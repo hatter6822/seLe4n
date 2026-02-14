@@ -8,11 +8,13 @@ transitions before adding major new subsystems.
 
 ### Current objective slice (next step)
 
-The active implementation target is **Scheduler Invariant Bundle v1**:
+The active implementation target is **Scheduler Invariant Bundle v1**.
 
-- define the invariant components in a compositional form,
-- lock and document queue/current consistency policy,
-- prove preservation over `chooseThread`, `schedule`, and `handleYield`.
+Current status:
+
+- ✅ Step 1 complete: runnable queue uniqueness (`runQueueUnique`) is defined and preserved,
+- ⏳ Next: current-thread object validity and explicit queue/current policy,
+- ⏳ Then: composed preservation coverage over `chooseThread`, `schedule`, and `handleYield`.
 
 ## 2. Working agreement
 
@@ -76,9 +78,9 @@ M1 proof hygiene conventions:
 
 Before merging work intended for M1, verify:
 
-- [ ] invariant bundle entrypoint exists and contains all required components,
+- [~] invariant bundle entrypoint exists; currently includes scheduler well-formedness + runQueue uniqueness,
 - [ ] queue/current policy is documented in-code and in spec,
-- [ ] preservation lemmas exist for `chooseThread`, `schedule`, and `handleYield`,
+- [~] preservation lemmas exist for `chooseThread`, `schedule`, and `handleYield` for implemented components,
 - [ ] no new `axiom` introduced,
 - [ ] `lake build` passes,
 - [ ] `lake exe sele4n` still demonstrates scheduler execution,

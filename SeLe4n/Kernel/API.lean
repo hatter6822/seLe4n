@@ -10,9 +10,13 @@ def schedulerWellFormed (s : SchedulerState) : Prop :=
   | none => True
   | some tid => tid ∈ s.runnable
 
+/-- Scheduler invariant component #1 (M1 bundle v1): runnable queue has no duplicate TIDs. -/
+def runQueueUnique (s : SchedulerState) : Prop :=
+  s.runnable.Nodup
+
 /-- Invariant bundle that should eventually mirror seL4 proof obligations. -/
 def kernelInvariant (st : SystemState) : Prop :=
-  schedulerWellFormed st.scheduler
+  schedulerWellFormed st.scheduler ∧ runQueueUnique st.scheduler
 
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
@@ -54,6 +58,16 @@ theorem setCurrentThread_preserves_wellFormed
   cases hStep
   simp [schedulerWellFormed, hMem]
 
+theorem setCurrentThread_preserves_runQueueUnique
+    (st st' : SystemState)
+    (tid : Option SeLe4n.ThreadId)
+    (hUnique : runQueueUnique st.scheduler)
+    (hStep : setCurrentThread tid st = .ok ((), st')) :
+    runQueueUnique st'.scheduler := by
+  simp [setCurrentThread] at hStep
+  cases hStep
+  simpa [runQueueUnique] using hUnique
+
 theorem chooseThread_returns_runnable_or_none
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
@@ -91,10 +105,56 @@ theorem schedule_preserves_wellFormed
       cases hStep
       simp [schedulerWellFormed]
 
+theorem chooseThread_preserves_runQueueUnique
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hUnique : runQueueUnique st.scheduler)
+    (hStep : chooseThread st = .ok (next, st')) :
+    runQueueUnique st'.scheduler := by
+  rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
+  subst hSt
+  simpa using hUnique
+
+theorem schedule_preserves_runQueueUnique
+    (st st' : SystemState)
+    (hUnique : runQueueUnique st.scheduler)
+    (hStep : schedule st = .ok ((), st')) :
+    runQueueUnique st'.scheduler := by
+  cases hRun : st.scheduler.runnable with
+  | nil =>
+      exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
+        simpa [schedule, hRun] using hStep)
+  | cons t ts =>
+      exact setCurrentThread_preserves_runQueueUnique st st' (some t) hUnique (by
+        simpa [schedule, hRun] using hStep)
+
 theorem handleYield_preserves_wellFormed
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
   simpa [handleYield] using schedule_preserves_wellFormed st st' hStep
+
+theorem handleYield_preserves_runQueueUnique
+    (st st' : SystemState)
+    (hUnique : runQueueUnique st.scheduler)
+    (hStep : handleYield st = .ok ((), st')) :
+    runQueueUnique st'.scheduler := by
+  simpa [handleYield] using schedule_preserves_runQueueUnique st st' hUnique hStep
+
+theorem schedule_preserves_kernelInvariant
+    (st st' : SystemState)
+    (hInv : kernelInvariant st)
+    (hStep : schedule st = .ok ((), st')) :
+    kernelInvariant st' := by
+  exact ⟨schedule_preserves_wellFormed st st' hStep,
+    schedule_preserves_runQueueUnique st st' hInv.2 hStep⟩
+
+theorem handleYield_preserves_kernelInvariant
+    (st st' : SystemState)
+    (hInv : kernelInvariant st)
+    (hStep : handleYield st = .ok ((), st')) :
+    kernelInvariant st' := by
+  exact ⟨handleYield_preserves_wellFormed st st' hStep,
+    handleYield_preserves_runQueueUnique st st' hInv.2 hStep⟩
 
 end SeLe4n.Kernel
