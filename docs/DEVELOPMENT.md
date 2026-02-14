@@ -2,20 +2,19 @@
 
 ## 1. Current phase
 
-The project has completed bootstrap and is now in **M1: Scheduler Integrity**.
-Development should prioritize invariant strengthening and proof coverage for existing scheduling
-transitions before adding major new subsystems.
+The project has completed bootstrap and **M1: Scheduler Integrity**.
+Development is now focused on **M2 Foundation Slice: typed CSpace lookup and mint model**.
 
 ### Current objective slice (next step)
 
-The active implementation target is **Scheduler Invariant Bundle v1**.
+The active implementation target is a minimal, proof-ready M2 slice.
 
-Current status:
+Target outcomes for this slice:
 
-- ✅ Step 1 complete: runnable queue uniqueness (`runQueueUnique`) is defined and preserved,
-- ✅ Step 2 complete: current-thread object validity (`currentThreadValid`) is defined and preserved,
-- ✅ Step 3 complete: explicit strict queue/current policy (`queueCurrentConsistent`) is defined and preserved,
-- ✅ Composed preservation coverage over `chooseThread`, `schedule`, and `handleYield` is complete for v1 bundle.
+- add typed capability operations for lookup and write/update paths,
+- define and compose initial capability invariants,
+- prove preservation for at least one read and one write transition,
+- keep executable behavior and existing scheduler proofs stable.
 
 ## 2. Working agreement
 
@@ -24,35 +23,38 @@ Current status:
 3. Prove before broadening: land small, composable invariants with corresponding proofs.
 4. Prefer total functions and explicit error channels (`Except`) over partial definitions.
 
-Additional M1-specific agreements:
+Additional milestone agreements:
 
 5. Keep theorem statements stable once introduced; iterate via helper lemmas first.
-6. Make policy choices explicit near definitions (not only in PR text).
+6. Make policy choices explicit near definitions (not only in commit/PR text).
 7. When a proof blocks, land minimal supporting lemmas rather than broad refactors.
+8. Do not regress completed M1 scheduler invariants while extending M2 semantics.
 
 ## 3. Recommended workflow per change
 
-1. Confirm milestone impact (M1-only vs. future milestone prep).
+1. Confirm milestone impact (M2 foundation-only vs. future milestone prep).
 2. Update spec text if acceptance criteria/scope move.
 3. Implement Lean model/theorem changes in smallest coherent slices.
 4. Run checks:
    - `lake build`
    - `lake exe sele4n` (when transition behavior is affected)
-5. Summarize proof obligations completed and remaining in PR notes.
+   - targeted repository scans (`rg -n "axiom|TODO|sorry"`) before merge
+5. Summarize obligations completed and remaining in commit/PR notes.
 
-### 3.1 Suggested micro-slice workflow for M1
+### 3.1 Suggested micro-slice workflow for M2 foundation
 
-For each invariant component:
+For each capability invariant component:
 
 1. Add/adjust predicate definition.
-2. Add one small sanity lemma (shape/property) to constrain later proof drift.
-3. Add transition-specific preservation lemma(s).
-4. Fold result into composed invariant preservation theorem.
-5. Re-run build and executable checks.
+2. Add one sanity lemma constraining theorem drift.
+3. Add read-path preservation lemma (`lookup`-style).
+4. Add write-path preservation lemma (`insert`/`mint`-style).
+5. Fold results into composed invariant theorem.
+6. Re-run build and executable checks.
 
 This sequence keeps each change reviewable and reduces proof breakage fan-out.
 
-## 4. Coding conventions
+## 4. Coding and proof conventions
 
 - Namespaces:
   - `SeLe4n.Model` for state/object definitions,
@@ -65,41 +67,68 @@ This sequence keeps each change reviewable and reduces proof breakage fan-out.
 - Documentation:
   - add short comments when a design choice is non-obvious or policy-based.
 
-M1 proof hygiene conventions:
+M2 proof hygiene conventions:
 
-- Prefer explicit theorem names for bundle members, e.g.:
-  - `runQueueUnique`,
-  - `currentThreadValid`,
-  - `queueCurrentConsistent`.
-- Group helper lemmas by subject (`runQueue`, object lookup, transition step facts).
+- Use explicit names for bundle members and avoid anonymous conjunctions without aliases.
+- Group helper lemmas by subject (`lookup`, slot mutations, rights attenuation facts).
 - Keep `simp` sets predictable; avoid global simp attributes unless broadly safe.
-- Avoid introducing abstractions that hide transition state updates during M1.
+- Avoid introducing abstractions that hide state updates while invariants are still evolving.
 
-## 5. Acceptance-driven delivery checklist (M1)
+## 5. Repository readability checklist
 
-Before merging work intended for M1, verify:
+When touching a module, check the following to keep codebase comprehension high:
 
-- [x] invariant bundle entrypoint exists and includes queue/current consistency + runQueue uniqueness + current-thread object validity,
-- [x] queue/current policy is documented in-code and in spec,
-- [x] preservation lemmas exist for `chooseThread`, `schedule`, and `handleYield` for all bundle components,
-- [x] no new `axiom` introduced,
-- [x] `lake build` passes,
-- [x] `lake exe sele4n` still demonstrates scheduler execution,
-- [x] docs reflect both progress and remaining proof debt.
+- exported names are discoverable from `SeLe4n.lean`,
+- top-level doc comments exist for new public definitions,
+- transition semantics are accompanied by at least one theorem use-site,
+- docs reference the same milestone terminology as the code,
+- examples in `Main.lean` remain concrete and executable.
 
-## 6. Development path ahead (post-next-step preview)
+## 6. Acceptance-driven delivery checklist (M2 foundation)
 
-After Scheduler Invariant Bundle v1 is complete, expected follow-on work is:
+Before merging work intended for the active M2 slice, verify:
 
-1. Strengthen scheduler model edges (idle/blocked transitions as needed).
-2. Begin M2 prep by isolating capability/CSpace interfaces from scheduler proofs.
-3. Carry forward reusable proof utilities while keeping scheduler theorems stable.
+- [ ] capability invariant bundle entrypoint exists and includes uniqueness + lookup soundness + attenuation rule,
+- [ ] attenuation policy is documented in code and spec,
+- [ ] preservation lemmas exist for one read and one write transition,
+- [ ] completed M1 scheduler theorems still build unchanged,
+- [ ] no new `axiom`/`sorry` introduced,
+- [ ] `lake build` passes,
+- [ ] `lake exe sele4n` demonstrates executable transition behavior,
+- [ ] docs reflect progress and remaining proof debt.
 
-This preview is directional only; M1 completion criteria remain authoritative.
+## 7. Audit protocol for milestone completion claims
 
-## 7. Anti-patterns to avoid
+When marking any milestone item complete, record evidence in the same commit range:
 
-- Expanding into IPC/MMU/retype semantics before M1 proofs stabilize.
+1. **Code evidence**: definitions and theorem statements exist in tracked Lean modules.
+2. **Proof evidence**: preservation theorem(s) compile under `lake build`.
+3. **Executable evidence**: runnable example path (`lake exe sele4n` or equivalent).
+4. **Hygiene evidence**: no unresolved proof escapes (`axiom`, `sorry`) and no stale TODO markers
+   in Lean code.
+
+Recommended command set:
+
+- `lake build`
+- `lake exe sele4n`
+- `rg -n "axiom|TODO|sorry" SeLe4n Main.lean`
+
+## 8. Development path ahead
+
+Near-term sequence after M2 foundation slice:
+
+1. Expand CSpace operations to revoke/delete and prove local authority constraints.
+2. Start M3 IPC semantics with endpoint transition definitions.
+3. Lift reusable capability and scheduler proof utilities into stable helper modules.
+
+Longer-term sequence:
+
+4. Object lifecycle/retype safety (M4).
+5. Refinement and correspondence track (M5+).
+
+## 9. Anti-patterns to avoid
+
+- Expanding into IPC/MMU/retype semantics before current-slice proofs stabilize.
 - Embedding milestone assumptions in code without documenting them in the spec.
 - Monolithic proof scripts that block incremental refactoring.
-- Deferring policy decisions (strict vs. relaxed consistency) until late in proof work.
+- Deferring policy decisions (e.g., attenuation constraints) until late in proof work.

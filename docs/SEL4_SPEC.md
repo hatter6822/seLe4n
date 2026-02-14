@@ -2,8 +2,8 @@
 
 ## 1. Purpose and intent
 
-This document captures the current specification baseline for seLe4n after bootstrap completion
-and defines the immediate plan for Milestone M1.
+This document captures the current specification baseline for seLe4n after bootstrap completion,
+records closure evidence for M1, and defines the immediate plan for Milestone M2.
 
 The project now targets a disciplined progression from an executable abstract kernel model to a
 proof-oriented scheduler and capability semantics stack.
@@ -11,15 +11,18 @@ proof-oriented scheduler and capability semantics stack.
 Primary outcomes for this revision:
 
 - codify that bootstrap requirements are complete,
-- establish explicit M1 acceptance criteria,
+- record that M1 Scheduler Invariant Bundle v1 is complete with verification evidence,
+- establish explicit acceptance criteria for the next implementation step (M2 foundation),
 - tighten change-control expectations for upcoming milestones.
 
 ## 2. Definitions
 
 - **Bootstrap milestone**: the initial semantic core with executable transitions and at least one
   machine-checked invariant-preservation proof.
-- **M1 (Scheduler Integrity)**: the next milestone focused on strengthening scheduler invariants
-  and proving preservation across core scheduling transitions.
+- **M1 (Scheduler Integrity)**: completed milestone that strengthened scheduler invariants and
+  proved preservation across core scheduling transitions.
+- **M2 (Capability & CSpace Semantics)**: active milestone for typed CSpace operations and
+  authority-safety properties.
 - **Executable semantics**: Lean definitions evaluable via `lake exe sele4n` or `#eval` without
   axiomatic escape hatches.
 - **Kernel transition**: a `Kernel` computation from `SystemState` to either `(result,
@@ -39,38 +42,62 @@ Primary outcomes for this revision:
 6. ✅ Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).
 7. ✅ Preservation theorem entrypoint for scheduler well-formedness.
 
-### 3.2 Milestone M1 scope (in progress)
+### 3.2 Milestone M1 scope (complete)
 
-The immediate next step is to complete a **Scheduler Invariant Bundle v1** with explicit policy and
-proof coverage. The repository shall implement and prove:
+M1 **Scheduler Invariant Bundle v1** is complete. Implemented and proven artifacts:
 
 1. ✅ Runnable queue uniqueness (no duplicate TIDs in `runQueue`).
 2. ✅ Current-thread object validity (if `currentThread = some tid`, object lookup resolves to a
    `TCB`).
-3. ✅ Queue/current consistency under an explicitly chosen policy:
-   - **strict policy**: current thread must be in `runQueue`, or
-   - **relaxed policy**: current thread may be absent while blocked/idle.
-4. Preservation of the composed scheduler invariant bundle for:
+3. ✅ Queue/current consistency under explicit strict policy.
+4. ✅ Preservation of the composed scheduler invariant bundle for:
    - `chooseThread`,
    - `schedule`,
    - `handleYield`.
 
-### 3.3 M1 implementation boundary (normative)
+### 3.3 Immediate next step scope: M2 foundation slice (active)
 
-Within this step, changes should stay inside scheduler semantics and proofs. The following are in
-scope:
+The immediate next step is to deliver a narrow **M2 Foundation Slice: typed CSpace lookup and
+mint model** that is proof-ready and does not destabilize completed scheduler results.
 
-- adding helper predicates/lemmas needed to define and prove scheduler invariants,
+In-scope for this slice:
+
+1. Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
+   module) for:
+   - slot lookup,
+   - cap insertion/update,
+   - mint-like derivation with rights attenuation.
+2. Add state/model helpers needed to represent slot-level capability ownership without adding
+   architecture-specific detail.
+3. Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
+   lookup soundness, attenuation monotonicity).
+4. Prove preservation for at least one write transition and one read transition in the new API.
+5. Keep `Main.lean` executable path functional; if changed, include a concrete demonstration of at
+   least one CSpace operation.
+
+Out-of-scope for this slice:
+
+- full revoke/delete cascade semantics,
+- endpoint IPC/reply-cap lifecycle,
+- untyped retype/allocation semantics,
+- correspondence/refinement obligations to external artifacts.
+
+### 3.4 M2 foundation implementation boundary (normative)
+
+Within this step, changes should stay inside CSpace/capability semantics and proofs. The following
+are in scope:
+
+- adding helper predicates/lemmas needed to define and prove capability invariants,
 - minor state-accessor refactors required for theorem clarity,
 - executable examples in `Main.lean` that exercise affected transitions.
 
 The following are out-of-scope for this step even if they appear adjacent:
 
-- introducing new kernel object classes,
-- extending capability operations beyond what scheduler proofs consume,
+- introducing new architecture-specific object classes,
+- extending capability operations beyond the M2 foundation slice,
 - architecture-specific behavior (timer interrupts, MMU details, etc.).
 
-### 3.4 Deferred (explicitly out-of-scope for M1)
+### 3.5 Deferred (explicitly out-of-scope for M2 foundation slice)
 
 - virtual memory and architecture-specific MMU semantics,
 - full capability derivation tree and revoke/delete cascade behavior,
@@ -95,12 +122,12 @@ The following are out-of-scope for this step even if they appear adjacent:
 
 ## 5. Normative requirements
 
-The project shall preserve the following through M1:
+The project shall preserve the following through M2 foundation:
 
 1. `lake build` succeeds from a clean checkout.
-2. `Main.lean` continues to demonstrate executable scheduler behavior.
+2. `Main.lean` continues to demonstrate executable transition behavior.
 3. No `axiom` is introduced to bypass missing proofs.
-4. Every new scheduler invariant has:
+4. Every new capability invariant has:
    - a clear definition,
    - at least one proof use-site,
    - placement in the composed invariant entrypoint.
@@ -109,51 +136,74 @@ The project shall preserve the following through M1:
 
 ## 6. Acceptance criteria and evidence mapping
 
-The next step (M1 Scheduler Invariant Bundle v1) is complete when all checks below are satisfied.
-Current status: all v1 components are implemented with strict queue/current policy and composed preservation over all three target transitions.
+The next step is **M2 Foundation Slice: typed CSpace lookup and mint model**. This step is
+complete when all checks below are satisfied.
 
-### 6.1 Functional and proof acceptance criteria
+### 6.1 M2 functional and proof acceptance criteria
 
-1. A single composed scheduler invariant entrypoint exists in `SeLe4n.Kernel.API` and includes at
-   least:
-   - runnable queue uniqueness,
-   - current-thread object validity,
-   - queue/current consistency with the documented policy.
-2. Each component invariant has at least one dedicated preservation lemma or helper theorem.
-3. Theorems show preservation of the composed invariant for:
-   - `chooseThread`,
-   - `schedule`,
-   - `handleYield`.
-4. The policy choice (strict vs. relaxed) is stated in comments/doc text close to the invariant
-   definition and reflected in theorem statements.
+1. A composed capability invariant bundle entrypoint exists and includes at least:
+   - slot-level uniqueness/no-alias property for the modeled structure,
+   - lookup soundness (resolved slot points to the modeled capability),
+   - rights attenuation monotonicity for mint/derive-style operations.
+2. Each invariant component has at least one dedicated preservation lemma or helper theorem.
+3. Theorems show preservation of the composed capability invariant for at least:
+   - one read transition (`lookup`-style),
+   - one write transition (`insert`/`mint`-style).
+4. The attenuation policy is stated in code comments/doc text near definitions and reflected in
+   theorem statements.
 
 ### 6.2 Build and executability acceptance criteria
 
 5. `lake build` passes with no new `axiom` introduced to bypass missing proofs.
-6. `lake exe sele4n` (or equivalent `#eval` path used by `Main.lean`) still demonstrates at least
-   one concrete scheduler transition from an explicit state.
+6. `lake exe sele4n` (or equivalent `#eval` path used by `Main.lean`) demonstrates at least one
+   concrete transition (scheduler and/or capability path) from an explicit state.
 
 ### 6.3 Documentation acceptance criteria
 
 7. `docs/SEL4_SPEC.md` and `docs/DEVELOPMENT.md` both describe:
-   - current invariant bundle scope,
+   - current M2 foundation scope,
    - remaining proof gaps (if any),
    - next intended increment.
 
 Evidence sources:
 
-- theorem statements/proofs in `SeLe4n/Kernel/API.lean`,
+- theorem statements/proofs in `SeLe4n/Kernel/API.lean` (or adjacent kernel semantics module),
 - executable path in `Main.lean`,
 - build/execution output from local checks.
 
 ### 6.4 Definition of done for this step
 
 This step should be marked complete only when all acceptance criteria pass in one commit range,
-and no open TODOs remain for the three targeted transitions.
+and no open TODOs remain for the transitions introduced in this slice.
 
-## 7. Roadmap
+## 7. Audit closure report (Bootstrap + M1)
 
-### 7.1 M1 (current): scheduler integrity
+The repository has been audited against completed milestone claims.
+
+### 7.1 Bootstrap verification summary
+
+- Core identifiers, machine state, object universe, and global state are implemented in
+  `Prelude`, `Machine`, `Model.Object`, and `Model.State` modules.
+- `KernelM`, `KernelError`, and executable scheduling transitions are present and buildable.
+
+### 7.2 M1 verification summary
+
+- Invariant components (`runQueueUnique`, `currentThreadValid`, `queueCurrentConsistent`) and
+  composed entrypoint (`schedulerInvariantBundle`) are implemented.
+- Preservation theorems exist for `chooseThread`, `schedule`, and `handleYield` over bundle
+  components and composed bundle.
+- Strict queue/current policy is documented in-code at invariant definition.
+- Repository search shows no `axiom`, `sorry`, or unresolved `TODO` markers in Lean code.
+
+### 7.3 Audit evidence commands
+
+- `lake build`
+- `lake exe sele4n`
+- `rg -n "axiom|TODO|sorry"`
+
+## 8. Roadmap
+
+### 8.1 M1 (completed): scheduler integrity
 
 Incremental plan:
 
@@ -165,30 +215,30 @@ Incremental plan:
 6. ✅ Consolidate helper lemmas and remove redundant proof scaffolding.
 7. ✅ Update docs to record what is complete and what remains.
 
-### 7.2 M2: capability and CSpace semantics
+### 8.2 M2 (current): capability and CSpace semantics
 
 - typed CSpace tree model,
 - lookup/mint/revoke/delete operations,
 - authority monotonicity and reachability constraints.
 
-### 7.3 M3: IPC semantics
+### 8.3 M3: IPC semantics
 
 - endpoint send/receive transitions,
 - queue discipline invariants,
 - call/reply correspondence lemmas.
 
-### 7.4 M4: memory/object lifecycle
+### 8.4 M4: memory/object lifecycle
 
 - untyped memory + retype operations,
 - object creation/deletion safety,
 - alignment/disjointness constraints.
 
-### 7.5 M5+: refinement and correspondence
+### 8.5 M5+: refinement and correspondence
 
 - abstract-to-lower-level refinement relation,
 - staged correspondence strategy toward external seL4 artifacts.
 
-## 8. Change control
+## 9. Change control
 
 - Keep milestone status conservative; only mark complete when code and proofs validate.
 - Any regression in completed criteria must be reflected immediately in this spec.
