@@ -41,9 +41,7 @@ Status is based on the repository state at the time of this spec revision.
 4. ~~Global system state (`SystemState`) with object store and scheduler fields.~~ (**Done**)
 5. ~~Basic kernel monad (`KernelM`) and error type (`KernelError`).~~ (**Done**)
 6. ~~Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).~~ (**Done**)
-7. A proof that at least one scheduler transition preserves a base invariant. (**Partial**;
-   current proof covers `setCurrentThread` preservation under a runnable-membership precondition,
-   but not yet `schedule` end-to-end preservation.)
+7. ~~A proof that at least one scheduler transition preserves a base invariant.~~ (**Done**; includes end-to-end preservation for `schedule` and its `handleYield` entrypoint.)
 
 ### 3.2 Out-of-scope milestone catalog (explicitly deferred)
 
