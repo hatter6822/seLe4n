@@ -40,4 +40,44 @@ theorem setCurrentThread_preserves_wellFormed
   cases hStep
   simp [schedulerWellFormed, hMem]
 
+theorem chooseThread_returns_runnable_or_none
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : chooseThread st = .ok (next, st')) :
+    st' = st ∧
+      (match next with
+      | none => st.scheduler.runnable = []
+      | some tid => tid ∈ st.scheduler.runnable) := by
+  simp [chooseThread] at hStep
+  cases hRun : st.scheduler.runnable with
+  | nil =>
+      simp [hRun] at hStep
+      cases hStep
+      simp [hRun]
+  | cons t ts =>
+      simp [hRun] at hStep
+      cases hStep
+      simp [hRun]
+
+theorem schedule_preserves_wellFormed
+    (st st' : SystemState)
+    (hStep : schedule st = .ok ((), st')) :
+    schedulerWellFormed st'.scheduler := by
+  simp [schedule] at hStep
+  rcases hStep with ⟨next, hChoose, hSet⟩
+  rcases chooseThread_returns_runnable_or_none st _ next hChoose with ⟨rfl, hNext⟩
+  cases hNextCase : next with
+  | none =>
+      simp [setCurrentThread, schedulerWellFormed] at hSet ⊢
+      cases hSet
+      simp [schedulerWellFormed]
+  | some tid =>
+      exact setCurrentThread_preserves_wellFormed st st' tid hNext hSet
+
+theorem handleYield_preserves_wellFormed
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    schedulerWellFormed st'.scheduler := by
+  simpa [handleYield] using schedule_preserves_wellFormed st st' hStep
+
 end SeLe4n.Kernel
