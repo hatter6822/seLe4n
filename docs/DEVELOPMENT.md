@@ -1,37 +1,53 @@
 # Development Guide
 
-## Goals
+## 1. Current phase
 
-- Maintain an executable Lean model while progressively increasing fidelity to seL4.
-- Keep specifications and code synchronized.
-- Prefer total functions and explicit error channels (`Except`) over partial definitions.
+The project has completed bootstrap and is now in **M1: Scheduler Integrity**.
+Development should prioritize invariant strengthening and proof coverage for existing scheduling
+transitions before adding major new subsystems.
 
-## Workflow
+## 2. Working agreement
 
-1. Add or refine specification text in `docs/SEL4_SPEC.md`.
-2. Add/modify Lean model definitions.
-3. Add theorem statements and proofs for preserved invariants.
-4. Run `lake build` after every cohesive change.
+1. Spec-first: update `docs/SEL4_SPEC.md` when scope or acceptance criteria change.
+2. Keep executable behavior intact (`Main.lean` path should remain runnable).
+3. Prove before broadening: land small, composable invariants with corresponding proofs.
+4. Prefer total functions and explicit error channels (`Except`) over partial definitions.
 
-## Suggested next milestones
+## 3. Recommended workflow per change
 
-- Introduce typed CSpace trees and capability derivation rules.
-- Add endpoint IPC send/receive transition semantics.
-- Model untyped memory and retype operations.
-- Encode a refinement relation between abstract and executable states.
+1. Confirm milestone impact (M1-only vs. future milestone prep).
+2. Update spec text if acceptance criteria/scope move.
+3. Implement Lean model/theorem changes in smallest coherent slices.
+4. Run checks:
+   - `lake build`
+   - `lake exe sele4n` (when transition behavior is affected)
+5. Summarize proof obligations completed and remaining in PR notes.
 
-## Coding conventions
+## 4. Coding conventions
 
-- Use namespaces to separate abstract model layers:
-  - `SeLe4n.Model` for objects/state/semantics.
-  - `SeLe4n.Kernel` for kernel-facing operations and invariants.
-- Keep theorem names descriptive, e.g. `schedule_preserves_wellFormed`.
-- Document non-obvious design choices with short comments.
+- Namespaces:
+  - `SeLe4n.Model` for state/object definitions,
+  - `SeLe4n.Kernel` for transitions/invariants/proofs.
+- Theorem naming:
+  - use `<transition>_preserves_<invariant>` style where practical.
+- Proof structure:
+  - isolate helper lemmas for list/set facts,
+  - keep theorem statements stable and refactor proof terms beneath them.
+- Documentation:
+  - add short comments when a design choice is non-obvious or policy-based.
 
-## Validation
+## 5. Milestone-oriented checklist
 
-Minimum required check before commit:
+Before merging work intended for M1, verify:
 
-```bash
-lake build
-```
+- [ ] invariant definition is explicit and compositional,
+- [ ] theorem(s) use the invariant in transition preservation,
+- [ ] no new `axiom` introduced,
+- [ ] `lake build` passes,
+- [ ] docs reflect the new state of completion.
+
+## 6. Anti-patterns to avoid
+
+- Expanding into IPC/MMU/retype semantics before M1 proofs stabilize.
+- Embedding milestone assumptions in code without documenting them in the spec.
+- Monolithic proof scripts that block incremental refactoring.

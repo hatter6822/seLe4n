@@ -1,211 +1,142 @@
-# seL4-in-Lean Bootstrap Specification
+# seL4-in-Lean Specification and Milestone Plan
 
 ## 1. Purpose and intent
 
-This document defines the **bootstrap milestone** for a Lean 4 formalization of the seL4
-microkernel, and records the current implementation status against that milestone.
+This document captures the current specification baseline for seLe4n after bootstrap completion
+and defines the immediate plan for Milestone M1.
 
-The bootstrap milestone is intentionally narrow: establish a small abstract state machine that is
-executable, deterministic, and amenable to proof-driven extension.
+The project now targets a disciplined progression from an executable abstract kernel model to a
+proof-oriented scheduler and capability semantics stack.
 
-Primary bootstrap outcomes:
+Primary outcomes for this revision:
 
-- coherent abstract state and object model,
-- deterministic transition semantics for basic scheduling,
-- machine-checked invariant preservation proof(s),
-- a clear handoff plan into post-bootstrap milestones.
+- codify that bootstrap requirements are complete,
+- establish explicit M1 acceptance criteria,
+- tighten change-control expectations for upcoming milestones.
 
 ## 2. Definitions
 
-- **Bootstrap milestone**: the initial repository state that provides a working semantic core, not
-  full kernel fidelity.
-- **Executable semantics**: Lean definitions that can be evaluated via `lake exe sele4n` or `#eval`
-  without introducing axioms.
+- **Bootstrap milestone**: the initial semantic core with executable transitions and at least one
+  machine-checked invariant-preservation proof.
+- **M1 (Scheduler Integrity)**: the next milestone focused on strengthening scheduler invariants
+  and proving preservation across core scheduling transitions.
+- **Executable semantics**: Lean definitions evaluable via `lake exe sele4n` or `#eval` without
+  axiomatic escape hatches.
 - **Kernel transition**: a `Kernel` computation from `SystemState` to either `(result,
   SystemState)` or `KernelError`.
-- **Invariant**: a predicate over `SystemState` that designated transitions should preserve.
-- **Milestone status**:
-  - **Done**: implemented in code and typechecked,
-  - **Partial**: present but weaker than target intent,
-  - **Deferred**: intentionally excluded from bootstrap scope.
+- **Invariant bundle**: a compositional predicate over `SystemState` made from smaller,
+  independently provable properties.
 
 ## 3. Scope and status
 
-### 3.1 In-scope bootstrap milestones
+### 3.1 Bootstrap milestones (complete)
 
-Status is based on the repository state at the time of this spec revision.
+1. ✅ Core type aliases for kernel identifiers.
+2. ✅ Abstract machine state (`RegisterFile`, `MachineState`).
+3. ✅ Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).
+4. ✅ Global system state (`SystemState`) with object store and scheduler fields.
+5. ✅ Basic kernel monad (`KernelM`) and error type (`KernelError`).
+6. ✅ Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).
+7. ✅ Preservation theorem entrypoint for scheduler well-formedness.
 
-1. ~~Core type aliases for kernel identifiers.~~ (**Done**)
-2. ~~Abstract machine state (`RegisterFile`, `MachineState`).~~ (**Done**)
-3. ~~Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).~~ (**Done**)
-4. ~~Global system state (`SystemState`) with object store and scheduler fields.~~ (**Done**)
-5. ~~Basic kernel monad (`KernelM`) and error type (`KernelError`).~~ (**Done**)
-6. ~~Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).~~ (**Done**)
-7. ~~A proof that at least one scheduler transition preserves a base invariant.~~ (**Done**; includes end-to-end preservation for `schedule` and its `handleYield` entrypoint.)
+### 3.2 Milestone M1 scope (in progress)
 
-### 3.2 Out-of-scope milestone catalog (explicitly deferred)
+The repository shall next implement and prove:
 
-These are tracked to prevent accidental scope creep during bootstrap.
+1. Runnable queue uniqueness.
+2. Current-thread object validity (if current is set, it refers to a TCB object).
+3. Queue/current consistency (policy-driven; choose and document strict or relaxed form).
+4. Preservation of the strengthened invariant bundle for:
+   - `chooseThread`,
+   - `schedule`,
+   - `handleYield`.
 
-#### A. Virtual memory and architecture semantics
+### 3.3 Deferred (explicitly out-of-scope for M1)
 
-- architecture-specific MMU/page-table structures,
-- ASID pool behavior and TLB interaction,
-- user/kernel address-space switching rules,
-- architecture-dependent trap/exception entry details.
-
-#### B. Capability-system depth
-
-- full capability derivation tree constraints,
-- revoke/delete cascading behavior,
-- mint/mutate semantics with authority attenuation proofs,
-- CSpace lookup failure taxonomy matching production seL4.
-
-#### C. IPC and synchronization completeness
-
-- endpoint send/receive operational semantics with blocking behavior,
-- notification objects and signal/wait interactions,
-- reply-cap lifecycle and call/reply protocol correctness.
-
-#### D. Memory management and object lifecycle
-
-- untyped memory model and retype invariants,
-- object allocation/deallocation proofs,
-- alignment and size class constraints.
-
-#### E. Interrupt/temporal fidelity
-
-- interrupt-controller hardware detail,
-- timer interrupt delivery and preemption model,
-- deterministic interleaving model for asynchronous events.
-
-#### F. Refinement and ecosystem compatibility
-
-- refinement to C implementation artifacts,
-- compatibility proofs with Isabelle/HOL seL4 developments,
-- proof-producing translation or correspondence infrastructure.
+- virtual memory and architecture-specific MMU semantics,
+- full capability derivation tree and revoke/delete cascade behavior,
+- full IPC/reply-cap lifecycle correctness,
+- untyped memory allocation and retype proofs,
+- Isabelle/HOL correspondence and refinement-to-C obligations.
 
 ## 4. Architecture and module responsibilities
 
-### 4.1 Type and monad layer (`SeLe4n.Prelude`)
+### 4.1 Core layers
 
-Defines:
+- `SeLe4n.Prelude`: identifiers and base kernel monad infrastructure.
+- `SeLe4n.Machine`: machine state/register/memory abstractions.
+- `SeLe4n.Model.Object`: kernel object and capability model.
+- `SeLe4n.Model.State`: global state, scheduler state, and utility accessors.
+- `SeLe4n.Kernel.API`: transition semantics and invariant theorems.
 
-- primitive identifier aliases (`ObjId`, `ThreadId`, `DomainId`, `Priority`, `Irq`, etc.),
-- the bootstrap state/error monad (`KernelM`) with `Monad` instance.
+### 4.2 Documentation layers
 
-### 4.2 Machine layer (`SeLe4n.Machine`)
+- `docs/SEL4_SPEC.md`: normative scope and acceptance requirements.
+- `docs/DEVELOPMENT.md`: implementation workflow and review checks.
 
-Defines:
+## 5. Normative requirements
 
-- abstract register and memory vocabulary (`RegName`, `RegValue`, `Memory`),
-- machine state records (`RegisterFile`, `MachineState`),
-- utility operations (`readReg`, `writeReg`, `readMem`, `writeMem`, `setPC`, `tick`).
+The project shall preserve the following through M1:
 
-### 4.3 Object and global state layer (`SeLe4n.Model.Object`, `SeLe4n.Model.State`)
-
-Defines:
-
-- capability-target/addressing model and rights,
-- kernel object payloads (`TCB`, `Endpoint`, `CNode`),
-- object universe sum type (`KernelObject`),
-- global state (`SystemState`) and scheduler state,
-- bootstrap kernel error channel (`KernelError`),
-- utility state operations (`lookupObject`, `setCurrentThread`).
-
-### 4.4 Kernel API and invariant layer (`SeLe4n.Kernel.API`)
-
-Defines:
-
-- scheduler base invariant (`schedulerWellFormed`),
-- composed invariant entrypoint (`kernelInvariant`),
-- scheduler transitions (`chooseThread`, `schedule`, `handleYield`),
-- a current preservation theorem (`setCurrentThread_preserves_wellFormed`).
-
-## 5. Functional requirements (normative)
-
-The implementation **shall** satisfy all items below for bootstrap completion:
-
-1. **Buildability**: `lake build` succeeds from a clean checkout.
-2. **Executability**: at least one transition path executes from `Main.lean`.
-3. **Determinism**: in-scope transitions are total, pure, and deterministic.
-4. **Extensibility**: module boundaries permit adding semantics without broad refactors.
-5. **Proof entry point**: at least one transition-preservation theorem is machine checked.
-6. **No axiomatic bypass**: no `axiom` used to mask missing bootstrap proofs.
+1. `lake build` succeeds from a clean checkout.
+2. `Main.lean` continues to demonstrate executable scheduler behavior.
+3. No `axiom` is introduced to bypass missing proofs.
+4. Every new scheduler invariant has:
+   - a clear definition,
+   - at least one proof use-site,
+   - placement in the composed invariant entrypoint.
+5. Milestone changes that affect scope or acceptance criteria update this document in the same
+   commit.
 
 ## 6. Acceptance criteria and evidence mapping
 
-A revision satisfies bootstrap when **all** acceptance checks pass:
+M1 is complete when all checks below are satisfied:
 
-1. Builds with pinned toolchain and `lakefile.toml` configuration.
-2. `Main.lean` demonstrates concrete state transition execution.
-3. Scheduler invariants are defined and linked to theorem(s).
-4. No `axiom` introduced for invariant obligations.
-5. Layered module organization under `SeLe4n/` remains coherent.
+1. Strengthened scheduler invariants are present in `SeLe4n.Kernel.API`.
+2. Theorems show preservation for `chooseThread`, `schedule`, and `handleYield`.
+3. `lake build` passes with no axiomatic bypass introduced.
+4. `Main.lean` still runs a concrete transition path from an explicit bootstrap state.
+5. Documentation (`SEL4_SPEC.md` + `DEVELOPMENT.md`) reflects implemented behavior.
 
-Evidence should be maintained as:
+Evidence sources:
 
-- executable demonstration path in code (`Main.lean`),
-- theorem artifacts in `SeLe4n/Kernel/API.lean`,
-- CI/build command output (local and/or CI workflow).
+- theorem statements/proofs in `SeLe4n/Kernel/API.lean`,
+- executable path in `Main.lean`,
+- build output from local checks.
 
-## 7. Detailed roadmap after bootstrap
+## 7. Roadmap
 
-### 7.1 Near-term (Milestone M1)
+### 7.1 M1 (current): scheduler integrity
 
-- strengthen scheduler invariants:
-  - runnable queue uniqueness,
-  - current-thread validity against object heap,
-  - optional non-empty runnable/current consistency;
-- prove `schedule` preserves strengthened invariant bundle.
+- compose scheduler invariant bundle,
+- prove preservation across core scheduling transitions,
+- add small helper lemmas to keep proof scripts modular.
 
-### 7.2 Capability and CSpace (Milestone M2)
+### 7.2 M2: capability and CSpace semantics
 
-- introduce typed CSpace tree semantics,
-- add lookup/mint/revoke/delete operations,
-- prove basic capability safety properties (authority monotonicity, reachability constraints).
+- typed CSpace tree model,
+- lookup/mint/revoke/delete operations,
+- authority monotonicity and reachability constraints.
 
-### 7.3 IPC semantics (Milestone M3)
+### 7.3 M3: IPC semantics
 
-- endpoint send/receive state machine,
-- queue discipline invariants and progress properties,
-- call/reply correspondence and reply-cap validity lemmas.
+- endpoint send/receive transitions,
+- queue discipline invariants,
+- call/reply correspondence lemmas.
 
-### 7.4 Memory/object management (Milestone M4)
+### 7.4 M4: memory/object lifecycle
 
-- untyped memory/retype lifecycle,
+- untyped memory + retype operations,
 - object creation/deletion safety,
-- disjointness, alignment, and aliasing invariants.
+- alignment/disjointness constraints.
 
-### 7.5 Refinement and correspondence (Milestone M5+)
+### 7.5 M5+: refinement and correspondence
 
-- relation between abstract machine operations and kernel transitions,
-- staged refinement toward executable low-level model,
-- initial correspondence strategy with Isabelle/HOL artifacts.
+- abstract-to-lower-level refinement relation,
+- staged correspondence strategy toward external seL4 artifacts.
 
-## 8. Non-functional requirements
+## 8. Change control
 
-- preserve deterministic, total model updates,
-- keep proof scripts maintainable and compositional,
-- avoid introducing `axiom` except with explicit documented rationale,
-- keep local build/test feedback fast (`lake build` baseline),
-- prefer clear naming and modular namespaces.
-
-## 9. Deliverables for this repository revision
-
-- toolchain pin (`lean-toolchain`),
-- Lake configuration (`lakefile.toml`),
-- layered Lean modules under `SeLe4n/`,
-- executable bootstrap path in `Main.lean`,
-- specification and development documentation under `docs/`.
-
-## 10. Change control and milestone hygiene
-
-Any revision changing scope, acceptance criteria, or invariant obligations must update this spec in
-that same commit.
-
-Milestone markup policy:
-
-- only strike through milestones that are fully implemented and validated,
-- if implementation regresses or is shown incomplete, remove strike-through immediately,
-- prefer marking nuanced states as **Partial** over optimistic completion.
+- Keep milestone status conservative; only mark complete when code and proofs validate.
+- Any regression in completed criteria must be reflected immediately in this spec.
+- Avoid speculative requirement text that lacks code-path ownership.
