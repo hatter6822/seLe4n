@@ -46,6 +46,26 @@ The following are explicitly deferred to later milestones:
 - refinement to C implementation artifacts,
 - compatibility proofs with Isabelle/HOL seL4 developments.
 
+These deferred items are now tracked as named follow-on milestones in §7.
+
+## 3.3 Bootstrap milestone status review
+
+Code review against current sources confirms that **items 1–3 are implemented** and align with the
+bootstrap intent:
+
+- **Item 1 (identifier aliases)**: `SeLe4n.Prelude` defines the core ID/value aliases used across
+  the model (`ObjId`, `ThreadId`, `DomainId`, `Priority`, `Irq`, `CPtr`, `Slot`, `Badge`, `ASID`,
+  `VAddr`, `PAddr`).
+- **Item 2 (abstract machine state)**: `SeLe4n.Machine` defines `RegisterFile` and `MachineState`
+  as pure data structures, with inhabited defaults and basic read/write helpers for registers and
+  memory.
+- **Item 3 (object universe)**: `SeLe4n.Model.Object` defines capabilities, capability targets,
+  `TCB`, `Endpoint`, `CNode`, and the `KernelObject` sum type.
+
+Items **4–7 remain open** in this checklist for milestone-tracking purposes, even where partial
+infrastructure exists in the codebase. They should only be crossed out once the full acceptance
+intent (including end-to-end validation/proof expectations) is met.
+
 ## 4. Architecture and module responsibilities
 
 ### 4.1 Type layer (`SeLe4n.Prelude`)
@@ -99,16 +119,72 @@ A repository revision satisfies the bootstrap milestone when all checks below ho
 
 ## 7. Verification roadmap (post-bootstrap)
 
-Planned progression after this milestone:
+Planned progression after bootstrap is split into explicit milestones so deferred scope can be
+implemented incrementally and validated with concrete exit criteria.
 
-1. Strengthen invariants:
-   - runnable queue uniqueness,
-   - current-thread validity,
-   - object-reference well-formedness.
-2. Add IPC operational semantics and send/receive matching proofs.
-3. Add CSpace operations and capability safety theorems.
-4. Introduce refinement relation from concrete machine operations to abstract kernel steps.
-5. Organize theorem libraries by subsystem via `namespace`-scoped modules.
+### Milestone A — Invariant strengthening
+
+- Add runnable queue uniqueness and no-duplicate constraints.
+- Strengthen `current`-thread validity beyond list membership (e.g., object existence + TCB type).
+- Add object-reference well-formedness predicates over capability targets.
+- Exit criteria:
+  - strengthened invariant bundle replaces current `kernelInvariant`,
+  - preservation proofs for `chooseThread` and `schedule` are present.
+
+### Milestone B — IPC semantics
+
+- Model endpoint send/receive state transitions.
+- Define blocking/unblocking behavior and queue updates.
+- Prove basic send/receive correspondence and queue safety properties.
+- Exit criteria:
+  - executable IPC transition examples,
+  - at least one preservation theorem involving endpoint queues.
+
+### Milestone C — CSpace and capability safety
+
+- Add capability lookup/update/delete operations over `CNode` structures.
+- Specify capability transfer/retyping constraints (bootstrap-safe approximation first).
+- Prove non-escalation properties for rights-preserving operations.
+- Exit criteria:
+  - API-level CSpace operations exposed,
+  - capability safety theorem family added.
+
+### Milestone D — Architecture + interrupt model
+
+- Introduce abstract architecture layer for address translation and ASID semantics.
+- Model IRQ delivery/ack transitions and scheduler interaction.
+- Keep architecture details abstract enough for proof reuse before platform specialization.
+- Exit criteria:
+  - interrupt path executable in model,
+  - proofs connecting IRQ transitions to scheduler invariants.
+
+### Milestone E — Refinement + external alignment
+
+- Define refinement relation from concrete machine operations to abstract kernel steps.
+- Add trace/step correspondence lemmas for selected transitions.
+- Align major abstractions with Isabelle/HOL seL4 concepts to reduce semantic drift.
+- Exit criteria:
+  - documented refinement statement with machine-checked lemmas,
+  - compatibility notes mapping key terms to Isabelle/HOL artifacts.
+
+### Milestone F — Proof architecture and maintainability
+
+- Reorganize theorem libraries by subsystem (`Scheduler`, `IPC`, `CSpace`, `Machine`).
+- Introduce reusable proof helpers and normal forms to reduce tactic duplication.
+- Add CI checks to ensure theorem build remains lightweight.
+- Exit criteria:
+  - subsystem-oriented module tree established,
+  - proof build targets documented and stable.
+
+### Out-of-scope tracking map
+
+Deferred item → planned milestone mapping:
+
+- MMU/page-table behavior → **Milestone D**,
+- capability derivation tree constraints → **Milestone C**,
+- interrupt-controller detail → **Milestone D**,
+- C artifact refinement → **Milestone E**,
+- Isabelle/HOL compatibility proofs → **Milestone E**.
 
 ## 8. Non-functional requirements
 
