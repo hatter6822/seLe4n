@@ -1,0 +1,10 @@
+name = "seLe4"
+version = "0.1.0"
+defaultTargets = ["sele4"]
+
+[[lean_lib]]
+name = "SeLe4"
+
+[[lean_exe]]
+name = "sele4"
+root = "Main"
