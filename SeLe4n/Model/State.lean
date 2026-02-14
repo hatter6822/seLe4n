@@ -40,6 +40,13 @@ def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
     | none => .error .objectNotFound
     | some obj => .ok (obj, st)
 
+/-- Replace the object stored at `id` with `obj`. -/
+def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    let objects' : SeLe4n.ObjId → Option KernelObject :=
+      fun oid => if oid = id then some obj else st.objects oid
+    .ok ((), { st with objects := objects' })
+
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := { st.scheduler with current := tid }
