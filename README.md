@@ -48,6 +48,6 @@ lake exe sele4n
 
 ## Current status
 
-Bootstrap goals are complete and validated in code. The project is now entering the M1
-invariant-strengthening phase (scheduler integrity and richer preservation proofs), with the
-version advanced to `0.2.4` after landing Scheduler Invariant Bundle v1 (including an explicit strict queue/current consistency policy).
+Bootstrap and M1 scheduler-integrity goals are complete and validated in code. The next active
+step is an M2 foundation slice focused on typed CSpace lookup/mint semantics and initial
+capability-invariant preservation proofs, while maintaining runnable executable transitions.
