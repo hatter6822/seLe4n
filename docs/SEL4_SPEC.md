@@ -1,88 +1,131 @@
 # seL4-in-Lean Bootstrap Specification
 
-## 1. Project intent
+## 1. Purpose and intent
 
-This repository initializes a formalization effort for the seL4 microkernel in Lean 4. The
-initial scaffold focuses on a coherent *abstract state machine* with executable semantics and
-foundational invariants, rather than full kernel behavior.
+This specification defines the **bootstrap milestone** for a Lean 4 formalization of the seL4
+microkernel. The goal is to establish a small, executable, and provable core model that can be
+extended toward richer semantics and stronger correctness guarantees.
 
-## 2. Scope of this bootstrap phase
+The bootstrap milestone optimizes for:
 
-### In scope
+- a coherent abstract state machine,
+- deterministic transition semantics,
+- and at least one machine-checked invariant preservation proof.
 
-- Core type aliases for kernel identifiers.
-- Abstract machine state (`RegisterFile`, `MachineState`).
-- Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).
-- Global system state (`SystemState`) with object store + scheduler.
-- Basic kernel monad (`KernelM`) and error type (`KernelError`).
-- Initial scheduler transition (`schedule`) with proof of a basic invariant.
+## 2. Definitions
 
-### Out of scope (future phases)
+- **Bootstrap milestone**: the initial repository state that provides a working semantic core, not
+  full kernel fidelity.
+- **Executable semantics**: Lean definitions that can be evaluated (e.g., through `#eval` or a
+  runnable `Main.lean`) without introducing axioms.
+- **Kernel transition**: a state transformer in `KernelM` that maps an input `SystemState` to either
+  `(result, SystemState)` or `KernelError`.
+- **Invariant**: a predicate over `SystemState` that must be preserved by designated transitions.
 
-- Architecture-specific MMU/page table semantics.
-- Full capability derivation tree constraints.
-- Interrupt controller details.
-- Binary correctness/refinement to C implementation.
-- End-to-end proof compatibility with existing Isabelle/HOL artifacts.
+## 3. Scope
 
-## 3. High-level architecture
+### 3.1 In scope
 
-## 3.1 Type layer (`SeLe4.Prelude`)
+The following are required in this milestone:
 
-Defines primitive identifiers and a state/error monad used to make transition functions executable
-inside Lean.
+1. Core type aliases for kernel identifiers.
+2. Abstract machine state (`RegisterFile`, `MachineState`).
+3. Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).
+4. Global system state (`SystemState`) with object store and scheduler fields.
+5. Basic kernel monad (`KernelM`) and error type (`KernelError`).
+6. Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).
+7. A proof that at least one scheduler transition preserves a base invariant.
 
-## 3.2 Machine layer (`SeLe4.Machine`)
+### 3.2 Out of scope
 
-Represents abstract register and memory state as pure data. This supports future integration of
-trap handling and context switches.
+The following are explicitly deferred to later milestones:
 
-## 3.3 Object and state layer (`SeLe4.Model.Object`, `SeLe4.Model.State`)
+- architecture-specific MMU/page-table behavior,
+- full capability derivation tree constraints,
+- interrupt-controller hardware detail,
+- refinement to C implementation artifacts,
+- compatibility proofs with Isabelle/HOL seL4 developments.
+
+## 4. Architecture and module responsibilities
+
+### 4.1 Type layer (`SeLe4.Prelude`)
+
+Defines primitive identifier aliases and reusable monadic/error infrastructure used by transition
+functions.
+
+### 4.2 Machine layer (`SeLe4.Machine`)
+
+Represents abstract register and memory state as pure data and provides a stable target for future
+trap/context-switch semantics.
+
+### 4.3 Object/state layer (`SeLe4.Model.Object`, `SeLe4.Model.State`)
 
 Defines kernel objects and global state:
 
-- `Capability` with rights + optional badge.
-- `TCB`, `Endpoint`, `CNode` object payloads.
-- `KernelObject` sum type.
-- `SystemState` with machine state, object heap, scheduler, IRQ handlers.
+- `Capability` (rights + optional badge),
+- payload types (`TCB`, `Endpoint`, `CNode`),
+- `KernelObject` sum type,
+- `SystemState` including machine state, object heap, scheduler metadata, and IRQ handlers.
 
-## 3.4 Kernel API layer (`SeLe4.Kernel.API`)
+### 4.4 Kernel API/proof layer (`SeLe4.Kernel.API`)
 
 Defines:
 
-- `schedulerWellFormed` invariant.
-- `kernelInvariant` bundle (currently minimal).
-- Scheduling transitions (`chooseThread`, `schedule`, `handleYield`).
-- Proof `schedule_preserves_wellFormed`.
+- scheduler-focused invariants (`schedulerWellFormed`),
+- composed kernel invariant (`kernelInvariant`),
+- scheduling transitions,
+- at least one preservation theorem (e.g., `schedule_preserves_wellFormed`).
 
-## 4. Functional requirements
+## 5. Functional requirements
 
-1. **Buildability**: `lake build` must pass from clean checkout.
-2. **Executability**: at least one transition path should run from `Main.lean`.
-3. **Extensibility**: module structure must support incremental semantic enrichment.
-4. **Proof entry point**: at least one state transition preservation theorem must be present.
+The implementation **shall** satisfy all requirements below:
 
-## 5. Verification roadmap
+1. **Buildability**: `lake build` succeeds from a clean checkout.
+2. **Executability**: at least one transition path can be executed from `Main.lean`.
+3. **Determinism**: transition definitions in scope are total and deterministic.
+4. **Extensibility**: module boundaries permit adding semantics without cross-cutting refactors.
+5. **Proof entry point**: at least one transition-preservation theorem is present and checked by Lean.
 
-1. Expand invariant set:
+## 6. Acceptance criteria
+
+A repository revision satisfies the bootstrap milestone when all checks below hold:
+
+1. Source builds with the pinned toolchain and current `lakefile.toml`.
+2. `Main.lean` demonstrates a concrete transition execution path.
+3. Scheduler invariant predicates are defined and referenced by at least one theorem.
+4. No `axiom` is introduced to bypass missing proofs in bootstrap invariants.
+5. Public module organization under `SeLe4/` remains coherent by layer (Prelude, Machine, Model,
+   Kernel).
+
+## 7. Verification roadmap (post-bootstrap)
+
+Planned progression after this milestone:
+
+1. Strengthen invariants:
    - runnable queue uniqueness,
-   - current thread validity,
+   - current-thread validity,
    - object-reference well-formedness.
-2. Add IPC semantics with send/receive matching proofs.
+2. Add IPC operational semantics and send/receive matching proofs.
 3. Add CSpace operations and capability safety theorems.
 4. Introduce refinement relation from concrete machine operations to abstract kernel steps.
-5. Add theorem grouping by subsystem with `namespace`-scoped proof libraries.
+5. Organize theorem libraries by subsystem via `namespace`-scoped modules.
 
-## 6. Non-functional requirements
+## 8. Non-functional requirements
 
-- Keep all model updates deterministic and total.
-- Avoid introducing `axiom` unless explicitly justified.
-- Preserve fast feedback: build should remain quick on developer hardware.
+- Keep model updates deterministic and total.
+- Avoid `axiom` unless explicitly justified in documentation.
+- Maintain fast local feedback (`lake build` should remain lightweight).
+- Prefer clear naming and small compositional definitions over dense monolithic encodings.
 
-## 7. Deliverables in this repository revision
+## 9. Deliverables for this repository revision
 
 - Lean toolchain pin (`lean-toolchain`).
-- Lake package config (`lakefile.toml`).
-- Multi-module library scaffold under `SeLe4/`.
-- Executable demo in `Main.lean`.
-- Development and specification docs under `docs/`.
+- Lake package configuration (`lakefile.toml`).
+- Multi-module scaffold under `SeLe4/`.
+- Executable demonstration in `Main.lean`.
+- Documentation under `docs/`, including this specification.
+
+## 10. Change control
+
+Any future revision that changes scope, acceptance criteria, or invariant obligations should update
+this document in the same commit as the corresponding code/proof changes.
