@@ -38,10 +38,10 @@ def main : IO Unit := do
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st1) =>
       IO.println s!"scheduled thread: {reprStr st1.scheduler.current}"
-      match SeLe4n.Kernel.cspaceMint (10, 0) (11, 3) [.read] none st1 with
+      match SeLe4n.Kernel.cspaceMint { cnode := 10, slot := 0 } { cnode := 11, slot := 3 } [.read] none st1 with
       | .error err => IO.println s!"cspace mint error: {reprStr err}"
       | .ok (_, st2) =>
-          match SeLe4n.Kernel.cspaceLookupSlot (11, 3) st2 with
+          match SeLe4n.Kernel.cspaceLookupSlot { cnode := 11, slot := 3 } st2 with
           | .error err => IO.println s!"cspace lookup error: {reprStr err}"
           | .ok (cap, _) =>
               IO.println s!"minted cap rights: {reprStr cap.rights}"

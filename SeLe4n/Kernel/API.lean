@@ -52,7 +52,7 @@ theorem queueCurrentConsistent_when_no_current
   simp [queueCurrentConsistent, hNone]
 
 /-- Address of a capability slot in the modeled CSpace. -/
-abbrev CSpaceAddr := SeLe4n.ObjId × SeLe4n.Slot
+abbrev CSpaceAddr := SlotRef
 
 /-- Rights attenuation policy for the M2 foundation slice.
 
@@ -64,23 +64,54 @@ def capAttenuates (parent derived : Capability) : Prop :=
 /-- Lookup a capability at `(cnode, slot)` with typed CNode checking. -/
 def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
   fun st =>
-    let (cnodeId, slot) := addr
-    match st.objects cnodeId with
-    | some (.cnode cn) =>
-        match cn.lookup slot with
-        | some cap => .ok (cap, st)
-        | none => .error .invalidCapability
-    | _ => .error .objectNotFound
+    match SystemState.lookupSlotCap st addr with
+    | some cap => .ok (cap, st)
+    | none =>
+        match st.objects addr.cnode with
+        | some (.cnode _) => .error .invalidCapability
+        | _ => .error .objectNotFound
 
 /-- Insert or replace a capability in `(cnode, slot)`. -/
 def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
   fun st =>
-    let (cnodeId, slot) := addr
-    match st.objects cnodeId with
+    match st.objects addr.cnode with
     | some (.cnode cn) =>
-        let cn' := cn.insert slot cap
-        storeObject cnodeId (.cnode cn') st
+        let cn' := cn.insert addr.slot cap
+        storeObject addr.cnode (.cnode cn') st
     | _ => .error .objectNotFound
+
+theorem cspaceLookupSlot_ok_iff_lookupSlotCap
+    (st : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability) :
+    cspaceLookupSlot addr st = .ok (cap, st) ↔
+      SystemState.lookupSlotCap st addr = some cap := by
+  constructor
+  · intro hOk
+    unfold cspaceLookupSlot at hOk
+    cases hLookup : SystemState.lookupSlotCap st addr with
+    | none =>
+        cases hObj : st.objects addr.cnode with
+        | none => simp [hLookup, hObj] at hOk
+        | some obj =>
+            cases obj <;> simp [hLookup, hObj] at hOk
+    | some cap' =>
+        simp [hLookup] at hOk
+        simpa [hOk] using hLookup
+  · intro hCap
+    unfold cspaceLookupSlot
+    simp [hCap]
+
+/-- Successful lookup yields slot ownership by the containing CNode object id. -/
+theorem cspaceLookupSlot_ok_implies_ownsSlot
+    (st : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hLookup : cspaceLookupSlot addr st = .ok (cap, st)) :
+    SystemState.ownsSlot st addr.cnode addr := by
+  have hCap : SystemState.lookupSlotCap st addr = some cap :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup
+  exact (SystemState.ownsSlot_iff st addr.cnode addr).2 ⟨rfl, ⟨cap, hCap⟩⟩
 
 /-- Requested rights must be contained in allowed rights. -/
 def rightsSubset (requested allowed : List AccessRight) : Bool :=
@@ -127,7 +158,7 @@ def cspaceSlotUnique (st : SystemState) : Prop :=
 def cspaceLookupSound (st : SystemState) : Prop :=
   ∀ addr cap st',
     cspaceLookupSlot addr st = .ok (cap, st') →
-    ∃ cn, st.objects addr.1 = some (.cnode cn) ∧ cn.lookup addr.2 = some cap
+    ∃ cn, st.objects addr.cnode = some (.cnode cn) ∧ cn.lookup addr.slot = some cap
 
 /-- Attenuation rule component used by the M2 capability invariant bundle. -/
 def cspaceAttenuationRule : Prop :=
@@ -145,19 +176,16 @@ theorem cspaceLookupSlot_preserves_state
     (cap : Capability)
     (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
     st' = st := by
-  rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects cnodeId with
-  | none => simp [cspaceLookupSlot, hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [cspaceLookupSlot, hObj] at hStep
-      | endpoint ep => simp [cspaceLookupSlot, hObj] at hStep
-      | cnode cn =>
-          cases hLookup : cn.lookup slot with
-          | none => simp [cspaceLookupSlot, hObj, hLookup] at hStep
-          | some foundCap =>
-              simp [cspaceLookupSlot, hObj, hLookup] at hStep
-              exact hStep.2.symm
+  unfold cspaceLookupSlot at hStep
+  cases hLookup : SystemState.lookupSlotCap st addr with
+  | none =>
+      cases hObj : st.objects addr.cnode with
+      | none => simp [hLookup, hObj] at hStep
+      | some obj =>
+          cases obj <;> simp [hLookup, hObj] at hStep
+  | some foundCap =>
+      simp [hLookup] at hStep
+      exact hStep.2.symm
 
 theorem cspaceInsertSlot_lookup_eq
     (st st' : SystemState)
@@ -175,7 +203,17 @@ theorem cspaceInsertSlot_lookup_eq
       | cnode cn =>
           simp [cspaceInsertSlot, hObj] at hStep
           cases hStep
-          simp [cspaceLookupSlot, CNode.lookup, CNode.insert]
+          simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+
+theorem cspaceInsertSlot_establishes_ownsSlot
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    SystemState.ownsSlot st' addr.cnode addr := by
+  have hLookup : cspaceLookupSlot addr st' = .ok (cap, st') :=
+    cspaceInsertSlot_lookup_eq st st' addr cap hStep
+  exact cspaceLookupSlot_ok_implies_ownsSlot st' addr cap hLookup
 
 theorem mintDerivedCap_attenuates
     (parent child : Capability)
@@ -234,22 +272,21 @@ theorem cspaceSlotUnique_holds (st : SystemState) :
 theorem cspaceLookupSound_holds (st : SystemState) :
     cspaceLookupSound st := by
   intro addr cap st' hStep
-  rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects cnodeId with
-  | none => simp [cspaceLookupSlot, hObj] at hStep
+  have hEq : st' = st := cspaceLookupSlot_preserves_state st st' addr cap hStep
+  have hOk : cspaceLookupSlot addr st = .ok (cap, st) := by
+    simpa [hEq] using hStep
+  have hCap : SystemState.lookupSlotCap st addr = some cap :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hOk
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode at hCap
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hCap
   | some obj =>
       cases obj with
-      | tcb tcb => simp [cspaceLookupSlot, hObj] at hStep
-      | endpoint ep => simp [cspaceLookupSlot, hObj] at hStep
+      | tcb tcb => simp [hObj] at hCap
+      | endpoint ep => simp [hObj] at hCap
       | cnode cn =>
-          cases hLookup : cn.lookup slot with
-          | none => simp [cspaceLookupSlot, hObj, hLookup] at hStep
-          | some foundCap =>
-              simp [cspaceLookupSlot, hObj, hLookup] at hStep
-              rcases hStep with ⟨hCap, hSt⟩
-              subst hCap
-              refine ⟨cn, ?_, hLookup⟩
-              simp at hObj ⊢
+          simp [hObj] at hCap
+          exact ⟨cn, rfl, hCap⟩
 
 theorem capabilityInvariantBundle_holds (st : SystemState) :
     capabilityInvariantBundle st := by

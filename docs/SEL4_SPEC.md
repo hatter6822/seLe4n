@@ -62,13 +62,13 @@ mint model** that is proof-ready and does not destabilize completed scheduler re
 
 In-scope for this slice:
 
-1. Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
+1. ~~Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
    module) for:
    - slot lookup,
    - cap insertion/update,
-   - mint-like derivation with rights attenuation.
-2. Add state/model helpers needed to represent slot-level capability ownership without adding
-   architecture-specific detail.
+   - mint-like derivation with rights attenuation.~~ ✅
+2. ~~Add state/model helpers needed to represent slot-level capability ownership without adding
+   architecture-specific detail.~~ ✅
 3. Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
    lookup soundness, attenuation monotonicity).
 4. Prove preservation for at least one write transition and one read transition in the new API.
@@ -181,6 +181,8 @@ and no open TODOs remain for the transitions introduced in this slice.
 - M2 Foundation **Step 1 API surface** is implemented in `SeLe4n.Kernel.API` with `cspaceLookupSlot`,
   `cspaceInsertSlot`, `mintDerivedCap`, and `cspaceMint`, including read/write preservation and
   attenuation theorems.
+- M2 Foundation **Step 2 state/model helpers** are implemented in `SeLe4n.Model.State` (`SlotRef`,
+  ownership-oriented lookup/accessor helpers) and connected to kernel lookup/insert lemmas.
 - Remaining M2 work focuses on stronger capability invariants and broader capability lifecycle
   transitions (revoke/delete), not yet claimed complete in this snapshot.
 
@@ -227,7 +229,8 @@ Incremental plan:
 ### 8.2 M2 (current): capability and CSpace semantics
 
 - ✅ Step 1 complete: typed CSpace lookup/insert/mint API with explicit rights attenuation policy and core theorems.
-- 🔄 Next: strengthen capability invariants (non-trivial uniqueness/authority constraints) and add revoke/delete transitions.
+- ✅ ~~Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.~~
+- 🔄 Next: define/strengthen capability invariant bundle components using the ownership helpers and add revoke/delete transitions.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics

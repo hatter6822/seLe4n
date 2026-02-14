@@ -7,11 +7,12 @@ Development is now focused on **M2 Foundation Slice: typed CSpace lookup and min
 
 ### Current objective slice (next step)
 
-The active implementation target is a minimal, proof-ready M2 slice.
+The active implementation target is the remaining minimal, proof-ready M2 slice increments.
 
 Target outcomes for this slice:
 
-- add typed capability operations for lookup and write/update paths,
+- ~~add typed capability operations for lookup and write/update paths~~,
+- ~~add state/model helpers for slot-level capability ownership representation~~,
 - define and compose initial capability invariants,
 - prove preservation for at least one read and one write transition,
 - keep executable behavior and existing scheduler proofs stable.
