@@ -50,4 +50,4 @@ lake exe sele4n
 
 Bootstrap goals are complete and validated in code. The project is now entering the M1
 invariant-strengthening phase (scheduler integrity and richer preservation proofs), with the
-version advanced to `0.2.0` to mark this transition.
+version advanced to `0.2.3` after landing Scheduler Invariant Bundle v1 (including an explicit strict queue/current consistency policy).

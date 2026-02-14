@@ -10,6 +10,16 @@ def schedulerWellFormed (s : SchedulerState) : Prop :=
   | none => True
   | some tid => tid ∈ s.runnable
 
+/-- Scheduler invariant component #3 (M1 bundle v1): queue/current consistency.
+
+Policy choice for this model is **strict**: when `current = some tid`, `tid` must appear in the
+runnable queue. The relaxed policy (allowing absence while blocked/idle) is intentionally deferred
+until explicit blocked/idle scheduler state is modeled. -/
+def queueCurrentConsistent (s : SchedulerState) : Prop :=
+  match s.current with
+  | none => True
+  | some tid => tid ∈ s.runnable
+
 /-- Scheduler invariant component #1 (M1 bundle v1): runnable queue has no duplicate TIDs. -/
 def runQueueUnique (s : SchedulerState) : Prop :=
   s.runnable.Nodup
@@ -23,7 +33,17 @@ def currentThreadValid (st : SystemState) : Prop :=
 
 /-- Invariant bundle that should eventually mirror seL4 proof obligations. -/
 def kernelInvariant (st : SystemState) : Prop :=
-  schedulerWellFormed st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
+  queueCurrentConsistent st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
+
+theorem schedulerWellFormed_iff_queueCurrentConsistent (s : SchedulerState) :
+    schedulerWellFormed s ↔ queueCurrentConsistent s := by
+  simp [schedulerWellFormed, queueCurrentConsistent]
+
+theorem queueCurrentConsistent_when_no_current
+    (s : SchedulerState)
+    (hNone : s.current = none) :
+    queueCurrentConsistent s := by
+  simp [queueCurrentConsistent, hNone]
 
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
@@ -75,6 +95,16 @@ theorem setCurrentThread_preserves_wellFormed
   simp [setCurrentThread] at hStep
   cases hStep
   simp [schedulerWellFormed, hMem]
+
+theorem setCurrentThread_preserves_queueCurrentConsistent
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hMem : tid ∈ st.scheduler.runnable)
+    (hStep : setCurrentThread (some tid) st = .ok ((), st')) :
+    queueCurrentConsistent st'.scheduler := by
+  simp [setCurrentThread] at hStep
+  cases hStep
+  simp [queueCurrentConsistent, hMem]
 
 theorem setCurrentThread_preserves_runQueueUnique
     (st st' : SystemState)
@@ -156,6 +186,52 @@ theorem schedule_preserves_wellFormed
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
               simp [schedulerWellFormed]
+
+theorem chooseThread_preserves_queueCurrentConsistent
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hConsistent : queueCurrentConsistent st.scheduler)
+    (hStep : chooseThread st = .ok (next, st')) :
+    queueCurrentConsistent st'.scheduler := by
+  rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
+  subst hSt
+  simpa using hConsistent
+
+theorem schedule_preserves_queueCurrentConsistent
+    (st st' : SystemState)
+    (hStep : schedule st = .ok ((), st')) :
+    queueCurrentConsistent st'.scheduler := by
+  cases hRun : st.scheduler.runnable with
+  | nil =>
+      simp [schedule, setCurrentThread, hRun] at hStep
+      cases hStep
+      simp [queueCurrentConsistent]
+  | cons t ts =>
+      cases hObj : st.objects t with
+      | none =>
+          simp [schedule, setCurrentThread, hRun, hObj] at hStep
+          cases hStep
+          simp [queueCurrentConsistent]
+      | some obj =>
+          cases obj with
+          | tcb tcb =>
+              exact setCurrentThread_preserves_queueCurrentConsistent st st' t
+                (by simp [hRun])
+                (by simpa [schedule, hRun, hObj] using hStep)
+          | endpoint ep =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [queueCurrentConsistent]
+          | cnode cn =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [queueCurrentConsistent]
+
+theorem handleYield_preserves_queueCurrentConsistent
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    queueCurrentConsistent st'.scheduler := by
+  simpa [handleYield] using schedule_preserves_queueCurrentConsistent st st' hStep
 
 theorem chooseThread_preserves_runQueueUnique
     (st st' : SystemState)
@@ -255,10 +331,7 @@ theorem chooseThread_preserves_kernelInvariant
     (hStep : chooseThread st = .ok (next, st')) :
     kernelInvariant st' := by
   exact ⟨
-    by
-      rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
-      subst hSt
-      simpa using hInv.1,
+    chooseThread_preserves_queueCurrentConsistent st st' next hInv.1 hStep,
     chooseThread_preserves_runQueueUnique st st' next hInv.2.1 hStep,
     chooseThread_preserves_currentThreadValid st st' next hInv.2.2 hStep
   ⟩
@@ -268,7 +341,7 @@ theorem schedule_preserves_kernelInvariant
     (hInv : kernelInvariant st)
     (hStep : schedule st = .ok ((), st')) :
     kernelInvariant st' := by
-  exact ⟨schedule_preserves_wellFormed st st' hStep,
+  exact ⟨schedule_preserves_queueCurrentConsistent st st' hStep,
     schedule_preserves_runQueueUnique st st' hInv.2.1 hStep,
     schedule_preserves_currentThreadValid st st' hStep⟩
 
@@ -277,7 +350,7 @@ theorem handleYield_preserves_kernelInvariant
     (hInv : kernelInvariant st)
     (hStep : handleYield st = .ok ((), st')) :
     kernelInvariant st' := by
-  exact ⟨handleYield_preserves_wellFormed st st' hStep,
+  exact ⟨handleYield_preserves_queueCurrentConsistent st st' hStep,
     handleYield_preserves_runQueueUnique st st' hInv.2.1 hStep,
     handleYield_preserves_currentThreadValid st st' hStep⟩
 
