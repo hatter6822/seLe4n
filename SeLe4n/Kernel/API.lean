@@ -315,9 +315,33 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
+    (hInv : capabilityInvariantBundle st)
     (_hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  exact capabilityInvariantBundle_holds st'
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule⟩
+
+theorem cspaceMint_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceMint at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hMint : mintDerivedCap parent rights badge with
+      | error e => simp [hSrc, hMint] at hStep
+      | ok child =>
+          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
+            simpa [hSrc, hMint] using hStep
+          exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv hInsert
 
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
