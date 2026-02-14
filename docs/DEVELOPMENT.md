@@ -13,7 +13,8 @@ The active implementation target is **Scheduler Invariant Bundle v1**.
 Current status:
 
 - ✅ Step 1 complete: runnable queue uniqueness (`runQueueUnique`) is defined and preserved,
-- ⏳ Next: current-thread object validity and explicit queue/current policy,
+- ✅ Step 2 complete: current-thread object validity (`currentThreadValid`) is defined and preserved,
+- ⏳ Next: explicit queue/current policy,
 - ⏳ Then: composed preservation coverage over `chooseThread`, `schedule`, and `handleYield`.
 
 ## 2. Working agreement
