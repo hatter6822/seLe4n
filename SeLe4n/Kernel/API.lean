@@ -158,7 +158,8 @@ def cspaceSlotUnique (st : SystemState) : Prop :=
 def cspaceLookupSound (st : SystemState) : Prop :=
   ∀ addr cap st',
     cspaceLookupSlot addr st = .ok (cap, st') →
-    ∃ cn, st.objects addr.cnode = some (.cnode cn) ∧ cn.lookup addr.slot = some cap
+    st' = st ∧ SystemState.ownsSlot st addr.cnode addr ∧
+      SystemState.lookupSlotCap st addr = some cap
 
 /-- Attenuation rule component used by the M2 capability invariant bundle. -/
 def cspaceAttenuationRule : Prop :=
@@ -273,26 +274,31 @@ theorem cspaceLookupSound_holds (st : SystemState) :
     cspaceLookupSound st := by
   intro addr cap st' hStep
   have hEq : st' = st := cspaceLookupSlot_preserves_state st st' addr cap hStep
-  have hOk : cspaceLookupSlot addr st = .ok (cap, st) := by
-    simpa [hEq] using hStep
+  have hOk : cspaceLookupSlot addr st = .ok (cap, st) := by simpa [hEq] using hStep
   have hCap : SystemState.lookupSlotCap st addr = some cap :=
     (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hOk
-  unfold SystemState.lookupSlotCap SystemState.lookupCNode at hCap
-  cases hObj : st.objects addr.cnode with
-  | none => simp [hObj] at hCap
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hCap
-      | endpoint ep => simp [hObj] at hCap
-      | cnode cn =>
-          simp [hObj] at hCap
-          exact ⟨cn, rfl, hCap⟩
+  have hOwn : SystemState.ownsSlot st addr.cnode addr :=
+    cspaceLookupSlot_ok_implies_ownsSlot st addr cap hOk
+  exact ⟨hEq, hOwn, hCap⟩
+
+theorem cspaceLookupSound_implies_ownsSlot
+    (st : SystemState)
+    (hSound : cspaceLookupSound st)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (st' : SystemState)
+    (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
+    SystemState.ownsSlot st addr.cnode addr := by
+  exact (hSound addr cap st' hStep).2.1
+
+theorem cspaceAttenuationRule_holds :
+    cspaceAttenuationRule := by
+  intro parent child rights badge hMint
+  exact mintDerivedCap_attenuates parent child rights badge hMint
 
 theorem capabilityInvariantBundle_holds (st : SystemState) :
     capabilityInvariantBundle st := by
-  refine ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, ?_⟩
-  intro parent child rights badge hMint
-  exact mintDerivedCap_attenuates parent child rights badge hMint
+  exact ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, cspaceAttenuationRule_holds⟩
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
