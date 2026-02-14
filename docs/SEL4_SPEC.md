@@ -28,8 +28,8 @@ The bootstrap milestone optimizes for:
 
 The following are required in this milestone:
 
-1. Core type aliases for kernel identifiers.
-2. Abstract machine state (`RegisterFile`, `MachineState`).
+1. ~~Core type aliases for kernel identifiers.~~
+2. ~~Abstract machine state (`RegisterFile`, `MachineState`).~~
 3. Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).
 4. Global system state (`SystemState`) with object store and scheduler fields.
 5. Basic kernel monad (`KernelM`) and error type (`KernelError`).
