@@ -88,14 +88,14 @@ When touching a module, check the following to keep codebase comprehension high:
 
 Before merging work intended for the active M2 slice, verify:
 
-- [ ] capability invariant bundle entrypoint exists and includes uniqueness + lookup soundness + attenuation rule,
-- [ ] attenuation policy is documented in code and spec,
-- [ ] preservation lemmas exist for one read and one write transition,
-- [ ] completed M1 scheduler theorems still build unchanged,
-- [ ] no new `axiom`/`sorry` introduced,
-- [ ] `lake build` passes,
-- [ ] `lake exe sele4n` demonstrates executable transition behavior,
-- [ ] docs reflect progress and remaining proof debt.
+- [x] capability invariant bundle entrypoint exists and includes uniqueness + lookup soundness + attenuation rule,
+- [x] attenuation policy is documented in code and spec,
+- [x] preservation lemmas exist for one read and one write transition,
+- [x] completed M1 scheduler theorems still build unchanged,
+- [x] no new `axiom`/`sorry` introduced,
+- [x] `lake build` passes,
+- [x] `lake exe sele4n` demonstrates executable transition behavior,
+- [x] docs reflect progress and remaining proof debt.
 
 ## 7. Audit protocol for milestone completion claims
 

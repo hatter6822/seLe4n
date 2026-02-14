@@ -49,5 +49,6 @@ lake exe sele4n
 ## Current status
 
 Bootstrap and M1 scheduler-integrity goals are complete and validated in code. The next active
-step is an M2 foundation slice focused on typed CSpace lookup/mint semantics and initial
-capability-invariant preservation proofs, while maintaining runnable executable transitions.
+step is Milestone M2 foundation work. Step 1 (typed CSpace lookup/insert/mint surface with
+attenuation lemmas) is implemented; next increments will strengthen non-trivial capability
+invariants and extend operations beyond mint/lookup while maintaining runnable transitions.

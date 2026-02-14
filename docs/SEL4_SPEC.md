@@ -176,6 +176,15 @@ Evidence sources:
 This step should be marked complete only when all acceptance criteria pass in one commit range,
 and no open TODOs remain for the transitions introduced in this slice.
 
+### 6.5 Progress snapshot (current repository state)
+
+- M2 Foundation **Step 1 API surface** is implemented in `SeLe4n.Kernel.API` with `cspaceLookupSlot`,
+  `cspaceInsertSlot`, `mintDerivedCap`, and `cspaceMint`, including read/write preservation and
+  attenuation theorems.
+- Remaining M2 work focuses on stronger capability invariants and broader capability lifecycle
+  transitions (revoke/delete), not yet claimed complete in this snapshot.
+
+
 ## 7. Audit closure report (Bootstrap + M1)
 
 The repository has been audited against completed milestone claims.
@@ -217,9 +226,9 @@ Incremental plan:
 
 ### 8.2 M2 (current): capability and CSpace semantics
 
-- typed CSpace tree model,
-- lookup/mint/revoke/delete operations,
-- authority monotonicity and reachability constraints.
+- ✅ Step 1 complete: typed CSpace lookup/insert/mint API with explicit rights attenuation policy and core theorems.
+- 🔄 Next: strengthen capability invariants (non-trivial uniqueness/authority constraints) and add revoke/delete transitions.
+- 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics
 

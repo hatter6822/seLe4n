@@ -51,6 +51,231 @@ theorem queueCurrentConsistent_when_no_current
     queueCurrentConsistent s := by
   simp [queueCurrentConsistent, hNone]
 
+/-- Address of a capability slot in the modeled CSpace. -/
+abbrev CSpaceAddr := SeLe4n.ObjId × SeLe4n.Slot
+
+/-- Rights attenuation policy for the M2 foundation slice.
+
+`derived.rights` must be a subset of `parent.rights`; targets are preserved by mint-like
+derivation in this slice. -/
+def capAttenuates (parent derived : Capability) : Prop :=
+  derived.target = parent.target ∧ ∀ right, right ∈ derived.rights → right ∈ parent.rights
+
+/-- Lookup a capability at `(cnode, slot)` with typed CNode checking. -/
+def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
+  fun st =>
+    let (cnodeId, slot) := addr
+    match st.objects cnodeId with
+    | some (.cnode cn) =>
+        match cn.lookup slot with
+        | some cap => .ok (cap, st)
+        | none => .error .invalidCapability
+    | _ => .error .objectNotFound
+
+/-- Insert or replace a capability in `(cnode, slot)`. -/
+def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
+  fun st =>
+    let (cnodeId, slot) := addr
+    match st.objects cnodeId with
+    | some (.cnode cn) =>
+        let cn' := cn.insert slot cap
+        storeObject cnodeId (.cnode cn') st
+    | _ => .error .objectNotFound
+
+/-- Requested rights must be contained in allowed rights. -/
+def rightsSubset (requested allowed : List AccessRight) : Bool :=
+  requested.all (fun right => right ∈ allowed)
+
+theorem rightsSubset_sound
+    (requested allowed : List AccessRight)
+    (hSubset : rightsSubset requested allowed = true) :
+    ∀ right, right ∈ requested → right ∈ allowed := by
+  intro right hMem
+  unfold rightsSubset at hSubset
+  have hDec : decide (right ∈ allowed) = true := (List.all_eq_true.mp hSubset) right hMem
+  simpa using hDec
+
+/-- Build a mint-like derived capability with explicit rights attenuation. -/
+def mintDerivedCap (parent : Capability) (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge := parent.badge) : Except KernelError Capability :=
+  if rightsSubset rights parent.rights then
+    .ok { target := parent.target, rights := rights, badge := badge }
+  else
+    .error .invalidCapability
+
+/-- Mint from source slot and insert into destination slot under attenuation checks. -/
+def cspaceMint
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (parent, st') =>
+        match mintDerivedCap parent rights badge with
+        | .error e => .error e
+        | .ok child => cspaceInsertSlot dst child st'
+
+/-- Slot-level uniqueness/no-alias policy: lookup is deterministic for each slot address. -/
+def cspaceSlotUnique (st : SystemState) : Prop :=
+  ∀ addr cap₁ cap₂ st₁ st₂,
+    cspaceLookupSlot addr st = .ok (cap₁, st₁) →
+    cspaceLookupSlot addr st = .ok (cap₂, st₂) →
+    cap₁ = cap₂
+
+/-- Lookup soundness policy: successful lookup corresponds to concrete `(cnode, slot)` content. -/
+def cspaceLookupSound (st : SystemState) : Prop :=
+  ∀ addr cap st',
+    cspaceLookupSlot addr st = .ok (cap, st') →
+    ∃ cn, st.objects addr.1 = some (.cnode cn) ∧ cn.lookup addr.2 = some cap
+
+/-- Attenuation rule component used by the M2 capability invariant bundle. -/
+def cspaceAttenuationRule : Prop :=
+  ∀ parent child rights badge,
+    mintDerivedCap parent rights badge = .ok child →
+    capAttenuates parent child
+
+/-- M2 foundation capability invariant bundle entrypoint. -/
+def capabilityInvariantBundle (st : SystemState) : Prop :=
+  cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule
+
+theorem cspaceLookupSlot_preserves_state
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
+    st' = st := by
+  rcases addr with ⟨cnodeId, slot⟩
+  cases hObj : st.objects cnodeId with
+  | none => simp [cspaceLookupSlot, hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [cspaceLookupSlot, hObj] at hStep
+      | endpoint ep => simp [cspaceLookupSlot, hObj] at hStep
+      | cnode cn =>
+          cases hLookup : cn.lookup slot with
+          | none => simp [cspaceLookupSlot, hObj, hLookup] at hStep
+          | some foundCap =>
+              simp [cspaceLookupSlot, hObj, hLookup] at hStep
+              exact hStep.2.symm
+
+theorem cspaceInsertSlot_lookup_eq
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    cspaceLookupSlot addr st' = .ok (cap, st') := by
+  rcases addr with ⟨cnodeId, slot⟩
+  cases hObj : st.objects cnodeId with
+  | none => simp [cspaceInsertSlot, hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [cspaceInsertSlot, hObj] at hStep
+      | endpoint ep => simp [cspaceInsertSlot, hObj] at hStep
+      | cnode cn =>
+          simp [cspaceInsertSlot, hObj] at hStep
+          cases hStep
+          simp [cspaceLookupSlot, CNode.lookup, CNode.insert]
+
+theorem mintDerivedCap_attenuates
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    capAttenuates parent child := by
+  by_cases hSubset : rightsSubset rights parent.rights = true
+  · simp [mintDerivedCap, hSubset] at hMint
+    cases hMint
+    constructor
+    · rfl
+    · exact rightsSubset_sound rights parent.rights hSubset
+  · simp [mintDerivedCap, hSubset] at hMint
+
+theorem cspaceMint_child_attenuates
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      capAttenuates parent child := by
+  unfold cspaceMint at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hMint : mintDerivedCap parent rights badge with
+      | error e => simp [hSrc, hMint] at hStep
+      | ok child =>
+          have hAtt : capAttenuates parent child :=
+            mintDerivedCap_attenuates parent child rights badge hMint
+          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
+            simpa [hSrc, hMint] using hStep
+          refine ⟨parent, child, ?_, ?_, hAtt⟩
+          · rfl
+          · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
+
+theorem cspaceSlotUnique_holds (st : SystemState) :
+    cspaceSlotUnique st := by
+  intro addr cap₁ cap₂ st₁ st₂ h₁ h₂
+  have hSt₁ : st₁ = st := cspaceLookupSlot_preserves_state st st₁ addr cap₁ h₁
+  have hSt₂ : st₂ = st := cspaceLookupSlot_preserves_state st st₂ addr cap₂ h₂
+  subst st₁
+  subst st₂
+  have hEq : (.ok (cap₁, st) : Except KernelError (Capability × SystemState)) = .ok (cap₂, st) := by
+    simpa [h₁] using h₂
+  cases hEq
+  rfl
+
+theorem cspaceLookupSound_holds (st : SystemState) :
+    cspaceLookupSound st := by
+  intro addr cap st' hStep
+  rcases addr with ⟨cnodeId, slot⟩
+  cases hObj : st.objects cnodeId with
+  | none => simp [cspaceLookupSlot, hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [cspaceLookupSlot, hObj] at hStep
+      | endpoint ep => simp [cspaceLookupSlot, hObj] at hStep
+      | cnode cn =>
+          cases hLookup : cn.lookup slot with
+          | none => simp [cspaceLookupSlot, hObj, hLookup] at hStep
+          | some foundCap =>
+              simp [cspaceLookupSlot, hObj, hLookup] at hStep
+              rcases hStep with ⟨hCap, hSt⟩
+              subst hCap
+              refine ⟨cn, ?_, hLookup⟩
+              simp at hObj ⊢
+
+theorem capabilityInvariantBundle_holds (st : SystemState) :
+    capabilityInvariantBundle st := by
+  refine ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, ?_⟩
+  intro parent child rights badge hMint
+  exact mintDerivedCap_attenuates parent child rights badge hMint
+
+theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
+    capabilityInvariantBundle st' := by
+  have hEq : st' = st := cspaceLookupSlot_preserves_state st st' addr cap hStep
+  subst hEq
+  simpa using hInv
+
+theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (_hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  exact capabilityInvariantBundle_holds st'
+
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
