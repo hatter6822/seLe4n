@@ -1,4 +1,4 @@
-namespace SeLe4
+namespace SeLe4n
 
 abbrev ObjId := Nat
 abbrev ThreadId := Nat
@@ -26,4 +26,4 @@ instance {σ ε : Type} : Monad (KernelM σ ε) where
 
 end KernelM
 
-end SeLe4
+end SeLe4n

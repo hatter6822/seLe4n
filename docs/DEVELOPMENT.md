@@ -23,8 +23,8 @@
 ## Coding conventions
 
 - Use namespaces to separate abstract model layers:
-  - `SeLe4.Model` for objects/state/semantics.
-  - `SeLe4.Kernel` for kernel-facing operations and invariants.
+  - `SeLe4n.Model` for objects/state/semantics.
+  - `SeLe4n.Kernel` for kernel-facing operations and invariants.
 - Keep theorem names descriptive, e.g. `schedule_preserves_wellFormed`.
 - Document non-obvious design choices with short comments.
 

@@ -1,6 +1,6 @@
-import SeLe4
+import SeLe4n
 
-open SeLe4.Model
+open SeLe4n.Model
 
 /-- Demonstrate a tiny executable path through the kernel model. -/
 def bootstrapState : SystemState :=
@@ -9,7 +9,7 @@ def bootstrapState : SystemState :=
   }
 
 def main : IO Unit := do
-  match SeLe4.Kernel.schedule bootstrapState with
+  match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st') =>
       IO.println s!"scheduled thread: {reprStr st'.scheduler.current}"

@@ -48,17 +48,17 @@ The following are explicitly deferred to later milestones:
 
 ## 4. Architecture and module responsibilities
 
-### 4.1 Type layer (`SeLe4.Prelude`)
+### 4.1 Type layer (`SeLe4n.Prelude`)
 
 Defines primitive identifier aliases and reusable monadic/error infrastructure used by transition
 functions.
 
-### 4.2 Machine layer (`SeLe4.Machine`)
+### 4.2 Machine layer (`SeLe4n.Machine`)
 
 Represents abstract register and memory state as pure data and provides a stable target for future
 trap/context-switch semantics.
 
-### 4.3 Object/state layer (`SeLe4.Model.Object`, `SeLe4.Model.State`)
+### 4.3 Object/state layer (`SeLe4n.Model.Object`, `SeLe4n.Model.State`)
 
 Defines kernel objects and global state:
 
@@ -67,7 +67,7 @@ Defines kernel objects and global state:
 - `KernelObject` sum type,
 - `SystemState` including machine state, object heap, scheduler metadata, and IRQ handlers.
 
-### 4.4 Kernel API/proof layer (`SeLe4.Kernel.API`)
+### 4.4 Kernel API/proof layer (`SeLe4n.Kernel.API`)
 
 Defines:
 
@@ -94,7 +94,7 @@ A repository revision satisfies the bootstrap milestone when all checks below ho
 2. `Main.lean` demonstrates a concrete transition execution path.
 3. Scheduler invariant predicates are defined and referenced by at least one theorem.
 4. No `axiom` is introduced to bypass missing proofs in bootstrap invariants.
-5. Public module organization under `SeLe4/` remains coherent by layer (Prelude, Machine, Model,
+5. Public module organization under `SeLe4n/` remains coherent by layer (Prelude, Machine, Model,
    Kernel).
 
 ## 7. Verification roadmap (post-bootstrap)
@@ -121,7 +121,7 @@ Planned progression after this milestone:
 
 - Lean toolchain pin (`lean-toolchain`).
 - Lake package configuration (`lakefile.toml`).
-- Multi-module scaffold under `SeLe4/`.
+- Multi-module scaffold under `SeLe4n/`.
 - Executable demonstration in `Main.lean`.
 - Documentation under `docs/`, including this specification.
 

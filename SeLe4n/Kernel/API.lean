@@ -1,8 +1,8 @@
-import SeLe4.Model.State
+import SeLe4n.Model.State
 
-namespace SeLe4.Kernel
+namespace SeLe4n.Kernel
 
-open SeLe4.Model
+open SeLe4n.Model
 
 /-- Minimal scheduling well-formedness condition for the bootstrap model. -/
 def schedulerWellFormed (s : SchedulerState) : Prop :=
@@ -15,7 +15,7 @@ def kernelInvariant (st : SystemState) : Prop :=
   schedulerWellFormed st.scheduler
 
 /-- Choose the first runnable thread, if any. -/
-def chooseThread : Kernel (Option SeLe4.ThreadId) :=
+def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match st.scheduler.runnable with
     | [] => .ok (none, st)
@@ -32,7 +32,7 @@ def handleYield : Kernel Unit :=
 
 theorem setCurrentThread_preserves_wellFormed
     (st st' : SystemState)
-    (tid : SeLe4.ThreadId)
+    (tid : SeLe4n.ThreadId)
     (hMem : tid ∈ st.scheduler.runnable)
     (hStep : setCurrentThread (some tid) st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
@@ -40,4 +40,4 @@ theorem setCurrentThread_preserves_wellFormed
   cases hStep
   simp [schedulerWellFormed, hMem]
 
-end SeLe4.Kernel
+end SeLe4n.Kernel

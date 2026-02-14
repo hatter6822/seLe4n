@@ -1,4 +1,4 @@
-# seLe4
+# seLe4n
 
 A Lean 4 development environment and formalization scaffold for implementing and verifying
 key parts of the [seL4 microkernel](https://sel4.systems).
@@ -33,16 +33,16 @@ lake build
 ### 3) Run the sample executable
 
 ```bash
-lake exe sele4
+lake exe sele4n
 ```
 
 ## Repository layout
 
-- `SeLe4.lean`: library root exports.
-- `SeLe4/Prelude.lean`: shared base definitions.
-- `SeLe4/Machine.lean`: abstract machine/model primitives.
-- `SeLe4/Model/`: high-level state and kernel object model.
-- `SeLe4/Kernel/`: kernel interface skeleton and invariants.
+- `SeLe4n.lean`: library root exports.
+- `SeLe4n/Prelude.lean`: shared base definitions.
+- `SeLe4n/Machine.lean`: abstract machine/model primitives.
+- `SeLe4n/Model/`: high-level state and kernel object model.
+- `SeLe4n/Kernel/`: kernel interface skeleton and invariants.
 - `docs/SEL4_SPEC.md`: complete initial implementation specification.
 - `docs/DEVELOPMENT.md`: coding/testing/documentation guidance.
 

@@ -1,6 +1,6 @@
-import SeLe4.Prelude
+import SeLe4n.Prelude
 
-namespace SeLe4
+namespace SeLe4n
 
 structure RegisterFile where
   pc : Nat
@@ -18,4 +18,4 @@ structure MachineState where
 instance : Inhabited MachineState where
   default := { regs := default, memory := fun _ => 0, timer := 0 }
 
-end SeLe4
+end SeLe4n
