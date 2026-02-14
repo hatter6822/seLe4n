@@ -35,6 +35,12 @@ def currentThreadValid (st : SystemState) : Prop :=
 def kernelInvariant (st : SystemState) : Prop :=
   queueCurrentConsistent st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
 
+/-- Scheduler Invariant Bundle v1 entrypoint used by milestone wording in the spec/docs.
+This is an alias of `kernelInvariant` to keep theorem names aligned with the development guide
+without changing existing proof call sites. -/
+abbrev schedulerInvariantBundle (st : SystemState) : Prop :=
+  kernelInvariant st
+
 theorem schedulerWellFormed_iff_queueCurrentConsistent (s : SchedulerState) :
     schedulerWellFormed s ↔ queueCurrentConsistent s := by
   simp [schedulerWellFormed, queueCurrentConsistent]
@@ -350,8 +356,28 @@ theorem handleYield_preserves_kernelInvariant
     (hInv : kernelInvariant st)
     (hStep : handleYield st = .ok ((), st')) :
     kernelInvariant st' := by
-  exact ⟨handleYield_preserves_queueCurrentConsistent st st' hStep,
-    handleYield_preserves_runQueueUnique st st' hInv.2.1 hStep,
-    handleYield_preserves_currentThreadValid st st' hStep⟩
+  simpa [handleYield] using schedule_preserves_kernelInvariant st st' hInv hStep
+
+theorem chooseThread_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : chooseThread st = .ok (next, st')) :
+    schedulerInvariantBundle st' := by
+  exact chooseThread_preserves_kernelInvariant st st' next hInv hStep
+
+theorem schedule_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : schedule st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  exact schedule_preserves_kernelInvariant st st' hInv hStep
+
+theorem handleYield_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : handleYield st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  exact handleYield_preserves_kernelInvariant st st' hInv hStep
 
 end SeLe4n.Kernel
