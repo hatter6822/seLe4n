@@ -47,7 +47,7 @@ proof coverage. The repository shall implement and prove:
 1. ✅ Runnable queue uniqueness (no duplicate TIDs in `runQueue`).
 2. ✅ Current-thread object validity (if `currentThread = some tid`, object lookup resolves to a
    `TCB`).
-3. ⏳ Queue/current consistency under an explicitly chosen policy:
+3. ✅ Queue/current consistency under an explicitly chosen policy:
    - **strict policy**: current thread must be in `runQueue`, or
    - **relaxed policy**: current thread may be absent while blocked/idle.
 4. Preservation of the composed scheduler invariant bundle for:
@@ -110,7 +110,7 @@ The project shall preserve the following through M1:
 ## 6. Acceptance criteria and evidence mapping
 
 The next step (M1 Scheduler Invariant Bundle v1) is complete when all checks below are satisfied.
-Current proof debt after landing step 2: complete item (3), then discharge composed preservation for all three transitions:
+Current status: all v1 components are implemented with strict queue/current policy and composed preservation over all three target transitions.
 
 ### 6.1 Functional and proof acceptance criteria
 
@@ -157,13 +157,13 @@ and no open TODOs remain for the three targeted transitions.
 
 Incremental plan:
 
-1. Lock invariant policy (strict vs. relaxed queue/current consistency).
-2. Encode component predicates and compose the bundle entrypoint.
-3. Prove preservation for `chooseThread`.
-4. Prove preservation for `schedule`.
-5. Prove preservation for `handleYield`.
-6. Consolidate helper lemmas and remove redundant proof scaffolding.
-7. Update docs to record what is complete and what remains.
+1. ✅ Lock invariant policy (strict vs. relaxed queue/current consistency).
+2. ✅ Encode component predicates and compose the bundle entrypoint.
+3. ✅ Prove preservation for `chooseThread`.
+4. ✅ Prove preservation for `schedule`.
+5. ✅ Prove preservation for `handleYield`.
+6. ✅ Consolidate helper lemmas and remove redundant proof scaffolding.
+7. ✅ Update docs to record what is complete and what remains.
 
 ### 7.2 M2: capability and CSpace semantics
 

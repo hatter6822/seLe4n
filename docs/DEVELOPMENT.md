@@ -14,8 +14,8 @@ Current status:
 
 - ✅ Step 1 complete: runnable queue uniqueness (`runQueueUnique`) is defined and preserved,
 - ✅ Step 2 complete: current-thread object validity (`currentThreadValid`) is defined and preserved,
-- ⏳ Next: explicit queue/current policy,
-- ⏳ Then: composed preservation coverage over `chooseThread`, `schedule`, and `handleYield`.
+- ✅ Step 3 complete: explicit strict queue/current policy (`queueCurrentConsistent`) is defined and preserved,
+- ✅ Composed preservation coverage over `chooseThread`, `schedule`, and `handleYield` is complete for v1 bundle.
 
 ## 2. Working agreement
 
@@ -79,13 +79,13 @@ M1 proof hygiene conventions:
 
 Before merging work intended for M1, verify:
 
-- [~] invariant bundle entrypoint exists; currently includes scheduler well-formedness + runQueue uniqueness,
-- [ ] queue/current policy is documented in-code and in spec,
-- [~] preservation lemmas exist for `chooseThread`, `schedule`, and `handleYield` for implemented components,
-- [ ] no new `axiom` introduced,
-- [ ] `lake build` passes,
-- [ ] `lake exe sele4n` still demonstrates scheduler execution,
-- [ ] docs reflect both progress and remaining proof debt.
+- [x] invariant bundle entrypoint exists and includes queue/current consistency + runQueue uniqueness + current-thread object validity,
+- [x] queue/current policy is documented in-code and in spec,
+- [x] preservation lemmas exist for `chooseThread`, `schedule`, and `handleYield` for all bundle components,
+- [x] no new `axiom` introduced,
+- [x] `lake build` passes,
+- [x] `lake exe sele4n` still demonstrates scheduler execution,
+- [x] docs reflect both progress and remaining proof debt.
 
 ## 6. Development path ahead (post-next-step preview)
 
