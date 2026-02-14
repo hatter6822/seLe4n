@@ -30,7 +30,7 @@ The following are required in this milestone:
 
 1. ~~Core type aliases for kernel identifiers.~~
 2. ~~Abstract machine state (`RegisterFile`, `MachineState`).~~
-3. Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).
+3. ~~Kernel object universe (`TCB`, `Endpoint`, `CNode`, capabilities).~~
 4. Global system state (`SystemState`) with object store and scheduler fields.
 5. Basic kernel monad (`KernelM`) and error type (`KernelError`).
 6. Initial scheduler transitions (`chooseThread`, `schedule`, `handleYield`).
@@ -62,8 +62,8 @@ trap/context-switch semantics.
 
 Defines kernel objects and global state:
 
-- `Capability` (rights + optional badge),
-- payload types (`TCB`, `Endpoint`, `CNode`),
+- `Capability` (typed target, rights + optional badge),
+- payload types (`TCB`, `Endpoint` with queue state, `CNode` with slots),
 - `KernelObject` sum type,
 - `SystemState` including machine state, object heap, scheduler metadata, and IRQ handlers.
 
