@@ -14,7 +14,7 @@ Target outcomes for this slice:
 - ~~add typed capability operations for lookup and write/update paths~~,
 - ~~add state/model helpers for slot-level capability ownership representation~~,
 - ~~define and compose initial capability invariants~~,
-- prove preservation for at least one read and one write transition,
+- ~~prove preservation for at least one read and one write transition~~,
 - keep executable behavior and existing scheduler proofs stable.
 
 ## 2. Working agreement
