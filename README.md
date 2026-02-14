@@ -43,11 +43,11 @@ lake exe sele4n
 - `SeLe4n/Machine.lean`: abstract machine/model primitives.
 - `SeLe4n/Model/`: high-level state and kernel object model.
 - `SeLe4n/Kernel/`: kernel interface skeleton and invariants.
-- `docs/SEL4_SPEC.md`: complete initial implementation specification.
+- `docs/SEL4_SPEC.md`: complete implementation specification.
 - `docs/DEVELOPMENT.md`: coding/testing/documentation guidance.
 
 ## Current status
 
-This is a bootstrap formalization stage. The model is intentionally minimal but coherent,
-compiles under Lean, and is ready for iterative refinement toward concrete seL4 behavior and
-proof obligations.
+Bootstrap goals are complete and validated in code. The project is now entering the M1
+invariant-strengthening phase (scheduler integrity and richer preservation proofs), with the
+version advanced to `0.2.0` to mark this transition.
