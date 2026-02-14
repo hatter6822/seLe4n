@@ -22,9 +22,11 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | t :: _ => .ok (some t, st)
 
 /-- Simple scheduler step for the bootstrap model. -/
-def schedule : Kernel Unit := do
-  let next ← chooseThread
-  setCurrentThread next
+def schedule : Kernel Unit :=
+  fun st =>
+    match st.scheduler.runnable with
+    | [] => setCurrentThread none st
+    | t :: _ => setCurrentThread (some t) st
 
 /-- Placeholder syscall dispatcher with one implemented path for now. -/
 def handleYield : Kernel Unit :=
@@ -45,34 +47,37 @@ theorem chooseThread_returns_runnable_or_none
     (next : Option SeLe4n.ThreadId)
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st ∧
-      (match next with
-      | none => st.scheduler.runnable = []
-      | some tid => tid ∈ st.scheduler.runnable) := by
-  simp [chooseThread] at hStep
+      ((next = none ∧ st.scheduler.runnable = []) ∨
+       ∃ tid, next = some tid ∧ tid ∈ st.scheduler.runnable) := by
   cases hRun : st.scheduler.runnable with
   | nil =>
-      simp [hRun] at hStep
-      cases hStep
-      simp [hRun]
+      simp [chooseThread, hRun] at hStep
+      rcases hStep with ⟨hNext, hSt⟩
+      have hNext' : next = none := hNext.symm
+      subst hNext'
+      subst hSt
+      exact ⟨rfl, Or.inl ⟨rfl, rfl⟩⟩
   | cons t ts =>
-      simp [hRun] at hStep
-      cases hStep
-      simp [hRun]
+      simp [chooseThread, hRun] at hStep
+      rcases hStep with ⟨hNext, hSt⟩
+      have hNext' : next = some t := hNext.symm
+      subst hNext'
+      subst hSt
+      exact ⟨rfl, Or.inr ⟨t, rfl, by simp⟩⟩
 
 theorem schedule_preserves_wellFormed
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
-  simp [schedule] at hStep
-  rcases hStep with ⟨next, hChoose, hSet⟩
-  rcases chooseThread_returns_runnable_or_none st _ next hChoose with ⟨rfl, hNext⟩
-  cases hNextCase : next with
-  | none =>
-      simp [setCurrentThread, schedulerWellFormed] at hSet ⊢
-      cases hSet
+  cases hRun : st.scheduler.runnable with
+  | nil =>
+      simp [schedule, setCurrentThread, hRun] at hStep
+      cases hStep
       simp [schedulerWellFormed]
-  | some tid =>
-      exact setCurrentThread_preserves_wellFormed st st' tid hNext hSet
+  | cons t ts =>
+      simp [schedule, setCurrentThread, hRun] at hStep
+      cases hStep
+      simp [schedulerWellFormed]
 
 theorem handleYield_preserves_wellFormed
     (st st' : SystemState)
