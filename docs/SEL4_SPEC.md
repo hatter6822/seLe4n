@@ -44,10 +44,10 @@ Primary outcomes for this revision:
 The immediate next step is to complete a **Scheduler Invariant Bundle v1** with explicit policy and
 proof coverage. The repository shall implement and prove:
 
-1. Runnable queue uniqueness (no duplicate TIDs in `runQueue`).
-2. Current-thread object validity (if `currentThread = some tid`, object lookup resolves to a
+1. ✅ Runnable queue uniqueness (no duplicate TIDs in `runQueue`).
+2. ⏳ Current-thread object validity (if `currentThread = some tid`, object lookup resolves to a
    `TCB`).
-3. Queue/current consistency under an explicitly chosen policy:
+3. ⏳ Queue/current consistency under an explicitly chosen policy:
    - **strict policy**: current thread must be in `runQueue`, or
    - **relaxed policy**: current thread may be absent while blocked/idle.
 4. Preservation of the composed scheduler invariant bundle for:
@@ -109,7 +109,8 @@ The project shall preserve the following through M1:
 
 ## 6. Acceptance criteria and evidence mapping
 
-The next step (M1 Scheduler Invariant Bundle v1) is complete when all checks below are satisfied:
+The next step (M1 Scheduler Invariant Bundle v1) is complete when all checks below are satisfied.
+Current proof debt after landing step 1: complete items (2) and (3), then discharge composed preservation for all three transitions:
 
 ### 6.1 Functional and proof acceptance criteria
 
