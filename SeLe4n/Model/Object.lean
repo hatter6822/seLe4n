@@ -11,7 +11,7 @@ inductive AccessRight where
 structure Capability where
   target : SeLe4n.ObjId
   rights : List AccessRight
-  badge : Option Nat := none
+  badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -27,7 +27,7 @@ structure Endpoint where
   deriving Repr, DecidableEq
 
 structure CNode where
-  slots : Nat → Option Capability
+  slots : SeLe4n.Slot → Option Capability
 
 instance : Repr CNode where
   reprPrec _ _ := "CNode(<function>)"
