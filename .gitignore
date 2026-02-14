@@ -1,0 +1,7 @@
+/.lake/
+/build/
+/.elan/
+.DS_Store
+*.olean
+*.ilean
+*.trace

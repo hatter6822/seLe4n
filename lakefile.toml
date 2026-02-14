@@ -1,0 +1,9 @@
+name = "seLe4"
+defaultTargets = ["SeL4"]
+
+[[lean_lib]]
+name = "SeL4"
+
+[[lean_exe]]
+name = "seL4-spec-check"
+root = "Main"
