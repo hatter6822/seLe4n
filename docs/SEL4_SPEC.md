@@ -63,12 +63,12 @@ mint model** that is proof-ready and does not destabilize completed scheduler re
 In-scope for this slice:
 
 1. ~~Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
-   module) for:
-   - slot lookup,
-   - cap insertion/update,
-   - mint-like derivation with rights attenuation.~~ ✅
+   module) for:~~
+   ~~- slot lookup,~~
+   ~~- cap insertion/update,~~
+   ~~- mint-like derivation with rights attenuation.~~
 2. ~~Add state/model helpers needed to represent slot-level capability ownership without adding
-   architecture-specific detail.~~ ✅
+   architecture-specific detail.~~
 3. Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
    lookup soundness, attenuation monotonicity).
 4. Prove preservation for at least one write transition and one read transition in the new API.
