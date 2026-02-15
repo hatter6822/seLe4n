@@ -384,6 +384,34 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
 def m3IpcSeedInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st
 
+/-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
+def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
+  runnableThreadIpcReady st
+
+/-- Named M3.5 coherence component: send-blocked threads are not runnable. -/
+def ipcSchedulerBlockedSendComponent (st : SystemState) : Prop :=
+  blockedOnSendNotRunnable st
+
+/-- Named M3.5 coherence component: receive-blocked threads are not runnable. -/
+def ipcSchedulerBlockedReceiveComponent (st : SystemState) : Prop :=
+  blockedOnReceiveNotRunnable st
+
+/-- Named M3.5 aggregate coherence component for IPC+scheduler interaction. -/
+def ipcSchedulerCoherenceComponent (st : SystemState) : Prop :=
+  ipcSchedulerRunnableReadyComponent st ∧
+  ipcSchedulerBlockedSendComponent st ∧
+  ipcSchedulerBlockedReceiveComponent st
+
+theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState) :
+    ipcSchedulerCoherenceComponent st ↔ ipcSchedulerContractPredicates st := by
+  rfl
+
+/-- M3.5 composed bundle entrypoint layered over the M3 IPC seed bundle.
+
+This is the step-4 composition target for active-slice endpoint/scheduler coupling. -/
+def m35IpcSchedulerInvariantBundle (st : SystemState) : Prop :=
+  m3IpcSeedInvariantBundle st ∧ ipcSchedulerCoherenceComponent st
+
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -455,5 +483,50 @@ theorem endpointReceive_preserves_m3IpcSeedInvariantBundle
   · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
   · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
   · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+
+theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    m35IpcSchedulerInvariantBundle st' := by
+  rcases hInv with ⟨hM3Seed, hIpcSched⟩
+  have hContract : ipcSchedulerContractPredicates st :=
+    (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
+  refine ⟨?_, ?_⟩
+  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
+      (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+
+theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    m35IpcSchedulerInvariantBundle st' := by
+  rcases hInv with ⟨hM3Seed, hIpcSched⟩
+  have hContract : ipcSchedulerContractPredicates st :=
+    (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
+  refine ⟨?_, ?_⟩
+  · exact endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId receiver hM3Seed hStep
+  · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
+      (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates st st' endpointId receiver hContract hStep)
+
+theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    m35IpcSchedulerInvariantBundle st' := by
+  rcases hInv with ⟨hM3Seed, hIpcSched⟩
+  have hContract : ipcSchedulerContractPredicates st :=
+    (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
+  refine ⟨?_, ?_⟩
+  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
+      (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
 
 end SeLe4n.Kernel

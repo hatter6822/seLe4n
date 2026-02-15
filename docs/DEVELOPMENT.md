@@ -71,7 +71,7 @@ Use this order unless a concrete dependency forces adjustment.
    - define targeted blocked-vs-runnable coherence predicates,
    - avoid over-generalized abstraction.
 
-4. **Invariant bundle composition fourth**
+4. **Invariant bundle composition fourth** ✅ **completed**
    - add named IPC+scheduler coherence components,
    - layer over `m3IpcSeedInvariantBundle`.
 
