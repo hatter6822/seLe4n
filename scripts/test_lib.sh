@@ -81,6 +81,24 @@ ensure_lake_available() {
     return 0
   fi
 
-  record_failure "BUILD" "lake not found on PATH. Run ./scripts/setup_lean_env.sh or install elan."
+  local setup_script="${REPO_ROOT}/scripts/setup_lean_env.sh"
+  if [[ -x "${setup_script}" ]]; then
+    log_section "BUILD" "lake missing; attempting automatic Lean toolchain setup"
+    if "${setup_script}"; then
+      if [[ -f "${HOME}/.elan/env" ]]; then
+        # shellcheck disable=SC1090,SC1091
+        source "${HOME}/.elan/env"
+      fi
+    else
+      record_failure "BUILD" "automatic setup via ${setup_script} failed"
+      finalize_report
+    fi
+  fi
+
+  if command -v lake >/dev/null 2>&1; then
+    return 0
+  fi
+
+  record_failure "BUILD" "lake not found on PATH after auto-setup attempt. Run ./scripts/setup_lean_env.sh manually."
   finalize_report
 }
