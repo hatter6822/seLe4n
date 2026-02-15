@@ -38,3 +38,11 @@ is shaped this way, not only **what** commands to run.
 12. [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
 For normative acceptance criteria, treat `docs/SEL4_SPEC.md` as canonical.
+
+
+## What changed in this edition
+
+- Expanded deep-reference material in **Codebase Reference** with transition-level semantics,
+  proof-organization guidance, and practical debug playbooks.
+- Expanded **Testing & CI** chapter with tier-by-tier intent, entrypoint behavior, and
+  color-coded test logging conventions for local runs.
