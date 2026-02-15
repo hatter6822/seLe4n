@@ -20,7 +20,7 @@ Validation commands used in this audit:
 
 ## 2. Executive summary
 
-Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-4 complete).
+Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-5 complete).
 
 - The codebase exhibits a disciplined, executable-and-provable style.
 - Required quality gates (hygiene/build/smoke fixture) are effective and deterministic.
@@ -28,12 +28,12 @@ Overall project health is **strong** for its milestone stage (post-M3 seed / act
 
 Key advancement in this audit cycle:
 
-- M3.5 step-3 scheduler/IPC coherence predicates are implemented and now lifted into a named step-4 composed bundle (`m35IpcSchedulerInvariantBundle`) layered over `m3IpcSeedInvariantBundle` with explicit named coherence subcomponents, with machine-checked preservation entrypoints for send/await-receive/receive.
-- Tier 3 remains active and now includes anchor checks for the new step-3 predicate/theorem surface.
+- M3.5 step-3 scheduler/IPC coherence predicates and step-4 composed bundle layering (`m35IpcSchedulerInvariantBundle` over `m3IpcSeedInvariantBundle`) are in place, and step-5 local endpoint-store helper lemmas now discharge recurring lookup/runnable obligations in machine-checked send/await-receive/receive preservation proofs.
+- Tier 3 remains active and now includes anchor checks through the new step-5 helper-lemma surface.
 
 Primary remaining high-value path:
 
-- Complete M3.5 steps 5-7 (helper-lemma hardening, further composed preservation/theorem hardening, and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
+- Complete M3.5 steps 6-7 (further composed preservation/theorem hardening and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
 
 ---
 
@@ -82,7 +82,7 @@ Primary remaining high-value path:
 ### 4.3 Remaining testing roadmap
 
 1. Strengthen Tier 3 from static symbol-surface checks to grouped milestone semantic checks.
-2. Expand Tier 2 fixture scenarios as additional M3.5 blocked/wakeup stories (steps 4-7) land.
+2. Expand Tier 2 fixture scenarios as additional M3.5 blocked/wakeup stories (steps 5-7) land.
 3. Convert Tier 4 nightly note into repeat-run determinism and broader scenario sweeps.
 
 ---

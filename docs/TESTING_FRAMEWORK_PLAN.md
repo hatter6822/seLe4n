@@ -14,7 +14,7 @@ Current repository status:
 - ✅ Work package B (fixture-backed executable smoke baseline) implemented.
 - ✅ Work package C (CI wiring to script entrypoints) implemented.
 - ✅ Work package D (docs integration) implemented.
-- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented.
+- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented, including M3.5 step-1 through step-5 theorem/lemma surface anchors.
 
 ---
 
@@ -63,7 +63,7 @@ Both are required pull-request CI jobs.
 - `./scripts/test_full.sh` runs Tier 3 invariant/doc-surface checks.
 - `./scripts/test_nightly.sh` runs full plus Tier 4 extension notice.
 
-Tier 3 is now active in the full suite; Tier 4 remains the next expansion hook.
+Tier 3 is now active in the full suite and includes milestone-surface anchors through current M3.5 step-5 helper lemmas; Tier 4 remains the next expansion hook.
 
 ---
 

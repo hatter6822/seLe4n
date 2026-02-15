@@ -75,9 +75,9 @@ Use this order unless a concrete dependency forces adjustment.
    - add named IPC+scheduler coherence components,
    - layer over `m3IpcSeedInvariantBundle`.
 
-5. **Helper lemmas fifth**
-   - add local store/lookup lemmas near transitions,
-   - prefer small lemmas that discharge concrete proof obligations.
+5. **Helper lemmas fifth** ✅ **completed**
+   - added local endpoint-store lookup helpers near IPC transitions (`tcb_lookup_of_endpoint_store`, runnable/non-runnable scheduler membership transport lemmas),
+   - preservation proofs now consume these small lemmas directly to discharge concrete object-lookup and runnable-set obligations without duplicated case analysis.
 
 6. **Preservation theorems sixth**
    - prove local invariants first, composed bundles second,
