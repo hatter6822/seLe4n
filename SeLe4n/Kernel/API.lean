@@ -207,6 +207,78 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+/-- Generic object-store update lemma: writing at `id` makes that slot resolve to `obj`. -/
+theorem storeObject_objects_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects id = some obj := by
+  unfold storeObject at hStore
+  cases hStore
+  simp
+
+/-- Generic object-store update lemma: writing at `id` preserves all other object lookups. -/
+theorem storeObject_objects_ne
+    (st st' : SystemState)
+    (id oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hNe : oid ≠ id)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold storeObject at hStore
+  cases hStore
+  simp [hNe]
+
+/-- Local transition helper: successful send is exactly one endpoint-object update. -/
+theorem endpointSend_ok_as_storeObject
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st') := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state <;> simp [hObj, hState, storeObject] at hStep
+          case idle =>
+            refine ⟨{ state := .send, queue := [sender] }, ?_⟩
+            simp [storeObject, hStep]
+          case send =>
+            refine ⟨{ state := .send, queue := ep.queue ++ [sender] }, ?_⟩
+            simp [storeObject, hStep]
+
+/-- Local transition helper: successful receive is exactly one endpoint-object update. -/
+theorem endpointReceive_ok_as_storeObject
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st') := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state <;> simp [hObj, hState] at hStep
+          case send =>
+            cases hQueue : ep.queue with
+            | nil => simp [hQueue] at hStep
+            | cons head tail =>
+                simp [hQueue, storeObject] at hStep
+                rcases hStep with ⟨_, hStore⟩
+                let nextState : EndpointState := if tail.isEmpty then .idle else .send
+                refine ⟨{ state := nextState, queue := tail }, ?_⟩
+                simp [storeObject, nextState, hStore]
+
 /-- Endpoint-local queue/state well-formedness for the M3 IPC seed.
 
 Policy for this slice is intentionally simple and deterministic:
@@ -314,18 +386,8 @@ theorem endpointSend_preserves_other_objects
     (hNe : oid ≠ endpointId)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     st'.objects oid = st.objects oid := by
-  unfold endpointSend at hStep
-  cases hObj : st.objects endpointId with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | cnode cn => simp [hObj] at hStep
-      | endpoint ep =>
-          cases hState : ep.state <;> simp [hObj, hState, storeObject] at hStep
-          all_goals
-            cases hStep
-            simp [hNe]
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  exact storeObject_objects_ne st st' endpointId oid (.endpoint ep') hNe hStore
 
 theorem endpointReceive_preserves_other_objects
     (st st' : SystemState)
@@ -334,23 +396,8 @@ theorem endpointReceive_preserves_other_objects
     (hNe : oid ≠ endpointId)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     st'.objects oid = st.objects oid := by
-  unfold endpointReceive at hStep
-  cases hObj : st.objects endpointId with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | cnode cn => simp [hObj] at hStep
-      | endpoint ep =>
-          cases hState : ep.state <;> simp [hObj, hState] at hStep
-          case send =>
-            cases hQueue : ep.queue with
-            | nil => simp [hQueue] at hStep
-            | cons head tail =>
-                simp [hQueue, storeObject] at hStep
-                rcases hStep with ⟨hSender, hStoreEq⟩
-                cases hStoreEq
-                simp [hNe]
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  exact storeObject_objects_ne st st' endpointId oid (.endpoint ep') hNe hStore
 
 theorem endpointSend_preserves_ipcInvariant
     (st st' : SystemState)

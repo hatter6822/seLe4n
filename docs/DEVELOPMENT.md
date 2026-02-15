@@ -51,9 +51,13 @@ Work in this order unless a blocking dependency requires adjustment:
    - Bundle under a clearly named IPC invariant entrypoint.
    - Status: `endpointQueueWellFormed` + `endpointObjectValid` are bundled under `endpointInvariant` and exposed through `ipcInvariant`.
 
-4. **Local helper lemmas fourth**
+4. **Local helper lemmas fourth** *(complete)*
    - Add lookup/update lemmas close to transition definitions.
    - Keep helper statements small and reusable.
+   - Status: transition-local object-store helpers (`storeObject_objects_eq`,
+     `storeObject_objects_ne`, `endpointSend_ok_as_storeObject`,
+     `endpointReceive_ok_as_storeObject`) are now placed adjacent to endpoint transitions and
+     consumed by preservation plumbing.
 
 5. **Preservation theorems fifth**
    - Prove send preserves IPC invariant bundle.

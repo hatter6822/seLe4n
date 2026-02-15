@@ -82,6 +82,12 @@ Implemented pieces already landed for the active slice:
    - `ipcInvariant`,
    - `endpointSend_preserves_ipcInvariant`,
    - `endpointReceive_preserves_ipcInvariant`.
+5. Transition-local lookup/update helper lemmas are now in place near endpoint transition
+   definitions to keep preservation proofs compositional:
+   - `storeObject_objects_eq`,
+   - `storeObject_objects_ne`,
+   - `endpointSend_ok_as_storeObject`,
+   - `endpointReceive_ok_as_storeObject`.
 
 ---
 
