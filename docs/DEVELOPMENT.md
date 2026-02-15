@@ -3,11 +3,11 @@
 ## 1. Current phase
 
 The project has completed bootstrap and **M1: Scheduler Integrity**.
-Development is now focused on **M2 Foundation Slice: typed CSpace lookup and mint model**.
+Development has completed the **M2 Foundation Slice: typed CSpace lookup and mint model** and now focuses on post-foundation capability lifecycle work.
 
 ### Current objective slice (next step)
 
-The active implementation target is the remaining minimal, proof-ready M2 slice increments.
+The active implementation target is capability-lifecycle expansion beyond the completed M2 foundation slice.
 
 Target outcomes for this slice:
 
@@ -15,7 +15,7 @@ Target outcomes for this slice:
 - ~~add state/model helpers for slot-level capability ownership representation~~,
 - ~~define and compose initial capability invariants~~,
 - ~~prove preservation for at least one read and one write transition~~,
-- keep executable behavior and existing scheduler proofs stable.
+- ~~keep executable behavior and existing scheduler proofs stable~~.
 
 ## 2. Working agreement
 
@@ -116,7 +116,7 @@ Recommended command set:
 
 ## 8. Development path ahead
 
-Near-term sequence after M2 foundation slice:
+Near-term sequence after the completed M2 foundation slice:
 
 1. Expand CSpace operations to revoke/delete and prove local authority constraints.
 2. Start M3 IPC semantics with endpoint transition definitions.

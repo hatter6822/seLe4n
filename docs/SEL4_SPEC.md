@@ -72,8 +72,8 @@ In-scope for this slice:
 3. ~~Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
    lookup soundness, attenuation monotonicity).~~
 4. ~~Prove preservation for at least one write transition and one read transition in the new API.~~
-5. Keep `Main.lean` executable path functional; if changed, include a concrete demonstration of at
-   least one CSpace operation.
+5. ✅ Keep `Main.lean` executable path functional; if changed, include a concrete demonstration of
+   at least one CSpace operation.
 
 Out-of-scope for this slice:
 
@@ -187,6 +187,8 @@ and no open TODOs remain for the transitions introduced in this slice.
   `capabilityInvariantBundle` with explicit components (`cspaceSlotUnique`, `cspaceLookupSound`,
   `cspaceAttenuationRule`) and dedicated helper lemmas/theorem entrypoints.
 - M2 Foundation **Step 4 preservation proofs** are now established for one read transition (`cspaceLookupSlot_preserves_capabilityInvariantBundle`) and one write transition (`cspaceMint_preserves_capabilityInvariantBundle`) in `SeLe4n.Kernel.API`.
+- M2 Foundation **Step 5 executable path** is now demonstrated in `Main.lean` via explicit source
+  slot lookup plus mint + destination lookup on concrete CSpace addresses.
 - Remaining M2 work focuses on broader capability lifecycle transitions (revoke/delete) and
   strengthening authority properties across those new operations.
 
