@@ -296,7 +296,7 @@ Incremental plan:
 - ✅ Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.
 - ✅ Step 3 complete: first capability invariant bundle is defined/proven (slot uniqueness, lookup soundness, attenuation monotonicity).
 - ✅ Next increment landed: typed revoke/delete transitions over `SlotRef`-style addresses (local revoke semantics in the modeled CNode scope).
-- 🔄 Next: extend lifecycle-aware authority constraints across the new lifecycle operations.
+- ✅ Step 2 complete: lifecycle-aware authority monotonicity constraints are defined for attenuation + delete/revoke reduction.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics
