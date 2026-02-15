@@ -2,156 +2,134 @@
 
 ## 1. Purpose
 
-This guide defines the expected engineering workflow for seLe4n contributors.
+This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current project stage: **post-M3.5 handshake closure / pre-M4 lifecycle kickoff**.
+Current stage: **M4-A lifecycle/retype foundations (active)**.
 
-Primary contributor goals:
+Primary goals for contributors:
 
-- keep executable semantics readable and testable,
-- preserve milestone theorem entrypoints,
-- land changes in narrow, reviewable slices,
-- keep docs synchronized with implementation stage and next-slice planning.
-
----
-
-## 2. Stage contract and baseline stability
-
-The following behavior is stable and must not regress unless intentionally redesigned and documented.
-
-1. M1 scheduler invariant bundle (`schedulerInvariantBundle`) and preservation theorem entrypoints.
-2. M2 CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and capability bundle
-   preservation entrypoints.
-3. M3 endpoint seed APIs (`endpointSend`, `endpointReceive`) and IPC invariant bundle entrypoints.
-4. Runnable executable trace in `Main.lean` demonstrating scheduler + CSpace + IPC seed behavior.
-5. Tier 0/1/2 required gates and Tier 3 full-suite invariant/doc-surface checks.
-
-If a change intentionally adjusts one of these contracts, call it out in docs + PR notes.
+- keep semantics executable and understandable,
+- preserve theorem-entrypoint continuity across milestones,
+- ship narrow, reviewable slices,
+- keep docs synchronized with active and next slice plans.
 
 ---
 
-## 3. Recently closed slice: M3.5 IPC handshake + scheduler interaction
+## 2. Baseline contracts to preserve
 
-### 3.1 Current-slice target outcomes
+Unless intentionally redesigned and documented, preserve:
 
-Contributors should align M3.5 work to all outcomes below:
-
-1. Refine endpoint protocol state so waiting directions are explicit.
-2. Introduce minimal blocking/wakeup effects in endpoint transitions.
-3. Add scheduler-facing coherence predicates for IPC-blocked threads.
-4. Extend IPC invariant bundle with endpoint/scheduler coherence components.
-5. Prove preservation theorem entrypoints for new/changed transitions.
-6. Extend executable trace with one waiting-to-delivery scenario.
-
-### 3.2 Current-slice non-goals
-
-Do **not** include the following in M3.5 PRs unless explicitly approved:
-
-- full reply-cap protocol,
-- priority scheduling policy redesign,
-- architecture/MMU concerns,
-- object lifecycle/retype semantics (belongs to M4).
-
-### 3.3 M3.5 recommended implementation sequence
-
-Use this order unless a concrete dependency forces adjustment.
-
-1. **State-model refinement first** ✅ **completed**
-   - added only endpoint/thread fields needed for one deterministic handshake story (`Endpoint.waitingReceiver`, `TCB.ipcState`),
-   - state ownership remains explicit: endpoint-owned waiting counterpart identity + thread-owned IPC blocking status,
-   - endpoint local well-formedness now constrains queue shape and waiting-receiver ownership together for deterministic unfolding in later transition/proof work.
-
-2. **Transition updates second** ✅ **completed**
-   - added explicit waiting-receiver registration transition (`endpointAwaitReceive`) for idle endpoints,
-   - updated `endpointSend` with explicit handshake-success branch (`receive` + waiting receiver) and explicit mismatch errors for illegal receive-state shapes,
-   - updated `endpointReceive` branching to keep explicit error outcomes for impossible waiting-receiver combinations,
-   - preservation-entrypoint proofs for updated send/receive transitions remain unfold-friendly and machine-checked.
-
-3. **Scheduler contract predicates third** ✅ **completed**
-   - define targeted blocked-vs-runnable coherence predicates,
-   - avoid over-generalized abstraction.
-
-4. **Invariant bundle composition fourth** ✅ **completed**
-   - add named IPC+scheduler coherence components,
-   - layer over `m3IpcSeedInvariantBundle`.
-
-5. **Helper lemmas fifth** ✅ **completed**
-   - added local endpoint-store lookup helpers near IPC transitions (`tcb_lookup_of_endpoint_store`, runnable/non-runnable scheduler membership transport lemmas),
-   - preservation proofs now consume these small lemmas directly to discharge concrete object-lookup and runnable-set obligations without duplicated case analysis.
-
-6. **Preservation theorems sixth** ✅ **completed**
-   - endpoint transitions now prove local scheduler-contract components first (`runnableThreadIpcReady`, `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`),
-   - composed preservation (`ipcSchedulerContractPredicates`, `m35IpcSchedulerInvariantBundle`) is layered after those local theorems,
-   - new theorem entrypoints follow `<transition>_preserves_<invariant>` naming throughout step-6 additions.
-
-7. **Executable demonstration last** ✅ **completed**
-   - `Main.lean` now includes a concrete M3.5 waiting-receiver handshake story (`endpointAwaitReceive` followed by handshake-success send),
-   - the prior scheduler/CSpace/M3 executable trace is preserved as a prefix and the existing queue-delivery sequence remains executable after the handshake path.
+1. M1 scheduler bundle + preservation theorem entrypoints.
+2. M2 capability/CSpace transition surfaces and capability invariant composition.
+3. M3 endpoint seed APIs and invariant entrypoints.
+4. M3.5 handshake/scheduler coherence predicates and composed bundle surfaces.
+5. Tier 0/1/2 required test gates and CI entrypoint parity.
 
 ---
 
-## 4. Next slice preparation (planned): M4 object lifecycle / retype safety
+## 3. Current slice implementation plan: M4-A
 
-With M3.5 closed, contributors should now implement M4 work while preserving the M1-M3.5 theorem and executable contracts.
+### 3.1 M4-A target outcomes (implementation contract)
 
-### 4.1 M4 target outcomes (planning baseline)
+1. Add typed lifecycle/retype transition API.
+2. Add object identity + aliasing lifecycle invariants.
+3. Add capability-object coherence invariants.
+4. Add preservation theorem entrypoints for new lifecycle transitions.
+5. Add executable evidence in `Main.lean` and fixture-backed smoke coverage.
 
-1. Executable lifecycle/retype transition surface.
-2. Object identity and aliasing invariants.
-3. Capability-object lifecycle coherence invariants.
-4. Preservation theorem entrypoints for lifecycle transitions.
-5. Executable + fixture evidence for lifecycle behavior.
+### 3.2 Recommended implementation sequence (M4-A)
 
-### 4.2 Pre-M4 design guardrails
+1. **State-model preparation**
+   - introduce only lifecycle metadata required for the first transition story,
+   - keep ownership explicit (object store identity, capability reference mapping).
 
-While working on M4:
+2. **Lifecycle transition(s)**
+   - implement deterministic success/error branching,
+   - keep illegal-state and illegal-authority branches explicit via `KernelError`.
 
-- keep transition APIs typed and explicit,
-- avoid embedding lifecycle assumptions into IPC-only predicates,
-- preserve compositional bundle structure so M4 can layer cleanly.
+3. **Invariant definitions**
+   - define narrow, named lifecycle invariants first,
+   - separate identity/aliasing constraints from capability-reference constraints.
+
+4. **Local helper lemmas**
+   - add transition-local lookup/membership lemmas near lifecycle code,
+   - avoid duplicated case-analysis across proof scripts.
+
+5. **Preservation theorem entrypoints**
+   - prove local component preservation first,
+   - then compose with existing capability/scheduler/IPC bundles.
+
+6. **Executable demonstration + fixture update**
+   - extend `Main.lean` for lifecycle success path,
+   - add fixture lines only for stable semantic output.
+
+### 3.3 M4-A non-goals
+
+Do not include in this slice unless explicitly approved:
+
+- full allocator internals,
+- architecture-specific memory internals,
+- broad policy redesign,
+- unrelated IPC protocol expansion.
+
+---
+
+## 4. Next slice preparation: M4-B
+
+### 4.1 M4-B target outcomes
+
+1. Compose lifecycle with revoke/delete semantics.
+2. Add stale-reference exclusion invariants.
+3. Prove cross-bundle preservation theorems.
+4. Add failure-path theorem coverage for lifecycle-capability interactions.
+5. Expand Tier 3 checks and scenario coverage for lifecycle composition.
+
+### 4.2 Design guardrails for M4-B readiness
+
+- preserve clean invariant layering;
+- keep lifecycle assumptions out of unrelated IPC predicates;
+- avoid monolithic “mega invariant” definitions that block review.
 
 ---
 
 ## 5. Proof engineering standards
 
-1. Prefer explicit theorem statements over brittle tactic cleverness.
+1. Prefer explicit theorem statements and local proof structure over brittle tactic compression.
 2. Keep conjunction-heavy invariants factored into named components.
-3. Avoid global `simp` side effects; use local simp blocks.
-4. Structure proofs in layers:
-   - unfold transition,
-   - split result cases,
-   - apply local helper lemmas,
-   - discharge invariant components.
-5. Keep helper lemmas near transitions they support.
+3. Use local simplification blocks; avoid global `simp` side effects.
+4. Structure proofs by:
+   - transition unfold,
+   - result-case split,
+   - local helper lemma application,
+   - invariant component discharge.
+5. Keep helper lemmas physically near transitions they support.
 6. Do not introduce `axiom` or `sorry` in core modules.
 
 ---
 
 ## 6. Documentation responsibilities
 
-Any PR changing transitions, invariants, or milestone boundaries must update docs in the same
+Any PR changing transitions, invariants, milestone scope, or tests must update docs in the same
 commit range:
 
-1. `docs/SEL4_SPEC.md`: current + next slice definitions, outcomes, acceptance criteria.
-2. `docs/DEVELOPMENT.md`: implementation sequence, workflow expectations, PR checklist.
-3. `README.md`: stage snapshot and contributor verification loop.
-4. `docs/TESTING_FRAMEWORK_PLAN.md` and/or `tests/scenarios/README.md` when testing workflow
-   expectations change.
-
-If docs are deferred, state why and when they will be updated.
+1. `docs/SEL4_SPEC.md`
+2. `docs/DEVELOPMENT.md`
+3. `README.md`
+4. `docs/TESTING_FRAMEWORK_PLAN.md` and/or `tests/scenarios/README.md` as needed
+5. `docs/gitbook/*` pages impacted by the change
 
 ---
 
-## 7. Contributor validation loop (required)
+## 7. Required contributor validation loop
 
-Run this minimum set before opening a PR:
+Run before opening a PR:
 
 ```bash
 ./scripts/test_fast.sh
 ./scripts/test_smoke.sh
 ```
 
-Direct checks for local debugging:
+Recommended additional checks:
 
 ```bash
 lake build
@@ -160,73 +138,112 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 ./scripts/test_full.sh
 ```
 
-If any command cannot run due to environment limits, report the constraint and impact.
-
-Default shared ownership of test/CI gates applies to contributors touching:
-
-- `Main.lean`,
-- `SeLe4n/Kernel/API.lean` (barrel) and `SeLe4n/Kernel/**/*.lean`,
-- `scripts/test_*.sh`,
-- `tests/fixtures/*`.
-
-Pull-request CI enforces required gates through `.github/workflows/lean_action_ci.yml` by running
-`./scripts/test_fast.sh` and `./scripts/test_smoke.sh` as separate required jobs.
-
-For fresh environments, run `./scripts/setup_lean_env.sh` once. Test scripts auto-source
-`$HOME/.elan/env` when available.
+If a command is blocked by environment limitations, report the limitation and impact.
 
 ---
 
-## 8. PR checklist (required)
+## 8. PR checklist (copy into PR descriptions)
 
-Copy this checklist into PR descriptions:
-
-- [ ] Scope is one coherent milestone slice.
-- [ ] Transition APIs use explicit success/error branching.
-- [ ] New invariant components are named and documented.
+- [ ] Scope fits one coherent milestone slice.
+- [ ] Transition APIs expose explicit success/error branching.
+- [ ] New invariants are named and documented.
 - [ ] Preservation theorem entrypoints compile.
 - [ ] `lake build` executed.
 - [ ] `lake exe sele4n` executed.
-- [ ] Hygiene scan (`axiom|sorry|TODO`) executed.
-- [ ] Docs updated in the same commit range.
-- [ ] Remaining proof debt identified.
-- [ ] Current-slice and next-slice docs are synchronized.
-
-### 8.1 Fixture-backed smoke regression workflow (Tier 2)
-
-Tier 2 is active and required in `./scripts/test_smoke.sh`.
-
-- Expected trace fragments live in `tests/fixtures/main_trace_smoke.expected`.
-- `scripts/test_tier2_trace.sh` runs `lake exe sele4n` and enforces substring matching for each
-  non-empty fixture line.
-- On mismatch, failures are tagged with `[TRACE]` and list each missing expectation.
-
-Intentional behavior change workflow:
-
-1. Run `lake exe sele4n` and verify new behavior is expected.
-2. Update only stable semantic lines in fixture.
-3. Re-run `./scripts/test_tier2_trace.sh` and `./scripts/test_smoke.sh`.
-4. Explain fixture updates in PR description.
+- [ ] Hygiene scan executed.
+- [ ] `test_fast` and `test_smoke` executed.
+- [ ] Docs (including GitBook pages) updated in same commit range.
+- [ ] Remaining proof debt identified explicitly.
 
 ---
 
-## 9. Review heuristics for maintainers
+## 9. Codebase touch matrix (what to update when)
 
-Reviewers should verify:
+This section helps avoid partial updates when changing a subsystem.
 
-1. Transition semantics are understandable without tactic archaeology.
-2. Endpoint/scheduler coupling is minimal and justified.
-3. Helper lemmas are scoped to transition behavior.
-4. Invariant bundle growth remains incremental and compositional.
-5. Executable trace evidence matches milestone claims.
-6. Current-slice and next-slice planning text is consistent across docs.
+### 9.1 Scheduler behavior changes
+
+Touch at least:
+
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (transition semantics),
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (component/bundle reasoning),
+- any composed bundle module that imports scheduler invariants,
+- docs (`README`, `SEL4_SPEC`, `DEVELOPMENT`, relevant GitBook chapters).
+
+Validation focus:
+
+- queue/current consistency remains explicit,
+- `*_preserves_schedulerInvariantBundle` theorem surfaces still compile,
+- executable trace remains coherent if scheduling output changed.
+
+### 9.2 Capability/CSpace changes
+
+Touch at least:
+
+- `SeLe4n/Kernel/Capability/Operations.lean`,
+- `SeLe4n/Kernel/Capability/Invariant.lean`,
+- fixture/docs if executable output semantics changed.
+
+Validation focus:
+
+- attenuation properties preserved,
+- lifecycle authority monotonicity still valid,
+- composed bundle aliases remain stable.
+
+### 9.3 IPC changes
+
+Touch at least:
+
+- `SeLe4n/Kernel/IPC/Invariant.lean` (transitions + invariants + proofs),
+- composed invariant/bundle module references,
+- `Main.lean` scenario if behavior surface changed,
+- Tier 2 fixture if output changed intentionally.
+
+Validation focus:
+
+- endpoint object validity + queue well-formedness,
+- scheduler coherence predicates,
+- local-first and composed preservation theorem layering.
+
+### 9.4 Lifecycle/retype (M4) changes
+
+Touch at least:
+
+- model files when object metadata evolves,
+- lifecycle transition implementation module(s),
+- lifecycle invariant components,
+- cross-bundle composition entrypoints,
+- milestone docs and GitBook M4 chapters.
+
+Validation focus:
+
+- identity/aliasing safety,
+- capability-object coherence,
+- deterministic error-path behavior,
+- fixture signal quality for lifecycle scenarios.
 
 ---
 
-## 10. Anti-patterns to avoid
+## 10. Proof review checklist (maintainers)
 
-- Bundling model redesign, protocol redesign, and major proof rewrites in one PR.
-- Adding non-essential architecture detail during IPC-slice work.
-- Hiding transition semantics behind abstractions that block direct unfolding.
-- Claiming slice completion without theorem + executable evidence.
-- Leaving milestone docs stale after API or theorem-surface changes.
+When reviewing theorem changes, verify:
+
+1. transition-level theorem statements still mirror executable semantics,
+2. helper lemmas are local and narrowly scoped,
+3. no hidden global simp behavior introduced,
+4. composed bundle theorem depends on named components (not ad hoc unfolding),
+5. theorem naming follows searchable `<transition>_preserves_<target>` pattern.
+
+---
+
+## 11. Documentation depth contract
+
+For any milestone movement, docs should answer all of:
+
+1. **What exists now?**
+2. **What is being added in this slice?**
+3. **What is intentionally deferred?**
+4. **Which commands validate the change?**
+5. **How does this affect composed invariant architecture?**
+
+If a doc update does not answer these five, it is incomplete.
