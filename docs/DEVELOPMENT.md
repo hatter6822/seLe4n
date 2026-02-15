@@ -67,7 +67,7 @@ Use this order unless a concrete dependency forces adjustment.
    - updated `endpointReceive` branching to keep explicit error outcomes for impossible waiting-receiver combinations,
    - preservation-entrypoint proofs for updated send/receive transitions remain unfold-friendly and machine-checked.
 
-3. **Scheduler contract predicates third**
+3. **Scheduler contract predicates third** ✅ **completed**
    - define targeted blocked-vs-runnable coherence predicates,
    - avoid over-generalized abstraction.
 

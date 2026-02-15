@@ -21,6 +21,15 @@ run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvaria
 run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
+# M3.5 step-3 scheduler-contract predicate anchors must remain present.
+run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+
 # Bundle composition guard: M3 seed bundle must still compose scheduler + capability + IPC invariants.
 run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/Capability/Invariant.lean
 
