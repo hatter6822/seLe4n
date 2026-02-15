@@ -38,3 +38,13 @@ TRACE_FIXTURE_PATH="$TMP_FIXTURE" ./scripts/test_tier2_trace.sh
 ```
 
 The command should fail and report the missing expected line.
+
+## Failure diagnostics contract
+
+`./scripts/test_tier2_trace.sh` reports:
+
+- total matched vs expected fragment count,
+- each missing expected fragment on its own `[TRACE]` line,
+- a reminder to update fixture + PR rationale when drift is intentional.
+
+This contract keeps smoke regressions deterministic and reviewable in both local runs and CI logs.

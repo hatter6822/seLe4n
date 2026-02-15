@@ -14,6 +14,8 @@ It has four jobs:
 The project is currently in a **post-M3-seed** stage: M1 scheduler invariants, M2 capability
 semantics, and M3 endpoint send/receive seed semantics are complete and executable.
 
+Testing framework baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed executable smoke checks are implemented under `scripts/test_*.sh`.
+
 ---
 
 ## 2. Milestone glossary
@@ -144,13 +146,15 @@ Out of scope for this slice:
 
 All criteria are required:
 
-1. `lake build` succeeds.
-2. `lake exe sele4n` succeeds and shows IPC behavior beyond the seed queue-only story.
-3. Hygiene scan is clean:
+1. `./scripts/test_fast.sh` succeeds.
+2. `./scripts/test_smoke.sh` succeeds (including Tier 2 fixture-backed trace checks).
+3. `lake build` succeeds.
+4. `lake exe sele4n` succeeds and shows IPC behavior beyond the seed queue-only story.
+5. Hygiene scan is clean:
    - `rg -n "axiom|sorry|TODO" SeLe4n Main.lean`.
-4. New endpoint/scheduler interaction invariants exist and are included in the active IPC bundle.
-5. New/updated endpoint transitions have machine-checked preservation theorem entrypoints.
-6. `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and `README.md` reflect the same stage and next
+6. New endpoint/scheduler interaction invariants exist and are included in the active IPC bundle.
+7. New/updated endpoint transitions have machine-checked preservation theorem entrypoints.
+8. `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and `README.md` reflect the same stage and next
    slice scope.
 
 ---

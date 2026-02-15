@@ -22,27 +22,39 @@ fi
 
 run_check "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
 
-missing=0
+expected_count=0
+matched_count=0
+
 while IFS= read -r expected_line || [[ -n "${expected_line}" ]]; do
   [[ -z "${expected_line}" ]] && continue
-  if ! grep -Fq "${expected_line}" "${TRACE_OUTPUT}"; then
-    printf '%s\n' "${expected_line}" >> "${MISSING_REPORT}"
-    record_failure "TRACE" "Missing expected trace line: ${expected_line}"
-    missing=1
-    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
-      finalize_report
-    fi
+  expected_count=$((expected_count + 1))
+
+  if grep -Fq "${expected_line}" "${TRACE_OUTPUT}"; then
+    matched_count=$((matched_count + 1))
+    continue
+  fi
+
+  printf '%s\n' "${expected_line}" >> "${MISSING_REPORT}"
+  record_failure "TRACE" "Missing expected trace line: ${expected_line}"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
   fi
 done < "${TRACE_FIXTURE}"
 
-if [[ "${missing}" -eq 0 ]]; then
-  log_section "TRACE" "Fixture comparison passed (${TRACE_FIXTURE})."
+if [[ "${expected_count}" -eq 0 ]]; then
+  record_failure "TRACE" "Fixture is empty: ${TRACE_FIXTURE}. Add at least one stable semantic expectation."
+  finalize_report
+fi
+
+if [[ "${matched_count}" -eq "${expected_count}" ]]; then
+  log_section "TRACE" "Fixture comparison passed (${matched_count}/${expected_count} matched)."
 else
+  log_section "TRACE" "Matched ${matched_count}/${expected_count} expected lines from ${TRACE_FIXTURE}."
   log_section "TRACE" "Missing expectation lines:"
   while IFS= read -r missing_line || [[ -n "${missing_line}" ]]; do
     log_section "TRACE" "  - ${missing_line}"
   done < "${MISSING_REPORT}"
-  log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR."
+  log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR and explain why."
 fi
 
 finalize_report
