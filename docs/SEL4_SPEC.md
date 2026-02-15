@@ -153,8 +153,12 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
   - added explicit scheduler/IPC coherence predicates for the active slice (`runnableThreadIpcReady`, `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`),
   - composed the targeted trio under `ipcSchedulerContractPredicates` with intentionally narrow (non-over-generalized) scope,
   - added machine-checked preservation entrypoints for send/await-receive/receive under the new scheduler-contract predicate set.
+- ✅ **Step 4 complete (invariant bundle composition)**
+  - added named IPC+scheduler coherence components (`ipcSchedulerRunnableReadyComponent`, `ipcSchedulerBlockedSendComponent`, `ipcSchedulerBlockedReceiveComponent`) and aggregated them under `ipcSchedulerCoherenceComponent`,
+  - introduced composed `m35IpcSchedulerInvariantBundle` layered directly over `m3IpcSeedInvariantBundle`,
+  - added machine-checked preservation entrypoints for send/await-receive/receive over the new composed M3.5 bundle.
 - ⏳ **Remaining M3.5 steps**
-  - invariant bundle composition onward (steps 4-7) remain in progress.
+  - helper lemmas onward (steps 5-7) remain in progress.
 
 ---
 

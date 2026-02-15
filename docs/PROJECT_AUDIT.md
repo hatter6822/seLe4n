@@ -20,7 +20,7 @@ Validation commands used in this audit:
 
 ## 2. Executive summary
 
-Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-3 complete).
+Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-4 complete).
 
 - The codebase exhibits a disciplined, executable-and-provable style.
 - Required quality gates (hygiene/build/smoke fixture) are effective and deterministic.
@@ -28,12 +28,12 @@ Overall project health is **strong** for its milestone stage (post-M3 seed / act
 
 Key advancement in this audit cycle:
 
-- M3.5 step-3 scheduler/IPC coherence predicates are now implemented and machine-checked preservation entrypoints exist for send/await-receive/receive.
+- M3.5 step-3 scheduler/IPC coherence predicates are implemented and now lifted into a named step-4 composed bundle (`m35IpcSchedulerInvariantBundle`) layered over `m3IpcSeedInvariantBundle` with explicit named coherence subcomponents, with machine-checked preservation entrypoints for send/await-receive/receive.
 - Tier 3 remains active and now includes anchor checks for the new step-3 predicate/theorem surface.
 
 Primary remaining high-value path:
 
-- Complete M3.5 steps 4-7 (bundle composition, helper-lemma hardening, composed preservation entrypoints, and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
+- Complete M3.5 steps 5-7 (helper-lemma hardening, further composed preservation/theorem hardening, and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
 
 ---
 
