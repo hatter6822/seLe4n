@@ -104,7 +104,12 @@ lake exe sele4n
 - `SeLe4n/Machine.lean` — abstract machine state and primitive updates.
 - `SeLe4n/Model/Object.lean` — kernel object types (`TCB`, `Endpoint`, `CNode`, `Capability`).
 - `SeLe4n/Model/State.lean` — global system state and typed lookup helpers.
-- `SeLe4n/Kernel/API.lean` — executable transitions, invariants, preservation theorem entrypoints.
+- `SeLe4n/Kernel/API.lean` — compatibility barrel that re-exports the kernel surface.
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` — scheduler invariant definitions and base lemmas.
+- `SeLe4n/Kernel/Scheduler/Operations.lean` — scheduler transitions and preservation theorems.
+- `SeLe4n/Kernel/Capability/Operations.lean` — CSpace/capability executable operations.
+- `SeLe4n/Kernel/Capability/Invariant.lean` — capability invariant bundles and M3 composition proofs.
+- `SeLe4n/Kernel/IPC/Invariant.lean` — endpoint IPC transitions and IPC invariant preservation.
 - `Main.lean` — runnable integration trace.
 - `docs/SEL4_SPEC.md` — normative milestone spec and acceptance criteria.
 - `docs/DEVELOPMENT.md` — implementation workflow, proof standards, PR checklist.
