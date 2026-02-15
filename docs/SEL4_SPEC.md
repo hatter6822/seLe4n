@@ -66,7 +66,7 @@ Implemented M2 scope includes:
 6. Preservation theorem entrypoints for lookup/insert/mint/delete/revoke progression.
 7. Executable trace in `Main.lean` showing scheduler + capability lifecycle behavior.
 
-### 3.4 M3 IPC seed (partial progress)
+### 3.4 M3 IPC seed (in progress)
 
 Implemented pieces already landed for the active slice:
 
@@ -75,6 +75,11 @@ Implemented pieces already landed for the active slice:
    - `endpointSend`,
    - `endpointReceive`.
 3. Explicit IPC error branches for mismatched endpoint/object states and empty-send-queue cases.
+4. IPC seed invariants and preservation theorem entrypoints:
+   - `endpointQueueWellFormed`,
+   - `ipcInvariant`,
+   - `endpointSend_preserves_ipcInvariant`,
+   - `endpointReceive_preserves_ipcInvariant`.
 
 ---
 
@@ -99,12 +104,12 @@ Status is tracked per outcome.
      with clear ownership and access discipline.
    - Avoid architecture-specific payload details in this slice.
 
-3. **First IPC invariant bundle component is introduced** *(open)*
+3. **First IPC invariant bundle component is introduced** *(complete)*
    - At minimum, define one queue well-formedness condition and one endpoint/object validity
      condition.
    - Bundle naming should align with existing invariant terminology and theorem style.
 
-4. **Preservation proof coverage lands for new transitions** *(open)*
+4. **Preservation proof coverage lands for new transitions** *(complete)*
    - At least one send transition preservation theorem.
    - At least one receive transition preservation theorem.
    - New proof entrypoints should be composable with existing M1/M2 bundles.
