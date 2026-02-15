@@ -120,6 +120,9 @@ If docs are intentionally deferred, state why and when they will be updated.
 
 ## 7. Contributor validation loop (required)
 
+PR CI runs this same loop (`./scripts/test_fast.sh` and `./scripts/test_smoke.sh`) in
+`.github/workflows/lean_action_ci.yml`, so local pass/fail behavior should match CI outcomes.
+
 Run this minimum set before opening a PR:
 
 ```bash

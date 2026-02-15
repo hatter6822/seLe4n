@@ -2,6 +2,9 @@
 
 This directory documents fixture-backed trace checks for `scripts/test_tier2_trace.sh`.
 
+These checks are not local-only: `./scripts/test_smoke.sh` is enforced in pull-request CI via
+`.github/workflows/lean_action_ci.yml`, so fixture drift will fail review gates until reconciled.
+
 ## Current fixture
 
 - `tests/fixtures/main_trace_smoke.expected`

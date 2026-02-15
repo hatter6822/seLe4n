@@ -6,9 +6,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test-fast:
+    name: Tier 0+1 fast gate
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
       - uses: leanprover/lean-action@v1
+      - name: Run fast tier gate
+        run: ./scripts/test_fast.sh
+
+  test-smoke:
+    name: Tier 0+1+2 smoke gate
+    runs-on: ubuntu-latest
+    needs: test-fast
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+      - name: Run smoke tier gate
+        run: ./scripts/test_smoke.sh

@@ -8,8 +8,8 @@ Current repository status against this plan:
 
 - ✅ Work package A (script scaffold) is implemented.
 - ✅ Work package B (fixture-backed executable smoke baseline) is implemented.
-- ⏳ Work package C (CI wiring to script entrypoints) is pending.
-- ⏳ Work package D (final doc integration pass) is in progress and should track script/CI reality.
+- ✅ Work package C (CI wiring to script entrypoints) is implemented.
+- ✅ Work package D (final doc integration pass) is implemented and tracks script/CI reality.
 - ⏳ Work package E (Tier 3 hooks) is partially prepared via explicit extension points.
 
 ---
@@ -219,6 +219,9 @@ Update `.github/workflows/lean_action_ci.yml` to run:
 
 (If runtime is redundant, smoke may subsume fast; keep both only if they provide distinct signal.)
 
+Status: implemented in `.github/workflows/lean_action_ci.yml` with explicit `test-fast` and
+`test-smoke` jobs.
+
 ## 7.2 Main/nightly follow-up checks
 
 Add separate jobs (or future workflow file) for:
@@ -276,6 +279,9 @@ Tasks:
 Acceptance criteria:
 - PR workflow fails when any tier script fails.
 - CI and local script behavior match for pass/fail outcomes.
+
+Implementation status:
+- `.github/workflows/lean_action_ci.yml` runs `./scripts/test_fast.sh` and `./scripts/test_smoke.sh` as separate jobs on `pull_request`, with smoke depending on fast.
 
 ## 8.4 Work package D — Documentation integration (day 2)
 
