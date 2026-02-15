@@ -1,30 +1,38 @@
 # Test scenarios and fixture maintenance
 
-This directory documents fixture-backed trace checks for `scripts/test_tier2_trace.sh`.
+This directory documents fixture-backed trace checks for `scripts/test_tier2_trace.sh` and how to
+keep them aligned with the active milestone stage.
+
+## Current stage alignment
+
+- Active development slice: **M3.5 IPC handshake + scheduler interaction**.
+- Fixture expectations should preserve stable M1/M2/M3 behavior and expand only for intentional
+  M3.5-visible executable semantics.
 
 ## Current fixture
 
 - `tests/fixtures/main_trace_smoke.expected`
-  - line-oriented expected *substrings* for the `lake exe sele4n` smoke trace.
+  - line-oriented expected *substrings* for `lake exe sele4n` smoke trace,
   - each non-empty line must appear somewhere in actual output.
 
 ## Intentional fixture update workflow
 
 When executable behavior changes intentionally:
 
-1. Run the executable and inspect output:
+1. Run executable and inspect output:
    ```bash
    source "$HOME/.elan/env"
    lake exe sele4n
    ```
 2. Update `tests/fixtures/main_trace_smoke.expected` with stable semantic lines only
-   (avoid timestamps / ordering-noise-sensitive strings).
+   (avoid timestamps/ordering-noise-sensitive strings).
 3. Re-run:
    ```bash
    ./scripts/test_tier2_trace.sh
    ./scripts/test_smoke.sh
    ```
-4. In your PR description, explain why fixture changes are expected.
+4. In PR description, explain why fixture changes are expected and which milestone slice they
+   correspond to (current slice vs next slice prep).
 
 ## Control-data audit tip
 
@@ -45,9 +53,9 @@ The command should fail and report the missing expected line.
 
 - total matched vs expected fragment count,
 - each missing expected fragment on its own `[TRACE]` line,
-- a reminder to update fixture + PR rationale when drift is intentional.
+- reminder to update fixture + PR rationale when drift is intentional.
 
-This contract keeps smoke regressions deterministic and reviewable in both local runs and CI logs.
+This keeps smoke regressions deterministic and reviewable in local runs and CI logs.
 
 ## CI trace artifacts
 
@@ -57,4 +65,4 @@ writes:
 - `main_trace_smoke.actual.log` (captured executable output),
 - `main_trace_smoke.missing.txt` (one missing expectation per line).
 
-The pull-request workflow uploads those files plus the expected fixture on failure.
+PR workflow uploads those files plus expected fixture on failure.
