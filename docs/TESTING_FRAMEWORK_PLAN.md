@@ -1,176 +1,101 @@
-# seLe4n Testing Framework Implementation Plan (Current Baseline + Next Expansion)
+# seLe4n Testing Framework Plan
 
 ## 1. Purpose
 
-This document is the testing framework baseline for seLe4n. It captures what is already enforced,
-what remains intentionally optional, and what next expansion steps should be taken as the project
-moves through the post-M3.5 / active-M4 stage.
+This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-### 1.1 Implementation status snapshot
+Current stage context: **M4-A lifecycle/retype foundations in progress**.
 
-Current repository status:
+## 2. Current enforced tiers
 
-- ✅ Work package A (script scaffold) implemented.
-- ✅ Work package B (fixture-backed executable smoke baseline) implemented.
-- ✅ Work package C (CI wiring to script entrypoints) implemented.
-- ✅ Work package D (docs integration) implemented.
-- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented, including M3.5 step-1 through step-7 closure anchors (transition/preservation anchors plus executable demonstration evidence anchors).
-
----
-
-## 2. Quality bar and outcomes
-
-The framework is successful only if all of the following remain true.
-
-1. **Proof-surface stability**
-   - `lake build` keeps theorem entrypoints compiling.
-   - No committed `axiom`, `sorry`, or unresolved work markers in core scope.
-
-2. **Executable behavior stability**
-   - `lake exe sele4n` remains operational.
-   - Stable output fragments are guarded by fixture checks.
-
-3. **Milestone regression resistance**
-   - M1/M2/M3/M3.5 guarantees remain protected while M4 evolves.
-   - Future milestone additions can be integrated without replacing baseline tiers.
-
-4. **Fast local loop + deterministic CI gates**
-   - contributors can run required checks quickly,
-   - CI runs the same repository entrypoints used locally.
-
-5. **Actionable failures**
-   - failures identify category (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`) and likely next action.
-
----
-
-## 3. Current enforced scope
-
-### 3.1 Active required tiers
-
-- **Tier 0** hygiene check (`scripts/test_tier0_hygiene.sh`)
-- **Tier 1** build/theorem check (`scripts/test_tier1_build.sh`)
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`)
+- **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
 - **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
+- **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariants.sh`, via full suite)
+- **Tier 4** extension hook (nightly wrapper currently documents expansion point)
 
-### 3.2 Aggregated required entrypoints
+## 3. Required entrypoints and CI contract
 
-- `./scripts/test_fast.sh` = Tier 0 + Tier 1
-- `./scripts/test_smoke.sh` = Tier 0 + Tier 1 + Tier 2
+Required local/CI entrypoints:
 
-Both are required pull-request CI jobs.
+- `./scripts/test_fast.sh` (Tier 0 + Tier 1)
+- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2)
 
-### 3.3 Full/nightly tiers
+PR CI must call repository scripts directly and keep workflow logic thin.
 
-- `./scripts/test_full.sh` runs Tier 3 invariant/doc-surface checks.
-- `./scripts/test_nightly.sh` runs full plus Tier 4 extension notice.
+## 4. M4-A testing objectives
 
-Tier 3 is active in the full suite and includes milestone-surface anchors for M3.5 closure,
-including step-7 executable-demonstration closure guards; Tier 4 remains the next expansion hook.
+1. Keep baseline M1-M3.5 behavior stable.
+2. Add fixture fragments for lifecycle output once lifecycle scenarios become executable.
+3. Add Tier 3 anchors for lifecycle transition/invariant theorem surfaces.
+4. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
----
+## 5. M4-B testing expansion targets
 
-## 4. Script contract (implemented baseline)
+1. Add success + failure lifecycle scenario fixtures.
+2. Add grouped Tier 3 checks for lifecycle-capability composition symbols.
+3. Expand nightly checks toward repeat-run determinism and broader scenario sweeps.
+4. Standardize new artifact names for debugging lifecycle regression failures.
 
-All test scripts should continue to:
+## 6. Fixture policy
 
-- use `set -euo pipefail`,
-- resolve repository root robustly,
-- auto-source `$HOME/.elan/env` when available,
-- emit section-prefixed logs,
-- fail deterministically with clear category messages.
+Source of truth: `tests/fixtures/main_trace_smoke.expected`.
 
-Shared helper behaviors are centralized in `scripts/test_lib.sh` to avoid drift.
+Rules:
 
----
+1. Assert stable semantic substrings only.
+2. Update fixture only when executable behavior intentionally changes.
+3. Re-run `./scripts/test_tier2_trace.sh` and `./scripts/test_smoke.sh` after fixture edits.
+4. Explain fixture changes in PR notes.
 
-## 5. Fixture regression policy
+## 7. Operational checklist for contributors
 
-### 5.1 Fixture source of truth
+- [ ] Ran `./scripts/test_fast.sh`.
+- [ ] Ran `./scripts/test_smoke.sh`.
+- [ ] Ran `lake build` and `lake exe sele4n` when transition semantics changed.
+- [ ] Updated fixture intentionally (if needed) with rationale.
+- [ ] Updated docs when testing expectations changed.
 
-- Expected trace fragments: `tests/fixtures/main_trace_smoke.expected`.
-- Comparison mode: line-oriented substring matching for each non-empty fixture line.
+## 8. Signal map: what each tier protects
 
-### 5.2 Intentional behavior change workflow
+### Tier 0 (hygiene)
 
-1. Run `lake exe sele4n` and validate behavior change intent.
-2. Update only stable semantic fixture lines.
-3. Re-run `./scripts/test_tier2_trace.sh` and `./scripts/test_smoke.sh`.
-4. Explain fixture updates in PR notes.
+Primary risk protected:
 
-### 5.3 Failure diagnostics
+- accidental introduction of unresolved proof placeholders or hygiene debt in tracked proof surface.
 
-On mismatch, Tier 2 reports missing fragments on `[TRACE]` lines. CI can additionally archive:
+### Tier 1 (build/theorem compile)
 
-- `main_trace_smoke.actual.log`,
-- `main_trace_smoke.missing.txt`,
-- expected fixture file.
+Primary risks protected:
 
----
+- transition API drift,
+- theorem-entrypoint breakage,
+- bundle composition breakage across modules.
 
-## 6. CI contract
+### Tier 2 (trace fixture)
 
-Required PR jobs execute:
+Primary risks protected:
 
-1. `./scripts/test_fast.sh`
-2. `./scripts/test_smoke.sh`
+- executable semantic drift in integration scenarios,
+- stale milestone claims not reflected in runtime evidence.
 
-CI must continue calling repository scripts directly; avoid duplicating gate logic in workflow YAML.
+### Tier 3 (invariant/doc-surface anchors)
 
----
+Primary risks protected:
 
-## 7. Next expansion steps (active M4 readiness)
+- silent loss of required theorem/bundle/doc symbols used as milestone acceptance anchors.
 
-1. **Tier 2 fixture growth for M4 stories**
-   - add stable trace fragments once lifecycle/retype transitions become executable.
+### Tier 4 (nightly extension)
 
-2. **Tier 3 invariant-group deepening**
-   - extend current invariant/doc-surface checks into richer milestone-bundle grouped checks.
+Primary risks to target next:
 
-3. **Artifact ergonomics**
-   - standardize artifact naming for any new tier scripts.
+- determinism regressions,
+- scenario breadth gaps,
+- long-horizon confidence blind spots.
 
-4. **Nightly confidence checks (Tier 4)**
-   - add repeat-run determinism and broader scenario sweeps.
+## 9. M4-specific testing growth plan
 
-5. **Contributor guidance hardening**
-   - keep README + DEVELOPMENT + scenarios docs synchronized with any new tier requirements.
-
----
-
-## 8. Definition of done for current framework stage
-
-Current stage is healthy when all conditions below hold:
-
-1. `test_fast` and `test_smoke` remain stable and required.
-2. Tier 0/1/2 checks are enforced in PR CI.
-3. Fixture-backed trace regression check remains active and reviewable.
-4. Contributor docs explain run/debug/update workflow consistently.
-5. Failure output remains category-labeled and actionable.
-
----
-
-## 9. Operational checklist (for PR authors touching tests/docs)
-
-- [ ] Updated relevant docs when changing test behavior or tier requirements.
-- [ ] Verified `./scripts/test_fast.sh`.
-- [ ] Verified `./scripts/test_smoke.sh`.
-- [ ] Verified direct `lake build` and `lake exe sele4n` as needed.
-- [ ] Documented fixture intent when expected trace fragments changed.
-
----
-
-## 10. Risks and mitigations
-
-1. **Fixture brittleness**
-   - Mitigation: assert stable semantic fragments, not volatile formatting.
-
-2. **Script drift across tiers**
-   - Mitigation: continue shared helper usage in `test_lib.sh`.
-
-3. **CI/local divergence**
-   - Mitigation: CI must invoke repository scripts directly.
-
-4. **Runtime inflation**
-   - Mitigation: keep required loop minimal; push heavier checks to full/nightly.
-
-5. **Unclear maintenance ownership**
-   - Mitigation: maintain shared ownership expectations in `docs/DEVELOPMENT.md`.
+1. add lifecycle scenario fixture fragments that remain stable across formatting changes,
+2. add grouped lifecycle theorem anchor checks in Tier 3,
+3. add at least one failure-path scenario for lifecycle invalid-object/invalid-authority behavior,
+4. record any new artifact outputs with consistent naming for CI triage.

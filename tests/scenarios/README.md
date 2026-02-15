@@ -1,68 +1,44 @@
 # Test scenarios and fixture maintenance
 
-This directory documents fixture-backed trace checks for `scripts/test_tier2_trace.sh` and how to
-keep them aligned with the active milestone stage.
+This directory tracks fixture-backed executable trace checks used by
+`scripts/test_tier2_trace.sh`.
 
-## Current stage alignment
+## Stage alignment
 
-- Most recently closed slice: **M3.5 IPC handshake + scheduler interaction**.
-- Fixture expectations preserve stable M1/M2/M3 behavior while capturing intentional M3.5
-  executable semantics (including waiting-receiver handshake evidence).
+- Closed baseline: M1-M3.5 (scheduler, capability, IPC handshake coherence).
+- Active stage: M4-A lifecycle/retype foundations.
+- Next stage: M4-B lifecycle-capability composition hardening.
 
-## Current fixture
+## Fixture source
 
 - `tests/fixtures/main_trace_smoke.expected`
-  - line-oriented expected *substrings* for `lake exe sele4n` smoke trace,
-  - each non-empty line must appear somewhere in actual output.
+  - each non-empty line is a required output substring,
+  - matching is line-oriented and order-agnostic.
 
-## Intentional fixture update workflow
+## Intentional update workflow
 
-When executable behavior changes intentionally:
-
-1. Run executable and inspect output:
+1. Run executable:
    ```bash
    source "$HOME/.elan/env"
    lake exe sele4n
    ```
-2. Update `tests/fixtures/main_trace_smoke.expected` with stable semantic lines only
-   (avoid timestamps/ordering-noise-sensitive strings).
+2. Update fixture with stable semantic fragments only.
 3. Re-run:
    ```bash
    ./scripts/test_tier2_trace.sh
    ./scripts/test_smoke.sh
    ```
-4. In PR description, explain why fixture changes are expected and which milestone slice they
-   correspond to (current slice vs next slice prep).
+4. Document why fixture changes are expected and which slice they support (M4-A or M4-B).
 
-## Control-data audit tip
+## Diagnostics behavior
 
-Use an intentionally bad fixture line to verify deterministic failure behavior:
+On mismatch, Tier 2 reports:
 
-```bash
-TMP_FIXTURE="$(mktemp)"
-cp tests/fixtures/main_trace_smoke.expected "$TMP_FIXTURE"
-echo "this line should never match" >> "$TMP_FIXTURE"
-TRACE_FIXTURE_PATH="$TMP_FIXTURE" ./scripts/test_tier2_trace.sh
-```
+- expected vs matched fragment counts,
+- missing lines with `[TRACE]` prefixes,
+- reminder to update fixture intentionally when behavior changed by design.
 
-The command should fail and report the missing expected line.
+When `TRACE_ARTIFACT_DIR` is set, diagnostics files are written:
 
-## Failure diagnostics contract
-
-`./scripts/test_tier2_trace.sh` reports:
-
-- total matched vs expected fragment count,
-- each missing expected fragment on its own `[TRACE]` line,
-- reminder to update fixture + PR rationale when drift is intentional.
-
-This keeps smoke regressions deterministic and reviewable in local runs and CI logs.
-
-## CI trace artifacts
-
-CI can set `TRACE_ARTIFACT_DIR` when running `./scripts/test_tier2_trace.sh`. When set, the script
-writes:
-
-- `main_trace_smoke.actual.log` (captured executable output),
-- `main_trace_smoke.missing.txt` (one missing expectation per line).
-
-PR workflow uploads those files plus expected fixture on failure.
+- `main_trace_smoke.actual.log`
+- `main_trace_smoke.missing.txt`
