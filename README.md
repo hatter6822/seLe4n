@@ -56,9 +56,9 @@ The current active slice has already landed typed lifecycle transition primitive
 authority modeling:
 
 1. ✅ `cspaceDeleteSlot` and `cspaceRevoke` transitions over typed CSpace addresses.
-2. ✅ `lifecycleAuthorityMonotonicity` policy + helper theorems for attenuation/delete/revoke.
-3. 🔄 Remaining: fold lifecycle clauses into the composed capability bundle and prove composed
-   preservation theorems for lifecycle transitions.
+2. ✅ Lifecycle monotonicity coverage is modeled with `cspaceAttenuationRule` plus `lifecycleAuthorityMonotonicity` helper theorems for delete/revoke reduction.
+3. ✅ The composed capability bundle now includes lifecycle obligations, with lifecycle
+   preservation theorem entrypoints for `cspaceDeleteSlot` and `cspaceRevoke`.
 
 See `docs/SEL4_SPEC.md` for normative acceptance criteria and `docs/DEVELOPMENT.md` for the
 recommended implementation sequence and review checklist.

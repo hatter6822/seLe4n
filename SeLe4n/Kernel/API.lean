@@ -193,19 +193,14 @@ def cspaceAttenuationRule : Prop :=
     mintDerivedCap parent rights badge = .ok child →
     capAttenuates parent child
 
-/-- M2 foundation capability invariant bundle entrypoint. -/
-def capabilityInvariantBundle (st : SystemState) : Prop :=
-  cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule
+/-- Lifecycle-transition authority monotonicity obligations for the active slice.
 
+This models transition-local non-escalation constraints:
+1. delete cannot leave authority in the deleted slot,
+2. local revoke cannot leave sibling authority to the revoked target.
 
-/-- Lifecycle-aware authority monotonicity bundle for the active slice.
-
-This models three policy obligations together:
-1. direct mint/derive attenuation,
-2. delete cannot leave authority in the deleted slot,
-3. local revoke cannot leave sibling authority to the revoked target. -/
+Direct mint/derive attenuation remains the dedicated `cspaceAttenuationRule` bundle component. -/
 def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
-  cspaceAttenuationRule ∧
   (∀ addr st',
       cspaceDeleteSlot addr st = .ok ((), st') →
       SystemState.lookupSlotCap st' addr = none) ∧
@@ -216,6 +211,15 @@ def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
         SystemState.lookupSlotCap st' { cnode := addr.cnode, slot := slot } = some cap →
         cap.target = parent.target →
         slot = addr.slot)
+
+/-- Composed capability invariant bundle entrypoint.
+
+The active lifecycle slice extends the M2 foundation bundle with explicit lifecycle-transition
+authority obligations (`delete`/`revoke`) so lifecycle preservation can be stated against a
+single invariant entrypoint. -/
+def capabilityInvariantBundle (st : SystemState) : Prop :=
+  cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
+    lifecycleAuthorityMonotonicity st
 
 /-- Delete transition authority reduction clause. -/
 theorem cspaceDeleteSlot_authority_reduction
@@ -469,7 +473,7 @@ theorem cspaceAttenuationRule_holds :
 
 theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
     lifecycleAuthorityMonotonicity st := by
-  refine ⟨cspaceAttenuationRule_holds, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro addr st' hDelete
     exact cspaceDeleteSlot_authority_reduction st st' addr hDelete
   · intro addr st' parent hRevoke hParent slot cap hLookup hTarget
@@ -477,7 +481,8 @@ theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
 
 theorem capabilityInvariantBundle_holds (st : SystemState) :
     capabilityInvariantBundle st := by
-  exact ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, cspaceAttenuationRule_holds⟩
+  exact ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, cspaceAttenuationRule_holds,
+    lifecycleAuthorityMonotonicity_holds st⟩
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -497,8 +502,9 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (_hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
 
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -521,6 +527,26 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
             simpa [hSrc, hMint] using hStep
           exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv hInsert
+
+theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (_hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+theorem cspaceRevoke_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (_hStep : cspaceRevoke addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
 
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
