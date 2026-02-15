@@ -16,8 +16,20 @@ MISSING_REPORT="$(mktemp)"
 trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}"' EXIT
 TRACE_ARTIFACT_DIR="${TRACE_ARTIFACT_DIR:-}"
 
+write_trace_artifacts() {
+  if [[ -z "${TRACE_ARTIFACT_DIR}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "${TRACE_ARTIFACT_DIR}"
+  cp "${TRACE_OUTPUT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.actual.log"
+  cp "${MISSING_REPORT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.missing.txt"
+  log_section "TRACE" "Wrote trace diagnostics to ${TRACE_ARTIFACT_DIR}."
+}
+
 if [[ ! -f "${TRACE_FIXTURE}" ]]; then
   record_failure "TRACE" "Fixture not found: ${TRACE_FIXTURE}"
+  write_trace_artifacts
   finalize_report
 fi
 
@@ -38,12 +50,13 @@ while IFS= read -r expected_line || [[ -n "${expected_line}" ]]; do
   printf '%s\n' "${expected_line}" >> "${MISSING_REPORT}"
   record_failure "TRACE" "Missing expected trace line: ${expected_line}"
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
-    finalize_report
+    break
   fi
 done < "${TRACE_FIXTURE}"
 
 if [[ "${expected_count}" -eq 0 ]]; then
   record_failure "TRACE" "Fixture is empty: ${TRACE_FIXTURE}. Add at least one stable semantic expectation."
+  write_trace_artifacts
   finalize_report
 fi
 
@@ -58,11 +71,6 @@ else
   log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR and explain why."
 fi
 
-if [[ -n "${TRACE_ARTIFACT_DIR}" ]]; then
-  mkdir -p "${TRACE_ARTIFACT_DIR}"
-  cp "${TRACE_OUTPUT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.actual.log"
-  cp "${MISSING_REPORT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.missing.txt"
-  log_section "TRACE" "Wrote trace diagnostics to ${TRACE_ARTIFACT_DIR}."
-fi
+write_trace_artifacts
 
 finalize_report
