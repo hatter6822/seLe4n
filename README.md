@@ -38,6 +38,14 @@ Core references remain:
 - `docs/TESTING_FRAMEWORK_PLAN.md` — active test tiers and CI contract.
 - `docs/PROJECT_AUDIT.md` — audit snapshot and recommendations.
 
+Deep technical chapters for implementation work:
+
+- `docs/gitbook/11-codebase-reference.md` — file-by-file architecture map, transition semantics,
+  proof organization, runtime trace contract, and debugging playbooks.
+- `docs/gitbook/12-proof-and-invariant-map.md` — theorem surface map and invariant composition index.
+- `docs/gitbook/07-testing-and-ci.md` — exact tier responsibilities, triage flow, and script logging
+  behavior (including color-coded prefixes in interactive terminals).
+
 ## Current slice target outcomes (M4-A)
 
 1. Introduce typed lifecycle transition surface (at minimum one deterministic retype/create path).
@@ -102,6 +110,9 @@ lake exe sele4n
 ./scripts/test_full.sh
 ./scripts/test_nightly.sh
 ```
+
+Note: test script logs use color-coded category/status prefixes when run in a TTY, and
+automatically fall back to plain output in non-interactive environments (such as most CI logs).
 
 ## Repository layout
 

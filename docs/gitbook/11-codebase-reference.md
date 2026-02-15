@@ -1,7 +1,10 @@
-# Codebase Reference (Developer-Facing)
+# Codebase Reference (Deep Developer Map)
 
 This chapter is a practical map of the current Lean codebase so developers can reason about where
-semantics live, where proofs live, and how to evolve modules without breaking milestone contracts.
+semantics live, where proofs live, how runtime traces are produced, and how to evolve modules
+without breaking milestone contracts.
+
+---
 
 ## 1. Repository-level structure
 
@@ -11,6 +14,18 @@ semantics live, where proofs live, and how to evolve modules without breaking mi
   - executable scenario integration trace used in Tier 2 smoke checks.
 - `SeLe4n/`
   - foundational model, transition, and proof modules.
+- `scripts/`
+  - tiered test entrypoints (`test_fast`, `test_smoke`, `test_full`, `test_nightly`) and shared
+    logging/check helpers (`test_lib.sh`).
+
+Design intent:
+
+- Keep the import boundary stable at `SeLe4n.lean` so external users can import one root while
+  internal modules continue to evolve.
+- Keep executable evidence (`Main.lean`) independent from theorem files so scenario growth does not
+  force theorem namespace churn.
+
+---
 
 ## 2. Foundation layer
 
@@ -18,18 +33,17 @@ semantics live, where proofs live, and how to evolve modules without breaking mi
 
 Purpose:
 
-- defines core ID aliases (`ObjId`, `ThreadId`, `CPtr`, etc.),
+- defines core ID aliases (`ObjId`, `ThreadId`, `CPtr`, `Slot`, etc.),
 - defines `KernelM`, a small state+error monad for executable transitions.
 
-Why it matters:
+Why this design matters:
 
 - all kernel operations and proof statements ultimately rely on these type aliases and monadic
-  conventions.
-
-Design notes:
-
+  conventions,
 - aliases remain architecture-neutral (`Nat`) intentionally to keep early slices focused on
-  semantic correctness over representation detail.
+  semantic correctness over representation detail,
+- `KernelM` stays intentionally minimal (`σ → Except ε (α × σ)`) so transition proofs can unfold
+  directly without heavy monad-transformer infrastructure.
 
 ### `SeLe4n/Machine.lean`
 
@@ -38,42 +52,57 @@ Purpose:
 - defines abstract machine state (`RegisterFile`, `MachineState`),
 - provides pure primitive update/read helpers (`readReg`, `writeReg`, `readMem`, `writeMem`, etc.).
 
-Why it matters:
+Why this design matters:
 
-- allows transitions to carry machine context while keeping proof effort concentrated on kernel
-  object semantics.
+- transitions can carry machine context while proof effort stays concentrated on kernel object
+  semantics,
+- machine details are available to future milestones without forcing immediate architecture lock-in.
 
-## 3. Object/state modeling layer
+---
+
+## 3. Object and global-state modeling layer
 
 ### `SeLe4n/Model/Object.lean`
 
 Primary contents:
 
-- capability rights + capability target model,
-- TCB model with M3.5 IPC-visible thread state (`ready`, `blockedOnSend`, `blockedOnReceive`),
-- endpoint model (`state`, queue, optional waiting receiver),
-- CNode structure and slot operations (`lookup`, `insert`, `remove`, local revoke helper),
-- `KernelObject` sum type (`tcb`, `endpoint`, `cnode`).
+- capability rights + capability target model (`AccessRight`, `CapTarget`, `Capability`),
+- M3.5 IPC-visible thread status (`ThreadIpcState`),
+- endpoint model (`EndpointState`, queue, optional waiting receiver),
+- CNode structure + operations (`lookup`, `insert`, `remove`, `revokeTargetLocal`),
+- global `KernelObject` sum type and `KernelObjectType` discriminator.
 
-Reasoning value:
+Key design choices:
 
-- central place where object semantics are typed and constrained before transition code applies
-  updates.
+1. **Capability target is explicit (`object` or `cnodeSlot`)**
+   - preserves room for richer CSpace stories without changing capability shape later.
+2. **CNode represented as slot list**
+   - favors proof readability and deterministic update semantics over optimized lookup structure.
+3. **`revokeTargetLocal` explicitly scoped**
+   - only revokes sibling slots in one CNode while preserving source slot authority;
+   - full graph-based revocation is deferred intentionally and documented in comments.
 
 ### `SeLe4n/Model/State.lean`
 
 Primary contents:
 
-- `KernelError`, `SchedulerState`, `SystemState`, `SlotRef`.
-- global object lookup/store transitions (`lookupObject`, `storeObject`, `setCurrentThread`).
-- typed CSpace helpers (`lookupCNode`, `lookupSlotCap`, `ownsSlot`, `ownedSlots`) + local lemmas.
+- `KernelError`, `SchedulerState`, `SystemState`, `SlotRef`,
+- global lookup/store transitions (`lookupObject`, `storeObject`, `setCurrentThread`),
+- typed CSpace helpers (`lookupCNode`, `lookupSlotCap`, `ownsSlot`, `ownedSlots`),
+- small support lemmas that simplify subsystem-level invariants.
 
-Reasoning value:
+Key design choices:
 
-- provides reusable typed access patterns; reduces repeated object-store pattern matching in kernel
-  transitions and theorem scripts.
+1. **Object store as function map (`ObjId → Option KernelObject`)**
+   - replacement updates are simple and theorem-friendly.
+2. **`SlotRef` as first-class typed address**
+   - avoids ad-hoc `(obj,slot)` tuple handling across capability and invariant code.
+3. **Ownership relation local to CNode identity**
+   - enough to state authority monotonicity constraints in current milestones.
 
-## 4. Scheduler layer (M1)
+---
+
+## 4. Scheduler layer (M1 contract)
 
 ### `SeLe4n/Kernel/Scheduler/Invariant.lean`
 
@@ -82,12 +111,11 @@ Core invariants:
 1. `runQueueUnique`
 2. `currentThreadValid`
 3. `queueCurrentConsistent`
-4. composed alias bundle `schedulerInvariantBundle`
+4. composed aliases (`schedulerWellFormed`, `schedulerInvariantBundle`)
 
-Design intent:
+Preservation entrypoints:
 
-- strict queue/current consistency policy today (current must appear in runnable list).
-- aliases are used so milestone naming can evolve without breaking theorem call sites.
+- scheduler operations preserve the component predicates and bundle-level aliases.
 
 ### `SeLe4n/Kernel/Scheduler/Operations.lean`
 
@@ -97,29 +125,44 @@ Primary transitions:
 - `schedule`
 - `handleYield`
 
+Operational semantics snapshot:
+
+- `chooseThread` returns head of runnable queue or `none`, without state mutation,
+- `schedule` sets `current` to first runnable TCB if object is valid TCB; otherwise clears
+  `current` to prevent invalid selection,
+- `handleYield` currently aliases `schedule` to keep syscall surface stable while implementation
+  remains narrow.
+
 Proof style:
 
-- case-split over runnable queue and object lookup shape,
-- preserve each invariant component,
-- compose component proofs into bundle-level preservation entrypoints.
+- strong use of case analysis over runnable queue shape and object lookup result,
+- small helper lemmas (`chooseThread_returns_runnable_or_none`,
+  `setCurrentThread_*_preserves_*`) reduce repetition in bundle theorem proofs.
 
-## 5. Capability layer (M2)
+---
+
+## 5. Capability + CSpace layer (M2 contract)
 
 ### `SeLe4n/Kernel/Capability/Operations.lean`
 
 Primary semantics:
 
-- slot lookup/insert (`cspaceLookupSlot`, `cspaceInsertSlot`),
-- minting with rights attenuation (`cspaceMint`, `rightsSubset`, `mintDerivedCap`),
-- lifecycle transitions (`cspaceDeleteSlot`, `cspaceRevoke`).
+- slot access/update (`cspaceLookupSlot`, `cspaceInsertSlot`),
+- minting with attenuation (`rightsSubset`, `mintDerivedCap`, `cspaceMint`),
+- lifecycle/authority operations (`cspaceDeleteSlot`, `cspaceRevoke`).
 
-Authority modeling:
+Design details that matter:
 
-- attenuation + local revoke semantics intentionally scoped to current slice constraints.
+1. **Attenuation as explicit list-subset rule**
+   - requested rights must be subset of source rights.
+2. **Mint does not silently widen authority**
+   - failure path is explicit via `invalidCapability`.
+3. **Revoke is local by design**
+   - aligns with the current CNode-local revoke helper in object model.
 
 ### `SeLe4n/Kernel/Capability/Invariant.lean`
 
-Core invariant components:
+Core components:
 
 1. `cspaceSlotUnique`
 2. `cspaceLookupSound`
@@ -134,10 +177,12 @@ Composition surfaces:
 
 Cross-layer role:
 
-- composes scheduler + capability + IPC invariants while preserving milestone-wise theorem naming
-  conventions.
+- capability theorems are composed with scheduler and IPC predicates to preserve milestone
+  continuity while proof surfaces grow.
 
-## 6. IPC layer (M3/M3.5)
+---
+
+## 6. IPC layer (M3 + M3.5 contract)
 
 ### `SeLe4n/Kernel/IPC/Invariant.lean`
 
@@ -151,58 +196,102 @@ Core invariant surfaces:
 
 - endpoint-local validity (`endpointQueueWellFormed`, `endpointObjectValid`, `endpointInvariant`),
 - system-level IPC validity (`ipcInvariant`),
-- scheduler coherence predicates for M3.5 handshake contract:
+- M3.5 scheduler coherence contract:
   - `runnableThreadIpcReady`,
   - `blockedOnSendNotRunnable`,
   - `blockedOnReceiveNotRunnable`,
-  - composed `ipcSchedulerContractPredicates`.
+  - `ipcSchedulerContractPredicates`.
+
+Handshake behavior modeled today:
+
+- waiting receiver path (`endpointAwaitReceive`) marks thread blocked on receive and records
+  waiting receiver in endpoint,
+- send path can satisfy waiting receiver directly (handoff-like behavior),
+- queued senders are still supported and drained by `endpointReceive`.
 
 Proof organization:
 
-- local helper lemmas for `storeObject` effects,
+- local helper lemmas for store/update effects,
 - transition-specific preservation theorems,
-- bundle-level preservation theorems reusing local components.
+- composed theorem entrypoints over IPC + scheduler + capability surfaces.
 
-## 7. API and executable integration
+---
 
-### `SeLe4n/Kernel/API.lean`
-
-Purpose:
-
-- compatibility barrel re-exporting kernel surfaces for client imports.
+## 7. Executable evidence and trace contract
 
 ### `Main.lean`
 
-Purpose:
+`main` builds a deterministic scenario in this order:
 
-- constructs bootstrap object graph,
-- executes scheduler/capability/IPC scenario chain,
-- emits trace lines validated by Tier 2 fixture checks.
+1. scheduler step (`schedule`),
+2. root capability lookup,
+3. mint + sibling mint,
+4. revoke + delete checks,
+5. waiting-receiver handshake send,
+6. queued senders + receives,
+7. expected error on extra receive.
 
-## 8. How to reason about changes safely
+Why this matters:
 
-When editing a module, apply this map:
+- each stage emits trace lines consumed by Tier 2 fixture checks,
+- executable traces provide semantic evidence beyond “build succeeds”.
+
+### `tests/fixtures/main_trace_smoke.expected`
+
+- stores stable semantic fragments expected in executable output,
+- intentionally fragment-based (not full exact output snapshot) so harmless formatting shifts do not
+  destabilize the gate.
+
+### `scripts/test_tier2_trace.sh`
+
+- runs `lake exe sele4n`,
+- checks each non-empty fixture line appears in output,
+- emits diagnostics and optional trace artifacts for CI debugging.
+
+---
+
+## 8. Test framework logging and color prefixes
+
+The shared `scripts/test_lib.sh` logging layer now supports color-coded prefixes:
+
+- category prefixes (`[META]`, `[TRACE]`, `[HYGIENE]`, `[BUILD]`, `[INVARIANT]`) are colorized,
+- status prefixes in messages (`RUN`, `PASS`, `FAIL`) are colorized,
+- color output is automatically disabled when stdout is not a TTY or `NO_COLOR` is set.
+
+This gives local developers faster scanability while preserving CI-safe plain output behavior.
+
+---
+
+## 9. Safe change workflow by module
+
+When editing a module, follow this decision path:
 
 1. identify which milestone contract the file owns,
-2. identify which composed bundle references that contract,
-3. add/adjust local helper lemmas near transition changes,
-4. preserve theorem-entrypoint naming shape,
-5. update docs + fixture/test anchors in same commit range.
+2. identify composed bundles that include that contract,
+3. adjust local helper lemmas nearest the transition,
+4. keep theorem entrypoint naming stable where practical,
+5. update docs and fixture anchors in the same commit range.
 
-## 9. Typical developer navigation patterns
+---
 
-- **Need to add a new transition?**
-  - start in `Model/Object` or `Model/State` for data model updates,
-  - implement transition in the relevant kernel subsystem,
-  - add invariant component + preservation theorem,
-  - update composed bundle if needed.
+## 10. Debug playbooks
 
-- **Need to understand an existing proof failure?**
-  - inspect transition-local helper lemmas first,
-  - then invariant component theorem,
-  - then composed bundle theorem that imports those components.
+### A) Proof breakage after transition changes
 
-- **Need to adjust executable scenario behavior?**
-  - update `Main.lean`,
-  - run Tier 2 trace check,
-  - update fixture lines intentionally and document rationale.
+1. Re-run `lake build` and note first failing theorem.
+2. Inspect transition-local helper lemmas before editing bundle theorem scripts.
+3. Re-establish component theorem first, then bundle theorem.
+
+### B) Trace fixture mismatch
+
+1. Run Tier 2 script to collect missing lines.
+2. Decide if change is bug or intentional semantics shift.
+3. If intentional, update fixture and document rationale in docs/PR.
+
+### C) Capability authority surprise
+
+1. Check minted rights against source cap (`rightsSubset` path).
+2. Check local revoke behavior (same-CNode sibling target removal only).
+3. Verify ownership assumptions in `SystemState.ownsSlot`-based invariants.
+
+This map should be your primary orientation reference before touching theorem-heavy files.

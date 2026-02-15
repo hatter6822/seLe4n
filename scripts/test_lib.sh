@@ -9,10 +9,80 @@ CONTINUE_MODE=0
 FAILURE_COUNT=0
 FAILURE_MESSAGES=()
 
+if [[ -t 1 ]] && [[ "${NO_COLOR:-}" = "" ]]; then
+  COLOR_RESET='\033[0m'
+  COLOR_META='\033[1;36m'
+  COLOR_BUILD='\033[1;35m'
+  COLOR_TRACE='\033[1;34m'
+  COLOR_HYGIENE='\033[1;33m'
+  COLOR_INVARIANT='\033[1;35m'
+  COLOR_PASS='\033[1;32m'
+  COLOR_FAIL='\033[1;31m'
+  COLOR_RUN='\033[1;34m'
+else
+  COLOR_RESET=''
+  COLOR_META=''
+  COLOR_BUILD=''
+  COLOR_TRACE=''
+  COLOR_HYGIENE=''
+  COLOR_INVARIANT=''
+  COLOR_PASS=''
+  COLOR_FAIL=''
+  COLOR_RUN=''
+fi
+
+category_color() {
+  local category="$1"
+  case "${category}" in
+    META)
+      printf '%s' "${COLOR_META}"
+      ;;
+    BUILD)
+      printf '%s' "${COLOR_BUILD}"
+      ;;
+    TRACE)
+      printf '%s' "${COLOR_TRACE}"
+      ;;
+    HYGIENE)
+      printf '%s' "${COLOR_HYGIENE}"
+      ;;
+    INVARIANT)
+      printf '%s' "${COLOR_INVARIANT}"
+      ;;
+    *)
+      printf '%s' "${COLOR_META}"
+      ;;
+  esac
+}
+
+status_color() {
+  local message="$1"
+  case "${message}" in
+    PASS*)
+      printf '%s' "${COLOR_PASS}"
+      ;;
+    FAIL*)
+      printf '%s' "${COLOR_FAIL}"
+      ;;
+    RUN*)
+      printf '%s' "${COLOR_RUN}"
+      ;;
+    *)
+      printf '%s' ""
+      ;;
+  esac
+}
+
 log_section() {
   local category="$1"
   local message="$2"
-  printf '[%s] %s\n' "${category}" "${message}"
+  local cat_color
+  local msg_color
+  cat_color="$(category_color "${category}")"
+  msg_color="$(status_color "${message}")"
+  printf '%b[%s]%b %b%s%b\n' \
+    "${cat_color}" "${category}" "${COLOR_RESET}" \
+    "${msg_color}" "${message}" "${COLOR_RESET}"
 }
 
 parse_common_args() {
