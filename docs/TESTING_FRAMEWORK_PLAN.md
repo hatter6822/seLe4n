@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-A lifecycle/retype foundations in progress (steps 1-2 completed)**.
+Current stage context: **M4-A lifecycle/retype foundations in progress (steps 1-3 completed)**.
 
 ## 2. Current enforced tiers
 
@@ -28,7 +28,8 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 1. Keep baseline M1-M3.5 behavior stable.
 2. Add fixture fragments for lifecycle output once lifecycle scenarios become executable.
 3. Keep Tier 3 anchors for lifecycle transition/invariant theorem surfaces (including metadata-coherence anchors).
-4. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
+4. Keep Tier 3 milestone-closure anchors for M1 scheduler and M2 capability transition/preservation surfaces so completed milestones remain continuously verified.
+5. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
 ## 5. M4-B testing expansion targets
 

@@ -14,7 +14,10 @@ relationships remain coherent through those updates.
 - ✅ Step 2 complete: `lifecycleRetypeObject` adds deterministic success/error branching with
   explicit `KernelError.illegalState` and `KernelError.illegalAuthority` branches, and executable
   traces now cover both failure branches plus success.
-- 🚧 Remaining M4-A work: invariant layering and composed preservation theorem growth.
+- ✅ Step 3 complete: lifecycle invariants are now defined as narrow named components with explicit
+  separation between identity/aliasing (`lifecycleIdentityAliasingInvariant`) and
+  capability-reference (`lifecycleCapabilityReferenceInvariant`) constraints.
+- 🚧 Remaining M4-A work: local helper lemmas and composed preservation theorem growth.
 
 
 1. **Transition surface**

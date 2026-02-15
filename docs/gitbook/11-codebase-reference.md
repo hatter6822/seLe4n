@@ -178,6 +178,23 @@ Design details that matter:
 3. **Successful path reuses `storeObject`**
    - object store and lifecycle object-type metadata are updated atomically.
 
+### `SeLe4n/Kernel/Lifecycle/Invariant.lean`
+
+Primary semantics:
+
+- identity/aliasing lifecycle invariants (`lifecycleIdentityAliasingInvariant`),
+- capability-reference lifecycle invariants (`lifecycleCapabilityReferenceInvariant`),
+- composed lifecycle invariant bundle (`lifecycleInvariantBundle`).
+
+Design details that matter:
+
+1. **Invariant layering is explicit**
+   - identity/aliasing constraints are defined and reviewed independently from capability-reference constraints.
+2. **Naming is milestone-oriented**
+   - definitions are narrow and named so later preservation theorems can compose cleanly.
+3. **Metadata-to-bundle bridge is explicit**
+   - `lifecycleInvariantBundle_of_metadata_consistent` connects model-level consistency assumptions to the new lifecycle bundle surface.
+
 ### `SeLe4n/Kernel/Capability/Invariant.lean`
 
 Core components:

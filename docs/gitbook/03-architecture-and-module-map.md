@@ -73,6 +73,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
   - deterministic lifecycle retype transition (`lifecycleRetypeObject`),
   - explicit illegal-state / illegal-authority error branching and local theorem entrypoints.
+- `SeLe4n/Kernel/Lifecycle/Invariant.lean`
+  - step-3 lifecycle invariant components and bundle layering,
+  - explicit split between identity/aliasing and capability-reference constraints.
 
 ### API + executable
 
