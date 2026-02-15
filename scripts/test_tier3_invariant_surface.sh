@@ -17,6 +17,10 @@ run_check "INVARIANT" rg -n '^def m3IpcSeedInvariantBundle' SeLe4n/Kernel/API.le
 run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/API.lean
 
+# M3.5 step-2 transition anchors must remain present.
+run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/API.lean
+
 # Bundle composition guard: M3 seed bundle must still compose scheduler + capability + IPC invariants.
 run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/API.lean
 

@@ -71,26 +71,33 @@ def main : IO Unit := do
                       | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
                       | .ok (cap, _) =>
                           IO.println s!"unexpected cap after delete: {reprStr cap}"
-                      match SeLe4n.Kernel.endpointSend demoEndpoint 1 st5 with
-                      | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
+                      match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
+                      | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                       | .ok (_, st6) =>
-                          match SeLe4n.Kernel.endpointSend demoEndpoint 2 st6 with
-                          | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
+                          match SeLe4n.Kernel.endpointSend demoEndpoint 1 st6 with
+                          | .error err => IO.println s!"endpoint handshake send error: {reprStr err}"
                           | .ok (_, st7) =>
-                              IO.println "queued two senders on endpoint"
-                              match SeLe4n.Kernel.endpointReceive demoEndpoint st7 with
-                              | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
-                              | .ok (sender1, st8) =>
-                                  IO.println s!"endpoint receive #1 sender: {sender1}"
-                                  match SeLe4n.Kernel.endpointReceive demoEndpoint st8 with
-                                  | .error err => IO.println s!"endpoint receive #2 error: {reprStr err}"
-                                  | .ok (sender2, st9) =>
-                                      IO.println s!"endpoint receive #2 sender: {sender2}"
+                              IO.println "handshake send matched waiting receiver"
+                              match SeLe4n.Kernel.endpointSend demoEndpoint 1 st7 with
+                              | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
+                              | .ok (_, st8) =>
+                                  match SeLe4n.Kernel.endpointSend demoEndpoint 2 st8 with
+                                  | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
+                                  | .ok (_, st9) =>
+                                      IO.println "queued two senders on endpoint"
                                       match SeLe4n.Kernel.endpointReceive demoEndpoint st9 with
-                                      | .error err =>
-                                          IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
-                                      | .ok (sender3, _) =>
-                                          IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
+                                      | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
+                                      | .ok (sender1, st10) =>
+                                          IO.println s!"endpoint receive #1 sender: {sender1}"
+                                          match SeLe4n.Kernel.endpointReceive demoEndpoint st10 with
+                                          | .error err => IO.println s!"endpoint receive #2 error: {reprStr err}"
+                                          | .ok (sender2, st11) =>
+                                              IO.println s!"endpoint receive #2 sender: {sender2}"
+                                              match SeLe4n.Kernel.endpointReceive demoEndpoint st11 with
+                                              | .error err =>
+                                                  IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
+                                              | .ok (sender3, _) =>
+                                                  IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
           match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
           | .error err => IO.println s!"cspace lookup error: {reprStr err}"
           | .ok (cap, _) =>
