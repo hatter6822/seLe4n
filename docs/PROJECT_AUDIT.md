@@ -63,3 +63,20 @@ This pass increased documentation depth in two important ways:
      responsibilities from source alone.
 
 These additions reduce review friction and lower onboarding risk for M4 and later slices.
+
+## 8. Milestone completion verification (latest re-audit)
+
+This re-audit re-validated milestones currently marked complete in repository docs:
+
+- **Bootstrap**: executable monad/model skeleton still builds and runs via `lake build` +
+  `lake exe sele4n`.
+- **M1**: scheduler invariant bundle symbols and theorem entrypoints verified by Tier 3 anchors.
+- **M2**: capability invariant bundle and preservation entrypoints verified by Tier 3 anchors and
+  full build.
+- **M3**: IPC seed bundle and endpoint send/receive preservation entrypoints verified by Tier 3.
+- **M3.5**: handshake/scheduler coherence predicates, composed bundle surfaces, and executable trace
+  evidence verified by Tier 2 fixture checks and Tier 3 anchor scans.
+
+No failing tests were observed in the full scripted stack (`test_fast`, `test_smoke`,
+`test_full`, `test_nightly`). The nightly Tier 4 message remains an explicit documented extension
+point, not a runtime warning/failure condition.

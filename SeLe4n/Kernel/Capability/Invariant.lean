@@ -92,10 +92,40 @@ theorem cspaceRevoke_local_target_reduction
       | tcb tcb => simp [hObj] at hStep
       | endpoint ep => simp [hObj] at hStep
       | cnode cn =>
-          simp [hObj] at hStep
-          cases hStep
-          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.revokeTargetLocal] at hLookup
-          rcases hLookup with ⟨slot', hFind⟩
+          let revokedRefs : List SlotRef :=
+            (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
+              (fun entry => { cnode := addr.cnode, slot := entry.fst })
+          let storedState : SystemState :=
+            { st with
+              objects :=
+                fun oid =>
+                  if oid = addr.cnode then
+                    some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
+                  else
+                    st.objects oid,
+              lifecycle :=
+                {
+                  st.lifecycle with
+                    objectTypes :=
+                      fun oid =>
+                        if oid = addr.cnode then
+                          some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
+                        else
+                          st.lifecycle.objectTypes oid
+                }
+            }
+          have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
+            simpa [revokedRefs, storedState, storeObject, hObj] using hStep
+          have hObjEq : st'.objects = storedState.objects :=
+            clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
+          have hLookupStored :
+              SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
+            have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
+              { cnode := addr.cnode, slot := slot } hObjEq
+            simpa [hEq] using hLookup
+          simp [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
+            CNode.lookup, CNode.revokeTargetLocal] at hLookupStored
+          rcases hLookupStored with ⟨slot', hFind⟩
           have hPred :
               ((decide (slot' = addr.slot) || !decide (cap.target = parent.target)) &&
                 decide (slot' = slot)) = true := by
@@ -204,22 +234,42 @@ theorem cspaceRevoke_preserves_source
           | tcb tcb => simp [hLookup, hObj] at hStep
           | endpoint ep => simp [hLookup, hObj] at hStep
           | cnode cn =>
-              simp [hLookup, hObj] at hStep
-              cases hStep
-              have hCap : SystemState.lookupSlotCap st addr = some parent :=
-                (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
-              refine ⟨parent, ?_⟩
-              apply (cspaceLookupSlot_ok_iff_lookupSlotCap
+              let revokedRefs : List SlotRef :=
+                (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
+                  (fun entry => { cnode := addr.cnode, slot := entry.fst })
+              let storedState : SystemState :=
                 { st with
                   objects :=
                     fun oid =>
                       if oid = addr.cnode then
-                        some (.cnode (cn.revokeTargetLocal addr.slot parent.target))
+                        some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
                       else
-                        st.objects oid }
-                addr parent).2
-              simpa [SystemState.lookupSlotCap, SystemState.lookupCNode,
-                CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+                        st.objects oid,
+                  lifecycle :=
+                    {
+                      st.lifecycle with
+                        objectTypes :=
+                          fun oid =>
+                            if oid = addr.cnode then
+                              some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
+                            else
+                              st.lifecycle.objectTypes oid
+                    }
+                }
+              have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
+                simpa [revokedRefs, storedState, storeObject, hLookup, hObj] using hStep
+              have hObjEq : st'.objects = storedState.objects :=
+                clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
+              have hCap : SystemState.lookupSlotCap st addr = some parent :=
+                (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
+              have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
+                simpa [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                  CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+              have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
+                have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
+                simpa [hEq] using hCapStored
+              refine ⟨parent, ?_⟩
+              exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
 
 theorem mintDerivedCap_attenuates
     (parent child : Capability)

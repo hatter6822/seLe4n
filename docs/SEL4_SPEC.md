@@ -12,7 +12,7 @@ It defines:
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 
-Current stage: **post-M3.5 closure / active M4 kickoff**.
+Current stage: **active M4-A lifecycle/retype foundations (step 1 complete)**.
 
 ---
 

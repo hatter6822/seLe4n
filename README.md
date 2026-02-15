@@ -5,8 +5,8 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4 kickoff (object lifecycle/retype safety)** after completing M3.5 IPC
-handshake + scheduler coherence.
+seLe4n is currently in **M4-A lifecycle/retype foundations (step 1 complete)** after completing M3.5
+IPC handshake + scheduler coherence.
 
 ### Milestone board
 
@@ -18,7 +18,7 @@ handshake + scheduler coherence.
   composed IPC+scheduler invariant bundle, local-first preservation theorem layering, executable
   waiting-to-delivery trace evidence.
 - 🚧 **M4 current slice in progress**: object lifecycle/retype foundations and capability-object
-  coupling safety.
+  coupling safety (with state-model preparation completed).
 - 📍 **M4 next slice planned**: lifecycle + revocation composition, richer invariants, and expanded
   executable scenarios.
 
@@ -53,6 +53,9 @@ Deep technical chapters for implementation work:
 3. Establish capability-reference coherence invariants over lifecycle updates.
 4. Add preservation theorem entrypoints for each lifecycle transition.
 5. Extend executable evidence (`Main.lean`) and Tier 2 trace fixtures for lifecycle behavior.
+
+Step-1 progress note: lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
+capability references, and CSpace insert/delete/revoke transitions keep those references synchronized.
 
 ## Next slice target outcomes (M4-B)
 

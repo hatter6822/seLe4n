@@ -4,7 +4,7 @@ This handbook chapter complements `docs/SEL4_SPEC.md`.
 
 ## Current slice: M4-A
 
-M4-A focuses on introducing lifecycle/retype semantics with clear theorem and executable surfaces:
+M4-A focuses on introducing lifecycle/retype semantics with clear theorem and executable surfaces (with step 1 state-model preparation completed):
 
 1. lifecycle transition API,
 2. identity/aliasing invariants,

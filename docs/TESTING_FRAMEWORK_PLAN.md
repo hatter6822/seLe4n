@@ -4,14 +4,14 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-A lifecycle/retype foundations in progress**.
+Current stage context: **M4-A lifecycle/retype foundations in progress (step 1 completed)**.
 
 ## 2. Current enforced tiers
 
 - **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
 - **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
-- **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariants.sh`, via full suite)
+- **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite)
 - **Tier 4** extension hook (nightly wrapper currently documents expansion point)
 
 ## 3. Required entrypoints and CI contract
@@ -27,7 +27,7 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 
 1. Keep baseline M1-M3.5 behavior stable.
 2. Add fixture fragments for lifecycle output once lifecycle scenarios become executable.
-3. Add Tier 3 anchors for lifecycle transition/invariant theorem surfaces.
+3. Keep Tier 3 anchors for lifecycle transition/invariant theorem surfaces (including metadata-coherence anchors).
 4. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
 ## 5. M4-B testing expansion targets

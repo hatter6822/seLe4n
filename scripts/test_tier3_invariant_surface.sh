@@ -68,6 +68,12 @@ run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/IPC/Inv
 run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invariant.lean
 
 
+# M4-A step-1 lifecycle metadata anchors must remain present.
+run_check "INVARIANT" rg -n '^structure LifecycleMetadata' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def lifecycleMetadataConsistent' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4n/Kernel/Capability/Invariant.lean
+
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
