@@ -61,10 +61,10 @@ lake exe sele4n
 ### Active planning target
 
 The next implementation slice is **M3 IPC seed**: the minimal endpoint state model and typed
-endpoint send/receive transition entrypoints now have first IPC safety invariant components
-(`endpointQueueWellFormed` + `endpointObjectValid`) bundled through `ipcInvariant` and backed by
-preservation theorems; the remaining M3 work is extending executable IPC trace coverage while
-preserving the established M1/M2 theorem surface.
+endpoint send/receive transition entrypoints now have IPC safety invariant preservation theorems
+and composed preservation entrypoints for the M1/M2/M3 seed bundle (`m3IpcSeedInvariantBundle`);
+the remaining M3 work is extending executable IPC trace coverage while preserving the established
+theorem surface.
 
 See:
 
