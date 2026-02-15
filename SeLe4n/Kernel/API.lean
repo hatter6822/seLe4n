@@ -181,10 +181,10 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
     | some (.endpoint ep) =>
         match ep.state with
         | .idle =>
-            let ep' : Endpoint := { state := .send, queue := [sender] }
+            let ep' : Endpoint := { state := .send, queue := [sender], waitingReceiver := none }
             storeObject endpointId (.endpoint ep') st
         | .send =>
-            let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender] }
+            let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }
             storeObject endpointId (.endpoint ep') st
         | .receive => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
@@ -198,7 +198,7 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
         match ep.state, ep.queue with
         | .send, sender :: rest =>
             let nextState : EndpointState := if rest.isEmpty then .idle else .send
-            let ep' : Endpoint := { state := nextState, queue := rest }
+            let ep' : Endpoint := { state := nextState, queue := rest, waitingReceiver := none }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') => .ok (sender, st')
@@ -259,10 +259,10 @@ theorem endpointSend_ok_as_storeObject
       | endpoint ep =>
           cases hState : ep.state <;> simp [hObj, hState, storeObject] at hStep
           case idle =>
-            refine ⟨{ state := .send, queue := [sender] }, ?_⟩
+            refine ⟨{ state := .send, queue := [sender], waitingReceiver := none }, ?_⟩
             simp [storeObject, hStep]
           case send =>
-            refine ⟨{ state := .send, queue := ep.queue ++ [sender] }, ?_⟩
+            refine ⟨{ state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }, ?_⟩
             simp [storeObject, hStep]
 
 /-- Local transition helper: successful receive is exactly one endpoint-object update. -/
@@ -288,29 +288,30 @@ theorem endpointReceive_ok_as_storeObject
                 simp [hQueue, storeObject] at hStep
                 rcases hStep with ⟨_, hStore⟩
                 let nextState : EndpointState := if tail.isEmpty then .idle else .send
-                refine ⟨{ state := nextState, queue := tail }, ?_⟩
+                refine ⟨{ state := nextState, queue := tail, waitingReceiver := none }, ?_⟩
                 simp [storeObject, nextState, hStore]
 
-/-- Endpoint-local queue/state well-formedness for the M3 IPC seed.
+/-- Endpoint-local queue/state well-formedness for the M3.5 handshake scaffold.
 
-Policy for this slice is intentionally simple and deterministic:
-- `idle` endpoints have empty queues,
-- `send` endpoints have a non-empty sender queue,
-- `receive` endpoints have empty queues (receive waiters are out-of-scope in this seed). -/
+Policy for this slice stays deterministic and ownership-explicit:
+- `idle` endpoints have an empty sender queue and no waiting receiver,
+- `send` endpoints have a non-empty sender queue and no waiting receiver,
+- `receive` endpoints have an empty sender queue and one waiting receiver identity. -/
 def endpointQueueWellFormed (ep : Endpoint) : Prop :=
   match ep.state with
-  | .idle => ep.queue = []
-  | .send => ep.queue ≠ []
-  | .receive => ep.queue = []
+  | .idle => ep.queue = [] ∧ ep.waitingReceiver = none
+  | .send => ep.queue ≠ [] ∧ ep.waitingReceiver = none
+  | .receive => ep.queue = [] ∧ ep.waitingReceiver.isSome
 
-/-- Endpoint/object validity component for the M3 IPC seed.
+/-- Endpoint/object validity component for the active IPC slice.
 
-This predicate captures a minimal object-level discipline: explicit `receive` state is represented
-without queued senders in this first slice. -/
+Ownership discipline for the waiting counterpart identity:
+- no waiting receiver implies endpoint is not in `.receive`,
+- a waiting receiver id implies endpoint is in `.receive`. -/
 def endpointObjectValid (ep : Endpoint) : Prop :=
-  match ep.state with
-  | .receive => ep.queue = []
-  | _ => True
+  match ep.waitingReceiver with
+  | none => ep.state ≠ .receive
+  | some _ => ep.state = .receive
 
 /-- IPC invariant component bundle for one endpoint object. -/
 def endpointInvariant (ep : Endpoint) : Prop :=
@@ -326,12 +327,8 @@ theorem endpointObjectValid_of_queueWellFormed
     (ep : Endpoint)
     (hWf : endpointQueueWellFormed ep) :
     endpointObjectValid ep := by
-  cases ep with
-  | mk state queue =>
-      cases state
-      · simp [endpointObjectValid]
-      · simp [endpointObjectValid]
-      · simpa [endpointQueueWellFormed, endpointObjectValid] using hWf
+  cases hState : ep.state <;> cases hWait : ep.waitingReceiver <;>
+    simp [endpointQueueWellFormed, endpointObjectValid, hState, hWait] at hWf ⊢
 
 theorem endpointSend_result_wellFormed
     (st st' : SystemState)
@@ -351,13 +348,13 @@ theorem endpointSend_result_wellFormed
           | idle =>
               simp [hObj, hState, storeObject] at hStep
               cases hStep
-              refine ⟨{ state := .send, queue := [sender] }, ?_, ?_⟩
+              refine ⟨{ state := .send, queue := [sender], waitingReceiver := none }, ?_, ?_⟩
               · simp
               · simp [endpointQueueWellFormed]
           | send =>
               simp [hObj, hState, storeObject] at hStep
               cases hStep
-              refine ⟨{ state := .send, queue := ep.queue ++ [sender] }, ?_, ?_⟩
+              refine ⟨{ state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }, ?_, ?_⟩
               · simp
               · simp [endpointQueueWellFormed]
           | receive => simp [hObj, hState] at hStep
@@ -384,7 +381,7 @@ theorem endpointReceive_result_wellFormed
                 simp [hQueue, storeObject] at hStep
                 rcases hStep with ⟨hSender, hStoreEq⟩
                 let nextState : EndpointState := if tail.isEmpty then .idle else .send
-                refine ⟨{ state := nextState, queue := tail }, ?_, ?_⟩
+                refine ⟨{ state := nextState, queue := tail, waitingReceiver := none }, ?_, ?_⟩
                 · cases hStoreEq
                   simp [nextState]
                 · cases hTail : tail with

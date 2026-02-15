@@ -20,6 +20,13 @@ run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvaria
 # Bundle composition guard: M3 seed bundle must still compose scheduler + capability + IPC invariants.
 run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/API.lean
 
+# M3.5 step-1 state-model anchors must remain present.
+run_check "INVARIANT" rg -n '^inductive ThreadIpcState' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^\s*waitingReceiver\s*:\s*Option SeLe4n\.ThreadId' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/API.lean
+
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md

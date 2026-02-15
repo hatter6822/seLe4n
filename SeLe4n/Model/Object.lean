@@ -28,6 +28,16 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
+/-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
+
+This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
+waiting-thread handshake story. -/
+inductive ThreadIpcState where
+  | ready
+  | blockedOnSend (endpoint : SeLe4n.ObjId)
+  | blockedOnReceive (endpoint : SeLe4n.ObjId)
+  deriving Repr, DecidableEq
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -35,6 +45,7 @@ structure TCB where
   cspaceRoot : SeLe4n.ObjId
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
+  ipcState : ThreadIpcState := .ready
   deriving Repr, DecidableEq
 
 inductive EndpointState where
@@ -46,6 +57,7 @@ inductive EndpointState where
 structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
+  waitingReceiver : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
 structure CNode where

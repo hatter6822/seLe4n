@@ -19,6 +19,7 @@ def bootstrapState : SystemState :=
           cspaceRoot := 10
           vspaceRoot := 20
           ipcBuffer := 4096
+          ipcState := .ready
         })
       else if oid = 10 then
         some (.cnode {
@@ -34,7 +35,7 @@ def bootstrapState : SystemState :=
       else if oid = 11 then
         some (.cnode CNode.empty)
       else if oid = demoEndpoint then
-        some (.endpoint { state := .idle, queue := [] })
+        some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
       else
         none
     scheduler := { runnable := [1, 2], current := none }
