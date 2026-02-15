@@ -13,7 +13,8 @@ Primary outcomes for this revision:
 - codify that bootstrap requirements are complete,
 - record that M1 Scheduler Invariant Bundle v1 is complete with verification evidence,
 - establish explicit acceptance criteria for the next implementation step (M2 foundation),
-- tighten change-control expectations for upcoming milestones.
+- tighten change-control expectations for upcoming milestones,
+- define an implementation-ready post-foundation active slice plan for lifecycle transitions.
 
 ## 2. Definitions
 
@@ -55,9 +56,9 @@ M1 **Scheduler Invariant Bundle v1** is complete. Implemented and proven artifac
    - `schedule`,
    - `handleYield`.
 
-### 3.3 Immediate next step scope: M2 foundation slice (active)
+### 3.3 Immediate next step scope: M2 foundation slice (completed)
 
-The immediate next step is to deliver a narrow **M2 Foundation Slice: typed CSpace lookup and
+The completed immediate step was a narrow **M2 Foundation Slice: typed CSpace lookup and
 mint model** that is proof-ready and does not destabilize completed scheduler results.
 
 In-scope for this slice:
@@ -82,7 +83,29 @@ Out-of-scope for this slice:
 - untyped retype/allocation semantics,
 - correspondence/refinement obligations to external artifacts.
 
-### 3.4 M2 foundation implementation boundary (normative)
+### 3.4 Active slice scope (new): lifecycle transitions and authority monotonicity
+
+The active slice now extends the completed M2 foundation with lifecycle operations over typed
+CSpace addresses and stronger authority preservation constraints.
+
+In-scope for the active slice:
+
+1. Add revoke/delete transitions over typed `SlotRef`-style addresses already used by lookup and
+   mint semantics.
+2. Define lifecycle-aware authority monotonicity constraints that cover both direct cap
+   attenuation and authority reduction through revoke/delete.
+3. Strengthen the capability invariant bundle to include lifecycle transition obligations and
+   prove composed preservation for lifecycle operations.
+4. Preserve existing scheduler invariant proofs and executable behavior in `Main.lean`.
+
+Out-of-scope for the active slice:
+
+- full derivation-tree global revoke semantics across unmodeled object classes,
+- IPC/reply-cap protocol proofs,
+- retype/allocation correctness,
+- external refinement correspondence obligations.
+
+### 3.5 M2 foundation and active-slice implementation boundary (normative)
 
 Within this step, changes should stay inside CSpace/capability semantics and proofs. The following
 are in scope:
@@ -97,10 +120,10 @@ The following are out-of-scope for this step even if they appear adjacent:
 - extending capability operations beyond the M2 foundation slice,
 - architecture-specific behavior (timer interrupts, MMU details, etc.).
 
-### 3.5 Deferred (explicitly out-of-scope for M2 foundation slice)
+### 3.6 Deferred (explicitly out-of-scope for M2 active lifecycle slice)
 
 - virtual memory and architecture-specific MMU semantics,
-- full capability derivation tree and revoke/delete cascade behavior,
+- full capability derivation tree with architecture-complete revoke/delete cascade behavior,
 - full IPC/reply-cap lifecycle correctness,
 - untyped memory allocation and retype proofs,
 - Isabelle/HOL correspondence and refinement-to-C obligations.
@@ -122,7 +145,7 @@ The following are out-of-scope for this step even if they appear adjacent:
 
 ## 5. Normative requirements
 
-The project shall preserve the following through M2 foundation:
+The project shall preserve the following through the active M2 lifecycle slice:
 
 1. `lake build` succeeds from a clean checkout.
 2. `Main.lean` continues to demonstrate executable transition behavior.
@@ -131,36 +154,43 @@ The project shall preserve the following through M2 foundation:
    - a clear definition,
    - at least one proof use-site,
    - placement in the composed invariant entrypoint.
-5. Milestone changes that affect scope or acceptance criteria update this document in the same
+5. Lifecycle transitions use typed addresses and explicit error behavior (e.g., missing slot,
+   invalid object class, unsupported operation).
+6. Milestone changes that affect scope or acceptance criteria update this document in the same
    commit.
 
 ## 6. Acceptance criteria and evidence mapping
 
-The next step is **M2 Foundation Slice: typed CSpace lookup and mint model**. This step is
-complete when all checks below are satisfied.
+The active step is **M2 Lifecycle Slice: revoke/delete transitions + authority monotonicity**.
+This step is complete when all checks below are satisfied.
 
-### 6.1 M2 functional and proof acceptance criteria
+### 6.1 M2 active-slice functional and proof acceptance criteria
 
 1. A composed capability invariant bundle entrypoint exists and includes at least:
    - slot-level uniqueness/no-alias property for the modeled structure,
    - lookup soundness (resolved slot points to the modeled capability),
    - rights attenuation monotonicity for mint/derive-style operations.
-2. Each invariant component has at least one dedicated preservation lemma or helper theorem.
-3. Theorems show preservation of the composed capability invariant for at least:
+2. Lifecycle-aware authority monotonicity is explicitly modeled and includes constraints for:
+   - mint/derive attenuation,
+   - delete non-escalation,
+   - revoke non-escalation for reachable descendants in the modeled slice.
+3. Each invariant component has at least one dedicated preservation lemma or helper theorem.
+4. Theorems show preservation of the composed capability invariant for at least:
    - one read transition (`lookup`-style),
-   - one write transition (`insert`/`mint`-style).
-4. The attenuation policy is stated in code comments/doc text near definitions and reflected in
+   - one write transition (`insert`/`mint`-style),
+   - one lifecycle transition (`delete` and/or `revoke`-style).
+5. The attenuation policy is stated in code comments/doc text near definitions and reflected in
    theorem statements.
 
 ### 6.2 Build and executability acceptance criteria
 
-5. `lake build` passes with no new `axiom` introduced to bypass missing proofs.
-6. `lake exe sele4n` (or equivalent `#eval` path used by `Main.lean`) demonstrates at least one
+6. `lake build` passes with no new `axiom` introduced to bypass missing proofs.
+7. `lake exe sele4n` (or equivalent `#eval` path used by `Main.lean`) demonstrates at least one
    concrete transition (scheduler and/or capability path) from an explicit state.
 
 ### 6.3 Documentation acceptance criteria
 
-7. `docs/SEL4_SPEC.md` and `docs/DEVELOPMENT.md` both describe:
+8. `docs/SEL4_SPEC.md` and `docs/DEVELOPMENT.md` both describe:
    - current M2 foundation scope,
    - remaining proof gaps (if any),
    - next intended increment.
@@ -192,7 +222,26 @@ and no open TODOs remain for the transitions introduced in this slice.
 - Remaining M2 work focuses on broader capability lifecycle transitions (revoke/delete) and
   strengthening authority properties across those new operations.
 
-### 6.6 Full-repository audit snapshot (documentation-to-code alignment)
+### 6.6 Active-slice incremental target outcomes and sequencing
+
+To reduce proof breakage and keep review units small, the active slice should be delivered in
+four target increments:
+
+1. **Lifecycle transition surface**
+   - Add `cspaceDelete` and `cspaceRevoke`-style transitions over typed addresses.
+   - Specify exact preconditions and kernel errors in transition-level comments.
+2. **Authority monotonicity formalization**
+   - Introduce lifecycle-aware monotonicity predicates as reusable definitions.
+   - Prove helper lemmas showing each lifecycle primitive cannot introduce stronger authority than
+     the source state permits.
+3. **Composed invariant uplift**
+   - Extend `capabilityInvariantBundle` with lifecycle clauses and update existing proof entrypoints
+     with minimal theorem-statement churn.
+4. **Executable and documentation closure**
+   - Demonstrate at least one lifecycle path in `Main.lean`.
+   - Update this spec and `docs/DEVELOPMENT.md` with delivered scope and next proof debt.
+
+### 6.7 Full-repository audit snapshot (documentation-to-code alignment)
 
 - Build proof check (`lake build`): passes; one non-blocking linter hint suggests `simp` in place
   of one `simpa` in `SeLe4n.Kernel.API`.
