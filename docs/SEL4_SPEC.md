@@ -66,7 +66,7 @@ Implemented M2 scope includes:
 6. Preservation theorem entrypoints for lookup/insert/mint/delete/revoke progression.
 7. Executable trace in `Main.lean` showing scheduler + capability lifecycle behavior.
 
-### 3.4 M3 IPC seed (in progress)
+### 3.4 M3 IPC seed (complete)
 
 Implemented pieces already landed for the active slice:
 
@@ -125,9 +125,10 @@ Status is tracked per outcome.
    - At least one receive transition preservation theorem.
    - New proof entrypoints should be composable with existing M1/M2 bundles.
 
-5. **Executable trace includes IPC behavior** *(open)*
-   - Extend or add executable demonstration to show endpoint transition flow.
-   - Existing scheduler + CSpace demo should remain available or equivalent coverage provided.
+5. **Executable trace includes IPC behavior** *(complete)*
+   - `Main.lean` now extends the runnable trace with endpoint `endpointSend`/`endpointReceive`
+     transitions after the existing scheduler + CSpace lifecycle sequence.
+   - Existing scheduler + CSpace demonstration remains intact before IPC steps are executed.
 
 ### 4.3 Explicit out-of-scope for this slice
 
