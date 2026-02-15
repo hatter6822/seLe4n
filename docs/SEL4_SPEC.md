@@ -96,7 +96,7 @@ In-scope for the active slice:
    attenuation and authority reduction through revoke/delete.
 3. ✅ Strengthen the capability invariant bundle to include lifecycle transition obligations and
    prove composed preservation for lifecycle operations.
-4. Preserve existing scheduler invariant proofs and executable behavior in `Main.lean`.
+4. ✅ Preserve existing scheduler invariant proofs and executable behavior in `Main.lean`.
 
 Out-of-scope for the active slice:
 
@@ -225,6 +225,8 @@ and no open TODOs remain for the transitions introduced in this slice.
   `lifecycleAuthorityMonotonicity` and proven to hold in the current model.
 - The composed capability invariant bundle now includes lifecycle clauses, and composed
   lifecycle-preservation theorem entrypoints are established for `delete` and `revoke`.
+- Existing scheduler invariant proofs still build unchanged, and `Main.lean` retains executable
+  scheduler + lifecycle transition behavior for the active slice.
 
 ### 6.6 Active-slice incremental target outcomes and sequencing
 
@@ -252,6 +254,7 @@ four target increments:
   source-slot lookup, rights-attenuated mint, local revoke, and delete transitions.
 - Proof-hygiene check (`rg -n "axiom|TODO|sorry" SeLe4n Main.lean`): no unresolved proof escapes
   or stale TODO markers found in Lean code.
+- Milestone-audit check (definitions + preservation theorem entrypoints): completed milestone claims in this spec map to implemented symbols in `SeLe4n/Kernel/API.lean` and executable lifecycle traces in `Main.lean`.
 
 
 ## 7. Audit closure report (Bootstrap + M1)
