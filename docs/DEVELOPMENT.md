@@ -140,6 +140,11 @@ If any command cannot run due to environment constraints, report the constraint 
 Default ownership for test and CI gate maintenance is shared by contributors touching
 `Main.lean`, `SeLe4n/Kernel/API.lean`, `scripts/test_*.sh`, and fixture files under `tests/fixtures/`.
 
+Pull-request CI now enforces the same required tiers through `.github/workflows/lean_action_ci.yml`
+by running `./scripts/test_fast.sh` and `./scripts/test_smoke.sh` as separate required jobs.
+Smoke failures upload fixture diagnostics (`main_trace_smoke.actual.log`,
+`main_trace_smoke.missing.txt`, and the expected fixture) to speed up review and triage.
+
 For fresh environments, run `./scripts/setup_lean_env.sh` once. Test scripts auto-source
 `$HOME/.elan/env` when available so `lake` can be found in non-interactive shells.
 

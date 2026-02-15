@@ -8,8 +8,8 @@ Current repository status against this plan:
 
 - ✅ Work package A (script scaffold) is implemented.
 - ✅ Work package B (fixture-backed executable smoke baseline) is implemented.
-- ⏳ Work package C (CI wiring to script entrypoints) is pending.
-- ⏳ Work package D (final doc integration pass) is in progress and should track script/CI reality.
+- ✅ Work package C (CI wiring to script entrypoints) is implemented.
+- ✅ Work package D (final doc integration pass) is implemented and tracks script/CI reality.
 - ⏳ Work package E (Tier 3 hooks) is partially prepared via explicit extension points.
 
 ---
@@ -212,23 +212,23 @@ Line-oriented expected fragments, one per line, e.g.:
 
 ## 7.1 Pull request required checks (v1)
 
-Update `.github/workflows/lean_action_ci.yml` to run:
+`.github/workflows/lean_action_ci.yml` now runs both required pull-request gates:
 
 1. `./scripts/test_fast.sh`
 2. `./scripts/test_smoke.sh`
 
-(If runtime is redundant, smoke may subsume fast; keep both only if they provide distinct signal.)
+Both jobs install the pinned Lean toolchain via `./scripts/setup_lean_env.sh` and call repository
+script entrypoints directly to keep local and CI behavior aligned.
 
 ## 7.2 Main/nightly follow-up checks
 
-Add separate jobs (or future workflow file) for:
-- `./scripts/test_full.sh`
-- `./scripts/test_nightly.sh` (scheduled)
+Follow-up (not yet required):
+- add non-required jobs for `./scripts/test_full.sh` and scheduled `./scripts/test_nightly.sh`.
 
-Artifacts to upload on trace failure:
-- actual output log,
-- expected fixture,
-- diff report.
+Current CI artifact behavior on smoke-trace failure:
+- uploads actual output log (`main_trace_smoke.actual.log`),
+- uploads expected fixture (`tests/fixtures/main_trace_smoke.expected`),
+- uploads missing-line report (`main_trace_smoke.missing.txt`).
 
 ## 7.3 CI failure policy
 

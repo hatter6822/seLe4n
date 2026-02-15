@@ -14,7 +14,7 @@ It has four jobs:
 The project is currently in a **post-M3-seed** stage: M1 scheduler invariants, M2 capability
 semantics, and M3 endpoint send/receive seed semantics are complete and executable.
 
-Testing framework baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed executable smoke checks are implemented under `scripts/test_*.sh`.
+Testing framework baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed executable smoke checks are implemented under `scripts/test_*.sh` and enforced in pull-request CI via `.github/workflows/lean_action_ci.yml`.
 
 ---
 

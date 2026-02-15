@@ -14,6 +14,7 @@ TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-tests/fixtures/main_trace_smoke.expected}"
 TRACE_OUTPUT="$(mktemp)"
 MISSING_REPORT="$(mktemp)"
 trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}"' EXIT
+TRACE_ARTIFACT_DIR="${TRACE_ARTIFACT_DIR:-}"
 
 if [[ ! -f "${TRACE_FIXTURE}" ]]; then
   record_failure "TRACE" "Fixture not found: ${TRACE_FIXTURE}"
@@ -55,6 +56,13 @@ else
     log_section "TRACE" "  - ${missing_line}"
   done < "${MISSING_REPORT}"
   log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR and explain why."
+fi
+
+if [[ -n "${TRACE_ARTIFACT_DIR}" ]]; then
+  mkdir -p "${TRACE_ARTIFACT_DIR}"
+  cp "${TRACE_OUTPUT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.actual.log"
+  cp "${MISSING_REPORT}" "${TRACE_ARTIFACT_DIR}/main_trace_smoke.missing.txt"
+  log_section "TRACE" "Wrote trace diagnostics to ${TRACE_ARTIFACT_DIR}."
 fi
 
 finalize_report

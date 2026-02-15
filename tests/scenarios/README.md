@@ -48,3 +48,13 @@ The command should fail and report the missing expected line.
 - a reminder to update fixture + PR rationale when drift is intentional.
 
 This contract keeps smoke regressions deterministic and reviewable in both local runs and CI logs.
+
+## CI trace artifacts
+
+CI can set `TRACE_ARTIFACT_DIR` when running `./scripts/test_tier2_trace.sh`. When set, the script
+writes:
+
+- `main_trace_smoke.actual.log` (captured executable output),
+- `main_trace_smoke.missing.txt` (one missing expectation per line).
+
+The pull-request workflow uploads those files plus the expected fixture on failure.
