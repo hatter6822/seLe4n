@@ -17,7 +17,8 @@ The active planning target is **M3.5 IPC handshake + scheduler interaction**, wh
 narrow blocking/wakeup IPC contract while preserving existing M1/M2/M3 guarantees.
 
 Testing framework status: Tier 0 (hygiene), Tier 1 (build), and Tier 2 (fixture-backed executable
-smoke regression checks) are implemented and usable via `scripts/test_*.sh` entrypoints.
+smoke regression checks) are implemented and enforced in pull-request CI via
+`.github/workflows/lean_action_ci.yml`, which calls the repository script entrypoints directly.
 
 ## Quick start
 
@@ -108,6 +109,20 @@ Use the tiered test entrypoints for local validation:
 
 The test scripts automatically source `$HOME/.elan/env` when present so `lake` is available even in
 fresh shells after running `./scripts/setup_lean_env.sh`.
+
+## CI gates (pull requests)
+
+Pull requests must pass both required CI jobs:
+
+```bash
+./scripts/test_fast.sh
+./scripts/test_smoke.sh
+```
+
+The workflow intentionally calls these scripts directly (no duplicated inline test logic) so local
+and CI pass/fail behavior stay aligned. On smoke-trace failures, CI uploads fixture diagnostics
+(`main_trace_smoke.actual.log` and `main_trace_smoke.missing.txt`) along with the expected fixture
+for fast triage.
 
 ## Daily contributor verification loop
 

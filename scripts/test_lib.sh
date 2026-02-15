@@ -3,6 +3,7 @@ set -euo pipefail
 
 TEST_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${TEST_LIB_DIR}/.." && pwd)"
+export REPO_ROOT
 
 CONTINUE_MODE=0
 FAILURE_COUNT=0
@@ -72,7 +73,7 @@ ensure_lake_available() {
   fi
 
   if [[ -f "${HOME}/.elan/env" ]]; then
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "${HOME}/.elan/env"
   fi
 
