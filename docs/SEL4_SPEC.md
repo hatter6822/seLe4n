@@ -66,6 +66,16 @@ Implemented M2 scope includes:
 6. Preservation theorem entrypoints for lookup/insert/mint/delete/revoke progression.
 7. Executable trace in `Main.lean` showing scheduler + capability lifecycle behavior.
 
+### 3.4 M3 IPC seed (partial progress)
+
+Implemented pieces already landed for the active slice:
+
+1. Minimal explicit endpoint model state (`EndpointState` + queue on `Endpoint`).
+2. Typed endpoint transition entrypoints:
+   - `endpointSend`,
+   - `endpointReceive`.
+3. Explicit IPC error branches for mismatched endpoint/object states and empty-send-queue cases.
+
 ---
 
 ## 4. Next slice: M3 IPC seed (target outcomes)
@@ -77,31 +87,29 @@ safety invariants, while keeping M1/M2 theorems and executable path stable.
 
 ### 4.2 Required outcomes
 
-For this slice to be considered complete, all of the following must be true:
+For this slice to be considered complete, all of the following must be true.
+Status is tracked per outcome.
 
-> Status note: step 1 is now implemented with typed `endpointSend`/`endpointReceive` entrypoints
-> and explicit error branches; remaining items in this section are still open for M3 completion.
-
-1. **Endpoint transition API exists**
+1. **Endpoint transition API exists** *(complete)*
    - Add typed endpoint transition entrypoints (minimum one send path and one receive path).
    - Transitions must use existing `Kernel` style and explicit error handling.
 
-2. **State modeling remains minimal but explicit**
+2. **State modeling remains minimal but explicit** *(complete)*
    - Any new state needed for IPC queues or pending messages is represented in model structures
      with clear ownership and access discipline.
    - Avoid architecture-specific payload details in this slice.
 
-3. **First IPC invariant bundle component is introduced**
+3. **First IPC invariant bundle component is introduced** *(open)*
    - At minimum, define one queue well-formedness condition and one endpoint/object validity
      condition.
    - Bundle naming should align with existing invariant terminology and theorem style.
 
-4. **Preservation proof coverage lands for new transitions**
+4. **Preservation proof coverage lands for new transitions** *(open)*
    - At least one send transition preservation theorem.
    - At least one receive transition preservation theorem.
    - New proof entrypoints should be composable with existing M1/M2 bundles.
 
-5. **Executable trace includes IPC behavior**
+5. **Executable trace includes IPC behavior** *(open)*
    - Extend or add executable demonstration to show endpoint transition flow.
    - Existing scheduler + CSpace demo should remain available or equivalent coverage provided.
 
