@@ -7,6 +7,8 @@ inductive KernelError where
   | invalidCapability
   | objectNotFound
   | schedulerInvariantViolation
+  | endpointStateMismatch
+  | endpointQueueEmpty
   | notImplemented
   deriving Repr, DecidableEq
 

@@ -41,6 +41,8 @@ Work in this order unless a blocking dependency requires adjustment:
 2. **Transitions second**
    - Implement one send transition and one receive transition.
    - Keep transition semantics deterministic and easy to unfold in proofs.
+   - Current status: typed endpoint entrypoints (`endpointSend`, `endpointReceive`) are present;
+     continue by proving IPC-specific invariants against them.
 
 3. **Invariant components third**
    - Define one endpoint queue well-formedness predicate.
