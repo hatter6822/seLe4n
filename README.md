@@ -187,6 +187,17 @@ On smoke-trace failures, CI uploads diagnostics:
 
 ---
 
+## License
+
+This project is licensed under the MIT License. See [`LICENSE`](./LICENSE).
+
+### Provenance policy
+
+- Do not copy third-party code or text into this repository without explicit attribution.
+- Confirm incoming third-party material is license-compatible with MIT before committing it.
+
+---
+
 ## Daily contributor verification loop
 
 Run this minimum loop before opening a PR:
