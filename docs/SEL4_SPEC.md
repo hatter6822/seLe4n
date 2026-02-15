@@ -90,11 +90,11 @@ CSpace addresses and stronger authority preservation constraints.
 
 In-scope for the active slice:
 
-1. Add revoke/delete transitions over typed `SlotRef`-style addresses already used by lookup and
+1. ✅ Add revoke/delete transitions over typed `SlotRef`-style addresses already used by lookup and
    mint semantics.
-2. Define lifecycle-aware authority monotonicity constraints that cover both direct cap
+2. ✅ Define lifecycle-aware authority monotonicity constraints that cover both direct cap
    attenuation and authority reduction through revoke/delete.
-3. Strengthen the capability invariant bundle to include lifecycle transition obligations and
+3. ✅ Strengthen the capability invariant bundle to include lifecycle transition obligations and
    prove composed preservation for lifecycle operations.
 4. Preserve existing scheduler invariant proofs and executable behavior in `Main.lean`.
 
