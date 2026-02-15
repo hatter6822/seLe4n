@@ -39,16 +39,17 @@ Work in this order unless a blocking dependency requires adjustment:
    - Favor explicit, typed fields over generic maps when possible.
    - Status: endpoint object state (`EndpointState` + queue) is modeled in core structures.
 
-2. **Transitions second** *(partially complete)*
+2. **Transitions second** *(complete)*
    - Implement one send transition and one receive transition.
    - Keep transition semantics deterministic and easy to unfold in proofs.
    - Status: typed endpoint entrypoints (`endpointSend`, `endpointReceive`) are present with
-     explicit error branches; preserve this API while proving IPC-specific invariants.
+     explicit error branches, and IPC-specific preservation lemmas are now proved for both.
 
-3. **Invariant components third**
+3. **Invariant components third** *(partially complete)*
    - Define one endpoint queue well-formedness predicate.
    - Define one endpoint/object validity predicate.
    - Bundle under a clearly named IPC invariant entrypoint.
+   - Status: `endpointQueueWellFormed` + `ipcInvariant` are defined; broader cross-bundle composition remains.
 
 4. **Local helper lemmas fourth**
    - Add lookup/update lemmas close to transition definitions.

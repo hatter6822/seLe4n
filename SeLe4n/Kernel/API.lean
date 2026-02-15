@@ -207,6 +207,169 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+/-- Endpoint-local queue/state well-formedness for the M3 IPC seed.
+
+Policy for this slice is intentionally simple and deterministic:
+- `idle` endpoints have empty queues,
+- `send` endpoints have a non-empty sender queue,
+- `receive` endpoints have empty queues (receive waiters are out-of-scope in this seed). -/
+def endpointQueueWellFormed (ep : Endpoint) : Prop :=
+  match ep.state with
+  | .idle => ep.queue = []
+  | .send => ep.queue ≠ []
+  | .receive => ep.queue = []
+
+/-- Global IPC seed invariant: every endpoint object satisfies queue/state well-formedness. -/
+def ipcInvariant (st : SystemState) : Prop :=
+  ∀ oid ep,
+    st.objects oid = some (.endpoint ep) →
+    endpointQueueWellFormed ep
+
+theorem endpointSend_result_wellFormed
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    ∃ ep', st'.objects endpointId = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state with
+          | idle =>
+              simp [hObj, hState, storeObject] at hStep
+              cases hStep
+              refine ⟨{ state := .send, queue := [sender] }, ?_, ?_⟩
+              · simp
+              · simp [endpointQueueWellFormed]
+          | send =>
+              simp [hObj, hState, storeObject] at hStep
+              cases hStep
+              refine ⟨{ state := .send, queue := ep.queue ++ [sender] }, ?_, ?_⟩
+              · simp
+              · simp [endpointQueueWellFormed]
+          | receive => simp [hObj, hState] at hStep
+
+theorem endpointReceive_result_wellFormed
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    ∃ ep', st'.objects endpointId = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state <;> simp [hObj, hState] at hStep
+          case send =>
+            cases hQueue : ep.queue with
+            | nil => simp [hQueue] at hStep
+            | cons head tail =>
+                simp [hQueue, storeObject] at hStep
+                rcases hStep with ⟨hSender, hStoreEq⟩
+                let nextState : EndpointState := if tail.isEmpty then .idle else .send
+                refine ⟨{ state := nextState, queue := tail }, ?_, ?_⟩
+                · cases hStoreEq
+                  simp [nextState]
+                · cases hTail : tail with
+                  | nil => simp [endpointQueueWellFormed, nextState, hTail]
+                  | cons t ts => simp [endpointQueueWellFormed, nextState, hTail]
+
+theorem endpointSend_preserves_other_objects
+    (st st' : SystemState)
+    (endpointId oid : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hNe : oid ≠ endpointId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state <;> simp [hObj, hState, storeObject] at hStep
+          all_goals
+            cases hStep
+            simp [hNe]
+
+theorem endpointReceive_preserves_other_objects
+    (st st' : SystemState)
+    (endpointId oid : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hNe : oid ≠ endpointId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    st'.objects oid = st.objects oid := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          cases hState : ep.state <;> simp [hObj, hState] at hStep
+          case send =>
+            cases hQueue : ep.queue with
+            | nil => simp [hQueue] at hStep
+            | cons head tail =>
+                simp [hQueue, storeObject] at hStep
+                rcases hStep with ⟨hSender, hStoreEq⟩
+                cases hStoreEq
+                simp [hNe]
+
+theorem endpointSend_preserves_ipcInvariant
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcInvariant st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    ipcInvariant st' := by
+  intro oid ep hObj
+  rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
+  by_cases hEq : oid = endpointId
+  · subst hEq
+    have hCast : ep = epNew := by
+      rw [hStored] at hObj
+      cases hObj
+      rfl
+    simpa [hCast] using hWfNew
+  · have hUnchanged : st'.objects oid = st.objects oid := by
+      exact endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
+    have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
+    exact hInv oid ep hOrig
+
+theorem endpointReceive_preserves_ipcInvariant
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcInvariant st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    ipcInvariant st' := by
+  intro oid ep hObj
+  rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
+  by_cases hEq : oid = endpointId
+  · subst hEq
+    have hCast : ep = epNew := by
+      rw [hStored] at hObj
+      cases hObj
+      rfl
+    simpa [hCast] using hWfNew
+  · have hUnchanged : st'.objects oid = st.objects oid := by
+      exact endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
+    have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
+    exact hInv oid ep hOrig
+
 /-- Slot-level uniqueness/no-alias policy: lookup is deterministic for each slot address. -/
 def cspaceSlotUnique (st : SystemState) : Prop :=
   ∀ addr cap₁ cap₂ st₁ st₂,

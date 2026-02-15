@@ -10,8 +10,8 @@ The repository is currently at the point where:
 - The executable demo path in `Main.lean` exercises scheduling, mint, revoke, and delete.
 
 The immediate focus is now completing the next milestone slice (M3 IPC seed) without regressing the
-existing M1/M2 proof surface. The model-first minimal IPC state and typed endpoint transition
-entrypoints are now in place, with IPC invariants/preservation proofs still pending.
+existing M1/M2 proof surface. The model-first minimal IPC state, typed endpoint transition
+entrypoints, and first IPC invariant preservation proofs are now in place.
 
 ## Quick start
 
@@ -61,9 +61,9 @@ lake exe sele4n
 ### Active planning target
 
 The next implementation slice is **M3 IPC seed**: the minimal endpoint state model and typed
-endpoint send/receive transition entrypoints are now in place, with IPC safety invariants and
-preservation proofs as the immediate follow-on work while preserving the established M1/M2 theorem
-surface.
+endpoint send/receive transition entrypoints now have a first IPC safety invariant and
+preservation theorems; the remaining M3 work is extending executable IPC trace coverage while
+preserving the established M1/M2 theorem surface.
 
 See:
 
