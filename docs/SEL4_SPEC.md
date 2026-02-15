@@ -138,7 +138,17 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
 7. New/updated endpoint transitions have machine-checked preservation theorem entrypoints.
 8. `README.md`, `docs/SEL4_SPEC.md`, and `docs/DEVELOPMENT.md` are internally stage-consistent.
 
-### 4.5 Explicit non-goals for M3.5
+### 4.5 M3.5 implementation sequence progress
+
+- ✅ **Step 1 complete (state-model refinement)**
+  - endpoint model now includes explicit waiting-counterpart identity for deterministic handshake setup (`waitingReceiver`),
+  - TCB model now carries explicit IPC blocking status (`ready`, `blockedOnSend endpoint`, `blockedOnReceive endpoint`) to keep scheduler-facing ownership clear,
+  - endpoint well-formedness now captures ownership coupling between endpoint mode and waiting-receiver identity (non-receive states require `none`, receive requires `some`),
+  - remaining M3.5 steps (transition updates onward) stay in progress.
+
+---
+
+### 4.6 Explicit non-goals for M3.5
 
 Out of scope for this slice:
 

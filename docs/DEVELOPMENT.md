@@ -56,9 +56,10 @@ Do **not** include the following in M3.5 PRs unless explicitly approved:
 
 Use this order unless a concrete dependency forces adjustment.
 
-1. **State-model refinement first**
-   - add only endpoint/thread fields needed for one deterministic handshake story,
-   - keep state ownership clear.
+1. **State-model refinement first** ✅ **completed**
+   - added only endpoint/thread fields needed for one deterministic handshake story (`Endpoint.waitingReceiver`, `TCB.ipcState`),
+   - state ownership remains explicit: endpoint-owned waiting counterpart identity + thread-owned IPC blocking status,
+   - endpoint local well-formedness now constrains queue shape and waiting-receiver ownership together for deterministic unfolding in later transition/proof work.
 
 2. **Transition updates second**
    - add/update endpoint transitions with explicit success/error branches,
