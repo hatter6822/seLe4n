@@ -97,7 +97,8 @@ theorem cspaceLookupSlot_ok_iff_lookupSlotCap
             cases obj <;> simp [hLookup, hObj] at hOk
     | some cap' =>
         simp [hLookup] at hOk
-        simpa [hOk] using hLookup
+        cases hOk
+        rfl
   · intro hCap
     unfold cspaceLookupSlot
     simp [hCap]
@@ -195,6 +196,96 @@ def cspaceAttenuationRule : Prop :=
 /-- M2 foundation capability invariant bundle entrypoint. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule
+
+
+/-- Lifecycle-aware authority monotonicity bundle for the active slice.
+
+This models three policy obligations together:
+1. direct mint/derive attenuation,
+2. delete cannot leave authority in the deleted slot,
+3. local revoke cannot leave sibling authority to the revoked target. -/
+def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
+  cspaceAttenuationRule ∧
+  (∀ addr st',
+      cspaceDeleteSlot addr st = .ok ((), st') →
+      SystemState.lookupSlotCap st' addr = none) ∧
+  (∀ addr st' parent,
+      cspaceRevoke addr st = .ok ((), st') →
+      cspaceLookupSlot addr st = .ok (parent, st) →
+      ∀ slot cap,
+        SystemState.lookupSlotCap st' { cnode := addr.cnode, slot := slot } = some cap →
+        cap.target = parent.target →
+        slot = addr.slot)
+
+/-- Delete transition authority reduction clause. -/
+theorem cspaceDeleteSlot_authority_reduction
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    SystemState.lookupSlotCap st' addr = none := by
+  rcases addr with ⟨cnodeId, slot⟩
+  cases hObj : st.objects cnodeId with
+  | none => simp [cspaceDeleteSlot, hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
+      | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | cnode cn =>
+          simp [cspaceDeleteSlot, hObj] at hStep
+          cases hStep
+          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup_remove_eq_none]
+
+/-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
+the revoked target. -/
+theorem cspaceRevoke_local_target_reduction
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (parent : Capability)
+    (hStep : cspaceRevoke addr st = .ok ((), st'))
+    (hParent : cspaceLookupSlot addr st = .ok (parent, st))
+    (slot : SeLe4n.Slot)
+    (cap : Capability)
+    (hLookup : SystemState.lookupSlotCap st' { cnode := addr.cnode, slot := slot } = some cap)
+    (hTarget : cap.target = parent.target) :
+    slot = addr.slot := by
+  unfold cspaceRevoke at hStep
+  rw [hParent] at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | endpoint ep => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hStep
+          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.revokeTargetLocal] at hLookup
+          rcases hLookup with ⟨slot', hFind⟩
+          have hPred :
+              ((decide (slot' = addr.slot) || !decide (cap.target = parent.target)) &&
+                decide (slot' = slot)) = true := by
+            have hPredRaw := List.find?_some
+              (p := fun entry : SeLe4n.Slot × Capability =>
+                (decide (entry.fst = addr.slot) || !decide (entry.snd.target = parent.target)) &&
+                  decide (entry.fst = slot))
+              (a := (slot', cap)) hFind
+            simpa using hPredRaw
+          have hSplit :
+              (decide (slot' = addr.slot) || !decide (cap.target = parent.target)) = true ∧
+              decide (slot' = slot) = true := by
+            simpa [Bool.and_eq_true] using hPred
+          have hEqSlot : slot' = slot := by
+            simpa using hSplit.2
+          have hOrProp : slot' = addr.slot ∨ cap.target ≠ parent.target := by
+            simpa using hSplit.1
+          by_cases hSlot : slot = addr.slot
+          · exact hSlot
+          · have hNotTarget : cap.target ≠ parent.target := by
+              rcases hOrProp with hSrc | hNe
+              · exfalso
+                exact hSlot (hEqSlot.symm.trans hSrc)
+              · exact hNe
+            exact False.elim (hNotTarget hTarget)
 
 theorem cspaceLookupSlot_preserves_state
     (st st' : SystemState)
@@ -374,6 +465,15 @@ theorem cspaceAttenuationRule_holds :
     cspaceAttenuationRule := by
   intro parent child rights badge hMint
   exact mintDerivedCap_attenuates parent child rights badge hMint
+
+
+theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
+    lifecycleAuthorityMonotonicity st := by
+  refine ⟨cspaceAttenuationRule_holds, ?_, ?_⟩
+  · intro addr st' hDelete
+    exact cspaceDeleteSlot_authority_reduction st st' addr hDelete
+  · intro addr st' parent hRevoke hParent slot cap hLookup hTarget
+    exact cspaceRevoke_local_target_reduction st st' addr parent hRevoke hParent slot cap hLookup hTarget
 
 theorem capabilityInvariantBundle_holds (st : SystemState) :
     capabilityInvariantBundle st := by
