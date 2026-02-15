@@ -10,6 +10,13 @@ cd "${REPO_ROOT}"
 
 ensure_lake_available
 
-run_check "BUILD" lake build
+build_log="$(mktemp)"
+cleanup() {
+  rm -f "${build_log}"
+}
+trap cleanup EXIT
+
+run_check "BUILD" bash -lc "set -o pipefail; lake build 2>&1 | tee '${build_log}'"
+run_check "BUILD" bash -lc "if rg -n '^warning:' '${build_log}'; then echo 'Lean build emitted warnings; resolve warnings before merge.' >&2; exit 1; fi"
 
 finalize_report

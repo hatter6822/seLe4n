@@ -209,6 +209,41 @@ def ipcInvariant (st : SystemState) : Prop :=
     st.objects oid = some (.endpoint ep) →
     endpointInvariant ep
 
+/-- IPC+scheduler coherence predicate #1 (targeted):
+threads blocked on send must not be runnable or currently executing. -/
+def blockedOnSendNotRunnable (st : SystemState) : Prop :=
+  ∀ tid tcb endpoint,
+    st.objects tid = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnSend endpoint →
+    tid ∉ st.scheduler.runnable ∧ st.scheduler.current ≠ some tid
+
+/-- IPC+scheduler coherence predicate #2 (targeted):
+threads blocked on receive must not be runnable or currently executing. -/
+def blockedOnReceiveNotRunnable (st : SystemState) : Prop :=
+  ∀ tid tcb endpoint,
+    st.objects tid = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnReceive endpoint →
+    tid ∉ st.scheduler.runnable ∧ st.scheduler.current ≠ some tid
+
+/-- IPC+scheduler coherence predicate #3 (targeted):
+runnable threads must advertise `ready` IPC state. -/
+def runnableThreadIpcReady (st : SystemState) : Prop :=
+  ∀ tid,
+    tid ∈ st.scheduler.runnable →
+    ∃ tcb, st.objects tid = some (.tcb tcb) ∧ tcb.ipcState = .ready
+
+/-- IPC+scheduler coherence predicate #4 (targeted):
+the current thread, if present, must advertise `ready` IPC state. -/
+def currentThreadIpcReady (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid => ∃ tcb, st.objects tid = some (.tcb tcb) ∧ tcb.ipcState = .ready
+
+/-- Targeted blocked-vs-runnable coherence bundle for the active M3.5 step-3 contract. -/
+def schedulerIpcCoherencePredicates (st : SystemState) : Prop :=
+  blockedOnSendNotRunnable st ∧ blockedOnReceiveNotRunnable st ∧
+    runnableThreadIpcReady st ∧ currentThreadIpcReady st
+
 theorem endpointObjectValid_of_queueWellFormed
     (ep : Endpoint)
     (hWf : endpointQueueWellFormed ep) :
@@ -554,6 +589,211 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
           rw [endpointReceive_preserves_other_objects st st' endpointId tid sender hTidNe hStep]
           exact hTcbObj
         simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+
+
+theorem endpointSend_tcb_lookup_iff
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    st'.objects tid = some (.tcb tcb) ↔ st.objects tid = some (.tcb tcb) := by
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hStoreEq : st'.objects endpointId = some (.endpoint ep') :=
+    storeObject_objects_eq st st' endpointId (.endpoint ep') hStore
+  constructor
+  · intro hObj'
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rw [hStoreEq] at hObj'
+      cases hObj'
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointSend_preserves_other_objects st st' endpointId tid sender hNe hStep] at hObj'
+      exact hObj'
+  · intro hObj
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rcases endpointSend_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+      rw [hEpObj] at hObj
+      cases hObj
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointSend_preserves_other_objects st st' endpointId tid sender hNe hStep]
+      exact hObj
+
+theorem endpointAwaitReceive_tcb_lookup_iff
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    st'.objects tid = some (.tcb tcb) ↔ st.objects tid = some (.tcb tcb) := by
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  have hStoreEq : st'.objects endpointId = some (.endpoint ep') :=
+    storeObject_objects_eq st st' endpointId (.endpoint ep') hStore
+  constructor
+  · intro hObj'
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rw [hStoreEq] at hObj'
+      cases hObj'
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointAwaitReceive_preserves_other_objects st st' endpointId tid receiver hNe hStep] at hObj'
+      exact hObj'
+  · intro hObj
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rcases endpointAwaitReceive_ok_implies_endpoint_object st st' tid receiver hStep with ⟨ep, hEpObj⟩
+      rw [hEpObj] at hObj
+      cases hObj
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointAwaitReceive_preserves_other_objects st st' endpointId tid receiver hNe hStep]
+      exact hObj
+
+theorem endpointReceive_tcb_lookup_iff
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    st'.objects tid = some (.tcb tcb) ↔ st.objects tid = some (.tcb tcb) := by
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hStoreEq : st'.objects endpointId = some (.endpoint ep') :=
+    storeObject_objects_eq st st' endpointId (.endpoint ep') hStore
+  constructor
+  · intro hObj'
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rw [hStoreEq] at hObj'
+      cases hObj'
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointReceive_preserves_other_objects st st' endpointId tid sender hNe hStep] at hObj'
+      exact hObj'
+  · intro hObj
+    by_cases hEq : tid = endpointId
+    · subst hEq
+      rcases endpointReceive_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+      rw [hEpObj] at hObj
+      cases hObj
+    · have hNe : tid ≠ endpointId := hEq
+      rw [endpointReceive_preserves_other_objects st st' endpointId tid sender hNe hStep]
+      exact hObj
+
+theorem endpointSend_preserves_schedulerIpcCoherencePredicates
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : schedulerIpcCoherencePredicates st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    schedulerIpcCoherencePredicates st' := by
+  rcases hInv with ⟨hSend, hRecv, hRun, hCur⟩
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointSend_tcb_lookup_iff st st' endpointId sender tid tcb hStep).1 hObj
+    have hRes := hSend tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointSend_tcb_lookup_iff st st' endpointId sender tid tcb hStep).1 hObj
+    have hRes := hRecv tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid hIn
+    have hInSt : tid ∈ st.scheduler.runnable := by simpa [hSchedEq] using hIn
+    rcases hRun tid hInSt with ⟨tcb, hObjSt, hReady⟩
+    have hObj' : st'.objects tid = some (.tcb tcb) :=
+      (endpointSend_tcb_lookup_iff st st' endpointId sender tid tcb hStep).2 hObjSt
+    exact ⟨tcb, hObj', hReady⟩
+  · cases hCurrent : st.scheduler.current with
+    | none => simp [currentThreadIpcReady, hSchedEq, hCurrent]
+    | some tid =>
+        have hCurSt : ∃ tcb, st.objects tid = some (.tcb tcb) ∧ tcb.ipcState = .ready := by
+          simpa [currentThreadIpcReady, hCurrent] using hCur
+        rcases hCurSt with ⟨tcb, hObjSt, hReady⟩
+        have hObj' : st'.objects tid = some (.tcb tcb) :=
+          (endpointSend_tcb_lookup_iff st st' endpointId sender tid tcb hStep).2 hObjSt
+        simpa [currentThreadIpcReady, hSchedEq, hCurrent] using ⟨tcb, hObj', hReady⟩
+
+theorem endpointAwaitReceive_preserves_schedulerIpcCoherencePredicates
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (hInv : schedulerIpcCoherencePredicates st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    schedulerIpcCoherencePredicates st' := by
+  rcases hInv with ⟨hSend, hRecv, hRun, hCur⟩
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointAwaitReceive_tcb_lookup_iff st st' endpointId receiver tid tcb hStep).1 hObj
+    have hRes := hSend tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointAwaitReceive_tcb_lookup_iff st st' endpointId receiver tid tcb hStep).1 hObj
+    have hRes := hRecv tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid hIn
+    have hInSt : tid ∈ st.scheduler.runnable := by simpa [hSchedEq] using hIn
+    rcases hRun tid hInSt with ⟨tcb, hObjSt, hReady⟩
+    have hObj' : st'.objects tid = some (.tcb tcb) :=
+      (endpointAwaitReceive_tcb_lookup_iff st st' endpointId receiver tid tcb hStep).2 hObjSt
+    exact ⟨tcb, hObj', hReady⟩
+  · cases hCurrent : st.scheduler.current with
+    | none => simp [currentThreadIpcReady, hSchedEq, hCurrent]
+    | some tid =>
+        have hCurSt : ∃ tcb, st.objects tid = some (.tcb tcb) ∧ tcb.ipcState = .ready := by
+          simpa [currentThreadIpcReady, hCurrent] using hCur
+        rcases hCurSt with ⟨tcb, hObjSt, hReady⟩
+        have hObj' : st'.objects tid = some (.tcb tcb) :=
+          (endpointAwaitReceive_tcb_lookup_iff st st' endpointId receiver tid tcb hStep).2 hObjSt
+        simpa [currentThreadIpcReady, hSchedEq, hCurrent] using ⟨tcb, hObj', hReady⟩
+
+theorem endpointReceive_preserves_schedulerIpcCoherencePredicates
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : schedulerIpcCoherencePredicates st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    schedulerIpcCoherencePredicates st' := by
+  rcases hInv with ⟨hSend, hRecv, hRun, hCur⟩
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointReceive_tcb_lookup_iff st st' endpointId sender tid tcb hStep).1 hObj
+    have hRes := hSend tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjSt : st.objects tid = some (.tcb tcb) :=
+      (endpointReceive_tcb_lookup_iff st st' endpointId sender tid tcb hStep).1 hObj
+    have hRes := hRecv tid tcb endpoint hObjSt hBlocked
+    simpa [hSchedEq] using hRes
+  · intro tid hIn
+    have hInSt : tid ∈ st.scheduler.runnable := by simpa [hSchedEq] using hIn
+    rcases hRun tid hInSt with ⟨tcb, hObjSt, hReady⟩
+    have hObj' : st'.objects tid = some (.tcb tcb) :=
+      (endpointReceive_tcb_lookup_iff st st' endpointId sender tid tcb hStep).2 hObjSt
+    exact ⟨tcb, hObj', hReady⟩
+  · cases hCurrent : st.scheduler.current with
+    | none => simp [currentThreadIpcReady, hSchedEq, hCurrent]
+    | some tid =>
+        have hCurSt : ∃ tcb, st.objects tid = some (.tcb tcb) ∧ tcb.ipcState = .ready := by
+          simpa [currentThreadIpcReady, hCurrent] using hCur
+        rcases hCurSt with ⟨tcb, hObjSt, hReady⟩
+        have hObj' : st'.objects tid = some (.tcb tcb) :=
+          (endpointReceive_tcb_lookup_iff st st' endpointId sender tid tcb hStep).2 hObjSt
+        simpa [currentThreadIpcReady, hSchedEq, hCurrent] using ⟨tcb, hObj', hReady⟩
 
 
 end SeLe4n.Kernel

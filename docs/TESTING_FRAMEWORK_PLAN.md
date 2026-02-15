@@ -23,7 +23,7 @@ Current repository status:
 The framework is successful only if all of the following remain true.
 
 1. **Proof-surface stability**
-   - `lake build` keeps theorem entrypoints compiling.
+   - `lake build` keeps theorem entrypoints compiling and emits no unresolved Lean warnings in required Tier 1 checks.
    - No committed `axiom`, `sorry`, or unresolved work markers in core scope.
 
 2. **Executable behavior stability**
@@ -48,7 +48,7 @@ The framework is successful only if all of the following remain true.
 ### 3.1 Active required tiers
 
 - **Tier 0** hygiene check (`scripts/test_tier0_hygiene.sh`)
-- **Tier 1** build/theorem check (`scripts/test_tier1_build.sh`)
+- **Tier 1** build/theorem check (`scripts/test_tier1_build.sh`, including warning-free `lake build` enforcement)
 - **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
 
 ### 3.2 Aggregated required entrypoints

@@ -4,7 +4,7 @@
 
 This guide defines the expected engineering workflow for seLe4n contributors.
 
-Current project stage: **post-M3 seed / pre-M3.5 handshake completion**.
+Current project stage: **post-M3 seed / mid-M3.5 handshake completion**.
 
 Primary contributor goals:
 
@@ -67,9 +67,10 @@ Use this order unless a concrete dependency forces adjustment.
    - updated `endpointReceive` branching to keep explicit error outcomes for impossible waiting-receiver combinations,
    - preservation-entrypoint proofs for updated send/receive transitions remain unfold-friendly and machine-checked.
 
-3. **Scheduler contract predicates third**
-   - define targeted blocked-vs-runnable coherence predicates,
-   - avoid over-generalized abstraction.
+3. **Scheduler contract predicates third** ✅ **completed**
+   - added targeted blocked-vs-runnable coherence predicates (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `runnableThreadIpcReady`, `currentThreadIpcReady`),
+   - introduced explicit step-3 scheduler/IPC contract bundle entrypoint (`schedulerIpcCoherencePredicates`) without over-generalized abstraction,
+   - added transition preservation theorem entrypoints for this step-3 contract (`endpointSend|endpointAwaitReceive|endpointReceive_preserves_schedulerIpcCoherencePredicates`).
 
 4. **Invariant bundle composition fourth**
    - add named IPC+scheduler coherence components,

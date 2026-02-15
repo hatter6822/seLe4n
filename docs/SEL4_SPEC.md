@@ -12,7 +12,7 @@ It has five jobs:
 4. Declare what is out of scope so review stays focused.
 5. Provide acceptance gates that can be validated locally.
 
-The project is currently in a **post-M3-seed / pre-M3.5** stage: M1 scheduler invariants, M2
+The project is currently in a **post-M3-seed / mid-M3.5** stage: M1 scheduler invariants, M2
 capability semantics, and M3 endpoint send/receive seed semantics are complete and executable.
 
 Testing baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed
@@ -149,8 +149,12 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
   - `endpointSend` now has an explicit receive-handshake success path (`receive` + waiting receiver) and explicit state-mismatch error branches for illegal endpoint shapes,
   - `endpointReceive` now keeps explicit success/error splits over queue + waiting-receiver combinations,
   - send/receive preservation theorem entrypoints remain machine-checked after transition-surface updates.
+- ✅ **Step 3 complete (scheduler contract predicates)**
+  - added focused blocked-vs-runnable coherence predicates (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `runnableThreadIpcReady`, `currentThreadIpcReady`),
+  - introduced explicit grouped step-3 contract entrypoint (`schedulerIpcCoherencePredicates`) while keeping abstraction deliberately narrow,
+  - added machine-checked preservation theorem entrypoints for endpoint transitions over this step-3 contract.
 - ⏳ **Remaining M3.5 steps**
-  - scheduler contract predicates onward (steps 3-7) remain in progress.
+  - invariant-bundle composition onward (steps 4-7) remain in progress.
 
 ---
 
