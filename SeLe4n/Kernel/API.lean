@@ -219,11 +219,35 @@ def endpointQueueWellFormed (ep : Endpoint) : Prop :=
   | .send => ep.queue ≠ []
   | .receive => ep.queue = []
 
-/-- Global IPC seed invariant: every endpoint object satisfies queue/state well-formedness. -/
+/-- Endpoint/object validity component for the M3 IPC seed.
+
+This predicate captures a minimal object-level discipline: explicit `receive` state is represented
+without queued senders in this first slice. -/
+def endpointObjectValid (ep : Endpoint) : Prop :=
+  match ep.state with
+  | .receive => ep.queue = []
+  | _ => True
+
+/-- IPC invariant component bundle for one endpoint object. -/
+def endpointInvariant (ep : Endpoint) : Prop :=
+  endpointQueueWellFormed ep ∧ endpointObjectValid ep
+
+/-- Global IPC seed invariant entrypoint. -/
 def ipcInvariant (st : SystemState) : Prop :=
   ∀ oid ep,
     st.objects oid = some (.endpoint ep) →
-    endpointQueueWellFormed ep
+    endpointInvariant ep
+
+theorem endpointObjectValid_of_queueWellFormed
+    (ep : Endpoint)
+    (hWf : endpointQueueWellFormed ep) :
+    endpointObjectValid ep := by
+  cases ep with
+  | mk state queue =>
+      cases state
+      · simp [endpointObjectValid]
+      · simp [endpointObjectValid]
+      · simpa [endpointQueueWellFormed, endpointObjectValid] using hWf
 
 theorem endpointSend_result_wellFormed
     (st st' : SystemState)
@@ -343,7 +367,9 @@ theorem endpointSend_preserves_ipcInvariant
       rw [hStored] at hObj
       cases hObj
       rfl
-    simpa [hCast] using hWfNew
+    have hObjValidNew : endpointObjectValid epNew :=
+      endpointObjectValid_of_queueWellFormed epNew hWfNew
+    simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
   · have hUnchanged : st'.objects oid = st.objects oid := by
       exact endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
     have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
@@ -364,7 +390,9 @@ theorem endpointReceive_preserves_ipcInvariant
       rw [hStored] at hObj
       cases hObj
       rfl
-    simpa [hCast] using hWfNew
+    have hObjValidNew : endpointObjectValid epNew :=
+      endpointObjectValid_of_queueWellFormed epNew hWfNew
+    simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
   · have hUnchanged : st'.objects oid = st.objects oid := by
       exact endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
     have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
