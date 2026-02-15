@@ -1,0 +1,10 @@
+scheduled thread: some 1
+source cap rights before mint:
+created sibling cap with the same target
+post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
+post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
+queued two senders on endpoint
+endpoint receive #1 sender: 1
+endpoint receive #2 sender: 2
+endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
+minted cap rights:

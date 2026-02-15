@@ -1,0 +1,40 @@
+# Test scenarios and fixture maintenance
+
+This directory documents fixture-backed trace checks for `scripts/test_tier2_trace.sh`.
+
+## Current fixture
+
+- `tests/fixtures/main_trace_smoke.expected`
+  - line-oriented expected *substrings* for the `lake exe sele4n` smoke trace.
+  - each non-empty line must appear somewhere in actual output.
+
+## Intentional fixture update workflow
+
+When executable behavior changes intentionally:
+
+1. Run the executable and inspect output:
+   ```bash
+   source "$HOME/.elan/env"
+   lake exe sele4n
+   ```
+2. Update `tests/fixtures/main_trace_smoke.expected` with stable semantic lines only
+   (avoid timestamps / ordering-noise-sensitive strings).
+3. Re-run:
+   ```bash
+   ./scripts/test_tier2_trace.sh
+   ./scripts/test_smoke.sh
+   ```
+4. In your PR description, explain why fixture changes are expected.
+
+## Control-data audit tip
+
+Use an intentionally bad fixture line to verify deterministic failure behavior:
+
+```bash
+TMP_FIXTURE="$(mktemp)"
+cp tests/fixtures/main_trace_smoke.expected "$TMP_FIXTURE"
+echo "this line should never match" >> "$TMP_FIXTURE"
+TRACE_FIXTURE_PATH="$TMP_FIXTURE" ./scripts/test_tier2_trace.sh
+```
+
+The command should fail and report the missing expected line.
