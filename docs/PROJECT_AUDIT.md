@@ -20,7 +20,7 @@ Validation commands used in this audit:
 
 ## 2. Executive summary
 
-Overall project health is **strong** for its milestone stage (post-M3 seed / pre-M3.5 handshake).
+Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-3 complete).
 
 - The codebase exhibits a disciplined, executable-and-provable style.
 - Required quality gates (hygiene/build/smoke fixture) are effective and deterministic.
@@ -28,11 +28,12 @@ Overall project health is **strong** for its milestone stage (post-M3 seed / pre
 
 Key advancement in this audit cycle:
 
-- Tier 3 was moved from placeholder to an active full-suite gate (`test_tier3_invariant_surface.sh`) that checks critical invariant theorem surface anchors and doc stage markers.
+- M3.5 step-3 scheduler/IPC coherence predicates are now implemented and machine-checked preservation entrypoints exist for send/await-receive/receive.
+- Tier 3 remains active and now includes anchor checks for the new step-3 predicate/theorem surface.
 
 Primary remaining high-value path:
 
-- Develop M3.5 handshake semantics with scheduler-blocked/runnable coherence and strengthen Tier 3 from static surface checks toward semantic grouped invariant checks.
+- Complete M3.5 steps 4-7 (bundle composition, helper-lemma hardening, composed preservation entrypoints, and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
 
 ---
 
@@ -55,7 +56,7 @@ Primary remaining high-value path:
 ### 3.3 Remaining optimization recommendations
 
 1. Introduce a small proof-style guide section for preferred lemma naming patterns by milestone bundle.
-2. Add focused theorem-group index comments around M3.5 additions to keep API discoverability high as file size grows.
+2. Add focused theorem-group index comments around M3.5 additions to keep API discoverability high as `SeLe4n/Kernel/IPC/Invariant.lean` grows.
 3. Keep transition-local helper theorems near transition definitions to maintain unfolding ergonomics.
 
 ---
@@ -81,7 +82,7 @@ Primary remaining high-value path:
 ### 4.3 Remaining testing roadmap
 
 1. Strengthen Tier 3 from static symbol-surface checks to grouped milestone semantic checks.
-2. Expand Tier 2 fixture scenarios once M3.5 waiting/handshake behavior lands.
+2. Expand Tier 2 fixture scenarios as additional M3.5 blocked/wakeup stories (steps 4-7) land.
 3. Convert Tier 4 nightly note into repeat-run determinism and broader scenario sweeps.
 
 ---
@@ -140,6 +141,6 @@ Primary remaining high-value path:
 
 ## 8. Conclusion
 
-The project is in a healthy state and technically well-positioned for M3.5 handshake work.
+The project is in a healthy state and technically well-positioned to finish the remaining M3.5 closure steps.
 
 This audit cycle improved maintainability (predicate aliasing), strengthened confidence gates (Tier 3 activation), and expanded project-level status reporting (new audit document).

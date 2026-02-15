@@ -149,8 +149,12 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
   - `endpointSend` now has an explicit receive-handshake success path (`receive` + waiting receiver) and explicit state-mismatch error branches for illegal endpoint shapes,
   - `endpointReceive` now keeps explicit success/error splits over queue + waiting-receiver combinations,
   - send/receive preservation theorem entrypoints remain machine-checked after transition-surface updates.
+- ✅ **Step 3 complete (scheduler contract predicates)**
+  - added explicit scheduler/IPC coherence predicates for the active slice (`runnableThreadIpcReady`, `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`),
+  - composed the targeted trio under `ipcSchedulerContractPredicates` with intentionally narrow (non-over-generalized) scope,
+  - added machine-checked preservation entrypoints for send/await-receive/receive under the new scheduler-contract predicate set.
 - ⏳ **Remaining M3.5 steps**
-  - scheduler contract predicates onward (steps 3-7) remain in progress.
+  - invariant bundle composition onward (steps 4-7) remain in progress.
 
 ---
 
