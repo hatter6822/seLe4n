@@ -77,6 +77,8 @@ Implemented pieces already landed for the active slice:
 3. Explicit IPC error branches for mismatched endpoint/object states and empty-send-queue cases.
 4. IPC seed invariants and preservation theorem entrypoints:
    - `endpointQueueWellFormed`,
+   - `endpointObjectValid`,
+   - `endpointInvariant`,
    - `ipcInvariant`,
    - `endpointSend_preserves_ipcInvariant`,
    - `endpointReceive_preserves_ipcInvariant`.

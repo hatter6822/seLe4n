@@ -45,11 +45,11 @@ Work in this order unless a blocking dependency requires adjustment:
    - Status: typed endpoint entrypoints (`endpointSend`, `endpointReceive`) are present with
      explicit error branches, and IPC-specific preservation lemmas are now proved for both.
 
-3. **Invariant components third** *(partially complete)*
+3. **Invariant components third** *(complete)*
    - Define one endpoint queue well-formedness predicate.
    - Define one endpoint/object validity predicate.
    - Bundle under a clearly named IPC invariant entrypoint.
-   - Status: `endpointQueueWellFormed` + `ipcInvariant` are defined; broader cross-bundle composition remains.
+   - Status: `endpointQueueWellFormed` + `endpointObjectValid` are bundled under `endpointInvariant` and exposed through `ipcInvariant`.
 
 4. **Local helper lemmas fourth**
    - Add lookup/update lemmas close to transition definitions.
