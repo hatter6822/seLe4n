@@ -147,6 +147,31 @@ def cspaceMint
         | .error e => .error e
         | .ok child => cspaceInsertSlot dst child st'
 
+/-- Delete the capability currently stored in `addr`. -/
+def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.objects addr.cnode with
+    | some (.cnode cn) =>
+        let cn' := cn.remove addr.slot
+        storeObject addr.cnode (.cnode cn') st
+    | _ => .error .objectNotFound
+
+/-- Revoke capabilities with the same target as the source in the containing CNode.
+
+This first lifecycle transition is intentionally local to one CNode while derivation-tree state is
+still out-of-scope for the active slice. The source slot remains present and sibling slots naming
+the same target are removed. -/
+def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot addr st with
+    | .error e => .error e
+    | .ok (parent, st') =>
+        match st'.objects addr.cnode with
+        | some (.cnode cn) =>
+            let cn' := cn.revokeTargetLocal addr.slot parent.target
+            storeObject addr.cnode (.cnode cn') st'
+        | _ => .error .objectNotFound
+
 /-- Slot-level uniqueness/no-alias policy: lookup is deterministic for each slot address. -/
 def cspaceSlotUnique (st : SystemState) : Prop :=
   ∀ addr cap₁ cap₂ st₁ st₂,
@@ -215,6 +240,60 @@ theorem cspaceInsertSlot_establishes_ownsSlot
   have hLookup : cspaceLookupSlot addr st' = .ok (cap, st') :=
     cspaceInsertSlot_lookup_eq st st' addr cap hStep
   exact cspaceLookupSlot_ok_implies_ownsSlot st' addr cap hLookup
+
+theorem cspaceDeleteSlot_lookup_eq_none
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    cspaceLookupSlot addr st' = .error .invalidCapability := by
+  rcases addr with ⟨cnodeId, slot⟩
+  cases hObj : st.objects cnodeId with
+  | none => simp [cspaceDeleteSlot, hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
+      | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | cnode cn =>
+          simp [cspaceDeleteSlot, hObj] at hStep
+          cases hStep
+          simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
+            CNode.lookup_remove_eq_none]
+
+theorem cspaceRevoke_preserves_source
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    ∃ cap, cspaceLookupSlot addr st' = .ok (cap, st') := by
+  unfold cspaceRevoke at hStep
+  cases hLookup : cspaceLookupSlot addr st with
+  | error e => simp [hLookup] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
+      subst st1
+      cases hObj : st.objects addr.cnode with
+      | none => simp [hLookup, hObj] at hStep
+      | some obj =>
+          cases obj with
+          | tcb tcb => simp [hLookup, hObj] at hStep
+          | endpoint ep => simp [hLookup, hObj] at hStep
+          | cnode cn =>
+              simp [hLookup, hObj] at hStep
+              cases hStep
+              have hCap : SystemState.lookupSlotCap st addr = some parent :=
+                (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
+              refine ⟨parent, ?_⟩
+              apply (cspaceLookupSlot_ok_iff_lookupSlotCap
+                { st with
+                  objects :=
+                    fun oid =>
+                      if oid = addr.cnode then
+                        some (.cnode (cn.revokeTargetLocal addr.slot parent.target))
+                      else
+                        st.objects oid }
+                addr parent).2
+              simpa [SystemState.lookupSlotCap, SystemState.lookupCNode,
+                CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
 
 theorem mintDerivedCap_attenuates
     (parent child : Capability)

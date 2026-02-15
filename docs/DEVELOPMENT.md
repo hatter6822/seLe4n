@@ -144,7 +144,7 @@ Before merging work intended for the active M2 slice, verify:
 
 Additional active-slice closure checks:
 
-- [ ] typed revoke/delete transitions compile and use typed CSpace addresses,
+- [x] typed revoke/delete transitions compile and use typed CSpace addresses,
 - [ ] lifecycle-aware authority monotonicity predicates are defined and used in theorem statements,
 - [ ] composed capability bundle includes lifecycle clauses,
 - [ ] at least one lifecycle preservation theorem is proven for the composed bundle,
