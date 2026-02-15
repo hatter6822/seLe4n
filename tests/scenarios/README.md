@@ -48,3 +48,8 @@ The command should fail and report the missing expected line.
 - a reminder to update fixture + PR rationale when drift is intentional.
 
 This contract keeps smoke regressions deterministic and reviewable in both local runs and CI logs.
+
+## CI usage
+
+This fixture is enforced in pull requests by the `tier_smoke` workflow job, which runs
+`./scripts/test_smoke.sh` from `.github/workflows/lean_action_ci.yml`.

@@ -8,8 +8,8 @@ Current repository status against this plan:
 
 - ✅ Work package A (script scaffold) is implemented.
 - ✅ Work package B (fixture-backed executable smoke baseline) is implemented.
-- ⏳ Work package C (CI wiring to script entrypoints) is pending.
-- ⏳ Work package D (final doc integration pass) is in progress and should track script/CI reality.
+- ✅ Work package C (CI wiring to script entrypoints) is implemented.
+- ✅ Work package D (final doc integration pass) tracks script/CI reality.
 - ⏳ Work package E (Tier 3 hooks) is partially prepared via explicit extension points.
 
 ---
@@ -268,6 +268,8 @@ Acceptance criteria:
 
 ## 8.3 Work package C — CI wiring (day 2)
 
+Implementation status (current): Completed via required `tier_fast` and `tier_smoke` pull request jobs in `.github/workflows/lean_action_ci.yml`, both invoking repository scripts directly.
+
 Tasks:
 1. Update `.github/workflows/lean_action_ci.yml` to run smoke gate scripts.
 2. Ensure script paths and permissions are valid in CI.
@@ -319,7 +321,7 @@ Copy into implementation PR(s):
 - [ ] Added shared script helper library (or equivalent dedup strategy).
 - [ ] Added fixture directory and baseline expected trace file.
 - [ ] Implemented trace comparison and clear mismatch diagnostics.
-- [ ] Updated CI workflow to call repository test scripts.
+- [x] Updated CI workflow to call repository test scripts.
 - [ ] Updated README and development docs.
 - [ ] Ran local verification commands listed below.
 

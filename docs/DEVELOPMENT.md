@@ -145,6 +145,20 @@ For fresh environments, run `./scripts/setup_lean_env.sh` once. Test scripts aut
 
 ---
 
+
+## 7.1 Pull request CI enforcement (required)
+
+Pull request CI now enforces the same required tiers used locally by calling repository scripts
+from `.github/workflows/lean_action_ci.yml`:
+
+- `tier_fast` job runs `./scripts/test_fast.sh`.
+- `tier_smoke` job runs `./scripts/test_smoke.sh`.
+
+Do not inline bespoke test commands in CI when updating gates; keep CI and local behavior aligned
+by extending script entrypoints under `scripts/` first.
+
+---
+
 ## 8. PR checklist (required)
 
 Copy this checklist into the PR description:
@@ -157,6 +171,7 @@ Copy this checklist into the PR description:
 - [ ] `lake exe sele4n` executed.
 - [ ] Hygiene scan (`axiom|sorry|TODO`) executed.
 - [ ] Docs updated in the same commit range.
+- [ ] CI required-tier workflow jobs still call repository script entrypoints.
 - [ ] Remaining proof debt is identified.
 
 ---

@@ -3,6 +3,8 @@
 A Lean 4 formalization project for building an executable and machine-checked model of key
 [seL4 microkernel](https://sel4.systems) semantics.
 
+Current project version: **0.3.11**.
+
 ## Project status snapshot
 
 seLe4n is currently in a **post-M3 IPC seed** stage:
@@ -17,7 +19,8 @@ The active planning target is **M3.5 IPC handshake + scheduler interaction**, wh
 narrow blocking/wakeup IPC contract while preserving existing M1/M2/M3 guarantees.
 
 Testing framework status: Tier 0 (hygiene), Tier 1 (build), and Tier 2 (fixture-backed executable
-smoke regression checks) are implemented and usable via `scripts/test_*.sh` entrypoints.
+smoke regression checks) are implemented and enforced in pull request CI via repository
+`scripts/test_*.sh` entrypoints.
 
 ## Quick start
 
@@ -117,6 +120,17 @@ Run this as a minimum before opening a PR:
 ./scripts/test_fast.sh
 ./scripts/test_smoke.sh
 ```
+
+## Pull request CI gates
+
+Pull requests now run required tiered checks through workflow jobs that directly call repository
+scripts:
+
+- `tier_fast` runs `./scripts/test_fast.sh`.
+- `tier_smoke` runs `./scripts/test_smoke.sh`.
+
+This keeps local and CI behavior aligned and preserves category-labeled logs from the scripts
+(`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
 When debugging locally, you can still run individual commands:
 

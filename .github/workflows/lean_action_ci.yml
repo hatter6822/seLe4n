@@ -6,9 +6,32 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  tier_fast:
+    name: Tier Fast (hygiene + build)
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
       - uses: leanprover/lean-action@v1
+      - name: Ensure test scripts are executable
+        run: chmod +x scripts/test_*.sh scripts/test_lib.sh
+      - name: Run fast required gate
+        run: |
+          echo "::group::test_fast"
+          ./scripts/test_fast.sh
+          echo "::endgroup::"
+
+  tier_smoke:
+    name: Tier Smoke (hygiene + build + trace)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+      - name: Ensure test scripts are executable
+        run: chmod +x scripts/test_*.sh scripts/test_lib.sh
+      - name: Run smoke required gate
+        run: |
+          echo "::group::test_smoke"
+          ./scripts/test_smoke.sh
+          echo "::endgroup::"
