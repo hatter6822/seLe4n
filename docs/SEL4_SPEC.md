@@ -219,8 +219,12 @@ and no open TODOs remain for the transitions introduced in this slice.
 - M2 Foundation **Step 4 preservation proofs** are now established for one read transition (`cspaceLookupSlot_preserves_capabilityInvariantBundle`) and one write transition (`cspaceMint_preserves_capabilityInvariantBundle`) in `SeLe4n.Kernel.API`.
 - M2 Foundation **Step 5 executable path** is now demonstrated in `Main.lean` via explicit source
   slot lookup plus mint + destination lookup on concrete CSpace addresses.
-- Remaining M2 work focuses on broader capability lifecycle transitions (revoke/delete) and
-  strengthening authority properties across those new operations.
+- Active-slice lifecycle transition surface is now implemented (`cspaceDeleteSlot`,
+  `cspaceRevoke`) with local authority-reduction helper theorems.
+- Active-slice lifecycle authority monotonicity modeling is now defined as
+  `lifecycleAuthorityMonotonicity` and proven to hold in the current model.
+- Remaining M2 work is to fold lifecycle clauses into the composed capability bundle and prove
+  composed lifecycle-preservation theorem entrypoints.
 
 ### 6.6 Active-slice incremental target outcomes and sequencing
 
@@ -243,10 +247,9 @@ four target increments:
 
 ### 6.7 Full-repository audit snapshot (documentation-to-code alignment)
 
-- Build proof check (`lake build`): passes; one non-blocking linter hint suggests `simp` in place
-  of one `simpa` in `SeLe4n.Kernel.API`.
+- Build proof check (`lake build`): passes.
 - Executable behavior check (`lake exe sele4n`): runs and demonstrates scheduler selection,
-  source-slot lookup, and rights-attenuated mint into destination slot.
+  source-slot lookup, rights-attenuated mint, local revoke, and delete transitions.
 - Proof-hygiene check (`rg -n "axiom|TODO|sorry" SeLe4n Main.lean`): no unresolved proof escapes
   or stale TODO markers found in Lean code.
 
@@ -296,7 +299,8 @@ Incremental plan:
 - ✅ Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.
 - ✅ Step 3 complete: first capability invariant bundle is defined/proven (slot uniqueness, lookup soundness, attenuation monotonicity).
 - ✅ Next increment landed: typed revoke/delete transitions over `SlotRef`-style addresses (local revoke semantics in the modeled CNode scope).
-- ✅ Step 2 complete: lifecycle-aware authority monotonicity constraints are defined for attenuation + delete/revoke reduction.
+- ✅ Step 4 complete (partial active-slice closure): lifecycle-aware authority monotonicity constraints are defined for attenuation + delete/revoke reduction, with dedicated helper theorems.
+- 🔄 Step 5 in progress: extend composed `capabilityInvariantBundle` with lifecycle clauses and prove composed preservation for delete/revoke transitions.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics
