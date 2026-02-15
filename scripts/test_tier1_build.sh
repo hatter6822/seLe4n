@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
+ensure_lake_available
+
 run_check "BUILD" lake build
 
 finalize_report

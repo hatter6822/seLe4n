@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
+ensure_lake_available
+
 TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-tests/fixtures/main_trace_smoke.expected}"
 TRACE_OUTPUT="$(mktemp)"
 MISSING_REPORT="$(mktemp)"
