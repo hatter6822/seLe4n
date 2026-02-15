@@ -173,6 +173,40 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
             storeObject addr.cnode (.cnode cn') st'
         | _ => .error .objectNotFound
 
+/-- Add a sender to an endpoint wait queue with explicit state transition. -/
+def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.state with
+        | .idle =>
+            let ep' : Endpoint := { state := .send, queue := [sender] }
+            storeObject endpointId (.endpoint ep') st
+        | .send =>
+            let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender] }
+            storeObject endpointId (.endpoint ep') st
+        | .receive => .error .endpointStateMismatch
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- Consume one queued sender from an endpoint wait queue. -/
+def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.state, ep.queue with
+        | .send, sender :: rest =>
+            let nextState : EndpointState := if rest.isEmpty then .idle else .send
+            let ep' : Endpoint := { state := nextState, queue := rest }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') => .ok (sender, st')
+        | .send, [] => .error .endpointQueueEmpty
+        | .idle, _ => .error .endpointStateMismatch
+        | .receive, _ => .error .endpointStateMismatch
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
 /-- Slot-level uniqueness/no-alias policy: lookup is deterministic for each slot address. -/
 def cspaceSlotUnique (st : SystemState) : Prop :=
   ∀ addr cap₁ cap₂ st₁ st₂,

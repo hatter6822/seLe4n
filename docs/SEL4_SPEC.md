@@ -79,6 +79,9 @@ safety invariants, while keeping M1/M2 theorems and executable path stable.
 
 For this slice to be considered complete, all of the following must be true:
 
+> Status note: step 1 is now implemented with typed `endpointSend`/`endpointReceive` entrypoints
+> and explicit error branches; remaining items in this section are still open for M3 completion.
+
 1. **Endpoint transition API exists**
    - Add typed endpoint transition entrypoints (minimum one send path and one receive path).
    - Transitions must use existing `Kernel` style and explicit error handling.

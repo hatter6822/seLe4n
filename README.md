@@ -59,8 +59,9 @@ lake exe sele4n
 
 ### Active planning target
 
-The next implementation slice is **M3 IPC seed**: introduce typed endpoint operations and first IPC
-safety invariants while preserving the established M1/M2 theorem surface.
+The next implementation slice is **M3 IPC seed**: typed endpoint send/receive transition entrypoints
+are now in place, with IPC safety invariants as the immediate follow-on work while preserving the
+established M1/M2 theorem surface.
 
 See:
 
