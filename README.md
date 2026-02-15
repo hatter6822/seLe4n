@@ -91,6 +91,21 @@ The next development slice should deliver:
 4. Preservation theorem entrypoints for updated transitions and bundle composition.
 5. Executable trace evidence for one waiting-to-delivery IPC scenario.
 
+## Testing quick reference
+
+Use the tiered test entrypoints for local validation:
+
+```bash
+./scripts/test_fast.sh      # Tier 0 + Tier 1
+./scripts/test_smoke.sh     # Tier 0 + Tier 1 + Tier 2 (fixture-backed trace gate)
+./scripts/test_full.sh      # smoke + explicit Tier 3 extension-point notice
+./scripts/test_nightly.sh   # full + explicit Tier 4 extension-point notice
+./scripts/audit_testing_framework.sh
+```
+
+The test scripts automatically source `$HOME/.elan/env` when present so `lake` is available even in
+fresh shells after running `./scripts/setup_lean_env.sh`.
+
 ## Daily contributor verification loop
 
 Run this as a minimum before opening a PR:

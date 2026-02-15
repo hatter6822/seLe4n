@@ -65,3 +65,21 @@ finalize_report() {
 
   log_section "META" "All checks passed."
 }
+
+ensure_lake_available() {
+  if command -v lake >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ -f "${HOME}/.elan/env" ]]; then
+    # shellcheck disable=SC1090
+    source "${HOME}/.elan/env"
+  fi
+
+  if command -v lake >/dev/null 2>&1; then
+    return 0
+  fi
+
+  record_failure "BUILD" "lake not found on PATH. Run ./scripts/setup_lean_env.sh or install elan."
+  finalize_report
+}

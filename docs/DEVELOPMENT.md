@@ -123,6 +123,13 @@ If docs are intentionally deferred, state why and when they will be updated.
 Run this minimum set before opening a PR:
 
 ```bash
+./scripts/test_fast.sh
+./scripts/test_smoke.sh
+```
+
+Keep these direct checks in your local loop when debugging specific failures:
+
+```bash
 lake build
 lake exe sele4n
 rg -n "axiom|sorry|TODO" SeLe4n Main.lean
@@ -130,7 +137,8 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 
 If any command cannot run due to environment constraints, report the constraint and its impact.
 
-For fresh environments without `lake` on `PATH`, run `./scripts/setup_lean_env.sh` before the validation loop.
+For fresh environments, run `./scripts/setup_lean_env.sh` once. Test scripts auto-source
+`$HOME/.elan/env` when available so `lake` can be found in non-interactive shells.
 
 ---
 
