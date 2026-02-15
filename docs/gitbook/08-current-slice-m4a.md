@@ -11,8 +11,10 @@ relationships remain coherent through those updates.
 
 - ✅ Step 1 complete: state-model lifecycle metadata is now explicit for object identity and
   capability reference ownership mapping (including revoke-path sibling cleanup).
-- 🚧 Remaining M4-A work: transition expansion, invariant layering, and composed preservation
-  theorem growth.
+- ✅ Step 2 complete: `lifecycleRetypeObject` adds deterministic success/error branching with
+  explicit `KernelError.illegalState` and `KernelError.illegalAuthority` branches, and executable
+  traces now cover both failure branches plus success.
+- 🚧 Remaining M4-A work: invariant layering and composed preservation theorem growth.
 
 
 1. **Transition surface**

@@ -3,6 +3,7 @@ import SeLe4n
 open SeLe4n.Model
 
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
+def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 5 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
@@ -33,7 +34,22 @@ def bootstrapState : SystemState :=
                 target := .object 1
                 rights := [.read, .write, .grant]
                 badge := none
+              }),
+              (5, {
+                target := .object 12
+                rights := [.read, .write]
+                badge := none
               }) ]
+        })
+      else if oid = 12 then
+        some (.tcb {
+          tid := 12
+          priority := 10
+          domain := 0
+          cspaceRoot := 10
+          vspaceRoot := 20
+          ipcBuffer := 8192
+          ipcState := .ready
         })
       else if oid = 11 then
         some (.cnode CNode.empty)
@@ -46,11 +62,13 @@ def bootstrapState : SystemState :=
       objectTypes := fun oid =>
         if oid = 1 then some .tcb
         else if oid = 10 then some .cnode
+        else if oid = 12 then some .tcb
         else if oid = 11 then some .cnode
         else if oid = demoEndpoint then some .endpoint
         else none
       capabilityRefs := fun ref =>
         if ref = rootSlot then some (.object 1)
+        else if ref = lifecycleAuthSlot then some (.object 12)
         else none
     }
   }
@@ -64,6 +82,30 @@ def main : IO Unit := do
       | .error err => IO.println s!"source lookup error: {reprStr err}"
       | .ok (srcCap, _) =>
           IO.println s!"source cap rights before mint: {reprStr srcCap.rights}"
+      match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
+          (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      | .error err =>
+          IO.println s!"lifecycle retype unauthorized branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected lifecycle retype success with wrong authority"
+      let stIllegalState : SystemState :=
+        { st1 with
+          lifecycle := {
+            st1.lifecycle with
+              objectTypes := fun oid =>
+                if oid = 12 then some .endpoint else st1.lifecycle.objectTypes oid
+          }
+        }
+      match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
+          (.endpoint { state := .idle, queue := [], waitingReceiver := none }) stIllegalState with
+      | .error err => IO.println s!"lifecycle retype illegal-state branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected lifecycle retype success under stale metadata"
+      match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
+          (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
+      | .ok (_, stLifecycle) =>
+          IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects 12).map KernelObject.objectType}"
       match SeLe4n.Kernel.cspaceMint rootSlot mintedSlot [.read] none st1 with
       | .error err => IO.println s!"cspace mint error: {reprStr err}"
       | .ok (_, st2) =>

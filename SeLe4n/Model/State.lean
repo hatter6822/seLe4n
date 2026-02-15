@@ -6,6 +6,8 @@ namespace SeLe4n.Model
 inductive KernelError where
   | invalidCapability
   | objectNotFound
+  | illegalState
+  | illegalAuthority
   | schedulerInvariantViolation
   | endpointStateMismatch
   | endpointQueueEmpty
