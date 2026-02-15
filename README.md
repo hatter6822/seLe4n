@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in a **post-M3 IPC seed / pre-M3.5 handshake** stage.
+seLe4n is currently in a **post-M3 IPC seed / mid-M3.5 handshake** stage.
 
 ### Milestone board (authoritative)
 
@@ -13,7 +13,7 @@ seLe4n is currently in a **post-M3 IPC seed / pre-M3.5 handshake** stage.
 - ✅ **M1 complete**: scheduler integrity invariants and preservation entrypoints.
 - ✅ **M2 complete**: capability + CSpace operations, attenuation/lifecycle rules, composed invariants.
 - ✅ **M3 complete**: endpoint IPC seed (`endpointSend`/`endpointReceive`) plus preservation theorem surface.
-- 🚧 **M3.5 in progress target**: typed waiting/handshake behavior with scheduler coherence obligations (steps 1-5 complete: endpoint/thread handshake fields, explicit handshake transition branches, targeted scheduler blocked-vs-runnable contract predicates, composed IPC+scheduler bundle layering over `m3IpcSeedInvariantBundle`, and local endpoint-store helper lemmas used by transition-preservation proofs).
+- 🚧 **M3.5 in progress target**: typed waiting/handshake behavior with scheduler coherence obligations (steps 1-6 complete: endpoint/thread handshake fields, explicit handshake transition branches, targeted scheduler blocked-vs-runnable contract predicates, composed IPC+scheduler bundle layering over `m3IpcSeedInvariantBundle`, local endpoint-store helper lemmas, and local-first preservation theorem layering with `<transition>_preserves_<invariant>` naming).
 - 📌 **Next slice after M3.5 (planned M4)**: object lifecycle/retype safety and capability-object interaction invariants.
 
 Testing framework status:

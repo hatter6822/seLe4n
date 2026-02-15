@@ -4,7 +4,7 @@
 
 This guide defines the expected engineering workflow for seLe4n contributors.
 
-Current project stage: **post-M3 seed / pre-M3.5 handshake completion**.
+Current project stage: **post-M3 seed / mid-M3.5 handshake completion**.
 
 Primary contributor goals:
 
@@ -79,9 +79,10 @@ Use this order unless a concrete dependency forces adjustment.
    - added local endpoint-store lookup helpers near IPC transitions (`tcb_lookup_of_endpoint_store`, runnable/non-runnable scheduler membership transport lemmas),
    - preservation proofs now consume these small lemmas directly to discharge concrete object-lookup and runnable-set obligations without duplicated case analysis.
 
-6. **Preservation theorems sixth**
-   - prove local invariants first, composed bundles second,
-   - use `<transition>_preserves_<invariant>` naming.
+6. **Preservation theorems sixth** ✅ **completed**
+   - endpoint transitions now prove local scheduler-contract components first (`runnableThreadIpcReady`, `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`),
+   - composed preservation (`ipcSchedulerContractPredicates`, `m35IpcSchedulerInvariantBundle`) is layered after those local theorems,
+   - new theorem entrypoints follow `<transition>_preserves_<invariant>` naming throughout step-6 additions.
 
 7. **Executable demonstration last**
    - extend `Main.lean` with a concrete M3.5 story,
