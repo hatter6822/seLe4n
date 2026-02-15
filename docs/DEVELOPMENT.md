@@ -68,9 +68,12 @@ Work in this order unless a blocking dependency requires adjustment:
      (`endpointSend_preserves_m3IpcSeedInvariantBundle`,
      `endpointReceive_preserves_m3IpcSeedInvariantBundle`) alongside existing M1/M2 bundles.
 
-6. **Executable demonstration last**
+6. **Executable demonstration last** *(complete)*
    - Extend `Main.lean` trace to include IPC behavior.
    - Confirm current demo behavior still executes.
+   - Status: `Main.lean` now demonstrates endpoint send/receive queue flow after the established
+     scheduler + CSpace lifecycle path, including an explicit expected error once the endpoint
+     returns to `idle`.
 
 ---
 

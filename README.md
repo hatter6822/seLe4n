@@ -7,11 +7,11 @@ The repository is currently at the point where:
 
 - Scheduler integrity (M1) is implemented and machine-checked.
 - Capability-space foundation + lifecycle transitions (M2) are implemented and machine-checked.
-- The executable demo path in `Main.lean` exercises scheduling, mint, revoke, and delete.
+- The executable demo path in `Main.lean` exercises scheduling, CSpace lifecycle operations, and endpoint IPC send/receive behavior.
 
-The immediate focus is now completing the next milestone slice (M3 IPC seed) without regressing the
-existing M1/M2 proof surface. The model-first minimal IPC state, typed endpoint transition
-entrypoints, and first IPC invariant preservation proofs are now in place.
+The immediate focus is preserving completed M3 IPC seed behavior while preparing follow-on slices
+without regressing the M1/M2/M3 proof surface. The executable IPC trace and theorem-backed IPC
+invariant preservation entrypoints are now in place.
 
 ## Quick start
 
@@ -60,11 +60,10 @@ lake exe sele4n
 
 ### Active planning target
 
-The next implementation slice is **M3 IPC seed**: the minimal endpoint state model and typed
-endpoint send/receive transition entrypoints now have IPC safety invariant preservation theorems
-and composed preservation entrypoints for the M1/M2/M3 seed bundle (`m3IpcSeedInvariantBundle`);
-the remaining M3 work is extending executable IPC trace coverage while preserving the established
-theorem surface.
+The **M3 IPC seed** slice is now complete: the minimal endpoint state model, typed endpoint
+send/receive transitions, IPC safety invariant preservation theorems, composed M1/M2/M3 seed
+bundle preservation entrypoints (`m3IpcSeedInvariantBundle`), and executable IPC trace coverage
+are all present.
 
 See:
 

@@ -5,8 +5,9 @@ open SeLe4n.Model
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
+def demoEndpoint : SeLe4n.ObjId := 30
 
-/-- Demonstrate a tiny executable path through scheduler + CSpace transitions. -/
+/-- Demonstrate a tiny executable path through scheduler + CSpace + IPC transitions. -/
 def bootstrapState : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
@@ -32,6 +33,8 @@ def bootstrapState : SystemState :=
         })
       else if oid = 11 then
         some (.cnode CNode.empty)
+      else if oid = demoEndpoint then
+        some (.endpoint { state := .idle, queue := [] })
       else
         none
     scheduler := { runnable := [1, 2], current := none }
@@ -67,6 +70,26 @@ def main : IO Unit := do
                       | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
                       | .ok (cap, _) =>
                           IO.println s!"unexpected cap after delete: {reprStr cap}"
+                      match SeLe4n.Kernel.endpointSend demoEndpoint 1 st5 with
+                      | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
+                      | .ok (_, st6) =>
+                          match SeLe4n.Kernel.endpointSend demoEndpoint 2 st6 with
+                          | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
+                          | .ok (_, st7) =>
+                              IO.println "queued two senders on endpoint"
+                              match SeLe4n.Kernel.endpointReceive demoEndpoint st7 with
+                              | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
+                              | .ok (sender1, st8) =>
+                                  IO.println s!"endpoint receive #1 sender: {sender1}"
+                                  match SeLe4n.Kernel.endpointReceive demoEndpoint st8 with
+                                  | .error err => IO.println s!"endpoint receive #2 error: {reprStr err}"
+                                  | .ok (sender2, st9) =>
+                                      IO.println s!"endpoint receive #2 sender: {sender2}"
+                                      match SeLe4n.Kernel.endpointReceive demoEndpoint st9 with
+                                      | .error err =>
+                                          IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
+                                      | .ok (sender3, _) =>
+                                          IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
           match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
           | .error err => IO.println s!"cspace lookup error: {reprStr err}"
           | .ok (cap, _) =>
