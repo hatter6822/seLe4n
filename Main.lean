@@ -2,6 +2,9 @@ import SeLe4n
 
 open SeLe4n.Model
 
+def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
+def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
+
 /-- Demonstrate a tiny executable path through scheduler + CSpace transitions. -/
 def bootstrapState : SystemState :=
   { (default : SystemState) with
@@ -38,10 +41,14 @@ def main : IO Unit := do
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st1) =>
       IO.println s!"scheduled thread: {reprStr st1.scheduler.current}"
-      match SeLe4n.Kernel.cspaceMint { cnode := 10, slot := 0 } { cnode := 11, slot := 3 } [.read] none st1 with
+      match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
+      | .error err => IO.println s!"source lookup error: {reprStr err}"
+      | .ok (srcCap, _) =>
+          IO.println s!"source cap rights before mint: {reprStr srcCap.rights}"
+      match SeLe4n.Kernel.cspaceMint rootSlot mintedSlot [.read] none st1 with
       | .error err => IO.println s!"cspace mint error: {reprStr err}"
       | .ok (_, st2) =>
-          match SeLe4n.Kernel.cspaceLookupSlot { cnode := 11, slot := 3 } st2 with
+          match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
           | .error err => IO.println s!"cspace lookup error: {reprStr err}"
           | .ok (cap, _) =>
               IO.println s!"minted cap rights: {reprStr cap.rights}"
