@@ -9,13 +9,27 @@ Development has completed the **M2 Foundation Slice: typed CSpace lookup and min
 
 The active implementation target is capability-lifecycle expansion beyond the completed M2 foundation slice.
 
-Target outcomes for this slice:
+Audited outcomes from the completed M2 foundation slice:
 
-- ~~add typed capability operations for lookup and write/update paths~~,
-- ~~add state/model helpers for slot-level capability ownership representation~~,
-- ~~define and compose initial capability invariants~~,
-- ~~prove preservation for at least one read and one write transition~~,
-- ~~keep executable behavior and existing scheduler proofs stable~~.
+- ✅ typed capability operations exist for lookup and write/update paths,
+- ✅ state/model helpers exist for slot-level capability ownership representation,
+- ✅ initial capability invariants are defined and composed,
+- ✅ preservation is proven for at least one read and one write transition,
+- ✅ executable behavior and existing scheduler proofs remain stable.
+
+Next target outcomes for the active slice:
+
+- add revoke/delete transitions over typed CSpace addresses,
+- define lifecycle-aware authority monotonicity constraints,
+- prove preservation of the capability invariant bundle across lifecycle transitions.
+
+### 1.1 Current audit evidence snapshot
+
+Latest repository-wide audit commands and expected outcomes:
+
+- `lake build` passes (current run: passes, with one non-blocking linter hint in `SeLe4n/Kernel/API.lean`),
+- `lake exe sele4n` runs scheduler + CSpace demonstration path,
+- `rg -n "axiom|TODO|sorry" SeLe4n Main.lean` returns no unresolved proof escapes or stale TODO markers.
 
 ## 2. Working agreement
 

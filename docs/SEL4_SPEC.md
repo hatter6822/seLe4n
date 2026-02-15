@@ -62,16 +62,16 @@ mint model** that is proof-ready and does not destabilize completed scheduler re
 
 In-scope for this slice:
 
-1. ~~Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
-   module) for:~~
-   ~~- slot lookup,~~
-   ~~- cap insertion/update,~~
-   ~~- mint-like derivation with rights attenuation.~~
-2. ~~Add state/model helpers needed to represent slot-level capability ownership without adding
-   architecture-specific detail.~~
-3. ~~Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
-   lookup soundness, attenuation monotonicity).~~
-4. ~~Prove preservation for at least one write transition and one read transition in the new API.~~
+1. ✅ Introduce minimal CSpace transition API surface in `SeLe4n.Kernel.API` (or a sibling kernel
+   module) for:
+   - slot lookup,
+   - cap insertion/update,
+   - mint-like derivation with rights attenuation.
+2. ✅ Add state/model helpers needed to represent slot-level capability ownership without adding
+   architecture-specific detail.
+3. ✅ Define a first capability-safety invariant bundle for this slice (e.g., slot uniqueness,
+   lookup soundness, attenuation monotonicity).
+4. ✅ Prove preservation for at least one write transition and one read transition in the new API.
 5. ✅ Keep `Main.lean` executable path functional; if changed, include a concrete demonstration of
    at least one CSpace operation.
 
@@ -192,6 +192,15 @@ and no open TODOs remain for the transitions introduced in this slice.
 - Remaining M2 work focuses on broader capability lifecycle transitions (revoke/delete) and
   strengthening authority properties across those new operations.
 
+### 6.6 Full-repository audit snapshot (documentation-to-code alignment)
+
+- Build proof check (`lake build`): passes; one non-blocking linter hint suggests `simp` in place
+  of one `simpa` in `SeLe4n.Kernel.API`.
+- Executable behavior check (`lake exe sele4n`): runs and demonstrates scheduler selection,
+  source-slot lookup, and rights-attenuated mint into destination slot.
+- Proof-hygiene check (`rg -n "axiom|TODO|sorry" SeLe4n Main.lean`): no unresolved proof escapes
+  or stale TODO markers found in Lean code.
+
 
 ## 7. Audit closure report (Bootstrap + M1)
 
@@ -235,7 +244,7 @@ Incremental plan:
 ### 8.2 M2 (current): capability and CSpace semantics
 
 - ✅ Step 1 complete: typed CSpace lookup/insert/mint API with explicit rights attenuation policy and core theorems.
-- ✅ ~~Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.~~
+- ✅ Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.
 - ✅ Step 3 complete: first capability invariant bundle is defined/proven (slot uniqueness, lookup soundness, attenuation monotonicity).
 - 🔄 Next: add revoke/delete transitions and extend authority constraints across lifecycle operations.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
