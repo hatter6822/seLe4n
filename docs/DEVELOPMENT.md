@@ -17,11 +17,11 @@ Audited outcomes from the completed M2 foundation slice:
 - ✅ preservation is proven for at least one read and one write transition,
 - ✅ executable behavior and existing scheduler proofs remain stable.
 
-Next target outcomes for the active slice:
+Current active-slice status:
 
-- add revoke/delete transitions over typed CSpace addresses,
-- define lifecycle-aware authority monotonicity constraints,
-- prove preservation of the capability invariant bundle across lifecycle transitions.
+- ✅ typed revoke/delete transitions over typed CSpace addresses are implemented,
+- ✅ lifecycle-aware authority monotonicity constraints are implemented,
+- 🔄 composed capability-bundle lifecycle preservation remains the open proof target.
 
 ### 1.1 Active-slice outcome details (implementation-ready)
 
@@ -42,10 +42,10 @@ To keep scope tight and proofs composable, treat the current slice as three expl
 
 ### 1.2 Current audit evidence snapshot
 
-Latest repository-wide audit commands and expected outcomes:
+Latest repository-wide audit commands and outcomes:
 
-- `lake build` passes (current run: passes, with one non-blocking linter hint in `SeLe4n/Kernel/API.lean`),
-- `lake exe sele4n` runs scheduler + CSpace demonstration path,
+- `lake build` passes,
+- `lake exe sele4n` runs scheduler + mint + revoke + delete demonstration path,
 - `rg -n "axiom|TODO|sorry" SeLe4n Main.lean` returns no unresolved proof escapes or stale TODO markers.
 
 ## 2. Working agreement
@@ -147,8 +147,8 @@ Additional active-slice closure checks:
 - [x] typed revoke/delete transitions compile and use typed CSpace addresses,
 - [x] lifecycle-aware authority monotonicity predicates are defined and used in theorem statements,
 - [ ] composed capability bundle includes lifecycle clauses,
-- [ ] at least one lifecycle preservation theorem is proven for the composed bundle,
-- [ ] executable example includes a lifecycle transition trace.
+- [ ] at least one lifecycle preservation theorem is proven for the composed bundle.
+- [x] executable example includes a lifecycle transition trace.
 
 ## 7. Audit protocol for milestone completion claims
 
