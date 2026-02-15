@@ -20,20 +20,21 @@ Validation commands used in this audit:
 
 ## 2. Executive summary
 
-Overall project health is **strong** for its milestone stage (post-M3 seed / active M3.5 step-5 complete).
+Overall project health is **strong** for its current milestone stage (**post-M3.5 closure / active M4 planning**).
 
-- The codebase exhibits a disciplined, executable-and-provable style.
-- Required quality gates (hygiene/build/smoke fixture) are effective and deterministic.
-- Documentation is unusually explicit for a formalization repository, with clear stage boundaries.
+- The codebase keeps a disciplined executable-and-provable style.
+- Required quality gates (hygiene/build/smoke fixture) are deterministic and informative.
+- Documentation now reflects that M3.5 is fully closed and M4 is the active next slice.
 
-Key advancement in this audit cycle:
+Key verified status in this cycle:
 
-- M3.5 step-3 scheduler/IPC coherence predicates and step-4 composed bundle layering (`m35IpcSchedulerInvariantBundle` over `m3IpcSeedInvariantBundle`) are in place, and step-5 local endpoint-store helper lemmas now discharge recurring lookup/runnable obligations in machine-checked send/await-receive/receive preservation proofs.
-- Tier 3 remains active and now includes anchor checks through the new step-5 helper-lemma surface.
+- M3.5 closure is complete across code + docs: waiting-receiver handshake transitions, scheduler coherence predicates, composed invariant bundle layering, local-first preservation theorem surfaces, and executable demonstration evidence are all present and validated.
+- Tier 3 invariant/doc-surface checks and Tier 2 fixture checks both pass and guard milestone-regression surfaces effectively.
+- Hygiene warnings about missing optional shell tooling were eliminated by installing `shellcheck`; Tier 0 now runs shell linting as part of normal checks.
 
-Primary remaining high-value path:
+Primary next high-value path:
 
-- Complete M3.5 steps 6-7 (further composed preservation/theorem hardening and expanded executable story), while continuing to deepen Tier 3 from surface checks toward milestone semantic group checks.
+- Begin M4 lifecycle/retype semantics while preserving M1–M3.5 contracts and extending Tier 2/Tier 3 checks to cover new lifecycle surfaces.
 
 ---
 
@@ -42,22 +43,17 @@ Primary remaining high-value path:
 ### 3.1 Strengths
 
 1. **Compositional invariant architecture**
-   - Scheduler, capability, and IPC invariants are separated and recomposed by bundle entrypoints.
+   - Scheduler, capability, and IPC invariants remain separated and recomposed through named bundle entrypoints.
 2. **Executable semantics + proof entrypoints**
-   - Transition functions support executable traces while theorem surfaces preserve safety properties.
+   - Transition functions remain executable while theorem surfaces preserve key safety properties.
 3. **Conservative milestone evolution style**
-   - Current slice constraints avoid destabilizing proven M1–M3 theorem structure.
+   - Existing M1–M3.5 theorem contracts are preserved while milestone status transitions to M4 planning.
 
-### 3.2 Improvements made during this audit
+### 3.2 Remaining optimization recommendations
 
-1. **Duplicate scheduler predicate logic removed**
-   - `schedulerWellFormed` is now an alias of `queueCurrentConsistent`, reducing duplicate maintenance risk while preserving milestone terminology compatibility.
-
-### 3.3 Remaining optimization recommendations
-
-1. Introduce a small proof-style guide section for preferred lemma naming patterns by milestone bundle.
-2. Add focused theorem-group index comments around M3.5 additions to keep API discoverability high as `SeLe4n/Kernel/IPC/Invariant.lean` grows.
-3. Keep transition-local helper theorems near transition definitions to maintain unfolding ergonomics.
+1. Add theorem-group index comments around large proof files (especially IPC/capability invariant modules) as M4 content lands.
+2. Keep transition-local helper lemmas physically close to transitions they support to reduce proof-maintenance drift.
+3. Add narrow fixture lines and invariant-surface anchors for each M4 transition as they are introduced.
 
 ---
 
@@ -65,82 +61,53 @@ Primary remaining high-value path:
 
 ### 4.1 Current quality of implemented tiers
 
-- **Tier 0 hygiene**: correctly catches `axiom|sorry|TODO` markers in proof surface.
+- **Tier 0 hygiene**: catches `axiom|sorry|TODO` markers and now executes `shellcheck` successfully.
 - **Tier 1 build**: validates full Lean compilation and executable artifact.
-- **Tier 2 smoke fixture**: protects stable semantic trace fragments.
+- **Tier 2 smoke fixture**: protects stable executable trace semantics.
+- **Tier 3 invariant/doc surface**: validates milestone theorem/bundle/documentation anchors.
 
-### 4.2 Improvements made during this audit
+### 4.2 Audit-cycle hardening applied
 
-1. **Tier 3 gate implemented**
-   - New script `scripts/test_tier3_invariant_surface.sh` checks:
-     - presence of key invariant bundle definitions,
-     - presence of key M3 IPC preservation theorem entrypoints,
-     - stage coherence markers across core docs.
-2. **`test_full.sh` upgraded**
-   - now runs Tier 3 checks directly rather than only emitting an extension notice.
+1. **Shell hygiene upgrade**
+   - Optional-lint warning removed by installing `shellcheck`; hygiene scripts now run the lint path instead of skip path.
+2. **M3.5 closure consistency verification**
+   - Re-ran all repository tier entrypoints plus audit script to verify no drift across proof surface, trace fixtures, and docs.
 
-### 4.3 Remaining testing roadmap
+### 4.3 Next testing roadmap
 
-1. Strengthen Tier 3 from static symbol-surface checks to grouped milestone semantic checks.
-2. Expand Tier 2 fixture scenarios as additional M3.5 blocked/wakeup stories (steps 5-7) land.
-3. Convert Tier 4 nightly note into repeat-run determinism and broader scenario sweeps.
+1. Strengthen Tier 3 from symbol-surface checks toward grouped semantic checks for M4 lifecycle bundles.
+2. Expand Tier 2 fixture scenarios once M4 transitions add user-visible executable behavior.
+3. Upgrade Tier 4 from extension notice to repeat-run determinism + broader scenario sweeps.
 
 ---
 
 ## 5. Documentation audit findings
 
-### 5.1 Strengths
+### 5.1 Current strengths
 
-- Status, acceptance criteria, and non-goals are clearly separated.
-- Milestone progression from M3.5 to M4 is explicit and realistic.
+- Status, acceptance criteria, and non-goals are clearly separated by milestone.
+- Stage markers now consistently reflect post-M3.5 closure and M4 planning.
 
-### 5.2 Improvements made during this audit
+### 5.2 Remaining recommendations
 
-1. README testing status updated to reflect active Tier 3 coverage.
-2. Testing framework plan updated to record Tier 3 implementation and next deepening steps.
-3. This audit document was added as a living baseline for future audits.
-
-### 5.3 Documentation development path (recommended)
-
-1. Update this audit after every milestone closure (M3.5, M4, …).
-2. Add a short “since last audit” changelog section in future revisions.
-3. Keep README, `SEL4_SPEC`, `DEVELOPMENT`, and testing plan synchronized in milestone-tagged PRs.
+1. Keep this audit refreshed at each milestone boundary (M4 kickoff, M4 closure, etc.).
+2. Add a short “since last audit” section in future updates for easier review diffs.
+3. Keep README, `SEL4_SPEC`, `DEVELOPMENT`, and testing-plan synchronization as a hard PR requirement when stage markers change.
 
 ---
 
+## 6. Known limitations and next hardening steps
 
-## 6. Change-by-change justification for this audit PR
-
-1. **`schedulerWellFormed` aliasing**
-   - Improvement: removes duplicated predicate definitions that could drift over time while preserving external milestone terminology.
-   - Why necessary: duplicated logical definitions create avoidable proof-maintenance risk.
-
-2. **Tier 3 script activation in `test_full.sh`**
-   - Improvement: converts a placeholder/full-suite notice into an executable gate.
-   - Why necessary: full-suite checks should fail when milestone-level invariant/doc surface contracts are accidentally removed.
-
-3. **Tier 3 surface checks (invariant/theorem/doc coherence)**
-   - Improvement: adds deterministic regression checks for bundle/theorem anchors and cross-doc stage consistency.
-   - Why necessary: these anchors are contract surfaces for milestone continuity and reviewer confidence.
-
-4. **README/DEVELOPMENT/TESTING docs synchronization**
-   - Improvement: aligns stated testing reality with script behavior and current roadmap posture.
-   - Why necessary: stale process docs create contributor and review friction.
-
-5. **Project audit document introduction**
-   - Improvement: provides a centralized audit baseline that can be updated per milestone closure.
-   - Why necessary: larger milestone transitions benefit from explicit, versioned quality/status narrative.
-
-## 7. Known limitations and next hardening steps
-
-1. Tier 3 currently validates named/theorem/doc surface contracts, not deep semantic equivalence.
-2. Highest-value next hardening is grouped invariant checks per milestone boundary once M3.5 handshake semantics land.
-3. Tier 4 remains intentionally lightweight until broader nightly determinism/scenario sweeps are defined.
+1. Tier 3 currently validates milestone surfaces, not full semantic equivalence.
+2. M4 has not yet introduced lifecycle/retype transition semantics; associated fixture/proof checks will be required as those APIs appear.
+3. Tier 4 remains intentionally lightweight until nightly determinism and multi-scenario coverage are specified.
 
 ---
 
-## 8. Conclusion
+## 7. Conclusion
 
-The project is in a healthy state and technically well-positioned to finish the remaining M3.5 closure steps.
+The project is in a healthy state, with M3.5 closure now fully reflected in executable evidence,
+proof surfaces, testing gates, and documentation.
 
-This audit cycle improved maintainability (predicate aliasing), strengthened confidence gates (Tier 3 activation), and expanded project-level status reporting (new audit document).
+The repository is well-positioned for M4 lifecycle/retype work without sacrificing the existing
+M1–M3.5 contract quality bar.

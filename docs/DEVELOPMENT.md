@@ -4,7 +4,7 @@
 
 This guide defines the expected engineering workflow for seLe4n contributors.
 
-Current project stage: **post-M3 seed / mid-M3.5 handshake completion**.
+Current project stage: **post-M3.5 handshake closure / pre-M4 lifecycle kickoff**.
 
 Primary contributor goals:
 
@@ -30,7 +30,7 @@ If a change intentionally adjusts one of these contracts, call it out in docs + 
 
 ---
 
-## 3. Active development target (current slice): M3.5 IPC handshake + scheduler interaction
+## 3. Recently closed slice: M3.5 IPC handshake + scheduler interaction
 
 ### 3.1 Current-slice target outcomes
 
@@ -84,15 +84,15 @@ Use this order unless a concrete dependency forces adjustment.
    - composed preservation (`ipcSchedulerContractPredicates`, `m35IpcSchedulerInvariantBundle`) is layered after those local theorems,
    - new theorem entrypoints follow `<transition>_preserves_<invariant>` naming throughout step-6 additions.
 
-7. **Executable demonstration last**
-   - extend `Main.lean` with a concrete M3.5 story,
-   - preserve prior demonstration sequence as a prefix.
+7. **Executable demonstration last** ✅ **completed**
+   - `Main.lean` now includes a concrete M3.5 waiting-receiver handshake story (`endpointAwaitReceive` followed by handshake-success send),
+   - the prior scheduler/CSpace/M3 executable trace is preserved as a prefix and the existing queue-delivery sequence remains executable after the handshake path.
 
 ---
 
 ## 4. Next slice preparation (planned): M4 object lifecycle / retype safety
 
-Contributors do not need to implement M4 in M3.5 PRs, but should avoid design choices that block it.
+With M3.5 closed, contributors should now implement M4 work while preserving the M1-M3.5 theorem and executable contracts.
 
 ### 4.1 M4 target outcomes (planning baseline)
 
@@ -104,7 +104,7 @@ Contributors do not need to implement M4 in M3.5 PRs, but should avoid design ch
 
 ### 4.2 Pre-M4 design guardrails
 
-While working on M3.5:
+While working on M4:
 
 - keep transition APIs typed and explicit,
 - avoid embedding lifecycle assumptions into IPC-only predicates,

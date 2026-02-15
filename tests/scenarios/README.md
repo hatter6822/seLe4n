@@ -5,9 +5,9 @@ keep them aligned with the active milestone stage.
 
 ## Current stage alignment
 
-- Active development slice: **M3.5 IPC handshake + scheduler interaction**.
-- Fixture expectations should preserve stable M1/M2/M3 behavior and expand only for intentional
-  M3.5-visible executable semantics.
+- Most recently closed slice: **M3.5 IPC handshake + scheduler interaction**.
+- Fixture expectations preserve stable M1/M2/M3 behavior while capturing intentional M3.5
+  executable semantics (including waiting-receiver handshake evidence).
 
 ## Current fixture
 
