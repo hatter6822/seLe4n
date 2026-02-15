@@ -59,6 +59,8 @@ authority modeling:
 2. ✅ Lifecycle monotonicity coverage is modeled with `cspaceAttenuationRule` plus `lifecycleAuthorityMonotonicity` helper theorems for delete/revoke reduction.
 3. ✅ The composed capability bundle now includes lifecycle obligations, with lifecycle
    preservation theorem entrypoints for `cspaceDeleteSlot` and `cspaceRevoke`.
+4. ✅ Existing scheduler invariant proofs continue to build unchanged, and `Main.lean`
+   keeps the executable scheduler + lifecycle trace path stable.
 
 See `docs/SEL4_SPEC.md` for normative acceptance criteria and `docs/DEVELOPMENT.md` for the
 recommended implementation sequence and review checklist.

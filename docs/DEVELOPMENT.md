@@ -21,7 +21,8 @@ Current active-slice status:
 
 - ✅ typed revoke/delete transitions over typed CSpace addresses are implemented,
 - ✅ lifecycle-aware authority monotonicity constraints are implemented,
-- ✅ composed capability bundle now includes lifecycle clauses with lifecycle-preservation theorem entrypoints.
+- ✅ composed capability bundle now includes lifecycle clauses with lifecycle-preservation theorem entrypoints,
+- ✅ existing scheduler invariant proofs and `Main.lean` executable behavior are preserved.
 
 ### 1.1 Active-slice outcome details (implementation-ready)
 
