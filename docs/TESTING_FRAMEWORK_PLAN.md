@@ -4,7 +4,7 @@
 
 This document is the testing framework baseline for seLe4n. It captures what is already enforced,
 what remains intentionally optional, and what next expansion steps should be taken as the project
-moves from M3.5 to M4.
+moves through the post-M3.5 / active-M4 stage.
 
 ### 1.1 Implementation status snapshot
 
@@ -14,7 +14,7 @@ Current repository status:
 - ✅ Work package B (fixture-backed executable smoke baseline) implemented.
 - ✅ Work package C (CI wiring to script entrypoints) implemented.
 - ✅ Work package D (docs integration) implemented.
-- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented, including M3.5 step-1 through step-6 theorem/lemma surface anchors.
+- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented, including M3.5 step-1 through step-7 closure anchors (transition/preservation anchors plus executable demonstration evidence anchors).
 
 ---
 
@@ -31,8 +31,8 @@ The framework is successful only if all of the following remain true.
    - Stable output fragments are guarded by fixture checks.
 
 3. **Milestone regression resistance**
-   - M1/M2/M3 guarantees remain protected while M3.5 evolves.
-   - Future M4 additions can be integrated without replacing baseline tiers.
+   - M1/M2/M3/M3.5 guarantees remain protected while M4 evolves.
+   - Future milestone additions can be integrated without replacing baseline tiers.
 
 4. **Fast local loop + deterministic CI gates**
    - contributors can run required checks quickly,
@@ -63,7 +63,8 @@ Both are required pull-request CI jobs.
 - `./scripts/test_full.sh` runs Tier 3 invariant/doc-surface checks.
 - `./scripts/test_nightly.sh` runs full plus Tier 4 extension notice.
 
-Tier 3 is now active in the full suite and includes milestone-surface anchors through current M3.5 step-6 local-first preservation theorem layer; Tier 4 remains the next expansion hook.
+Tier 3 is active in the full suite and includes milestone-surface anchors for M3.5 closure,
+including step-7 executable-demonstration closure guards; Tier 4 remains the next expansion hook.
 
 ---
 
@@ -116,12 +117,10 @@ CI must continue calling repository scripts directly; avoid duplicating gate log
 
 ---
 
-## 7. Next expansion steps (post-M3.5 to M4 readiness)
+## 7. Next expansion steps (active M4 readiness)
 
-These are the prioritized testing next steps once M3.5 semantics begin landing.
-
-1. **Tier 2 fixture growth for M3.5 stories**
-   - add stable trace fragments for waiting/handshake behavior.
+1. **Tier 2 fixture growth for M4 stories**
+   - add stable trace fragments once lifecycle/retype transitions become executable.
 
 2. **Tier 3 invariant-group deepening**
    - extend current invariant/doc-surface checks into richer milestone-bundle grouped checks.

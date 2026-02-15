@@ -12,8 +12,7 @@ It has five jobs:
 4. Declare what is out of scope so review stays focused.
 5. Provide acceptance gates that can be validated locally.
 
-The project is currently in a **post-M3-seed / mid-M3.5** stage: M1 scheduler invariants, M2
-capability semantics, and M3 endpoint send/receive seed semantics are complete and executable, while M3.5 step 7 remains open.
+The project is currently in a **post-M3.5 / pre-M4** stage: M1 scheduler invariants, M2 capability semantics, M3 endpoint send/receive seed semantics, and the full M3.5 IPC handshake + scheduler-interaction closure are complete and executable.
 
 Testing baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed
 executable smoke checks are implemented under `scripts/test_*.sh` and enforced in pull-request CI.
@@ -26,8 +25,8 @@ executable smoke checks are implemented under `scripts/test_*.sh` and enforced i
 - **M1 (complete)**: scheduler integrity bundle and preservation.
 - **M2 (complete)**: typed CSpace operations and capability lifecycle invariants.
 - **M3 (complete)**: endpoint send/receive seed semantics with first IPC invariant bundle.
-- **M3.5 (current slice, in progress)**: typed IPC handshake + scheduler interaction contract.
-- **M4 (next slice, planned)**: object lifecycle/retype safety with capability-object coupling invariants.
+- **M3.5 (complete)**: typed IPC handshake + scheduler interaction contract.
+- **M4 (current slice, planned/starting)**: object lifecycle/retype safety with capability-object coupling invariants.
 
 ---
 
@@ -163,8 +162,9 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
 - ✅ **Step 6 complete (preservation-theorem hardening)**
   - endpoint transitions now expose local-first preservation theorems for scheduler-contract components (`<transition>_preserves_runnableThreadIpcReady`, `<transition>_preserves_blockedOnSendNotRunnable`, `<transition>_preserves_blockedOnReceiveNotRunnable`),
   - composed scheduler-contract and M3.5 bundle preservation theorems are layered second and continue to compile machine-checked.
-- ⏳ **Remaining M3.5 steps**
-  - executable-demonstration extension (step 7) remains in progress.
+- ✅ **Step 7 complete (executable demonstration closure)**
+  - `Main.lean` now includes an explicit waiting-receiver registration + handshake-send success path before the existing queued-sender receive sequence,
+  - prior demonstration behavior is preserved as an executable prefix and fixture-backed smoke expectations remain stable.
 
 ---
 

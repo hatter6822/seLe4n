@@ -7,7 +7,10 @@ def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
 
-/-- Demonstrate a tiny executable path through scheduler + CSpace + IPC transitions. -/
+/-- Demonstrate a tiny executable path through scheduler + CSpace + IPC transitions.
+
+The original scheduler/CSpace/M3 queue-delivery sequence is preserved, and the M3.5
+waiting-receiver handshake story is appended before replaying the queued-sender receive path. -/
 def bootstrapState : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
