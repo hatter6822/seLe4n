@@ -230,6 +230,17 @@ theorem storeObject_objects_ne
   cases hStore
   simp [hNe]
 
+theorem storeObject_scheduler_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+
 /-- Local transition helper: successful send is exactly one endpoint-object update. -/
 theorem endpointSend_ok_as_storeObject
     (st st' : SystemState)
@@ -444,6 +455,104 @@ theorem endpointReceive_preserves_ipcInvariant
       exact endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
     have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
     exact hInv oid ep hOrig
+
+theorem endpointSend_ok_implies_endpoint_object
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    ∃ ep, st.objects endpointId = some (.endpoint ep) := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          refine ⟨ep, rfl⟩
+
+theorem endpointReceive_ok_implies_endpoint_object
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    ∃ ep, st.objects endpointId = some (.endpoint ep) := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | cnode cn => simp [hObj] at hStep
+      | endpoint ep =>
+          refine ⟨ep, rfl⟩
+
+theorem endpointSend_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [hSchedEq] using hQueue
+  · simpa [hSchedEq] using hRunq
+  · cases hCurrent : st.scheduler.current with
+    | none =>
+        simp [currentThreadValid, hCurEq, hCurrent]
+    | some tid =>
+        have hCurSome : ∃ tcb : TCB, st.objects tid = some (.tcb tcb) := by
+          simpa [currentThreadValid, hCurrent] using hCur
+        rcases hCurSome with ⟨tcb, hTcbObj⟩
+        have hTidNe : tid ≠ endpointId := by
+          intro hEq
+          subst hEq
+          rcases endpointSend_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+          rw [hEpObj] at hTcbObj
+          cases hTcbObj
+        have hTcbObj' : st'.objects tid = some (.tcb tcb) := by
+          rw [endpointSend_preserves_other_objects st st' endpointId tid sender hTidNe hStep]
+          exact hTcbObj
+        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+
+theorem endpointReceive_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [hSchedEq] using hQueue
+  · simpa [hSchedEq] using hRunq
+  · cases hCurrent : st.scheduler.current with
+    | none =>
+        simp [currentThreadValid, hCurEq, hCurrent]
+    | some tid =>
+        have hCurSome : ∃ tcb : TCB, st.objects tid = some (.tcb tcb) := by
+          simpa [currentThreadValid, hCurrent] using hCur
+        rcases hCurSome with ⟨tcb, hTcbObj⟩
+        have hTidNe : tid ≠ endpointId := by
+          intro hEq
+          subst hEq
+          rcases endpointReceive_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+          rw [hEpObj] at hTcbObj
+          cases hTcbObj
+        have hTcbObj' : st'.objects tid = some (.tcb tcb) := by
+          rw [endpointReceive_preserves_other_objects st st' endpointId tid sender hTidNe hStep]
+          exact hTcbObj
+        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
 
 /-- Slot-level uniqueness/no-alias policy: lookup is deterministic for each slot address. -/
 def cspaceSlotUnique (st : SystemState) : Prop :=
@@ -819,6 +928,59 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
   rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
   exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
+
+
+/-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
+def m3IpcSeedInvariantBundle (st : SystemState) : Prop :=
+  schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st
+
+theorem endpointSend_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : capabilityInvariantBundle st)
+    (_hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+theorem endpointReceive_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : capabilityInvariantBundle st)
+    (_hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+theorem endpointSend_preserves_m3IpcSeedInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : m3IpcSeedInvariantBundle st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    m3IpcSeedInvariantBundle st' := by
+  rcases hInv with ⟨hSched, hCap, hIpc⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
+  · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
+  · exact endpointSend_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+
+theorem endpointReceive_preserves_m3IpcSeedInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : m3IpcSeedInvariantBundle st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    m3IpcSeedInvariantBundle st' := by
+  rcases hInv with ⟨hSched, hCap, hIpc⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
+  · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
+  · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender hIpc hStep
 
 /-- Choose the first runnable thread, if any. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=

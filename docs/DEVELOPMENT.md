@@ -59,10 +59,14 @@ Work in this order unless a blocking dependency requires adjustment:
      `endpointReceive_ok_as_storeObject`) are now placed adjacent to endpoint transitions and
      consumed by preservation plumbing.
 
-5. **Preservation theorems fifth**
+5. **Preservation theorems fifth** *(complete)*
    - Prove send preserves IPC invariant bundle.
    - Prove receive preserves IPC invariant bundle.
    - Compose with existing M1/M2 bundle entrypoints only after local proofs are stable.
+   - Status: local IPC preservation proofs (`endpointSend_preserves_ipcInvariant`,
+     `endpointReceive_preserves_ipcInvariant`) now feed composed M3 bundle entrypoints
+     (`endpointSend_preserves_m3IpcSeedInvariantBundle`,
+     `endpointReceive_preserves_m3IpcSeedInvariantBundle`) alongside existing M1/M2 bundles.
 
 6. **Executable demonstration last**
    - Extend `Main.lean` trace to include IPC behavior.
