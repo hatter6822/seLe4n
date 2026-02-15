@@ -5,20 +5,70 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in a **post-M3 IPC seed** stage:
+seLe4n is currently in a **post-M3 IPC seed / pre-M3.5 handshake** stage.
 
-- ✅ M1 scheduler integrity invariants are implemented and proved.
-- ✅ M2 capability/CSpace semantics and lifecycle transitions are implemented and proved.
-- ✅ M3 endpoint IPC seed (send/receive + invariant-preservation entrypoints) is implemented and
-  proved.
-- ✅ `Main.lean` executable trace demonstrates scheduler, CSpace lifecycle, and IPC seed behavior.
+### Milestone board (authoritative)
 
-The active planning target is **M3.5 IPC handshake + scheduler interaction**, which will add a
-narrow blocking/wakeup IPC contract while preserving existing M1/M2/M3 guarantees.
+- ✅ **Bootstrap complete**: executable kernel monad, core object/state model, transition scaffolding.
+- ✅ **M1 complete**: scheduler integrity invariants and preservation entrypoints.
+- ✅ **M2 complete**: capability + CSpace operations, attenuation/lifecycle rules, composed invariants.
+- ✅ **M3 complete**: endpoint IPC seed (`endpointSend`/`endpointReceive`) plus preservation theorem surface.
+- 🚧 **M3.5 in progress target**: typed waiting/handshake behavior with scheduler coherence obligations.
+- 📌 **Next slice after M3.5 (planned M4)**: object lifecycle/retype safety and capability-object interaction invariants.
 
-Testing framework status: Tier 0 (hygiene), Tier 1 (build), and Tier 2 (fixture-backed executable
-smoke regression checks) are implemented and enforced in pull-request CI via
-`.github/workflows/lean_action_ci.yml`, which calls the repository script entrypoints directly.
+Testing framework status:
+
+- ✅ Tier 0 hygiene gate (`axiom|sorry|TODO` scan).
+- ✅ Tier 1 build/theorem gate (`lake build`).
+- ✅ Tier 2 fixture-backed executable smoke regression gate.
+- 🧩 Tier 3/Tier 4 extension points are documented and script-wired for future expansion.
+
+CI status:
+
+- Required pull-request jobs call repository script entrypoints directly via
+  `.github/workflows/lean_action_ci.yml`.
+- Required jobs today: `./scripts/test_fast.sh` and `./scripts/test_smoke.sh`.
+
+---
+
+## What "current slice" means right now (M3.5)
+
+The active engineering objective is **IPC handshake + scheduler interaction** with minimal, explicit
+state changes that can be proved and executed.
+
+### Current-slice target outcomes (must all land for M3.5 close)
+
+1. Endpoint protocol-state refinement with explicit waiting direction(s).
+2. Narrow blocking/wakeup transition behavior in IPC send/receive paths.
+3. Scheduler-facing coherence predicate(s) for runnable-vs-blocked IPC thread state.
+4. Invariant bundle extension layered on top of M3 seed IPC invariants.
+5. Preservation theorem entrypoints for each changed/new transition.
+6. `Main.lean` evidence path showing at least one waiting-to-delivery story.
+
+### Current-slice constraints
+
+- Keep changes architecture-neutral.
+- Preserve M1/M2/M3 theorem surfaces unless intentionally revised and documented.
+- Avoid reply-cap protocol completeness and policy redesign in this slice.
+
+---
+
+## What comes immediately after (next slice: M4)
+
+After M3.5 closure, the planned next delivery slice is **M4 object lifecycle / retype safety**.
+
+### Next-slice target outcomes (planning baseline)
+
+1. Typed object creation/retype transition model.
+2. Object identity and aliasing constraints suitable for machine proofs.
+3. Capability/object lifecycle coupling invariants.
+4. Preservation entrypoints for retype lifecycle transitions.
+5. Executable scenario coverage showing safe object lifecycle evolution.
+
+M4 planning is intentionally bounded so we can preserve the same incremental proof style used in
+M1-M3.5.
+
+---
 
 ## Quick start
 
@@ -44,21 +94,25 @@ lake build
 lake exe sele4n
 ```
 
+---
+
 ## Repository layout
 
 - `SeLe4n.lean` — library export root.
-- `SeLe4n/Prelude.lean` — shared IDs, aliases, and kernel monad definitions.
+- `SeLe4n/Prelude.lean` — shared IDs, aliases, kernel monad definitions.
 - `SeLe4n/Machine.lean` — abstract machine state and primitive updates.
 - `SeLe4n/Model/Object.lean` — kernel object types (`TCB`, `Endpoint`, `CNode`, `Capability`).
 - `SeLe4n/Model/State.lean` — global system state and typed lookup helpers.
-- `SeLe4n/Kernel/API.lean` — executable transitions, invariants, and preservation theorem
-  entrypoints.
+- `SeLe4n/Kernel/API.lean` — executable transitions, invariants, preservation theorem entrypoints.
 - `Main.lean` — runnable integration trace.
-- `docs/SEL4_SPEC.md` — normative milestone spec, acceptance criteria, and next-slice outcomes.
-- `docs/DEVELOPMENT.md` — implementation workflow, proof standards, and review checklist.
-- `scripts/setup_lean_env.sh` — one-command Lean/elán bootstrap for local development environments.
+- `docs/SEL4_SPEC.md` — normative milestone spec and acceptance criteria.
+- `docs/DEVELOPMENT.md` — implementation workflow, proof standards, PR checklist.
+- `docs/TESTING_FRAMEWORK_PLAN.md` — testing tiers, CI strategy, and expansion path.
+- `tests/scenarios/README.md` — fixture maintenance and trace regression workflow.
 
-## Milestone view
+---
+
+## Milestone detail
 
 ### Completed milestones
 
@@ -85,15 +139,17 @@ lake exe sele4n
    - endpoint/IPC invariant definitions,
    - preservation theorems including composed `m3IpcSeedInvariantBundle`.
 
-### Next slice (M3.5) target outcomes
+### Active milestone (M3.5)
 
-The next development slice should deliver:
+Focus: move from queue-only seed semantics to a first explicit waiting/handshake contract between
+endpoint behavior and scheduler-visible thread coherence.
 
-1. Endpoint protocol-state refinement for waiting directions.
-2. Minimal blocking/wakeup behavior in endpoint transitions.
-3. Scheduler-facing coherence predicates for IPC-touched threads.
-4. Preservation theorem entrypoints for updated transitions and bundle composition.
-5. Executable trace evidence for one waiting-to-delivery IPC scenario.
+### Planned next milestone (M4)
+
+Focus: introduce object lifecycle/retype transitions and prove capability/object lifecycle safety
+properties without destabilizing existing scheduler/capability/IPC theorem bundles.
+
+---
 
 ## Testing quick reference
 
@@ -107,8 +163,10 @@ Use the tiered test entrypoints for local validation:
 ./scripts/audit_testing_framework.sh
 ```
 
-The test scripts automatically source `$HOME/.elan/env` when present so `lake` is available even in
-fresh shells after running `./scripts/setup_lean_env.sh`.
+The test scripts auto-source `$HOME/.elan/env` when present so `lake` is available in fresh shells
+after `./scripts/setup_lean_env.sh`.
+
+---
 
 ## CI gates (pull requests)
 
@@ -119,21 +177,24 @@ Pull requests must pass both required CI jobs:
 ./scripts/test_smoke.sh
 ```
 
-The workflow intentionally calls these scripts directly (no duplicated inline test logic) so local
-and CI pass/fail behavior stay aligned. On smoke-trace failures, CI uploads fixture diagnostics
-(`main_trace_smoke.actual.log` and `main_trace_smoke.missing.txt`) along with the expected fixture
-for fast triage.
+On smoke-trace failures, CI uploads diagnostics:
+
+- `main_trace_smoke.actual.log`
+- `main_trace_smoke.missing.txt`
+- `tests/fixtures/main_trace_smoke.expected`
+
+---
 
 ## Daily contributor verification loop
 
-Run this as a minimum before opening a PR:
+Run this minimum loop before opening a PR:
 
 ```bash
 ./scripts/test_fast.sh
 ./scripts/test_smoke.sh
 ```
 
-When debugging locally, you can still run individual commands:
+Useful direct commands for local debugging:
 
 ```bash
 lake build
@@ -141,7 +202,10 @@ lake exe sele4n
 rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 ```
 
+---
+
 ## Where to look next
 
-- Specification and acceptance gates: `docs/SEL4_SPEC.md`
-- Development workflow and PR checklist: `docs/DEVELOPMENT.md`
+- Normative scope and acceptance gates: `docs/SEL4_SPEC.md`
+- Implementation workflow and review checklist: `docs/DEVELOPMENT.md`
+- Testing framework roadmap and ownership guidance: `docs/TESTING_FRAMEWORK_PLAN.md`
