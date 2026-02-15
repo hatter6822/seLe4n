@@ -7,6 +7,14 @@ relationships remain coherent through those updates.
 
 ## Detailed target outcomes
 
+## Implementation status
+
+- ✅ Step 1 complete: state-model lifecycle metadata is now explicit for object identity and
+  capability reference ownership mapping (including revoke-path sibling cleanup).
+- 🚧 Remaining M4-A work: transition expansion, invariant layering, and composed preservation
+  theorem growth.
+
+
 1. **Transition surface**
    - at least one lifecycle operation with explicit success/error outcomes.
 2. **Identity discipline**

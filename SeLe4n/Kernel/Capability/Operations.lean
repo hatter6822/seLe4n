@@ -30,7 +30,9 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
     match st.objects addr.cnode with
     | some (.cnode cn) =>
         let cn' := cn.insert addr.slot cap
-        storeObject addr.cnode (.cnode cn') st
+        match storeObject addr.cnode (.cnode cn') st with
+        | .error e => .error e
+        | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
     | _ => .error .objectNotFound
 
 theorem cspaceLookupSlot_ok_iff_lookupSlotCap
@@ -107,7 +109,9 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
     match st.objects addr.cnode with
     | some (.cnode cn) =>
         let cn' := cn.remove addr.slot
-        storeObject addr.cnode (.cnode cn') st
+        match storeObject addr.cnode (.cnode cn') st with
+        | .error e => .error e
+        | .ok (_, st') => storeCapabilityRef addr none st'
     | _ => .error .objectNotFound
 
 /-- Revoke capabilities with the same target as the source in the containing CNode.
@@ -123,7 +127,12 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         match st'.objects addr.cnode with
         | some (.cnode cn) =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
-            storeObject addr.cnode (.cnode cn') st'
+            let revokedRefs : List SlotRef :=
+              (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
+                (fun entry => { cnode := addr.cnode, slot := entry.fst })
+            match storeObject addr.cnode (.cnode cn') st' with
+            | .error e => .error e
+            | .ok (_, st'') => clearCapabilityRefs revokedRefs st''
         | _ => .error .objectNotFound
 
 

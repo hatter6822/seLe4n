@@ -42,6 +42,17 @@ def bootstrapState : SystemState :=
       else
         none
     scheduler := { runnable := [1, 2], current := none }
+    lifecycle := {
+      objectTypes := fun oid =>
+        if oid = 1 then some .tcb
+        else if oid = 10 then some .cnode
+        else if oid = 11 then some .cnode
+        else if oid = demoEndpoint then some .endpoint
+        else none
+      capabilityRefs := fun ref =>
+        if ref = rootSlot then some (.object 1)
+        else none
+    }
   }
 
 def main : IO Unit := do

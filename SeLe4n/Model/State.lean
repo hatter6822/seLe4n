@@ -17,17 +17,26 @@ structure SchedulerState where
   current : Option SeLe4n.ThreadId
   deriving Repr, DecidableEq
 
-structure SystemState where
-  machine : SeLe4n.MachineState
-  objects : SeLe4n.ObjId → Option KernelObject
-  scheduler : SchedulerState
-  irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
-
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
   cnode : SeLe4n.ObjId
   slot : SeLe4n.Slot
   deriving Repr, DecidableEq
+
+/-- Lifecycle metadata required by the first M4-A transition story.
+
+`objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
+named by each populated capability slot reference. -/
+structure LifecycleMetadata where
+  objectTypes : SeLe4n.ObjId → Option KernelObjectType
+  capabilityRefs : SlotRef → Option CapTarget
+
+structure SystemState where
+  machine : SeLe4n.MachineState
+  objects : SeLe4n.ObjId → Option KernelObject
+  scheduler : SchedulerState
+  irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
+  lifecycle : LifecycleMetadata
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -41,6 +50,10 @@ instance : Inhabited SystemState where
     objects := fun _ => none
     scheduler := default
     irqHandlers := fun _ => none
+    lifecycle := {
+      objectTypes := fun _ => none
+      capabilityRefs := fun _ => none
+    }
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -56,12 +69,101 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     let objects' : SeLe4n.ObjId → Option KernelObject :=
       fun oid => if oid = id then some obj else st.objects oid
-    .ok ((), { st with objects := objects' })
+    let lifecycle' : LifecycleMetadata :=
+      {
+        st.lifecycle with
+          objectTypes := fun oid => if oid = id then some obj.objectType else st.lifecycle.objectTypes oid
+      }
+    .ok ((), { st with objects := objects', lifecycle := lifecycle' })
+
+/-- Record or clear a slot-to-target lifecycle reference mapping. -/
+def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
+  fun st =>
+    let lifecycle' : LifecycleMetadata :=
+      {
+        st.lifecycle with
+          capabilityRefs := fun ref' => if ref' = ref then target else st.lifecycle.capabilityRefs ref'
+      }
+    .ok ((), { st with lifecycle := lifecycle' })
+
+/-- Pure state update that clears a finite list of slot-reference mappings. -/
+def clearCapabilityRefsState : List SlotRef → SystemState → SystemState
+  | [], st => st
+  | ref :: refs, st =>
+      clearCapabilityRefsState refs {
+        st with
+          lifecycle := {
+            st.lifecycle with
+              capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+          }
+      }
+
+/-- Clear a finite list of slot-reference mappings. -/
+def clearCapabilityRefs (refs : List SlotRef) : Kernel Unit :=
+  fun st => .ok ((), clearCapabilityRefsState refs st)
 
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := { st.scheduler with current := tid }
     .ok ((), { st with scheduler := sched })
+
+theorem storeCapabilityRef_preserves_objects
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.objects = st.objects := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
+
+theorem clearCapabilityRefsState_preserves_objects
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).objects = st.objects := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simpa [clearCapabilityRefsState] using
+        ih {
+          st with
+            lifecycle := {
+              st.lifecycle with
+                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+            }
+        }
+
+theorem clearCapabilityRefs_preserves_objects
+    (st st' : SystemState)
+    (refs : List SlotRef)
+    (hStep : clearCapabilityRefs refs st = .ok ((), st')) :
+    st'.objects = st.objects := by
+  unfold clearCapabilityRefs at hStep
+  cases hStep
+  simpa using clearCapabilityRefsState_preserves_objects refs st
+
+theorem storeCapabilityRef_lookup_eq
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.lifecycle.capabilityRefs ref = target := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  simp
+
+theorem storeObject_updates_objectTypeMeta
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes oid = some obj.objectType := by
+  unfold storeObject at hStep
+  simp at hStep
+  cases hStep
+  simp
 
 namespace SystemState
 
@@ -90,6 +192,34 @@ def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × C
   match lookupCNode st owner with
   | some cn => cn.slots
   | none => []
+
+/-- Lifecycle metadata view of object identity typing. -/
+def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
+  st.lifecycle.objectTypes id
+
+/-- Lifecycle metadata view of capability slot reference mapping. -/
+def lookupCapabilityRefMeta (st : SystemState) (ref : SlotRef) : Option CapTarget :=
+  st.lifecycle.capabilityRefs ref
+
+/-- `lookupSlotCap` is determined entirely by the object store. -/
+theorem lookupSlotCap_eq_of_objects_eq
+    (st₁ st₂ : SystemState)
+    (ref : SlotRef)
+    (hObj : st₁.objects = st₂.objects) :
+    lookupSlotCap st₁ ref = lookupSlotCap st₂ ref := by
+  simp [lookupSlotCap, lookupCNode, hObj]
+
+/-- Object-type lifecycle metadata is exact for every object-store id. -/
+def objectTypeMetadataConsistent (st : SystemState) : Prop :=
+  ∀ oid, lookupObjectTypeMeta st oid = (st.objects oid).map KernelObject.objectType
+
+/-- Capability-reference lifecycle metadata is exact for every slot reference. -/
+def capabilityRefMetadataConsistent (st : SystemState) : Prop :=
+  ∀ ref, lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map Capability.target
+
+/-- M4-A state-model metadata consistency bundle. -/
+def lifecycleMetadataConsistent (st : SystemState) : Prop :=
+  objectTypeMetadataConsistent st ∧ capabilityRefMetadataConsistent st
 
 theorem lookupSlotCap_eq_none_of_lookupCNode_eq_none
     (st : SystemState)

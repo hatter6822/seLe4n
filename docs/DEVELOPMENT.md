@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active)**.
+Current stage: **M4-A lifecycle/retype foundations (active, step 1 completed)**.
 
 Primary goals for contributors:
 
@@ -39,9 +39,9 @@ Unless intentionally redesigned and documented, preserve:
 
 ### 3.2 Recommended implementation sequence (M4-A)
 
-1. **State-model preparation**
-   - introduce only lifecycle metadata required for the first transition story,
-   - keep ownership explicit (object store identity, capability reference mapping).
+1. **State-model preparation** ✅ **completed**
+   - lifecycle metadata introduced for first transition story only,
+   - ownership remains explicit via object-store identity metadata and capability reference mapping.
 
 2. **Lifecycle transition(s)**
    - implement deterministic success/error branching,
