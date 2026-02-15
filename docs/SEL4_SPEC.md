@@ -295,7 +295,8 @@ Incremental plan:
 - ✅ Step 1 complete: typed CSpace lookup/insert/mint API with explicit rights attenuation policy and core theorems.
 - ✅ Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.
 - ✅ Step 3 complete: first capability invariant bundle is defined/proven (slot uniqueness, lookup soundness, attenuation monotonicity).
-- 🔄 Next: add revoke/delete transitions and extend authority constraints across lifecycle operations.
+- ✅ Next increment landed: typed revoke/delete transitions over `SlotRef`-style addresses (local revoke semantics in the modeled CNode scope).
+- 🔄 Next: extend lifecycle-aware authority constraints across the new lifecycle operations.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics

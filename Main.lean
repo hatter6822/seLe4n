@@ -4,6 +4,7 @@ open SeLe4n.Model
 
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
+def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 
 /-- Demonstrate a tiny executable path through scheduler + CSpace transitions. -/
 def bootstrapState : SystemState :=
@@ -48,6 +49,24 @@ def main : IO Unit := do
       match SeLe4n.Kernel.cspaceMint rootSlot mintedSlot [.read] none st1 with
       | .error err => IO.println s!"cspace mint error: {reprStr err}"
       | .ok (_, st2) =>
+          match SeLe4n.Kernel.cspaceMint rootSlot siblingSlot [.read] none st2 with
+          | .error err => IO.println s!"sibling mint error: {reprStr err}"
+          | .ok (_, st3) =>
+              IO.println "created sibling cap with the same target"
+              match SeLe4n.Kernel.cspaceRevoke mintedSlot st3 with
+              | .error err => IO.println s!"cspace revoke error: {reprStr err}"
+              | .ok (_, st4) =>
+                  match SeLe4n.Kernel.cspaceLookupSlot siblingSlot st4 with
+                  | .error err => IO.println s!"post-revoke sibling lookup: {reprStr err}"
+                  | .ok (cap, _) =>
+                      IO.println s!"unexpected sibling cap after revoke: {reprStr cap}"
+                  match SeLe4n.Kernel.cspaceDeleteSlot mintedSlot st4 with
+                  | .error err => IO.println s!"cspace delete error: {reprStr err}"
+                  | .ok (_, st5) =>
+                      match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st5 with
+                      | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
+                      | .ok (cap, _) =>
+                          IO.println s!"unexpected cap after delete: {reprStr cap}"
           match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
           | .error err => IO.println s!"cspace lookup error: {reprStr err}"
           | .ok (cap, _) =>

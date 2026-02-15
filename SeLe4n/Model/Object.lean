@@ -69,6 +69,37 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
 def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
   { node with slots := node.slots.filter (fun entry => entry.fst ≠ slot) }
 
+/-- Local revoke helper for the current modeled slice.
+
+This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that
+name the same capability target. Full cross-CNode revoke requires an explicit derivation graph and
+is intentionally deferred. -/
+def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=
+  {
+    node with
+      slots := node.slots.filter (fun entry => entry.fst = sourceSlot ∨ entry.snd.target ≠ target)
+  }
+
+theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot) :
+    (node.remove slot).lookup slot = none := by
+  unfold remove lookup
+  simp
+
+theorem lookup_revokeTargetLocal_source_eq_lookup
+    (node : CNode)
+    (sourceSlot : SeLe4n.Slot)
+    (target : CapTarget) :
+    (node.revokeTargetLocal sourceSlot target).lookup sourceSlot = node.lookup sourceSlot := by
+  unfold revokeTargetLocal lookup
+  have hPred :
+      (fun entry : SeLe4n.Slot × Capability =>
+        (decide (entry.fst = sourceSlot) || !decide (entry.snd.target = target)) &&
+          decide (entry.fst = sourceSlot)) =
+      (fun entry : SeLe4n.Slot × Capability => decide (entry.fst = sourceSlot)) := by
+    funext entry
+    by_cases hEq : entry.fst = sourceSlot <;> simp [hEq]
+  simp [hPred]
+
 end CNode
 
 inductive KernelObject where
