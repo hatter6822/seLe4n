@@ -34,15 +34,16 @@ Keep changes narrow and compositional so M1/M2 proof obligations remain intact.
 
 Work in this order unless a blocking dependency requires adjustment:
 
-1. **Model-first minimal IPC state**
+1. **Model-first minimal IPC state** *(complete)*
    - Add only the endpoint state required for one send/receive story.
    - Favor explicit, typed fields over generic maps when possible.
+   - Status: endpoint object state (`EndpointState` + queue) is modeled in core structures.
 
-2. **Transitions second**
+2. **Transitions second** *(partially complete)*
    - Implement one send transition and one receive transition.
    - Keep transition semantics deterministic and easy to unfold in proofs.
-   - Current status: typed endpoint entrypoints (`endpointSend`, `endpointReceive`) are present;
-     continue by proving IPC-specific invariants against them.
+   - Status: typed endpoint entrypoints (`endpointSend`, `endpointReceive`) are present with
+     explicit error branches; preserve this API while proving IPC-specific invariants.
 
 3. **Invariant components third**
    - Define one endpoint queue well-formedness predicate.
