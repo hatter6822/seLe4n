@@ -23,7 +23,24 @@ Next target outcomes for the active slice:
 - define lifecycle-aware authority monotonicity constraints,
 - prove preservation of the capability invariant bundle across lifecycle transitions.
 
-### 1.1 Current audit evidence snapshot
+### 1.1 Active-slice outcome details (implementation-ready)
+
+To keep scope tight and proofs composable, treat the current slice as three explicit outcomes.
+
+1. **Typed lifecycle transitions (`revoke`/`delete`)**
+   - Operate on typed CSpace addresses (`SlotRef`/equivalent typed slot handle).
+   - Keep failure behavior explicit via existing kernel error channels.
+   - Reuse existing lookup/insert helper style to avoid branching state-access idioms.
+2. **Lifecycle-aware authority monotonicity**
+   - Capture that lifecycle operations cannot increase rights or introduce stronger authority.
+   - Distinguish local attenuation constraints from global non-escalation constraints.
+   - Document policy near definitions to keep theorem intent reviewable.
+3. **Capability bundle preservation over lifecycle transitions**
+   - Extend bundle composition rather than replacing existing components.
+   - Add dedicated preservation theorem entrypoints for lifecycle operations.
+   - Preserve existing read/write preservation results and scheduler proof stability.
+
+### 1.2 Current audit evidence snapshot
 
 Latest repository-wide audit commands and expected outcomes:
 
@@ -44,6 +61,9 @@ Additional milestone agreements:
 6. Make policy choices explicit near definitions (not only in commit/PR text).
 7. When a proof blocks, land minimal supporting lemmas rather than broad refactors.
 8. Do not regress completed M1 scheduler invariants while extending M2 semantics.
+9. For lifecycle transitions, prefer one transition = one clearly stated policy obligation,
+   followed by helper lemmas and then composed-bundle preservation.
+10. Avoid broad state-model rewrites while active-slice authority properties are still settling.
 
 ## 3. Recommended workflow per change
 
@@ -56,18 +76,26 @@ Additional milestone agreements:
    - targeted repository scans (`rg -n "axiom|TODO|sorry"`) before merge
 5. Summarize obligations completed and remaining in commit/PR notes.
 
-### 3.1 Suggested micro-slice workflow for M2 foundation
+### 3.1 Suggested micro-slice workflow for the active lifecycle slice
 
-For each capability invariant component:
+For each lifecycle transition (`delete`, `revoke`) and each authority rule:
 
-1. Add/adjust predicate definition.
-2. Add one sanity lemma constraining theorem drift.
-3. Add read-path preservation lemma (`lookup`-style).
-4. Add write-path preservation lemma (`insert`/`mint`-style).
-5. Fold results into composed invariant theorem.
-6. Re-run build and executable checks.
+1. Add/adjust predicate definition (authority + lifecycle safety component).
+2. Add one local sanity lemma constraining theorem drift.
+3. Add transition-local preservation theorem (`<transition>_preserves_<component>`).
+4. Fold transition result into composed invariant theorem.
+5. Re-run build and executable checks.
 
 This sequence keeps each change reviewable and reduces proof breakage fan-out.
+
+### 3.2 Recommended implementation order for active-slice delivery
+
+1. Land typed delete transition and local lemmas.
+2. Land typed revoke transition and local lemmas.
+3. Introduce lifecycle-aware authority monotonicity predicates.
+4. Extend composed capability invariant bundle.
+5. Add composed preservation theorems for new transitions.
+6. Refresh executable demonstration path and docs.
 
 ## 4. Coding and proof conventions
 
@@ -88,6 +116,8 @@ M2 proof hygiene conventions:
 - Group helper lemmas by subject (`lookup`, slot mutations, rights attenuation facts).
 - Keep `simp` sets predictable; avoid global simp attributes unless broadly safe.
 - Avoid introducing abstractions that hide state updates while invariants are still evolving.
+- For lifecycle operations, separate “address resolution” lemmas from “authority effect” lemmas.
+- Keep revoke/delete proofs structurally parallel where possible to minimize maintenance burden.
 
 ## 5. Repository readability checklist
 
@@ -99,7 +129,7 @@ When touching a module, check the following to keep codebase comprehension high:
 - docs reference the same milestone terminology as the code,
 - examples in `Main.lean` remain concrete and executable.
 
-## 6. Acceptance-driven delivery checklist (M2 foundation)
+## 6. Acceptance-driven delivery checklist (M2 active lifecycle slice)
 
 Before merging work intended for the active M2 slice, verify:
 
@@ -111,6 +141,14 @@ Before merging work intended for the active M2 slice, verify:
 - [x] `lake build` passes,
 - [x] `lake exe sele4n` demonstrates executable transition behavior,
 - [x] docs reflect progress and remaining proof debt.
+
+Additional active-slice closure checks:
+
+- [ ] typed revoke/delete transitions compile and use typed CSpace addresses,
+- [ ] lifecycle-aware authority monotonicity predicates are defined and used in theorem statements,
+- [ ] composed capability bundle includes lifecycle clauses,
+- [ ] at least one lifecycle preservation theorem is proven for the composed bundle,
+- [ ] executable example includes a lifecycle transition trace.
 
 ## 7. Audit protocol for milestone completion claims
 
@@ -132,16 +170,27 @@ Recommended command set:
 
 Near-term sequence after the completed M2 foundation slice:
 
-1. Expand CSpace operations to revoke/delete and prove local authority constraints.
-2. Start M3 IPC semantics with endpoint transition definitions.
-3. Lift reusable capability and scheduler proof utilities into stable helper modules.
+1. Expand CSpace operations to revoke/delete over typed addresses.
+2. Land lifecycle-aware authority monotonicity constraints and helper lemmas.
+3. Prove composed capability bundle preservation for lifecycle transitions.
+4. Start M3 IPC semantics with endpoint transition definitions.
+5. Lift reusable capability and scheduler proof utilities into stable helper modules.
 
 Longer-term sequence:
 
-4. Object lifecycle/retype safety (M4).
-5. Refinement and correspondence track (M5+).
+6. Object lifecycle/retype safety (M4).
+7. Refinement and correspondence track (M5+).
 
-## 9. Anti-patterns to avoid
+## 9. PR and review notes for the active slice
+
+When submitting lifecycle-slice changes, include a short “proof-impact summary” in PR text:
+
+1. New/changed transitions.
+2. New/changed invariant components.
+3. New/changed preservation theorem entrypoints.
+4. Any intentional proof debt carried to next increment.
+
+## 10. Anti-patterns to avoid
 
 - Expanding into IPC/MMU/retype semantics before current-slice proofs stabilize.
 - Embedding milestone assumptions in code without documenting them in the spec.

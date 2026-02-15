@@ -50,5 +50,14 @@ lake exe sele4n
 
 Bootstrap and M1 scheduler-integrity goals are complete and validated in code. Milestone M2 foundation
 work (typed CSpace lookup/insert/mint model plus invariant-preservation proofs and executable
-CSpace demonstration) is complete. Next increments focus on capability lifecycle expansion
-(revoke/delete) and stronger authority monotonicity constraints.
+CSpace demonstration) is complete.
+
+The active development slice now focuses on capability lifecycle expansion with three concrete
+outcomes:
+
+1. Add revoke/delete transitions over typed CSpace addresses.
+2. Define lifecycle-aware authority monotonicity constraints.
+3. Prove preservation of the capability invariant bundle across lifecycle transitions.
+
+See `docs/SEL4_SPEC.md` for normative acceptance criteria and `docs/DEVELOPMENT.md` for the
+recommended implementation sequence and review checklist.
