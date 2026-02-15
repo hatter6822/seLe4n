@@ -21,7 +21,8 @@ Testing framework status:
 - ✅ Tier 0 hygiene gate (`axiom|sorry|TODO` scan).
 - ✅ Tier 1 build/theorem gate (`lake build`).
 - ✅ Tier 2 fixture-backed executable smoke regression gate.
-- 🧩 Tier 3/Tier 4 extension points are documented and script-wired for future expansion.
+- ✅ Tier 3 invariant/doc-surface checks are wired via `test_full.sh`.
+- 🧩 Tier 4 nightly extension point remains documented for broader confidence checks.
 
 CI status:
 
@@ -108,6 +109,7 @@ lake exe sele4n
 - `docs/SEL4_SPEC.md` — normative milestone spec and acceptance criteria.
 - `docs/DEVELOPMENT.md` — implementation workflow, proof standards, PR checklist.
 - `docs/TESTING_FRAMEWORK_PLAN.md` — testing tiers, CI strategy, and expansion path.
+- `docs/PROJECT_AUDIT.md` — current deep audit of code, tests, documentation, and roadmap.
 - `tests/scenarios/README.md` — fixture maintenance and trace regression workflow.
 
 ---
@@ -158,7 +160,7 @@ Use the tiered test entrypoints for local validation:
 ```bash
 ./scripts/test_fast.sh      # Tier 0 + Tier 1
 ./scripts/test_smoke.sh     # Tier 0 + Tier 1 + Tier 2 (fixture-backed trace gate)
-./scripts/test_full.sh      # smoke + explicit Tier 3 extension-point notice
+./scripts/test_full.sh      # smoke + Tier 3 invariant/doc-surface gate
 ./scripts/test_nightly.sh   # full + explicit Tier 4 extension-point notice
 ./scripts/audit_testing_framework.sh
 ```

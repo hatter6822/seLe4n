@@ -4,12 +4,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Minimal scheduling well-formedness condition for the bootstrap model. -/
-def schedulerWellFormed (s : SchedulerState) : Prop :=
-  match s.current with
-  | none => True
-  | some tid => tid ∈ s.runnable
-
 /-- Scheduler invariant component #3 (M1 bundle v1): queue/current consistency.
 
 Policy choice for this model is **strict**: when `current = some tid`, `tid` must appear in the
@@ -19,6 +13,13 @@ def queueCurrentConsistent (s : SchedulerState) : Prop :=
   match s.current with
   | none => True
   | some tid => tid ∈ s.runnable
+
+/-- Minimal scheduling well-formedness condition for the bootstrap model.
+
+At this stage the condition is intentionally identical to `queueCurrentConsistent` and is kept as
+an alias so milestone wording can evolve without duplicating theorem maintenance. -/
+abbrev schedulerWellFormed (s : SchedulerState) : Prop :=
+  queueCurrentConsistent s
 
 /-- Scheduler invariant component #1 (M1 bundle v1): runnable queue has no duplicate TIDs. -/
 def runQueueUnique (s : SchedulerState) : Prop :=
@@ -1031,7 +1032,7 @@ theorem setCurrentThread_preserves_wellFormed
     schedulerWellFormed st'.scheduler := by
   simp [setCurrentThread] at hStep
   cases hStep
-  simp [schedulerWellFormed, hMem]
+  simpa [schedulerWellFormed, queueCurrentConsistent] using hMem
 
 theorem setCurrentThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -1102,27 +1103,27 @@ theorem schedule_preserves_wellFormed
   | nil =>
       simp [schedule, setCurrentThread, hRun] at hStep
       cases hStep
-      simp [schedulerWellFormed]
+      simp [schedulerWellFormed, queueCurrentConsistent]
   | cons t ts =>
       cases hObj : st.objects t with
       | none =>
           simp [schedule, setCurrentThread, hRun, hObj] at hStep
           cases hStep
-          simp [schedulerWellFormed]
+          simp [schedulerWellFormed, queueCurrentConsistent]
       | some obj =>
           cases obj with
           | tcb tcb =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
-              simp [schedulerWellFormed]
+              simp [schedulerWellFormed, queueCurrentConsistent]
           | endpoint ep =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
-              simp [schedulerWellFormed]
+              simp [schedulerWellFormed, queueCurrentConsistent]
           | cnode cn =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
-              simp [schedulerWellFormed]
+              simp [schedulerWellFormed, queueCurrentConsistent]
 
 theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)

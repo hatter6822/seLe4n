@@ -24,7 +24,7 @@ The following behavior is stable and must not regress unless intentionally redes
    preservation entrypoints.
 3. M3 endpoint seed APIs (`endpointSend`, `endpointReceive`) and IPC invariant bundle entrypoints.
 4. Runnable executable trace in `Main.lean` demonstrating scheduler + CSpace + IPC seed behavior.
-5. Tier 0/1/2 test entrypoints and CI required-gate behavior.
+5. Tier 0/1/2 required gates and Tier 3 full-suite invariant/doc-surface checks.
 
 If a change intentionally adjusts one of these contracts, call it out in docs + PR notes.
 
@@ -153,6 +153,7 @@ Direct checks for local debugging:
 lake build
 lake exe sele4n
 rg -n "axiom|sorry|TODO" SeLe4n Main.lean
+./scripts/test_full.sh
 ```
 
 If any command cannot run due to environment limits, report the constraint and impact.

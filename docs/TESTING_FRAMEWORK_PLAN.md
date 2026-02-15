@@ -14,7 +14,7 @@ Current repository status:
 - ✅ Work package B (fixture-backed executable smoke baseline) implemented.
 - ✅ Work package C (CI wiring to script entrypoints) implemented.
 - ✅ Work package D (docs integration) implemented.
-- ⏳ Work package E (Tier 3 integration checks) prepared as extension points, not yet mandatory.
+- ✅ Work package E (Tier 3 invariant/doc-surface checks) implemented.
 
 ---
 
@@ -58,12 +58,12 @@ The framework is successful only if all of the following remain true.
 
 Both are required pull-request CI jobs.
 
-### 3.3 Optional extension tiers (prepared)
+### 3.3 Full/nightly tiers
 
-- `./scripts/test_full.sh` includes Tier 3 extension notice.
-- `./scripts/test_nightly.sh` includes Tier 4 extension notice.
+- `./scripts/test_full.sh` runs Tier 3 invariant/doc-surface checks.
+- `./scripts/test_nightly.sh` runs full plus Tier 4 extension notice.
 
-These are currently informational expansion hooks.
+Tier 3 is now active in the full suite; Tier 4 remains the next expansion hook.
 
 ---
 
@@ -123,8 +123,8 @@ These are the prioritized testing next steps once M3.5 semantics begin landing.
 1. **Tier 2 fixture growth for M3.5 stories**
    - add stable trace fragments for waiting/handshake behavior.
 
-2. **Tier 3 invariant-group checks**
-   - add grouped checks by milestone bundle boundary (M1/M2/M3/M3.5/M4).
+2. **Tier 3 invariant-group deepening**
+   - extend current invariant/doc-surface checks into richer milestone-bundle grouped checks.
 
 3. **Artifact ergonomics**
    - standardize artifact naming for any new tier scripts.
