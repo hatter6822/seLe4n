@@ -70,7 +70,8 @@ run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invaria
 
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
-run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
+run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
 
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
