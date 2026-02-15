@@ -21,7 +21,7 @@ Current active-slice status:
 
 - ✅ typed revoke/delete transitions over typed CSpace addresses are implemented,
 - ✅ lifecycle-aware authority monotonicity constraints are implemented,
-- 🔄 composed capability-bundle lifecycle preservation remains the open proof target.
+- ✅ composed capability bundle now includes lifecycle clauses with lifecycle-preservation theorem entrypoints.
 
 ### 1.1 Active-slice outcome details (implementation-ready)
 
@@ -146,8 +146,8 @@ Additional active-slice closure checks:
 
 - [x] typed revoke/delete transitions compile and use typed CSpace addresses,
 - [x] lifecycle-aware authority monotonicity predicates are defined and used in theorem statements,
-- [ ] composed capability bundle includes lifecycle clauses,
-- [ ] at least one lifecycle preservation theorem is proven for the composed bundle.
+- [x] composed capability bundle includes lifecycle clauses,
+- [x] lifecycle preservation theorems are proven for delete and revoke on the composed bundle.
 - [x] executable example includes a lifecycle transition trace.
 
 ## 7. Audit protocol for milestone completion claims

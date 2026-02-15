@@ -223,8 +223,8 @@ and no open TODOs remain for the transitions introduced in this slice.
   `cspaceRevoke`) with local authority-reduction helper theorems.
 - Active-slice lifecycle authority monotonicity modeling is now defined as
   `lifecycleAuthorityMonotonicity` and proven to hold in the current model.
-- Remaining M2 work is to fold lifecycle clauses into the composed capability bundle and prove
-  composed lifecycle-preservation theorem entrypoints.
+- The composed capability invariant bundle now includes lifecycle clauses, and composed
+  lifecycle-preservation theorem entrypoints are established for `delete` and `revoke`.
 
 ### 6.6 Active-slice incremental target outcomes and sequencing
 
@@ -299,8 +299,8 @@ Incremental plan:
 - ✅ Step 2 complete: state/model helpers for slot-level capability ownership without architecture-specific details.
 - ✅ Step 3 complete: first capability invariant bundle is defined/proven (slot uniqueness, lookup soundness, attenuation monotonicity).
 - ✅ Next increment landed: typed revoke/delete transitions over `SlotRef`-style addresses (local revoke semantics in the modeled CNode scope).
-- ✅ Step 4 complete (partial active-slice closure): lifecycle-aware authority monotonicity constraints are defined for attenuation + delete/revoke reduction, with dedicated helper theorems.
-- 🔄 Step 5 in progress: extend composed `capabilityInvariantBundle` with lifecycle clauses and prove composed preservation for delete/revoke transitions.
+- ✅ Step 4 complete: lifecycle-aware authority monotonicity constraints are defined for attenuation + delete/revoke reduction, with dedicated helper theorems.
+- ✅ Step 5 complete: composed `capabilityInvariantBundle` is extended with lifecycle clauses and composed preservation theorem entrypoints are proven for delete/revoke transitions.
 - 🔄 Later: authority monotonicity and reachability constraints across extended operations.
 
 ### 8.3 M3: IPC semantics
