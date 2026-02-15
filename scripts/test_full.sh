@@ -13,6 +13,6 @@ if [[ "${CONTINUE_MODE}" -eq 1 ]]; then
 fi
 
 run_check "META" "${SCRIPT_DIR}/test_smoke.sh" "${sub_args[@]}"
-log_section "INVARIANT" "Tier 3 integration checks are not yet wired; this is an explicit extension point."
+run_check "META" "${SCRIPT_DIR}/test_tier3_invariant_surface.sh" "${sub_args[@]}"
 
 finalize_report
