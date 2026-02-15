@@ -61,9 +61,11 @@ Use this order unless a concrete dependency forces adjustment.
    - state ownership remains explicit: endpoint-owned waiting counterpart identity + thread-owned IPC blocking status,
    - endpoint local well-formedness now constrains queue shape and waiting-receiver ownership together for deterministic unfolding in later transition/proof work.
 
-2. **Transition updates second**
-   - add/update endpoint transitions with explicit success/error branches,
-   - preserve straightforward unfoldability for proofs.
+2. **Transition updates second** ✅ **completed**
+   - added explicit waiting-receiver registration transition (`endpointAwaitReceive`) for idle endpoints,
+   - updated `endpointSend` with explicit handshake-success branch (`receive` + waiting receiver) and explicit mismatch errors for illegal receive-state shapes,
+   - updated `endpointReceive` branching to keep explicit error outcomes for impossible waiting-receiver combinations,
+   - preservation-entrypoint proofs for updated send/receive transitions remain unfold-friendly and machine-checked.
 
 3. **Scheduler contract predicates third**
    - define targeted blocked-vs-runnable coherence predicates,

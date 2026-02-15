@@ -143,8 +143,14 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
 - ✅ **Step 1 complete (state-model refinement)**
   - endpoint model now includes explicit waiting-counterpart identity for deterministic handshake setup (`waitingReceiver`),
   - TCB model now carries explicit IPC blocking status (`ready`, `blockedOnSend endpoint`, `blockedOnReceive endpoint`) to keep scheduler-facing ownership clear,
-  - endpoint well-formedness now captures ownership coupling between endpoint mode and waiting-receiver identity (non-receive states require `none`, receive requires `some`),
-  - remaining M3.5 steps (transition updates onward) stay in progress.
+  - endpoint well-formedness now captures ownership coupling between endpoint mode and waiting-receiver identity (non-receive states require `none`, receive requires `some`).
+- ✅ **Step 2 complete (transition updates)**
+  - added explicit receiver-wait registration transition (`endpointAwaitReceive`) for idle endpoints,
+  - `endpointSend` now has an explicit receive-handshake success path (`receive` + waiting receiver) and explicit state-mismatch error branches for illegal endpoint shapes,
+  - `endpointReceive` now keeps explicit success/error splits over queue + waiting-receiver combinations,
+  - send/receive preservation theorem entrypoints remain machine-checked after transition-surface updates.
+- ⏳ **Remaining M3.5 steps**
+  - scheduler contract predicates onward (steps 3-7) remain in progress.
 
 ---
 
