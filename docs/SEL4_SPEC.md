@@ -12,8 +12,8 @@ It has five jobs:
 4. Declare what is out of scope so review stays focused.
 5. Provide acceptance gates that can be validated locally.
 
-The project is currently in a **post-M3-seed / pre-M3.5** stage: M1 scheduler invariants, M2
-capability semantics, and M3 endpoint send/receive seed semantics are complete and executable.
+The project is currently in a **post-M3-seed / mid-M3.5** stage: M1 scheduler invariants, M2
+capability semantics, and M3 endpoint send/receive seed semantics are complete and executable, while M3.5 step 7 remains open.
 
 Testing baseline status: Tier 0 hygiene checks, Tier 1 build checks, and Tier 2 fixture-backed
 executable smoke checks are implemented under `scripts/test_*.sh` and enforced in pull-request CI.
@@ -160,8 +160,11 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
 - ✅ **Step 5 complete (helper lemmas)**
   - added local endpoint-store lookup helpers near transitions (`tcb_lookup_of_endpoint_store`, `runnable_membership_of_endpoint_store`, `not_runnable_membership_of_endpoint_store`),
   - send/await-receive/receive scheduler-contract preservation proofs now discharge concrete lookup/runnable obligations via these small local lemmas rather than repeated ad hoc case splits.
+- ✅ **Step 6 complete (preservation-theorem hardening)**
+  - endpoint transitions now expose local-first preservation theorems for scheduler-contract components (`<transition>_preserves_runnableThreadIpcReady`, `<transition>_preserves_blockedOnSendNotRunnable`, `<transition>_preserves_blockedOnReceiveNotRunnable`),
+  - composed scheduler-contract and M3.5 bundle preservation theorems are layered second and continue to compile machine-checked.
 - ⏳ **Remaining M3.5 steps**
-  - preservation-theorem hardening and executable-demonstration extension (steps 6-7) remain in progress.
+  - executable-demonstration extension (step 7) remains in progress.
 
 ---
 

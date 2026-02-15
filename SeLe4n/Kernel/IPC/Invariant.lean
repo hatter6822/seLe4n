@@ -287,33 +287,48 @@ def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
   blockedOnSendNotRunnable st ∧
   blockedOnReceiveNotRunnable st
 
-/-- Shared local proof core: any successful endpoint-object store preserves
-M3.5 scheduler-contract predicates. -/
-theorem endpointStore_preserves_ipcSchedulerContractPredicates
+theorem endpointSend_preserves_runnableThreadIpcReady
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (ep' : Endpoint)
-    (hInv : ipcSchedulerContractPredicates st)
-    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st')) :
-    ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
-  refine ⟨?_, ?_, ?_⟩
-  · intro tid tcb hObj hRun
-    have hObjOrig : st.objects tid = some (.tcb tcb) :=
-      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
-    have hRunOrig : tid ∈ st.scheduler.runnable :=
-      runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
-    exact hReady tid tcb hObjOrig hRunOrig
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) :=
-      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb endpoint hObjOrig hBlocked
-    exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) :=
-      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedReceive tid tcb endpoint hObjOrig hBlocked
-    exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+    (sender : SeLe4n.ThreadId)
+    (hInv : runnableThreadIpcReady st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    runnableThreadIpcReady st' := by
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb hObj hRun
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hRunOrig : tid ∈ st.scheduler.runnable :=
+    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
+  exact hInv tid tcb hObjOrig hRunOrig
+
+theorem endpointSend_preserves_blockedOnSendNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : blockedOnSendNotRunnable st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    blockedOnSendNotRunnable st' := by
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+
+theorem endpointSend_preserves_blockedOnReceiveNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : blockedOnReceiveNotRunnable st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    blockedOnReceiveNotRunnable st' := by
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
 theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -322,8 +337,54 @@ theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact endpointSend_preserves_runnableThreadIpcReady st st' endpointId sender hReady hStep
+  · exact endpointSend_preserves_blockedOnSendNotRunnable st st' endpointId sender hBlockedSend hStep
+  · exact endpointSend_preserves_blockedOnReceiveNotRunnable st st' endpointId sender hBlockedReceive hStep
+
+theorem endpointAwaitReceive_preserves_runnableThreadIpcReady
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (hInv : runnableThreadIpcReady st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    runnableThreadIpcReady st' := by
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  intro tid tcb hObj hRun
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hRunOrig : tid ∈ st.scheduler.runnable :=
+    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
+  exact hInv tid tcb hObjOrig hRunOrig
+
+theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (hInv : blockedOnSendNotRunnable st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    blockedOnSendNotRunnable st' := by
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+
+theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (hInv : blockedOnReceiveNotRunnable st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    blockedOnReceiveNotRunnable st' := by
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
 theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -332,8 +393,54 @@ theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact endpointAwaitReceive_preserves_runnableThreadIpcReady st st' endpointId receiver hReady hStep
+  · exact endpointAwaitReceive_preserves_blockedOnSendNotRunnable st st' endpointId receiver hBlockedSend hStep
+  · exact endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable st st' endpointId receiver hBlockedReceive hStep
+
+theorem endpointReceive_preserves_runnableThreadIpcReady
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : runnableThreadIpcReady st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    runnableThreadIpcReady st' := by
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb hObj hRun
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hRunOrig : tid ∈ st.scheduler.runnable :=
+    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
+  exact hInv tid tcb hObjOrig hRunOrig
+
+theorem endpointReceive_preserves_blockedOnSendNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : blockedOnSendNotRunnable st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    blockedOnSendNotRunnable st' := by
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+
+theorem endpointReceive_preserves_blockedOnReceiveNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : blockedOnReceiveNotRunnable st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    blockedOnReceiveNotRunnable st' := by
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  intro tid tcb endpoint hObj hBlocked
+  have hObjOrig : st.objects tid = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
+  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
 theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -342,8 +449,11 @@ theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact endpointReceive_preserves_runnableThreadIpcReady st st' endpointId sender hReady hStep
+  · exact endpointReceive_preserves_blockedOnSendNotRunnable st st' endpointId sender hBlockedSend hStep
+  · exact endpointReceive_preserves_blockedOnReceiveNotRunnable st st' endpointId sender hBlockedReceive hStep
 
 theorem endpointObjectValid_of_queueWellFormed
     (ep : Endpoint)
