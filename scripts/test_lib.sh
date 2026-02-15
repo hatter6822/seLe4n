@@ -67,14 +67,22 @@ finalize_report() {
   log_section "META" "All checks passed."
 }
 
+resolve_elan_env_file() {
+  local elan_home_default="${HOME}/.elan"
+  local elan_home="${ELAN_HOME:-${elan_home_default}}"
+  printf '%s/env\n' "${elan_home}"
+}
+
 ensure_lake_available() {
   if command -v lake >/dev/null 2>&1; then
     return 0
   fi
 
-  if [[ -f "${HOME}/.elan/env" ]]; then
+  local elan_env_file
+  elan_env_file="$(resolve_elan_env_file)"
+  if [[ -f "${elan_env_file}" ]]; then
     # shellcheck disable=SC1090,SC1091
-    source "${HOME}/.elan/env"
+    source "${elan_env_file}"
   fi
 
   if command -v lake >/dev/null 2>&1; then
@@ -85,9 +93,10 @@ ensure_lake_available() {
   if [[ -x "${setup_script}" ]]; then
     log_section "BUILD" "lake missing; attempting automatic Lean toolchain setup"
     if "${setup_script}"; then
-      if [[ -f "${HOME}/.elan/env" ]]; then
+      elan_env_file="$(resolve_elan_env_file)"
+      if [[ -f "${elan_env_file}" ]]; then
         # shellcheck disable=SC1090,SC1091
-        source "${HOME}/.elan/env"
+        source "${elan_env_file}"
       fi
     else
       record_failure "BUILD" "automatic setup via ${setup_script} failed"
