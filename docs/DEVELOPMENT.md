@@ -164,7 +164,7 @@ If any command cannot run due to environment limits, report the constraint and i
 Default shared ownership of test/CI gates applies to contributors touching:
 
 - `Main.lean`,
-- `SeLe4n/Kernel/API.lean`,
+- `SeLe4n/Kernel/API.lean` (barrel) and `SeLe4n/Kernel/**/*.lean`,
 - `scripts/test_*.sh`,
 - `tests/fixtures/*`.
 
