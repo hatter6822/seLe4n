@@ -1,199 +1,146 @@
-# Development Guide
+# seLe4n Development Guide
 
-## 1. Current phase
+## 1. Purpose
 
-The project has completed bootstrap and **M1: Scheduler Integrity**.
-Development has completed the **M2 Foundation Slice: typed CSpace lookup and mint model** and now focuses on post-foundation capability lifecycle work.
+This guide defines the day-to-day implementation workflow for seLe4n, with emphasis on:
 
-### Current objective slice (next step)
+- maintaining executable semantics,
+- preserving established theorem surfaces,
+- delivering milestones in small, reviewable proof slices.
 
-The active implementation target is capability-lifecycle expansion beyond the completed M2 foundation slice.
+The codebase is currently in a **post-M2 / pre-M3** phase.
 
-Audited outcomes from the completed M2 foundation slice:
+---
 
-- ✅ typed capability operations exist for lookup and write/update paths,
-- ✅ state/model helpers exist for slot-level capability ownership representation,
-- ✅ initial capability invariants are defined and composed,
-- ✅ preservation is proven for at least one read and one write transition,
-- ✅ executable behavior and existing scheduler proofs remain stable.
+## 2. Current baseline and active focus
 
-Current active-slice status:
+### 2.1 Baseline guarantees to keep stable
 
-- ✅ typed revoke/delete transitions over typed CSpace addresses are implemented,
-- ✅ lifecycle-aware authority monotonicity constraints are implemented,
-- ✅ composed capability bundle now includes lifecycle clauses with lifecycle-preservation theorem entrypoints,
-- ✅ existing scheduler invariant proofs and `Main.lean` executable behavior are preserved.
+The following are considered stable and must not regress:
 
-### 1.1 Active-slice outcome details (implementation-ready)
+1. M1 scheduler invariant bundle entrypoints and preservation behavior.
+2. M2 capability lifecycle transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`).
+3. Capability invariant bundle structure and lifecycle authority monotonicity entrypoints.
+4. Executable sanity path in `Main.lean`.
 
-To keep scope tight and proofs composable, treat the current slice as three explicit outcomes.
+### 2.2 Active focus: M3 IPC seed
 
-1. **Typed lifecycle transitions (`revoke`/`delete`)**
-   - Operate on typed CSpace addresses (`SlotRef`/equivalent typed slot handle).
-   - Keep failure behavior explicit via existing kernel error channels.
-   - Reuse existing lookup/insert helper style to avoid branching state-access idioms.
-2. **Lifecycle-aware authority monotonicity**
-   - Capture that lifecycle operations cannot increase rights or introduce stronger authority.
-   - Distinguish local attenuation constraints from global non-escalation constraints.
-   - Document policy near definitions to keep theorem intent reviewable.
-3. **Capability bundle preservation over lifecycle transitions**
-   - Extend bundle composition rather than replacing existing components.
-   - Add dedicated preservation theorem entrypoints for lifecycle operations.
-   - Preserve existing read/write preservation results and scheduler proof stability.
+Current development should prioritize a small endpoint IPC seed with theorem-backed invariants.
+Keep changes narrow and compositional so M1/M2 proof obligations remain intact.
 
-### 1.2 Current audit evidence snapshot
+---
 
-Latest repository-wide audit commands and outcomes:
+## 3. Recommended implementation sequence (M3 IPC seed)
 
-- `lake build` passes,
-- `lake exe sele4n` runs scheduler + mint + revoke + delete demonstration path,
-- `rg -n "axiom|TODO|sorry" SeLe4n Main.lean` returns no unresolved proof escapes or stale TODO markers.
+Work in this order unless a blocking dependency requires adjustment:
 
-## 2. Working agreement
+1. **Model-first minimal IPC state**
+   - Add only the endpoint state required for one send/receive story.
+   - Favor explicit, typed fields over generic maps when possible.
 
-1. Spec-first: update `docs/SEL4_SPEC.md` when scope or acceptance criteria change.
-2. Keep executable behavior intact (`Main.lean` path should remain runnable).
-3. Prove before broadening: land small, composable invariants with corresponding proofs.
-4. Prefer total functions and explicit error channels (`Except`) over partial definitions.
+2. **Transitions second**
+   - Implement one send transition and one receive transition.
+   - Keep transition semantics deterministic and easy to unfold in proofs.
 
-Additional milestone agreements:
+3. **Invariant components third**
+   - Define one endpoint queue well-formedness predicate.
+   - Define one endpoint/object validity predicate.
+   - Bundle under a clearly named IPC invariant entrypoint.
 
-5. Keep theorem statements stable once introduced; iterate via helper lemmas first.
-6. Make policy choices explicit near definitions (not only in commit/PR text).
-7. When a proof blocks, land minimal supporting lemmas rather than broad refactors.
-8. Do not regress completed M1 scheduler invariants while extending M2 semantics.
-9. For lifecycle transitions, prefer one transition = one clearly stated policy obligation,
-   followed by helper lemmas and then composed-bundle preservation.
-10. Avoid broad state-model rewrites while active-slice authority properties are still settling.
+4. **Local helper lemmas fourth**
+   - Add lookup/update lemmas close to transition definitions.
+   - Keep helper statements small and reusable.
 
-## 3. Recommended workflow per change
+5. **Preservation theorems fifth**
+   - Prove send preserves IPC invariant bundle.
+   - Prove receive preserves IPC invariant bundle.
+   - Compose with existing M1/M2 bundle entrypoints only after local proofs are stable.
 
-1. Confirm milestone impact (M2 foundation-only vs. future milestone prep).
-2. Update spec text if acceptance criteria/scope move.
-3. Implement Lean model/theorem changes in smallest coherent slices.
-4. Run checks:
-   - `lake build`
-   - `lake exe sele4n` (when transition behavior is affected)
-   - targeted repository scans (`rg -n "axiom|TODO|sorry"`) before merge
-5. Summarize obligations completed and remaining in commit/PR notes.
+6. **Executable demonstration last**
+   - Extend `Main.lean` trace to include IPC behavior.
+   - Confirm current demo behavior still executes.
 
-### 3.1 Suggested micro-slice workflow for the active lifecycle slice
+---
 
-For each lifecycle transition (`delete`, `revoke`) and each authority rule:
+## 4. Proof hygiene standards
 
-1. Add/adjust predicate definition (authority + lifecycle safety component).
-2. Add one local sanity lemma constraining theorem drift.
-3. Add transition-local preservation theorem (`<transition>_preserves_<component>`).
-4. Fold transition result into composed invariant theorem.
-5. Re-run build and executable checks.
+1. Prefer theorem names in `<transition>_preserves_<invariant>` form.
+2. Keep conjunction-heavy invariant bundles factored with named components.
+3. Avoid broad global simp attribute changes; use local `simp` scopes.
+4. Keep proof scripts short and layered:
+   - unfold transition,
+   - split success/error branches,
+   - dispatch local helper lemmas.
+5. Preserve theorem statement stability when refactoring internals.
+6. Do not introduce `axiom` or `sorry` into core Lean modules.
 
-This sequence keeps each change reviewable and reduces proof breakage fan-out.
+---
 
-### 3.2 Recommended implementation order for active-slice delivery
+## 5. Documentation update requirements
 
-1. Land typed delete transition and local lemmas.
-2. Land typed revoke transition and local lemmas.
-3. Introduce lifecycle-aware authority monotonicity predicates.
-4. Extend composed capability invariant bundle.
-5. Add composed preservation theorems for new transitions.
-6. Refresh executable demonstration path and docs.
+Any PR that changes transitions or invariant composition must update docs in the same commit range:
 
-## 4. Coding and proof conventions
+1. `docs/SEL4_SPEC.md`:
+   - scope/status,
+   - acceptance criteria,
+   - next-slice outcomes.
+2. `docs/DEVELOPMENT.md`:
+   - implementation order,
+   - proof workflow,
+   - review checklist.
+3. `README.md`:
+   - current milestone stage summary,
+   - quick contributor verification loop.
 
-- Namespaces:
-  - `SeLe4n.Model` for state/object definitions,
-  - `SeLe4n.Kernel` for transitions/invariants/proofs.
-- Theorem naming:
-  - use `<transition>_preserves_<invariant>` style where practical.
-- Proof structure:
-  - isolate helper lemmas for list/set facts,
-  - keep theorem statements stable and refactor proof terms beneath them.
-- Documentation:
-  - add short comments when a design choice is non-obvious or policy-based.
+---
 
-M2 proof hygiene conventions:
+## 6. Validation commands
 
-- Use explicit names for bundle members and avoid anonymous conjunctions without aliases.
-- Group helper lemmas by subject (`lookup`, slot mutations, rights attenuation facts).
-- Keep `simp` sets predictable; avoid global simp attributes unless broadly safe.
-- Avoid introducing abstractions that hide state updates while invariants are still evolving.
-- For lifecycle operations, separate “address resolution” lemmas from “authority effect” lemmas.
-- Keep revoke/delete proofs structurally parallel where possible to minimize maintenance burden.
+Run this minimum command set before opening a PR:
 
-## 5. Repository readability checklist
+```bash
+lake build
+lake exe sele4n
+rg -n "axiom|sorry|TODO" SeLe4n Main.lean
+```
 
-When touching a module, check the following to keep codebase comprehension high:
+If a command cannot be run due to environment constraints, document the limitation explicitly in
+PR notes.
 
-- exported names are discoverable from `SeLe4n.lean`,
-- top-level doc comments exist for new public definitions,
-- transition semantics are accompanied by at least one theorem use-site,
-- docs reference the same milestone terminology as the code,
-- examples in `Main.lean` remain concrete and executable.
+---
 
-## 6. Acceptance-driven delivery checklist (M2 active lifecycle slice)
+## 7. PR checklist (required)
 
-Before merging work intended for the active M2 slice, verify:
+Include this checklist in your PR description and mark each item:
 
-- [x] capability invariant bundle entrypoint exists and includes uniqueness + lookup soundness + attenuation rule,
-- [x] attenuation policy is documented in code and spec,
-- [x] preservation lemmas exist for one read and one write transition,
-- [x] completed M1 scheduler theorems still build unchanged,
-- [x] no new `axiom`/`sorry` introduced,
-- [x] `lake build` passes,
-- [x] `lake exe sele4n` demonstrates executable transition behavior,
-- [x] docs reflect progress and remaining proof debt.
+- [ ] Scope is limited to one coherent milestone slice.
+- [ ] New transitions have explicit error branches.
+- [ ] New invariant components are named and documented.
+- [ ] Preservation theorem entrypoints compile.
+- [ ] `lake build` executed.
+- [ ] `lake exe sele4n` executed.
+- [ ] Hygiene scan (`axiom|sorry|TODO`) executed.
+- [ ] Docs updated to match current implementation stage.
+- [ ] Remaining proof debt is explicitly identified.
 
-Additional active-slice closure checks:
+---
 
-- [x] typed revoke/delete transitions compile and use typed CSpace addresses,
-- [x] lifecycle-aware authority monotonicity predicates are defined and used in theorem statements,
-- [x] composed capability bundle includes lifecycle clauses,
-- [x] lifecycle preservation theorems are proven for delete and revoke on the composed bundle.
-- [x] executable example includes a lifecycle transition trace.
+## 8. Review heuristics for maintainers
 
-## 7. Audit protocol for milestone completion claims
+Reviewers should verify:
 
-When marking any milestone item complete, record evidence in the same commit range:
+1. Transition semantics are readable without deep tactic archaeology.
+2. Helper lemmas match transition granularity (not overly generic).
+3. Invariant bundle changes are justified and scoped.
+4. New executable examples provide concrete behavior evidence.
+5. Milestone claims in docs match the code present in the same range.
 
-1. **Code evidence**: definitions and theorem statements exist in tracked Lean modules.
-2. **Proof evidence**: preservation theorem(s) compile under `lake build`.
-3. **Executable evidence**: runnable example path (`lake exe sele4n` or equivalent).
-4. **Hygiene evidence**: no unresolved proof escapes (`axiom`, `sorry`) and no stale TODO markers
-   in Lean code.
+---
 
-Recommended command set:
+## 9. Anti-patterns to avoid
 
-- `lake build`
-- `lake exe sele4n`
-- `rg -n "axiom|TODO|sorry" SeLe4n Main.lean`
-
-## 8. Development path ahead
-
-Near-term sequence after the completed M2 foundation slice:
-
-1. Expand CSpace operations to revoke/delete over typed addresses.
-2. Land lifecycle-aware authority monotonicity constraints and helper lemmas.
-3. Prove composed capability bundle preservation for lifecycle transitions.
-4. Start M3 IPC semantics with endpoint transition definitions.
-5. Lift reusable capability and scheduler proof utilities into stable helper modules.
-
-Longer-term sequence:
-
-6. Object lifecycle/retype safety (M4).
-7. Refinement and correspondence track (M5+).
-
-## 9. PR and review notes for the active slice
-
-When submitting lifecycle-slice changes, include a short “proof-impact summary” in PR text:
-
-1. New/changed transitions.
-2. New/changed invariant components.
-3. New/changed preservation theorem entrypoints.
-4. Any intentional proof debt carried to next increment.
-
-## 10. Anti-patterns to avoid
-
-- Expanding into IPC/MMU/retype semantics before current-slice proofs stabilize.
-- Embedding milestone assumptions in code without documenting them in the spec.
-- Monolithic proof scripts that block incremental refactoring.
-- Deferring policy decisions (e.g., attenuation constraints) until late in proof work.
+- Mixing large model redesign with new proof obligations in one PR.
+- Introducing IPC/MMU/retype details simultaneously during M3 seed.
+- Hiding semantics in abstraction layers that make transition unfolding opaque.
+- Deferring policy decisions that proofs depend on.
+- Marking milestone completion without executable and theorem evidence.

@@ -1,66 +1,78 @@
 # seLe4n
 
-A Lean 4 development environment and formalization scaffold for implementing and verifying
-key parts of the [seL4 microkernel](https://sel4.systems).
+A Lean 4 formalization project for building an executable and provable model of key
+[seL4 microkernel](https://sel4.systems) semantics.
 
-This repository now contains:
+The repository is currently at the point where:
 
-- A working Lean 4 / Lake project that builds locally.
-- A typed, executable high-level model skeleton for core seL4 concepts.
-- A formal specification roadmap in `docs/SEL4_SPEC.md`.
-- Development conventions in `docs/DEVELOPMENT.md`.
+- Scheduler integrity (M1) is implemented and machine-checked.
+- Capability-space foundation + lifecycle transitions (M2) are implemented and machine-checked.
+- The executable demo path in `Main.lean` exercises scheduling, mint, revoke, and delete.
+
+The immediate focus is now preparing the next milestone slice (M3 IPC seed) without regressing the
+existing M1/M2 proof surface.
 
 ## Quick start
 
-### 1) Install Lean tooling (Elan)
+### 1) Install Lean tooling
 
 ```bash
 curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
-```
-
-Then open a new shell (or source Elan env):
-
-```bash
 source "$HOME/.elan/env"
 ```
 
-### 2) Build
+### 2) Build and run
 
 ```bash
 lake build
-```
-
-### 3) Run the sample executable
-
-```bash
 lake exe sele4n
 ```
 
 ## Repository layout
 
-- `SeLe4n.lean`: library root exports.
-- `SeLe4n/Prelude.lean`: shared base definitions.
-- `SeLe4n/Machine.lean`: abstract machine/model primitives.
-- `SeLe4n/Model/`: high-level state and kernel object model.
-- `SeLe4n/Kernel/`: kernel interface skeleton and invariants.
-- `docs/SEL4_SPEC.md`: complete implementation specification.
-- `docs/DEVELOPMENT.md`: coding/testing/documentation guidance.
+- `SeLe4n.lean` — library export root.
+- `SeLe4n/Prelude.lean` — shared IDs, aliases, and the kernel monad definition.
+- `SeLe4n/Machine.lean` — abstract machine state and primitive state updates.
+- `SeLe4n/Model/Object.lean` — kernel object types (`TCB`, `Endpoint`, `CNode`, `Capability`).
+- `SeLe4n/Model/State.lean` — global state model + typed CSpace lookup helpers.
+- `SeLe4n/Kernel/API.lean` — executable transitions + preservation and policy theorems.
+- `Main.lean` — runnable transition trace used as an executable integration sanity check.
+- `docs/SEL4_SPEC.md` — milestone specification, status, and acceptance criteria.
+- `docs/DEVELOPMENT.md` — implementation workflow, proof hygiene, and review checklist.
 
-## Current status
+## Current development stage
 
-Bootstrap and M1 scheduler-integrity goals are complete and validated in code. Milestone M2
-foundation work (typed CSpace lookup/insert/mint model plus invariant-preservation proofs and
-executable CSpace demonstration) is also complete.
+### Completed milestones
 
-The current active slice has already landed typed lifecycle transition primitives and initial
-authority modeling:
+- **Bootstrap**: project wiring, state/object model, kernel transition skeleton.
+- **M1 Scheduler Integrity Bundle v1**:
+  - queue/current consistency,
+  - runnable queue uniqueness,
+  - current-thread object validity,
+  - preservation across `chooseThread`, `schedule`, and `handleYield`.
+- **M2 Capability & CSpace Semantics (current completion boundary)**:
+  - typed slot lookup/insert,
+  - mint-like derivation with rights attenuation,
+  - lifecycle transitions (`cspaceDeleteSlot`, `cspaceRevoke`),
+  - lifecycle-aware authority monotonicity claims,
+  - composed capability invariant bundle entrypoints and preservation theorems.
 
-1. ✅ `cspaceDeleteSlot` and `cspaceRevoke` transitions over typed CSpace addresses.
-2. ✅ Lifecycle monotonicity coverage is modeled with `cspaceAttenuationRule` plus `lifecycleAuthorityMonotonicity` helper theorems for delete/revoke reduction.
-3. ✅ The composed capability bundle now includes lifecycle obligations, with lifecycle
-   preservation theorem entrypoints for `cspaceDeleteSlot` and `cspaceRevoke`.
-4. ✅ Existing scheduler invariant proofs continue to build unchanged, and `Main.lean`
-   keeps the executable scheduler + lifecycle trace path stable.
+### Active planning target
 
-See `docs/SEL4_SPEC.md` for normative acceptance criteria and `docs/DEVELOPMENT.md` for the
-recommended implementation sequence and review checklist.
+The next implementation slice is **M3 IPC seed**: introduce typed endpoint operations and first IPC
+safety invariants while preserving the established M1/M2 theorem surface.
+
+See:
+
+- `docs/SEL4_SPEC.md` for normative target outcomes and acceptance gates.
+- `docs/DEVELOPMENT.md` for the recommended implementation sequence and PR checklist.
+
+## Daily contributor loop
+
+```bash
+lake build
+lake exe sele4n
+rg -n "axiom|sorry|TODO" SeLe4n Main.lean
+```
+
+Use this loop as a minimum pre-PR verification baseline.
