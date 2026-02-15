@@ -2,190 +2,195 @@
 
 ## 1. Purpose
 
-This document defines the current normative specification baseline for seLe4n and the immediate
-next delivery target.
+This document is the normative planning baseline for the seLe4n Lean model.
 
-It serves three roles:
+It has four jobs:
 
-1. Record **what is already complete** in the Lean codebase.
-2. Define **what the next slice must deliver**.
-3. Provide **acceptance criteria** that can be validated with local commands.
+1. Capture what is implemented and trusted today.
+2. Define the exact **next delivery slice** and why it matters.
+3. Declare what is out of scope so review stays focused.
+4. Provide acceptance gates that can be validated locally.
+
+The project is currently in a **post-M3-seed** stage: M1 scheduler invariants, M2 capability
+semantics, and M3 endpoint send/receive seed semantics are complete and executable.
 
 ---
 
 ## 2. Milestone glossary
 
-- **Bootstrap**: executable core model and initial invariant-preservation theorem pipeline.
-- **M1 (Scheduler Integrity Bundle v1)**: scheduler-focused invariant components + preservation.
-- **M2 (Capability & CSpace Semantics)**: typed CSpace operations, attenuation, lifecycle effects.
-- **M3 (IPC seed)**: first endpoint transition model and IPC safety invariants.
+- **Bootstrap**: executable model skeleton (state, objects, kernel monad, transition style).
+- **M1 (Scheduler Integrity Bundle v1)**: queue/current-thread invariants + preservation.
+- **M2 (Capability & CSpace Semantics)**: typed slot operations, mint attenuation, lifecycle effects.
+- **M3 (IPC seed)**: minimal endpoint send/receive semantics + first IPC invariants.
+- **M3.5 (next slice: IPC handshake + scheduler interaction)**: introduce blocking/wakeup-facing
+  endpoint behavior while preserving existing theorem bundles.
 
 ---
 
-## 3. Current status (implemented)
+## 3. Current status (implemented and expected to remain stable)
 
 ### 3.1 Bootstrap (complete)
 
-The repository includes:
+The codebase provides:
 
-1. Core object/thread/slot identifiers and kernel monad structure.
-2. Abstract machine model (`RegisterFile`, `MachineState`).
-3. Kernel object universe (`TCB`, `Endpoint`, `CNode`, `Capability`).
+1. Core identifiers and `Kernel` monad flow.
+2. Machine model (`RegisterFile`, `MachineState`).
+3. Object universe (`TCB`, `Endpoint`, `CNode`, `Capability`).
 4. Global `SystemState` with object store and scheduler state.
-5. Executable kernel transitions and error handling path.
+5. Executable transitions with explicit error handling.
 
 ### 3.2 M1 Scheduler Integrity Bundle v1 (complete)
 
-The following invariants are modeled and used in preservation entrypoints:
+Implemented and theorem-backed:
 
-1. `runQueueUnique`: runnable queue has no duplicate TIDs.
-2. `currentThreadValid`: current thread resolves to a TCB.
-3. `queueCurrentConsistent`: current thread must be in runnable queue under strict policy.
-4. `schedulerInvariantBundle` composed entrypoint and preservation alignment.
+1. `runQueueUnique`.
+2. `currentThreadValid`.
+3. `queueCurrentConsistent`.
+4. Composed `schedulerInvariantBundle` preservation for `chooseThread`, `schedule`, `handleYield`.
 
 ### 3.3 M2 Capability & CSpace Semantics (complete)
 
-Implemented M2 scope includes:
+Implemented and theorem-backed:
 
-1. Typed CSpace address model (`SlotRef` / `CSpaceAddr`).
-2. Read/write transitions:
-   - `cspaceLookupSlot`,
-   - `cspaceInsertSlot`,
-   - `cspaceMint`.
-3. Lifecycle transitions:
-   - `cspaceDeleteSlot`,
-   - `cspaceRevoke`.
-4. Authority policy components:
-   - rights attenuation (`capAttenuates`),
-   - lifecycle authority reduction statements.
-5. Composed capability invariant entrypoint:
-   - slot uniqueness,
-   - lookup soundness,
-   - attenuation rule,
-   - lifecycle authority monotonicity.
-6. Preservation theorem entrypoints for lookup/insert/mint/delete/revoke progression.
-7. Executable trace in `Main.lean` showing scheduler + capability lifecycle behavior.
+1. Addressing model: `SlotRef` and `CSpaceAddr`.
+2. Read/write transitions: `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceMint`.
+3. Lifecycle transitions: `cspaceDeleteSlot`, `cspaceRevoke`.
+4. Authority policy support: `capAttenuates`, rights subset/attenuation lemmas.
+5. Bundle: slot uniqueness, lookup soundness, attenuation rule, lifecycle authority monotonicity.
+6. Preservation entrypoints for lookup/insert/mint/delete/revoke.
 
 ### 3.4 M3 IPC seed (complete)
 
-Implemented pieces already landed for the active slice:
+Implemented and theorem-backed:
 
-1. Minimal explicit endpoint model state (`EndpointState` + queue on `Endpoint`).
-2. Typed endpoint transition entrypoints:
-   - `endpointSend`,
-   - `endpointReceive`.
-3. Explicit IPC error branches for mismatched endpoint/object states and empty-send-queue cases.
-4. IPC seed invariants and preservation theorem entrypoints:
+1. Endpoint model state (`EndpointState` + queue field on endpoint objects).
+2. IPC transitions: `endpointSend`, `endpointReceive`.
+3. Explicit mismatch/error branches and empty-queue receive failure path.
+4. IPC invariants:
    - `endpointQueueWellFormed`,
    - `endpointObjectValid`,
    - `endpointInvariant`,
    - `ipcInvariant`,
-   - `endpointSend_preserves_ipcInvariant`,
-   - `endpointReceive_preserves_ipcInvariant`,
-   - `m3IpcSeedInvariantBundle`,
-   - `endpointSend_preserves_m3IpcSeedInvariantBundle`,
-   - `endpointReceive_preserves_m3IpcSeedInvariantBundle`.
-5. Transition-local lookup/update helper lemmas are now in place near endpoint transition
-   definitions to keep preservation proofs compositional:
-   - `storeObject_objects_eq`,
-   - `storeObject_objects_ne`,
-   - `endpointSend_ok_as_storeObject`,
-   - `endpointReceive_ok_as_storeObject`.
+   - composed `m3IpcSeedInvariantBundle`.
+5. Preservation entrypoints for both endpoint transitions over IPC, scheduler, capability, and
+   composed M3 seed bundle invariants.
+6. Local store/lookup helper lemmas colocated near endpoint transitions to keep proof scripts
+   compositional and readable.
 
 ---
 
-## 4. Next slice: M3 IPC seed (target outcomes)
+## 4. Next slice definition: M3.5 IPC handshake + scheduler interaction
 
-### 4.1 Objective
+### 4.1 Slice objective
 
-Land a narrow, typed IPC model centered on endpoint send/receive transitions and prove first-order
-safety invariants, while keeping M1/M2 theorems and executable path stable.
+Move from queue-only endpoint seed semantics toward a typed handshake model that introduces the
+first blocking/wakeup contract between IPC transitions and scheduler-visible thread state, while
+keeping all M1/M2/M3 guarantees intact.
 
-### 4.2 Required outcomes
+### 4.2 Why this slice is next
 
-For this slice to be considered complete, all of the following must be true.
-Status is tracked per outcome.
+M3 seed established endpoint-local safety. The highest-leverage next step is to connect endpoint
+state transitions to scheduling consequences in a narrow and provable way. This enables later
+reply-cap and protocol refinements without forcing a full redesign.
 
-1. **Endpoint transition API exists** *(complete)*
-   - Add typed endpoint transition entrypoints (minimum one send path and one receive path).
-   - Transitions must use existing `Kernel` style and explicit error handling.
+### 4.3 Required target outcomes
 
-2. **State modeling remains minimal but explicit** *(complete)*
-   - Any new state needed for IPC queues or pending messages is represented in model structures
-     with clear ownership and access discipline.
-   - Avoid architecture-specific payload details in this slice.
+A change set claiming M3.5 completion must satisfy all outcomes below.
 
-3. **First IPC invariant bundle component is introduced** *(complete)*
-   - At minimum, define one queue well-formedness condition and one endpoint/object validity
-     condition.
-   - Bundle naming should align with existing invariant terminology and theorem style.
+1. **Endpoint protocol state refinement (new)**
+   - Extend endpoint state to represent at least one waiting receiver / waiting sender direction
+     explicitly (not just queue content).
+   - Keep representation architecture-neutral and deterministic.
 
-4. **Preservation proof coverage lands for new transitions** *(complete)*
-   - At least one send transition preservation theorem.
-   - At least one receive transition preservation theorem.
-   - New proof entrypoints should be composable with existing M1/M2 bundles.
+2. **Typed blocking/wakeup transition surface (new)**
+   - Add at least one send path that can place a sender into a blocked/waiting state.
+   - Add at least one receive path that can unblock or hand off work to a waiting counterpart.
+   - Preserve explicit `KernelError` branches for invalid object/state combinations.
 
-5. **Executable trace includes IPC behavior** *(complete)*
-   - `Main.lean` now extends the runnable trace with endpoint `endpointSend`/`endpointReceive`
-     transitions after the existing scheduler + CSpace lifecycle sequence.
-   - Existing scheduler + CSpace demonstration remains intact before IPC steps are executed.
+3. **Scheduler interaction contract (new)**
+   - Define a minimal scheduler-facing predicate relating runnable queue membership and blocked IPC
+     state for touched threads.
+   - Ensure endpoint transitions preserve or intentionally update this contract.
 
-### 4.3 Explicit out-of-scope for this slice
+4. **Invariant bundle extension (new)**
+   - Add at least two invariant components that cover:
+     - endpoint protocol-state coherence,
+     - thread blocking/runnable coherence for IPC-touched threads.
+   - Integrate them into a clearly named bundle layered on top of existing M3 seed invariant
+     structure.
 
-- Full blocking/wakeup scheduler semantics.
-- Reply-cap semantics and complete endpoint protocol states.
-- Architecture/MMU/ASID-specific details.
-- Global refinement relation to C implementation.
+5. **Preservation theorem entrypoints (new)**
+   - Provide machine-checked preservation theorems for each new/changed endpoint transition.
+   - Show compositional preservation with existing scheduler and capability bundles.
+
+6. **Executable evidence path (new)**
+   - Extend `Main.lean` trace to demonstrate at least one blocking-to-delivery or waiting-to-ready
+     IPC story.
+   - Preserve existing scheduler + CSpace + M3-seed behaviors as a prefix of the demo path.
+
+### 4.4 Explicit non-goals for M3.5
+
+Out of scope for this slice:
+
+- Reply-cap transfer protocol completeness.
+- Priority donation and full scheduling policy reasoning.
+- Architecture/MMU/ASID details.
+- Retype/object-creation semantics (tracked for later milestone).
+- Full refinement correspondence to C-level seL4 implementation.
 
 ---
 
-## 5. Acceptance criteria for M3 IPC seed
+## 5. Acceptance criteria for M3.5
 
-A change set claiming M3 slice completion must satisfy all criteria below:
+All criteria are required:
 
 1. `lake build` succeeds.
-2. `lake exe sele4n` succeeds and demonstrates IPC-related behavior.
-3. No new unresolved proof escapes in core Lean sources:
+2. `lake exe sele4n` succeeds and shows IPC behavior beyond the seed queue-only story.
+3. Hygiene scan is clean:
    - `rg -n "axiom|sorry|TODO" SeLe4n Main.lean`.
-4. New IPC transitions have machine-checked preservation theorem entrypoints.
-5. `docs/SEL4_SPEC.md` and `docs/DEVELOPMENT.md` reflect delivered API and proof status.
+4. New endpoint/scheduler interaction invariants exist and are included in the active IPC bundle.
+5. New/updated endpoint transitions have machine-checked preservation theorem entrypoints.
+6. `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and `README.md` reflect the same stage and next
+   slice scope.
 
 ---
 
-## 6. Change-control and documentation policy
+## 6. Change-control policy
 
-When milestone scope changes, update docs first (or in the same commit range) with:
+When milestone scope, transition APIs, or invariant composition changes:
 
-1. New/changed transition names.
-2. New invariant components and bundle composition.
-3. New preservation theorem entrypoints.
-4. Remaining proof debt explicitly called out as deferred.
-
-Claims of milestone completion must include evidence in code, proofs, and executable behavior.
+1. Update documentation in the same commit range as code.
+2. Keep milestone status markers accurate (`complete`, `in progress`, `planned`).
+3. If scope is deferred, record the reason and the destination milestone.
+4. Do not claim milestone completion without executable + theorem evidence.
 
 ---
 
-## 7. Evidence checklist for milestone closure
+## 7. Milestone closure evidence checklist
 
-Use this checklist in PR descriptions:
+Include this checklist in PR descriptions:
 
-- [ ] Transition definitions for the claimed slice exist.
-- [ ] Invariant components for the slice are defined and bundled.
+- [ ] New/updated transition definitions for the claimed slice exist.
+- [ ] Invariant components are named, documented, and bundled.
 - [ ] Preservation theorem entrypoints compile.
-- [ ] Executable path demonstrates slice behavior.
-- [ ] `lake build` output is clean.
-- [ ] Hygiene scan (`axiom|sorry|TODO`) is clean for core Lean sources.
-- [ ] Docs updated to match implementation stage and next-slice plan.
+- [ ] `lake build` executed successfully.
+- [ ] `lake exe sele4n` executed successfully.
+- [ ] Hygiene scan (`axiom|sorry|TODO`) executed and clean.
+- [ ] Docs updated to match implementation and next slice.
+- [ ] Explicit statement of remaining proof debt (if any).
 
 ---
 
-## 8. Medium-term roadmap (post-M3)
+## 8. Roadmap after M3.5 (planning horizon)
 
-Planned sequence after M3 seed stabilization:
+1. **M4 Object lifecycle/retype safety**
+   - typed object creation/retype model,
+   - ownership/aliasing constraints,
+   - capability/object lifecycle interaction invariants.
+2. **M5 Refinement bridge (incremental)**
+   - progressive correspondence obligations between abstract Lean transitions and lower-level
+     semantics.
+3. **M6 Policy and protocol deepening**
+   - richer IPC/reply capability protocol and stronger scheduler-policy obligations.
 
-1. **M3 expansion**: blocking semantics, endpoint state refinements, reply-cap scaffolding.
-2. **M4 Object lifecycle/retype safety**: typed object creation/retyping invariants.
-3. **M5+ Refinement/correspondence track**: progressively connect abstract model obligations to
-   lower-level semantics.
-
-This roadmap is intentionally staged to keep proof breakage localized and reviewable.
+This roadmap is intentionally incremental so proof breakage stays local and reviewable.
