@@ -11,9 +11,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 2. **Typed object/state model (`Model/Object`, `Model/State`)**
    - kernel object universe and lifecycle-relevant object fields,
    - global object store, scheduler state, typed lookup/store helpers,
-   - shared error taxonomy (`KernelError`).
+   - shared error taxonomy (`KernelError`, including explicit illegal-state/authority lifecycle branches).
 
-3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`)**
+3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`, `Kernel/Lifecycle`)**
    - executable transition definitions,
    - local invariants and transition-preservation theorem entrypoints.
 
@@ -67,6 +67,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - endpoint + IPC invariants,
   - scheduler-coherence contract predicates,
   - preservation theorem entrypoints.
+
+### Lifecycle subsystem
+
+- `SeLe4n/Kernel/Lifecycle/Operations.lean`
+  - deterministic lifecycle retype transition (`lifecycleRetypeObject`),
+  - explicit illegal-state / illegal-authority error branching and local theorem entrypoints.
 
 ### API + executable
 

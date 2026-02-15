@@ -86,7 +86,7 @@ Key design choices:
 
 Primary contents:
 
-- `KernelError`, `SchedulerState`, `SystemState`, `SlotRef`,
+- `KernelError` (including `illegalState`/`illegalAuthority` lifecycle errors), `SchedulerState`, `SystemState`, `SlotRef`,
 - global lookup/store transitions (`lookupObject`, `storeObject`, `setCurrentThread`),
 - typed CSpace helpers (`lookupCNode`, `lookupSlotCap`, `ownsSlot`, `ownedSlots`),
 - small support lemmas that simplify subsystem-level invariants.
@@ -159,6 +159,24 @@ Design details that matter:
    - failure path is explicit via `invalidCapability`.
 3. **Revoke is local by design**
    - aligns with the current CNode-local revoke helper in object model.
+
+### `SeLe4n/Kernel/Lifecycle/Operations.lean`
+
+Primary semantics:
+
+- lifecycle retype authority predicate (`lifecycleRetypeAuthority`),
+- deterministic retype transition (`lifecycleRetypeObject`),
+- explicit branch theorems for illegal-state and illegal-authority outcomes.
+
+Design details that matter:
+
+1. **Metadata coherence gate before mutation**
+   - retype fails with `illegalState` when object-store type and lifecycle metadata diverge.
+2. **Authority is explicit and narrow**
+   - retype authority requires direct-object target and `write` rights; violations return
+     `illegalAuthority`.
+3. **Successful path reuses `storeObject`**
+   - object store and lifecycle object-type metadata are updated atomically.
 
 ### `SeLe4n/Kernel/Capability/Invariant.lean`
 

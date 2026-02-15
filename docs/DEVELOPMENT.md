@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active, step 1 completed)**.
+Current stage: **M4-A lifecycle/retype foundations (active, steps 1-2 completed)**.
 
 Primary goals for contributors:
 
@@ -43,9 +43,9 @@ Unless intentionally redesigned and documented, preserve:
    - lifecycle metadata introduced for first transition story only,
    - ownership remains explicit via object-store identity metadata and capability reference mapping.
 
-2. **Lifecycle transition(s)**
-   - implement deterministic success/error branching,
-   - keep illegal-state and illegal-authority branches explicit via `KernelError`.
+2. **Lifecycle transition(s)** ✅ **completed**
+   - deterministic success/error branching implemented via `lifecycleRetypeObject`,
+   - illegal-state and illegal-authority branches are explicit via `KernelError.illegalState` and `KernelError.illegalAuthority`.
 
 3. **Invariant definitions**
    - define narrow, named lifecycle invariants first,

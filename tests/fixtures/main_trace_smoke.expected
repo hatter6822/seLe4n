@@ -1,5 +1,8 @@
 scheduled thread: some 1
 source cap rights before mint:
+lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
+lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
 created sibling cap with the same target
 post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
 post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability

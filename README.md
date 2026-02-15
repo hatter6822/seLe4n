@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-A lifecycle/retype foundations (step 1 complete)** after completing M3.5
+seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-2 complete)** after completing M3.5
 IPC handshake + scheduler coherence.
 
 ### Milestone board
@@ -18,7 +18,7 @@ IPC handshake + scheduler coherence.
   composed IPC+scheduler invariant bundle, local-first preservation theorem layering, executable
   waiting-to-delivery trace evidence.
 - 🚧 **M4 current slice in progress**: object lifecycle/retype foundations and capability-object
-  coupling safety (with state-model preparation completed).
+  coupling safety (with state-model preparation and deterministic lifecycle transition branching completed).
 - 📍 **M4 next slice planned**: lifecycle + revocation composition, richer invariants, and expanded
   executable scenarios.
 
@@ -48,14 +48,16 @@ Deep technical chapters for implementation work:
 
 ## Current slice target outcomes (M4-A)
 
-1. Introduce typed lifecycle transition surface (at minimum one deterministic retype/create path).
+1. Introduce typed lifecycle transition surface (deterministic retype branch now implemented).
 2. Define object identity and aliasing invariants for newly created/retyped objects.
 3. Establish capability-reference coherence invariants over lifecycle updates.
 4. Add preservation theorem entrypoints for each lifecycle transition.
 5. Extend executable evidence (`Main.lean`) and Tier 2 trace fixtures for lifecycle behavior.
 
-Step-1 progress note: lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
-capability references, and CSpace insert/delete/revoke transitions keep those references synchronized.
+Progress note (steps 1-2): lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
+capability references, CSpace insert/delete/revoke transitions keep those references synchronized, and
+`lifecycleRetypeObject` provides deterministic success/error branching with explicit illegal-state and
+illegal-authority outcomes, and the executable trace now exercises both failure branches plus a success path.
 
 ## Next slice target outcomes (M4-B)
 
