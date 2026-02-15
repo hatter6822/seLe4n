@@ -16,6 +16,9 @@ seLe4n is currently in a **post-M3 IPC seed** stage:
 The active planning target is **M3.5 IPC handshake + scheduler interaction**, which will add a
 narrow blocking/wakeup IPC contract while preserving existing M1/M2/M3 guarantees.
 
+Testing framework status: Tier 0 (hygiene), Tier 1 (build), and Tier 2 (fixture-backed executable
+smoke regression checks) are implemented and usable via `scripts/test_*.sh` entrypoints.
+
 ## Quick start
 
 ### 1) Install Lean tooling
@@ -109,6 +112,13 @@ fresh shells after running `./scripts/setup_lean_env.sh`.
 ## Daily contributor verification loop
 
 Run this as a minimum before opening a PR:
+
+```bash
+./scripts/test_fast.sh
+./scripts/test_smoke.sh
+```
+
+When debugging locally, you can still run individual commands:
 
 ```bash
 lake build

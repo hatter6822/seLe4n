@@ -137,6 +137,9 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 
 If any command cannot run due to environment constraints, report the constraint and its impact.
 
+Default ownership for test and CI gate maintenance is shared by contributors touching
+`Main.lean`, `SeLe4n/Kernel/API.lean`, `scripts/test_*.sh`, and fixture files under `tests/fixtures/`.
+
 For fresh environments, run `./scripts/setup_lean_env.sh` once. Test scripts auto-source
 `$HOME/.elan/env` when available so `lake` can be found in non-interactive shells.
 
@@ -157,6 +160,23 @@ Copy this checklist into the PR description:
 - [ ] Remaining proof debt is identified.
 
 ---
+
+
+## 8.1 Fixture-backed smoke regression workflow (Tier 2)
+
+Tier 2 is now active and required in `./scripts/test_smoke.sh`.
+
+- Expected trace fragments live in `tests/fixtures/main_trace_smoke.expected`.
+- `scripts/test_tier2_trace.sh` runs `lake exe sele4n` and enforces substring matching for every
+  non-empty fixture line.
+- On mismatch, failures are tagged with `[TRACE]` and list every missing expectation.
+
+Intentional behavior change workflow:
+
+1. Run `lake exe sele4n` and verify the new executable behavior is expected.
+2. Update only stable semantic lines in `tests/fixtures/main_trace_smoke.expected`.
+3. Re-run `./scripts/test_tier2_trace.sh` and `./scripts/test_smoke.sh`.
+4. Explain fixture changes in the PR description.
 
 ## 9. Review heuristics for maintainers
 

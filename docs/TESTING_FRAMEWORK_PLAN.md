@@ -2,6 +2,18 @@
 
 ## 1. Purpose
 
+## 1.1 Implementation status snapshot
+
+Current repository status against this plan:
+
+- ✅ Work package A (script scaffold) is implemented.
+- ✅ Work package B (fixture-backed executable smoke baseline) is implemented.
+- ⏳ Work package C (CI wiring to script entrypoints) is pending.
+- ⏳ Work package D (final doc integration pass) is in progress and should track script/CI reality.
+- ⏳ Work package E (Tier 3 hooks) is partially prepared via explicit extension points.
+
+---
+
 This document is the implementation-ready plan for building and enforcing a tiered testing
 framework for seLe4n. It translates testing goals into concrete files, scripts, CI jobs,
 acceptance criteria, and rollout steps so contributors can begin implementation immediately.
@@ -252,6 +264,7 @@ Tasks:
 Acceptance criteria:
 - Tier 2 passes on current baseline branch.
 - Artificially removing one expected line triggers deterministic failure.
+- Failure output reports missing expectation lines and fixture-update guidance.
 
 ## 8.3 Work package C — CI wiring (day 2)
 
