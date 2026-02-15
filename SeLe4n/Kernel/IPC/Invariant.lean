@@ -59,6 +59,9 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+/- Local store/lookup transport lemmas (M3.5 step-5).
+These lemmas keep endpoint-transition preservation proofs concrete and non-duplicative. -/
+
 /-- Generic object-store update lemma: writing at `id` makes that slot resolve to `obj`. -/
 theorem storeObject_objects_eq
     (st st' : SystemState)
@@ -91,6 +94,51 @@ theorem storeObject_scheduler_eq
   unfold storeObject at hStore
   cases hStore
   rfl
+
+/-- Local lookup helper for endpoint transitions:
+if an endpoint-object store succeeds, any TCB lookup in the post-state
+comes from the pre-state. -/
+theorem tcb_lookup_of_endpoint_store
+    (st st' : SystemState)
+    (endpointId tid : SeLe4n.ObjId)
+    (tcb : TCB)
+    (ep' : Endpoint)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
+    (hObj : st'.objects tid = some (.tcb tcb)) :
+    st.objects tid = some (.tcb tcb) := by
+  by_cases hEq : tid = endpointId
+  · have hObjAtEndpoint : st'.objects endpointId = some (.tcb tcb) := by
+      simpa [hEq] using hObj
+    rw [storeObject_objects_eq st st' endpointId (.endpoint ep') hStore] at hObjAtEndpoint
+    cases hObjAtEndpoint
+  · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
+    exact hObj
+
+/-- Scheduler-local helper for endpoint transitions:
+endpoint-object stores do not alter runnable-set membership goals. -/
+theorem runnable_membership_of_endpoint_store
+    (st st' : SystemState)
+    (endpointId tid : SeLe4n.ObjId)
+    (ep' : Endpoint)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
+    (hRun : tid ∈ st'.scheduler.runnable) :
+    tid ∈ st.scheduler.runnable := by
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  simpa [hSchedEq] using hRun
+
+/-- Scheduler-local helper for endpoint transitions:
+endpoint-object stores do not alter non-runnable goals. -/
+theorem not_runnable_membership_of_endpoint_store
+    (st st' : SystemState)
+    (endpointId tid : SeLe4n.ObjId)
+    (ep' : Endpoint)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
+    (hNotRun : tid ∉ st.scheduler.runnable) :
+    tid ∉ st'.scheduler.runnable := by
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
+  simpa [hSchedEq] using hNotRun
 
 
 /-- Local transition helper: successful send is exactly one endpoint-object update. -/
@@ -239,6 +287,34 @@ def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
   blockedOnSendNotRunnable st ∧
   blockedOnReceiveNotRunnable st
 
+/-- Shared local proof core: any successful endpoint-object store preserves
+M3.5 scheduler-contract predicates. -/
+theorem endpointStore_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (ep' : Endpoint)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' := by
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro tid tcb hObj hRun
+    have hObjOrig : st.objects tid = some (.tcb tcb) :=
+      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+    have hRunOrig : tid ∈ st.scheduler.runnable :=
+      runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
+    exact hReady tid tcb hObjOrig hRunOrig
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjOrig : st.objects tid = some (.tcb tcb) :=
+      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb endpoint hObjOrig hBlocked
+    exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+  · intro tid tcb endpoint hObj hBlocked
+    have hObjOrig : st.objects tid = some (.tcb tcb) :=
+      tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedReceive tid tcb endpoint hObjOrig hBlocked
+    exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+
 theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -246,40 +322,8 @@ theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
   rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  refine ⟨?_, ?_, ?_⟩
-  · intro tid tcb hObj hRun
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    exact hReady tid tcb hObjOrig (by simpa [hSchedEq] using hRun)
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedReceive tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
+  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
 
 theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -288,40 +332,8 @@ theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
   rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  refine ⟨?_, ?_, ?_⟩
-  · intro tid tcb hObj hRun
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    exact hReady tid tcb hObjOrig (by simpa [hSchedEq] using hRun)
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedReceive tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
+  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
 
 theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -330,40 +342,8 @@ theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
   rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  refine ⟨?_, ?_, ?_⟩
-  · intro tid tcb hObj hRun
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    exact hReady tid tcb hObjOrig (by simpa [hSchedEq] using hRun)
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
-  · intro tid tcb endpoint hObj hBlocked
-    have hObjOrig : st.objects tid = some (.tcb tcb) := by
-      by_cases hEq : tid = endpointId
-      · subst hEq
-        rw [storeObject_objects_eq st st' tid (.endpoint ep') hStore] at hObj
-        cases hObj
-      · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj
-        exact hObj
-    have hNotRun : tid ∉ st.scheduler.runnable := hBlockedReceive tid tcb endpoint hObjOrig hBlocked
-    simpa [hSchedEq] using hNotRun
+  exact endpointStore_preserves_ipcSchedulerContractPredicates st st' endpointId ep' hInv hStore
 
 theorem endpointObjectValid_of_queueWellFormed
     (ep : Endpoint)

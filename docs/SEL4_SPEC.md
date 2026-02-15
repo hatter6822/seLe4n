@@ -157,8 +157,11 @@ A change set claiming M3.5 completion must satisfy all outcomes below.
   - added named IPC+scheduler coherence components (`ipcSchedulerRunnableReadyComponent`, `ipcSchedulerBlockedSendComponent`, `ipcSchedulerBlockedReceiveComponent`) and aggregated them under `ipcSchedulerCoherenceComponent`,
   - introduced composed `m35IpcSchedulerInvariantBundle` layered directly over `m3IpcSeedInvariantBundle`,
   - added machine-checked preservation entrypoints for send/await-receive/receive over the new composed M3.5 bundle.
+- ✅ **Step 5 complete (helper lemmas)**
+  - added local endpoint-store lookup helpers near transitions (`tcb_lookup_of_endpoint_store`, `runnable_membership_of_endpoint_store`, `not_runnable_membership_of_endpoint_store`),
+  - send/await-receive/receive scheduler-contract preservation proofs now discharge concrete lookup/runnable obligations via these small local lemmas rather than repeated ad hoc case splits.
 - ⏳ **Remaining M3.5 steps**
-  - helper lemmas onward (steps 5-7) remain in progress.
+  - preservation-theorem hardening and executable-demonstration extension (steps 6-7) remain in progress.
 
 ---
 
