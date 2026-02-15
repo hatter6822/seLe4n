@@ -1,274 +1,339 @@
-# seLe4n Testing Framework Plan
+# seLe4n Testing Framework Implementation Plan (Implementation-Ready)
 
 ## 1. Purpose
 
-This document defines a staged plan for building a comprehensive testing framework for seLe4n.
-The objective is to add repeatable, automated confidence checks that complement Lean proof
-obligations with executable behavior checks, regression detection, and contributor ergonomics.
+This document is the implementation-ready plan for building and enforcing a tiered testing
+framework for seLe4n. It translates testing goals into concrete files, scripts, CI jobs,
+acceptance criteria, and rollout steps so contributors can begin implementation immediately.
 
-This is a planning artifact only. Implementation will be delivered in follow-up slices.
+The framework complements Lean theorem checks with executable-behavior regression coverage,
+hygiene gates, and contributor-friendly workflows.
 
 ---
 
-## 2. Testing goals and quality bar
+## 2. Outcomes and non-negotiable quality bar
 
-The framework should ensure:
+The framework is successful only if it guarantees all of the following:
 
 1. **Proof surface stability**
-   - Existing milestone theorem entrypoints continue to compile.
-   - No accidental reintroduction of `axiom`/`sorry` in core modules.
+   - Existing milestone theorem entrypoints continue to compile via `lake build`.
+   - Core modules do not gain new `axiom`, `sorry`, or unresolved work markers in committed code.
 
 2. **Executable behavior stability**
-   - The `Main.lean` scenario remains runnable and deterministic enough for CI checks.
-   - Expected high-level state transitions are validated through output-oriented smoke tests.
+   - `Main.lean` runnable trace (`lake exe sele4n`) remains operational.
+   - Deterministic, reviewed output expectations guard against accidental behavior drift.
 
-3. **Regression resistance for milestone slices**
-   - M1/M2/M3 guarantees remain covered as M3.5 evolves.
-   - Invariant bundle boundaries are tested at module and integration levels.
+3. **Milestone regression resistance**
+   - M1/M2/M3 guarantees remain enforced while M3.5 evolves.
+   - Integration checks are grouped by invariant bundle boundary (M1/M2/M3/M3.5).
 
-4. **Fast local feedback + reliable CI enforcement**
-   - Contributors can run a short pre-commit suite quickly.
-   - CI runs an expanded suite with stronger guarantees.
+4. **Fast local loop + deterministic CI gate**
+   - Contributors can run a <2 minute default local suite.
+   - CI uses the exact same script entrypoints as local development.
 
 5. **Actionable failures**
-   - Failures should pinpoint class of regression (proof compile break, trace mismatch,
-     hygiene issue, style/lint issue, or performance drift).
+   - Failing checks clearly identify class and location of regression (`HYGIENE`, `BUILD`, `TRACE`,
+     `INVARIANT`, `CI-CONFIG`).
 
 ---
 
-## 3. Scope
+## 3. Scope definition
 
-### In scope
+### 3.1 In scope (v1)
 
-- Standardized command entrypoints (scripts or `lake` aliases) for test tiers.
-- Baseline gates for build, executable run, and hygiene checks.
-- Structured organization for theorem-preservation and scenario regression tests.
-- CI pipeline design with clear tiers and failure policy.
-- Contributor documentation and PR checklist integration.
+- Scripted test entrypoints under `scripts/` for all baseline tiers.
+- Fixture-backed executable smoke regression checks.
+- CI workflow updates to run required tiers on pull requests.
+- Documentation updates (README + development guide + this plan).
+- Contributor and reviewer checklist alignment.
 
-### Out of scope (initial rollout)
+### 3.2 Out of scope (v1)
 
-- Full formal benchmarking/latency dashboards.
-- Heavy randomized theorem generation infrastructure.
-- Broad architecture-specific or kernel-configuration matrix testing.
-
----
-
-## 4. Test taxonomy (target end-state)
-
-### 4.1 Tier 0 — Hygiene and structural checks (fastest)
-
-Purpose: catch obvious defects before expensive checks.
-
-Proposed checks:
-
-- forbidden markers scan: `axiom|sorry|TODO` in core model/kernel files,
-- formatting/style policy checks (if formatter/lint rules are adopted),
-- docs drift checks for required milestone sections (optional later enhancement).
-
-Expected runtime: ~seconds.
-
-### 4.2 Tier 1 — Build and theorem compile checks
-
-Purpose: guarantee theorem surfaces still compile.
-
-Proposed checks:
-
-- `lake build` for full project compile,
-- optional focused module build targets for rapid feedback,
-- optional explicit compile list for theorem-entrypoint modules.
-
-Expected runtime: short-to-medium.
-
-### 4.3 Tier 2 — Executable scenario regression checks
-
-Purpose: validate operational behavior alongside proofs.
-
-Proposed checks:
-
-- run `lake exe sele4n`,
-- compare output against approved golden patterns (not necessarily byte-for-byte unless stable),
-- include at least one IPC waiting-to-delivery scenario once M3.5 trace lands.
-
-Expected runtime: short.
-
-### 4.4 Tier 3 — Invariant-focused integration checks
-
-Purpose: ensure composed milestone bundles remain coherent under representative transitions.
-
-Proposed checks:
-
-- curated “transition script” scenarios that exercise scheduler + CSpace + IPC flows,
-- integration proofs/build targets grouped by bundle (`M1`, `M2`, `M3`, `M3.5`).
-
-Expected runtime: medium.
-
-### 4.5 Tier 4 — Stress/extended checks (CI nightly or manual)
-
-Purpose: catch edge regressions without slowing day-to-day loops.
-
-Proposed checks:
-
-- expanded scenario matrix,
-- optional determinism/repeatability checks over repeated executable runs,
-- optional future property-based generators for state-transition sequences.
-
-Expected runtime: longest.
+- Full performance benchmark dashboards.
+- Architecture matrix or hardware-specific execution matrix.
+- Property-based random transition generation infrastructure.
 
 ---
 
-## 5. Execution model
+## 4. Target architecture
 
-## 5.1 Standard command interface
+## 4.1 Directory and file layout to create
 
-Define stable entrypoints so developers and CI use the same commands.
+```
+scripts/
+  test_lib.sh                  # shared helpers (logging, fail/exit behavior)
+  test_tier0_hygiene.sh        # marker scans, structural checks
+  test_tier1_build.sh          # lake build gates
+  test_tier2_trace.sh          # exe + fixture comparison
+  test_fast.sh                 # Tier 0 + Tier 1 (default local pre-commit)
+  test_smoke.sh                # Tier 0 + Tier 1 + Tier 2 (required PR gate)
+  test_full.sh                 # smoke + integration hooks (Tier 3 when enabled)
+  test_nightly.sh              # optional Tier 4 expansion
 
-Proposed command families:
+tests/
+  fixtures/
+    main_trace_smoke.expected  # approved key-line expectations
+  scenarios/
+    README.md                  # how to add scenario fixtures/checks
 
-- `scripts/test_fast.sh` → Tier 0 + Tier 1 minimal,
-- `scripts/test_smoke.sh` → Tier 0 + Tier 1 + Tier 2,
-- `scripts/test_full.sh` → all standard tiers except optional nightly,
-- `scripts/test_nightly.sh` → Tier 4 extended checks (optional at first).
+.github/workflows/
+  lean_action_ci.yml           # updated to run script entrypoints
+```
 
-Implementation note: keep scripts composable and avoid duplicated command logic.
+## 4.2 Tier model and required checks
 
-### 5.2 Exit codes and reporting
+### Tier 0 — Hygiene/structural checks (required)
 
-- Non-zero on first failure by default.
-- Optional `--continue` mode to collect all failures for local debugging.
-- Prefix output lines with category labels (`[HYGIENE]`, `[BUILD]`, `[TRACE]`, `[INVARIANT]`).
+Checks:
+- Marker scan command: `rg -n "axiom|sorry|TODO" SeLe4n Main.lean`.
+- Optional shell script lint hook (only if shellcheck is present in environment).
 
-### 5.3 Test data and fixtures
+Pass criteria:
+- No forbidden marker matches in scope.
 
-- Keep expected-output fixtures under `tests/fixtures/`.
-- Keep scenario scripts under `tests/scenarios/`.
-- Prefer minimal, human-readable fixture files.
+### Tier 1 — Build/theorem compile checks (required)
 
----
+Checks:
+- `lake build`.
 
-## 6. CI strategy
+Pass criteria:
+- Full compile succeeds with zero errors.
 
-## 6.1 Pull request gating
+### Tier 2 — Executable regression smoke (required)
 
-Required on every PR:
+Checks:
+- Run `lake exe sele4n` and capture output.
+- Compare selected stable lines against `tests/fixtures/main_trace_smoke.expected`.
 
-1. Tier 0 hygiene checks,
-2. Tier 1 full build,
-3. Tier 2 executable smoke check.
+Pass criteria:
+- Command exits successfully.
+- Fixture comparison helper reports no mismatches.
 
-Optional initially, then promoted to required:
+### Tier 3 — Invariant-bundle integration checks (initially optional, then required)
 
-4. selected Tier 3 integration checks.
+Checks:
+- Bundle-focused integration entrypoints grouped by `M1`, `M2`, `M3`, `M3.5`.
 
-### 6.2 Main-branch/nightly jobs
+Pass criteria:
+- Selected integration groups succeed in CI.
 
-- run full tier suite,
-- run extended Tier 4 checks,
-- archive artifacts for trace regressions (logs, output diffs).
+### Tier 4 — Extended/nightly checks (optional)
 
-### 6.3 Failure policy
+Checks:
+- Repeat-run determinism checks.
+- Larger scenario matrix.
 
-- Required jobs block merge on failure.
-- Flaky checks must be downgraded or fixed quickly; no prolonged flaky required job.
-
----
-
-## 7. Proposed rollout plan
-
-### Phase 1 — Baseline framework bootstrap
-
-Deliverables:
-
-- test script skeletons,
-- Tier 0 forbidden-marker scan,
-- Tier 1 `lake build`,
-- Tier 2 `lake exe sele4n` smoke run,
-- documentation update in `README.md` + `docs/DEVELOPMENT.md`.
-
-Success criteria:
-
-- one-command local smoke test,
-- CI equivalent of local smoke test.
-
-### Phase 2 — Regression fixtures and scenario checks
-
-Deliverables:
-
-- approved output fixtures,
-- comparison helper for trace outputs,
-- at least one scenario fixture per completed milestone bundle.
-
-Success criteria:
-
-- intentional behavior changes require explicit fixture updates.
-
-### Phase 3 — Invariant-bundle integration harness
-
-Deliverables:
-
-- grouped integration check entrypoints (`M1`, `M2`, `M3`, `M3.5`),
-- documentation for adding new invariant checks,
-- CI promotion of selected Tier 3 checks to required.
-
-Success criteria:
-
-- regressions are attributable to specific bundle groupings.
-
-### Phase 4 — Extended reliability and maintainability
-
-Deliverables:
-
-- optional nightly matrix/stress jobs,
-- performance/runtime tracking over time,
-- contributor troubleshooting guide for common failures.
-
-Success criteria:
-
-- predictable maintenance burden with low test flakiness.
+Pass criteria:
+- Nightly signal remains stable; failures create issues and are triaged.
 
 ---
 
-## 8. Ownership and maintenance model
+## 5. Script contract (implementation detail)
 
-- Every PR touching transitions/invariants must update or validate relevant tests.
-- New milestone slice docs should include test impact notes.
-- Test scripts must remain shellcheck-clean (if shellcheck adopted).
-- CI config ownership should be explicit in contributor docs.
+## 5.1 Common behavior for all scripts
+
+All scripts must:
+- Use `set -euo pipefail`.
+- Resolve repository root reliably (work when run from any cwd inside repo).
+- Print section-prefixed logs:
+  - `[HYGIENE]`
+  - `[BUILD]`
+  - `[TRACE]`
+  - `[INVARIANT]`
+  - `[META]`
+- Exit non-zero on first failure by default.
+- Support `--continue` mode for aggregated local diagnostics (best effort: run all checks and
+  summarize failed categories at end).
+
+## 5.2 `scripts/test_lib.sh` helper API (minimum)
+
+Implement reusable helpers:
+- `log_section <CATEGORY> <message>`
+- `run_check <CATEGORY> <command...>`
+- `record_failure <CATEGORY> <message>`
+- `finalize_report` (handles `--continue` summary and exit code)
+
+This avoids duplicated error handling across tier scripts.
+
+## 5.3 Tier entrypoint responsibilities
+
+- `test_tier0_hygiene.sh`: marker scan + optional structural checks.
+- `test_tier1_build.sh`: build check only.
+- `test_tier2_trace.sh`: executable run, capture, fixture compare.
+- `test_fast.sh`: call Tier 0 then Tier 1.
+- `test_smoke.sh`: call Tier 0 → Tier 1 → Tier 2.
+- `test_full.sh`: smoke + Tier 3 hooks.
+- `test_nightly.sh`: full + Tier 4 extended checks.
 
 ---
 
-## 9. Risks and mitigations
+## 6. Fixture and comparison strategy
 
-1. **Risk:** Test runtime becomes too slow.
-   - **Mitigation:** tiered model with fast default local path.
+## 6.1 Fixture design constraints
 
-2. **Risk:** brittle output comparisons.
-   - **Mitigation:** compare structured key lines/patterns over unstable text sections.
+- Keep fixtures concise and human-reviewable.
+- Compare stable semantic lines, not fragile timestamps/format noise.
+- Use deterministic ordering if output can be re-sequenced.
 
-3. **Risk:** proof compile and scenario checks diverge in intent.
-   - **Mitigation:** require both proof and executable evidence in PR checklist.
+## 6.2 `main_trace_smoke.expected` format (v1)
 
-4. **Risk:** CI-only logic diverges from local workflows.
-   - **Mitigation:** enforce script-based entrypoints used by both CI and contributors.
+Line-oriented expected fragments, one per line, e.g.:
+
+```
+[TRACE] Scheduler transition succeeded
+[TRACE] CSpace mint succeeded
+[TRACE] Endpoint send/receive path succeeded
+```
+
+(Use actual current `lake exe sele4n` output during implementation.)
+
+## 6.3 Comparison policy
+
+- Substring/contains matching per expected line (not full-file byte equality).
+- Report missing lines with context and suggested action:
+  - if intended behavior change: update fixture in same PR with rationale.
+  - if unintended: fix code.
 
 ---
 
-## 10. Definition of done for the framework (v1)
+## 7. CI implementation blueprint
 
-The testing framework v1 is complete when:
+## 7.1 Pull request required checks (v1)
 
-1. documented tiered testing model is implemented,
-2. local `test_fast` and `test_smoke` commands are stable,
-3. CI gates Tier 0/1/2 on PRs,
-4. at least one regression fixture-backed scenario is enforced,
-5. contributor docs clearly explain how to run, debug, and extend tests.
+Update `.github/workflows/lean_action_ci.yml` to run:
+
+1. `./scripts/test_fast.sh`
+2. `./scripts/test_smoke.sh`
+
+(If runtime is redundant, smoke may subsume fast; keep both only if they provide distinct signal.)
+
+## 7.2 Main/nightly follow-up checks
+
+Add separate jobs (or future workflow file) for:
+- `./scripts/test_full.sh`
+- `./scripts/test_nightly.sh` (scheduled)
+
+Artifacts to upload on trace failure:
+- actual output log,
+- expected fixture,
+- diff report.
+
+## 7.3 CI failure policy
+
+- Required jobs block merge.
+- Any flaky required job must be fixed or downgraded within 48 hours.
+- CI logic must call repository scripts directly; avoid inlining test commands in workflow YAML.
 
 ---
 
-## 11. Immediate next implementation tasks
+## 8. Implementation backlog (ordered, directly actionable)
 
-1. Add script entrypoints for Tier 0/1/2 baseline.
-2. Add fixture directory and first executable output expectation file.
-3. Wire baseline smoke suite into CI.
-4. Update README and development checklist to reference new commands.
-5. Add follow-up issue list for Tier 3 and Tier 4 expansion.
+## 8.1 Work package A — Script scaffold (day 1)
+
+Tasks:
+1. Create `scripts/test_lib.sh` with shared logging/runner helpers.
+2. Create Tier 0/1/2 scripts and orchestration scripts (`test_fast.sh`, `test_smoke.sh`,
+   `test_full.sh`, `test_nightly.sh`).
+3. Add executable permissions (`chmod +x`).
+
+Acceptance criteria:
+- Each script runs independently.
+- `./scripts/test_fast.sh` executes Tier 0 + Tier 1 in order.
+- `./scripts/test_smoke.sh` executes Tier 0 + Tier 1 + Tier 2 in order.
+
+## 8.2 Work package B — Fixture baseline (day 1-2)
+
+Tasks:
+1. Create `tests/fixtures/` and `tests/scenarios/README.md`.
+2. Capture current `lake exe sele4n` output.
+3. Derive and commit `main_trace_smoke.expected` containing stable semantic lines.
+4. Implement fixture comparison logic in `test_tier2_trace.sh`.
+
+Acceptance criteria:
+- Tier 2 passes on current baseline branch.
+- Artificially removing one expected line triggers deterministic failure.
+
+## 8.3 Work package C — CI wiring (day 2)
+
+Tasks:
+1. Update `.github/workflows/lean_action_ci.yml` to run smoke gate scripts.
+2. Ensure script paths and permissions are valid in CI.
+3. Emit readable grouped logs with category prefixes.
+
+Acceptance criteria:
+- PR workflow fails when any tier script fails.
+- CI and local script behavior match for pass/fail outcomes.
+
+## 8.4 Work package D — Documentation integration (day 2)
+
+Tasks:
+1. Update `README.md` with test command quick reference.
+2. Update `docs/DEVELOPMENT.md` validation loop to reference script entrypoints.
+3. Add “how to update fixture intentionally” section to `tests/scenarios/README.md`.
+
+Acceptance criteria:
+- New contributor can run documented commands without reading CI YAML.
+- Docs and scripts reference identical command names.
+
+## 8.5 Work package E — Tier 3 hook preparation (day 3, optional in initial PR)
+
+Tasks:
+1. Stub `test_tier3_invariants.sh` or Tier 3 section in `test_full.sh` behind feature flag.
+2. Add TODO issue list for M1/M2/M3/M3.5 grouped checks.
+
+Acceptance criteria:
+- `test_full.sh` has explicit extension point for integration checks.
+
+---
+
+## 9. Definition of done (v1 launch gate)
+
+The framework v1 is complete when all conditions below hold:
+
+1. `scripts/test_fast.sh` and `scripts/test_smoke.sh` are implemented and stable.
+2. Tier 0/1/2 checks are enforced in PR CI.
+3. At least one fixture-backed executable regression check is active.
+4. Contributor docs explain run/debug/update workflows.
+5. Regression failures are category-labeled and actionable.
+
+---
+
+## 10. PR checklist for testing-framework implementation
+
+Copy into implementation PR(s):
+
+- [ ] Added script entrypoints for Tier 0/1/2.
+- [ ] Added shared script helper library (or equivalent dedup strategy).
+- [ ] Added fixture directory and baseline expected trace file.
+- [ ] Implemented trace comparison and clear mismatch diagnostics.
+- [ ] Updated CI workflow to call repository test scripts.
+- [ ] Updated README and development docs.
+- [ ] Ran local verification commands listed below.
+
+Required local verification commands before merging:
+
+```bash
+./scripts/test_fast.sh
+./scripts/test_smoke.sh
+lake build
+lake exe sele4n
+```
+
+---
+
+## 11. Risks and mitigations (implementation-phase)
+
+1. **Risk: fixture brittleness causes false failures.**
+   - Mitigation: assert stable semantic substrings, not volatile formatting.
+
+2. **Risk: duplicated logic across scripts drifts over time.**
+   - Mitigation: centralize runner/logging behavior in `test_lib.sh`.
+
+3. **Risk: CI and local checks diverge.**
+   - Mitigation: CI invokes same scripts, no bespoke workflow-only commands.
+
+4. **Risk: runtime inflation hurts contributor productivity.**
+   - Mitigation: keep fast tier minimal; move heavy checks to full/nightly tiers.
+
+5. **Risk: unclear ownership of failing tests.**
+   - Mitigation: assign default ownership in `docs/DEVELOPMENT.md` for CI/test maintenance.
