@@ -8,6 +8,19 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
+# M6 WS-M6-A assumption inventory anchors.
+run_check "INVARIANT" rg -n '^inductive ArchAssumption' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure BootBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure RuntimeBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure InterruptBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^inductive ContractRef' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^def assumptionContractMap' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^def assumptionTransitionMap' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^def assumptionInvariantMap' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem assumptionContractMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem assumptionTransitionMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
+
 # Invariant bundle surface anchors (M1/M2/M3 composed entrypoints).
 run_check "INVARIANT" rg -n '^(def|abbrev) schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
@@ -233,7 +246,7 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
-run_check "DOC" rg -n 'Active slice:|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-m5-closeout-snapshot.md
+run_check "DOC" rg -n 'Active slice:.*M6|Current slice:.*M6|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-m5-closeout-snapshot.md
 run_check "DOC" rg -n 'M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md
 run_check "DOC" rg -n 'WS-M5-D|WS-M5-E|proof package ✅ \*\*completed\*\*|Evidence and validation ✅ \*\*completed\*\*|WS-M5-A/B/C/D/E complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
 run_check "DOC" rg -n 'M4-B \(complete\)|Completed predecessor slice: M4-B' docs/SEL4_SPEC.md docs/gitbook/16-completed-slice-m4b.md docs/gitbook/09-m5-closeout-snapshot.md

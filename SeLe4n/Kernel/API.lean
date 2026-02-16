@@ -8,3 +8,5 @@ import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Lifecycle.Invariant
 import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Service.Invariant
+
+import SeLe4n.Kernel.Architecture.Assumptions

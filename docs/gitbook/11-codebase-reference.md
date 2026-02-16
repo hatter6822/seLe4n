@@ -53,15 +53,15 @@ It also highlights where M6 and post-M6 (Raspberry Pi 5-first) work should land.
 
 ## 3. How M6 should map onto this codebase
 
-### M6 boundary extraction (WS-M6-A)
+### M6 boundary extraction (WS-M6-A) ✅ **completed**
 
-Likely touch points:
+Implemented touch points:
 
-- `SeLe4n/Machine.lean`
-- `SeLe4n/Model/State.lean`
+- `SeLe4n/Kernel/Architecture/Assumptions.lean`
 - `SeLe4n/Kernel/API.lean`
+- `SeLe4n.lean`
 
-Goal: isolate architecture-facing assumptions into explicit, named interface surfaces.
+Outcome: architecture-facing assumptions are isolated into explicit, named interface surfaces (including first-class contract references) and exported for downstream adapter/proof work.
 
 ### M6 adapter semantics (WS-M6-B)
 

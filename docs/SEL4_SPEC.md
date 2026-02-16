@@ -264,8 +264,10 @@ M6 explicitly owns the deferred architecture-binding scope:
 
 M6 work is tracked through the following workstreams:
 
-1. **WS-M6-A — assumption inventory + boundary extraction**
-   - enumerate architecture-facing assumptions and map them into interface surfaces.
+1. **WS-M6-A — assumption inventory + boundary extraction** ✅ **completed**
+   - architecture-facing assumptions are enumerated in `SeLe4n/Kernel/Architecture/Assumptions.lean` via `ArchAssumption` and `assumptionInventory`,
+   - boundary contract skeletons are explicit via `BootBoundaryContract`, `RuntimeBoundaryContract`, and `InterruptBoundaryContract` with first-class `ContractRef` obligations,
+   - transition/invariant mapping is captured in `assumptionTransitionMap` and `assumptionInvariantMap`.
 2. **WS-M6-B — interface API + adapter semantics**
    - implement deterministic adapter behavior with explicit unsupported/invalid branches.
 3. **WS-M6-C — proof integration**
