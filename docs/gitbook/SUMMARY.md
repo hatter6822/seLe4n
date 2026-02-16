@@ -20,7 +20,7 @@
 
 ## Slice history and roadmap
 
-- [Completed Slice: M4-A](08-current-slice-m4a.md)
+- [Completed Slice: M4-A](08-completed-slice-m4a.md)
 - [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)

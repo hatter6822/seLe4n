@@ -29,7 +29,7 @@ Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance
 
 ### 3) Slice history and forward planning
 
-11. [Completed Slice: M4-A](08-current-slice-m4a.md)
+11. [Completed Slice: M4-A](08-completed-slice-m4a.md)
 12. [Completed Slice: M4-B](16-completed-slice-m4b.md)
 13. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 14. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)

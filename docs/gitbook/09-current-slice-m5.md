@@ -55,7 +55,7 @@ Before landing M5 PRs, verify:
 
 ## Related chapters
 
-- historical context: [Completed Slice: M4-A](08-current-slice-m4a.md)
+- historical context: [Completed Slice: M4-A](08-completed-slice-m4a.md)
 - immediate predecessor contracts: [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - normative scope and acceptance criteria: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md)
 - broader roadmap: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
