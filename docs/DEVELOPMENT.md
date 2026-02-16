@@ -174,8 +174,9 @@ For each milestone-moving PR, include a short section that states:
 
 Use this workstream mapping for implementation planning and review checklists:
 
-1. **WS-M6-A — assumption inventory and boundary extraction**
-   - make architecture assumptions explicit interface artifacts.
+1. **WS-M6-A — assumption inventory and boundary extraction** ✅ **completed**
+   - architecture assumptions are now explicit interface artifacts in `SeLe4n/Kernel/Architecture/Assumptions.lean` (`ArchAssumption`, `ContractRef`),
+   - extracted assumptions are mapped to transition and invariant surfaces for reviewable boundary ownership.
 2. **WS-M6-B — interface API and adapter semantics**
    - define deterministic adapter behavior with explicit errors.
 3. **WS-M6-C — proof-layer integration**

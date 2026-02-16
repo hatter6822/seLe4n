@@ -5,7 +5,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening.
+- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A completed; WS-M6-B through WS-M6-E in progress).
 - **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A through WS-M5-F completed).
 - **First real-hardware architecture focus:** Raspberry Pi 5 (post-M6 binding path).
 
@@ -61,6 +61,7 @@ lake exe sele4n
 - `SeLe4n/Kernel/IPC/*.lean` — endpoint IPC semantics and invariants.
 - `SeLe4n/Kernel/Lifecycle/*.lean` — lifecycle/retype semantics and invariants.
 - `SeLe4n/Kernel/Service/*.lean` — service orchestration transitions and policy-surface invariants.
+- `SeLe4n/Kernel/Architecture/Assumptions.lean` — WS-M6-A assumption inventory, typed contract references (`ContractRef`), and architecture-boundary contract skeletons.
 - `Main.lean` — executable scenario traces.
 
 ## License

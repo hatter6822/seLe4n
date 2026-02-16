@@ -35,18 +35,18 @@ M6 is considered complete only when all outcomes are met:
 
 ## 2. M6 workstream breakdown
 
-### WS-M6-A — Assumption inventory and boundary extraction
+### WS-M6-A — Assumption inventory and boundary extraction ✅ **completed**
 
 **Objective:** Enumerate architecture-facing assumptions currently implicit in model behavior and
 lift them into explicit interface artifacts.
 
 **Primary deliverables**
-- assumption inventory document section(s),
-- typed interface skeletons for architecture-bound contracts,
-- mapping from existing transitions/invariants to new boundary surfaces.
+- assumption inventory surfaced in `SeLe4n/Kernel/Architecture/Assumptions.lean` (`ArchAssumption`, `assumptionInventory`),
+- typed interface skeletons landed as `BootBoundaryContract`, `RuntimeBoundaryContract`, `InterruptBoundaryContract`, plus first-class `ContractRef` obligations,
+- mapping from existing transitions/invariants captured by `assumptionTransitionMap` and `assumptionInvariantMap`.
 
 **Exit signal**
-- reviewers can point to a bounded list of assumptions and their interface location.
+- achieved: reviewers can point to a bounded list of assumptions and their interface location.
 
 ### WS-M6-B — Interface API and adapter semantics
 

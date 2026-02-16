@@ -114,7 +114,7 @@ This obligation-based model is the correct notion of “full” for this reposit
 
 ### 6.1 Near-term (M6)
 
-- Define architecture-assumption interfaces with explicit, theorem-friendly contracts.
+- Architecture-assumption interfaces are now explicit with theorem-friendly contracts (WS-M6-A completed); continue adapter/proof integration follow-through.
 - Preserve composability with already-closed M1–M5 invariant bundles.
 - Add assumption-boundary scenarios to executable traces as each interface lands.
 
