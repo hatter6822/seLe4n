@@ -17,6 +17,7 @@
 - [Testing & CI](07-testing-and-ci.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
+- [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
 
 ## Slice history and roadmap
 

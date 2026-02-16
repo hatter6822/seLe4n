@@ -1,114 +1,142 @@
-# seLe4n Project Audit (Code, Tests, Documentation, and Forward Plan)
+# seLe4n End-to-End Project Audit
 
-## 1. Executive summary
+This document records a full end-to-end quality audit over code, tests, and documentation surfaces.
 
-Audit conclusion: **the repository is currently healthy, internally consistent with M5 closeout (including WS-M5-F), and operationally testable end-to-end**.
+## 1) Executive assessment
 
-What was re-validated in this audit pass:
+Overall verdict: **the repository is operationally healthy and correctly aligned with the documented M6-active / M5-completed milestone state**.
 
-1. source compiles and executable model runs,
-2. tiered test framework gates pass,
-3. Tier 4 staged candidates execute in experimental mode,
-4. Tier 2 fixture gate fails correctly under injected control-data mismatch,
-5. status/roadmap docs are aligned to current milestone language.
+Specifically, this audit re-validated:
 
-The most important caveat: the project does **not** use conventional statement/branch coverage tooling (common in imperative languages). Instead, it uses a **proof-surface + executable-fixture + invariant-anchor coverage model** appropriate to Lean formalization work.
+1. **Code correctness posture**: Lean sources build cleanly and executable traces are stable.
+2. **Testing framework function**: tiered checks run as documented, and failure detection behavior is active.
+3. **Documentation coherence**: root docs and GitBook chapters are synchronized on current stage, completed slices, and forward development path.
 
-## 2. Scope and method
+The main caveat remains intentional and domain-specific: this project uses **obligation-based coverage** (proof anchors + executable semantic fixtures + deterministic replay checks), not classic statement/branch percentage metrics.
 
-This audit evaluated three dimensions:
+---
 
-1. **Code correctness posture**
-   - compile/build soundness,
-   - invariant/preservation theorem surface availability,
-   - executable trace stability against fixture expectations.
+## 2) Audit scope and method
 
-2. **Testing framework effectiveness**
-   - required entrypoint behavior (`test_fast`, `test_smoke`),
-   - full and nightly tier orchestration,
-   - negative-control failure detection behavior.
+### 2.1 Codebase surfaces audited
 
-3. **Documentation fidelity and path clarity**
-   - consistency of current stage (M5 completed workstreams with M6 handoff),
-   - coherence across README/spec/development/testing/gitbook surfaces,
-   - explicit forward plan into M6 interface preparation.
+- Lean module graph (`SeLe4n/**/*.lean`, `Main.lean`).
+- Build and executable targets (`lake build`, `lake exe sele4n`).
+- Invariant/preservation theorem discovery anchors used by Tier 3 scripts.
 
-## 3. Current-state findings
+### 2.2 Testing framework surfaces audited
 
-### 3.1 Codebase status
+- Tier entrypoints (`test_fast`, `test_smoke`, `test_full`, `test_nightly`).
+- Framework self-audit (`scripts/audit_testing_framework.sh`).
+- Positive-path and negative-control behavior for fixture checks.
 
-- Lean build succeeds cleanly through the full module graph and executable target.
-- No forbidden placeholder markers (`axiom`, `sorry`, `TODO`) are present in the tracked proof surface checked by Tier 0 hygiene.
-- Theorems and invariant bundles required by the milestone acceptance anchors remain present and discoverable by Tier 3 symbol checks.
+### 2.3 Documentation surfaces audited
 
-### 3.2 Testing-framework status
+- Normative and operational docs: `README.md`, `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, `docs/TESTING_FRAMEWORK_PLAN.md`.
+- GitBook orientation, testing, roadmap, and execution chapters.
 
-- Tiered entrypoints are functioning and composable:
-  - fast (`Tier 0 + Tier 1`),
-  - smoke (`Tier 0 + Tier 1 + Tier 2`),
-  - full (`smoke + Tier 3`),
-  - nightly (`full + Tier 4 extension-point behavior`).
-- Tier 4 experimental candidates (repeat-run determinism + full-suite replay) execute when explicitly enabled.
-- Tier 2 negative-control check correctly fails when the fixture includes an impossible expected line, confirming mismatch detection is active rather than silently permissive.
+---
 
-### 3.3 Documentation status
+## 3) End-to-end validation results
 
-Documentation is synchronized for current milestone closure and handoff:
+## 3.1 Build and executable status
 
-- current stage language reflects M5 closeout and M6 as active planning focus,
-- testing responsibilities and triage map are explicit and preserved across tiers,
-- roadmap path from M5 closeout to M6 is documented in spec and handbook slices.
+- `lake build` completes successfully through full module graph.
+- Executable trace generation remains deterministic for repeated runs in Tier 4 staged candidates.
 
-## 4. Coverage interpretation (important)
+## 3.2 Testing framework status
 
-For this repository, “full coverage” should be interpreted as **closure of coverage obligations**, not raw line/branch percentages.
+All published entrypoints are functioning and composable:
 
-### 4.1 What is covered now
+- **Fast:** Tier 0 + Tier 1.
+- **Smoke:** Tier 0 + Tier 1 + Tier 2 fixture checks.
+- **Full:** smoke + Tier 3 invariant/proof/doc anchors.
+- **Nightly:** full + Tier 4 extension point (default non-experimental, opt-in staged candidates).
 
-1. **Proof/invariant surface coverage** via Tier 3 anchor checks for required bundles/theorems.
-2. **Build/typing closure** via Lean compile of the project graph.
-3. **Executable semantic coverage (integration slice)** via fixture-backed trace checks.
-4. **Failure-path sensitivity** via controlled mismatch injection in framework audit.
-5. **Nightly determinism extension** via staged Tier 4 experimental candidates.
+Framework quality properties verified:
 
-### 4.2 Remaining coverage opportunities
+1. **Positive pass behavior**: expected traces and anchors pass under normal runs.
+2. **Negative-control behavior**: Tier 2 correctly fails when an impossible expected line is injected by the framework audit script.
+3. **Determinism gate behavior**: staged Tier 4 replay/diff checks run and pass under experimental enablement.
 
-1. Increase executable scenario breadth for M6 interface-assumption stories.
-2. Expand explicit fixtures for architecture-binding assumption checks once interfaces land.
-3. Add additional deterministic replay seeds as new architecture-bound adapters are introduced.
+## 3.3 Documentation and GitBook coherence status
 
-## 5. Risk register and mitigations
+Current documentation set is synchronized around:
 
-1. **Risk: theorem-surface drift under refactors**
-   - Mitigation: keep Tier 3 anchor set synchronized with each newly closed acceptance obligation.
+- **Current slice:** M6 architecture-binding interfaces + assumption hardening.
+- **Most recently completed slice:** M5 service-graph + policy surfaces.
+- **Historical context:** M4-B completion retained as predecessor reference.
+- **Forward path:** M6 workstreams and post-M6 hardware trajectory are documented and linked.
 
-2. **Risk: fixture brittleness from output formatting changes**
-   - Mitigation: continue semantic-substring fixture policy; avoid asserting transient formatting.
+---
 
-3. **Risk: roadmap drift between canonical docs and handbook pages**
-   - Mitigation: enforce same-PR synchronized edits to `README.md`, `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and impacted `docs/gitbook/*` pages for milestone-stage changes.
+## 4) Coverage model: what “full coverage” means here
 
-## 6. Path of development (recommended near-term plan)
+For a theorem-oriented Lean project, “full coverage” should be interpreted as **coverage of quality obligations**:
 
-### 6.1 M6 track A — architecture-assumption interfaces
+1. **Syntactic/proof hygiene coverage**
+   - no forbidden placeholder markers in tracked proof surface.
+2. **Typing/build closure coverage**
+   - entire module graph compiles under declared toolchain.
+3. **Executable semantic coverage**
+   - scenario traces are compared against explicit expected fixtures.
+4. **Invariant/proof anchor coverage**
+   - required invariant bundles and theorem symbols remain present/discoverable.
+5. **Failure-path coverage for the framework itself**
+   - fixture mismatch path is exercised and confirmed to fail correctly.
+6. **Nightly determinism extension coverage**
+   - repeat-run trace stability and replay checks are available and validated.
 
-- define minimal, explicit architecture assumption interfaces,
-- keep interfaces theorem-friendly and reviewable,
-- preserve reuse of closed M1–M5 bundle contracts.
+This obligation-based model is the correct notion of “full” for this repository’s current architecture and maturity.
 
-### 6.2 M6 track B — adapter and proof surfaces
+---
 
-- define adapter surfaces from architecture-neutral semantics,
-- add local preservation hooks before broader composition.
+## 5) Risks and recommendations
 
-### 6.3 M6 track C — boundary validation growth
+### 5.1 Active risks
 
-- stage boot/runtime boundary obligations as explicit contracts,
-- expand fixtures and symbol anchors for interface assumptions,
-- keep tiered test obligations additive and deterministic.
+1. **Anchor drift risk**
+   - Large refactors can rename/move theorem anchors without updating Tier 3 checks.
+2. **Fixture evolution risk**
+   - Scenario output wording changes can break fixtures even when semantics are unchanged.
+3. **Doc synchronization risk**
+   - Milestone language can drift across root docs and GitBook pages if not updated in the same PR.
 
-## 7. Final verdict
+### 5.2 Recommended controls
 
-The project is in a strong state for M6 interface-preparation work: build/test/doc infrastructure is functioning, milestone claims are corroborated by current checks, and the testing framework demonstrates both positive-pass and negative-control behavior.
+1. Keep Tier 3 anchor lists updated in the same commit as proof-surface changes.
+2. Treat fixture updates as semantic changes requiring explicit justification in PR notes.
+3. Require synchronized edits to README/spec/dev/testing/gitbook pages for any stage or roadmap transition.
 
-To keep quality optimal, continue expanding obligation-based coverage in lockstep with new semantics rather than pursuing metric-only line coverage that is poorly matched to theorem-centric Lean development.
+---
+
+## 6) Forward development path (quality-focused)
+
+### 6.1 Near-term (M6)
+
+- Define architecture-assumption interfaces with explicit, theorem-friendly contracts.
+- Preserve composability with already-closed M1–M5 invariant bundles.
+- Add assumption-boundary scenarios to executable traces as each interface lands.
+
+### 6.2 Mid-term (post-M6 pre-hardware)
+
+- Grow adapter-level preservation theorems around architecture bindings.
+- Expand deterministic replay cases for boundary-sensitive behaviors.
+- Maintain additive test tiers (never replace prior obligations; only extend).
+
+### 6.3 Hardware trajectory support
+
+- Keep Raspberry Pi 5 path docs synchronized with interface/proof readiness status.
+- Promote only those assumptions that are already represented in executable evidence or invariant anchors.
+
+---
+
+## 7) Final verdict
+
+The project currently meets a strong end-to-end quality bar for its formal-methods context:
+
+- implementation compiles and runs,
+- test framework is functioning and self-validating,
+- docs/gitbook are aligned to present status and future direction.
+
+The most important discipline going forward is to continue **obligation-driven quality growth** in lockstep with M6 architecture-binding interfaces, rather than chasing generic coverage percentages that do not capture proof-centric correctness progress.
