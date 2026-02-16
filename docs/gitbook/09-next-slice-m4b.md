@@ -30,7 +30,7 @@ when they interact with authority-changing capability operations in realistic wo
 - define stale-reference exclusion invariants,
 - tie those invariants to existing identity/aliasing and authority components.
 
-### Phase 3: theorem expansion
+### Phase 3: theorem expansion ✅ completed
 
 - prove local preservation for new composition helpers,
 - prove composed preservation across lifecycle + capability bundles.

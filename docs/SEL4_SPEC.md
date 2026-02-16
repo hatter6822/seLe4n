@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **active M4-B lifecycle-capability composition hardening (Workstreams A+B complete)**.
+Current stage: **active M4-B lifecycle-capability composition hardening (Workstreams A+B+C complete)**.
 
 ---
 
