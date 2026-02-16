@@ -184,8 +184,10 @@ Use this workstream mapping for implementation planning and review checklists:
    - boundary state updates are deterministic via `advanceTimerState` and `writeRegisterState`.
 3. **WS-M6-C — proof-layer integration** ✅ **completed**
    - local + composed preservation hooks over adapter assumptions are implemented in `SeLe4n/Kernel/Architecture/Invariant.lean` (`proofLayerInvariantBundle` and adapter preservation/failure theorems).
-4. **WS-M6-D — evidence and test-surface expansion**
-   - expand executable traces and symbol anchors for boundary behavior.
+4. **WS-M6-D — evidence and test-surface expansion** ✅ **completed**
+   - executable trace coverage now includes boundary success/failure branches in `Main.lean`,
+   - fixture semantics and rationale are documented in `tests/scenarios/README.md` and anchored by `tests/fixtures/main_trace_smoke.expected`,
+   - Tier 3 symbol/trace anchors now gate architecture-boundary evidence continuity.
 5. **WS-M6-E — docs and handoff packaging**
    - keep README/spec/development/GitBook synchronized.
 

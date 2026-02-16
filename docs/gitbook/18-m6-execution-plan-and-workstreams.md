@@ -74,18 +74,18 @@ capability, IPC, lifecycle, service).
 **Exit signal**
 - achieved: theorem surfaces are importable via `SeLe4n/Kernel/API.lean` and `SeLe4n.lean` without reworking M1–M5 invariant layout.
 
-### WS-M6-D — Evidence, traces, and test anchors
+### WS-M6-D — Evidence, traces, and test anchors ✅ **completed**
 
 **Objective:** Expand evidence so boundary assumptions and failure branches are executable and
 regression-checked.
 
 **Primary deliverables**
-- `Main.lean` scenario growth where boundary behavior is externally visible,
-- fixture updates with semantic intent notes,
-- Tier 3 anchor updates for new theorem/invariant/API claims.
+- `Main.lean` scenario growth where architecture-boundary success/failure behavior is externally visible (`adapterAdvanceTimer`, `adapterReadMemory`, `adapterWriteRegister` branches),
+- fixture updates with semantic intent notes in `tests/scenarios/README.md` and stabilized evidence fragments in `tests/fixtures/main_trace_smoke.expected`,
+- Tier 3 anchor updates in `scripts/test_tier3_invariant_surface.sh` for new theorem/invariant/API and trace claims.
 
 **Exit signal**
-- evidence demonstrates both expected success path and bounded failure semantics.
+- achieved: evidence demonstrates both expected success path and bounded failure semantics.
 
 ### WS-M6-E — Documentation and handoff packaging
 
@@ -109,7 +109,7 @@ handoff.
 | Explicit architecture assumptions | WS-M6-A, WS-M6-E | `lake build`, `./scripts/test_tier3_invariant_surface.sh` | Interfaces and symbols are discoverable and anchored |
 | Adapter semantics and error handling | WS-M6-B | `./scripts/test_fast.sh`, `lake exe sele4n` | Deterministic success/failure behavior is executable |
 | Proof compositionality across boundary | WS-M6-C ✅ completed | `lake build`, `./scripts/test_full.sh` | Local + composed theorems compile and remain layered |
-| Regression-safe evidence growth | WS-M6-D | `./scripts/test_smoke.sh`, `./scripts/test_nightly.sh` | Fixture and nightly checks validate expected traces |
+| Regression-safe evidence growth | WS-M6-D ✅ completed | `./scripts/test_smoke.sh`, `./scripts/test_nightly.sh` | Fixture and nightly checks validate expected traces |
 | Slice handoff coherence | WS-M6-E | docs review + CI-required set | Spec/README/DEVELOPMENT/GitBook all match |
 
 ---
