@@ -81,12 +81,17 @@ failure paths).
 - `SeLe4n/Kernel/Capability/Invariant.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 
-### WS-M5-D — Proof package
+### WS-M5-D — Proof package ✅ **completed**
 
 **Deliverables**
 - local preservation theorem entrypoint per transition,
 - composed preservation theorem(s) over service + lifecycle + capability bundles,
 - failure-path preservation theorem coverage.
+
+**Completion status**
+- local preservation theorem entrypoints now cover `serviceStart`, `serviceStop`, and `serviceRestart`,
+- composed preservation now lands through `serviceLifecycleCapabilityInvariantBundle`,
+- explicit failure-path preservation theorem surfaces now cover start/stop/restart failure branches.
 
 **Expected file touch areas**
 - `SeLe4n/Kernel/*/Invariant.lean`

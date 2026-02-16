@@ -123,3 +123,22 @@ kept mutation-free:
 - composed bridge: `servicePolicySurfaceInvariant_of_lifecycleInvariant` lifts lifecycle contracts
   (plus backing-object existence assumptions) into the service policy bundle,
 - check-vs-mutation separation: policy-denial theorem surfaces remain explicit and deterministic.
+
+## 9. M5 proof package layering (WS-M5-D complete)
+
+Proof-package entrypoints now extend the M5 policy surface to full local + composed preservation:
+
+- composed bundle entrypoint: `serviceLifecycleCapabilityInvariantBundle`,
+- local preservation entrypoints:
+  - `serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle`,
+  - `serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle`,
+  - `serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle`,
+- failure-path preservation entrypoints:
+  - `serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
+  - `serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
+  - `serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
+  - `serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle`.
+
+This keeps the M5 theorem surface aligned with the local-first composition rule:
+prove per-transition preservation first, then expose cross-subsystem bundle preservation with
+explicit failure-path statements.

@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, and WS-M5-C complete)**.
+Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D complete)**.
 
 ---
 
@@ -232,7 +232,13 @@ The active milestone family (M5) targets operational realism while preserving th
      `SeLe4n/Kernel/Service/Invariant.lean`,
    - bridge lemmas connect policy assumptions to lifecycle/capability bundles,
    - policy denial branches are explicitly represented as check-only (non-mutation) outcomes.
-4. **Architecture-binding track**
+4. **Proof-package track (WS-M5-D)** ✅ **completed baseline**
+   - local preservation theorem entrypoints are available for `serviceStart`, `serviceStop`, and
+     `serviceRestart`,
+   - composed service+lifecycle+capability preservation is exposed via
+     `serviceLifecycleCapabilityInvariantBundle`,
+   - explicit failure-path preservation theorem coverage exists for start/stop/restart branches.
+5. **Architecture-binding track**
    - catalog architecture assumptions currently abstracted and define interface surfaces for future
      binding work.
 
