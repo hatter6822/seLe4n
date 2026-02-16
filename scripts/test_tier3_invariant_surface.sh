@@ -183,7 +183,9 @@ run_check "DOC" rg -n 'Workstream C — Preservation theorem expansion ✅ compl
 run_check "DOC" rg -n 'Workstream D — Executable and fixture evidence ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'Workstream E — Testing and CI growth ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
+# shellcheck disable=SC2016
 run_check "DOC" rg -n 'Tier 3 fails \(`\./scripts/test_tier3_invariant_surface\.sh`\)' docs/gitbook/07-testing-and-ci.md
+# shellcheck disable=SC2016
 run_check "DOC" rg -n 'Tier 4 fails \(`\./scripts/test_nightly\.sh` / `\./scripts/test_tier4_nightly_candidates\.sh`\)' docs/gitbook/07-testing-and-ci.md
 
 # Full-suite contract should continue to include Tier 3.
