@@ -18,7 +18,7 @@ fi
 if command -v shellcheck >/dev/null 2>&1; then
   run_check "HYGIENE" shellcheck scripts/*.sh
 else
-  log_section "HYGIENE" "shellcheck not installed; skipping optional lint."
+  log_section "HYGIENE" "shellcheck unavailable; optional shell lint not executed in this environment."
 fi
 
 finalize_report

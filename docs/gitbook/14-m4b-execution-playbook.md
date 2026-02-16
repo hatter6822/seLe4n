@@ -81,7 +81,7 @@ Definition of done:
 - fragments are stable semantic signals (not formatting noise),
 - scenario coverage maps back to M4-B target outcomes.
 
-### Workstream E — Testing and CI growth
+### Workstream E — Testing and CI growth ✅ completed
 
 Goal: ensure M4-B regression detection is reliable.
 

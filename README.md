@@ -5,8 +5,8 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-B lifecycle-capability composition hardening (Workstreams A+B+C+D complete)** after
-completing M4-A lifecycle/retype foundations.
+seLe4n is currently in **M4-B lifecycle-capability composition hardening (Workstreams A+B+C+D+E complete)** with slice
+closeout complete and M5 preparation now active.
 
 ### Milestone board
 
@@ -19,8 +19,7 @@ completing M4-A lifecycle/retype foundations.
   waiting-to-delivery trace evidence.
 - ✅ **M4-A current slice complete**: object lifecycle/retype foundations now include local lifecycle
   preservation entrypoints and composed scheduler/capability/IPC + lifecycle bundle theorem entrypoints.
-- 🚧 **M4-B current slice active**: Workstreams A+B+C+D (transition composition + invariant hardening + preservation theorem expansion + executable/fixture evidence) are
-  complete; executable/testing growth and closeout docs remain in progress.
+- ✅ **M4-B current slice complete**: Workstreams A+B+C+D+E (transition composition + invariant hardening + preservation theorem expansion + executable/fixture evidence + testing/CI growth) are complete, including Tier 3 M4-B anchors and staged Tier 4 nightly candidates.
 
 ## Documentation hub (GitBook-ready)
 
@@ -68,7 +67,8 @@ unauthorized branch, illegal-state branch, and success-path object-kind confirma
    (Workstream B complete).
 3. ✅ Add composed preservation theorems spanning lifecycle + capability bundles (Workstream C complete).
 4. ✅ Expand scenario coverage to include lifecycle rollback/error branches (Workstream D complete).
-5. Deepen Tier 3 checks for lifecycle-specific theorem/bundle surfaces.
+5. ✅ Deepen Tier 3 checks for lifecycle-specific theorem/bundle surfaces and stage Tier 4 nightly extension candidates
+   (Workstream E complete).
 
 Next-slice (M5 preview) direction: service-graph semantics, policy-oriented authority constraints,
 and architecture-binding interfaces that preserve reusable core proofs while M4-B lands.
@@ -76,14 +76,14 @@ and architecture-binding interfaces that preserve reusable core proofs while M4-
 
 ## Current slice execution plan (M4-B)
 
-To move M4-B toward closeout, work should progress in this order:
+M4-B closeout sequence executed in this order:
 
 1. compose lifecycle transitions with revoke/delete semantics,
 2. formalize stale-reference exclusion invariant components ✅ completed,
 3. prove local then composed preservation including failure paths ✅ completed,
 4. extend executable scenarios + fixture anchors ✅ completed,
-5. add Tier 3 anchors for new theorem/bundle surfaces,
-6. close out docs with explicit M5 deferrals.
+5. add Tier 3 anchors for new theorem/bundle surfaces ✅ completed,
+6. close out docs with explicit M5 deferrals ✅ completed.
 
 ## Next-slice readiness goals (M5 preview)
 

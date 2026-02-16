@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-B lifecycle-capability composition hardening active (M4-A + WS-A + WS-B + WS-C + WS-D complete)**.
+Current stage context: **M4-B lifecycle-capability composition hardening complete (M4-A + WS-A + WS-B + WS-C + WS-D + WS-E complete)**.
 
 ## 2. Current enforced tiers
 
@@ -13,7 +13,7 @@ Current stage context: **M4-B lifecycle-capability composition hardening active 
 - **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
   including M4-A executable-anchor checks for lifecycle unauthorized/illegal-state/success trace fragments.
-- **Tier 4** extension hook (nightly wrapper currently documents expansion point)
+- **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point)
 
 ## 3. Required entrypoints and CI contract
 
@@ -114,6 +114,7 @@ Primary risks to target next:
 3. **Phase T3 — Tier 3 anchor expansion**
    - add symbol anchors for M4-B invariant and preservation theorem surfaces,
    - keep anchors grouped by milestone objective for triage clarity.
-4. **Phase T4 — nightly evolution**
-   - preserve current Tier 4 extension hook behavior,
-   - stage repeat-run determinism checks as follow-on without destabilizing mainline gates.
+4. **Phase T4 — nightly evolution** ✅ completed
+   - preserve explicit Tier 4 extension-point behavior by default in `./scripts/test_nightly.sh`,
+   - stage repeat-run determinism + full-suite replay candidates in `./scripts/test_tier4_nightly_candidates.sh`,
+   - keep candidate execution opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) so required mainline gates remain stable.

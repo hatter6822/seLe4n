@@ -13,6 +13,7 @@ if [[ "${CONTINUE_MODE}" -eq 1 ]]; then
 fi
 
 run_check "META" "${SCRIPT_DIR}/test_full.sh" "${sub_args[@]}"
-log_section "INVARIANT" "Tier 4 nightly extensions are not yet wired; this is an explicit extension point."
+run_check "META" "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh" "${sub_args[@]}"
+log_section "INVARIANT" "Tier 4 keeps an explicit extension-point default; set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run staged candidates."
 
 finalize_report

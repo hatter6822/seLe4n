@@ -41,10 +41,11 @@ when they interact with authority-changing capability operations in realistic wo
 - extend Tier 3 anchors to include M4-B theorem surfaces,
 - keep fixture updates minimal and intentional.
 
-### Phase 5: documentation closeout
+### Phase 5: documentation closeout ✅ completed
 
 - update spec/development guide/GitBook pages,
-- publish explicit note on what is deferred to M5.
+- publish explicit note on what is deferred to M5,
+- align Tier 3/Tier 4 testing notes and triage entrypoints with script-level checks.
 
 ## Exit signals for M4-B
 
