@@ -113,21 +113,26 @@ def main : IO Unit := do
           | .error err => IO.println s!"sibling mint error: {reprStr err}"
           | .ok (_, st3) =>
               IO.println "created sibling cap with the same target"
-              match SeLe4n.Kernel.cspaceRevoke mintedSlot st3 with
-              | .error err => IO.println s!"cspace revoke error: {reprStr err}"
-              | .ok (_, st4) =>
-                  match SeLe4n.Kernel.cspaceLookupSlot siblingSlot st4 with
+              match SeLe4n.Kernel.lifecycleRevokeDeleteRetype mintedSlot mintedSlot 12
+                  (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              | .error err =>
+                  IO.println s!"composed transition alias guard (expected error): {reprStr err}"
+              | .ok _ =>
+                  IO.println "unexpected composed transition success with aliased authority/cleanup"
+              match SeLe4n.Kernel.lifecycleRevokeDeleteRetype lifecycleAuthSlot mintedSlot 12
+                  (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              | .error err => IO.println s!"composed transition error: {reprStr err}"
+              | .ok (_, st5) =>
+                  IO.println "composed revoke/delete/retype success"
+                  match SeLe4n.Kernel.cspaceLookupSlot siblingSlot st5 with
                   | .error err => IO.println s!"post-revoke sibling lookup: {reprStr err}"
                   | .ok (cap, _) =>
                       IO.println s!"unexpected sibling cap after revoke: {reprStr cap}"
-                  match SeLe4n.Kernel.cspaceDeleteSlot mintedSlot st4 with
-                  | .error err => IO.println s!"cspace delete error: {reprStr err}"
-                  | .ok (_, st5) =>
-                      match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st5 with
-                      | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
-                      | .ok (cap, _) =>
-                          IO.println s!"unexpected cap after delete: {reprStr cap}"
-                      match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
+                  match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st5 with
+                  | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
+                  | .ok (cap, _) =>
+                      IO.println s!"unexpected cap after delete: {reprStr cap}"
+                  match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
                       | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                       | .ok (_, st6) =>
                           match SeLe4n.Kernel.endpointSend demoEndpoint 1 st6 with

@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-B lifecycle-capability composition hardening (active slice kickoff)**.
+Current stage: **M4-B lifecycle-capability composition hardening (Workstream A complete)**.
 
 Primary goals for contributors:
 

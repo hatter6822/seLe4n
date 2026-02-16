@@ -17,7 +17,7 @@ Use this playbook together with:
 
 ## 2. Workstream map
 
-### Workstream A — Transition composition semantics
+### Workstream A — Transition composition semantics ✅ completed
 
 Goal: establish deterministic lifecycle+revoke/delete interaction behavior.
 

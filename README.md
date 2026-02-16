@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-B lifecycle-capability composition hardening (active slice kickoff)** after
+seLe4n is currently in **M4-B lifecycle-capability composition hardening (Workstream A complete)** after
 completing M4-A lifecycle/retype foundations.
 
 ### Milestone board
@@ -19,8 +19,8 @@ completing M4-A lifecycle/retype foundations.
   waiting-to-delivery trace evidence.
 - ✅ **M4-A current slice complete**: object lifecycle/retype foundations now include local lifecycle
   preservation entrypoints and composed scheduler/capability/IPC + lifecycle bundle theorem entrypoints.
-- 🚧 **M4-B current slice active**: lifecycle + revocation composition hardening, stale-reference
-  exclusion, and expanded executable/testing coverage.
+- 🚧 **M4-B current slice active**: Workstream A transition composition semantics complete; stale-reference
+  exclusion, preservation expansion, and broader testing anchors remain in progress.
 
 ## Documentation hub (GitBook-ready)
 
@@ -63,7 +63,7 @@ unauthorized branch, illegal-state branch, and success-path object-kind confirma
 
 ## Current slice target outcomes (M4-B)
 
-1. Compose lifecycle transitions with revoke/delete authority paths.
+1. ✅ Compose lifecycle transitions with revoke/delete authority paths (Workstream A complete).
 2. Strengthen invariants for stale-reference exclusion and authority monotonicity across retype chains.
 3. Add composed preservation theorems spanning lifecycle + capability bundles.
 4. Expand scenario coverage to include lifecycle rollback/error branches.

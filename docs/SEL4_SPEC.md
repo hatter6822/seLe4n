@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **active M4-B lifecycle-capability composition hardening (kickoff underway)**.
+Current stage: **active M4-B lifecycle-capability composition hardening (Workstream A complete)**.
 
 ---
 
@@ -176,7 +176,7 @@ flows and proving stronger stale-reference exclusion properties.
 
 For review clarity, M4-B evidence should map to these five workstreams:
 
-1. **WS-A semantics**: lifecycle-capability composed transition behavior is deterministic and
+1. **WS-A semantics** ✅ **completed**: lifecycle-capability composed transition behavior is deterministic and
    includes explicit failure branches.
 2. **WS-B invariants**: stale-reference exclusion is formalized as named components and linked to
    identity/authority assumptions.
