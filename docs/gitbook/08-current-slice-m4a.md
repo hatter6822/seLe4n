@@ -17,7 +17,10 @@ relationships remain coherent through those updates.
 - ✅ Step 3 complete: lifecycle invariants are now defined as narrow named components with explicit
   separation between identity/aliasing (`lifecycleIdentityAliasingInvariant`) and
   capability-reference (`lifecycleCapabilityReferenceInvariant`) constraints.
-- 🚧 Remaining M4-A work: local helper lemmas and composed preservation theorem growth.
+- ✅ Step 4 complete: transition-local helper lemmas now package lifecycle retype lookup and
+  runnable-membership transport facts near lifecycle operations, avoiding duplicated transition
+  case-analysis in downstream proofs.
+- 🚧 Remaining M4-A work: composed preservation theorem growth.
 
 
 1. **Transition surface**

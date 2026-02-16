@@ -91,7 +91,7 @@ Why:
 - stable doc/test anchors,
 - predictable maintainability under milestone growth.
 
-## 7. M4-A lifecycle invariant layering (step-3 completed)
+## 7. M4-A lifecycle invariant layering (steps 3-4 completed)
 
 Current M4-A lifecycle invariant structure now follows the existing layered style:
 
@@ -101,4 +101,4 @@ Current M4-A lifecycle invariant structure now follows the existing layered styl
 4. capability-reference bundle (`lifecycleCapabilityReferenceInvariant`),
 5. composed lifecycle bundle (`lifecycleInvariantBundle`).
 
-This explicit split keeps proof and review scope narrow as M4-A moves to helper lemmas and preservation composition.
+This explicit split now includes transition-local lifecycle helper lemmas in `Lifecycle/Operations`, keeping proof and review scope narrow as M4-A moves to preservation composition.
