@@ -12,7 +12,7 @@ It defines:
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 
-Current stage: **active M4-A lifecycle/retype foundations (steps 1-3 complete)**.
+Current stage: **active M4-A lifecycle/retype foundations (steps 1-4 complete)**.
 
 ---
 
@@ -72,7 +72,9 @@ state evolution.
      updates,
    - ensure lifecycle updates preserve authority monotonicity assumptions already used by M2.
 
-4. **Preservation theorem entrypoints**
+4. **Local helper lemmas + preservation theorem entrypoints**
+   - provide transition-local lookup/membership helper lemmas near lifecycle transitions to keep
+     proof scripts concise,
    - provide machine-checked `<transition>_preserves_<invariant>` entrypoints for each new
      lifecycle transition,
    - include at least one composed theorem over lifecycle + existing capability invariant bundle.

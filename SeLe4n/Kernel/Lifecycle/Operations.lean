@@ -37,6 +37,132 @@ def lifecycleRetypeObject
         else
           .error .illegalState
 
+/- Local lifecycle transition helper lemmas (M4-A step 4).
+These theorems keep preservation scripts focused on invariant obligations rather than
+repeating transition case analysis. -/
+
+theorem lifecycle_storeObject_objects_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects id = some obj := by
+  unfold storeObject at hStore
+  cases hStore
+  simp
+
+theorem lifecycle_storeObject_objects_ne
+    (st st' : SystemState)
+    (id oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hNe : oid ≠ id)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold storeObject at hStore
+  cases hStore
+  simp [hNe]
+
+theorem lifecycle_storeObject_scheduler_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+theorem cspaceLookupSlot_ok_state_eq
+    (st : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (st' : SystemState)
+    (hLookup : cspaceLookupSlot addr st = .ok (cap, st')) :
+    st' = st := by
+  unfold cspaceLookupSlot at hLookup
+  cases hCap : SystemState.lookupSlotCap st addr with
+  | none =>
+      cases hObj : st.objects addr.cnode with
+      | none => simp [hCap, hObj] at hLookup
+      | some obj =>
+          cases obj <;> simp [hCap, hObj] at hLookup
+  | some cap' =>
+      simp [hCap] at hLookup
+      exact hLookup.2.symm
+
+theorem lifecycleRetypeObject_ok_as_storeObject
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    ∃ currentObj cap,
+      st.objects target = some currentObj ∧
+      st.lifecycle.objectTypes target = some currentObj.objectType ∧
+      cspaceLookupSlot authority st = .ok (cap, st) ∧
+      lifecycleRetypeAuthority cap target = true ∧
+      storeObject target newObj st = .ok ((), st') := by
+  unfold lifecycleRetypeObject at hStep
+  cases hObj : st.objects target with
+  | none => simp [hObj] at hStep
+  | some currentObj =>
+      by_cases hMeta : st.lifecycle.objectTypes target = some currentObj.objectType
+      · cases hLookup : cspaceLookupSlot authority st with
+        | error e => simp [hObj, hMeta, hLookup] at hStep
+        | ok pair =>
+            rcases pair with ⟨cap, stLookup⟩
+            cases hAuth : lifecycleRetypeAuthority cap target with
+            | false => simp [hObj, hMeta, hLookup, hAuth] at hStep
+            | true =>
+                have hLookupSt : stLookup = st :=
+                  cspaceLookupSlot_ok_state_eq st authority cap stLookup hLookup
+                subst hLookupSt
+                simp [hObj, hMeta, hLookup, hAuth] at hStep
+                exact ⟨currentObj, cap, by simp, hMeta, by simp, hAuth, hStep⟩
+      · simp [hObj, hMeta] at hStep
+
+theorem lifecycleRetypeObject_ok_lookup_preserved_ne
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target oid : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hNe : oid ≠ target)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  exact lifecycle_storeObject_objects_ne st st' target oid newObj hNe hStore
+
+theorem lifecycleRetypeObject_ok_runnable_membership
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (tid : SeLe4n.ThreadId)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
+    (hRun : tid ∈ st'.scheduler.runnable) :
+    tid ∈ st.scheduler.runnable := by
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    lifecycle_storeObject_scheduler_eq st st' target newObj hStore
+  simpa [hSchedEq] using hRun
+
+theorem lifecycleRetypeObject_ok_not_runnable_membership
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (tid : SeLe4n.ThreadId)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
+    (hNotRun : tid ∉ st.scheduler.runnable) :
+    tid ∉ st'.scheduler.runnable := by
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    lifecycle_storeObject_scheduler_eq st st' target newObj hStore
+  simpa [hSchedEq] using hNotRun
+
 theorem lifecycleRetypeObject_error_illegalState
     (st : SystemState)
     (authority : CSpaceAddr)
@@ -74,9 +200,21 @@ theorem lifecycleRetypeObject_success_updates_object
     (hAuth : lifecycleRetypeAuthority cap target = true)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     st'.objects target = some newObj := by
-  unfold lifecycleRetypeObject at hStep
-  simp [hObj, hMeta, hLookup, hAuth] at hStep
-  cases hStep
-  simp
+  have _ : st.lifecycle.objectTypes target = some currentObj.objectType := hMeta
+  have _ : lifecycleRetypeAuthority cap target = true := hAuth
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨currentObj', cap', hObj', _, hLookup', _, hStore⟩
+  have hCurrent : currentObj' = currentObj := by
+    apply Option.some.inj
+    rw [← hObj', hObj]
+  subst hCurrent
+  have hCapLookup' : SystemState.lookupSlotCap st authority = some cap' :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st authority cap').1 hLookup'
+  have hCapLookup : SystemState.lookupSlotCap st authority = some cap :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st authority cap).1 hLookup
+  rw [hCapLookup'] at hCapLookup
+  injection hCapLookup with hCapEq
+  subst hCapEq
+  exact lifecycle_storeObject_objects_eq st st' target newObj hStore
 
 end SeLe4n.Kernel

@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active, steps 1-3 completed)**.
+Current stage: **M4-A lifecycle/retype foundations (active, steps 1-4 completed)**.
 
 Primary goals for contributors:
 
@@ -52,9 +52,9 @@ Unless intentionally redesigned and documented, preserve:
    - identity/aliasing constraints are separated from capability-reference constraints via
      `lifecycleIdentityAliasingInvariant` and `lifecycleCapabilityReferenceInvariant`.
 
-4. **Local helper lemmas**
-   - add transition-local lookup/membership lemmas near lifecycle code,
-   - avoid duplicated case-analysis across proof scripts.
+4. **Local helper lemmas** ✅ **completed**
+   - transition-local lookup/membership lemmas are now defined near lifecycle transition code,
+   - lifecycle proofs reuse helper theorems instead of repeating transition case-analysis.
 
 5. **Preservation theorem entrypoints**
    - prove local component preservation first,
