@@ -260,7 +260,28 @@ M6 explicitly owns the deferred architecture-binding scope:
 2. define proof-carrying adapters from architecture-neutral semantics,
 3. harden hardware-facing boot/runtime boundary assumptions with explicit contracts.
 
-### 6.5 Risks and mitigations retained from the M4-B → M5 handoff
+### 6.5 M6 execution workstreams (active)
+
+M6 work is tracked through the following workstreams:
+
+1. **WS-M6-A — assumption inventory + boundary extraction**
+   - enumerate architecture-facing assumptions and map them into interface surfaces.
+2. **WS-M6-B — interface API + adapter semantics**
+   - implement deterministic adapter behavior with explicit unsupported/invalid branches.
+3. **WS-M6-C — proof integration**
+   - connect adapter assumptions to local and composed invariant preservation theorem surfaces.
+4. **WS-M6-D — evidence + test anchor continuity**
+   - extend executable traces, fixtures, and Tier 3 symbol checks for new claims.
+5. **WS-M6-E — docs + handoff packaging**
+   - synchronize roadmap and stage markers across root docs and GitBook.
+
+### 6.6 Post-M6 first-hardware target
+
+The first real hardware architecture focus after M6 is **Raspberry Pi 5**.
+Post-M6 slices should instantiate M6 contracts for Raspberry Pi 5 constraints without resetting
+architecture-neutral theorem layering.
+
+### 6.7 Risks and mitigations retained from the M4-B → M5 handoff
 
 1. **Risk: composition proofs become monolithic and brittle**
    - mitigation: require local-first preservation entrypoints before composed proof merges.

@@ -5,7 +5,8 @@ This GitBook is the long-form documentation for seLe4n.
 ## Project stage snapshot
 
 - **Current slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening.
-- **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A/B/C/D/E/F complete).
+- **Most recently completed slice:** M5 service-graph + policy surfaces.
+- **First real hardware architecture focus:** Raspberry Pi 5 (post-M6 binding trajectory).
 
 Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance reference.
 
@@ -18,24 +19,25 @@ Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance
 3. [Architecture & Module Map](03-architecture-and-module-map.md)
 4. [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-### 2) Active planning + latest closeout
+### 2) Active planning and execution
 
-5. [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
-6. [Specification & Roadmap](05-specification-and-roadmap.md)
+5. [Specification & Roadmap](05-specification-and-roadmap.md)
+6. [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md)
 7. [Development Workflow](06-development-workflow.md)
 8. [Testing & CI](07-testing-and-ci.md)
 9. [Codebase Reference](11-codebase-reference.md)
 10. [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
-### 3) Slice history and forward planning
+### 3) Slice history and long-horizon path
 
-11. [Completed Slice: M4-A](08-completed-slice-m4a.md)
-12. [Completed Slice: M4-B](16-completed-slice-m4b.md)
-13. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
-14. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-15. [M5 Development Blueprint](15-m5-development-blueprint.md)
-16. [Project Usage and Value](17-project-usage-value.md)
-17. [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md)
+11. [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
+12. [Completed Slice: M4-A](08-completed-slice-m4a.md)
+13. [Completed Slice: M4-B](16-completed-slice-m4b.md)
+14. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
+15. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
+16. [M5 Development Blueprint](15-m5-development-blueprint.md)
+17. [Project Usage and Value](17-project-usage-value.md)
+18. [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md)
 
 ## Anti-duplication guidance
 
@@ -44,4 +46,5 @@ To keep this handbook maintainable:
 - put normative scope and acceptance criteria in `docs/SEL4_SPEC.md`,
 - keep current-slice chapters focused on active execution details,
 - keep completed-slice chapters as concise historical references,
-- prefer links to foundational chapters instead of restating shared definitions.
+- use cross-links when reusing definitions,
+- and keep Raspberry Pi 5 planning details synchronized between roadmap and hardware chapters.

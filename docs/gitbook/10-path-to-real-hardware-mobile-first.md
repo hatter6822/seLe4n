@@ -1,80 +1,85 @@
-# Path to Real Hardware (Mobile-First)
+# Path to Real Hardware (Raspberry Pi 5 First)
 
-## Why mobile-first
+## Why this chapter changed
 
-Mobile devices are an important practical target for high-assurance compartmentalization:
+The project hardware direction is now explicitly **Raspberry Pi 5 first**.
 
-- they run heterogeneous, privilege-sensitive workloads,
-- they are exposed to hostile networks and app ecosystems,
-- and they require strong isolation with tight performance/power constraints.
+Earlier documentation described a broad mobile-first direction. That remains useful context, but
+execution planning now prioritizes a concrete first architecture target to reduce ambiguity and
+improve milestone accountability.
 
-A mobile-first strategy gives seLe4n a realistic deployment pressure profile early.
+## 1. Hardware reality check
 
-## Reality check: model-to-hardware is a multi-stage bridge
+seLe4n is currently a formal and executable model project, not a direct deployable kernel image.
+The path to real hardware is staged and contract-driven:
 
-seLe4n today is a formal/executable model project, not a drop-in deployable kernel. A credible
-hardware path requires staged convergence across semantics, tooling, architecture binding, and
-system integration.
+1. architecture-neutral semantics and invariants,
+2. explicit architecture-binding interfaces,
+3. platform-specific binding of those interfaces,
+4. traceable evidence from model behavior to platform assumptions.
 
-## Staged roadmap toward hardware relevance
+## 2. Why Raspberry Pi 5 first
 
-### Stage H0: Semantic completeness in architecture-neutral model
+1. practical ARM64 platform for repeated experiments,
+2. realistic enough interrupt/memory/boot profile for architecture-bound modeling,
+3. broad tooling availability for incremental bring-up,
+4. good tradeoff between accessibility and systems realism.
 
-- complete lifecycle/capability/IPC/scheduler interactions,
-- harden invariant composition and error-path coverage,
-- strengthen executable scenarios to represent realistic subsystem choreography.
+## 3. Stage model toward Raspberry Pi 5 relevance
 
-### Stage H1: Architecture-binding interface plan
+### Stage H0 — Completed baseline hardening (M1–M5)
 
-- identify architecture-dependent assumptions currently abstracted,
-- define explicit interfaces for CPU mode transitions, interrupt surfaces, and memory mappings,
-- keep architecture-neutral theorems reusable where possible.
+- scheduler/capability/IPC/lifecycle/service semantics and proof bundles,
+- deterministic success/failure semantics and executable evidence,
+- testing tiers and CI contracts.
 
-### Stage H2: Boot and platform model alignment
+### Stage H1 — Current execution (M6)
 
-- model assumptions required at early boot (object initialization, capability roots, thread startup),
-- encode minimal platform contracts needed before user-space service graph starts.
+- extract architecture assumptions as explicit interfaces,
+- define proof-carrying adapters from architecture-neutral semantics,
+- harden boot/runtime boundary obligations as concrete contracts.
 
-### Stage H3: Mobile-oriented subsystem decomposition
+### Stage H2 — Raspberry Pi 5 contract instantiation (post-M6)
 
-- define trusted/less-trusted component boundaries for mobile use-cases,
-- map expected services (UI, radio, storage, sensor brokering) to capability/IPC patterns,
-- prioritize least-privilege capability distribution strategies.
+- instantiate M6 interfaces for Raspberry Pi 5 constraints,
+- map platform assumptions to theorem obligations,
+- keep core theorem surfaces reusable.
 
-### Stage H4: Performance and predictability envelope
+### Stage H3 — Minimal platform-oriented trust partition
 
-- identify IPC and scheduling hot paths that matter on mobile SoCs,
-- introduce scenario-driven performance hypotheses (without prematurely overfitting),
-- track proof-friendly simplifications versus deployment realism trade-offs.
+- define first constrained deployment partition,
+- map service graph boundaries to capability distribution constraints,
+- validate expected failure semantics for restart/isolation paths.
 
-### Stage H5: Prototype integration path
+### Stage H4 — Evidence convergence
 
-- produce a small demonstrator topology that mirrors a realistic mobile security partition,
-- connect formal model assumptions to implementation obligations,
-- establish traceability from theorem claims to system-level tests.
+- connect executable scenarios to platform-facing assumptions,
+- extend symbol/fixture coverage to architecture-bound claims,
+- package evidence for iterative integration decisions.
 
-## Mobile-first target outcomes (long horizon)
+## 4. Raspberry Pi 5 target outcomes (long horizon)
 
-1. clear trust-boundary documentation for mobile service partitions,
-2. lifecycle/capability semantics robust enough for dynamic service management,
-3. explicit failure semantics for compromised/restarted services,
-4. architecture-binding strategy that does not invalidate core proofs,
-5. incremental evidence chain from model behavior to deployment constraints.
+1. explicit platform-assumption contract inventory,
+2. architecture-binding interfaces that do not invalidate core proofs,
+3. predictable failure semantics for boundary violations,
+4. reusable traceability from theorem claims to validation artifacts,
+5. incremental integration path from model-level confidence to platform-level confidence.
 
-## Risks and mitigations
+## 5. Risks and mitigations
 
-1. **Risk: overcommitting to hardware details too early**
-   - mitigation: preserve architecture-neutral core while isolating binding interfaces.
-2. **Risk: proof complexity explosion during architecture binding**
-   - mitigation: keep theorem layering compositional and interface-driven.
-3. **Risk: performance surprises on mobile IPC/scheduling paths**
-   - mitigation: add scenario-guided profiling hypotheses early in H4 planning.
-4. **Risk: docs drift between formal model and integration assumptions**
-   - mitigation: treat roadmap and assumption docs as versioned artifacts with PR gating.
+1. **Premature platform lock-in**
+   - mitigation: complete M6 contract surfaces before broad platform encoding.
+2. **Proof complexity growth at binding boundary**
+   - mitigation: maintain local-first theorem layering and narrow adapter contracts.
+3. **Evidence mismatch between model and platform assumptions**
+   - mitigation: enforce synchronized updates across traces, tests, and docs.
+4. **Roadmap ambiguity**
+   - mitigation: keep README/spec/GitBook synchronized on Raspberry Pi 5-first direction.
 
-## What contributors can do now
+## 6. What contributors can do now
 
-- keep M4 work crisp and deterministic,
-- document assumptions where lifecycle semantics intersect capability authority,
-- add executable scenarios that resemble real compartment orchestration,
-- and keep spec/development/testing/gitbook docs synchronized as the roadmap evolves.
+- align milestone PRs to M6 workstreams,
+- document architecture assumptions explicitly,
+- add executable evidence for boundary success/failure behavior,
+- avoid implicit platform assumptions in architecture-neutral modules,
+- keep handoff notes explicit for the Raspberry Pi 5 slice.

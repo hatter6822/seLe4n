@@ -7,6 +7,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 - **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening.
 - **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A through WS-M5-F completed).
+- **First real-hardware architecture focus:** Raspberry Pi 5 (post-M6 binding path).
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
@@ -16,12 +17,14 @@ For normative milestones, acceptance criteria, and scope decisions, use
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
+- **Current-slice execution plan:** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
 - **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
 - **Project usage/value guide:** [`docs/gitbook/17-project-usage-value.md`](docs/gitbook/17-project-usage-value.md)
 - **Architecture and module map:** [`docs/gitbook/03-architecture-and-module-map.md`](docs/gitbook/03-architecture-and-module-map.md)
 - **Codebase deep reference:** [`docs/gitbook/11-codebase-reference.md`](docs/gitbook/11-codebase-reference.md)
 - **Proof and invariant map:** [`docs/gitbook/12-proof-and-invariant-map.md`](docs/gitbook/12-proof-and-invariant-map.md)
+- **Hardware direction (Raspberry Pi 5 first):** [`docs/gitbook/10-path-to-real-hardware-mobile-first.md`](docs/gitbook/10-path-to-real-hardware-mobile-first.md)
 
 ## Quick start
 
