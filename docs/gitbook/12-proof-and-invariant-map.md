@@ -91,7 +91,7 @@ Why:
 - stable doc/test anchors,
 - predictable maintainability under milestone growth.
 
-## 7. M4-A lifecycle invariant layering (steps 3-6 completed)
+## 7. M4 lifecycle invariant layering (M4-A complete, M4-B WS-B complete)
 
 Current M4-A lifecycle invariant structure now follows the existing layered style:
 
@@ -99,10 +99,14 @@ Current M4-A lifecycle invariant structure now follows the existing layered styl
 2. identity bundle (`lifecycleIdentityAliasingInvariant`),
 3. capability-reference components (`lifecycleCapabilityRefExact`, `lifecycleCapabilityRefObjectTargetBacked`),
 4. capability-reference bundle (`lifecycleCapabilityReferenceInvariant`),
-5. composed lifecycle bundle (`lifecycleInvariantBundle`).
+5. composed lifecycle bundle (`lifecycleInvariantBundle`),
+6. stale-reference hardening family (`lifecycleStaleReferenceExclusionInvariant`),
+7. lifecycle+stale bridge (`lifecycleIdentityStaleReferenceInvariant`).
 
 This explicit split now includes transition-local lifecycle helper lemmas in `Lifecycle/Operations`,
 local and composed lifecycle preservation entrypoints (`lifecycleRetypeObject_preserves_lifecycleInvariantBundle`,
+`lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`,
+`lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant`,
 `lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle`, and
 `lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle`), and fixture-backed executable trace evidence
-for unauthorized/illegal-state/success lifecycle retype outcomes.
+for unauthorized/illegal-state/success lifecycle retype outcomes plus composed lifecycle+capability behavior.

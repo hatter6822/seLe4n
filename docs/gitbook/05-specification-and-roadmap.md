@@ -93,7 +93,7 @@ To keep reviews crisp, each M4-B target should be tied to concrete evidence:
 Suggested checkpoint structure:
 
 - **Checkpoint B1 (semantics ready)**: composed transition APIs merged and deterministic.
-- **Checkpoint B2 (invariants ready)**: stale-reference components + local helpers merged.
+- **Checkpoint B2 (invariants ready)** ✅ completed: stale-reference components + local helpers merged.
 - **Checkpoint B3 (proof-ready)**: local and composed preservation theorem surfaces merged.
 - **Checkpoint B4 (evidence-ready)**: executable/fixture/Tier 3 updates merged.
 - **Checkpoint B5 (closeout-ready)**: docs synchronized and M5 deferrals explicitly listed.

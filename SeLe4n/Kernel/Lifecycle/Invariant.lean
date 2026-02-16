@@ -37,6 +37,34 @@ def lifecycleCapabilityRefObjectTargetBacked (st : SystemState) : Prop :=
 def lifecycleCapabilityReferenceInvariant (st : SystemState) : Prop :=
   lifecycleCapabilityRefExact st ∧ lifecycleCapabilityRefObjectTargetBacked st
 
+/-- M4-B stale-reference exclusion component: any object-target capability reference agrees with
+object-type metadata whenever that object identity is present. -/
+def lifecycleCapabilityRefObjectTargetTypeAligned (st : SystemState) : Prop :=
+  ∀ ref oid obj,
+    SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
+    st.objects oid = some obj →
+    SystemState.lookupObjectTypeMeta st oid = some obj.objectType
+
+/-- M4-B stale-reference exclusion component: capability-object references inherit the same
+identity non-aliasing guarantee used by lifecycle identity metadata. -/
+def lifecycleCapabilityRefNoTypeAliasConflict (st : SystemState) : Prop :=
+  ∀ ref oid ty₁ ty₂,
+    SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
+    SystemState.lookupObjectTypeMeta st oid = some ty₁ →
+    SystemState.lookupObjectTypeMeta st oid = some ty₂ →
+    ty₁ = ty₂
+
+/-- M4-B stale-reference exclusion family built from narrow, composable components. -/
+def lifecycleStaleReferenceExclusionInvariant (st : SystemState) : Prop :=
+  lifecycleCapabilityRefObjectTargetBacked st ∧
+    lifecycleCapabilityRefObjectTargetTypeAligned st ∧
+    lifecycleCapabilityRefNoTypeAliasConflict st
+
+/-- M4-B link point: stale-reference exclusion explicitly depends on identity/aliasing constraints
+rather than replacing them with a monolithic definition. -/
+def lifecycleIdentityStaleReferenceInvariant (st : SystemState) : Prop :=
+  lifecycleIdentityAliasingInvariant st ∧ lifecycleStaleReferenceExclusionInvariant st
+
 /-- Full lifecycle invariant bundle for M4-A step-3 with explicit layering separation. -/
 def lifecycleInvariantBundle (st : SystemState) : Prop :=
   lifecycleIdentityAliasingInvariant st ∧ lifecycleCapabilityReferenceInvariant st
@@ -93,6 +121,38 @@ theorem lifecycleMetadataConsistent_of_lifecycleInvariantBundle
   rcases hCapRef with ⟨hCapRefExact, _hBacked⟩
   exact ⟨hObjType, hCapRefExact⟩
 
+theorem lifecycleCapabilityRefObjectTargetTypeAligned_of_exact
+    (st : SystemState)
+    (hObjType : lifecycleIdentityTypeExact st) :
+    lifecycleCapabilityRefObjectTargetTypeAligned st := by
+  intro ref oid obj _hMeta hObj
+  simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
+    SystemState.lookupObjectTypeMeta, hObj] using hObjType oid
+
+theorem lifecycleCapabilityRefNoTypeAliasConflict_of_identity
+    (st : SystemState)
+    (hAlias : lifecycleIdentityNoTypeAliasConflict st) :
+    lifecycleCapabilityRefNoTypeAliasConflict st := by
+  intro _ref oid ty₁ ty₂ _hMeta hTy₁ hTy₂
+  exact hAlias oid ty₁ ty₂ hTy₁ hTy₂
+
+theorem lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle
+    (st : SystemState)
+    (hInv : lifecycleInvariantBundle st) :
+    lifecycleStaleReferenceExclusionInvariant st := by
+  rcases hInv with ⟨hIdAlias, hCapRef⟩
+  rcases hIdAlias with ⟨hObjType, hAlias⟩
+  rcases hCapRef with ⟨_hCapRefExact, hBacked⟩
+  refine ⟨hBacked, ?_, ?_⟩
+  · exact lifecycleCapabilityRefObjectTargetTypeAligned_of_exact st hObjType
+  · exact lifecycleCapabilityRefNoTypeAliasConflict_of_identity st hAlias
+
+theorem lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle
+    (st : SystemState)
+    (hInv : lifecycleInvariantBundle st) :
+    lifecycleIdentityStaleReferenceInvariant st := by
+  refine ⟨hInv.1, lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hInv⟩
+
 theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -108,5 +168,29 @@ theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
   have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
     storeObject_preserves_lifecycleMetadataConsistent st st' target newObj hMeta hStore
   exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
+
+theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : lifecycleInvariantBundle st)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    lifecycleStaleReferenceExclusionInvariant st' := by
+  have hBundle' : lifecycleInvariantBundle st' :=
+    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
+  exact lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st' hBundle'
+
+theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : lifecycleInvariantBundle st)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    lifecycleIdentityStaleReferenceInvariant st' := by
+  have hBundle' : lifecycleInvariantBundle st' :=
+    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
+  exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
 
 end SeLe4n.Kernel

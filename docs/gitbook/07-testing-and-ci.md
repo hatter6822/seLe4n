@@ -56,7 +56,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 ## M4 testing trajectory
 
 - **M4-A:** lifecycle semantic trace fragments are now landed and fixture-backed in Tier 2 smoke coverage.
-- **M4-B:** add lifecycle-capability composition success/failure traces and stronger Tier 3 anchors.
+- **M4-B:** WS-A/WS-B traces and invariant anchors are landed; continue expanding WS-C/WS-D/WS-E theorem and scenario anchors.
 
 ## Practical failure triage
 

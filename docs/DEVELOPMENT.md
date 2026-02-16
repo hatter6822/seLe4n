@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-B lifecycle-capability composition hardening (Workstream A complete)**.
+Current stage: **M4-B lifecycle-capability composition hardening (Workstreams A+B complete)**.
 
 Primary goals for contributors:
 

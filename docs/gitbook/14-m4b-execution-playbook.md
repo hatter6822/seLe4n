@@ -33,7 +33,7 @@ Definition of done:
 - error variants are explicit,
 - behavior is observable from executable scenarios.
 
-### Workstream B — Invariant hardening
+### Workstream B — Invariant hardening ✅ completed
 
 Goal: eliminate stale-reference ambiguity across lifecycle operations.
 

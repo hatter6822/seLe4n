@@ -184,7 +184,9 @@ Primary semantics:
 
 - identity/aliasing lifecycle invariants (`lifecycleIdentityAliasingInvariant`),
 - capability-reference lifecycle invariants (`lifecycleCapabilityReferenceInvariant`),
-- composed lifecycle invariant bundle (`lifecycleInvariantBundle`).
+- composed lifecycle invariant bundle (`lifecycleInvariantBundle`),
+- M4-B stale-reference hardening surfaces (`lifecycleStaleReferenceExclusionInvariant`,
+  `lifecycleIdentityStaleReferenceInvariant`).
 
 Design details that matter:
 
@@ -193,7 +195,9 @@ Design details that matter:
 2. **Naming is milestone-oriented**
    - definitions are narrow and named so later preservation theorems can compose cleanly.
 3. **Metadata-to-bundle bridge is explicit**
-   - `lifecycleInvariantBundle_of_metadata_consistent` connects model-level consistency assumptions to the new lifecycle bundle surface.
+   - `lifecycleInvariantBundle_of_metadata_consistent` connects model-level consistency assumptions to the lifecycle bundle surface.
+4. **WS-B stale-reference hardening is explicit**
+   - theorems lift stale-reference components from lifecycle bundle assumptions and preserve them across `lifecycleRetypeObject`.
 
 ### `SeLe4n/Kernel/Capability/Invariant.lean`
 
@@ -207,6 +211,7 @@ Core components:
 Composition surfaces:
 
 - `capabilityInvariantBundle`
+- `lifecycleCapabilityStaleAuthorityInvariant`
 - `m3IpcSeedInvariantBundle`
 - `m35IpcSchedulerInvariantBundle`
 
@@ -260,11 +265,13 @@ Proof organization:
 
 1. scheduler step (`schedule`),
 2. root capability lookup,
-3. mint + sibling mint,
-4. revoke + delete checks,
-5. waiting-receiver handshake send,
-6. queued senders + receives,
-7. expected error on extra receive.
+3. lifecycle retype unauthorized + illegal-state + success branches,
+4. mint + sibling mint,
+5. composed revoke/delete/retype alias-guard failure and success path,
+6. post-revoke/post-delete lookup checks,
+7. waiting-receiver handshake send,
+8. queued senders + receives,
+9. expected error on extra receive.
 
 Why this matters:
 

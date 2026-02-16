@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-B lifecycle-capability composition hardening active (M4-A + WS-A complete)**.
+Current stage context: **M4-B lifecycle-capability composition hardening active (M4-A + WS-A + WS-B complete)**.
 
 ## 2. Current enforced tiers
 
