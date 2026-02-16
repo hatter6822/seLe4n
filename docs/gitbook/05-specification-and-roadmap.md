@@ -1,107 +1,144 @@
 # Specification and Roadmap
 
-This chapter complements `docs/SEL4_SPEC.md` and provides the contributor-facing interpretation
-of current/next milestones.
+This chapter translates the normative spec (`docs/SEL4_SPEC.md`) into contributor-oriented
+planning and delivery guidance.
 
-## Completed slice baseline: M4-A
+## 1. Baseline status
 
-M4-A focuses on introducing lifecycle/retype semantics with clear theorem and executable surfaces.
-All six planned implementation steps are complete, so this chapter now acts as the baseline for
-follow-on work.
+M4 foundation status for planning purposes:
 
-### M4-A target outcomes (what must already be true)
+- **M4-A complete**: lifecycle/retype semantics, lifecycle invariants, and baseline preservation.
+- **M4-B complete**: lifecycle-capability composition hardening and stale-reference safety.
 
-1. lifecycle transition API with deterministic success/error branching,
-2. identity/aliasing invariants for lifecycle transitions,
-3. capability-object coherence invariants,
-4. lifecycle preservation theorem entrypoints and composed bundle entrypoints,
-5. executable trace evidence with fixture-backed semantic anchors.
+That means M5 planning should build on existing transition and theorem surfaces rather than
+restructuring them.
 
-### M4-A closeout outcomes
+## 2. M4 outcomes that are now assumed stable
 
-At this point, contributors should treat M4-A as the “stable foundation” layer:
+Contributors should treat these as established contracts:
 
-- new work should build on lifecycle theorem surfaces instead of replacing them,
-- failure branches should remain explicit and regression-testable,
-- docs should reference M4-A as complete and avoid re-opening its non-goals.
+1. deterministic lifecycle transition/error behavior,
+2. lifecycle identity/aliasing and capability-reference invariant components,
+3. lifecycle + capability composed preservation entrypoints,
+4. executable trace anchors for lifecycle and composition stories,
+5. Tier 3 symbol checks for critical theorem/bundle surfaces.
 
-## Current slice: M4-B
+## 3. Next slice definition: M5
 
-M4-B hardens lifecycle semantics through capability-lifecycle composition.
+M5 scope is to model **service-level operational stories** on top of M4 semantics.
 
-### M4-B target outcomes
+### M5 target outcomes
 
-1. lifecycle + revoke/delete interaction stories,
-2. stale-reference exclusion invariants,
-3. cross-bundle preservation theorems,
-4. explicit failure-path theorem coverage,
-5. expanded scenario/Tier 3 checks.
+1. **Service-graph semantics**
+   - model services, dependencies, and restart/isolation boundaries.
+2. **Policy-oriented authority constraints**
+   - represent policy checks as reusable theorem-facing predicates.
+3. **Composed preservation over orchestration paths**
+   - prove safety across start/stop/restart and dependency transitions.
+4. **Failure-path completeness**
+   - include denied-policy, missing-dependency, and stale-reference-style failures.
+5. **Executable scenario coverage**
+   - add `Main.lean` stories showing service lifecycle success and failure.
 
-### M4-B implementation sequencing
+### Non-goals for M5 (to prevent scope drift)
 
-1. define transition composition helpers,
-2. encode stale-reference properties,
-3. prove local then composed preservation,
-4. extend executable stories ✅ completed,
-5. lock fixture intent and update docs.
+- no architecture-specific memory-model lock-in,
+- no full seL4 boot pipeline modeling,
+- no replacement of M1-M4 theorem interfaces unless required for soundness.
 
-## Delivery model for upcoming slices
+## 4. Workstreams for completing M5
 
-The project now follows a predictable slice template:
+### Workstream A — Service graph model and transition API
 
-1. **Semantics first**: add deterministic transition behavior.
-2. **Invariants second**: codify named safety components.
-3. **Proofs third**: prove local, then composed preservation.
-4. **Executable evidence fourth**: extend `Main.lean` and fixtures.
-5. **Docs and roadmap finalization**: update spec + development guide + GitBook.
+Deliver:
 
-This keeps the codebase reviewable while preserving clear milestone boundaries.
+- service node/state representation,
+- dependency edges and restart policy shape,
+- deterministic transition helpers for activation/deactivation/restart.
 
-## Next-slice direction (M5 preview)
+Exit signal:
 
-After M4-A/M4-B, likely focus areas include:
+- transitions compile and return explicit `KernelError`-compatible failures.
 
-- service-graph and restart-oriented semantics,
-- policy and authority decomposition hardening,
-- architecture binding strategy with explicit assumptions,
-- and pre-deployment constraints for hardware execution paths.
+### Workstream B — Policy surfaces and authority decomposition
 
-See also:
+Deliver:
 
-- [Completed Slice: M4-A](08-current-slice-m4a.md)
+- policy predicates that constrain capability actions in service context,
+- theorem-friendly decomposition (small components, then bundle),
+- bridge lemmas connecting policy predicates to existing capability invariants.
+
+Exit signal:
+
+- policy logic can be reused without importing unrelated service internals.
+
+### Workstream C — Proof layering for service operations
+
+Deliver:
+
+- local preservation per service transition,
+- composed preservation across service + lifecycle + capability bundles,
+- failure-path preservation theorems.
+
+Exit signal:
+
+- proof naming and locality follow existing conventions; no `sorry`/`axiom` debt.
+
+### Workstream D — Trace/test expansion
+
+Deliver:
+
+- executable service scenarios (good and bad paths),
+- fixture anchors with semantic intent notes,
+- Tier 3 symbol anchors for new theorem surfaces.
+
+Exit signal:
+
+- `test_smoke` + `test_full` remain green with stable, intentional fixture deltas.
+
+### Workstream E — Documentation + milestone closeout
+
+Deliver:
+
+- synchronized updates across spec, README, GitBook,
+- explicit M6 deferrals and assumptions,
+- short risk log for unresolved architectural unknowns.
+
+Exit signal:
+
+- docs consistently describe active/next slice and accepted deferrals.
+
+## 5. Evidence map (what reviewers should require)
+
+For each M5 target outcome, require concrete evidence:
+
+1. transition code + theorem entrypoint,
+2. executable trace or symbol anchor,
+3. test command output in PR notes,
+4. explicit deferred items.
+
+## 6. Suggested checkpoint cadence
+
+- **M5-C1**: service graph definitions + initial transitions,
+- **M5-C2**: policy predicate set + bridge lemmas,
+- **M5-C3**: local preservation completion,
+- **M5-C4**: composed/failure-path preservation,
+- **M5-C5**: trace/fixture/Tier 3 completion,
+- **M5-C6**: docs and closeout memo.
+
+## 7. Delivery model (kept from prior slices)
+
+1. semantics first,
+2. invariants second,
+3. proofs third,
+4. executable evidence fourth,
+5. docs and acceptance closeout final.
+
+This sequencing minimizes churn and keeps proof updates aligned with behavior changes.
+
+## 8. Cross-reference index
+
 - [Current Slice: M4-B](09-next-slice-m4b.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-
-
-## Detailed M4-B outcome framing
-
-To keep reviews crisp, each M4-B target should be tied to concrete evidence:
-
-1. **Transition composition**
-   - Evidence: deterministic lifecycle+capability transition(s) with explicit errors.
-2. **Stale-reference exclusion**
-   - Evidence: named invariants + helper lemmas showing exclusion properties.
-3. **Cross-bundle preservation**
-   - Evidence: local-first then composed theorem entrypoints in compile-checked modules.
-4. **Failure-path completeness**
-   - Evidence: theorem statements covering invalid authority/state/reference outcomes.
-5. **Executable and testing growth**
-   - Evidence: trace scenario + fixture anchor + Tier 3 symbol checks.
-
-## Near-term roadmap checkpoints (M4-B)
-
-Suggested checkpoint structure:
-
-- **Checkpoint B1 (semantics ready)**: composed transition APIs merged and deterministic.
-- **Checkpoint B2 (invariants ready)** ✅ completed: stale-reference components + local helpers merged.
-- **Checkpoint B3 (proof-ready)**: local and composed preservation theorem surfaces merged.
-- **Checkpoint B4 (evidence-ready)**: executable/fixture/Tier 3 updates merged.
-- **Checkpoint B5 (closeout-ready)**: docs synchronized and M5 deferrals explicitly listed.
-
-## M5 preview: what “ready to start” should mean
-
-M5 should not start because of calendar pressure; it should start when:
-
-1. M4-B composed behavior is regression-protected by tests and fixture anchors,
-2. theorem surfaces are reusable without significant refactoring,
-3. roadmap docs list concrete M5 assumptions and constraints.
+- [M4-B Execution Playbook](14-m4b-execution-playbook.md)
+- [M5 Blueprint and Usage Value](15-m5-blueprint-and-project-usage.md)

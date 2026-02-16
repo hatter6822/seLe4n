@@ -15,3 +15,4 @@
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)
+- [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md)

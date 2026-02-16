@@ -13,14 +13,13 @@ This handbook is the long-form documentation set for:
 
 ## Why this handbook exists
 
-The repository docs (`README.md`, spec, development guide, testing plan) are intentionally concise.
-This GitBook layer provides deeper explanations so contributors can understand **why** the project
-is shaped this way, not only **what** commands to run.
+Repository-level docs are intentionally concise. The GitBook layer expands the "why" and "how" so
+contributors can understand current contracts and next-slice execution paths.
 
 ## Current stage
 
-- Active slice: **M4-B lifecycle-capability composition hardening**.
-- Next slice preview: **M5 service-graph + policy surfaces**.
+- Recently completed slice: **M4-B lifecycle-capability composition hardening**.
+- Next slice target: **M5 service-graph + policy surfaces**.
 
 ## Suggested reading order
 
@@ -38,17 +37,12 @@ is shaped this way, not only **what** commands to run.
 12. [Proof and Invariant Map](12-proof-and-invariant-map.md)
 13. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 14. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
+15. [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md)
 
 For normative acceptance criteria, treat `docs/SEL4_SPEC.md` as canonical.
 
 ## What changed in this edition
 
-- Expanded deep-reference material in **Codebase Reference** with transition-level semantics,
-  proof-organization guidance, and practical debug playbooks.
-- Expanded **Testing & CI** chapter with tier-by-tier intent, entrypoint behavior, and
-  color-coded test logging conventions for local runs.
-
-- Added **Future Slices and Delivery Plan** chapter to make post-M4 direction and milestone
-  handoff expectations explicit for contributors.
-
-- Added **M4-B Execution Playbook** chapter to turn roadmap targets into concrete workstreams, sequencing, and PR-level delivery checklists.
+- Expanded roadmap chapters to include explicit M5 target outcomes and workstreams.
+- Expanded M4-B closeout material to provide concrete handoff guidance.
+- Added a dedicated chapter on developer/team usage modes and technical project value.

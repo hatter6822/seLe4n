@@ -2,112 +2,76 @@
 
 ## Objective
 
-Move from foundational lifecycle semantics to stronger composition with capability deletion/revocation
-and stale-reference safety.
+M4-B moved lifecycle semantics from standalone correctness to robust composition with capability
+revocation/deletion paths and stale-reference safety.
 
-## Why M4-B matters
+## Why M4-B mattered
 
-M4-A made lifecycle transitions explicit and provable. M4-B ensures those transitions remain safe
-when they interact with authority-changing capability operations in realistic workflows.
+M4-A established lifecycle transitions. M4-B ensured those transitions remain safe under realistic
+authority-changing operations.
 
-## Detailed target outcomes
+## Delivered outcomes
 
-1. lifecycle + capability lifecycle interaction semantics,
-2. stale-reference exclusion invariants,
-3. cross-bundle preservation theorems,
+1. lifecycle + capability interaction semantics,
+2. stale-reference exclusion invariant components,
+3. composed preservation across lifecycle/capability bundles,
 4. failure-path theorem coverage,
-5. expanded executable/test anchors.
+5. expanded trace/test anchors.
 
-## Proposed execution plan
+## Workstream closeout summary
 
-### Phase 1: semantic composition ✅ completed
+### Workstream A — semantic composition ✅
 
-- codified a deterministic transition story spanning lifecycle and revoke/delete behavior,
-- made ordering assumptions explicit in transition API and theorem statements.
+- codified deterministic transition order across lifecycle + revoke/delete behavior,
+- documented authority/state validation assumptions in theorem-facing form.
 
-### Phase 2: invariant hardening ✅ completed
+### Workstream B — invariant hardening ✅
 
-- define stale-reference exclusion invariants,
-- tie those invariants to existing identity/aliasing and authority components.
+- added stale-reference exclusion components,
+- linked lifecycle identity/aliasing and capability authority assumptions.
 
-### Phase 3: theorem expansion ✅ completed
+### Workstream C — theorem expansion ✅
 
-- prove local preservation for new composition helpers,
-- prove composed preservation across lifecycle + capability bundles.
+- proved local preservation for composition helpers,
+- proved composed preservation including failure-path branches.
 
-### Phase 4: executable + testing growth ✅ completed
+### Workstream D — executable + fixture evidence ✅
 
-- add M4-B success/failure traces in `Main.lean`,
-- extend Tier 3 anchors to include M4-B theorem surfaces,
-- keep fixture updates minimal and intentional.
+- extended `Main.lean` with composed success/failure scenarios,
+- maintained fixture updates as intentional semantic anchors.
 
-### Phase 5: documentation closeout ✅ completed
+### Workstream E — test/doc synchronization ✅
 
-- update spec/development guide/GitBook pages,
-- publish explicit note on what is deferred to M5,
-- align Tier 3/Tier 4 testing notes and triage entrypoints with script-level checks.
+- expanded Tier 3 symbol anchors,
+- aligned roadmap and planning docs for next-slice kickoff.
 
-## Exit signals for M4-B
+## Exit signals satisfied
 
-- required gates remain green,
-- lifecycle-capability composition theorem surfaces compile,
-- fixture updates are intentional and explained,
-- docs include post-M4 direction and M5 preparation notes.
+- composition theorem surfaces compile,
+- stale-reference safety is explicit and machine-checked,
+- fixtures and Tier 3 anchors track claimed behavior,
+- documentation now includes concrete M5 planning details.
 
-## M4-B success outcomes for the broader roadmap
+## Handoff to M5 (next-slice implications)
 
-When M4-B exits successfully, the project should be ready to:
+M4-B reduces expected M5 churn by providing:
 
-1. model service restart/isolation workflows with stronger safety assumptions,
-2. introduce policy-facing authority constraints with less theorem churn,
-3. move architecture-binding work into explicit interfaces rather than hidden assumptions.
+1. deterministic lifecycle-capability base transitions,
+2. reusable stale-reference vocabulary for service-level policy checks,
+3. precedent for proving failure paths as first-class outcomes,
+4. stable executable evidence patterns for orchestration scenarios.
 
+## M5 readiness checklist
 
-## Detailed deliverable map
+Before opening M5 implementation PRs, contributors should verify:
 
-### D1. Composition transition API surface
+1. target transition can be expressed using existing lifecycle/capability helpers,
+2. new invariants are introduced as narrow components (not monolithic bundles),
+3. local-preservation theorem names follow repository conventions,
+4. intended trace outputs are represented in fixture strategy,
+5. docs identify which M5 target outcome the change advances.
 
-Expected characteristics:
+## Developer takeaway
 
-- explicit authority/state/reference validation order,
-- deterministic result shape for success and each failure case,
-- helper theorems that make result-case proof scripts concise.
-
-### D2. Stale-reference exclusion invariant family
-
-Expected characteristics:
-
-- narrow invariant components instead of one mega definition,
-- explicit dependency links to lifecycle identity/aliasing and capability authority invariants,
-- theorem assumptions phrased for reuse in M5 policy layering.
-
-### D3. Proof surface completion
-
-Expected characteristics:
-
-- local preservation theorem per transition,
-- composed preservation theorem(s) over lifecycle + capability bundles,
-- explicit failure-path preservation statements.
-
-### D4. Evidence and regression guardrails
-
-Expected characteristics:
-
-- executable scenarios for composed success/failure behavior,
-- fixture anchors for stable semantic fragments,
-- Tier 3 symbol anchors for new M4-B theorem surfaces.
-
-## Dependencies and critical path
-
-1. D1 must land before D3 can stabilize.
-2. D2 should land before final composed theorem statements are frozen.
-3. D4 should land after D1/D3 behavior settles to minimize fixture churn.
-
-## Exit review questions
-
-Maintainers should be able to answer “yes” to all:
-
-1. Are stale references excluded after lifecycle+capability composition transitions?
-2. Are failure paths as rigorously preserved as success paths?
-3. Does executable evidence clearly represent composed behavior?
-4. Are M4-B claims continuously protected by Tier 3 anchors?
+M4-B is now a completed hardening slice. New work should consume M4-B surfaces as dependency
+contracts, not reopen them unless a soundness bug is identified.

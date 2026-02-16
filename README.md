@@ -95,6 +95,16 @@ M5 kickoff goals are now documented around three readiness tracks:
 
 See `docs/gitbook/14-m4b-execution-playbook.md` for detailed workstream guidance and exit checklists.
 
+## How teams can use seLe4n today
+
+1. **Semantics prototyping** — model and evaluate transition changes before implementation lock-in.
+2. **Proof-backed regression control** — tie theorem surfaces and executable traces to test tiers.
+3. **Authority/policy design analysis** — reason about lifecycle-capability behavior under constraints.
+4. **Formal-methods onboarding** — use milestone slices as a practical Lean learning progression.
+5. **Pre-hardware assurance planning** — validate assumptions in architecture-neutral form first.
+
+For expanded adoption guidance, see `docs/gitbook/15-m5-blueprint-and-project-usage.md`.
+
 ## Codebase reasoning quick map
 
 For developers trying to understand where logic lives today:
