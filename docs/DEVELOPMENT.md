@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active, steps 1-4 completed)**.
+Current stage: **M4-A lifecycle/retype foundations (active, steps 1-5 completed)**.
 
 Primary goals for contributors:
 
@@ -56,9 +56,9 @@ Unless intentionally redesigned and documented, preserve:
    - transition-local lookup/membership lemmas are now defined near lifecycle transition code,
    - lifecycle proofs reuse helper theorems instead of repeating transition case-analysis.
 
-5. **Preservation theorem entrypoints**
-   - prove local component preservation first,
-   - then compose with existing capability/scheduler/IPC bundles.
+5. **Preservation theorem entrypoints** ✅ **completed**
+   - local lifecycle component preservation entrypoints are now machine-checked,
+   - composed entrypoints now bridge lifecycle with existing scheduler/capability/IPC bundle layers.
 
 6. **Executable demonstration + fixture update**
    - extend `Main.lean` for lifecycle success path,
@@ -148,7 +148,7 @@ If a command is blocked by environment limitations, report the limitation and im
 - [ ] Scope fits one coherent milestone slice.
 - [ ] Transition APIs expose explicit success/error branching.
 - [ ] New invariants are named and documented.
-- [ ] Preservation theorem entrypoints compile.
+- [x] Preservation theorem entrypoints compile.
 - [ ] `lake build` executed.
 - [ ] `lake exe sele4n` executed.
 - [ ] Hygiene scan executed.

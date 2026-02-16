@@ -12,7 +12,7 @@ It defines:
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 
-Current stage: **active M4-A lifecycle/retype foundations (steps 1-4 complete)**.
+Current stage: **active M4-A lifecycle/retype foundations (steps 1-5 complete)**.
 
 ---
 
@@ -159,7 +159,7 @@ When milestone scope or theorem/API surfaces change:
 
 - [ ] New/updated transition definitions for claimed slice are present.
 - [ ] Invariant components are named and integrated into bundle structure.
-- [ ] Preservation theorem entrypoints compile.
+- [x] Preservation theorem entrypoints compile.
 - [ ] `lake build` executed successfully.
 - [ ] `lake exe sele4n` executed successfully.
 - [ ] Hygiene scan (`axiom|sorry|TODO`) executed and clean.

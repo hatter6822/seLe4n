@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.Lifecycle.Invariant
 
 namespace SeLe4n.Kernel
 
@@ -112,6 +113,11 @@ theorem cspaceRevoke_local_target_reduction
                           some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
                         else
                           st.lifecycle.objectTypes oid
+                    capabilityRefs := fun ref =>
+                      if ref.cnode = addr.cnode then
+                        ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
+                      else
+                        st.lifecycle.capabilityRefs ref
                 }
             }
           have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
@@ -254,6 +260,11 @@ theorem cspaceRevoke_preserves_source
                               some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
                             else
                               st.lifecycle.objectTypes oid
+                        capabilityRefs := fun ref =>
+                          if ref.cnode = addr.cnode then
+                            ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
+                          else
+                            st.lifecycle.capabilityRefs ref
                     }
                 }
               have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
@@ -461,6 +472,110 @@ theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState)
 This is the step-4 composition target for active-slice endpoint/scheduler coupling. -/
 def m35IpcSchedulerInvariantBundle (st : SystemState) : Prop :=
   m3IpcSeedInvariantBundle st ∧ ipcSchedulerCoherenceComponent st
+
+/-- M4-A composed bundle entrypoint:
+M3.5 IPC+scheduler composition plus lifecycle metadata/invariant obligations. -/
+def m4aLifecycleInvariantBundle (st : SystemState) : Prop :=
+  m35IpcSchedulerInvariantBundle st ∧ lifecycleInvariantBundle st
+
+theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : schedulerInvariantBundle st)
+    (hCurrentValid : currentThreadValid st')
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    lifecycle_storeObject_scheduler_eq st st' target newObj hStore
+  rcases hInv with ⟨hQueue, hRunUnique, _hCurrent⟩
+  exact ⟨by simpa [hSchedEq] using hQueue, by simpa [hSchedEq] using hRunUnique, hCurrentValid⟩
+
+theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : capabilityInvariantBundle st)
+    (_hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+theorem lifecycleRetypeObject_preserves_ipcInvariant
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : ipcInvariant st)
+    (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    ipcInvariant st' := by
+  intro oid ep hEndpoint
+  by_cases hEq : oid = target
+  · subst hEq
+    have hObjAtTarget : st'.objects oid = some newObj := by
+      rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
+        ⟨_, _, _, _, _, _, hStore⟩
+      exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
+    rw [hObjAtTarget] at hEndpoint
+    cases hNewObj : newObj with
+    | tcb _ =>
+        rw [hNewObj] at hEndpoint
+        cases hEndpoint
+    | cnode _ =>
+        rw [hNewObj] at hEndpoint
+        cases hEndpoint
+    | endpoint newEp =>
+        rw [hNewObj] at hEndpoint
+        cases hEndpoint
+        exact hNewObjEndpointInv ep hNewObj
+  · have hPreserved : st'.objects oid = st.objects oid :=
+      lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
+    have hEndpointSt : st.objects oid = some (.endpoint ep) := by simpa [hPreserved] using hEndpoint
+    exact hInv oid ep hEndpointSt
+
+theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : m3IpcSeedInvariantBundle st)
+    (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hCurrentValid : currentThreadValid st')
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    m3IpcSeedInvariantBundle st' := by
+  rcases hInv with ⟨hSched, hCap, hIpc⟩
+  refine ⟨?_, ?_, ?_⟩
+  · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
+      hCurrentValid hStep
+  · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap hStep
+  · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hStep
+
+theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : m4aLifecycleInvariantBundle st)
+    (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hCurrentValid : currentThreadValid st')
+    (hCoherence' : ipcSchedulerCoherenceComponent st')
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    m4aLifecycleInvariantBundle st' := by
+  rcases hInv with ⟨hM35, hLifecycle⟩
+  rcases hM35 with ⟨hM3, _hCoherence⟩
+  have hM3' : m3IpcSeedInvariantBundle st' :=
+    lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle st st' authority target newObj hM3
+      hNewObjEndpointInv hCurrentValid hStep
+  have hLifecycle' : lifecycleInvariantBundle st' :=
+    SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
+      newObj hLifecycle hStep
+  exact ⟨⟨hM3', hCoherence'⟩, hLifecycle'⟩
 
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)

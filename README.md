@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-4 complete)** after completing M3.5
+seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-5 complete)** after completing M3.5
 IPC handshake + scheduler coherence.
 
 ### Milestone board
@@ -17,9 +17,8 @@ IPC handshake + scheduler coherence.
 - ✅ **M3.5 complete**: typed waiting/handshake behavior, scheduler coherence contract predicates,
   composed IPC+scheduler invariant bundle, local-first preservation theorem layering, executable
   waiting-to-delivery trace evidence.
-- 🚧 **M4 current slice in progress**: object lifecycle/retype foundations and capability-object
-  coupling safety (with state-model preparation, deterministic lifecycle transition branching,
-  lifecycle invariant definitions, and transition-local helper lemmas completed).
+- ✅ **M4-A current slice complete**: object lifecycle/retype foundations now include local lifecycle
+  preservation entrypoints and composed scheduler/capability/IPC + lifecycle bundle theorem entrypoints.
 - 📍 **M4 next slice planned**: lifecycle + revocation composition, richer invariants, and expanded
   executable scenarios.
 
@@ -55,12 +54,11 @@ Deep technical chapters for implementation work:
 4. Add preservation theorem entrypoints for each lifecycle transition.
 5. Extend executable evidence (`Main.lean`) and Tier 2 trace fixtures for lifecycle behavior.
 
-Progress note (steps 1-4): lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
-capability references, CSpace insert/delete/revoke transitions keep those references synchronized,
-`lifecycleRetypeObject` provides deterministic success/error branching with explicit illegal-state and
-illegal-authority outcomes, and step-3 now defines narrow lifecycle invariants with explicit separation
-between identity/aliasing constraints (`lifecycleIdentityAliasingInvariant`) and capability-reference
-constraints (`lifecycleCapabilityReferenceInvariant`), and step-4 adds lifecycle-local lookup/membership helper lemmas to avoid duplicated transition case-analysis across proofs.
+Progress note (steps 1-5): lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
+capability references (including store-time synchronization when a CNode is updated), `lifecycleRetypeObject`
+retains deterministic success/error branching, lifecycle invariants remain narrowly layered, and M4-A now
+includes theorem entrypoints for local lifecycle preservation plus composed scheduler/capability/IPC/lifecycle
+bundle preservation under explicit endpoint/scheduler side conditions.
 
 ## Next slice target outcomes (M4-B)
 
