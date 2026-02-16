@@ -61,18 +61,18 @@ error branching.
 **Exit signal**
 - achieved: adapter entrypoints compile and preserve transition-level determinism expectations (`adapterAdvanceTimer_deterministic`).
 
-### WS-M6-C — Proof-layer integration
+### WS-M6-C — Proof-layer integration ✅ **completed**
 
 **Objective:** Integrate adapter assumptions with existing theorem bundles (scheduler,
 capability, IPC, lifecycle, service).
 
 **Primary deliverables**
-- local preservation theorems for boundary-facing operations,
-- composed preservation hooks from adapter contracts into bundle-level invariants,
-- explicit failure-path preservation statements for denied/unsupported adapter conditions.
+- local preservation theorems for boundary-facing operations are implemented in `SeLe4n/Kernel/Architecture/Invariant.lean`,
+- composed preservation hooks from adapter contracts into bundle-level invariants are exposed through `proofLayerInvariantBundle`,
+- explicit failure-path preservation statements exist for denied/unsupported adapter conditions (`adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle`, `adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle`).
 
 **Exit signal**
-- new theorem surfaces are importable without reworking M1–M5 invariant layout.
+- achieved: theorem surfaces are importable via `SeLe4n/Kernel/API.lean` and `SeLe4n.lean` without reworking M1–M5 invariant layout.
 
 ### WS-M6-D — Evidence, traces, and test anchors
 
@@ -108,7 +108,7 @@ handoff.
 |---|---|---|---|
 | Explicit architecture assumptions | WS-M6-A, WS-M6-E | `lake build`, `./scripts/test_tier3_invariant_surface.sh` | Interfaces and symbols are discoverable and anchored |
 | Adapter semantics and error handling | WS-M6-B | `./scripts/test_fast.sh`, `lake exe sele4n` | Deterministic success/failure behavior is executable |
-| Proof compositionality across boundary | WS-M6-C | `lake build`, `./scripts/test_full.sh` | Local + composed theorems compile and remain layered |
+| Proof compositionality across boundary | WS-M6-C ✅ completed | `lake build`, `./scripts/test_full.sh` | Local + composed theorems compile and remain layered |
 | Regression-safe evidence growth | WS-M6-D | `./scripts/test_smoke.sh`, `./scripts/test_nightly.sh` | Fixture and nightly checks validate expected traces |
 | Slice handoff coherence | WS-M6-E | docs review + CI-required set | Spec/README/DEVELOPMENT/GitBook all match |
 

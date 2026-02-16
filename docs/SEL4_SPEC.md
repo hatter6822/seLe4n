@@ -272,8 +272,8 @@ M6 work is tracked through the following workstreams:
    - deterministic adapter behavior now lands in `SeLe4n/Kernel/Architecture/Adapter.lean`,
    - unsupported/invalid bound-context branches are explicit via `mapAdapterError` and adapter entrypoints,
    - runtime boundary contracts provide decidability witnesses so adapter branching is executable.
-3. **WS-M6-C — proof integration**
-   - connect adapter assumptions to local and composed invariant preservation theorem surfaces.
+3. **WS-M6-C — proof integration** ✅ **completed**
+   - adapter assumptions are connected to local and composed invariant-preservation hooks in `SeLe4n/Kernel/Architecture/Invariant.lean` via `proofLayerInvariantBundle` and adapter-path preservation theorems.
 4. **WS-M6-D — evidence + test anchor continuity**
    - extend executable traces, fixtures, and Tier 3 symbol checks for new claims.
 5. **WS-M6-E — docs + handoff packaging**

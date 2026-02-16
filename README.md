@@ -5,7 +5,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A and WS-M6-B completed; WS-M6-C through WS-M6-E in progress).
+- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-C completed; WS-M6-D and WS-M6-E in progress).
 - **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A through WS-M5-F completed).
 - **First real-hardware architecture focus:** Raspberry Pi 5 (post-M6 binding path).
 
@@ -63,6 +63,7 @@ lake exe sele4n
 - `SeLe4n/Kernel/Service/*.lean` — service orchestration transitions and policy-surface invariants.
 - `SeLe4n/Kernel/Architecture/Assumptions.lean` — WS-M6-A assumption inventory, typed contract references (`ContractRef`), architecture-boundary contract skeletons, and runtime-branch decidability witnesses used by adapters.
 - `SeLe4n/Kernel/Architecture/Adapter.lean` — WS-M6-B deterministic adapter APIs (`adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory`) with explicit bound-context error mapping.
+- `SeLe4n/Kernel/Architecture/Invariant.lean` — WS-M6-C proof-layer integration hooks (`proofLayerInvariantBundle`) and local/composed preservation theorems for adapter success/failure paths.
 - `Main.lean` — executable scenario traces.
 
 ## License
