@@ -46,12 +46,17 @@ failure paths).
 - `SeLe4n/Model/State.lean`
 - `SeLe4n/Kernel/Lifecycle/*` (only if bridge helpers are required)
 
-### WS-M5-B — Orchestration transitions
+### WS-M5-B — Orchestration transitions ✅ **completed**
 
 **Deliverables**
 - start/stop/restart transition helpers,
 - explicit failure outcomes (policy denial, dependency violation, invalid state),
 - deterministic transition-order assumptions.
+
+**Completion status**
+- implemented in `SeLe4n/Kernel/Service/Operations.lean` as `serviceStart`, `serviceStop`, and `serviceRestart`,
+- explicit `policyDenied` and `dependencyViolation` outcomes are now modeled in `KernelError`,
+- staged-order theorem coverage now includes both success and error composition helpers for restart.
 
 **Expected file touch areas**
 - `SeLe4n/Kernel/*/Operations.lean` (new service module or existing integration layer)

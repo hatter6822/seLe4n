@@ -8,6 +8,8 @@ inductive KernelError where
   | objectNotFound
   | illegalState
   | illegalAuthority
+  | policyDenied
+  | dependencyViolation
   | schedulerInvariantViolation
   | endpointStateMismatch
   | endpointQueueEmpty

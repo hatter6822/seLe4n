@@ -7,7 +7,7 @@ foundation.
 
 ## Current status
 
-- **Slice state:** active implementation (WS-M5-A completed; WS-M5-B onward in progress).
+- **Slice state:** active implementation (WS-M5-A and WS-M5-B completed; WS-M5-C onward in progress).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -16,7 +16,7 @@ foundation.
 1. service dependency graph representation and deterministic transition helpers,
 2. policy-aware authority predicates connected to lifecycle/capability checks,
 3. local and composed preservation theorems (including failure-path branches),
-4. executable traces and fixture anchors for restart/isolation/dependency-failure stories,
+4. executable traces and fixture anchors for restart/stop-policy/isolation/dependency-failure stories,
 5. Tier 3 symbol anchors for M5 theorem and invariant surfaces.
 
 ## Workstream map
@@ -25,21 +25,25 @@ foundation.
 
 Service identity, status, dependency, isolation, and deterministic state helpers are now implemented in the model layer.
 
-### WS-M5-B — policy and authority layer
+### WS-M5-B — orchestration transitions ✅ **completed**
 
-Introduce narrow policy predicates and explicit denial behavior without coupling policy to single
-service stories.
+Deterministic `serviceStart`, `serviceStop`, and `serviceRestart` transitions are implemented with
+explicit `policyDenied`, `dependencyViolation`, and `illegalState` failure branches.
 
-### WS-M5-C — proof completion
+### WS-M5-C — policy and authority layer
+
+Introduce reusable policy predicates and bridge lemmas without coupling policy logic to mutation.
+
+### WS-M5-D — proof completion
 
 Land local preservation first, then composed preservation across service + lifecycle + capability
 bundles.
 
-### WS-M5-D — evidence and testing
+### WS-M5-E — evidence and testing
 
 Expose scenarios in `Main.lean`, refresh fixtures intentionally, and extend Tier 3/Tier 4 coverage.
 
-### WS-M5-E — documentation and closeout
+### WS-M5-F — documentation and closeout
 
 Keep README/spec/GitBook synchronized in the same PR sequence as semantics/proofs/tests.
 

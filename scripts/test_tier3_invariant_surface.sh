@@ -151,10 +151,39 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState' 
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_object' SeLe4n/Kernel/Lifecycle/Operations.lean
 
+# M5-B orchestration transition anchors must remain present.
+run_check "INVARIANT" rg -n '^def serviceStart' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceStop' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceRestart' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceStart_error_policyDenied' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceStart_error_dependencyViolation' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceStop_error_policyDenied' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceStop_error_illegalState' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_of_stop_error' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_of_start_error' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_ok_implies_staged_steps' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/State.lean
+
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'serviceStart svcApi allowAll' Main.lean
+run_check "TRACE" rg -n 'service start denied branch' Main.lean
+run_check "TRACE" rg -n 'service start dependency branch' Main.lean
+run_check "TRACE" rg -n 'service restart status' Main.lean
+run_check "TRACE" rg -n 'service stop denied branch' Main.lean
+run_check "TRACE" rg -n 'service stop illegal-state branch' Main.lean
+run_check "TRACE" rg -n 'service restart stop-stage failure' Main.lean
+run_check "TRACE" rg -n 'service restart start-stage failure' Main.lean
+run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service restart status: some' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service stop denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype success object kind' Main.lean

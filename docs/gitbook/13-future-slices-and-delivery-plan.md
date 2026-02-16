@@ -31,25 +31,31 @@ M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardenin
 - model restart intent and isolation boundaries,
 - expose deterministic helper transitions.
 
-#### WS-M5-B — Policy and authority layer
+#### WS-M5-B — Orchestration transitions ✅ **completed**
 
-- encode policy predicates over capability/lifecycle operations,
+- implement deterministic start/stop/restart transitions,
+- expose policy-denial/dependency-violation/invalid-state branches explicitly,
+- codify staged restart ordering in theorem surface.
+
+#### WS-M5-C — Policy and authority layer
+
+- encode reusable policy predicates over capability/lifecycle operations,
 - bridge policy checks to existing invariant bundles,
-- ensure policy denial paths are explicit and testable.
+- avoid coupling policy predicates to single-service mutation scripts.
 
-#### WS-M5-C — Proof completion
+#### WS-M5-D — Proof completion
 
 - local preservation for each service transition,
 - composed preservation across service + lifecycle + capability bundles,
 - failure-path theorem completion.
 
-#### WS-M5-D — Evidence and testing
+#### WS-M5-E — Evidence and testing
 
 - add scenario traces for restart and dependency failures,
 - add/adjust fixtures with rationale notes,
 - add Tier 3 anchors and nightly candidates.
 
-#### WS-M5-E — Documentation and closeout
+#### WS-M5-F — Documentation and closeout
 
 - align spec/README/GitBook with shipped behavior,
 - record M6 assumptions and deferred items,
@@ -112,5 +118,5 @@ Require all:
 ## 7. Contributor operating cadence
 
 1. **Per PR**: state current-slice outcome moved + next-slice unlock.
-2. **Per checkpoint**: map progress to M5 workstreams A-E.
+2. **Per checkpoint**: map progress to M5 workstreams A-F.
 3. **Per milestone closeout**: publish delivered outcomes, deferrals, and risk notes.

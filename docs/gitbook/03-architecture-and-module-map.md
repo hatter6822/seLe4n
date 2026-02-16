@@ -13,7 +13,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
    - global object store, scheduler state, typed lookup/store helpers,
    - shared error taxonomy (`KernelError`, including explicit illegal-state/authority lifecycle branches).
 
-3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`, `Kernel/Lifecycle`)**
+3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`, `Kernel/Lifecycle`, `Kernel/Service`)**
    - executable transition definitions,
    - local invariants and transition-preservation theorem entrypoints.
 
@@ -76,6 +76,13 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
   - explicit split between identity/aliasing and capability-reference constraints.
+
+### Service subsystem
+
+- `SeLe4n/Kernel/Service/Operations.lean`
+  - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
+  - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
+  - staged-order theorem surface for restart composition.
 
 ### API + executable
 

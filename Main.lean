@@ -7,6 +7,12 @@ def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 5 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
+def svcDb : ServiceId := 100
+def svcApi : ServiceId := 101
+def svcDenied : ServiceId := 102
+def svcBroken : ServiceId := 103
+def svcRestart : ServiceId := 104
+def svcRestartBroken : ServiceId := 105
 
 /-- Demonstrate a tiny executable path through scheduler + CSpace + IPC transitions.
 
@@ -57,6 +63,51 @@ def bootstrapState : SystemState :=
         some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
       else
         none
+    services := fun sid =>
+      if sid = svcDb then
+        some {
+          identity := { sid := svcDb, backingObject := 12, owner := 10 }
+          status := .running
+          dependencies := []
+          isolatedFrom := []
+        }
+      else if sid = svcApi then
+        some {
+          identity := { sid := svcApi, backingObject := 1, owner := 10 }
+          status := .stopped
+          dependencies := [svcDb]
+          isolatedFrom := []
+        }
+      else if sid = svcDenied then
+        some {
+          identity := { sid := svcDenied, backingObject := 1, owner := 10 }
+          status := .stopped
+          dependencies := []
+          isolatedFrom := []
+        }
+      else if sid = svcBroken then
+        some {
+          identity := { sid := svcBroken, backingObject := 1, owner := 10 }
+          status := .stopped
+          dependencies := [999]
+          isolatedFrom := []
+        }
+      else if sid = svcRestart then
+        some {
+          identity := { sid := svcRestart, backingObject := 12, owner := 10 }
+          status := .running
+          dependencies := [svcDb]
+          isolatedFrom := []
+        }
+      else if sid = svcRestartBroken then
+        some {
+          identity := { sid := svcRestartBroken, backingObject := 12, owner := 10 }
+          status := .running
+          dependencies := [999]
+          isolatedFrom := []
+        }
+      else
+        none
     scheduler := { runnable := [1, 2], current := none }
     lifecycle := {
       objectTypes := fun oid =>
@@ -82,6 +133,41 @@ def main : IO Unit := do
       | .error err => IO.println s!"source lookup error: {reprStr err}"
       | .ok (srcCap, _) =>
           IO.println s!"source cap rights before mint: {reprStr srcCap.rights}"
+      let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
+      let denyAll : SeLe4n.Kernel.ServicePolicy := fun _ => false
+      match SeLe4n.Kernel.serviceStart svcApi allowAll st1 with
+      | .error err => IO.println s!"service start api error: {reprStr err}"
+      | .ok (_, stServiceStart) =>
+          IO.println s!"service start api status: {reprStr <| (SeLe4n.Model.lookupService stServiceStart svcApi).map ServiceGraphEntry.status}"
+      match SeLe4n.Kernel.serviceStart svcDenied denyAll st1 with
+      | .error err => IO.println s!"service start denied branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service start success under denied policy"
+      match SeLe4n.Kernel.serviceStart svcBroken allowAll st1 with
+      | .error err => IO.println s!"service start dependency branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service start success with unsatisfied dependencies"
+      match SeLe4n.Kernel.serviceRestart svcRestart allowAll allowAll st1 with
+      | .error err => IO.println s!"service restart error: {reprStr err}"
+      | .ok (_, stRestarted) =>
+          IO.println s!"service restart status: {reprStr <| (SeLe4n.Model.lookupService stRestarted svcRestart).map ServiceGraphEntry.status}"
+      match SeLe4n.Kernel.serviceStop svcRestart denyAll st1 with
+      | .error err => IO.println s!"service stop denied branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service stop success under denied policy"
+      match SeLe4n.Kernel.serviceStop svcApi allowAll st1 with
+      | .error err => IO.println s!"service stop illegal-state branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service stop success from stopped state"
+      match SeLe4n.Kernel.serviceRestart svcRestart denyAll allowAll st1 with
+      | .error err => IO.println s!"service restart stop-stage failure: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service restart success when stop policy denies"
+      match SeLe4n.Kernel.serviceRestart svcRestartBroken allowAll allowAll st1 with
+      | .error err => IO.println s!"service restart start-stage failure: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected service restart success with broken dependencies"
+
       match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
           (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
       | .error err =>
