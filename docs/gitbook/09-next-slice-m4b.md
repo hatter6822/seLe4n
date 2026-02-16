@@ -25,7 +25,7 @@ when they interact with authority-changing capability operations in realistic wo
 - codified a deterministic transition story spanning lifecycle and revoke/delete behavior,
 - made ordering assumptions explicit in transition API and theorem statements.
 
-### Phase 2: invariant hardening
+### Phase 2: invariant hardening ✅ completed
 
 - define stale-reference exclusion invariants,
 - tie those invariants to existing identity/aliasing and authority components.

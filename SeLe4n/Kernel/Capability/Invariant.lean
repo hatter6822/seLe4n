@@ -53,6 +53,19 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
     lifecycleAuthorityMonotonicity st
 
+/-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
+monotonicity so composition proofs can depend on a single named assumption. -/
+def lifecycleCapabilityStaleAuthorityInvariant (st : SystemState) : Prop :=
+  lifecycleStaleReferenceExclusionInvariant st ∧ lifecycleAuthorityMonotonicity st
+
+theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
+    (st : SystemState)
+    (hLifecycle : lifecycleInvariantBundle st)
+    (hCap : capabilityInvariantBundle st) :
+    lifecycleCapabilityStaleAuthorityInvariant st := by
+  refine ⟨lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hLifecycle, ?_⟩
+  exact hCap.2.2.2
+
 /-- Delete transition authority reduction clause. -/
 theorem cspaceDeleteSlot_authority_reduction
     (st st' : SystemState)
