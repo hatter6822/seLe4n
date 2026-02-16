@@ -175,13 +175,14 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'Phase 3: theorem expansion ✅ completed' docs/gitbook/09-next-slice-m4b.md
-run_check "DOC" rg -n 'Phase 5: documentation closeout ✅ completed' docs/gitbook/09-next-slice-m4b.md
-run_check "DOC" rg -n 'Workstream B — Invariant hardening ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
-run_check "DOC" rg -n 'Workstream C — Preservation theorem expansion ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
-run_check "DOC" rg -n 'Workstream D — Executable and fixture evidence ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
-run_check "DOC" rg -n 'Workstream E — Testing and CI growth ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
+run_check "DOC" rg -n 'Active slice:|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-current-slice-m5.md
+run_check "DOC" rg -n 'M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md
+run_check "DOC" rg -n 'M4-B \(complete\)|Completed predecessor slice: M4-B' docs/SEL4_SPEC.md docs/gitbook/16-completed-slice-m4b.md docs/gitbook/09-current-slice-m5.md
+run_check "DOC" rg -n 'Workstream B — invariant hardening ✅' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstream C — preservation theorem expansion ✅' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstream D — executable \+ fixture evidence ✅' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstream E — testing and CI growth ✅' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
 # shellcheck disable=SC2016
 run_check "DOC" rg -n 'Tier 3 fails \(`\./scripts/test_tier3_invariant_surface\.sh`\)' docs/gitbook/07-testing-and-ci.md

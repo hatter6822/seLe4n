@@ -132,3 +132,28 @@ Copy this into M5 PR descriptions:
 - Historical predecessor: [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - Development workflow standards: [Development Workflow](06-development-workflow.md)
 - Testing contract: [Testing & CI](07-testing-and-ci.md)
+
+
+## 8. Fast-start command bundle (recommended per PR)
+
+```bash
+./scripts/test_fast.sh
+./scripts/test_smoke.sh
+./scripts/test_tier3_invariant_surface.sh
+./scripts/audit_testing_framework.sh
+```
+
+Use this sequence whenever an M5 PR adds or changes theorem/invariant claims so exit-readiness
+signals remain continuously provable.
+
+## 9. Coverage obligations matrix for M5
+
+Treat “full coverage” in this project as obligation coverage across these layers:
+
+1. **Build/proof closure:** `lake build` through Tier 1.
+2. **Executable semantic closure:** Tier 2 fixture anchors covering M5 stories.
+3. **Surface-anchor closure:** Tier 3 symbol checks for every new theorem/bundle/predicate claim.
+4. **Nightly confidence closure:** Tier 4 candidate replay/determinism checks during audits.
+5. **Negative-control closure:** audit script verifies Tier 2 fails on impossible expectations.
+
+A milestone claim is incomplete if any one obligation is missing, even if other layers pass.

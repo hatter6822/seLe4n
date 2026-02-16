@@ -6,8 +6,8 @@ This directory tracks fixture-backed executable trace checks used by
 ## Stage alignment
 
 - Closed baseline: M1-M3.5 (scheduler, capability, IPC handshake coherence).
-- Active stage: M4-B lifecycle-capability composition hardening (Workstream D complete).
-- Next stage: M4-B Workstream E testing-anchor expansion and M5 preparation.
+- Active stage: M5 service-graph + policy surface development.
+- Previous stage (closed): M4-B lifecycle-capability composition hardening (WS-A..WS-E complete).
 
 ## Fixture source
 
@@ -28,10 +28,10 @@ This directory tracks fixture-backed executable trace checks used by
    ./scripts/test_tier2_trace.sh
    ./scripts/test_smoke.sh
    ```
-4. Document why fixture changes are expected and which slice they support (M4-A or M4-B).
+4. Document why fixture changes are expected and which slice they support (M4-B closeout or M5 execution).
 
 
-## Current fixture rationale notes (M4-B Workstream D)
+## Current fixture rationale notes (M4-B closeout baseline)
 
 The smoke fixture captures stable semantic anchors rather than formatting-dependent text:
 
