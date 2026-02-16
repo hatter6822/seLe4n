@@ -53,9 +53,9 @@ The framework self-audit confirms both sides of correctness:
 
 As M6 progresses:
 
-1. introduce architecture-bound interfaces with explicit contracts,
-2. attach each new contract to theorem/invariant obligations,
-3. expand executable fixtures for assumption-boundary behaviors,
-4. keep documentation synchronized in the same PR as any stage change.
+1. keep architecture-bound interfaces and proof-layer obligations synchronized (WS-M6-A through WS-M6-C now complete),
+2. expand executable fixtures for assumption-boundary behaviors (WS-M6-D focus),
+3. keep documentation synchronized in the same PR as any stage change (WS-M6-E focus),
+4. preserve deterministic replay and anchor discoverability as hard non-regression gates.
 
 This preserves continuity from M5 completion while safely increasing architecture realism.

@@ -73,14 +73,15 @@ Implemented touch points:
 
 Outcome: explicit deterministic adapter entrypoints compile with bounded failure mapping for invalid/unsupported architecture-bound contexts, using runtime-contract decidability witnesses for executable branch selection.
 
-### M6 proof integration (WS-M6-C)
+### M6 proof integration (WS-M6-C) ✅ **completed**
 
-Likely touch points:
+Implemented touch points:
 
-- `*/Invariant.lean` modules,
-- composed bundle entrypoints in service/lifecycle/capability integrations.
+- `SeLe4n/Kernel/Architecture/Invariant.lean`,
+- `SeLe4n/Kernel/API.lean`,
+- `SeLe4n.lean`.
 
-Goal: local + composed preservation hooks over adapter assumptions.
+Outcome: adapter assumptions are connected to theorem-layer invariants through `proofLayerInvariantBundle`, with explicit local/composed preservation hooks for success and denied/unsupported failure paths.
 
 ### M6 evidence expansion (WS-M6-D)
 
