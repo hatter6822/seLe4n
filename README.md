@@ -5,8 +5,8 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-6 complete)** after completing M3.5
-IPC handshake + scheduler coherence.
+seLe4n is currently in **M4-B lifecycle-capability composition hardening (active slice kickoff)** after
+completing M4-A lifecycle/retype foundations.
 
 ### Milestone board
 
@@ -19,8 +19,8 @@ IPC handshake + scheduler coherence.
   waiting-to-delivery trace evidence.
 - ✅ **M4-A current slice complete**: object lifecycle/retype foundations now include local lifecycle
   preservation entrypoints and composed scheduler/capability/IPC + lifecycle bundle theorem entrypoints.
-- 📍 **M4 next slice planned**: lifecycle + revocation composition, richer invariants, and expanded
-  executable scenarios.
+- 🚧 **M4-B current slice active**: lifecycle + revocation composition hardening, stale-reference
+  exclusion, and expanded executable/testing coverage.
 
 ## Documentation hub (GitBook-ready)
 
@@ -30,6 +30,7 @@ Project documentation has been reorganized into a GitBook-compatible structure a
 - `docs/gitbook/SUMMARY.md` (book table of contents)
 - `docs/gitbook/02-microkernel-and-sel4-primer.md` (microkernel + seL4 concepts)
 - `docs/gitbook/10-path-to-real-hardware-mobile-first.md` (mobile-first hardware roadmap)
+- `docs/gitbook/13-future-slices-and-delivery-plan.md` (post-M4 planning and delivery path)
 
 Core references remain:
 
@@ -46,7 +47,7 @@ Deep technical chapters for implementation work:
 - `docs/gitbook/07-testing-and-ci.md` — exact tier responsibilities, triage flow, and script logging
   behavior (including color-coded prefixes in interactive terminals).
 
-## Current slice target outcomes (M4-A)
+## Completed slice outcomes (M4-A)
 
 1. Introduce typed lifecycle transition surface (deterministic retype branch now implemented).
 2. Define object identity and aliasing invariants for newly created/retyped objects.
@@ -60,7 +61,7 @@ retains deterministic success/error branching, lifecycle invariants remain narro
 cover local and composed lifecycle preservation, and executable/fixture evidence now includes the lifecycle
 unauthorized branch, illegal-state branch, and success-path object-kind confirmation.
 
-## Next slice target outcomes (M4-B)
+## Current slice target outcomes (M4-B)
 
 1. Compose lifecycle transitions with revoke/delete authority paths.
 2. Strengthen invariants for stale-reference exclusion and authority monotonicity across retype chains.
@@ -68,6 +69,30 @@ unauthorized branch, illegal-state branch, and success-path object-kind confirma
 4. Expand scenario coverage to include lifecycle rollback/error branches.
 5. Deepen Tier 3 checks for lifecycle-specific theorem/bundle surfaces.
 
+Next-slice (M5 preview) direction: service-graph semantics, policy-oriented authority constraints,
+and architecture-binding interfaces that preserve reusable core proofs while M4-B lands.
+
+
+## Current slice execution plan (M4-B)
+
+To move M4-B toward closeout, work should progress in this order:
+
+1. compose lifecycle transitions with revoke/delete semantics,
+2. formalize stale-reference exclusion invariant components,
+3. prove local then composed preservation including failure paths,
+4. extend executable scenarios + fixture anchors,
+5. add Tier 3 anchors for new theorem/bundle surfaces,
+6. close out docs with explicit M5 deferrals.
+
+## Next-slice readiness goals (M5 preview)
+
+M5 kickoff goals are now documented around three readiness tracks:
+
+1. service-graph semantics for restart/isolation stories,
+2. policy-oriented authority decomposition over existing bundles,
+3. architecture-binding interface assumptions without rewriting core proofs.
+
+See `docs/gitbook/14-m4b-execution-playbook.md` for detailed workstream guidance and exit checklists.
 
 ## Codebase reasoning quick map
 

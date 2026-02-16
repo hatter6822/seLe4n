@@ -1,47 +1,70 @@
-# Current Slice: M4-A Lifecycle/Retype Foundations
+# Completed Slice: M4-A Lifecycle/Retype Foundations
 
 ## Objective
 
 Add first-class lifecycle/retype semantics to the executable model and prove that capability/object
 relationships remain coherent through those updates.
 
+## Slice status
+
+M4-A is complete for its planned six-step scope and now serves as the stable launch point for M4-B.
+
 ## Detailed target outcomes
 
-## Implementation status
-
-- ✅ Step 1 complete: state-model lifecycle metadata is now explicit for object identity and
-  capability reference ownership mapping (including revoke-path sibling cleanup).
-- ✅ Step 2 complete: `lifecycleRetypeObject` adds deterministic success/error branching with
-  explicit `KernelError.illegalState` and `KernelError.illegalAuthority` branches, and executable
-  traces now cover both failure branches plus success.
-- ✅ Step 3 complete: lifecycle invariants are now defined as narrow named components with explicit
-  separation between identity/aliasing (`lifecycleIdentityAliasingInvariant`) and
-  capability-reference (`lifecycleCapabilityReferenceInvariant`) constraints.
-- ✅ Step 4 complete: transition-local helper lemmas now package lifecycle retype lookup and
-  runnable-membership transport facts near lifecycle operations, avoiding duplicated transition
-  case-analysis in downstream proofs.
-- ✅ Step 5 complete: lifecycle preservation theorem entrypoints now prove local lifecycle bundle
-  preservation first and compose with scheduler/capability/IPC bundles via an M4-A composed bundle
-  surface (`m4aLifecycleInvariantBundle`) with explicit endpoint/scheduler side-condition hooks.
-- ✅ Step 6 complete: `Main.lean` now demonstrates lifecycle retype unauthorized/illegal-state/success
-  paths, and `tests/fixtures/main_trace_smoke.expected` captures only stable semantic fragments for
-  Tier 2 matching.
-
-
 1. **Transition surface**
-   - at least one lifecycle operation with explicit success/error outcomes.
+   - at least one lifecycle operation with explicit success/error outcomes,
+   - deterministic semantics suitable for theorem-driven reasoning.
+
 2. **Identity discipline**
-   - invariants preventing illegal identity reuse and invalid aliasing.
+   - invariants preventing illegal identity reuse and invalid aliasing,
+   - clean separation between identity constraints and capability-reference constraints.
+
 3. **Capability coherence**
-   - invariants ensuring capabilities remain target-valid/type-compatible after transitions.
+   - invariants ensuring capabilities remain target-valid/type-compatible after transitions,
+   - authority assumptions preserved from M2 contracts.
+
 4. **Proof surface**
-   - transition-level preservation theorem entrypoints.
+   - transition-level preservation theorem entrypoints,
+   - composed lifecycle+existing-bundle theorem surface.
+
 5. **Executable evidence**
-   - scenario extension in `Main.lean` and fixture updates where behavior changes intentionally.
+   - scenario extension in `Main.lean`,
+   - fixture updates where behavior changes intentionally.
+
+## Implementation status snapshot
+
+- ✅ Step 1 complete: state-model lifecycle metadata is explicit for object identity and
+  capability-reference ownership mapping.
+- ✅ Step 2 complete: `lifecycleRetypeObject` includes deterministic success/error branches,
+  including illegal-state and illegal-authority behavior.
+- ✅ Step 3 complete: lifecycle invariants are narrow named components (`identity/aliasing` and
+  `capability-reference` families).
+- ✅ Step 4 complete: transition-local helper lemmas package lookup and membership transport facts.
+- ✅ Step 5 complete: local lifecycle preservation and composed bundle preservation entrypoints are
+  machine-checked.
+- ✅ Step 6 complete: executable traces and fixture anchors cover unauthorized, illegal-state, and
+  success paths.
+
+## What this slice unlocks
+
+M4-A unlocks M4-B by providing:
+
+1. stable lifecycle transition semantics to compose with capability revocation/deletion,
+2. reusable theorem entrypoints for stale-reference exclusion proofs,
+3. regression-friendly trace evidence that can be extended without rewriting baseline semantics.
+
+## Known deferrals (intentional)
+
+These remain out of scope for M4-A and should not be backfilled silently:
+
+- allocator policy internals,
+- architecture-specific MMU/ASID details,
+- large policy-engine redesign.
 
 ## Review heuristics
 
 - are failure branches explicit and deterministic?
 - are invariants narrow and named?
-- are preservation proofs layered local-first?
+- are preservation proofs layered local-first then composed?
 - is executable output still meaningful and stable?
+- does the PR state what it unlocks in M4-B?
