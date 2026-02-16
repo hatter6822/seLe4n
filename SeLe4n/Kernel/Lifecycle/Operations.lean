@@ -37,6 +37,39 @@ def lifecycleRetypeObject
         else
           .error .illegalState
 
+/-- Compose local revoke/delete cleanup with lifecycle retype.
+
+Authority and state preconditions for deterministic success:
+1. `authority ≠ cleanup` (delete-before-reuse ordering guard),
+2. `cleanup` must resolve to a capability so revoke/delete can execute,
+3. post-delete lookup of `cleanup` must return `invalidCapability`,
+4. lifecycle retype preconditions from `lifecycleRetypeObject` must hold.
+
+Failure branches remain explicit and ordered:
+- aliasing `authority = cleanup` is rejected as `illegalState`,
+- revoke/delete failures are propagated directly,
+- unexpected post-delete lookup success is rejected as `illegalState`,
+- final retype failures are propagated directly. -/
+def lifecycleRevokeDeleteRetype
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    if authority = cleanup then
+      .error .illegalState
+    else
+      match cspaceRevoke cleanup st with
+      | .error e => .error e
+      | .ok (_, stRevoked) =>
+          match cspaceDeleteSlot cleanup stRevoked with
+          | .error e => .error e
+          | .ok (_, stDeleted) =>
+              match cspaceLookupSlot cleanup stDeleted with
+              | .ok _ => .error .illegalState
+              | .error .invalidCapability =>
+                  lifecycleRetypeObject authority target newObj stDeleted
+              | .error e => .error e
+
 /- Local lifecycle transition helper lemmas (M4-A step 4).
 These theorems keep preservation scripts focused on invariant obligations rather than
 repeating transition case analysis. -/
@@ -216,5 +249,28 @@ theorem lifecycleRetypeObject_success_updates_object
   injection hCapLookup with hCapEq
   subst hCapEq
   exact lifecycle_storeObject_objects_eq st st' target newObj hStore
+
+theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias
+    (st : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hAlias : authority = cleanup) :
+    lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState := by
+  unfold lifecycleRevokeDeleteRetype
+  simp [hAlias]
+
+theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup
+    (st st' : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
+    authority ≠ cleanup := by
+  intro hAlias
+  have hErr := lifecycleRevokeDeleteRetype_error_authority_cleanup_alias
+    st authority cleanup target newObj hAlias
+  rw [hErr] at hStep
+  cases hStep
 
 end SeLe4n.Kernel

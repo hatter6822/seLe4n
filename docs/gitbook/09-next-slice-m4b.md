@@ -20,10 +20,10 @@ when they interact with authority-changing capability operations in realistic wo
 
 ## Proposed execution plan
 
-### Phase 1: semantic composition
+### Phase 1: semantic composition ✅ completed
 
-- codify at least one deterministic transition story spanning lifecycle and revoke/delete behavior,
-- make ordering assumptions explicit in transition API and theorem statements.
+- codified a deterministic transition story spanning lifecycle and revoke/delete behavior,
+- made ordering assumptions explicit in transition API and theorem statements.
 
 ### Phase 2: invariant hardening
 
