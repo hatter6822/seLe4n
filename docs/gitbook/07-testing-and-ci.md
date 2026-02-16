@@ -54,11 +54,11 @@ Type-checking alone can miss semantic regressions. Tier 2 fixture checks ensure 
 stories remain visible and intentional, especially for milestone claims tied to executable behavior
 (e.g., mint/revoke/delete and IPC handshake flows).
 
-## M4 closeout + M5 testing trajectory
+## M4-B and M5 closeout testing trajectory
 
 - **M4-A:** lifecycle semantic trace fragments are landed and fixture-backed in Tier 2 smoke coverage.
 - **M4-B:** WS-A/WS-B/WS-C/WS-D/WS-E are complete, including Tier 3 M4-B symbol anchors and staged Tier 4 nightly candidates.
-- **M5 (active; WS-M5-E complete):** Tier 2/Tier 3 now cover service restart/policy-denial/dependency-failure/isolation evidence, with Tier 4 candidates checking determinism plus M5 evidence-line anchors.
+- **M5 (complete; WS-M5-F complete):** Tier 2/Tier 3 cover service restart/policy-denial/dependency-failure/isolation evidence, with Tier 4 candidates checking determinism plus M5 evidence-line anchors as preserved baselines for M6.
 
 ## Practical failure triage
 

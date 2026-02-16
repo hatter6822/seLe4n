@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M5 service-graph + policy surface delivery (active implementation; WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; WS-M5-F in progress)**.
+Current stage: **M6 architecture-binding interface preparation (active) with M5 service-graph + policy delivery fully closed (WS-M5-A through WS-M5-F complete)**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 
@@ -14,8 +14,7 @@ Primary goals for contributors:
 - preserve theorem-entrypoint continuity across milestones,
 - ship narrow, reviewable slices,
 - keep docs synchronized with active and next slice plans,
-- deliver M5 service-level semantics and policy layering without regressing closed M1–M4-B
-  contracts.
+- deliver M6 architecture-binding interfaces without regressing closed M1–M5 contracts.
 
 ---
 
@@ -151,25 +150,25 @@ Before maintainers mark M4-B complete, verify:
 
 ---
 
-## 5. Current slice planning discipline (M5)
+## 5. Current slice planning discipline (M6)
 
-To reduce milestone thrash, each M5 PR should state how it advances M5 outcomes while preserving
+To reduce milestone thrash, each M6 PR should state how it advances M6 outcomes while preserving
 closed milestone contracts:
 
-1. service-graph-oriented semantics,
-2. policy-oriented authority decomposition,
-3. architecture-binding assumptions made explicit as interfaces.
+1. architecture-assumption interfaces that remain explicit and reviewable,
+2. adapter-surface theorem hooks that preserve M1–M5 layering,
+3. hardware-facing boundary assumptions documented as contracts.
 
 A lightweight “what this unlocks next” paragraph is now expected in milestone-moving PRs.
 
 
-### 5.1 M5 narrative standard
+### 5.1 M6 narrative standard
 
 For each milestone-moving PR, include a short section that states:
 
-1. what concrete M5 outcome moved,
+1. what concrete M6 outcome moved,
 2. what evidence command validates that movement,
-3. what dependency for the next slice (M6) is now unblocked.
+3. what post-M6 dependency is now unblocked.
 
 ---
 

@@ -4,8 +4,8 @@ This GitBook is the long-form documentation for seLe4n.
 
 ## Project stage snapshot
 
-- **Current slice:** M5 service-graph + policy surfaces (active; WS-M5-A/B/C/D/E complete, WS-M5-F in progress).
-- **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
+- **Current slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening.
+- **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A/B/C/D/E/F complete).
 
 Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance reference.
 
@@ -18,9 +18,9 @@ Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance
 3. [Architecture & Module Map](03-architecture-and-module-map.md)
 4. [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-### 2) Current slice execution
+### 2) Active planning + latest closeout
 
-5. [Current Slice: M5](09-current-slice-m5.md)
+5. [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 6. [Specification & Roadmap](05-specification-and-roadmap.md)
 7. [Development Workflow](06-development-workflow.md)
 8. [Testing & CI](07-testing-and-ci.md)

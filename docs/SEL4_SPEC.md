@@ -7,13 +7,13 @@ This document is the normative specification baseline for seLe4n.
 It defines:
 
 1. What milestone behavior is already closed and considered stable.
-2. The **current delivery slice** (M5) with concrete target outcomes.
-3. The **next delivery slice** preview (M6-directional) so work continues without roadmap drift.
+2. The **current delivery slice** (M6) with concrete target outcomes.
+3. The **next delivery slice** preview (post-M6 directional) so work continues without roadmap drift.
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; WS-M5-F closeout in progress)**.
+Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening (active) with M5 service-graph/policy workstreams WS-M5-A through WS-M5-F completed**.
 
 ---
 
@@ -26,14 +26,14 @@ Current stage: **M5 service-graph semantics and policy-oriented authority layeri
 - **M3.5 (complete)**: waiting/handshake IPC semantics + scheduler coherence contract.
 - **M4-A (complete)**: lifecycle/retype transition foundations + initial lifecycle invariants.
 - **M4-B (complete)**: lifecycle-capability composition hardening and richer scenario coverage.
-- **M5 (current slice)**: service-graph semantics and policy-oriented authority constraints.
-- **M6 (next slice preview)**: architecture-binding interfaces and hardware-facing assumption hardening.
+- **M5 (complete)**: service-graph semantics and policy-oriented authority constraints.
+- **M6 (current slice)**: architecture-binding interfaces and hardware-facing assumption hardening.
 
 ---
 
 ## 3. Stable baseline contracts (must not regress)
 
-The following contracts are considered stable and preserved while M5 evolves:
+The following contracts are considered stable and preserved while M6 evolves:
 
 1. M1 scheduler invariant bundle and entrypoint preservation theorems.
 2. M2 capability/CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and
@@ -201,11 +201,11 @@ A PR series claiming M4-B completion should include all of:
 
 ---
 
-## 6. Current slice: M5 service graph + policy surfaces
+## 6. Completed slice baseline: M5 service graph + policy surfaces
 
 ### 6.1 M5 target direction: service graph + policy surfaces
 
-The active milestone family (M5) targets operational realism while preserving theorem layering:
+The completed milestone family (M5) delivered operational realism while preserving theorem layering:
 
 1. model service restart/isolation stories that exercise lifecycle+IPC+capability composition,
 2. introduce policy-friendly authority constraints without replacing existing invariants,
@@ -218,7 +218,7 @@ The active milestone family (M5) targets operational realism while preserving th
 - invariant bundles expose reusable theorem surfaces for policy composition.
 
 
-### 6.3 M5 execution tracks (active)
+### 6.3 M5 execution tracks (completed)
 
 1. **Service-graph modeling track** ✅ **completed baseline**
    - service identity/status/dependency/isolation model and deterministic state helpers are implemented,
@@ -244,11 +244,23 @@ The active milestone family (M5) targets operational realism while preserving th
    - fixture anchors in `tests/fixtures/main_trace_smoke.expected` are updated with semantic intent
      rationale in `tests/scenarios/README.md`,
    - Tier 3 and Tier 4 candidate checks include M5 evidence-line anchors.
-6. **Architecture-binding track (M6 preview)**
-   - catalog architecture assumptions currently abstracted and define interface surfaces for future
-     binding work.
+6. **Documentation closeout track (WS-M5-F)** ✅ **completed baseline**
+   - spec/README/GitBook are synchronized to reflect M5 completion and M6 handoff,
+   - achieved outcomes and explicit M6 deferrals are documented as milestone boundaries.
 
-### 6.4 Risks and mitigations for the M4-B → M5 handoff
+### 6.4 M5 closeout outcomes and M6 deferrals
+
+M5 closeout delivers deterministic service orchestration semantics, policy-surface predicates,
+composed preservation theorem coverage, and fixture-backed executable evidence as stable baseline
+contracts for the next slice.
+
+M6 explicitly owns the deferred architecture-binding scope:
+
+1. make architecture assumptions first-class interface artifacts,
+2. define proof-carrying adapters from architecture-neutral semantics,
+3. harden hardware-facing boot/runtime boundary assumptions with explicit contracts.
+
+### 6.5 Risks and mitigations retained from the M4-B → M5 handoff
 
 1. **Risk: composition proofs become monolithic and brittle**
    - mitigation: require local-first preservation entrypoints before composed proof merges.
@@ -316,13 +328,13 @@ The current milestone contract spans these concrete module families:
    - `Main.lean` scenario path,
    - Tier 2 fixture-backed semantic fragment checks.
 
-M4 work must extend this surface without regressing any closed milestone contract.
+M6 work must extend this surface without regressing any closed milestone contract.
 
 ---
 
 ## 10. Documentation acceptance expectations
 
-A PR claiming meaningful M4-B progress must include:
+A PR claiming meaningful M6 progress must include:
 
 1. updates to normative docs (`README`, spec, development guide),
 2. updates to GitBook roadmap and slice pages affected by semantic change,

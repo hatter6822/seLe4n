@@ -1,13 +1,13 @@
-# Current Slice: M5 Service-Graph and Policy Surfaces
+# M5 Closeout Snapshot: Service-Graph and Policy Surfaces
 
 ## Objective
 
 M5 builds service-level operational semantics on top of the stabilized M4 lifecycle-capability
 foundation.
 
-## Current status
+## Slice status
 
-- **Slice state:** active implementation (WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E completed; WS-M5-F closeout in progress).
+- **Slice state:** completed (WS-M5-A through WS-M5-F completed).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -45,9 +45,9 @@ and composed bundle preservation is available through
 
 `Main.lean` now includes restart/denial/dependency failure plus isolation-edge evidence lines, fixture anchors include those semantic fragments, and Tier 3/Tier 4 checks validate the expanded evidence surface.
 
-### WS-M5-F — documentation and closeout
+### WS-M5-F — documentation and closeout ✅ **completed**
 
-Keep README/spec/GitBook synchronized in the same PR sequence as semantics/proofs/tests.
+README/spec/GitBook are synchronized and now explicitly mark M5 complete with M6 deferrals.
 
 ## Entry and guardrails
 
@@ -58,6 +58,18 @@ Before landing M5 PRs, verify:
 3. failure paths are explicit in semantics and theorem statements,
 4. trace/fixture deltas explain semantic intent,
 5. docs state what M5 target outcome advanced.
+
+## M5 achieved outcomes and M6 deferrals
+
+M5 achieved deterministic service-graph orchestration semantics, policy/capability/lifecycle bridge
+lemmas, composed preservation theorem surfaces, and fixture-backed evidence across success/failure
+stories.
+
+Deferred to M6:
+
+1. architecture-binding interface definitions,
+2. hardware-facing contract hardening for boot/runtime boundaries,
+3. adapter-layer theorem packaging for architecture-specific assumptions.
 
 ## Related chapters
 

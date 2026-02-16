@@ -23,7 +23,7 @@ Contributors should treat these as established contracts:
 4. executable trace anchors for lifecycle and composition stories,
 5. Tier 3 symbol checks for critical theorem/bundle surfaces.
 
-## 3. Next slice definition: M5
+## 3. Completed slice definition: M5
 
 M5 scope is to model **service-level operational stories** on top of M4 semantics.
 
@@ -46,7 +46,7 @@ M5 scope is to model **service-level operational stories** on top of M4 semantic
 - no full seL4 boot pipeline modeling,
 - no replacement of M1-M4 theorem interfaces unless required for soundness.
 
-## 4. Workstreams for completing M5
+## 4. M5 closeout summary (all workstreams complete)
 
 ### Workstream A — Service graph model and transition API
 
@@ -96,7 +96,7 @@ Exit signal:
 
 - `test_smoke` + `test_full` remain green with stable, intentional fixture deltas.
 
-### Workstream E — Documentation + milestone closeout
+### Workstream E — Documentation + milestone closeout ✅ **complete**
 
 Deliver:
 
@@ -138,7 +138,9 @@ This sequencing minimizes churn and keeps proof updates aligned with behavior ch
 
 ## 8. Cross-reference index
 
-- [Current Slice: M5](09-current-slice-m5.md)
+For current execution planning, use M6-focused roadmap chapters after this M5 closeout baseline.
+
+- [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 - [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)

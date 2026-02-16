@@ -5,8 +5,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M5 service-graph + policy surfaces (WS-M5-A service graph model, WS-M5-B orchestration transitions, WS-M5-C policy surfaces, WS-M5-D proof package, and WS-M5-E evidence/testing completed; WS-M5-F closeout in progress).
-- **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
+- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening.
+- **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A through WS-M5-F completed).
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
@@ -16,7 +16,7 @@ For normative milestones, acceptance criteria, and scope decisions, use
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
-- **Current slice handbook chapter:** [`docs/gitbook/09-current-slice-m5.md`](docs/gitbook/09-current-slice-m5.md)
+- **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
 - **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
 - **Project usage/value guide:** [`docs/gitbook/17-project-usage-value.md`](docs/gitbook/17-project-usage-value.md)
 - **Architecture and module map:** [`docs/gitbook/03-architecture-and-module-map.md`](docs/gitbook/03-architecture-and-module-map.md)

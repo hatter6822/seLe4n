@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-This document defines the active testing baseline and near-term expansion path for the M5 stage.
+This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **M5 service-graph + policy surface delivery active (WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; M4-B fully closed)**.
+Current stage context: **M5 service-graph + policy surface delivery is complete (WS-M5-A through WS-M5-F complete); testing now gates M6 architecture-binding prep without regressing M1–M5 contracts**.
 
 ## 2. Current enforced tiers
 
