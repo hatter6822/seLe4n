@@ -1,5 +1,12 @@
 scheduled thread: some 1
-source cap rights before mint:
+source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+adapter timer success path value: 2
+adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
+adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
+adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
+adapter read success path byte: 0
+adapter register write success path value: 99
+adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
 service start api status: some (SeLe4n.Model.ServiceStatus.running)
 service start denied branch: SeLe4n.Model.KernelError.policyDenied
 service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
@@ -24,4 +31,4 @@ queued two senders on endpoint
 endpoint receive #1 sender: 1
 endpoint receive #2 sender: 2
 endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
-minted cap rights:
+minted cap rights: [SeLe4n.Model.AccessRight.read]

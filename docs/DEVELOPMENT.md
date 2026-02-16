@@ -177,8 +177,11 @@ Use this workstream mapping for implementation planning and review checklists:
 1. **WS-M6-A — assumption inventory and boundary extraction** ✅ **completed**
    - architecture assumptions are now explicit interface artifacts in `SeLe4n/Kernel/Architecture/Assumptions.lean` (`ArchAssumption`, `ContractRef`),
    - extracted assumptions are mapped to transition and invariant surfaces for reviewable boundary ownership.
-2. **WS-M6-B — interface API and adapter semantics**
-   - define deterministic adapter behavior with explicit errors.
+2. **WS-M6-B — interface API and adapter semantics** ✅ **completed**
+   - deterministic adapter APIs are now explicit in `SeLe4n/Kernel/Architecture/Adapter.lean`,
+   - unsupported/invalid bound-context cases map through `mapAdapterError`,
+   - runtime contracts carry explicit decidability witnesses for executable branch selection,
+   - boundary state updates are deterministic via `advanceTimerState` and `writeRegisterState`.
 3. **WS-M6-C — proof-layer integration**
    - add local + composed preservation hooks over adapter assumptions.
 4. **WS-M6-D — evidence and test-surface expansion**

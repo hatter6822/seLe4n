@@ -44,6 +44,9 @@ structure RuntimeBoundaryContract where
   timerMonotonic : SystemState → SystemState → Prop
   registerContextStable : SystemState → SystemState → Prop
   memoryAccessAllowed : SystemState → SeLe4n.PAddr → Prop
+  timerMonotonicDecidable : ∀ st st', Decidable (timerMonotonic st st')
+  registerContextStableDecidable : ∀ st st', Decidable (registerContextStable st st')
+  memoryAccessAllowedDecidable : ∀ st addr, Decidable (memoryAccessAllowed st addr)
 
 /-- Typed interrupt-boundary contract skeleton consumed by IRQ adapter paths. -/
 structure InterruptBoundaryContract where

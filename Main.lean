@@ -124,6 +124,41 @@ def bootstrapState : SystemState :=
     }
   }
 
+
+
+def runtimeContractAcceptAll : SeLe4n.Kernel.Architecture.RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
+    registerContextStable := fun _ _ => True
+    memoryAccessAllowed := fun _ _ => True
+    timerMonotonicDecidable := by
+      intro st st'
+      infer_instance
+    registerContextStableDecidable := by
+      intro st st'
+      infer_instance
+    memoryAccessAllowedDecidable := by
+      intro st addr
+      infer_instance
+  }
+
+def runtimeContractDenyAll : SeLe4n.Kernel.Architecture.RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun _ _ => False
+    registerContextStable := fun _ _ => False
+    memoryAccessAllowed := fun _ _ => False
+    timerMonotonicDecidable := by
+      intro st st'
+      infer_instance
+    registerContextStableDecidable := by
+      intro st st'
+      infer_instance
+    memoryAccessAllowedDecidable := by
+      intro st addr
+      infer_instance
+  }
+
+
 def main : IO Unit := do
   match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"scheduler error: {reprStr err}"
@@ -133,6 +168,34 @@ def main : IO Unit := do
       | .error err => IO.println s!"source lookup error: {reprStr err}"
       | .ok (srcCap, _) =>
           IO.println s!"source cap rights before mint: {reprStr srcCap.rights}"
+      match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractAcceptAll 2 st1 with
+      | .error err => IO.println s!"adapter timer success path error: {reprStr err}"
+      | .ok (_, stTimer) =>
+          IO.println s!"adapter timer success path value: {reprStr stTimer.machine.timer}"
+      match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractAcceptAll 0 st1 with
+      | .error err => IO.println s!"adapter timer invalid-context branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected adapter timer success with zero ticks"
+      match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractDenyAll 1 st1 with
+      | .error err => IO.println s!"adapter timer unsupported branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected adapter timer success under denied contract"
+      match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractDenyAll 0 st1 with
+      | .error err => IO.println s!"adapter read denied branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected adapter read success under denied contract"
+      match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll 0 st1 with
+      | .error err => IO.println s!"adapter read success path error: {reprStr err}"
+      | .ok (byte, _) =>
+          IO.println s!"adapter read success path byte: {reprStr byte}"
+      match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll 7 99 st1 with
+      | .error err => IO.println s!"adapter register write success path error: {reprStr err}"
+      | .ok (_, stReg) =>
+          IO.println s!"adapter register write success path value: {reprStr <| SeLe4n.readReg stReg.machine.regs 7}"
+      match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll 7 99 st1 with
+      | .error err => IO.println s!"adapter register write unsupported branch: {reprStr err}"
+      | .ok _ =>
+          IO.println "unexpected adapter register write success under denied contract"
       let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
       let denyAll : SeLe4n.Kernel.ServicePolicy := fun _ => false
       match SeLe4n.Kernel.serviceStart svcApi allowAll st1 with
