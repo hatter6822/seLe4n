@@ -6,6 +6,44 @@ ELAN_HOME_DEFAULT="${HOME}/.elan"
 ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
 
+ensure_shellcheck() {
+  if command -v shellcheck >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "[setup] shellcheck not found; attempting to install"
+
+  run_pkg_install() {
+    if command -v sudo >/dev/null 2>&1; then
+      sudo "$@"
+    else
+      "$@"
+    fi
+  }
+
+  if command -v apt-get >/dev/null 2>&1; then
+    run_pkg_install apt-get update
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck
+  elif command -v dnf >/dev/null 2>&1; then
+    run_pkg_install dnf install -y ShellCheck
+  elif command -v yum >/dev/null 2>&1; then
+    run_pkg_install yum install -y epel-release
+    run_pkg_install yum install -y ShellCheck
+  elif command -v pacman >/dev/null 2>&1; then
+    run_pkg_install pacman -Sy --noconfirm shellcheck
+  elif command -v brew >/dev/null 2>&1; then
+    brew install shellcheck
+  else
+    echo "error: shellcheck is required, but no supported package manager (apt, dnf, yum, pacman, brew) was found" >&2
+    exit 1
+  fi
+
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "error: shellcheck installation failed" >&2
+    exit 1
+  fi
+}
+
 if ! command -v curl >/dev/null 2>&1; then
   echo "error: curl is required to install elan" >&2
   exit 1
@@ -15,6 +53,8 @@ if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
   echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
   exit 1
 fi
+
+ensure_shellcheck
 
 if ! command -v elan >/dev/null 2>&1; then
   echo "[setup] elan not found; installing to ${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
