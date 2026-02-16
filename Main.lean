@@ -76,7 +76,7 @@ def bootstrapState : SystemState :=
           identity := { sid := svcApi, backingObject := 1, owner := 10 }
           status := .stopped
           dependencies := [svcDb]
-          isolatedFrom := []
+          isolatedFrom := [svcDenied]
         }
       else if sid = svcDenied then
         some {
@@ -167,6 +167,8 @@ def main : IO Unit := do
       | .error err => IO.println s!"service restart start-stage failure: {reprStr err}"
       | .ok _ =>
           IO.println "unexpected service restart success with broken dependencies"
+      IO.println s!"service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
+      IO.println s!"service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
 
       match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
           (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with

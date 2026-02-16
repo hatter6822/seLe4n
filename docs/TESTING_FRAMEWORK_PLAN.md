@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M5 stage.
 
-Current stage context: **M5 service-graph + policy surface delivery active (WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D complete; M4-B fully closed)**.
+Current stage context: **M5 service-graph + policy surface delivery active (WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; M4-B fully closed)**.
 
 ## 2. Current enforced tiers
 
@@ -36,12 +36,12 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 4. Keep Tier 3 milestone-closure anchors for M1 scheduler and M2 capability transition/preservation surfaces so completed milestones remain continuously verified.
 5. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
-## 5. Active M5 testing expansion targets
+## 5. M5 evidence/testing closure status (WS-M5-E complete)
 
-1. Add service-graph restart/isolation/dependency-failure scenario fixtures.
-2. Add grouped Tier 3 checks for M5 service/policy theorem and bundle symbols.
-3. Expand nightly checks toward repeat-run determinism and broader scenario sweeps.
-4. Standardize new artifact names for debugging service/policy regression failures.
+1. Service-graph restart/isolation/dependency-failure fixture fragments are present in `tests/fixtures/main_trace_smoke.expected`.
+2. Tier 3 includes grouped M5 service/policy theorem and bundle symbol checks plus trace anchors.
+3. Tier 4 staged nightly candidates now assert determinism and M5 evidence-line presence before full-suite replay.
+4. Artifact names remain standardized under `tests/artifacts/nightly/` for CI triage.
 
 ## 6. Fixture policy
 
@@ -99,7 +99,7 @@ Primary risks to target next:
 - scenario breadth gaps,
 - long-horizon confidence blind spots.
 
-## 9. M5-specific testing growth plan
+## 9. M5-specific testing growth plan (completed baseline)
 
 1. add service-orchestration fixture fragments that remain stable across formatting changes,
 2. add grouped service/policy theorem anchor checks in Tier 3,
@@ -107,21 +107,21 @@ Primary risks to target next:
 4. record any new artifact outputs with consistent naming for CI triage.
 
 
-## 10. M5 test implementation plan (detailed)
+## 10. M5 test implementation baseline (achieved)
 
-1. **Phase T1 — service scenario seeds**
-   - add at least one service start/restart success trace,
-   - add at least one policy/dependency failure trace.
-2. **Phase T2 — fixture hardening**
-   - capture stable semantic fragments only,
-   - avoid transient formatting-dependent assertions.
-3. **Phase T3 — Tier 3 anchor expansion**
-   - add symbol anchors for M5 invariant and preservation theorem surfaces,
-   - keep anchors grouped by milestone objective for triage clarity.
-4. **Phase T4 — nightly evolution**
-   - preserve explicit Tier 4 extension-point behavior by default in `./scripts/test_nightly.sh`,
-   - stage repeat-run determinism + full-suite replay candidates in `./scripts/test_tier4_nightly_candidates.sh`,
-   - keep candidate execution opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) so required mainline gates remain stable.
+1. **Phase T1 — service scenario seeds** ✅
+   - includes service start/restart success trace anchors,
+   - includes policy-denial and dependency-failure trace anchors.
+2. **Phase T2 — fixture hardening** ✅
+   - fixture captures stable semantic fragments,
+   - avoids formatting-dependent expectations.
+3. **Phase T3 — Tier 3 anchor expansion** ✅
+   - includes M5 invariant/preservation symbol anchors,
+   - keeps anchor groups organized by milestone objective for triage clarity.
+4. **Phase T4 — nightly evolution** ✅
+   - Tier 4 default remains an explicit extension point in `./scripts/test_nightly.sh`,
+   - staged candidates in `./scripts/test_tier4_nightly_candidates.sh` run determinism + evidence checks + full-suite replay,
+   - candidate execution remains opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) for stable required mainline gates.
 
 ## 11. Coverage model and "full coverage" interpretation
 

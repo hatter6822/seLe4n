@@ -31,7 +31,17 @@ This directory tracks fixture-backed executable trace checks used by
 4. Document why fixture changes are expected and which slice they support (M4-B closeout or M5 execution).
 
 
-## Current fixture rationale notes (M4-B closeout baseline)
+
+## Current fixture rationale notes (M5 evidence closure additions)
+
+M5 evidence lines now capture deterministic service-policy behavior without overfitting on output formatting:
+
+- `service restart status` keeps the success path visible for orchestration sequencing.
+- `service start denied branch` and `service stop denied branch` pin policy-denial behavior.
+- `service start dependency branch` and `service restart start-stage failure` pin dependency-failure behavior.
+- `service isolation api↔denied` and `service isolation api↔db` pin explicit positive/negative isolation-edge checks.
+
+## Historical fixture rationale notes (M4-B closeout baseline)
 
 The smoke fixture captures stable semantic anchors rather than formatting-dependent text:
 

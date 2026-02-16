@@ -97,17 +97,24 @@ failure paths).
 - `SeLe4n/Kernel/*/Invariant.lean`
 - `docs/gitbook/12-proof-and-invariant-map.md`
 
-### WS-M5-E — Evidence and validation
+### WS-M5-E — Evidence and validation ✅ **completed**
 
 **Deliverables**
 - executable scenarios in `Main.lean`,
 - fixture updates with semantic intent notes,
 - Tier 3 symbol checks for theorem/bundle surface additions.
 
+**Completion status**
+- executable scenarios in `Main.lean` now cover restart, policy-denial, dependency-failure, and isolation-edge stories,
+- smoke fixture anchors were extended and documented with M5 semantic rationale notes,
+- Tier 3 symbol checks and Tier 4 nightly candidates now assert the M5 evidence surface.
+
 **Expected file touch areas**
 - `Main.lean`
 - `tests/fixtures/*`
 - `scripts/test_tier3_invariant_surface.sh`
+- `scripts/test_tier4_nightly_candidates.sh`
+- `tests/scenarios/README.md`
 
 ### WS-M5-F — Documentation closeout
 

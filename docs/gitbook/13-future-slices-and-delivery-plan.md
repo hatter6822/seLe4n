@@ -49,11 +49,11 @@ M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardenin
 - composed preservation across service + lifecycle + capability bundles,
 - failure-path theorem completion.
 
-#### WS-M5-E — Evidence and testing
+#### WS-M5-E — Evidence and testing ✅ **completed**
 
-- add scenario traces for restart and dependency failures,
-- add/adjust fixtures with rationale notes,
-- add Tier 3 anchors and nightly candidates.
+- scenario traces now cover restart, dependency failure, policy denial, and isolation-edge checks,
+- fixture anchors include service semantics with rationale notes in `tests/scenarios/README.md`,
+- Tier 3 anchors and Tier 4 nightly candidate checks now include M5 evidence lines.
 
 #### WS-M5-F — Documentation and closeout
 

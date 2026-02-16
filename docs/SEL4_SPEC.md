@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D complete)**.
+Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; WS-M5-F closeout in progress)**.
 
 ---
 
@@ -238,7 +238,13 @@ The active milestone family (M5) targets operational realism while preserving th
    - composed service+lifecycle+capability preservation is exposed via
      `serviceLifecycleCapabilityInvariantBundle`,
    - explicit failure-path preservation theorem coverage exists for start/stop/restart branches.
-5. **Architecture-binding track**
+5. **Evidence/testing track (WS-M5-E)** ✅ **completed baseline**
+   - executable trace coverage includes service restart success, policy denial, dependency failure,
+     and explicit isolation-edge checks,
+   - fixture anchors in `tests/fixtures/main_trace_smoke.expected` are updated with semantic intent
+     rationale in `tests/scenarios/README.md`,
+   - Tier 3 and Tier 4 candidate checks include M5 evidence-line anchors.
+6. **Architecture-binding track (M6 preview)**
    - catalog architecture assumptions currently abstracted and define interface surfaces for future
      binding work.
 

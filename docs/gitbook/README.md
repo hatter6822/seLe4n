@@ -4,7 +4,7 @@ This GitBook is the long-form documentation for seLe4n.
 
 ## Project stage snapshot
 
-- **Current slice:** M5 service-graph + policy surfaces (active; WS-M5-A/B/C/D complete, WS-M5-E/F in progress).
+- **Current slice:** M5 service-graph + policy surfaces (active; WS-M5-A/B/C/D/E complete, WS-M5-F in progress).
 - **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
 
 Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance reference.

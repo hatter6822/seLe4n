@@ -58,7 +58,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 - **M4-A:** lifecycle semantic trace fragments are landed and fixture-backed in Tier 2 smoke coverage.
 - **M4-B:** WS-A/WS-B/WS-C/WS-D/WS-E are complete, including Tier 3 M4-B symbol anchors and staged Tier 4 nightly candidates.
-- **M5 (active):** expand Tier 2/Tier 3 coverage to service-graph transitions, policy-denial branches, and composed service+lifecycle+capability preservation theorem anchors.
+- **M5 (active; WS-M5-E complete):** Tier 2/Tier 3 now cover service restart/policy-denial/dependency-failure/isolation evidence, with Tier 4 candidates checking determinism plus M5 evidence-line anchors.
 
 ## Practical failure triage
 
