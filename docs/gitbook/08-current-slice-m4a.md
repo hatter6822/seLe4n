@@ -20,7 +20,9 @@ relationships remain coherent through those updates.
 - ✅ Step 4 complete: transition-local helper lemmas now package lifecycle retype lookup and
   runnable-membership transport facts near lifecycle operations, avoiding duplicated transition
   case-analysis in downstream proofs.
-- 🚧 Remaining M4-A work: composed preservation theorem growth.
+- ✅ Step 5 complete: lifecycle preservation theorem entrypoints now prove local lifecycle bundle
+  preservation first and compose with scheduler/capability/IPC bundles via an M4-A composed bundle
+  surface (`m4aLifecycleInvariantBundle`) with explicit endpoint/scheduler side-condition hooks.
 
 
 1. **Transition surface**

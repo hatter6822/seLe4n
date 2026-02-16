@@ -84,4 +84,29 @@ theorem lifecycleInvariantBundle_of_metadata_consistent
   · exact ⟨hObjType, lifecycleIdentityNoTypeAliasConflict_of_exact st hObjType⟩
   · exact ⟨hCapRef, lifecycleCapabilityRefObjectTargetBacked_of_exact st hCapRef⟩
 
+theorem lifecycleMetadataConsistent_of_lifecycleInvariantBundle
+    (st : SystemState)
+    (hInv : lifecycleInvariantBundle st) :
+    SystemState.lifecycleMetadataConsistent st := by
+  rcases hInv with ⟨hIdAlias, hCapRef⟩
+  rcases hIdAlias with ⟨hObjType, _hAlias⟩
+  rcases hCapRef with ⟨hCapRefExact, _hBacked⟩
+  exact ⟨hObjType, hCapRefExact⟩
+
+theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : lifecycleInvariantBundle st)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    lifecycleInvariantBundle st' := by
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  have hMeta : SystemState.lifecycleMetadataConsistent st :=
+    lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
+  have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
+    storeObject_preserves_lifecycleMetadataConsistent st st' target newObj hMeta hStore
+  exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
+
 end SeLe4n.Kernel

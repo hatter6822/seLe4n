@@ -24,8 +24,9 @@ What is strong today:
 
 ## 3. Key risks and next mitigations
 
-1. **Lifecycle semantics currently partial (M4-A steps 1-4 landed; preservation composition remains)**
-   - mitigation: continue M4-A with composed preservation entrypoints before broadening scope.
+1. **Lifecycle semantics now milestone-complete for M4-A (steps 1-5 landed)**
+   - mitigation: keep M4-B focused on revoke/delete composition and stale-reference exclusion without
+     regressing M4-A entrypoint coverage.
 2. **Potential invariant growth complexity**
    - mitigation: enforce component naming and layered composition from the start.
 3. **Fixture drift during lifecycle rollout**
@@ -36,7 +37,8 @@ What is strong today:
 - Required gates (`test_fast`, `test_smoke`) are correctly scoped.
 - Full/nightly tiers provide extension headroom for M4-specific hardening.
 - Step-3 lifecycle invariant layering anchors are now enforced in Tier 3.
-- Next high-value test work: lifecycle-preservation theorem anchors as M4-A step-5 lands.
+- Next high-value test work: extend Tier 3 anchor depth around new M4-A composed lifecycle bundle
+  entrypoints as M4-B evolves.
 
 ## 5. Documentation posture summary
 

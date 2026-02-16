@@ -75,6 +75,13 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
       {
         st.lifecycle with
           objectTypes := fun oid => if oid = id then some obj.objectType else st.lifecycle.objectTypes oid
+          capabilityRefs := fun ref =>
+            if ref.cnode = id then
+              match obj with
+              | .cnode cn => (cn.lookup ref.slot).map Capability.target
+              | _ => none
+            else
+              st.lifecycle.capabilityRefs ref
       }
     .ok ((), { st with objects := objects', lifecycle := lifecycle' })
 
@@ -246,5 +253,48 @@ theorem ownedSlots_eq_nil_of_lookupCNode_eq_none
   simp [ownedSlots, hNone]
 
 end SystemState
+
+theorem storeObject_preserves_objectTypeMetadataConsistent
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hConsistent : SystemState.objectTypeMetadataConsistent st)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    SystemState.objectTypeMetadataConsistent st' := by
+  intro oid'
+  unfold storeObject at hStep
+  cases hStep
+  by_cases hEq : oid' = oid
+  · subst hEq
+    simp [SystemState.lookupObjectTypeMeta]
+  · simpa [SystemState.lookupObjectTypeMeta, hEq] using hConsistent oid'
+
+theorem storeObject_preserves_capabilityRefMetadataConsistent
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hConsistent : SystemState.capabilityRefMetadataConsistent st)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    SystemState.capabilityRefMetadataConsistent st' := by
+  intro ref
+  unfold storeObject at hStep
+  cases hStep
+  by_cases hEq : ref.cnode = oid
+  · subst hEq
+    cases obj <;> simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+      SystemState.lookupCNode]
+  · simpa [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+      SystemState.lookupCNode, hEq] using hConsistent ref
+
+theorem storeObject_preserves_lifecycleMetadataConsistent
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hConsistent : SystemState.lifecycleMetadataConsistent st)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    SystemState.lifecycleMetadataConsistent st' := by
+  rcases hConsistent with ⟨hObjType, hCapRef⟩
+  exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
+    storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
 end SeLe4n.Model

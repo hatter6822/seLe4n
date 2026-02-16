@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-A lifecycle/retype foundations in progress (steps 1-4 completed)**.
+Current stage context: **M4-A lifecycle/retype foundations in progress (steps 1-5 completed)**.
 
 ## 2. Current enforced tiers
 
