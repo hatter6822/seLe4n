@@ -59,3 +59,24 @@ Before landing M5 PRs, verify:
 - immediate predecessor contracts: [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - normative scope and acceptance criteria: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md)
 - broader roadmap: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
+
+
+## M5 execution dashboard (optimized handoff)
+
+Use this compact checklist at the top of every M5 PR:
+
+- **Model surface (WS-M5-A/B):** service graph state + deterministic transition branch shape.
+- **Policy surface (WS-M5-C):** policy predicates are explicit, named, and separable from mutation.
+- **Proof surface (WS-M5-D):** local + composed preservation theorem entrypoints include failure paths.
+- **Evidence surface (WS-M5-E):** `Main.lean` traces and `tests/fixtures/main_trace_smoke.expected` anchors updated intentionally.
+- **Validation surface:** Tier 0/1/2 required gates pass; Tier 3 anchor additions reflect every new theorem/invariant claim.
+
+## M5 exit-readiness signals
+
+M5 should be marked complete only when all are true:
+
+1. service orchestration transitions are deterministic and expose denial/error branches,
+2. policy predicates bridge cleanly to lifecycle/capability invariants,
+3. local and composed theorem surfaces are machine-checked and discoverable,
+4. fixture-backed traces cover success and failure operational stories,
+5. Tier 3 includes all M5 symbol anchors and docs state M6 deferrals explicitly.

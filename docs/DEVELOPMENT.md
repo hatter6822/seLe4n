@@ -4,8 +4,9 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-B lifecycle-capability composition hardening (Workstreams A+B+C+D+E complete)**;
-M5 preparation is now active.
+Current stage: **M5 service-graph + policy surface delivery (active implementation)**.
+M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
+baseline.
 
 Primary goals for contributors:
 
@@ -13,7 +14,8 @@ Primary goals for contributors:
 - preserve theorem-entrypoint continuity across milestones,
 - ship narrow, reviewable slices,
 - keep docs synchronized with active and next slice plans,
-- deliver M4-B composition hardening with clear handoff toward M5.
+- deliver M5 service-level semantics and policy layering without regressing closed M1–M4-B
+  contracts.
 
 ---
 
@@ -87,9 +89,9 @@ Do not include in this slice unless explicitly approved:
 
 ---
 
-## 4. Current slice implementation plan: M4-B
+## 4. Completed predecessor slice baseline: M4-B
 
-### 4.1 M4-B target outcomes
+### 4.1 M4-B target outcomes (all complete)
 
 1. Compose lifecycle with revoke/delete semantics.
 2. Add stale-reference exclusion invariants.
@@ -97,7 +99,7 @@ Do not include in this slice unless explicitly approved:
 4. Add failure-path theorem coverage for lifecycle-capability interactions.
 5. Expand Tier 3 checks and scenario coverage for lifecycle composition.
 
-### 4.2 Delivery sequence for M4-B
+### 4.2 Delivery sequence used for M4-B closeout
 
 1. **Transition composition pass**
    - introduce helper transitions and theorem statements for lifecycle+capability interactions.
@@ -110,7 +112,7 @@ Do not include in this slice unless explicitly approved:
 5. **Documentation pass**
    - update spec, development guide, and GitBook slices with exact outcome/deferred mapping.
 
-### 4.3 Design guardrails for M4-B readiness
+### 4.3 Design guardrails retained from M4-B closeout
 
 - preserve clean invariant layering;
 - keep lifecycle assumptions out of unrelated IPC predicates;
@@ -118,7 +120,7 @@ Do not include in this slice unless explicitly approved:
 - keep theorem names searchable with `<transition>_preserves_<target>` style.
 
 
-### 4.4 Suggested M4-B work packages
+### 4.4 M4-B work package archive
 
 Use narrow PR-sized work packages to reduce review risk:
 
@@ -137,7 +139,7 @@ Use narrow PR-sized work packages to reduce review risk:
 7. **WP-7 doc closeout**
    - sync README/spec/development/testing/GitBook and state M5 deferrals.
 
-### 4.5 Exit readiness signals for M4-B
+### 4.5 Exit readiness signals used for M4-B
 
 Before maintainers mark M4-B complete, verify:
 
@@ -149,9 +151,10 @@ Before maintainers mark M4-B complete, verify:
 
 ---
 
-## 5. Next slice planning discipline (M5 preview)
+## 5. Current slice planning discipline (M5)
 
-To reduce milestone thrash, each M4-B PR should state how it advances M4-B exit criteria and supports the likely M5 direction:
+To reduce milestone thrash, each M5 PR should state how it advances M5 outcomes while preserving
+closed milestone contracts:
 
 1. service-graph-oriented semantics,
 2. policy-oriented authority decomposition,
@@ -160,13 +163,13 @@ To reduce milestone thrash, each M4-B PR should state how it advances M4-B exit 
 A lightweight “what this unlocks next” paragraph is now expected in milestone-moving PRs.
 
 
-### 5.1 M4-B to M5 handoff narrative standard
+### 5.1 M5 narrative standard
 
 For each milestone-moving PR, include a short section that states:
 
-1. what concrete M4-B outcome moved,
+1. what concrete M5 outcome moved,
 2. what evidence command validates that movement,
-3. what dependency for M5 is now unblocked.
+3. what dependency for the next slice (M6) is now unblocked.
 
 ---
 

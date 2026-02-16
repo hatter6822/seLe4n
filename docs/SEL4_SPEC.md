@@ -7,13 +7,13 @@ This document is the normative specification baseline for seLe4n.
 It defines:
 
 1. What milestone behavior is already closed and considered stable.
-2. The **current delivery slice** (M4-B) with concrete target outcomes.
-3. The **next delivery slice** (M5-preview) so work continues without roadmap drift.
+2. The **current delivery slice** (M5) with concrete target outcomes.
+3. The **next delivery slice** preview (M6-directional) so work continues without roadmap drift.
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M4-B lifecycle-capability composition hardening complete (Workstreams A+B+C+D+E complete)**.
+Current stage: **M5 service-graph semantics and policy-oriented authority layering (active)**.
 
 ---
 
@@ -25,14 +25,15 @@ Current stage: **M4-B lifecycle-capability composition hardening complete (Works
 - **M3 (complete)**: endpoint send/receive seed semantics + IPC invariant seed bundle.
 - **M3.5 (complete)**: waiting/handshake IPC semantics + scheduler coherence contract.
 - **M4-A (complete)**: lifecycle/retype transition foundations + initial lifecycle invariants.
-- **M4-B (current slice)**: lifecycle-capability composition hardening and richer scenario coverage.
-- **M5 (next slice preview)**: service-graph semantics and policy-oriented authority constraints.
+- **M4-B (complete)**: lifecycle-capability composition hardening and richer scenario coverage.
+- **M5 (current slice)**: service-graph semantics and policy-oriented authority constraints.
+- **M6 (next slice preview)**: architecture-binding interfaces and hardware-facing assumption hardening.
 
 ---
 
 ## 3. Stable baseline contracts (must not regress)
 
-The following contracts are considered stable and preserved while M4 evolves:
+The following contracts are considered stable and preserved while M5 evolves:
 
 1. M1 scheduler invariant bundle and entrypoint preservation theorems.
 2. M2 capability/CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and
@@ -120,7 +121,7 @@ A change is M4-A complete only when all of the following are true:
 
 ---
 
-## 5. Current slice: M4-B lifecycle-capability composition hardening
+## 5. Completed predecessor slice: M4-B lifecycle-capability composition hardening
 
 ### 5.1 Objective
 
@@ -200,24 +201,24 @@ A PR series claiming M4-B completion should include all of:
 
 ---
 
-## 6. Next slice preview (M5 and beyond)
+## 6. Current slice: M5 service graph + policy surfaces
 
 ### 6.1 M5 target direction: service graph + policy surfaces
 
-The next milestone family (M5) targets operational realism while preserving theorem layering:
+The active milestone family (M5) targets operational realism while preserving theorem layering:
 
 1. model service restart/isolation stories that exercise lifecycle+IPC+capability composition,
 2. introduce policy-friendly authority constraints without replacing existing invariants,
 3. prepare architecture-binding interfaces as explicit assumptions rather than implicit behavior.
 
-### 6.2 Required outcomes before entering M5
+### 6.2 M5 entry requirements (already satisfied)
 
 - M4-B stale-reference properties are merged and stable,
 - lifecycle-capability composition traces are fixture-backed,
 - invariant bundles expose reusable theorem surfaces for policy composition.
 
 
-### 6.3 M5 preparation tracks (to stage during late M4-B)
+### 6.3 M5 execution tracks (active)
 
 1. **Service-graph modeling track**
    - define minimal restart/isolation scenarios that reuse M4-B composition surfaces.

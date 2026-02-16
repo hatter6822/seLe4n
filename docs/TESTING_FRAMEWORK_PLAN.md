@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-This document defines the active testing baseline and near-term expansion path for the M4 stage.
+This document defines the active testing baseline and near-term expansion path for the M5 stage.
 
-Current stage context: **M4-B lifecycle-capability composition hardening complete (M4-A + WS-A + WS-B + WS-C + WS-D + WS-E complete)**.
+Current stage context: **M5 service-graph + policy surface delivery active (with M4-B fully closed)**.
 
 ## 2. Current enforced tiers
 
@@ -36,12 +36,12 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 4. Keep Tier 3 milestone-closure anchors for M1 scheduler and M2 capability transition/preservation surfaces so completed milestones remain continuously verified.
 5. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
-## 5. Active M4-B testing expansion targets
+## 5. Active M5 testing expansion targets
 
-1. Add success + failure lifecycle scenario fixtures.
-2. Add grouped Tier 3 checks for lifecycle-capability composition symbols.
+1. Add service-graph restart/isolation/dependency-failure scenario fixtures.
+2. Add grouped Tier 3 checks for M5 service/policy theorem and bundle symbols.
 3. Expand nightly checks toward repeat-run determinism and broader scenario sweeps.
-4. Standardize new artifact names for debugging lifecycle regression failures.
+4. Standardize new artifact names for debugging service/policy regression failures.
 
 ## 6. Fixture policy
 
@@ -99,26 +99,26 @@ Primary risks to target next:
 - scenario breadth gaps,
 - long-horizon confidence blind spots.
 
-## 9. M4-specific testing growth plan
+## 9. M5-specific testing growth plan
 
-1. add lifecycle scenario fixture fragments that remain stable across formatting changes,
-2. add grouped lifecycle theorem anchor checks in Tier 3,
-3. add at least one failure-path scenario for lifecycle invalid-object/invalid-authority behavior,
+1. add service-orchestration fixture fragments that remain stable across formatting changes,
+2. add grouped service/policy theorem anchor checks in Tier 3,
+3. add failure-path scenarios for dependency violation and policy denial behavior,
 4. record any new artifact outputs with consistent naming for CI triage.
 
 
-## 10. M4-B test implementation plan (detailed)
+## 10. M5 test implementation plan (detailed)
 
-1. **Phase T1 — composition scenario seeds**
-   - add at least one composed lifecycle+capability success trace,
-   - add at least one composed failure trace (stale or authority failure).
+1. **Phase T1 — service scenario seeds**
+   - add at least one service start/restart success trace,
+   - add at least one policy/dependency failure trace.
 2. **Phase T2 — fixture hardening**
    - capture stable semantic fragments only,
    - avoid transient formatting-dependent assertions.
 3. **Phase T3 — Tier 3 anchor expansion**
-   - add symbol anchors for M4-B invariant and preservation theorem surfaces,
+   - add symbol anchors for M5 invariant and preservation theorem surfaces,
    - keep anchors grouped by milestone objective for triage clarity.
-4. **Phase T4 — nightly evolution** ✅ completed
+4. **Phase T4 — nightly evolution**
    - preserve explicit Tier 4 extension-point behavior by default in `./scripts/test_nightly.sh`,
    - stage repeat-run determinism + full-suite replay candidates in `./scripts/test_tier4_nightly_candidates.sh`,
    - keep candidate execution opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) so required mainline gates remain stable.
