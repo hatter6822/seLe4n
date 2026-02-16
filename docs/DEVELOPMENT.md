@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active, steps 1-5 completed)**.
+Current stage: **M4-A lifecycle/retype foundations (all six implementation steps completed)**.
 
 Primary goals for contributors:
 
@@ -60,7 +60,7 @@ Unless intentionally redesigned and documented, preserve:
    - local lifecycle component preservation entrypoints are now machine-checked,
    - composed entrypoints now bridge lifecycle with existing scheduler/capability/IPC bundle layers.
 
-6. **Executable demonstration + fixture update**
+6. **Executable demonstration + fixture update** ✅ **completed**
    - extend `Main.lean` for lifecycle success path,
    - add fixture lines only for stable semantic output.
 

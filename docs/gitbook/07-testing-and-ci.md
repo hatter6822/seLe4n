@@ -10,7 +10,8 @@
 - **Tier 2 (trace/behavior)**
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments.
 - **Tier 3 (invariant and documentation anchor surface)**
-  - validates critical theorem/bundle/doc anchors expected for active milestone slices.
+  - validates critical theorem/bundle/doc anchors expected for active milestone slices,
+  - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
 - **Tier 4 (nightly extension point)**
   - explicitly reserved for heavier future checks.
 
@@ -54,7 +55,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 ## M4 testing trajectory
 
-- **M4-A:** add lifecycle semantic trace fragments once lifecycle scenarios land.
+- **M4-A:** lifecycle semantic trace fragments are now landed and fixture-backed in Tier 2 smoke coverage.
 - **M4-B:** add lifecycle-capability composition success/failure traces and stronger Tier 3 anchors.
 
 ## Practical failure triage

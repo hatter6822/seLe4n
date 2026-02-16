@@ -23,6 +23,9 @@ relationships remain coherent through those updates.
 - ✅ Step 5 complete: lifecycle preservation theorem entrypoints now prove local lifecycle bundle
   preservation first and compose with scheduler/capability/IPC bundles via an M4-A composed bundle
   surface (`m4aLifecycleInvariantBundle`) with explicit endpoint/scheduler side-condition hooks.
+- ✅ Step 6 complete: `Main.lean` now demonstrates lifecycle retype unauthorized/illegal-state/success
+  paths, and `tests/fixtures/main_trace_smoke.expected` captures only stable semantic fragments for
+  Tier 2 matching.
 
 
 1. **Transition surface**

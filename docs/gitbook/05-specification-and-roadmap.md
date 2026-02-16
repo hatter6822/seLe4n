@@ -4,7 +4,7 @@ This handbook chapter complements `docs/SEL4_SPEC.md`.
 
 ## Current slice: M4-A
 
-M4-A focuses on introducing lifecycle/retype semantics with clear theorem and executable surfaces (with steps 1-5 completed, including preservation theorem entrypoint composition):
+M4-A focuses on introducing lifecycle/retype semantics with clear theorem and executable surfaces (with steps 1-6 completed, including preservation theorem entrypoint composition and fixture-backed executable evidence):
 
 1. lifecycle transition API,
 2. identity/aliasing invariants,
