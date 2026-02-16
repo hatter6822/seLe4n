@@ -6,8 +6,8 @@ This directory tracks fixture-backed executable trace checks used by
 ## Stage alignment
 
 - Closed baseline: M1-M3.5 (scheduler, capability, IPC handshake coherence).
-- Active stage: M4-A lifecycle/retype foundations.
-- Next stage: M4-B lifecycle-capability composition hardening.
+- Active stage: M4-B lifecycle-capability composition hardening (Workstream D complete).
+- Next stage: M4-B Workstream E testing-anchor expansion and M5 preparation.
 
 ## Fixture source
 
@@ -29,6 +29,24 @@ This directory tracks fixture-backed executable trace checks used by
    ./scripts/test_smoke.sh
    ```
 4. Document why fixture changes are expected and which slice they support (M4-A or M4-B).
+
+
+## Current fixture rationale notes (M4-B Workstream D)
+
+The smoke fixture captures stable semantic anchors rather than formatting-dependent text:
+
+- `lifecycle retype unauthorized branch` and `lifecycle retype illegal-state branch` prove lifecycle
+  failure branches stay externally visible in the executable trace.
+- `composed transition alias guard (expected error)` and
+  `composed transition unauthorized branch` prove the composed lifecycle+capability helper rejects both
+  state-aliasing misuse and authority misuse.
+- `composed revoke/delete/retype success` proves the positive composition path still executes after
+  failure probes.
+- `post-revoke sibling lookup` and `post-delete lookup (expected error)` prove cleanup side-effects are
+  observable and stable.
+
+If any fragment changes, update `tests/fixtures/main_trace_smoke.expected` in the same PR and add a
+short rationale entry describing why the changed fragment still represents stable semantics.
 
 ## Diagnostics behavior
 

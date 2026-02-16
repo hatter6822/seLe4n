@@ -65,7 +65,7 @@ Definition of done:
 - local-first structure is visible in code organization,
 - no `axiom`/`sorry` placeholders.
 
-### Workstream D — Executable and fixture evidence
+### Workstream D — Executable and fixture evidence ✅ completed
 
 Goal: prove milestone behavior is externally visible and regression-testable.
 

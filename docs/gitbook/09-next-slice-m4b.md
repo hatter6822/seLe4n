@@ -35,7 +35,7 @@ when they interact with authority-changing capability operations in realistic wo
 - prove local preservation for new composition helpers,
 - prove composed preservation across lifecycle + capability bundles.
 
-### Phase 4: executable + testing growth
+### Phase 4: executable + testing growth ✅ completed
 
 - add M4-B success/failure traces in `Main.lean`,
 - extend Tier 3 anchors to include M4-B theorem surfaces,

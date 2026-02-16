@@ -119,6 +119,12 @@ def main : IO Unit := do
                   IO.println s!"composed transition alias guard (expected error): {reprStr err}"
               | .ok _ =>
                   IO.println "unexpected composed transition success with aliased authority/cleanup"
+              match SeLe4n.Kernel.lifecycleRevokeDeleteRetype rootSlot mintedSlot 12
+                  (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              | .error err =>
+                  IO.println s!"composed transition unauthorized branch: {reprStr err}"
+              | .ok _ =>
+                  IO.println "unexpected composed transition success with wrong authority"
               match SeLe4n.Kernel.lifecycleRevokeDeleteRetype lifecycleAuthSlot mintedSlot 12
                   (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
               | .error err => IO.println s!"composed transition error: {reprStr err}"

@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-B lifecycle-capability composition hardening (Workstreams A+B+C complete)** after
+seLe4n is currently in **M4-B lifecycle-capability composition hardening (Workstreams A+B+C+D complete)** after
 completing M4-A lifecycle/retype foundations.
 
 ### Milestone board
@@ -19,7 +19,7 @@ completing M4-A lifecycle/retype foundations.
   waiting-to-delivery trace evidence.
 - ✅ **M4-A current slice complete**: object lifecycle/retype foundations now include local lifecycle
   preservation entrypoints and composed scheduler/capability/IPC + lifecycle bundle theorem entrypoints.
-- 🚧 **M4-B current slice active**: Workstreams A+B+C (transition composition + invariant hardening + preservation theorem expansion) are
+- 🚧 **M4-B current slice active**: Workstreams A+B+C+D (transition composition + invariant hardening + preservation theorem expansion + executable/fixture evidence) are
   complete; executable/testing growth and closeout docs remain in progress.
 
 ## Documentation hub (GitBook-ready)
@@ -67,7 +67,7 @@ unauthorized branch, illegal-state branch, and success-path object-kind confirma
 2. ✅ Strengthen invariants for stale-reference exclusion and authority monotonicity across retype chains
    (Workstream B complete).
 3. ✅ Add composed preservation theorems spanning lifecycle + capability bundles (Workstream C complete).
-4. Expand scenario coverage to include lifecycle rollback/error branches.
+4. ✅ Expand scenario coverage to include lifecycle rollback/error branches (Workstream D complete).
 5. Deepen Tier 3 checks for lifecycle-specific theorem/bundle surfaces.
 
 Next-slice (M5 preview) direction: service-graph semantics, policy-oriented authority constraints,
@@ -81,7 +81,7 @@ To move M4-B toward closeout, work should progress in this order:
 1. compose lifecycle transitions with revoke/delete semantics,
 2. formalize stale-reference exclusion invariant components ✅ completed,
 3. prove local then composed preservation including failure paths ✅ completed,
-4. extend executable scenarios + fixture anchors,
+4. extend executable scenarios + fixture anchors ✅ completed,
 5. add Tier 3 anchors for new theorem/bundle surfaces,
 6. close out docs with explicit M5 deferrals.
 

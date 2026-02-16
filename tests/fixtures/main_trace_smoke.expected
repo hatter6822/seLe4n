@@ -5,6 +5,7 @@ lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
 lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
 created sibling cap with the same target
 composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
+composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
 composed revoke/delete/retype success
 post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
 post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
