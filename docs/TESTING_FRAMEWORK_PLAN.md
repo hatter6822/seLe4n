@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M4 stage.
 
-Current stage context: **M4-A lifecycle/retype foundations completed (steps 1-6 completed)**.
+Current stage context: **M4-B lifecycle-capability composition hardening active (M4-A complete)**.
 
 ## 2. Current enforced tiers
 
@@ -24,7 +24,7 @@ Required local/CI entrypoints:
 
 PR CI must call repository scripts directly and keep workflow logic thin.
 
-## 4. M4-A testing objectives
+## 4. Baseline testing objectives inherited from M4-A
 
 1. Keep baseline M1-M3.5 behavior stable.
 2. Add fixture fragments for lifecycle output once lifecycle scenarios become executable.
@@ -32,7 +32,7 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 4. Keep Tier 3 milestone-closure anchors for M1 scheduler and M2 capability transition/preservation surfaces so completed milestones remain continuously verified.
 5. Preserve category-labeled failure output (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`, `META`).
 
-## 5. M4-B testing expansion targets
+## 5. Active M4-B testing expansion targets
 
 1. Add success + failure lifecycle scenario fixtures.
 2. Add grouped Tier 3 checks for lifecycle-capability composition symbols.
@@ -101,3 +101,19 @@ Primary risks to target next:
 2. add grouped lifecycle theorem anchor checks in Tier 3,
 3. add at least one failure-path scenario for lifecycle invalid-object/invalid-authority behavior,
 4. record any new artifact outputs with consistent naming for CI triage.
+
+
+## 10. M4-B test implementation plan (detailed)
+
+1. **Phase T1 — composition scenario seeds**
+   - add at least one composed lifecycle+capability success trace,
+   - add at least one composed failure trace (stale or authority failure).
+2. **Phase T2 — fixture hardening**
+   - capture stable semantic fragments only,
+   - avoid transient formatting-dependent assertions.
+3. **Phase T3 — Tier 3 anchor expansion**
+   - add symbol anchors for M4-B invariant and preservation theorem surfaces,
+   - keep anchors grouped by milestone objective for triage clarity.
+4. **Phase T4 — nightly evolution**
+   - preserve current Tier 4 extension hook behavior,
+   - stage repeat-run determinism checks as follow-on without destabilizing mainline gates.

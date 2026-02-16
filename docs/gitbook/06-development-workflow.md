@@ -16,7 +16,7 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 ./scripts/test_full.sh
 ```
 
-## Implementation pattern
+## Milestone-oriented implementation pattern
 
 1. update/introduce transition,
 2. define/refine local invariant components,
@@ -24,7 +24,8 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 4. prove local preservation,
 5. prove composed preservation,
 6. update executable scenario/fixture,
-7. update docs in same commit range.
+7. update docs in same commit range,
+8. state “what this unlocks next” for the roadmap.
 
 ## Documentation synchronization rule
 
@@ -35,3 +36,50 @@ When semantics or milestone boundaries change, keep these in sync:
 - `docs/DEVELOPMENT.md`,
 - `docs/TESTING_FRAMEWORK_PLAN.md`,
 - related `docs/gitbook/*` pages.
+
+## Current focus and immediate next focus
+
+- **Completed baseline slice:** M4-A lifecycle/retype foundations.
+- **Current delivery slice:** M4-B lifecycle-capability composition hardening.
+- **Next slice preview:** M5 service-graph + policy surfaces.
+
+Contributors should treat M4-A theorem surfaces as stable interfaces and layer M4-B semantics on
+top, rather than reshaping already-closed M4-A contracts.
+
+## Definition of done for milestone-moving PRs
+
+A PR that claims milestone movement should include:
+
+1. deterministic transition behavior,
+2. named invariant components,
+3. local and composed preservation theorem entrypoints,
+4. executable evidence and any fixture rationale,
+5. explicit deferred-work note tied to next slice.
+
+
+## M4-B execution rhythm (recommended)
+
+For active-slice work, use a weekly rhythm:
+
+1. **Early week**: land semantic changes and local helper lemmas.
+2. **Mid week**: land local preservation theorem work.
+3. **Late week**: land composed preservation + executable/fixture updates.
+4. **Closeout**: run full test stack and sync all milestone docs.
+
+## Failure triage flow
+
+When a validation command fails:
+
+1. Identify tier (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`).
+2. Confirm whether failure is semantic drift, proof breakage, fixture drift, or missing anchor.
+3. Fix the root cause first; avoid patching fixture/tests before semantics stabilize.
+4. Re-run from smallest relevant tier upward (`test_fast` → `test_smoke` → `test_full`).
+
+## Milestone drift prevention checklist
+
+Before merging PRs that mention roadmap/slice movement:
+
+- update status markers in README/spec/development docs,
+- update GitBook slice chapter labels and navigation text,
+- ensure testing plan reflects current slice objectives,
+- state explicit deferred work and destination milestone.

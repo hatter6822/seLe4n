@@ -19,8 +19,8 @@ is shaped this way, not only **what** commands to run.
 
 ## Current stage
 
-- Active slice: **M4-A lifecycle/retype foundations**.
-- Next slice: **M4-B lifecycle-capability composition hardening**.
+- Active slice: **M4-B lifecycle-capability composition hardening**.
+- Next slice preview: **M5 service-graph + policy surfaces**.
 
 ## Suggested reading order
 
@@ -31,14 +31,15 @@ is shaped this way, not only **what** commands to run.
 5. [Specification & Roadmap](05-specification-and-roadmap.md)
 6. [Development Workflow](06-development-workflow.md)
 7. [Testing & CI](07-testing-and-ci.md)
-8. [Current Slice: M4-A](08-current-slice-m4a.md)
-9. [Next Slice: M4-B](09-next-slice-m4b.md)
+8. [Completed Slice: M4-A](08-current-slice-m4a.md)
+9. [Current Slice: M4-B](09-next-slice-m4b.md)
 10. [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md)
 11. [Codebase Reference](11-codebase-reference.md)
 12. [Proof and Invariant Map](12-proof-and-invariant-map.md)
+13. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
+14. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 
 For normative acceptance criteria, treat `docs/SEL4_SPEC.md` as canonical.
-
 
 ## What changed in this edition
 
@@ -46,3 +47,8 @@ For normative acceptance criteria, treat `docs/SEL4_SPEC.md` as canonical.
   proof-organization guidance, and practical debug playbooks.
 - Expanded **Testing & CI** chapter with tier-by-tier intent, entrypoint behavior, and
   color-coded test logging conventions for local runs.
+
+- Added **Future Slices and Delivery Plan** chapter to make post-M4 direction and milestone
+  handoff expectations explicit for contributors.
+
+- Added **M4-B Execution Playbook** chapter to turn roadmap targets into concrete workstreams, sequencing, and PR-level delivery checklists.

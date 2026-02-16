@@ -4,14 +4,15 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (all six implementation steps completed)**.
+Current stage: **M4-B lifecycle-capability composition hardening (active slice kickoff)**.
 
 Primary goals for contributors:
 
 - keep semantics executable and understandable,
 - preserve theorem-entrypoint continuity across milestones,
 - ship narrow, reviewable slices,
-- keep docs synchronized with active and next slice plans.
+- keep docs synchronized with active and next slice plans,
+- deliver M4-B composition hardening with clear handoff toward M5.
 
 ---
 
@@ -27,7 +28,7 @@ Unless intentionally redesigned and documented, preserve:
 
 ---
 
-## 3. Current slice implementation plan: M4-A
+## 3. Completed slice baseline: M4-A
 
 ### 3.1 M4-A target outcomes (implementation contract)
 
@@ -45,7 +46,8 @@ Unless intentionally redesigned and documented, preserve:
 
 2. **Lifecycle transition(s)** ✅ **completed**
    - deterministic success/error branching implemented via `lifecycleRetypeObject`,
-   - illegal-state and illegal-authority branches are explicit via `KernelError.illegalState` and `KernelError.illegalAuthority`.
+   - illegal-state and illegal-authority branches are explicit via `KernelError.illegalState` and
+     `KernelError.illegalAuthority`.
 
 3. **Invariant definitions** ✅ **completed**
    - narrow, named lifecycle invariants are defined in `SeLe4n/Kernel/Lifecycle/Invariant.lean`,
@@ -61,10 +63,19 @@ Unless intentionally redesigned and documented, preserve:
    - composed entrypoints now bridge lifecycle with existing scheduler/capability/IPC bundle layers.
 
 6. **Executable demonstration + fixture update** ✅ **completed**
-   - extend `Main.lean` for lifecycle success path,
-   - add fixture lines only for stable semantic output.
+   - `Main.lean` includes lifecycle success/failure evidence,
+   - fixture lines capture stable semantic intent only.
 
-### 3.3 M4-A non-goals
+### 3.3 M4-A closeout expectations
+
+Before calling follow-up work “M4-B ready,” maintainers should verify:
+
+1. lifecycle transition branches are deterministic,
+2. failure-path semantics are documented and traceable,
+3. composed theorem entrypoints are easy to discover and reuse,
+4. docs state what remains deferred.
+
+### 3.4 M4-A non-goals
 
 Do not include in this slice unless explicitly approved:
 
@@ -75,7 +86,7 @@ Do not include in this slice unless explicitly approved:
 
 ---
 
-## 4. Next slice preparation: M4-B
+## 4. Current slice implementation plan: M4-B
 
 ### 4.1 M4-B target outcomes
 
@@ -85,15 +96,80 @@ Do not include in this slice unless explicitly approved:
 4. Add failure-path theorem coverage for lifecycle-capability interactions.
 5. Expand Tier 3 checks and scenario coverage for lifecycle composition.
 
-### 4.2 Design guardrails for M4-B readiness
+### 4.2 Delivery sequence for M4-B
+
+1. **Transition composition pass**
+   - introduce helper transitions and theorem statements for lifecycle+capability interactions.
+2. **Invariant hardening pass**
+   - define stale-reference exclusion and connect it to aliasing and authority constraints.
+3. **Proof pass**
+   - prove local preservation first, then cross-bundle theorems.
+4. **Executable/test pass**
+   - add trace stories for success/failure, then stabilize fixture anchors.
+5. **Documentation pass**
+   - update spec, development guide, and GitBook slices with exact outcome/deferred mapping.
+
+### 4.3 Design guardrails for M4-B readiness
 
 - preserve clean invariant layering;
 - keep lifecycle assumptions out of unrelated IPC predicates;
-- avoid monolithic “mega invariant” definitions that block review.
+- avoid monolithic “mega invariant” definitions that block review;
+- keep theorem names searchable with `<transition>_preserves_<target>` style.
+
+
+### 4.4 Suggested M4-B work packages
+
+Use narrow PR-sized work packages to reduce review risk:
+
+1. **WP-1 transition composition**
+   - introduce composition transitions + explicit failure semantics.
+2. **WP-2 stale-reference invariants**
+   - add stale-reference exclusion components + helper lemmas.
+3. **WP-3 local preservation**
+   - prove per-transition preservation over new components.
+4. **WP-4 composed preservation**
+   - prove cross-bundle composition theorems and failure-path preservation.
+5. **WP-5 executable and fixture growth**
+   - extend `Main.lean` scenarios and fixture anchors with rationale.
+6. **WP-6 Tier 3/test anchor updates**
+   - add symbol-level guardrails for newly introduced theorem surfaces.
+7. **WP-7 doc closeout**
+   - sync README/spec/development/testing/GitBook and state M5 deferrals.
+
+### 4.5 Exit readiness signals for M4-B
+
+Before maintainers mark M4-B complete, verify:
+
+- composed lifecycle+capability semantics are deterministic,
+- stale-reference exclusion holds in machine-checked proofs,
+- failure-path theorem surfaces exist and are reviewed,
+- executable traces cover both success and failure composition stories,
+- Tier 3 anchors include all newly claimed theorem/bundle names.
 
 ---
 
-## 5. Proof engineering standards
+## 5. Next slice planning discipline (M5 preview)
+
+To reduce milestone thrash, each M4-B PR should state how it advances M4-B exit criteria and supports the likely M5 direction:
+
+1. service-graph-oriented semantics,
+2. policy-oriented authority decomposition,
+3. architecture-binding assumptions made explicit as interfaces.
+
+A lightweight “what this unlocks next” paragraph is now expected in milestone-moving PRs.
+
+
+### 5.1 M4-B to M5 handoff narrative standard
+
+For each milestone-moving PR, include a short section that states:
+
+1. what concrete M4-B outcome moved,
+2. what evidence command validates that movement,
+3. what dependency for M5 is now unblocked.
+
+---
+
+## 6. Proof engineering standards
 
 1. Prefer explicit theorem statements and local proof structure over brittle tactic compression.
 2. Keep conjunction-heavy invariants factored into named components.
@@ -108,7 +184,7 @@ Do not include in this slice unless explicitly approved:
 
 ---
 
-## 6. Documentation responsibilities
+## 7. Documentation responsibilities
 
 Any PR changing transitions, invariants, milestone scope, or tests must update docs in the same
 commit range:
@@ -119,9 +195,17 @@ commit range:
 4. `docs/TESTING_FRAMEWORK_PLAN.md` and/or `tests/scenarios/README.md` as needed
 5. `docs/gitbook/*` pages impacted by the change
 
+Docs should explicitly answer:
+
+- what exists now,
+- what was added in this PR,
+- what is deferred to next slice,
+- what command evidence validates the change,
+- what future slice this unlocks.
+
 ---
 
-## 7. Required contributor validation loop
+## 8. Required contributor validation loop
 
 Run before opening a PR:
 
@@ -143,7 +227,7 @@ If a command is blocked by environment limitations, report the limitation and im
 
 ---
 
-## 8. PR checklist (copy into PR descriptions)
+## 9. PR checklist (copy into PR descriptions)
 
 - [ ] Scope fits one coherent milestone slice.
 - [ ] Transition APIs expose explicit success/error branching.
@@ -155,14 +239,15 @@ If a command is blocked by environment limitations, report the limitation and im
 - [ ] `test_fast` and `test_smoke` executed.
 - [ ] Docs (including GitBook pages) updated in same commit range.
 - [ ] Remaining proof debt identified explicitly.
+- [ ] “Unlocks next slice” note included.
 
 ---
 
-## 9. Codebase touch matrix (what to update when)
+## 10. Codebase touch matrix (what to update when)
 
 This section helps avoid partial updates when changing a subsystem.
 
-### 9.1 Scheduler behavior changes
+### 10.1 Scheduler behavior changes
 
 Touch at least:
 
@@ -174,15 +259,16 @@ Touch at least:
 Validation focus:
 
 - queue/current consistency remains explicit,
-- `*_preserves_schedulerInvariantBundle` theorem surfaces still compile,
-- executable trace remains coherent if scheduling output changed.
+- scheduler theorem entrypoints remain discoverable,
+- fixture/docs are updated if executable output semantics changed.
 
-### 9.2 Capability/CSpace changes
+### 10.2 Capability changes
 
 Touch at least:
 
-- `SeLe4n/Kernel/Capability/Operations.lean`,
-- `SeLe4n/Kernel/Capability/Invariant.lean`,
+- `SeLe4n/Kernel/Capability/Operations.lean` (transition semantics),
+- `SeLe4n/Kernel/Capability/Invariant.lean` (invariant components + proofs),
+- composed bundle references if interfaces changed,
 - fixture/docs if executable output semantics changed.
 
 Validation focus:
@@ -191,11 +277,11 @@ Validation focus:
 - lifecycle authority monotonicity still valid,
 - composed bundle aliases remain stable.
 
-### 9.3 IPC changes
+### 10.3 IPC changes
 
 Touch at least:
 
-- `SeLe4n/Kernel/IPC/Invariant.lean` (transitions + invariants + proofs),
+- `SeLe4n/Kernel/IPC/Operations.lean` and `SeLe4n/Kernel/IPC/Invariant.lean`,
 - composed invariant/bundle module references,
 - `Main.lean` scenario if behavior surface changed,
 - Tier 2 fixture if output changed intentionally.
@@ -206,7 +292,7 @@ Validation focus:
 - scheduler coherence predicates,
 - local-first and composed preservation theorem layering.
 
-### 9.4 Lifecycle/retype (M4) changes
+### 10.4 Lifecycle/retype (M4) changes
 
 Touch at least:
 
@@ -225,7 +311,7 @@ Validation focus:
 
 ---
 
-## 10. Proof review checklist (maintainers)
+## 11. Proof review checklist (maintainers)
 
 When reviewing theorem changes, verify:
 
@@ -237,7 +323,7 @@ When reviewing theorem changes, verify:
 
 ---
 
-## 11. Documentation depth contract
+## 12. Documentation depth contract
 
 For any milestone movement, docs should answer all of:
 
@@ -246,5 +332,6 @@ For any milestone movement, docs should answer all of:
 3. **What is intentionally deferred?**
 4. **Which commands validate the change?**
 5. **How does this affect composed invariant architecture?**
+6. **What does this unlock for the next slice?**
 
-If a doc update does not answer these five, it is incomplete.
+If a doc update does not answer these questions, it is incomplete.
