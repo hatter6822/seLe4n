@@ -24,5 +24,6 @@
 - [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-- [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md)
+- [M5 Development Blueprint](15-m5-development-blueprint.md)
+- [Project Usage and Value](17-project-usage-value.md)
 - [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md)

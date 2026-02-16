@@ -24,7 +24,7 @@ soundness issue is identified.
 - For execution details and reusable delivery pattern: [M4-B Execution Playbook](14-m4b-execution-playbook.md).
 - For next-slice planning: [Current Slice: M5](09-current-slice-m5.md),
   [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md), and
-  [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md).
+  [M5 Development Blueprint](15-m5-development-blueprint.md).
 
 ## M5 handoff (what M4-B enables)
 

@@ -18,6 +18,7 @@ For normative milestones, acceptance criteria, and scope decisions, use
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **Current slice handbook chapter:** [`docs/gitbook/09-current-slice-m5.md`](docs/gitbook/09-current-slice-m5.md)
 - **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
+- **Project usage/value guide:** [`docs/gitbook/17-project-usage-value.md`](docs/gitbook/17-project-usage-value.md)
 - **Architecture and module map:** [`docs/gitbook/03-architecture-and-module-map.md`](docs/gitbook/03-architecture-and-module-map.md)
 - **Codebase deep reference:** [`docs/gitbook/11-codebase-reference.md`](docs/gitbook/11-codebase-reference.md)
 - **Proof and invariant map:** [`docs/gitbook/12-proof-and-invariant-map.md`](docs/gitbook/12-proof-and-invariant-map.md)

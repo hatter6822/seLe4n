@@ -33,8 +33,9 @@ Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance
 12. [Completed Slice: M4-B](16-completed-slice-m4b.md)
 13. [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 14. [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-15. [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md)
-16. [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md)
+15. [M5 Development Blueprint](15-m5-development-blueprint.md)
+16. [Project Usage and Value](17-project-usage-value.md)
+17. [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md)
 
 ## Anti-duplication guidance
 
