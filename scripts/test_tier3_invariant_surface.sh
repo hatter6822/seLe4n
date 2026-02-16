@@ -282,9 +282,10 @@ run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
 run_check "DOC" rg -n 'Active slice:.*M6|Current slice:.*M6|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-m5-closeout-snapshot.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-C completed|WS-M6-D/WS-M6-E in progress' docs/PROJECT_AUDIT.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-C now complete|WS-M6-D focus|WS-M6-E focus' docs/gitbook/19-end-to-end-audit-and-quality-gates.md
-run_check "DOC" rg -n 'M6 WS-M6-A through WS-M6-C are complete|WS-M6-D/WS-M6-E completion' docs/TESTING_FRAMEWORK_PLAN.md
+run_check "DOC" rg -n 'WS-M6-A through WS-M6-D completed and WS-M6-E in progress' docs/PROJECT_AUDIT.md
+run_check "DOC" rg -n 'WS-M6-A through WS-M6-C now complete|closed under WS-M6-D|WS-M6-E focus' docs/gitbook/19-end-to-end-audit-and-quality-gates.md
+run_check "DOC" rg -n 'M6 WS-M6-A through WS-M6-D are complete|WS-M6-E completion' docs/TESTING_FRAMEWORK_PLAN.md
+run_check "DOC" rg -n 'WS-M6-D complete; WS-M6-E in progress' docs/gitbook/05-specification-and-roadmap.md
 run_check "DOC" rg -n 'M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md
 run_check "DOC" rg -n 'WS-M5-D|WS-M5-E|proof package ✅ \*\*completed\*\*|Evidence and validation ✅ \*\*completed\*\*|WS-M5-A/B/C/D/E complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
 run_check "DOC" rg -n 'M4-B \(complete\)|Completed predecessor slice: M4-B' docs/SEL4_SPEC.md docs/gitbook/16-completed-slice-m4b.md docs/gitbook/09-m5-closeout-snapshot.md

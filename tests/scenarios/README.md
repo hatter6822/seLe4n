@@ -6,7 +6,7 @@ This directory tracks fixture-backed executable trace checks used by
 ## Stage alignment
 
 - Closed baseline: M1-M3.5 (scheduler, capability, IPC handshake coherence).
-- Active stage: M5 service-graph + policy surface development.
+- Active stage: M6 architecture-binding interface delivery (WS-M6-A through WS-M6-D complete; WS-M6-E in progress).
 - Previous stage (closed): M4-B lifecycle-capability composition hardening (WS-A..WS-E complete).
 
 ## Fixture source
@@ -28,18 +28,18 @@ This directory tracks fixture-backed executable trace checks used by
    ./scripts/test_tier2_trace.sh
    ./scripts/test_smoke.sh
    ```
-4. Document why fixture changes are expected and which slice they support (M4-B closeout or M5 execution).
+4. Document why fixture changes are expected and which slice they support (M4-B, M5, or M6 execution).
 
 
 
-## Current fixture rationale notes (M5 evidence closure additions)
+## Current fixture rationale notes (M6 WS-M6-D closure additions)
 
-M5 evidence lines now capture deterministic service-policy behavior without overfitting on output formatting:
+M6 evidence adds architecture-boundary adapter trace anchors while retaining the M5 service-policy closure lines:
 
-- `service restart status` keeps the success path visible for orchestration sequencing.
-- `service start denied branch` and `service stop denied branch` pin policy-denial behavior.
-- `service start dependency branch` and `service restart start-stage failure` pin dependency-failure behavior.
-- `service isolation api↔denied` and `service isolation api↔db` pin explicit positive/negative isolation-edge checks.
+- `adapter timer success path value` and `adapter read success path byte` pin successful boundary-visible behavior.
+- `adapter timer invalid-context branch`, `adapter timer unsupported branch`, and `adapter read denied branch` pin bounded failure semantics.
+- `adapter register write success path value` and `adapter register write unsupported branch` pin deterministic register boundary behavior across success/failure branches.
+- `service restart status`, `service start denied branch`, `service stop denied branch`, and dependency/isolation lines remain as M5 regression anchors to ensure no service-policy drift while M6 evolves.
 
 ## Historical fixture rationale notes (M4-B closeout baseline)
 

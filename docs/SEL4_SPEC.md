@@ -274,9 +274,9 @@ M6 work is tracked through the following workstreams:
    - runtime boundary contracts provide decidability witnesses so adapter branching is executable.
 3. **WS-M6-C — proof integration** ✅ **completed**
    - adapter assumptions are connected to local and composed invariant-preservation hooks in `SeLe4n/Kernel/Architecture/Invariant.lean` via `proofLayerInvariantBundle` and adapter-path preservation theorems.
-4. **WS-M6-D — evidence + test anchor continuity**
+4. **WS-M6-D — evidence + test anchor continuity** ✅ **completed**
    - extend executable traces, fixtures, and Tier 3 symbol checks for new claims.
-5. **WS-M6-E — docs + handoff packaging**
+5. **WS-M6-E — docs + handoff packaging** (in progress)
    - synchronize roadmap and stage markers across root docs and GitBook.
 
 ### 6.6 Post-M6 first-hardware target
