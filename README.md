@@ -35,6 +35,8 @@ For normative milestones, acceptance criteria, and scope decisions, use
 ./scripts/setup_lean_env.sh
 ```
 
+The setup script now retries `shellcheck` installation with existing package indexes when `apt-get update` is partially unavailable (for example, blocked optional third-party repositories), so bootstrap remains resilient in restricted CI environments.
+
 ### 2) Build and run
 
 ```bash

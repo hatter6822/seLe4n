@@ -22,8 +22,13 @@ ensure_shellcheck() {
   }
 
   if command -v apt-get >/dev/null 2>&1; then
-    run_pkg_install apt-get update
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck
+    if ! run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends shellcheck; then
+      echo "[setup] shellcheck install without apt index refresh failed; running apt-get update and retrying"
+      if ! run_pkg_install apt-get update; then
+        echo "[setup] warning: apt-get update failed (often due to optional or blocked third-party repositories); retrying shellcheck install with existing indexes"
+      fi
+      run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends shellcheck
+    fi
   elif command -v dnf >/dev/null 2>&1; then
     run_pkg_install dnf install -y ShellCheck
   elif command -v yum >/dev/null 2>&1; then

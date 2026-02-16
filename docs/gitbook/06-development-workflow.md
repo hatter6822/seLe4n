@@ -16,6 +16,8 @@ rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 ./scripts/test_full.sh
 ```
 
+Bootstrap note: `./scripts/setup_lean_env.sh` retries `shellcheck` installation even when `apt-get update` is partially unavailable (for example, blocked optional third-party repos), reducing setup friction in restricted CI/container environments.
+
 ## Milestone-oriented implementation pattern
 
 1. update/introduce transition,
