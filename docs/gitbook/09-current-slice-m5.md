@@ -7,7 +7,7 @@ foundation.
 
 ## Current status
 
-- **Slice state:** active implementation (WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D completed; WS-M5-E onward in progress).
+- **Slice state:** active implementation (WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E completed; WS-M5-F closeout in progress).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -41,9 +41,9 @@ Local preservation theorem entrypoints now cover `serviceStart`, `serviceStop`, 
 and composed bundle preservation is available through
 `serviceLifecycleCapabilityInvariantBundle` plus explicit failure-path theorems.
 
-### WS-M5-E — evidence and testing
+### WS-M5-E — evidence and testing ✅ **completed**
 
-Expose scenarios in `Main.lean`, refresh fixtures intentionally, and extend Tier 3/Tier 4 coverage.
+`Main.lean` now includes restart/denial/dependency failure plus isolation-edge evidence lines, fixture anchors include those semantic fragments, and Tier 3/Tier 4 checks validate the expanded evidence surface.
 
 ### WS-M5-F — documentation and closeout
 

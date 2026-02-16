@@ -201,6 +201,8 @@ run_check "TRACE" rg -n 'service stop denied branch' Main.lean
 run_check "TRACE" rg -n 'service stop illegal-state branch' Main.lean
 run_check "TRACE" rg -n 'service restart stop-stage failure' Main.lean
 run_check "TRACE" rg -n 'service restart start-stage failure' Main.lean
+run_check "TRACE" rg -n 'service isolation api↔denied' Main.lean
+run_check "TRACE" rg -n 'service isolation api↔db' Main.lean
 run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service restart status: some' tests/fixtures/main_trace_smoke.expected
@@ -208,6 +210,8 @@ run_check "TRACE" rg -n 'service stop denied branch: SeLe4n.Model.KernelError.po
 run_check "TRACE" rg -n 'service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'service isolation api↔db: false' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype success object kind' Main.lean
@@ -231,7 +235,7 @@ run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
 run_check "DOC" rg -n 'Active slice:|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-current-slice-m5.md
 run_check "DOC" rg -n 'M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md
-run_check "DOC" rg -n 'WS-M5-D|proof package ✅ \*\*completed\*\*|WS-M5-A/B/C/D complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
+run_check "DOC" rg -n 'WS-M5-D|WS-M5-E|proof package ✅ \*\*completed\*\*|Evidence and validation ✅ \*\*completed\*\*|WS-M5-A/B/C/D/E complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
 run_check "DOC" rg -n 'M4-B \(complete\)|Completed predecessor slice: M4-B' docs/SEL4_SPEC.md docs/gitbook/16-completed-slice-m4b.md docs/gitbook/09-current-slice-m5.md
 run_check "DOC" rg -n 'Workstream B — invariant hardening ✅' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'Workstream C — preservation theorem expansion ✅' docs/gitbook/14-m4b-execution-playbook.md

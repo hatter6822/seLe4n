@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M5 service-graph + policy surface delivery (active implementation; WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D complete)**.
+Current stage: **M5 service-graph + policy surface delivery (active implementation; WS-M5-A, WS-M5-B, WS-M5-C, WS-M5-D, and WS-M5-E complete; WS-M5-F in progress)**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 

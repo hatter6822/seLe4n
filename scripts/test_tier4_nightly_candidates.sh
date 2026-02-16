@@ -22,6 +22,9 @@ mkdir -p "${ARTIFACT_DIR}"
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run1.trace'
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run2.trace'
 run_check "TRACE" bash -lc 'diff -u tests/artifacts/nightly/sele4n_run1.trace tests/artifacts/nightly/sele4n_run2.trace > tests/artifacts/nightly/sele4n_determinism.diff'
+run_check "TRACE" rg -n 'service restart status: some' tests/artifacts/nightly/sele4n_run1.trace
+run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/artifacts/nightly/sele4n_run1.trace
+run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/artifacts/nightly/sele4n_run1.trace
 run_check "META" "${SCRIPT_DIR}/test_full.sh"
 
 finalize_report
