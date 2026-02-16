@@ -7,7 +7,7 @@ foundation.
 
 ## Current status
 
-- **Slice state:** active implementation (WS-M5-A, WS-M5-B, and WS-M5-C completed; WS-M5-D onward in progress).
+- **Slice state:** active implementation (WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D completed; WS-M5-E onward in progress).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -35,10 +35,11 @@ explicit `policyDenied`, `dependencyViolation`, and `illegalState` failure branc
 Reusable policy predicates and bridge lemmas are implemented in `SeLe4n/Kernel/Service/Invariant.lean`
 without coupling policy logic to service-state mutation helpers.
 
-### WS-M5-D — proof completion
+### WS-M5-D — proof completion ✅ **completed**
 
-Land local preservation first, then composed preservation across service + lifecycle + capability
-bundles.
+Local preservation theorem entrypoints now cover `serviceStart`, `serviceStop`, and `serviceRestart`,
+and composed bundle preservation is available through
+`serviceLifecycleCapabilityInvariantBundle` plus explicit failure-path theorems.
 
 ### WS-M5-E — evidence and testing
 

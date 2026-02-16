@@ -34,6 +34,18 @@ def servicePolicySurfaceInvariant (st : SystemState) : Prop :=
       policyBackingObjectTyped st svc ∧
       (policyOwnerAuthorityRefRecorded st svc → policyOwnerAuthoritySlotPresent st svc)
 
+/-- Cross-subsystem M5 proof-package bundle over service policy + lifecycle + capability surfaces. -/
+def serviceLifecycleCapabilityInvariantBundle (st : SystemState) : Prop :=
+  servicePolicySurfaceInvariant st ∧ lifecycleInvariantBundle st ∧ capabilityInvariantBundle st
+
+theorem serviceLifecycleCapabilityInvariantBundle_of_components
+    (st : SystemState)
+    (hPolicy : servicePolicySurfaceInvariant st)
+    (hLifecycle : lifecycleInvariantBundle st)
+    (hCap : capabilityInvariantBundle st) :
+    serviceLifecycleCapabilityInvariantBundle st := by
+  exact ⟨hPolicy, hLifecycle, hCap⟩
+
 /-- Bridge lemma: lifecycle typing assumptions imply policy backing-object typing. -/
 theorem policyBackingObjectTyped_of_lifecycleInvariant
     (st : SystemState)
@@ -119,5 +131,171 @@ theorem serviceStop_policyDenied_separates_check_from_mutation
     (hDenied : policyAllowsStop svc = false) :
     serviceStop sid policyAllowsStop st = .error .policyDenied := by
   exact serviceStop_error_policyDenied st sid policyAllowsStop svc hSvc hRunning hDenied
+
+theorem storeServiceState_preserves_servicePolicySurfaceInvariant
+    (st : SystemState)
+    (sid : ServiceId)
+    (svc : ServiceGraphEntry)
+    (newStatus : ServiceStatus)
+    (hSvc : lookupService st sid = some svc)
+    (hPolicy : servicePolicySurfaceInvariant st) :
+    servicePolicySurfaceInvariant (storeServiceState sid { svc with status := newStatus } st) := by
+  intro sid' svc' hLookup
+  by_cases hSid : sid' = sid
+  · subst sid'
+    have hLookupEq :
+        lookupService (storeServiceState sid { svc with status := newStatus } st) sid =
+          some { svc with status := newStatus } :=
+      storeServiceState_lookup_eq st sid { svc with status := newStatus }
+    rw [hLookupEq] at hLookup
+    cases hLookup
+    rcases hPolicy sid svc hSvc with ⟨hTyped, hBridge⟩
+    refine ⟨?_, ?_⟩
+    · simpa [policyBackingObjectTyped] using hTyped
+    · intro hRef
+      have hRefOld : policyOwnerAuthorityRefRecorded st svc := by
+        simpa [policyOwnerAuthorityRefRecorded] using hRef
+      have hPresentOld : policyOwnerAuthoritySlotPresent st svc := hBridge hRefOld
+      simpa [policyOwnerAuthoritySlotPresent] using hPresentOld
+  · have hLookupNe := storeServiceState_lookup_ne st sid sid' { svc with status := newStatus } hSid
+    have hLookupOld : lookupService st sid' = some svc' := by simpa [hLookupNe] using hLookup
+    exact hPolicy sid' svc' hLookupOld
+
+theorem storeServiceState_preserves_lifecycleInvariantBundle
+    (st : SystemState)
+    (sid : ServiceId)
+    (svc : ServiceGraphEntry)
+    (newStatus : ServiceStatus)
+    (hLifecycle : lifecycleInvariantBundle st) :
+    lifecycleInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
+  simpa [lifecycleInvariantBundle, lifecycleIdentityAliasingInvariant, lifecycleIdentityTypeExact,
+    lifecycleIdentityNoTypeAliasConflict, lifecycleCapabilityReferenceInvariant,
+    lifecycleCapabilityRefExact, lifecycleCapabilityRefObjectTargetBacked, storeServiceState,
+    SystemState.objectTypeMetadataConsistent, SystemState.capabilityRefMetadataConsistent,
+    SystemState.lookupObjectTypeMeta, SystemState.lookupCapabilityRefMeta,
+    SystemState.lookupSlotCap, SystemState.lookupCNode] using hLifecycle
+
+theorem storeServiceState_preserves_capabilityInvariantBundle
+    (st : SystemState)
+    (sid : ServiceId)
+    (svc : ServiceGraphEntry)
+    (newStatus : ServiceStatus) :
+    capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
+  exact capabilityInvariantBundle_holds (storeServiceState sid { svc with status := newStatus } st)
+
+theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st st' : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStart : ServicePolicy)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (hStep : serviceStart sid policyAllowsStart st = .ok ((), st')) :
+    serviceLifecycleCapabilityInvariantBundle st' := by
+  rcases hInv with ⟨hPolicy, hLifecycle, hCap⟩
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      have hSvc : lookupService st sid = some svc := hLookup
+      by_cases hStopped : svc.status = .stopped
+      · by_cases hAllow : policyAllowsStart svc
+        · by_cases hDeps : dependenciesSatisfied st sid
+          · unfold storeServiceEntry at hStep
+            simp [hLookup, hStopped, hAllow, hDeps, storeServiceState] at hStep
+            cases hStep
+            exact ⟨
+              storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
+              storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
+              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running
+            ⟩
+          · simp [hLookup, hStopped, hAllow, hDeps] at hStep
+        · simp [hLookup, hStopped, hAllow] at hStep
+      · simp [hLookup, hStopped] at hStep
+
+theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st st' : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (hStep : serviceStop sid policyAllowsStop st = .ok ((), st')) :
+    serviceLifecycleCapabilityInvariantBundle st' := by
+  rcases hInv with ⟨hPolicy, hLifecycle, hCap⟩
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      have hSvc : lookupService st sid = some svc := hLookup
+      by_cases hRunning : svc.status = .running
+      · by_cases hAllow : policyAllowsStop svc
+        · unfold storeServiceEntry at hStep
+          simp [hLookup, hRunning, hAllow, storeServiceState] at hStep
+          cases hStep
+          exact ⟨
+            storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
+            storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
+            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped
+          ⟩
+        · simp [hLookup, hRunning, hAllow] at hStep
+      · simp [hLookup, hRunning] at hStep
+
+theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st st' : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (policyAllowsStart : ServicePolicy)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (hStep : serviceRestart sid policyAllowsStop policyAllowsStart st = .ok ((), st')) :
+    serviceLifecycleCapabilityInvariantBundle st' := by
+  rcases serviceRestart_ok_implies_staged_steps st st' sid policyAllowsStop policyAllowsStart hStep with
+    ⟨stStopped, hStop, hStart⟩
+  have hStoppedInv : serviceLifecycleCapabilityInvariantBundle stStopped :=
+    serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
+      st stStopped sid policyAllowsStop hInv hStop
+  exact serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
+    stStopped st' sid policyAllowsStart hStoppedInv hStart
+
+theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStart : ServicePolicy)
+    (e : KernelError)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (_hStep : serviceStart sid policyAllowsStart st = .error e) :
+    serviceLifecycleCapabilityInvariantBundle st := by
+  exact hInv
+
+theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (e : KernelError)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (_hStep : serviceStop sid policyAllowsStop st = .error e) :
+    serviceLifecycleCapabilityInvariantBundle st := by
+  exact hInv
+
+theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (policyAllowsStart : ServicePolicy)
+    (e : KernelError)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (_hStep : serviceRestart sid policyAllowsStop policyAllowsStart st = .error e)
+    (_hStop : serviceStop sid policyAllowsStop st = .error e) :
+    serviceLifecycleCapabilityInvariantBundle st := by
+  exact hInv
+
+theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle
+    (st stStopped : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (policyAllowsStart : ServicePolicy)
+    (e : KernelError)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st)
+    (hStop : serviceStop sid policyAllowsStop st = .ok ((), stStopped))
+    (_hStart : serviceStart sid policyAllowsStart stStopped = .error e) :
+    serviceLifecycleCapabilityInvariantBundle stStopped := by
+  exact serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
+    st stStopped sid policyAllowsStop hInv hStop
 
 end SeLe4n.Kernel

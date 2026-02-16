@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path for the M5 stage.
 
-Current stage context: **M5 service-graph + policy surface delivery active (WS-M5-A, WS-M5-B, and WS-M5-C complete; M4-B fully closed)**.
+Current stage context: **M5 service-graph + policy surface delivery active (WS-M5-A, WS-M5-B, WS-M5-C, and WS-M5-D complete; M4-B fully closed)**.
 
 ## 2. Current enforced tiers
 

@@ -25,7 +25,7 @@ M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardenin
 
 ### M5 implementation workstreams
 
-#### WS-M5-A — Service graph model
+#### WS-M5-A — Service graph model ✅ **completed**
 
 - define service identity, status, and dependency structure,
 - model restart intent and isolation boundaries,
@@ -43,7 +43,7 @@ M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardenin
 - bridge policy checks are connected to existing invariant bundles,
 - policy predicates remain separated from service-state mutation scripts.
 
-#### WS-M5-D — Proof completion
+#### WS-M5-D — Proof completion ✅ **completed**
 
 - local preservation for each service transition,
 - composed preservation across service + lifecycle + capability bundles,

@@ -178,6 +178,17 @@ run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycle
 run_check "INVARIANT" rg -n '^theorem serviceStart_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem serviceStop_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant.lean
 
+# M5-D proof-package anchors must remain present.
+run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
@@ -220,6 +231,7 @@ run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
 run_check "DOC" rg -n 'Active slice:|Current Slice: M5' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-current-slice-m5.md
 run_check "DOC" rg -n 'M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md
+run_check "DOC" rg -n 'WS-M5-D|proof package ✅ \*\*completed\*\*|WS-M5-A/B/C/D complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/09-current-slice-m5.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
 run_check "DOC" rg -n 'M4-B \(complete\)|Completed predecessor slice: M4-B' docs/SEL4_SPEC.md docs/gitbook/16-completed-slice-m4b.md docs/gitbook/09-current-slice-m5.md
 run_check "DOC" rg -n 'Workstream B — invariant hardening ✅' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'Workstream C — preservation theorem expansion ✅' docs/gitbook/14-m4b-execution-playbook.md
