@@ -178,6 +178,23 @@ Design details that matter:
 3. **Successful path reuses `storeObject`**
    - object store and lifecycle object-type metadata are updated atomically.
 
+### `SeLe4n/Kernel/Service/Operations.lean`
+
+Primary semantics:
+
+- orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
+- explicit failure outcomes (`policyDenied`, `dependencyViolation`, `illegalState`),
+- staged-order theorem witness (`serviceRestart_ok_implies_staged_steps`).
+
+Design details that matter:
+
+1. **Transition checks are ordered and explicit**
+   - lookup/state/policy/dependency gates occur in deterministic sequence.
+2. **Policy is separated from mutation**
+   - transitions receive predicate parameters and only mutate after policy approval.
+3. **Restart is composition-first**
+   - restart semantics are encoded as stop-then-start and proven as staged execution.
+
 ### `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 
 Primary semantics:

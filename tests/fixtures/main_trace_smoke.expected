@@ -1,5 +1,13 @@
 scheduled thread: some 1
 source cap rights before mint:
+service start api status: some (SeLe4n.Model.ServiceStatus.running)
+service start denied branch: SeLe4n.Model.KernelError.policyDenied
+service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
+service restart status: some (SeLe4n.Model.ServiceStatus.running)
+service stop denied branch: SeLe4n.Model.KernelError.policyDenied
+service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
+service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
+service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
 lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
 lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
 lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
