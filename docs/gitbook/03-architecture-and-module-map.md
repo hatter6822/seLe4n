@@ -83,6 +83,10 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
   - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
   - staged-order theorem surface for restart composition.
+- `SeLe4n/Kernel/Service/Invariant.lean`
+  - reusable policy predicate components and `servicePolicySurfaceInvariant`,
+  - bridge lemmas connecting service policy assumptions to lifecycle/capability bundles,
+  - explicit policy-denial check-vs-mutation theorem entrypoints.
 
 ### API + executable
 

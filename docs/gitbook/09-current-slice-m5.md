@@ -7,7 +7,7 @@ foundation.
 
 ## Current status
 
-- **Slice state:** active implementation (WS-M5-A and WS-M5-B completed; WS-M5-C onward in progress).
+- **Slice state:** active implementation (WS-M5-A, WS-M5-B, and WS-M5-C completed; WS-M5-D onward in progress).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -30,9 +30,10 @@ Service identity, status, dependency, isolation, and deterministic state helpers
 Deterministic `serviceStart`, `serviceStop`, and `serviceRestart` transitions are implemented with
 explicit `policyDenied`, `dependencyViolation`, and `illegalState` failure branches.
 
-### WS-M5-C — policy and authority layer
+### WS-M5-C — policy and authority layer ✅ **completed**
 
-Introduce reusable policy predicates and bridge lemmas without coupling policy logic to mutation.
+Reusable policy predicates and bridge lemmas are implemented in `SeLe4n/Kernel/Service/Invariant.lean`
+without coupling policy logic to service-state mutation helpers.
 
 ### WS-M5-D — proof completion
 

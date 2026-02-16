@@ -37,11 +37,11 @@ M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardenin
 - expose policy-denial/dependency-violation/invalid-state branches explicitly,
 - codify staged restart ordering in theorem surface.
 
-#### WS-M5-C — Policy and authority layer
+#### WS-M5-C — Policy and authority layer ✅ **completed**
 
-- encode reusable policy predicates over capability/lifecycle operations,
-- bridge policy checks to existing invariant bundles,
-- avoid coupling policy predicates to single-service mutation scripts.
+- reusable policy predicates are encoded over service/lifecycle/capability surfaces,
+- bridge policy checks are connected to existing invariant bundles,
+- policy predicates remain separated from service-state mutation scripts.
 
 #### WS-M5-D — Proof completion
 
