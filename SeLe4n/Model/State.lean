@@ -36,6 +36,7 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
@@ -50,6 +51,7 @@ instance : Inhabited SystemState where
   default := {
     machine := default
     objects := fun _ => none
+    services := fun _ => none
     scheduler := default
     irqHandlers := fun _ => none
     lifecycle := {
@@ -115,6 +117,77 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := { st.scheduler with current := tid }
     .ok ((), { st with scheduler := sched })
+
+/-- Read one service graph entry. -/
+def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=
+  st.services sid
+
+/-- Determine whether `sid` lists `dependency` as a declared dependency edge. -/
+def hasServiceDependency (st : SystemState) (sid dependency : ServiceId) : Bool :=
+  match lookupService st sid with
+  | some svc => dependency ∈ svc.dependencies
+  | none => false
+
+/-- Determine whether two services are explicitly isolated from one another. -/
+def hasIsolationEdge (st : SystemState) (lhs rhs : ServiceId) : Bool :=
+  match lookupService st lhs, lookupService st rhs with
+  | some lhsSvc, some rhsSvc => rhs ∈ lhsSvc.isolatedFrom || lhs ∈ rhsSvc.isolatedFrom
+  | _, _ => false
+
+/-- A service is runnable only when all declared dependencies are currently `running`. -/
+def dependenciesSatisfied (st : SystemState) (sid : ServiceId) : Bool :=
+  match lookupService st sid with
+  | none => false
+  | some svc =>
+      svc.dependencies.all (fun dep =>
+        match lookupService st dep with
+        | some depSvc => depSvc.status = .running
+        | none => false)
+
+/-- Deterministic pure state helper: replace one service graph entry. -/
+def storeServiceState (sid : ServiceId) (entry : ServiceGraphEntry) (st : SystemState) : SystemState :=
+  {
+    st with
+      services := fun sid' => if sid' = sid then some entry else st.services sid'
+  }
+
+/-- Deterministic pure state helper: update only the status of an existing service. -/
+def setServiceStatusState (sid : ServiceId) (status : ServiceStatus) (st : SystemState) : SystemState :=
+  match lookupService st sid with
+  | none => st
+  | some svc => storeServiceState sid { svc with status := status } st
+
+theorem storeServiceState_lookup_eq
+    (st : SystemState)
+    (sid : ServiceId)
+    (entry : ServiceGraphEntry) :
+    lookupService (storeServiceState sid entry st) sid = some entry := by
+  simp [lookupService, storeServiceState]
+
+theorem storeServiceState_lookup_ne
+    (st : SystemState)
+    (sid sid' : ServiceId)
+    (entry : ServiceGraphEntry)
+    (hNe : sid' ≠ sid) :
+    lookupService (storeServiceState sid entry st) sid' = lookupService st sid' := by
+  simp [lookupService, storeServiceState, hNe]
+
+theorem setServiceStatusState_lookup_eq
+    (st : SystemState)
+    (sid : ServiceId)
+    (status : ServiceStatus)
+    (svc : ServiceGraphEntry)
+    (hSvc : lookupService st sid = some svc) :
+    lookupService (setServiceStatusState sid status st) sid = some { svc with status := status } := by
+  simp [setServiceStatusState, hSvc, storeServiceState_lookup_eq]
+
+theorem setServiceStatusState_preserves_objects
+    (st : SystemState)
+    (sid : ServiceId)
+    (status : ServiceStatus) :
+    (setServiceStatusState sid status st).objects = st.objects := by
+  unfold setServiceStatusState lookupService
+  cases hSvc : st.services sid <;> simp [storeServiceState]
 
 theorem storeCapabilityRef_preserves_objects
     (st st' : SystemState)

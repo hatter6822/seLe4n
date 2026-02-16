@@ -5,7 +5,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M5 service-graph + policy surfaces.
+- **Active slice:** M5 service-graph + policy surfaces (WS-M5-A service graph model completed).
 - **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
 
 For normative milestones, acceptance criteria, and scope decisions, use

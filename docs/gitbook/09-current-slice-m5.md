@@ -7,7 +7,7 @@ foundation.
 
 ## Current status
 
-- **Slice state:** active planning + incremental implementation.
+- **Slice state:** active implementation (WS-M5-A completed; WS-M5-B onward in progress).
 - **Baseline assumption:** M4-B theorem and invariant surfaces are stable and should be consumed as
   dependency contracts.
 
@@ -21,9 +21,9 @@ foundation.
 
 ## Workstream map
 
-### WS-M5-A — service graph model
+### WS-M5-A — service graph model ✅ **completed**
 
-Define service identity, status, dependencies, and deterministic lifecycle helpers.
+Service identity, status, dependency, isolation, and deterministic state helpers are now implemented in the model layer.
 
 ### WS-M5-B — policy and authority layer
 
