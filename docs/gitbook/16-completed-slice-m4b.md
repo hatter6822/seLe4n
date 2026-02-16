@@ -22,7 +22,7 @@ soundness issue is identified.
 
 - For acceptance criteria and formal milestone scope: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
 - For execution details and reusable delivery pattern: [M4-B Execution Playbook](14-m4b-execution-playbook.md).
-- For next-slice planning: [Current Slice: M5](09-current-slice-m5.md),
+- For handoff context: [M5 Closeout Snapshot](09-m5-closeout-snapshot.md),
   [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md), and
   [M5 Development Blueprint](15-m5-development-blueprint.md).
 

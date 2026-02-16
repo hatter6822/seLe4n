@@ -2,7 +2,7 @@
 
 ## 1. Executive summary
 
-Audit conclusion: **the repository is currently healthy, internally consistent with the M4-B closeout claim, and operationally testable end-to-end**.
+Audit conclusion: **the repository is currently healthy, internally consistent with M5 closeout (including WS-M5-F), and operationally testable end-to-end**.
 
 What was re-validated in this audit pass:
 
@@ -29,9 +29,9 @@ This audit evaluated three dimensions:
    - negative-control failure detection behavior.
 
 3. **Documentation fidelity and path clarity**
-   - consistency of current stage (M4-B completed workstreams),
+   - consistency of current stage (M5 completed workstreams with M6 handoff),
    - coherence across README/spec/development/testing/gitbook surfaces,
-   - explicit forward plan into M5 preparation.
+   - explicit forward plan into M6 interface preparation.
 
 ## 3. Current-state findings
 
@@ -53,11 +53,11 @@ This audit evaluated three dimensions:
 
 ### 3.3 Documentation status
 
-Documentation is substantially complete for current milestone closure:
+Documentation is synchronized for current milestone closure and handoff:
 
-- current stage language is synchronized around M4-B workstream completion,
-- testing responsibilities and triage map are explicit,
-- roadmap path from M4-B to M5 is documented in both spec and handbook slices.
+- current stage language reflects M5 closeout and M6 as active planning focus,
+- testing responsibilities and triage map are explicit and preserved across tiers,
+- roadmap path from M5 closeout to M6 is documented in spec and handbook slices.
 
 ## 4. Coverage interpretation (important)
 
@@ -73,9 +73,9 @@ For this repository, “full coverage” should be interpreted as **closure of c
 
 ### 4.2 Remaining coverage opportunities
 
-1. Increase executable scenario breadth for deeper M5-target stories (service graphs/isolation motifs).
-2. Expand explicit failure-path fixtures for future policy decomposition operations.
-3. Add additional deterministic replay seeds once new scenario generators land.
+1. Increase executable scenario breadth for M6 interface-assumption stories.
+2. Expand explicit fixtures for architecture-binding assumption checks once interfaces land.
+3. Add additional deterministic replay seeds as new architecture-bound adapters are introduced.
 
 ## 5. Risk register and mitigations
 
@@ -90,25 +90,25 @@ For this repository, “full coverage” should be interpreted as **closure of c
 
 ## 6. Path of development (recommended near-term plan)
 
-### 6.1 M5 preparation track A — service-graph semantics
+### 6.1 M6 track A — architecture-assumption interfaces
 
-- define minimal service-node state model extensions,
-- introduce restart/isolation transition seeds,
-- preserve reuse of closed M1-M4 bundle contracts.
+- define minimal, explicit architecture assumption interfaces,
+- keep interfaces theorem-friendly and reviewable,
+- preserve reuse of closed M1–M5 bundle contracts.
 
-### 6.2 M5 preparation track B — policy-oriented authority layer
+### 6.2 M6 track B — adapter and proof surfaces
 
-- specify policy predicates that compose over current capability/lifecycle invariants,
-- add local preservation theorems before bundle-level composition.
+- define adapter surfaces from architecture-neutral semantics,
+- add local preservation hooks before broader composition.
 
-### 6.3 M5 preparation track C — architecture-binding interfaces
+### 6.3 M6 track C — boundary validation growth
 
-- codify minimal architecture-assumption interfaces,
-- keep core generic proofs architecture-agnostic,
-- stage architecture-specific obligations as additive modules.
+- stage boot/runtime boundary obligations as explicit contracts,
+- expand fixtures and symbol anchors for interface assumptions,
+- keep tiered test obligations additive and deterministic.
 
 ## 7. Final verdict
 
-The project is in a strong state for M5 kickoff preparation: build/test/doc infrastructure is functioning, milestone claims are corroborated by current checks, and the testing framework demonstrates both positive-pass and negative-control behavior.
+The project is in a strong state for M6 interface-preparation work: build/test/doc infrastructure is functioning, milestone claims are corroborated by current checks, and the testing framework demonstrates both positive-pass and negative-control behavior.
 
 To keep quality optimal, continue expanding obligation-based coverage in lockstep with new semantics rather than pursuing metric-only line coverage that is poorly matched to theorem-centric Lean development.

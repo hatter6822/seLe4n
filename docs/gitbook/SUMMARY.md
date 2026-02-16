@@ -9,9 +9,9 @@
 - [Architecture & Module Map](03-architecture-and-module-map.md)
 - [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-## Current slice execution
+## Active planning + latest closeout
 
-- [Current Slice: M5](09-current-slice-m5.md)
+- [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 - [Specification & Roadmap](05-specification-and-roadmap.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)

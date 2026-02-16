@@ -39,12 +39,12 @@ When semantics or milestone boundaries change, keep these in sync:
 
 ## Current focus and immediate next focus
 
-- **Completed baseline slice:** M4-A lifecycle/retype foundations.
-- **Current delivery slice:** M4-B lifecycle-capability composition hardening.
-- **Next slice preview:** M5 service-graph + policy surfaces.
+- **Completed baseline slice:** M5 service-graph + policy surfaces.
+- **Current delivery slice:** M6 architecture-binding interface preparation.
+- **Historical predecessor slice:** M4-B lifecycle-capability composition hardening.
 
-Contributors should treat M4-A theorem surfaces as stable interfaces and layer M4-B semantics on
-top, rather than reshaping already-closed M4-A contracts.
+Contributors should treat M1–M5 theorem surfaces as stable interfaces and layer M6 architecture
+binding work on top, rather than reshaping already-closed contracts.
 
 ## Definition of done for milestone-moving PRs
 
@@ -57,7 +57,7 @@ A PR that claims milestone movement should include:
 5. explicit deferred-work note tied to next slice.
 
 
-## M4-B execution rhythm (recommended)
+## M6 execution rhythm (recommended)
 
 For active-slice work, use a weekly rhythm:
 

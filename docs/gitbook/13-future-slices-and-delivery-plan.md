@@ -11,65 +11,53 @@ implementation, proofs, tests, and docs aligned.
 4. ship docs and deferrals with each milestone change,
 5. preserve deterministic semantics before broadening scope.
 
-## 2. Immediate next slice (M5)
+## 2. Immediate next slice (M6)
 
-M5 theme: **service-oriented semantics built on M4 lifecycle-capability hardening**.
+M6 theme: **architecture-binding interfaces built on completed M5 service/policy semantics**.
 
-### M5 target outcomes
+### M6 target outcomes
 
-1. service dependency graph representation and transition semantics,
-2. policy-aware authority constraints integrated with capability surfaces,
-3. preservation theorems for restart/isolation and failure paths,
-4. executable scenario evidence for orchestration behaviors,
-5. Tier 3 anchors for M5 theorem/bundle surfaces.
+1. explicit architecture assumptions represented as stable interface artifacts,
+2. proof-carrying adapter surfaces from architecture-neutral semantics to architecture-bound contexts,
+3. platform contract checklist coverage for boot/runtime boundary expectations,
+4. preservation-proof hooks that keep M1–M5 theorem layering reusable during binding,
+5. fixture/test-plan extensions that validate interface assumptions without weakening existing gates.
 
-### M5 implementation workstreams
+### M5 closeout baseline consumed by M6
 
 #### WS-M5-A — Service graph model ✅ **completed**
 
-- define service identity, status, and dependency structure,
-- model restart intent and isolation boundaries,
-- expose deterministic helper transitions.
+- service identity, status, dependency, isolation, and deterministic state helpers are stable.
 
 #### WS-M5-B — Orchestration transitions ✅ **completed**
 
-- implement deterministic start/stop/restart transitions,
-- expose policy-denial/dependency-violation/invalid-state branches explicitly,
-- codify staged restart ordering in theorem surface.
+- deterministic start/stop/restart transitions with explicit failure branches are stable.
 
 #### WS-M5-C — Policy and authority layer ✅ **completed**
 
-- reusable policy predicates are encoded over service/lifecycle/capability surfaces,
-- bridge policy checks are connected to existing invariant bundles,
-- policy predicates remain separated from service-state mutation scripts.
+- reusable policy predicates and bridge lemmas to lifecycle/capability surfaces are stable.
 
 #### WS-M5-D — Proof completion ✅ **completed**
 
-- local preservation for each service transition,
-- composed preservation across service + lifecycle + capability bundles,
-- failure-path theorem completion.
+- local and composed preservation theorem entrypoints (including failure-path coverage) are stable.
 
 #### WS-M5-E — Evidence and testing ✅ **completed**
 
-- scenario traces now cover restart, dependency failure, policy denial, and isolation-edge checks,
-- fixture anchors include service semantics with rationale notes in `tests/scenarios/README.md`,
-- Tier 3 anchors and Tier 4 nightly candidate checks now include M5 evidence lines.
+- executable traces, fixtures, and Tier 3/4 anchor coverage for M5 scenarios are stable.
 
-#### WS-M5-F — Documentation and closeout
+#### WS-M5-F — Documentation and closeout ✅ **completed**
 
-- align spec/README/GitBook with shipped behavior,
-- record M6 assumptions and deferred items,
-- publish slice closeout summary and risk notes.
+- spec/README/GitBook now consistently mark M5 complete and document M6 deferrals.
 
-## 3. Mid-term slice preview (M6)
+## 3. Mid-term slice preview (M7+)
 
-M6 theme: **architecture binding interface preparation**.
+Post-M6 themes are intentionally deferred until architecture-binding interfaces stabilize.
 
 Indicative outcomes:
 
-1. explicit architecture assumptions represented as stable interfaces,
-2. proof-carrying adapters from architecture-neutral semantics,
-3. platform contract checklist for boot/runtime boundary expectations.
+1. subsystem integration plans that consume M6 interface contracts,
+2. refinement-oriented evidence packaging over architecture-bound assumptions,
+3. platform-specific validation strategy increments gated by M6 artifacts.
 
 ## 4. Long-horizon trajectory (mobile-first relevance)
 
@@ -83,22 +71,22 @@ See [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first
 
 ## 5. Transition gates
 
-### Gate: M4 → M5
+### Gate: M5 closeout (completed)
+
+Verified signals:
+
+1. service-graph semantics, policy surfaces, and proof package are merged and stable,
+2. success/failure orchestration scenarios are fixture-backed,
+3. Tier 3 anchors include claimed M5 theorem/invariant symbols,
+4. docs explicitly mark M5 completion and M6 deferrals.
+
+### Gate: M5 → M6 (active entry gate)
 
 Require all:
 
-1. M4-B semantics/theorems merged and fixture-backed,
-2. stale-reference and failure-path coverage in place,
-3. Tier 3 anchors cover M4-B claims,
-4. docs explicitly describe M5 assumptions.
-
-### Gate: M5 → M6
-
-Require all:
-
-1. service graph semantics cover realistic restart/isolation stories,
-2. policy surfaces prove reusable across multiple service scenarios,
-3. architecture-binding assumptions are explicit and reviewable.
+1. architecture-binding assumptions are explicit and reviewable,
+2. interface artifacts preserve M1–M5 theorem layering contracts,
+3. new testing obligations are added without regressing Tier 0–3 required gates.
 
 ## 6. Risk register (active)
 

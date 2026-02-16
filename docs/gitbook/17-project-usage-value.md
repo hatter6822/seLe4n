@@ -51,5 +51,5 @@ platform-specific interfaces are introduced.
 ## 4. Related chapters
 
 - active execution plan: [M5 Development Blueprint](15-m5-development-blueprint.md)
-- current slice status: [Current Slice: M5](09-current-slice-m5.md)
+- latest milestone closeout status: [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 - roadmap context: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)

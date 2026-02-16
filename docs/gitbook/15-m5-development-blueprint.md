@@ -116,12 +116,17 @@ failure paths).
 - `scripts/test_tier4_nightly_candidates.sh`
 - `tests/scenarios/README.md`
 
-### WS-M5-F — Documentation closeout
+### WS-M5-F — Documentation closeout ✅ **completed**
 
 **Deliverables**
 - synchronized updates across spec/README/GitBook,
 - explicit M5 achieved outcomes + M6 deferrals,
 - updated cross-linking for current vs historical slice docs.
+
+**Completion status**
+- README, spec, development guide, and GitBook milestone markers are synchronized to mark M5 complete,
+- achieved M5 semantics/proof/evidence outcomes and explicit M6 deferrals are documented consistently,
+- cross-links now distinguish M5 closeout status from historical M4 slice references.
 
 ## 4. Recommended implementation sequence (PR-ready)
 
@@ -157,7 +162,7 @@ Copy this into M5 PR descriptions:
 
 ## 7. Cross-references
 
-- Current-slice status: [Current Slice: M5](09-current-slice-m5.md)
+- M5 closeout status: [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 - Historical predecessor: [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - Development workflow standards: [Development Workflow](06-development-workflow.md)
 - Testing contract: [Testing & CI](07-testing-and-ci.md)

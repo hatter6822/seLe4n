@@ -38,7 +38,7 @@ Closed baseline slices:
 
 Current planning focus:
 
-- M5 kickoff preparation: service graph semantics and policy-oriented authority modeling.
+- M6 architecture-binding interface preparation on top of completed M5 service/policy semantics.
 
 ## 4. How to think about the architecture
 
@@ -64,21 +64,21 @@ For milestone-moving changes, contributors should follow this sequence:
 6. wire proof/trace symbols into test tiers,
 7. update spec + README + GitBook in the same PR.
 
-## 6. Target outcomes for the next slice (M5)
+## 6. Target outcomes for the current slice (M6)
 
-M5 is intended to convert the M4 lifecycle-capability foundation into service-oriented system
-reasoning.
+M6 focuses on converting architecture assumptions into explicit interface contracts while preserving
+completed M1–M5 theorem and evidence surfaces.
 
 Primary target outcomes:
 
-1. **Service graph model**
-   - represent service instances and restart/isolation relationships in a theorem-friendly form.
-2. **Policy surfaces**
-   - encode policy constraints over capability authority without breaking existing bundle layering.
-3. **Failure semantics for orchestration stories**
-   - ensure restart/recovery paths are explicit and theorem-covered, not only success paths.
-4. **Architecture-binding assumptions**
-   - make platform assumptions first-class interfaces so core proofs remain reusable.
+1. **Architecture-assumption interfaces**
+   - represent architecture-facing assumptions as stable, reviewable interface artifacts.
+2. **Adapter theorem surfaces**
+   - expose proof-carrying adapters from architecture-neutral semantics to bound contexts.
+3. **Boundary contract hardening**
+   - define boot/runtime boundary obligations as explicit contracts for future platform work.
+4. **Testing-obligation continuity**
+   - extend evidence checks without weakening existing Tier 0–3 required gates.
 
 ## 7. Project technical value for developers
 
