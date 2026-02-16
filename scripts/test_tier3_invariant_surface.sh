@@ -123,6 +123,12 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvaria
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
+# M4-B WS-C preservation theorem expansion anchors must remain present.
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+
 # M4-B WS-A composition transition anchors must remain present.
 run_check "INVARIANT" rg -n '^def lifecycleRevokeDeleteRetype' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias' SeLe4n/Kernel/Lifecycle/Operations.lean
@@ -167,9 +173,10 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'Workstreams A\+B complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'Phase 2: invariant hardening ✅ completed' docs/gitbook/09-next-slice-m4b.md
+run_check "DOC" rg -n 'Workstreams A\+B\+C complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
+run_check "DOC" rg -n 'Phase 3: theorem expansion ✅ completed' docs/gitbook/09-next-slice-m4b.md
 run_check "DOC" rg -n 'Workstream B — Invariant hardening ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstream C — Preservation theorem expansion ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
 
 # Full-suite contract should continue to include Tier 3.
 run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh

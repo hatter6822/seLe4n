@@ -49,7 +49,7 @@ Definition of done:
 - helper lemmas are transition-local,
 - no monolithic mega-invariant introduced.
 
-### Workstream C — Preservation theorem expansion
+### Workstream C — Preservation theorem expansion ✅ completed
 
 Goal: keep proofs layered while broadening composition guarantees.
 

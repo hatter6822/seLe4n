@@ -590,6 +590,61 @@ theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
       newObj hLifecycle hStep
   exact ⟨⟨hM3', hCoherence'⟩, hLifecycle'⟩
 
+
+theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
+    ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, _hLookupDeleted, hRetype⟩
+  have hRevoked : capabilityInvariantBundle stRevoked :=
+    cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hRevoke
+  have hDeleted : capabilityInvariantBundle stDeleted :=
+    cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked hDelete
+  exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
+    hDeleted hRetype
+
+theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant
+    (st st' : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hCap : capabilityInvariantBundle st)
+    (hLifecycleAfterCleanup :
+      ∀ stRevoked stDeleted,
+        cspaceRevoke cleanup st = .ok ((), stRevoked) →
+        cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) →
+        cspaceLookupSlot cleanup stDeleted = .error .invalidCapability →
+        lifecycleInvariantBundle stDeleted)
+    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
+    lifecycleCapabilityStaleAuthorityInvariant st' := by
+  rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
+    ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, hLookupDeleted, hRetype⟩
+  have hCap' : capabilityInvariantBundle st' :=
+    lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target newObj hCap hStep
+  have hLifecycleDeleted : lifecycleInvariantBundle stDeleted :=
+    hLifecycleAfterCleanup stRevoked stDeleted hRevoke hDelete hLookupDeleted
+  have hLifecycle' : lifecycleInvariantBundle st' :=
+    SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle stDeleted st' authority target
+      newObj hLifecycleDeleted hRetype
+  exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
+
+theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
+    (st : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hAlias : authority = cleanup)
+    (hInv : m4aLifecycleInvariantBundle st) :
+    m4aLifecycleInvariantBundle st := by
+  have _hExpected : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState :=
+    lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
+  exact hInv
+
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)

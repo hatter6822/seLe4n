@@ -273,4 +273,50 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup
   rw [hErr] at hStep
   cases hStep
 
+theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
+    (st st' : SystemState)
+    (authority cleanup : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
+    ∃ stRevoked stDeleted,
+      authority ≠ cleanup ∧
+      cspaceRevoke cleanup st = .ok ((), stRevoked) ∧
+      cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) ∧
+      cspaceLookupSlot cleanup stDeleted = .error .invalidCapability ∧
+      lifecycleRetypeObject authority target newObj stDeleted = .ok ((), st') := by
+  by_cases hAlias : authority = cleanup
+  · have hErr : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState := by
+      simp [lifecycleRevokeDeleteRetype, hAlias]
+    rw [hErr] at hStep
+    cases hStep
+  · cases hRevoke : cspaceRevoke cleanup st with
+    | error e =>
+        simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke] at hStep
+    | ok revPair =>
+        cases revPair with
+        | mk revUnit stRevoked =>
+            cases revUnit
+            cases hDelete : cspaceDeleteSlot cleanup stRevoked with
+            | error e =>
+                simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete] at hStep
+            | ok delPair =>
+                cases delPair with
+                | mk delUnit stDeleted =>
+                    cases delUnit
+                    cases hLookup : cspaceLookupSlot cleanup stDeleted with
+                    | ok pair =>
+                        simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] at hStep
+                    | error err =>
+                        have hErr : err = .invalidCapability := by
+                          cases err <;> simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] at hStep
+                          rfl
+                        subst hErr
+                        refine ⟨stRevoked, stDeleted, hAlias, ?_, ?_, ?_, ?_⟩
+                        · rfl
+                        · simpa using hDelete
+                        · exact hLookup
+                        · simpa [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] using hStep
+
+
 end SeLe4n.Kernel
