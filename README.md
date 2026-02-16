@@ -16,6 +16,7 @@ For normative milestones, acceptance criteria, and scope decisions, use
 
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
+- **Latest end-to-end audit snapshot:** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **Current-slice execution plan:** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
