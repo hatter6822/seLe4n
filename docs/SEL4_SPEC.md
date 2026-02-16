@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **active M4-B lifecycle-capability composition hardening (Workstreams A+B+C+D complete)**.
+Current stage: **M4-B lifecycle-capability composition hardening complete (Workstreams A+B+C+D+E complete)**.
 
 ---
 
@@ -184,8 +184,8 @@ For review clarity, M4-B evidence should map to these five workstreams:
    proven without placeholder debt.
 4. **WS-D executable evidence** ✅ **completed**: `Main.lean` includes composition success/failure scenarios and Tier
    2 fixture anchors capture stable semantics.
-5. **WS-E testing anchors**: Tier 3 includes M4-B theorem/bundle symbols so milestone claims remain
-   continuously checkable.
+5. **WS-E testing anchors** ✅ **completed**: Tier 3 includes M4-B theorem/bundle symbols, nightly extension
+   candidates are staged in Tier 4 entrypoints, and failure triage references exact script commands.
 
 ### 5.6 M4-B completion evidence checklist
 

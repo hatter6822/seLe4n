@@ -12,8 +12,9 @@
 - **Tier 3 (invariant and documentation anchor surface)**
   - validates critical theorem/bundle/doc anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
-- **Tier 4 (nightly extension point)**
-  - explicitly reserved for heavier future checks.
+- **Tier 4 (nightly staged extension candidates)**
+  - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + full-suite replay candidates,
+  - default remains explicit extension-point behavior unless `NIGHTLY_ENABLE_EXPERIMENTAL=1` is set.
 
 ## Entrypoints and intent
 
@@ -24,7 +25,7 @@
 - `./scripts/test_full.sh`
   - broader local verification (smoke + Tier 3 anchor coverage).
 - `./scripts/test_nightly.sh`
-  - full + nightly extension placeholder.
+  - full + Tier 4 staged-candidate wrapper (explicit opt-in by environment flag).
 
 CI should execute these repository scripts directly to avoid local/CI drift.
 
@@ -56,7 +57,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 ## M4 testing trajectory
 
 - **M4-A:** lifecycle semantic trace fragments are now landed and fixture-backed in Tier 2 smoke coverage.
-- **M4-B:** WS-A/WS-B/WS-C/WS-D semantic and proof-evidence anchors are landed; continue expanding WS-E theorem-surface and CI-growth anchors.
+- **M4-B:** WS-A/WS-B/WS-C/WS-D/WS-E are complete, including Tier 3 M4-B symbol anchors and staged Tier 4 nightly candidates.
 
 ## Practical failure triage
 
@@ -64,4 +65,5 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **Tier 1 fails:** resolve first Lean compile/proof failure before chasing downstream errors.
 - **Tier 2 fails:** inspect missing fixture lines and decide if behavior change was accidental or
   intentional.
-- **Tier 3 fails:** verify theorem/bundle/doc anchor names are still present after refactor.
+- **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/doc anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
+- **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture/doc updates.
