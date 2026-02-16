@@ -22,6 +22,10 @@ Required local/CI entrypoints:
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
 - `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2)
 
+Recommended audit entrypoint for release/closeout confidence:
+
+- `./scripts/audit_testing_framework.sh` (baseline tier stack + Tier 4 experimental candidate execution + Tier 2 negative-control mismatch assertion)
+
 PR CI must call repository scripts directly and keep workflow logic thin.
 
 ## 4. Baseline testing objectives inherited from M4-A
@@ -118,3 +122,17 @@ Primary risks to target next:
    - preserve explicit Tier 4 extension-point behavior by default in `./scripts/test_nightly.sh`,
    - stage repeat-run determinism + full-suite replay candidates in `./scripts/test_tier4_nightly_candidates.sh`,
    - keep candidate execution opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) so required mainline gates remain stable.
+
+## 11. Coverage model and "full coverage" interpretation
+
+Because seLe4n is a Lean theorem/proof-oriented project, coverage is tracked as **obligation coverage** rather than conventional statement-percentage metrics.
+
+Current coverage obligations:
+
+1. **Compile/build closure**: all tracked modules and executable build in Tier 1.
+2. **Executable semantic anchor coverage**: Tier 2 fixture checks assert stable integration-trace semantics.
+3. **Theorem/invariant surface coverage**: Tier 3 anchor checks ensure required milestone symbols remain present.
+4. **Nightly determinism candidate coverage**: Tier 4 staged repeat-run + replay checks are available and exercised during audit in experimental mode.
+5. **Failure-detection coverage**: audit-level negative control verifies Tier 2 correctly fails on intentionally impossible fixture expectations.
+
+For future milestones, expand this model by adding new proof/trace obligations at the same time new semantics are introduced.

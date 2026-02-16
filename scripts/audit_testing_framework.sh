@@ -12,6 +12,9 @@ echo "[AUDIT] Running baseline tiered entrypoint checks"
 "${SCRIPT_DIR}/test_full.sh"
 "${SCRIPT_DIR}/test_nightly.sh"
 
+echo "[AUDIT] Running Tier 4 staged candidates in experimental mode"
+NIGHTLY_ENABLE_EXPERIMENTAL=1 "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh"
+
 echo "[AUDIT] Verifying Tier 2 control-data failure behavior"
 TMP_FIXTURE="$(mktemp)"
 trap 'rm -f "${TMP_FIXTURE}"' EXIT

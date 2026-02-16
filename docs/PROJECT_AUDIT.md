@@ -1,85 +1,114 @@
-# seLe4n Project Audit (Code, Tests, Docs, and Near-Term Path)
+# seLe4n Project Audit (Code, Tests, Documentation, and Forward Plan)
 
-## 1. Scope
+## 1. Executive summary
 
-This audit summarizes:
+Audit conclusion: **the repository is currently healthy, internally consistent with the M4-B closeout claim, and operationally testable end-to-end**.
 
-1. codebase quality posture,
-2. testing-framework maturity,
-3. documentation completeness versus current milestone stage.
+What was re-validated in this audit pass:
 
-## 2. Current stage assessment
+1. source compiles and executable model runs,
+2. tiered test framework gates pass,
+3. Tier 4 staged candidates execute in experimental mode,
+4. Tier 2 fixture gate fails correctly under injected control-data mismatch,
+5. status/roadmap docs are aligned to current milestone language.
 
-Overall status: **healthy, with M4-A lifecycle/retype implementation as the active engineering
-frontier**.
+The most important caveat: the project does **not** use conventional statement/branch coverage tooling (common in imperative languages). Instead, it uses a **proof-surface + executable-fixture + invariant-anchor coverage model** appropriate to Lean formalization work.
 
-What is strong today:
+## 2. Scope and method
 
-- M1-M3.5 contracts are stable and reflected in executable + theorem surfaces.
-- Tiered testing entrypoints are structured and CI-aligned.
-- Documentation now includes a GitBook-compatible handbook structure plus refreshed spec and
-  development guidance for current/next slices.
-- The handbook now also includes conceptual onboarding (microkernel/seL4 primer) and a staged
-  mobile-first hardware path chapter to make long-horizon goals explicit.
+This audit evaluated three dimensions:
 
-## 3. Key risks and next mitigations
+1. **Code correctness posture**
+   - compile/build soundness,
+   - invariant/preservation theorem surface availability,
+   - executable trace stability against fixture expectations.
 
-1. **Lifecycle semantics now milestone-complete for M4-A (steps 1-6 landed)**
-   - mitigation: keep M4-B focused on revoke/delete composition and stale-reference exclusion without
-     regressing M4-A entrypoint coverage.
-2. **Potential invariant growth complexity**
-   - mitigation: enforce component naming and layered composition from the start.
-3. **Fixture drift during lifecycle rollout**
-   - mitigation: keep fixture lines semantic and require rationale in PR notes.
+2. **Testing framework effectiveness**
+   - required entrypoint behavior (`test_fast`, `test_smoke`),
+   - full and nightly tier orchestration,
+   - negative-control failure detection behavior.
 
-## 4. Testing posture summary
+3. **Documentation fidelity and path clarity**
+   - consistency of current stage (M4-B completed workstreams),
+   - coherence across README/spec/development/testing/gitbook surfaces,
+   - explicit forward plan into M5 preparation.
 
-- Required gates (`test_fast`, `test_smoke`) are correctly scoped.
-- Full/nightly tiers provide extension headroom for M4-specific hardening.
-- Step-3 lifecycle invariant layering anchors are now enforced in Tier 3.
-- Next high-value test work: extend Tier 3 anchor depth around new M4-A composed lifecycle bundle
-  entrypoints as M4-B evolves.
+## 3. Current-state findings
 
-## 5. Documentation posture summary
+### 3.1 Codebase status
 
-Documentation now reflects active stage and upcoming work in both canonical docs and GitBook pages.
-Immediate maintenance rule: any transition/invariant/milestone update must keep
-`README.md`, `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and affected `docs/gitbook/*` pages in
-sync.
+- Lean build succeeds cleanly through the full module graph and executable target.
+- No forbidden placeholder markers (`axiom`, `sorry`, `TODO`) are present in the tracked proof surface checked by Tier 0 hygiene.
+- Theorems and invariant bundles required by the milestone acceptance anchors remain present and discoverable by Tier 3 symbol checks.
 
-## 6. Conclusion
+### 3.2 Testing-framework status
 
-The repository is well positioned to execute M4-A and then M4-B without destabilizing M1-M3.5,
-provided lifecycle work remains incremental, theorem-backed, and documentation-synchronized.
+- Tiered entrypoints are functioning and composable:
+  - fast (`Tier 0 + Tier 1`),
+  - smoke (`Tier 0 + Tier 1 + Tier 2`),
+  - full (`smoke + Tier 3`),
+  - nightly (`full + Tier 4 extension-point behavior`).
+- Tier 4 experimental candidates (repeat-run determinism + full-suite replay) execute when explicitly enabled.
+- Tier 2 negative-control check correctly fails when the fixture includes an impossible expected line, confirming mismatch detection is active rather than silently permissive.
 
-## 7. Documentation hardening status (latest pass)
+### 3.3 Documentation status
 
-This pass increased documentation depth in two important ways:
+Documentation is substantially complete for current milestone closure:
 
-1. **Conceptual onboarding depth**
-   - added explicit microkernel/seL4 background and rationale pages so new contributors can align on
-     model intent before touching proof code.
+- current stage language is synchronized around M4-B workstream completion,
+- testing responsibilities and triage map are explicit,
+- roadmap path from M4-B to M5 is documented in both spec and handbook slices.
 
-2. **Codebase reasoning depth**
-   - added module-by-module codebase reference and proof/invariant map pages so contributors can
-     trace semantics, theorem surfaces, and composition boundaries without reverse-engineering file
-     responsibilities from source alone.
+## 4. Coverage interpretation (important)
 
-These additions reduce review friction and lower onboarding risk for M4 and later slices.
+For this repository, “full coverage” should be interpreted as **closure of coverage obligations**, not raw line/branch percentages.
 
-## 8. Milestone completion verification (latest re-audit)
+### 4.1 What is covered now
 
-This re-audit re-validated milestones currently marked complete in repository docs:
+1. **Proof/invariant surface coverage** via Tier 3 anchor checks for required bundles/theorems.
+2. **Build/typing closure** via Lean compile of the project graph.
+3. **Executable semantic coverage (integration slice)** via fixture-backed trace checks.
+4. **Failure-path sensitivity** via controlled mismatch injection in framework audit.
+5. **Nightly determinism extension** via staged Tier 4 experimental candidates.
 
-- **Bootstrap**: executable monad/model skeleton still builds and runs via `lake build` +
-  `lake exe sele4n`.
-- **M1**: scheduler invariant bundle symbols and theorem entrypoints verified by Tier 3 anchors.
-- **M2**: capability invariant bundle and preservation entrypoints verified by Tier 3 anchors and
-  full build.
-- **M3**: IPC seed bundle and endpoint send/receive preservation entrypoints verified by Tier 3.
-- **M3.5**: handshake/scheduler coherence predicates, composed bundle surfaces, and executable trace
-  evidence verified by Tier 2 fixture checks and Tier 3 anchor scans.
+### 4.2 Remaining coverage opportunities
 
-No failing tests were observed in the full scripted stack (`test_fast`, `test_smoke`,
-`test_full`, `test_nightly`). The nightly Tier 4 message remains an explicit documented extension
-point, not a runtime warning/failure condition.
+1. Increase executable scenario breadth for deeper M5-target stories (service graphs/isolation motifs).
+2. Expand explicit failure-path fixtures for future policy decomposition operations.
+3. Add additional deterministic replay seeds once new scenario generators land.
+
+## 5. Risk register and mitigations
+
+1. **Risk: theorem-surface drift under refactors**
+   - Mitigation: keep Tier 3 anchor set synchronized with each newly closed acceptance obligation.
+
+2. **Risk: fixture brittleness from output formatting changes**
+   - Mitigation: continue semantic-substring fixture policy; avoid asserting transient formatting.
+
+3. **Risk: roadmap drift between canonical docs and handbook pages**
+   - Mitigation: enforce same-PR synchronized edits to `README.md`, `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and impacted `docs/gitbook/*` pages for milestone-stage changes.
+
+## 6. Path of development (recommended near-term plan)
+
+### 6.1 M5 preparation track A — service-graph semantics
+
+- define minimal service-node state model extensions,
+- introduce restart/isolation transition seeds,
+- preserve reuse of closed M1-M4 bundle contracts.
+
+### 6.2 M5 preparation track B — policy-oriented authority layer
+
+- specify policy predicates that compose over current capability/lifecycle invariants,
+- add local preservation theorems before bundle-level composition.
+
+### 6.3 M5 preparation track C — architecture-binding interfaces
+
+- codify minimal architecture-assumption interfaces,
+- keep core generic proofs architecture-agnostic,
+- stage architecture-specific obligations as additive modules.
+
+## 7. Final verdict
+
+The project is in a strong state for M5 kickoff preparation: build/test/doc infrastructure is functioning, milestone claims are corroborated by current checks, and the testing framework demonstrates both positive-pass and negative-control behavior.
+
+To keep quality optimal, continue expanding obligation-based coverage in lockstep with new semantics rather than pursuing metric-only line coverage that is poorly matched to theorem-centric Lean development.
