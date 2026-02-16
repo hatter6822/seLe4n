@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A and WS-M5-B complete)**.
+Current stage: **M5 service-graph semantics and policy-oriented authority layering (active; WS-M5-A, WS-M5-B, and WS-M5-C complete)**.
 
 ---
 
@@ -227,9 +227,11 @@ The active milestone family (M5) targets operational realism while preserving th
    - deterministic `serviceStart`, `serviceStop`, and `serviceRestart` transitions are implemented,
    - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches are executable,
    - staged success/failure ordering helper theorems are available for restart composition.
-3. **Policy decomposition track**
-   - outline reusable authority predicates that can layer over M4 bundles without reshaping closed theorem
-     interfaces.
+3. **Policy decomposition track** ✅ **completed baseline**
+   - reusable policy predicates and authority surfaces are implemented in
+     `SeLe4n/Kernel/Service/Invariant.lean`,
+   - bridge lemmas connect policy assumptions to lifecycle/capability bundles,
+   - policy denial branches are explicitly represented as check-only (non-mutation) outcomes.
 4. **Architecture-binding track**
    - catalog architecture assumptions currently abstracted and define interface surfaces for future
      binding work.

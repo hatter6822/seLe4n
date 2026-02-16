@@ -62,12 +62,19 @@ failure paths).
 - `SeLe4n/Kernel/*/Operations.lean` (new service module or existing integration layer)
 - `SeLe4n/Kernel/API.lean`
 
-### WS-M5-C — Policy surfaces
+### WS-M5-C — Policy surfaces ✅ **completed**
 
 **Deliverables**
 - reusable policy predicates,
 - bridge lemmas connecting policy to lifecycle/capability assumptions,
 - explicit separation between policy checks and state mutation.
+
+**Completion status**
+- implemented in `SeLe4n/Kernel/Service/Invariant.lean` as reusable policy predicates and
+  `servicePolicySurfaceInvariant`,
+- bridge lemmas now connect service-policy authority expectations to lifecycle and capability
+  bundles,
+- policy-denial theorem surfaces now explicitly encode check-only (non-mutation) outcomes.
 
 **Expected file touch areas**
 - `SeLe4n/Kernel/*/Invariant.lean`

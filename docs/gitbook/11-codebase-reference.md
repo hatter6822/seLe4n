@@ -195,6 +195,28 @@ Design details that matter:
 3. **Restart is composition-first**
    - restart semantics are encoded as stop-then-start and proven as staged execution.
 
+### `SeLe4n/Kernel/Service/Invariant.lean`
+
+Primary semantics:
+
+- reusable policy components (`policyBackingObjectTyped`, `policyOwnerAuthorityRefRecorded`,
+  `policyOwnerAuthoritySlotPresent`),
+- service policy bundle entrypoint (`servicePolicySurfaceInvariant`),
+- bridge theorem (`servicePolicySurfaceInvariant_of_lifecycleInvariant`) for deriving policy
+  obligations from lifecycle contracts plus backing-object existence assumptions.
+
+Design details that matter:
+
+1. **Policy and mutation are separated by construction**
+   - service policy predicates are pure state predicates and do not mutate kernel state.
+2. **Bridge shape is compositional**
+   - bridge lemmas are local and reusable so policy obligations can be discharged without copying
+     transition proofs.
+3. **Failure branch intent is explicit**
+   - `serviceStart_policyDenied_separates_check_from_mutation` and
+     `serviceStop_policyDenied_separates_check_from_mutation` keep denial outcomes tied to check-only
+     semantics.
+
 ### `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 
 Primary semantics:

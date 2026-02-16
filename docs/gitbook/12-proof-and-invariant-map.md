@@ -110,3 +110,16 @@ local and composed lifecycle preservation entrypoints (`lifecycleRetypeObject_pr
 `lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle`, and
 `lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle`), and fixture-backed executable trace evidence
 for unauthorized/illegal-state/success lifecycle retype outcomes plus composed lifecycle+capability behavior.
+
+## 8. M5 policy-surface layering (WS-M5-C complete)
+
+Policy surface entrypoints now live in `SeLe4n/Kernel/Service/Invariant.lean` and are explicitly
+kept mutation-free:
+
+- reusable components: `policyBackingObjectTyped`, `policyOwnerAuthorityRefRecorded`,
+  `policyOwnerAuthoritySlotPresent`,
+- bundle entrypoint: `servicePolicySurfaceInvariant`,
+- bridge lemmas: lifecycle/capability assumptions can discharge policy authority obligations,
+- composed bridge: `servicePolicySurfaceInvariant_of_lifecycleInvariant` lifts lifecycle contracts
+  (plus backing-object existence assumptions) into the service policy bundle,
+- check-vs-mutation separation: policy-denial theorem surfaces remain explicit and deterministic.

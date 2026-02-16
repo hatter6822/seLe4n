@@ -5,7 +5,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M5 service-graph + policy surfaces (WS-M5-A service graph model and WS-M5-B orchestration transitions completed).
+- **Active slice:** M5 service-graph + policy surfaces (WS-M5-A service graph model, WS-M5-B orchestration transitions, and WS-M5-C policy surfaces completed).
 - **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
 
 For normative milestones, acceptance criteria, and scope decisions, use
@@ -56,7 +56,7 @@ lake exe sele4n
 - `SeLe4n/Kernel/Capability/*.lean` — capability/CSpace operations and invariants.
 - `SeLe4n/Kernel/IPC/*.lean` — endpoint IPC semantics and invariants.
 - `SeLe4n/Kernel/Lifecycle/*.lean` — lifecycle/retype semantics and invariants.
-- `SeLe4n/Kernel/Service/*.lean` — service orchestration transitions for start/stop/restart.
+- `SeLe4n/Kernel/Service/*.lean` — service orchestration transitions and policy-surface invariants.
 - `Main.lean` — executable scenario traces.
 
 ## License
