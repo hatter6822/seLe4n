@@ -42,7 +42,7 @@ M4-B hardens lifecycle semantics through capability-lifecycle composition.
 1. define transition composition helpers,
 2. encode stale-reference properties,
 3. prove local then composed preservation,
-4. extend executable stories,
+4. extend executable stories ✅ completed,
 5. lock fixture intent and update docs.
 
 ## Delivery model for upcoming slices

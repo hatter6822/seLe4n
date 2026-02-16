@@ -159,6 +159,7 @@ run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype success object kind' Main.lean
 run_check "TRACE" rg -n 'composed transition alias guard \(expected error\)' Main.lean
+run_check "TRACE" rg -n 'composed transition unauthorized branch' Main.lean
 run_check "TRACE" rg -n 'composed revoke/delete/retype success' Main.lean
 run_check "TRACE" rg -n 'post-revoke sibling lookup' Main.lean
 run_check "TRACE" rg -n 'post-delete lookup \(expected error\)' Main.lean
@@ -166,6 +167,7 @@ run_check "TRACE" rg -n 'lifecycle retype unauthorized branch: SeLe4n.Model.Kern
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype success object kind: some \(SeLe4n.Model.KernelObjectType.endpoint\)' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'composed transition alias guard \(expected error\): SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'composed revoke/delete/retype success' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
@@ -173,10 +175,11 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'Workstreams A\+B\+C complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
+run_check "DOC" rg -n 'Workstreams A\+B\+C\+D complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Phase 3: theorem expansion ✅ completed' docs/gitbook/09-next-slice-m4b.md
 run_check "DOC" rg -n 'Workstream B — Invariant hardening ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
 run_check "DOC" rg -n 'Workstream C — Preservation theorem expansion ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
+run_check "DOC" rg -n 'Workstream D — Executable and fixture evidence ✅ completed' docs/gitbook/14-m4b-execution-playbook.md
 
 # Full-suite contract should continue to include Tier 3.
 run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
