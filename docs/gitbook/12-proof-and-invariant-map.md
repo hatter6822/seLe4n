@@ -91,14 +91,14 @@ Why:
 - stable doc/test anchors,
 - predictable maintainability under milestone growth.
 
-## 7. How M4 should extend this map
+## 7. M4-A lifecycle invariant layering (step-3 completed)
 
-M4 additions should follow existing style:
+Current M4-A lifecycle invariant structure now follows the existing layered style:
 
-1. lifecycle component invariants,
-2. lifecycle subsystem bundle,
-3. lifecycle+capability composed bundle integration,
-4. transition-level local preservation,
-5. bundle-level preservation entrypoints.
+1. identity/aliasing components (`lifecycleIdentityTypeExact`, `lifecycleIdentityNoTypeAliasConflict`),
+2. identity bundle (`lifecycleIdentityAliasingInvariant`),
+3. capability-reference components (`lifecycleCapabilityRefExact`, `lifecycleCapabilityRefObjectTargetBacked`),
+4. capability-reference bundle (`lifecycleCapabilityReferenceInvariant`),
+5. composed lifecycle bundle (`lifecycleInvariantBundle`).
 
-Avoid adding broad invariants that bypass this layering.
+This explicit split keeps proof and review scope narrow as M4-A moves to helper lemmas and preservation composition.

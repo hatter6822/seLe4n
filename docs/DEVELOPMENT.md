@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M4-A lifecycle/retype foundations (active, steps 1-2 completed)**.
+Current stage: **M4-A lifecycle/retype foundations (active, steps 1-3 completed)**.
 
 Primary goals for contributors:
 
@@ -47,9 +47,10 @@ Unless intentionally redesigned and documented, preserve:
    - deterministic success/error branching implemented via `lifecycleRetypeObject`,
    - illegal-state and illegal-authority branches are explicit via `KernelError.illegalState` and `KernelError.illegalAuthority`.
 
-3. **Invariant definitions**
-   - define narrow, named lifecycle invariants first,
-   - separate identity/aliasing constraints from capability-reference constraints.
+3. **Invariant definitions** ✅ **completed**
+   - narrow, named lifecycle invariants are defined in `SeLe4n/Kernel/Lifecycle/Invariant.lean`,
+   - identity/aliasing constraints are separated from capability-reference constraints via
+     `lifecycleIdentityAliasingInvariant` and `lifecycleCapabilityReferenceInvariant`.
 
 4. **Local helper lemmas**
    - add transition-local lookup/membership lemmas near lifecycle code,
