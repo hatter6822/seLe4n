@@ -1,77 +1,33 @@
-# Current Slice: M4-B Lifecycle-Capability Hardening
+# Completed Slice: M4-B Lifecycle-Capability Hardening
 
 ## Objective
 
-M4-B moved lifecycle semantics from standalone correctness to robust composition with capability
-revocation/deletion paths and stale-reference safety.
+M4-B transitioned lifecycle semantics from standalone correctness to robust composition with
+capability revoke/delete paths and stale-reference safety.
 
-## Why M4-B mattered
+## Status
 
-M4-A established lifecycle transitions. M4-B ensured those transitions remain safe under realistic
-authority-changing operations.
+M4-B is complete. New implementation work should treat M4-B surfaces as stable contracts unless a
+soundness issue is identified.
 
 ## Delivered outcomes
 
-1. lifecycle + capability interaction semantics,
+1. deterministic lifecycle + capability interaction semantics,
 2. stale-reference exclusion invariant components,
-3. composed preservation across lifecycle/capability bundles,
-4. failure-path theorem coverage,
-5. expanded trace/test anchors.
+3. composed lifecycle/capability preservation theorem expansion (including failure paths),
+4. extended executable traces and fixture anchors,
+5. synchronized Tier 3 coverage and documentation closeout.
 
-## Workstream closeout summary
+## Relationship to adjacent docs
 
-### Workstream A — semantic composition ✅
+- For acceptance criteria and formal milestone scope: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+- For execution details and reusable delivery pattern: [M4-B Execution Playbook](14-m4b-execution-playbook.md).
+- For next-slice planning: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md) and
+  [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md).
 
-- codified deterministic transition order across lifecycle + revoke/delete behavior,
-- documented authority/state validation assumptions in theorem-facing form.
+## M5 handoff (what M4-B enables)
 
-### Workstream B — invariant hardening ✅
-
-- added stale-reference exclusion components,
-- linked lifecycle identity/aliasing and capability authority assumptions.
-
-### Workstream C — theorem expansion ✅
-
-- proved local preservation for composition helpers,
-- proved composed preservation including failure-path branches.
-
-### Workstream D — executable + fixture evidence ✅
-
-- extended `Main.lean` with composed success/failure scenarios,
-- maintained fixture updates as intentional semantic anchors.
-
-### Workstream E — test/doc synchronization ✅
-
-- expanded Tier 3 symbol anchors,
-- aligned roadmap and planning docs for next-slice kickoff.
-
-## Exit signals satisfied
-
-- composition theorem surfaces compile,
-- stale-reference safety is explicit and machine-checked,
-- fixtures and Tier 3 anchors track claimed behavior,
-- documentation now includes concrete M5 planning details.
-
-## Handoff to M5 (next-slice implications)
-
-M4-B reduces expected M5 churn by providing:
-
-1. deterministic lifecycle-capability base transitions,
-2. reusable stale-reference vocabulary for service-level policy checks,
-3. precedent for proving failure paths as first-class outcomes,
-4. stable executable evidence patterns for orchestration scenarios.
-
-## M5 readiness checklist
-
-Before opening M5 implementation PRs, contributors should verify:
-
-1. target transition can be expressed using existing lifecycle/capability helpers,
-2. new invariants are introduced as narrow components (not monolithic bundles),
-3. local-preservation theorem names follow repository conventions,
-4. intended trace outputs are represented in fixture strategy,
-5. docs identify which M5 target outcome the change advances.
-
-## Developer takeaway
-
-M4-B is now a completed hardening slice. New work should consume M4-B surfaces as dependency
-contracts, not reopen them unless a soundness bug is identified.
+1. reusable lifecycle-capability composition baseline,
+2. explicit stale-reference vocabulary for policy/service reasoning,
+3. established expectation that failure paths are first-class proof surfaces,
+4. stable trace/test anchors for future slice regression control.
