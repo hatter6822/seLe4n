@@ -29,12 +29,17 @@ failure paths).
 
 ## 3. Workstreams, deliverables, and file touch map
 
-### WS-M5-A — Service graph model
+### WS-M5-A — Service graph model ✅ **completed**
 
 **Deliverables**
 - service identity/status/dependency types,
 - helper queries for dependency and isolation checks,
 - deterministic state-update helpers.
+
+**Completion status**
+- implemented in `SeLe4n/Model/Object.lean` and `SeLe4n/Model/State.lean`,
+- deterministic service graph read/write helper theorems are machine-checked,
+- remaining M5 workstreams now build on this stabilized state-model surface.
 
 **Expected file touch areas**
 - `SeLe4n/Model/Object.lean`

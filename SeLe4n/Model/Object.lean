@@ -2,6 +2,32 @@ import SeLe4n.Prelude
 
 namespace SeLe4n.Model
 
+/-- Identifier for modeled services in the M5 service graph layer. -/
+abbrev ServiceId := Nat
+
+/-- High-level service runtime status for orchestration-level reasoning. -/
+inductive ServiceStatus where
+  | stopped
+  | running
+  | failed
+  | isolated
+  deriving Repr, DecidableEq
+
+/-- Stable service identity metadata for graph-level orchestration. -/
+structure ServiceIdentity where
+  sid : ServiceId
+  backingObject : SeLe4n.ObjId
+  owner : SeLe4n.ObjId
+  deriving Repr, DecidableEq
+
+/-- Declared service dependencies and isolation edges. -/
+structure ServiceGraphEntry where
+  identity : ServiceIdentity
+  status : ServiceStatus
+  dependencies : List ServiceId
+  isolatedFrom : List ServiceId
+  deriving Repr, DecidableEq
+
 inductive AccessRight where
   | read
   | write
