@@ -5,3 +5,5 @@ import SeLe4n.Model.State
 import SeLe4n.Kernel.API
 
 import SeLe4n.Kernel.Architecture.Assumptions
+
+import SeLe4n.Kernel.Architecture.Adapter

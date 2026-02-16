@@ -48,18 +48,18 @@ lift them into explicit interface artifacts.
 **Exit signal**
 - achieved: reviewers can point to a bounded list of assumptions and their interface location.
 
-### WS-M6-B — Interface API and adapter semantics
+### WS-M6-B — Interface API and adapter semantics ✅ **completed**
 
 **Objective:** Define interface APIs that maintain deterministic transition behavior and explicit
 error branching.
 
 **Primary deliverables**
-- architecture-binding adapter API in kernel/model modules,
-- explicit error mapping for unsupported/invalid bound-context cases,
-- deterministic state update semantics at the adapter boundary.
+- architecture-binding adapter API landed in `SeLe4n/Kernel/Architecture/Adapter.lean`,
+- explicit error mapping for unsupported/invalid bound-context cases via `mapAdapterError`,
+- deterministic state update semantics at the adapter boundary via `advanceTimerState` and `writeRegisterState`, with runtime contract decidability witnesses making branches executable.
 
 **Exit signal**
-- adapter entrypoints compile and preserve existing transition-level determinism expectations.
+- achieved: adapter entrypoints compile and preserve transition-level determinism expectations (`adapterAdvanceTimer_deterministic`).
 
 ### WS-M6-C — Proof-layer integration
 

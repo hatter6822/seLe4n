@@ -268,8 +268,10 @@ M6 work is tracked through the following workstreams:
    - architecture-facing assumptions are enumerated in `SeLe4n/Kernel/Architecture/Assumptions.lean` via `ArchAssumption` and `assumptionInventory`,
    - boundary contract skeletons are explicit via `BootBoundaryContract`, `RuntimeBoundaryContract`, and `InterruptBoundaryContract` with first-class `ContractRef` obligations,
    - transition/invariant mapping is captured in `assumptionTransitionMap` and `assumptionInvariantMap`.
-2. **WS-M6-B — interface API + adapter semantics**
-   - implement deterministic adapter behavior with explicit unsupported/invalid branches.
+2. **WS-M6-B — interface API + adapter semantics** ✅ **completed**
+   - deterministic adapter behavior now lands in `SeLe4n/Kernel/Architecture/Adapter.lean`,
+   - unsupported/invalid bound-context branches are explicit via `mapAdapterError` and adapter entrypoints,
+   - runtime boundary contracts provide decidability witnesses so adapter branching is executable.
 3. **WS-M6-C — proof integration**
    - connect adapter assumptions to local and composed invariant preservation theorem surfaces.
 4. **WS-M6-D — evidence + test anchor continuity**

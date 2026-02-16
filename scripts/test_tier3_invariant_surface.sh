@@ -9,9 +9,20 @@ parse_common_args "$@"
 cd "${REPO_ROOT}"
 
 # M6 WS-M6-A assumption inventory anchors.
+# M6 WS-M6-B adapter API anchors.
+run_check "INVARIANT" rg -n '^inductive AdapterErrorKind' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def mapAdapterError' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterAdvanceTimer' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterWriteRegister' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterReadMemory' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_deterministic' SeLe4n/Kernel/Architecture/Adapter.lean
+
 run_check "INVARIANT" rg -n '^inductive ArchAssumption' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^structure BootBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^structure RuntimeBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n "^\s*timerMonotonicDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n "^\s*registerContextStableDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n "^\s*memoryAccessAllowedDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^structure InterruptBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^inductive ContractRef' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^def assumptionContractMap' SeLe4n/Kernel/Architecture/Assumptions.lean
@@ -203,6 +214,19 @@ run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serv
 run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
 
 # M3.5 step-7 executable demonstration closure anchors.
+run_check "TRACE" rg -n 'adapter timer success path value' Main.lean
+run_check "TRACE" rg -n 'adapter timer invalid-context branch' Main.lean
+run_check "TRACE" rg -n 'adapter timer unsupported branch' Main.lean
+run_check "TRACE" rg -n 'adapter read denied branch' Main.lean
+run_check "TRACE" rg -n 'adapter read success path byte' Main.lean
+run_check "TRACE" rg -n 'adapter register write success path value' Main.lean
+run_check "TRACE" rg -n 'adapter register write unsupported branch' Main.lean
+run_check "TRACE" rg -n 'adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'adapter read denied branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'adapter read success path byte: 0' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'adapter register write success path value: 99' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected

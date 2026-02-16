@@ -45,7 +45,7 @@ M6 scope: **architecture-binding interfaces and hardware-facing assumption harde
 ### M6 workstreams
 
 - **WS-M6-A:** assumption inventory and boundary extraction ✅ completed (`SeLe4n/Kernel/Architecture/Assumptions.lean`),
-- **WS-M6-B:** interface API + adapter semantics,
+- **WS-M6-B:** interface API + adapter semantics ✅ completed (`SeLe4n/Kernel/Architecture/Adapter.lean`),
 - **WS-M6-C:** proof integration with existing bundles,
 - **WS-M6-D:** executable evidence and test-anchor expansion,
 - **WS-M6-E:** documentation synchronization and handoff packaging.
@@ -85,7 +85,7 @@ Verified signals:
 Progress snapshot:
 
 1. architecture assumptions explicit and reviewable ✅ (WS-M6-A complete),
-2. interface artifacts preserve M1–M5 theorem layering (in progress; WS-M6-B/C),
+2. interface artifacts preserve M1–M5 theorem layering (WS-M6-B complete; WS-M6-C in progress),
 3. test obligations added without regressing required gates (in progress; WS-M6-D/E).
 
 ### Gate: M6 → Raspberry Pi 5 binding slice (planned)

@@ -63,14 +63,15 @@ Implemented touch points:
 
 Outcome: architecture-facing assumptions are isolated into explicit, named interface surfaces (including first-class contract references) and exported for downstream adapter/proof work.
 
-### M6 adapter semantics (WS-M6-B)
+### M6 adapter semantics (WS-M6-B) ✅ **completed**
 
-Likely touch points:
+Implemented touch points:
 
-- operation modules that consume boundary assumptions,
-- `SeLe4n/Kernel/API.lean` for stable export/interface shape.
+- `SeLe4n/Kernel/Architecture/Adapter.lean`
+- `SeLe4n/Kernel/API.lean`
+- `SeLe4n.lean`
 
-Goal: explicit deterministic adapter semantics with failure branches.
+Outcome: explicit deterministic adapter entrypoints compile with bounded failure mapping for invalid/unsupported architecture-bound contexts, using runtime-contract decidability witnesses for executable branch selection.
 
 ### M6 proof integration (WS-M6-C)
 
