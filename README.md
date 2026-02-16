@@ -5,8 +5,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Latest completed slice:** M4-B lifecycle-capability composition hardening.
-- **Current planning focus:** M5 service-graph + policy surfaces.
+- **Active slice:** M5 service-graph + policy surfaces.
+- **Most recently completed slice:** M4-B lifecycle-capability composition hardening.
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
@@ -16,6 +16,8 @@ For normative milestones, acceptance criteria, and scope decisions, use
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
+- **Current slice handbook chapter:** [`docs/gitbook/09-current-slice-m5.md`](docs/gitbook/09-current-slice-m5.md)
+- **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
 - **Architecture and module map:** [`docs/gitbook/03-architecture-and-module-map.md`](docs/gitbook/03-architecture-and-module-map.md)
 - **Codebase deep reference:** [`docs/gitbook/11-codebase-reference.md`](docs/gitbook/11-codebase-reference.md)
 - **Proof and invariant map:** [`docs/gitbook/12-proof-and-invariant-map.md`](docs/gitbook/12-proof-and-invariant-map.md)

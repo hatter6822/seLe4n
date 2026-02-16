@@ -9,18 +9,19 @@
 - [Architecture & Module Map](03-architecture-and-module-map.md)
 - [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-## Engineering workflow
+## Current slice execution
 
+- [Current Slice: M5](09-current-slice-m5.md)
 - [Specification & Roadmap](05-specification-and-roadmap.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
-## Slice status and roadmap
+## Slice history and roadmap
 
 - [Completed Slice: M4-A](08-current-slice-m4a.md)
-- [Completed Slice: M4-B](09-next-slice-m4b.md)
+- [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 - [M5 Blueprint and Project Usage Value](15-m5-blueprint-and-project-usage.md)
