@@ -5,144 +5,114 @@ planning and delivery guidance.
 
 ## 1. Baseline status
 
-M4 foundation status for planning purposes:
+Milestone status for planning purposes:
 
-- **M4-A complete**: lifecycle/retype semantics, lifecycle invariants, and baseline preservation.
-- **M4-B complete**: lifecycle-capability composition hardening and stale-reference safety.
+- M4-A complete,
+- M4-B complete,
+- M5 complete,
+- **M6 active**.
 
-That means M5 planning should build on existing transition and theorem surfaces rather than
-restructuring them.
+M6 planning should build on existing transition and theorem surfaces rather than restructuring
+closed milestone contracts.
 
-## 2. M4 outcomes that are now assumed stable
+## 2. Stable outcomes now treated as contracts
 
-Contributors should treat these as established contracts:
+Contributors should treat these as stable unless a spec-level change is explicitly approved:
 
-1. deterministic lifecycle transition/error behavior,
-2. lifecycle identity/aliasing and capability-reference invariant components,
-3. lifecycle + capability composed preservation entrypoints,
-4. executable trace anchors for lifecycle and composition stories,
-5. Tier 3 symbol checks for critical theorem/bundle surfaces.
+1. deterministic lifecycle/capability/service transition behavior,
+2. layered invariant composition across scheduler/capability/IPC/lifecycle/service modules,
+3. local + composed preservation entrypoints for established transitions,
+4. fixture-backed executable traces for core success/failure stories,
+5. Tier 3 theorem/invariant symbol anchors for claimed surfaces.
 
-## 3. Completed slice definition: M5
+## 3. Current slice definition: M6
 
-M5 scope is to model **service-level operational stories** on top of M4 semantics.
+M6 scope: **architecture-binding interfaces and hardware-facing assumption hardening**.
 
-### M5 target outcomes
+### M6 target outcomes
 
-1. **Service-graph semantics**
-   - model services, dependencies, and restart/isolation boundaries.
-2. **Policy-oriented authority constraints**
-   - represent policy checks as reusable theorem-facing predicates.
-3. **Composed preservation over orchestration paths**
-   - prove safety across start/stop/restart and dependency transitions.
-4. **Failure-path completeness**
-   - include denied-policy, missing-dependency, and stale-reference-style failures.
-5. **Executable scenario coverage**
-   - add `Main.lean` stories showing service lifecycle success and failure.
+1. **Assumption extraction and interface definition**
+   - architecture-facing assumptions become explicit interfaces.
+2. **Adapter semantics and bounded error surfaces**
+   - adapter operations remain deterministic and failure-explicit.
+3. **Composed proof continuity**
+   - adapters connect to existing invariant bundles without flattening proof layering.
+4. **Hardware-boundary contract hardening**
+   - boot/runtime obligations are represented as concrete contracts.
+5. **Evidence continuity**
+   - tests and traces expand with no Tier 0–3 contract regression.
 
-### Non-goals for M5 (to prevent scope drift)
+### M6 workstreams
 
-- no architecture-specific memory-model lock-in,
-- no full seL4 boot pipeline modeling,
-- no replacement of M1-M4 theorem interfaces unless required for soundness.
+- **WS-M6-A:** assumption inventory and boundary extraction,
+- **WS-M6-B:** interface API + adapter semantics,
+- **WS-M6-C:** proof integration with existing bundles,
+- **WS-M6-D:** executable evidence and test-anchor expansion,
+- **WS-M6-E:** documentation synchronization and handoff packaging.
 
-## 4. M5 closeout summary (all workstreams complete)
+Detailed execution guidance: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-### Workstream A — Service graph model and transition API
+### Non-goals for M6
 
-Deliver:
+- full platform bring-up,
+- architecture-specific performance tuning,
+- replacing M1–M5 theorem APIs unless required for soundness,
+- broad subsystem redesign not required for architecture-boundary clarity.
 
-- service node/state representation,
-- dependency edges and restart policy shape,
-- deterministic transition helpers for activation/deactivation/restart.
+## 4. Next-slice preview (post-M6)
 
-Exit signal:
+Immediate next-slice direction is **Raspberry Pi 5-first binding and validation planning**.
 
-- transitions compile and return explicit `KernelError`-compatible failures.
+Indicative outcomes:
 
-### Workstream B — Policy surfaces and authority decomposition
+1. instantiate M6 adapter contracts for Raspberry Pi 5 assumptions,
+2. add platform-constraint evidence stories grounded in current model behavior,
+3. map trust boundaries for a minimal realistic deployment partition.
 
-Deliver:
+## 5. Transition gates
 
-- policy predicates that constrain capability actions in service context,
-- theorem-friendly decomposition (small components, then bundle),
-- bridge lemmas connecting policy predicates to existing capability invariants.
+### Gate: M5 closeout (completed)
 
-Exit signal:
+Verified signals:
 
-- policy logic can be reused without importing unrelated service internals.
+1. service semantics and policy surfaces merged and stable,
+2. success/failure scenarios fixture-backed,
+3. Tier 3 anchors include M5 theorem/invariant symbols,
+4. docs synchronized for M5 closure.
 
-### Workstream C — Proof layering for service operations
+### Gate: M5 → M6 (active, in progress)
 
-Deliver:
+Require all:
 
-- local preservation per service transition,
-- composed preservation across service + lifecycle + capability bundles,
-- failure-path preservation theorems.
+1. architecture assumptions explicit and reviewable,
+2. interface artifacts preserve M1–M5 theorem layering,
+3. test obligations added without regressing required gates.
 
-Exit signal:
+### Gate: M6 → Raspberry Pi 5 binding slice (planned)
 
-- proof naming and locality follow existing conventions; no `sorry`/`axiom` debt.
+Require all:
 
-### Workstream D — Trace/test expansion
+1. boundary contracts can be instantiated without hidden assumptions,
+2. adapter failure semantics are explicit and theorem-addressed,
+3. documentation identifies platform obligations vs model guarantees.
 
-Deliver:
+## 6. Risk register (active)
 
-- executable service scenarios (good and bad paths),
-- fixture anchors with semantic intent notes,
-- Tier 3 symbol anchors for new theorem surfaces.
+1. **Semantic/proof skew**
+   - risk: adapter semantics change without theorem updates,
+   - mitigation: enforce transition + theorem pairing in PR templates.
+2. **Roadmap drift**
+   - risk: docs describe conflicting active slices,
+   - mitigation: synchronize README/spec/DEVELOPMENT/GitBook in one PR.
+3. **Boundary overcoupling**
+   - risk: architecture interfaces leak into unrelated invariants,
+   - mitigation: require local interface contracts + bridge lemmas.
+4. **Hardware-path premature lock-in**
+   - risk: overfitting before contracts stabilize,
+   - mitigation: keep Raspberry Pi 5 work post-M6 and contract-driven.
 
-Exit signal:
+## 7. Contributor operating cadence
 
-- `test_smoke` + `test_full` remain green with stable, intentional fixture deltas.
-
-### Workstream E — Documentation + milestone closeout ✅ **complete**
-
-Deliver:
-
-- synchronized updates across spec, README, GitBook,
-- explicit M6 deferrals and assumptions,
-- short risk log for unresolved architectural unknowns.
-
-Exit signal:
-
-- docs consistently describe active/next slice and accepted deferrals.
-
-## 5. Evidence map (what reviewers should require)
-
-For each M5 target outcome, require concrete evidence:
-
-1. transition code + theorem entrypoint,
-2. executable trace or symbol anchor,
-3. test command output in PR notes,
-4. explicit deferred items.
-
-## 6. Suggested checkpoint cadence
-
-- **M5-C1**: service graph definitions + initial transitions,
-- **M5-C2**: policy predicate set + bridge lemmas,
-- **M5-C3**: local preservation completion,
-- **M5-C4**: composed/failure-path preservation,
-- **M5-C5**: trace/fixture/Tier 3 completion,
-- **M5-C6**: docs and closeout memo.
-
-## 7. Delivery model (kept from prior slices)
-
-1. semantics first,
-2. invariants second,
-3. proofs third,
-4. executable evidence fourth,
-5. docs and acceptance closeout final.
-
-This sequencing minimizes churn and keeps proof updates aligned with behavior changes.
-
-## 8. Cross-reference index
-
-For current execution planning, use M6-focused roadmap chapters after this M5 closeout baseline.
-
-- [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
-- [Completed Slice: M4-B](16-completed-slice-m4b.md)
-- [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-- [M4-B Execution Playbook](14-m4b-execution-playbook.md)
-- [M5 Development Blueprint](15-m5-development-blueprint.md)
-- [Project Usage and Value](17-project-usage-value.md)
+1. per PR: state M6 workstream advanced + next unlock,
+2. per checkpoint: map changes to M6 outcome matrix,
+3. per milestone closeout: publish delivered outcomes, deferrals, and risk updates.

@@ -1,110 +1,79 @@
 # Future Slices and Delivery Plan
 
-This chapter describes the forward path beyond M4 closeout and provides execution structure to keep
-implementation, proofs, tests, and docs aligned.
+This chapter captures the forward plan after the M5 closeout and during active M6 execution.
 
-## 1. Planning principles
+## 1. Planning assumptions
 
-1. keep each slice reviewable in one coherent thread,
-2. preserve theorem layering (local first, composed second),
-3. treat executable traces as contract evidence,
-4. ship docs and deferrals with each milestone change,
-5. preserve deterministic semantics before broadening scope.
+Forward planning is constrained by two rules:
 
-## 2. Immediate next slice (M6)
+1. no regression of closed milestone contracts (M1–M5),
+2. no hidden architecture assumptions in post-M6 platform plans.
 
-M6 theme: **architecture-binding interfaces built on completed M5 service/policy semantics**.
+## 2. Active execution window: M6
 
-### M6 target outcomes
+Current focus remains:
 
-1. explicit architecture assumptions represented as stable interface artifacts,
-2. proof-carrying adapter surfaces from architecture-neutral semantics to architecture-bound contexts,
-3. platform contract checklist coverage for boot/runtime boundary expectations,
-4. preservation-proof hooks that keep M1–M5 theorem layering reusable during binding,
-5. fixture/test-plan extensions that validate interface assumptions without weakening existing gates.
+- architecture-binding interfaces,
+- adapter theorem surfaces,
+- hardware-facing boundary contracts,
+- test/documentation continuity.
 
-### M5 closeout baseline consumed by M6
+Execution details are maintained in [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-#### WS-M5-A — Service graph model ✅ **completed**
+## 3. Immediate next slice (post-M6): Raspberry Pi 5 first binding
 
-- service identity, status, dependency, isolation, and deterministic state helpers are stable.
+### Target outcomes
 
-#### WS-M5-B — Orchestration transitions ✅ **completed**
+1. instantiate M6 interfaces for Raspberry Pi 5 assumptions,
+2. keep architecture-neutral invariants reusable,
+3. produce explicit mapping from platform assumptions to theorem obligations,
+4. validate minimal realistic scenario traces for platform-oriented boundaries.
 
-- deterministic start/stop/restart transitions with explicit failure branches are stable.
+### Candidate workstreams
 
-#### WS-M5-C — Policy and authority layer ✅ **completed**
+- **WS-M7-A:** Raspberry Pi 5 assumption binding and interface instantiation,
+- **WS-M7-B:** platform-aware adapter evidence and failure-path modeling,
+- **WS-M7-C:** trust-boundary scenario package for a minimal deployment topology,
+- **WS-M7-D:** docs/testing/acceptance closeout for hardware-binding readiness.
 
-- reusable policy predicates and bridge lemmas to lifecycle/capability surfaces are stable.
+## 4. Mid-horizon slices (M8+ directional)
 
-#### WS-M5-D — Proof completion ✅ **completed**
-
-- local and composed preservation theorem entrypoints (including failure-path coverage) are stable.
-
-#### WS-M5-E — Evidence and testing ✅ **completed**
-
-- executable traces, fixtures, and Tier 3/4 anchor coverage for M5 scenarios are stable.
-
-#### WS-M5-F — Documentation and closeout ✅ **completed**
-
-- spec/README/GitBook now consistently mark M5 complete and document M6 deferrals.
-
-## 3. Mid-term slice preview (M7+)
-
-Post-M6 themes are intentionally deferred until architecture-binding interfaces stabilize.
-
-Indicative outcomes:
-
-1. subsystem integration plans that consume M6 interface contracts,
-2. refinement-oriented evidence packaging over architecture-bound assumptions,
-3. platform-specific validation strategy increments gated by M6 artifacts.
-
-## 4. Long-horizon trajectory (mobile-first relevance)
-
-1. architecture-neutral semantic hardening (M1-M5),
-2. architecture-binding interface stabilization (M6+),
-3. subsystem trust-boundary mapping,
-4. prototype integration with traceability back to theorem claims,
-5. hardware-oriented validation strategy alignment.
-
-See [Path to Real Hardware (Mobile-First)](10-path-to-real-hardware-mobile-first.md).
+1. subsystem integration plans consuming M6/M7 contracts,
+2. refinement evidence packaging from model claims to implementation obligations,
+3. platform-validation increments gated by stabilized interfaces and theorem anchors.
 
 ## 5. Transition gates
 
-### Gate: M5 closeout (completed)
+### Gate A — M6 closeout
 
-Verified signals:
+All required:
 
-1. service-graph semantics, policy surfaces, and proof package are merged and stable,
-2. success/failure orchestration scenarios are fixture-backed,
-3. Tier 3 anchors include claimed M5 theorem/invariant symbols,
-4. docs explicitly mark M5 completion and M6 deferrals.
+1. architecture contracts explicit and reviewable,
+2. proof adapters compositional and compiled,
+3. required test tiers green,
+4. docs synchronized.
 
-### Gate: M5 → M6 (active entry gate)
+### Gate B — Raspberry Pi 5 binding slice closeout
 
-Require all:
+All required:
 
-1. architecture-binding assumptions are explicit and reviewable,
-2. interface artifacts preserve M1–M5 theorem layering contracts,
-3. new testing obligations are added without regressing Tier 0–3 required gates.
+1. M6 contracts instantiated for Raspberry Pi 5 constraints,
+2. failure semantics for bound adapters explicit,
+3. trust-boundary narrative backed by executable/test evidence.
 
-## 6. Risk register (active)
+## 6. Risk register and mitigations
 
-1. **Semantic/proof skew**
-   - risk: transitions evolve without theorem updates.
-   - mitigation: enforce transition + theorem pairing in PR checklist.
-2. **Trace/fixture fragility**
-   - risk: fixtures reflect formatting noise instead of semantics.
-   - mitigation: document semantic intent per fixture delta.
-3. **Roadmap drift**
-   - risk: docs describe different active slices.
-   - mitigation: synchronize README/spec/GitBook in same PR.
-4. **Policy overcoupling**
-   - risk: policy model entangles service internals and capability internals.
-   - mitigation: require bridge lemmas and module boundary review.
+1. **Contract instability risk**
+   - mitigation: keep adapter interfaces narrow and versioned through milestone docs.
+2. **Platform over-assumption risk**
+   - mitigation: separate platform obligations from model guarantees in every PR.
+3. **Evidence lag risk**
+   - mitigation: require fixture/symbol updates with every milestone-moving change.
+4. **Documentation fragmentation risk**
+   - mitigation: update roadmap + hardware chapter + README together.
 
-## 7. Contributor operating cadence
+## 7. Delivery rhythm
 
-1. **Per PR**: state current-slice outcome moved + next-slice unlock.
-2. **Per checkpoint**: map progress to M5 workstreams A-F.
-3. **Per milestone closeout**: publish delivered outcomes, deferrals, and risk notes.
+1. milestone-moving PRs should include "what this unlocks next" language,
+2. checkpoint reviews should score progress against workstreams/outcomes,
+3. closeout PRs should include achieved outcomes + explicit deferrals by destination slice.

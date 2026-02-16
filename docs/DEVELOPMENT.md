@@ -170,6 +170,27 @@ For each milestone-moving PR, include a short section that states:
 2. what evidence command validates that movement,
 3. what post-M6 dependency is now unblocked.
 
+### 5.2 M6 workstream model
+
+Use this workstream mapping for implementation planning and review checklists:
+
+1. **WS-M6-A — assumption inventory and boundary extraction**
+   - make architecture assumptions explicit interface artifacts.
+2. **WS-M6-B — interface API and adapter semantics**
+   - define deterministic adapter behavior with explicit errors.
+3. **WS-M6-C — proof-layer integration**
+   - add local + composed preservation hooks over adapter assumptions.
+4. **WS-M6-D — evidence and test-surface expansion**
+   - expand executable traces and symbol anchors for boundary behavior.
+5. **WS-M6-E — docs and handoff packaging**
+   - keep README/spec/development/GitBook synchronized.
+
+### 5.3 Hardware direction note
+
+The first real hardware architecture focus after M6 is **Raspberry Pi 5**.
+M6 contributors should explicitly describe which Raspberry Pi 5 follow-on dependency each
+milestone-moving PR unblocks.
+
 ---
 
 ## 6. Proof engineering standards
