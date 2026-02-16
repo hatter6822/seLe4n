@@ -138,7 +138,9 @@ This sequencing minimizes churn and keeps proof updates aligned with behavior ch
 
 ## 8. Cross-reference index
 
-- [Current Slice: M4-B](09-next-slice-m4b.md)
+- [Current Slice: M5](09-current-slice-m5.md)
+- [Completed Slice: M4-B](16-completed-slice-m4b.md)
 - [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 - [M4-B Execution Playbook](14-m4b-execution-playbook.md)
-- [M5 Blueprint and Usage Value](15-m5-blueprint-and-project-usage.md)
+- [M5 Development Blueprint](15-m5-development-blueprint.md)
+- [Project Usage and Value](17-project-usage-value.md)
