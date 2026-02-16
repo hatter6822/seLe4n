@@ -131,8 +131,12 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_obje
 run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' Main.lean
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' Main.lean
-run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'lifecycle retype success object kind' Main.lean
+run_check "TRACE" rg -n 'lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'lifecycle retype success object kind: some \(SeLe4n.Model.KernelObjectType.endpoint\)' tests/fixtures/main_trace_smoke.expected
 
 # Active milestone docs should stay synchronized for both current and next slices.
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md

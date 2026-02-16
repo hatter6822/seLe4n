@@ -5,7 +5,7 @@ A Lean 4 formalization project for building an executable and machine-checked mo
 
 ## Project status snapshot
 
-seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-5 complete)** after completing M3.5
+seLe4n is currently in **M4-A lifecycle/retype foundations (steps 1-6 complete)** after completing M3.5
 IPC handshake + scheduler coherence.
 
 ### Milestone board
@@ -54,11 +54,11 @@ Deep technical chapters for implementation work:
 4. Add preservation theorem entrypoints for each lifecycle transition.
 5. Extend executable evidence (`Main.lean`) and Tier 2 trace fixtures for lifecycle behavior.
 
-Progress note (steps 1-5): lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
+Progress note (steps 1-6): lifecycle metadata now explicitly tracks object-store type identity and slot-to-target
 capability references (including store-time synchronization when a CNode is updated), `lifecycleRetypeObject`
-retains deterministic success/error branching, lifecycle invariants remain narrowly layered, and M4-A now
-includes theorem entrypoints for local lifecycle preservation plus composed scheduler/capability/IPC/lifecycle
-bundle preservation under explicit endpoint/scheduler side conditions.
+retains deterministic success/error branching, lifecycle invariants remain narrowly layered, theorem entrypoints
+cover local and composed lifecycle preservation, and executable/fixture evidence now includes the lifecycle
+unauthorized branch, illegal-state branch, and success-path object-kind confirmation.
 
 ## Next slice target outcomes (M4-B)
 

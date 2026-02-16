@@ -24,7 +24,7 @@ What is strong today:
 
 ## 3. Key risks and next mitigations
 
-1. **Lifecycle semantics now milestone-complete for M4-A (steps 1-5 landed)**
+1. **Lifecycle semantics now milestone-complete for M4-A (steps 1-6 landed)**
    - mitigation: keep M4-B focused on revoke/delete composition and stale-reference exclusion without
      regressing M4-A entrypoint coverage.
 2. **Potential invariant growth complexity**
