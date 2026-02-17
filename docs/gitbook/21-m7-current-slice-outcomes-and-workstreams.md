@@ -41,21 +41,23 @@ Concretely, M7 should leave the repository in a state where:
 
 ## 3. Workstream deep map
 
-### WS-A1 — CI hardening and quality gate promotion
+### WS-A1 — CI hardening and quality gate promotion ✅ completed
 
 **Intent:** shift from “best effort checks” to enforced proof and determinism gates.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- keep Tier 0–3 checks required,
-- preserve deterministic replay posture,
-- reduce cold-start cost through caching and reliable setup.
+- Tier 0–3 are promoted into CI lanes (`Fast`, `Smoke`, `Full`) with Tier 3 included in merge-gate flow,
+- deterministic replay is scheduled in a dedicated nightly workflow with artifact retention,
+- Lean/Lake cache restoration is active to reduce cold-start latency,
+- branch protection and required-check policy is documented in `docs/CI_POLICY.md`,
+- failure diagnostics remain actionable through trace/nightly artifact uploads and category-labeled script output.
 
-**DoD signals:**
+**DoD signals status:**
 
-- branch protection requirements are documented and reproducible,
-- no milestone-moving PR bypasses proof-surface checks,
-- failed checks produce actionable diagnostics.
+- branch protection requirements are documented and reproducible ✅,
+- no milestone-moving PR bypasses proof-surface checks ✅,
+- failed checks produce actionable diagnostics ✅.
 
 ### WS-A2 — Architecture modularity and API surface
 

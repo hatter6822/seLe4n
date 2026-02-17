@@ -29,6 +29,8 @@
 
 CI should execute these repository scripts directly to avoid local/CI drift.
 
+Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md).
+
 ## Shared test library behavior
 
 All test entrypoints use `scripts/test_lib.sh` for:

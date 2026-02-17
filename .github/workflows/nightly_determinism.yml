@@ -1,0 +1,40 @@
+name: Nightly Determinism
+
+on:
+  schedule:
+    - cron: '22 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly-tier4:
+    name: Tiered Tests / Nightly (Tier 0-4)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-
+
+      - name: Setup Lean toolchain
+        run: ./scripts/setup_lean_env.sh
+
+      - name: Run nightly gate with deterministic replay candidates
+        env:
+          NIGHTLY_ENABLE_EXPERIMENTAL: '1'
+        run: ./scripts/test_nightly.sh
+
+      - name: Upload nightly trace artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-trace-artifacts
+          path: tests/artifacts/nightly/

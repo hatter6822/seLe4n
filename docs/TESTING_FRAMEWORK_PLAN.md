@@ -21,12 +21,21 @@ Required local/CI entrypoints:
 
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
 - `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2)
+- `./scripts/test_full.sh` (Tier 0 + Tier 1 + Tier 2 + Tier 3)
+
+Nightly deterministic replay entrypoint:
+
+- `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (Tier 0..4 staged replay/diff checks)
 
 Recommended audit entrypoint for release/closeout confidence:
 
 - `./scripts/audit_testing_framework.sh` (baseline tier stack + Tier 4 experimental candidate execution + Tier 2 negative-control mismatch assertion)
 
 PR CI must call repository scripts directly and keep workflow logic thin.
+
+Branch-protection and required-check policy is documented in `docs/CI_POLICY.md`.
+
+Root contributor discoverability artifacts are `CONTRIBUTING.md` and `CHANGELOG.md`.
 
 ## 4. Baseline testing objectives inherited from M4-A
 

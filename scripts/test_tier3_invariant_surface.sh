@@ -302,4 +302,11 @@ run_check "DOC" rg -n 'Tier 4 fails \(`\./scripts/test_nightly\.sh` / `\./script
 # Full-suite contract should continue to include Tier 3.
 run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
 
+run_check "DOC" rg -n "Contribution guide \(root pointer\)|Change history" README.md
+run_check "DOC" test -f CONTRIBUTING.md
+run_check "DOC" test -f CHANGELOG.md
+run_check "DOC" rg -n "Required checks \(Tier 0–3\)|Deterministic replay evidence" docs/CI_POLICY.md
+run_check "DOC" rg -n "Tiered Tests / Full \(Tier 0 \+ Tier 1 \+ Tier 2 \+ Tier 3\)" .github/workflows/lean_action_ci.yml docs/CI_POLICY.md
+run_check "DOC" rg -n "Nightly Determinism|NIGHTLY_ENABLE_EXPERIMENTAL" .github/workflows/nightly_determinism.yml docs/CI_POLICY.md
+
 finalize_report

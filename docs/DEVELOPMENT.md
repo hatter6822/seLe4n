@@ -284,15 +284,16 @@ Run before opening a PR:
 ```bash
 ./scripts/test_fast.sh
 ./scripts/test_smoke.sh
+./scripts/test_full.sh
 ```
 
 Recommended additional checks:
 
 ```bash
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 lake build
 lake exe sele4n
 rg -n "axiom|sorry|TODO" SeLe4n Main.lean
-./scripts/test_full.sh
 ```
 
 If a command is blocked by environment limitations, report the limitation and impact.

@@ -10,6 +10,8 @@ This GitBook is the long-form documentation for seLe4n.
 
 Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance reference.
 
+Root contributor-entry docs: [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`CHANGELOG.md`](../CHANGELOG.md).
+
 ## Recommended navigation
 
 ### 1) Orientation
