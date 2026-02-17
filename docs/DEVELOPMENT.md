@@ -233,7 +233,7 @@ Use this model for all milestone-moving work while M7 is active:
 - ✅ **Completed:** WS-A1, WS-A2, WS-A3, WS-A4, WS-A5, WS-A6, WS-A7, WS-A8
 - 📝 **Planned follow-on:** next-slice kickoff dependencies execution (closeout packet is published)
 
-(Authoritative closure evidence is recorded in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md`, `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`, and `docs/M7_CLOSEOUT_PACKET.md`.)
+(Authoritative closure evidence is recorded in `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`, `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`, and `docs/M7_CLOSEOUT_PACKET.md`.)
 
 ### 6.3 Required checkpoint summary format
 
@@ -244,7 +244,7 @@ Checkpoint summaries should include:
 3. evidence commands run since last checkpoint,
 4. confidence signal for M7 exit readiness.
 
-For full workstream definitions, see [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](./gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+For full workstream definitions, see [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](./audits/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](./gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
 
 For trusted-vs-test runtime contract boundaries, follow [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](./HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
 

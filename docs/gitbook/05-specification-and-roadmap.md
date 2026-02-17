@@ -60,7 +60,7 @@ M7 remediation (WS-A1 through WS-A8) is now complete and serves as the immediate
 
 - [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
 - [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
-- [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](../AUDIT_REMEDIATION_WORKSTREAMS.md)
+- [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](../audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
 
 ## 5. Next-slice preview (post-M7)
 

@@ -4,8 +4,8 @@ This document records a full end-to-end quality audit over code, tests, and docu
 
 > **Historical note:** This audit is preserved as a prior-stage snapshot for traceability.
 > For the current audit baseline and active remediation program, see
-> [`docs/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md) and
-> [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md).
+> [`docs/audits/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md) and
+> [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md).
 
 ## 1) Executive assessment
 

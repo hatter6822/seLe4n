@@ -1,6 +1,6 @@
 # Repository Audit Remediation Workstreams
 
-This plan translates findings in [`docs/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md)
+This plan translates findings in [`docs/audits/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md)
 into execution-ready workstreams for the (now completed) M7 slice and the post-remediation handoff.
 
 ## 1. Program goals

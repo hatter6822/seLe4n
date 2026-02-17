@@ -297,7 +297,7 @@ run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
 run_check "DOC" rg -n 'Active slice:.*post-M7|Current slice:.*post-M7|Most recently completed slice:.*M7|Previous completed slice:.*M6|M7 remediation is complete' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/23-m7-remediation-closeout-packet.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-E completed|M7 remediation closeout is complete|post-M7 hardware-oriented next slice' docs/PROJECT_AUDIT.md docs/DEVELOPMENT.md docs/SEL4_SPEC.md README.md
+run_check "DOC" rg -n 'WS-M6-A through WS-M6-E completed|M7 remediation closeout is complete|post-M7 hardware-oriented next slice' docs/audits/PROJECT_AUDIT.md docs/DEVELOPMENT.md docs/SEL4_SPEC.md README.md
 run_check "DOC" rg -n 'WS-M6-A through WS-M6-C now complete|closed under WS-M6-D|M7 closeout baseline|post-M7 next-slice execution' docs/gitbook/19-end-to-end-audit-and-quality-gates.md
 run_check "DOC" rg -n 'M7 remediation closeout is complete|without regressing M1–M7 contracts|WS-M6-A through WS-M6-E complete' docs/TESTING_FRAMEWORK_PLAN.md
 run_check "DOC" rg -n 'WS-M6-D and WS-M6-E complete|WS-M6-E: documentation synchronization and handoff packaging ✅ completed' docs/gitbook/05-specification-and-roadmap.md
@@ -338,6 +338,6 @@ run_check "DOC" rg -n "^\s*continue-on-error:\s*true" .github/workflows/platform
 run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/AUDIT_REMEDIATION_WORKSTREAMS.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
+run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
 
 finalize_report
