@@ -1,6 +1,6 @@
 # M6 Execution Plan and Workstreams
 
-This chapter is the delivery playbook for the **current active slice (M6)**.
+This chapter is the delivery playbook for the **completed M6 slice** and its handoff state.
 
 M6 goal: turn architecture-facing assumptions into explicit interfaces and proof-carrying contracts,
 while preserving all established M1–M5 semantics/invariants/evidence obligations.
@@ -87,7 +87,7 @@ regression-checked.
 **Exit signal**
 - achieved: evidence demonstrates both expected success path and bounded failure semantics.
 
-### WS-M6-E — Documentation and handoff packaging
+### WS-M6-E — Documentation and handoff packaging ✅ **completed**
 
 **Objective:** Keep roadmap/spec/development/GitBook synchronized and prepare post-M6 execution
 handoff.
@@ -98,19 +98,36 @@ handoff.
 - risk register updates tied to new boundary contracts.
 
 **Exit signal**
-- M6 claims are fully traceable from docs → code → proofs → tests.
+- achieved: M6 claims are fully traceable from docs → code → proofs → tests.
+
+### WS-M6-E closeout package
+
+**Post-M6 unlocks now explicit**
+- Raspberry Pi 5-focused adapter/contract instantiation can start without refactoring M1–M6 theorem surfaces.
+- Platform-specific boundary evidence can be layered on top of existing deterministic adapter semantics.
+- Trust-boundary deployment stories can consume M6 contract references directly.
+
+**Deferred to M7 (intentional)**
+- concrete Raspberry Pi 5 contract instantiation values and platform predicates,
+- expanded runtime trace scenarios that exercise platform-specific boot/runtime constraints,
+- deployment-partition validation stories that map trust boundaries onto concrete hardware assumptions.
+
+**Risk register updates tied to boundary contracts**
+- semantic/proof skew risk is now explicitly bound to adapter-contract theorem pairing expectations,
+- roadmap drift risk is now tied to synchronized stage markers across README/spec/development/GitBook,
+- premature hardware lock-in risk is constrained by keeping M7 as contract-instantiation (not theorem reset).
 
 ---
 
-## 3. Current-slice outcome matrix
+## 3. M6 outcome matrix (closeout status)
 
 | Outcome | Workstreams | Evidence command(s) | Completion signal |
 |---|---|---|---|
-| Explicit architecture assumptions | WS-M6-A, WS-M6-E | `lake build`, `./scripts/test_tier3_invariant_surface.sh` | Interfaces and symbols are discoverable and anchored |
-| Adapter semantics and error handling | WS-M6-B | `./scripts/test_fast.sh`, `lake exe sele4n` | Deterministic success/failure behavior is executable |
+| Explicit architecture assumptions | WS-M6-A, WS-M6-E ✅ completed | `lake build`, `./scripts/test_tier3_invariant_surface.sh` | Interfaces and symbols are discoverable and anchored |
+| Adapter semantics and error handling | WS-M6-B ✅ completed | `./scripts/test_fast.sh`, `lake exe sele4n` | Deterministic success/failure behavior is executable |
 | Proof compositionality across boundary | WS-M6-C ✅ completed | `lake build`, `./scripts/test_full.sh` | Local + composed theorems compile and remain layered |
 | Regression-safe evidence growth | WS-M6-D ✅ completed | `./scripts/test_smoke.sh`, `./scripts/test_nightly.sh` | Fixture and nightly checks validate expected traces |
-| Slice handoff coherence | WS-M6-E | docs review + CI-required set | Spec/README/DEVELOPMENT/GitBook all match |
+| Slice handoff coherence | WS-M6-E ✅ completed | docs review + CI-required set | Spec/README/DEVELOPMENT/GitBook all match |
 
 ---
 

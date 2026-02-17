@@ -5,8 +5,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-D completed; WS-M6-E in progress).
-- **Most recently completed slice:** M5 service-graph + policy surfaces (WS-M5-A through WS-M5-F completed).
+- **Active slice:** M7 Raspberry Pi 5 binding prototype and platform-constraint evidence planning.
+- **Most recently completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
 - **First real-hardware architecture focus:** Raspberry Pi 5 (post-M6 binding path).
 
 For normative milestones, acceptance criteria, and scope decisions, use
@@ -18,7 +18,7 @@ For normative milestones, acceptance criteria, and scope decisions, use
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **Latest end-to-end audit snapshot:** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
-- **Current-slice execution plan:** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
+- **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
 - **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
 - **Project usage/value guide:** [`docs/gitbook/17-project-usage-value.md`](docs/gitbook/17-project-usage-value.md)

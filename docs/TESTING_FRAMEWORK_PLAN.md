@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **M5 service-graph + policy surface delivery is complete (WS-M5-A through WS-M5-F complete); M6 WS-M6-A through WS-M6-D are complete and testing now gates WS-M6-E completion without regressing M1–M5 contracts**.
+Current stage context: **M6 architecture-boundary delivery is complete (WS-M6-A through WS-M6-E complete); testing now guards M7 planning and implementation changes without regressing M1–M6 contracts**.
 
 ## 2. Current enforced tiers
 

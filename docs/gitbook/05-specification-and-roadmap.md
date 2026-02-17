@@ -10,9 +10,9 @@ Milestone status for planning purposes:
 - M4-A complete,
 - M4-B complete,
 - M5 complete,
-- **M6 active**.
+- **M6 complete**.
 
-M6 planning should build on existing transition and theorem surfaces rather than restructuring
+Post-M6 planning should build on existing transition and theorem surfaces rather than restructuring
 closed milestone contracts.
 
 ## 2. Stable outcomes now treated as contracts
@@ -25,7 +25,7 @@ Contributors should treat these as stable unless a spec-level change is explicit
 4. fixture-backed executable traces for core success/failure stories,
 5. Tier 3 theorem/invariant symbol anchors for claimed surfaces.
 
-## 3. Current slice definition: M6
+## 3. Completed predecessor slice recap: M6
 
 M6 scope: **architecture-binding interfaces and hardware-facing assumption hardening**.
 
@@ -48,7 +48,7 @@ M6 scope: **architecture-binding interfaces and hardware-facing assumption harde
 - **WS-M6-B:** interface API + adapter semantics ✅ completed (`SeLe4n/Kernel/Architecture/Adapter.lean`),
 - **WS-M6-C:** proof integration with existing bundles ✅ completed (`SeLe4n/Kernel/Architecture/Invariant.lean`),
 - **WS-M6-D:** executable evidence and test-anchor expansion ✅ completed (`Main.lean`, `tests/fixtures/main_trace_smoke.expected`, `scripts/test_tier3_invariant_surface.sh`),
-- **WS-M6-E:** documentation synchronization and handoff packaging (in progress).
+- **WS-M6-E:** documentation synchronization and handoff packaging ✅ completed.
 
 Detailed execution guidance: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
@@ -59,9 +59,15 @@ Detailed execution guidance: [M6 Execution Plan and Workstreams](18-m6-execution
 - replacing M1–M5 theorem APIs unless required for soundness,
 - broad subsystem redesign not required for architecture-boundary clarity.
 
-## 4. Next-slice preview (post-M6)
+## 4. M6 closeout handoff signals
 
-Immediate next-slice direction is **Raspberry Pi 5-first binding and validation planning**.
+1. WS-M6-A through WS-M6-E are complete and traceable from docs to code/proofs/tests.
+2. Boundary contracts are explicit enough to support Raspberry Pi 5-first instantiation work.
+3. Risk controls now focus on contract-instantiation discipline rather than boundary extraction.
+
+## 5. Current active slice preview: M7
+
+Current active direction is **Raspberry Pi 5-first binding and validation planning**.
 
 Indicative outcomes:
 
@@ -69,7 +75,7 @@ Indicative outcomes:
 2. add platform-constraint evidence stories grounded in current model behavior,
 3. map trust boundaries for a minimal realistic deployment partition.
 
-## 5. Transition gates
+## 6. Transition gates
 
 ### Gate: M5 closeout (completed)
 
@@ -80,13 +86,13 @@ Verified signals:
 3. Tier 3 anchors include M5 theorem/invariant symbols,
 4. docs synchronized for M5 closure.
 
-### Gate: M5 → M6 (active, in progress)
+### Gate: M5 → M6 (completed)
 
 Progress snapshot:
 
 1. architecture assumptions explicit and reviewable ✅ (WS-M6-A complete),
 2. interface artifacts preserve M1–M5 theorem layering ✅ (WS-M6-B and WS-M6-C complete),
-3. test obligations added without regressing required gates ✅ (WS-M6-D complete; WS-M6-E in progress).
+3. test obligations added without regressing required gates ✅ (WS-M6-D and WS-M6-E complete).
 
 ### Gate: M6 → Raspberry Pi 5 binding slice (planned)
 
@@ -96,7 +102,7 @@ Require all:
 2. adapter failure semantics are explicit and theorem-addressed,
 3. documentation identifies platform obligations vs model guarantees.
 
-## 6. Risk register (active)
+## 7. Risk register (post-M6 updated)
 
 1. **Semantic/proof skew**
    - risk: adapter semantics change without theorem updates,
@@ -111,7 +117,7 @@ Require all:
    - risk: overfitting before contracts stabilize,
    - mitigation: keep Raspberry Pi 5 work post-M6 and contract-driven.
 
-## 7. Contributor operating cadence
+## 8. Contributor operating cadence
 
 1. per PR: state M6 workstream advanced + next unlock,
 2. per checkpoint: map changes to M6 outcome matrix,

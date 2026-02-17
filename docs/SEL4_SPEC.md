@@ -7,13 +7,13 @@ This document is the normative specification baseline for seLe4n.
 It defines:
 
 1. What milestone behavior is already closed and considered stable.
-2. The **current delivery slice** (M6) with concrete target outcomes.
-3. The **next delivery slice** preview (post-M6 directional) so work continues without roadmap drift.
+2. The **current delivery slice** (M7) with concrete target outcomes.
+3. The **completed predecessor slice** recap (M6) plus M7 directional planning so work continues without roadmap drift.
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening (active) with M5 service-graph/policy workstreams WS-M5-A through WS-M5-F completed**.
+Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening is complete (WS-M6-A through WS-M6-E completed); M7 Raspberry Pi 5-first binding planning is active**.
 
 ---
 
@@ -27,13 +27,13 @@ Current stage: **M6 architecture-binding interfaces and hardware-facing assumpti
 - **M4-A (complete)**: lifecycle/retype transition foundations + initial lifecycle invariants.
 - **M4-B (complete)**: lifecycle-capability composition hardening and richer scenario coverage.
 - **M5 (complete)**: service-graph semantics and policy-oriented authority constraints.
-- **M6 (current slice)**: architecture-binding interfaces and hardware-facing assumption hardening.
+- **M6 (complete)**: architecture-binding interfaces and hardware-facing assumption hardening.
 
 ---
 
 ## 3. Stable baseline contracts (must not regress)
 
-The following contracts are considered stable and preserved while M6 evolves:
+The following contracts are considered stable and preserved while M7 planning/implementation evolves:
 
 1. M1 scheduler invariant bundle and entrypoint preservation theorems.
 2. M2 capability/CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and
@@ -260,7 +260,7 @@ M6 explicitly owns the deferred architecture-binding scope:
 2. define proof-carrying adapters from architecture-neutral semantics,
 3. harden hardware-facing boot/runtime boundary assumptions with explicit contracts.
 
-### 6.5 M6 execution workstreams (active)
+### 6.5 M6 execution workstreams (completed recap)
 
 M6 work is tracked through the following workstreams:
 
@@ -276,8 +276,10 @@ M6 work is tracked through the following workstreams:
    - adapter assumptions are connected to local and composed invariant-preservation hooks in `SeLe4n/Kernel/Architecture/Invariant.lean` via `proofLayerInvariantBundle` and adapter-path preservation theorems.
 4. **WS-M6-D — evidence + test anchor continuity** ✅ **completed**
    - extend executable traces, fixtures, and Tier 3 symbol checks for new claims.
-5. **WS-M6-E — docs + handoff packaging** (in progress)
-   - synchronize roadmap and stage markers across root docs and GitBook.
+5. **WS-M6-E — docs + handoff packaging** ✅ **completed**
+   - roadmap/stage markers are synchronized across root docs and GitBook,
+   - post-M6 unlocks and M7 deferrals are explicitly recorded,
+   - risk register updates are mapped to architecture-boundary contract surfaces.
 
 ### 6.6 Post-M6 first-hardware target
 

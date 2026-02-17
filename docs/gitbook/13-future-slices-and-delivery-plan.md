@@ -1,26 +1,26 @@
 # Future Slices and Delivery Plan
 
-This chapter captures the forward plan after the M5 closeout and during active M6 execution.
+This chapter captures the forward plan after M6 closeout and during active M7 planning/execution.
 
 ## 1. Planning assumptions
 
 Forward planning is constrained by two rules:
 
-1. no regression of closed milestone contracts (M1–M5),
+1. no regression of closed milestone contracts (M1–M6),
 2. no hidden architecture assumptions in post-M6 platform plans.
 
-## 2. Active execution window: M6
+## 2. Completed predecessor recap: M6
 
-Current focus remains:
+M6 closeout delivered:
 
 - architecture-binding interfaces,
 - adapter theorem surfaces,
 - hardware-facing boundary contracts,
 - test/documentation continuity.
 
-Execution details are maintained in [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
+Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-## 3. Immediate next slice (post-M6): Raspberry Pi 5 first binding
+## 3. Current active slice (M7): Raspberry Pi 5 first binding
 
 ### Target outcomes
 
