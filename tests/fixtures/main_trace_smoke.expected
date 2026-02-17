@@ -44,3 +44,12 @@ WS-A4-IPC-05 | ipc-empty-mismatch | endpoint receive #3 (expected mismatch): SeL
 
 # Capability mint result
 WS-A4-CSPACE-02 | cspace-mint-rights-narrowing | minted cap rights: [SeLe4n.Model.AccessRight.read]
+
+# WS-A4 scale-expansion scenarios from audit recommendation set (#10)
+WS-A4-SCALE-01 | cspace-deep-radix-tree | deep cnode radix fixture: some 12
+WS-A4-SCALE-02 | scheduler-large-run-queue | large runnable queue length: 12
+WS-A4-SCALE-03 | scheduler-large-run-queue-schedule | large queue scheduled current: some 1
+WS-A4-SCALE-04 | ipc-multiple-endpoints | multi-endpoint receive senders: 4, 5
+WS-A4-SCALE-05 | service-dependency-chain-depth5 | service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
+WS-A4-SCALE-06 | boundary-memory-low-address | boundary memory low-address byte: 0
+WS-A4-SCALE-07 | boundary-memory-high-address | boundary memory high-address byte: 0

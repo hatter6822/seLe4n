@@ -99,6 +99,7 @@ Concretely, M7 should leave the repository in a state where:
 **Completed closure evidence:**
 
 - Tier 2 fixture lines now use a scenario-labeled `scenario_id | risk_class | expected_trace_fragment` format with comment support for readable maintenance,
+- Tier 2 scenarios now include the audit-recommended scale set (deep CNode radix shape, large runnable queue, multi-endpoint IPC, depth-5 service dependency chain, boundary memory addresses),
 - Tier 2 diagnostics include scenario/risk metadata to keep failures concise and actionable,
 - Tier 4 nightly candidates now run seeded `trace_sequence_probe` sequence-diversity checks that assert IPC endpoint-state consistency across nontrivial operation streams.
 

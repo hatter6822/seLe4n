@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.12] - 2026-02-17
+
+### Testing / WS-A4 completion hardening
+- Expanded Tier 2 fixture-backed trace coverage in `Main.lean` + `tests/fixtures/main_trace_smoke.expected` to explicitly cover all audit-recommended scale categories: deep CNode radix shape, large runnable queue (10+), multiple IPC endpoints, service dependency chain depth-5, and boundary memory addresses.
+- Kept Tier 2 scenario/risk tagging format for audit traceability while adding new WS-A4 scale scenarios under `WS-A4-SCALE-*` IDs.
+- Revalidated Tier 0–4 scripts (including seeded `trace_sequence_probe`) with the expanded scenarios and refreshed M7 workstream documentation evidence.
+
 All notable changes to this project are documented in this file.
 
 ## [0.8.10] - 2026-02-17

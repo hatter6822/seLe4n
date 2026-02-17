@@ -233,6 +233,118 @@ def main : IO Unit := do
       IO.println s!"service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
       IO.println s!"service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
 
+      let deepRadixCNode : CNode := {
+        guard := 3
+        radix := 12
+        slots := [
+          (1, { target := .object 1, rights := [.read], badge := none }),
+          (1024, { target := .object 12, rights := [.read, .write], badge := none })
+        ]
+      }
+      let stDeepCNode : SystemState :=
+        { st1 with
+          objects := fun oid =>
+            if oid = 200 then some (.cnode deepRadixCNode) else st1.objects oid
+        }
+      IO.println s!"deep cnode radix fixture: {reprStr <| (stDeepCNode.objects 200).map (fun obj => match obj with | .cnode cn => cn.radix | _ => 0)}"
+
+      let largeRunnable : List SeLe4n.ThreadId :=
+        (List.range 12).map (fun i => SeLe4n.ThreadId.ofNat (i + 1))
+      let stLargeQueue : SystemState :=
+        { st1 with scheduler := { st1.scheduler with runnable := largeRunnable, current := none } }
+      IO.println s!"large runnable queue length: {reprStr stLargeQueue.scheduler.runnable.length}"
+      match SeLe4n.Kernel.schedule stLargeQueue with
+      | .error err => IO.println s!"large queue schedule error: {reprStr err}"
+      | .ok (_, stLargeScheduled) =>
+          IO.println s!"large queue scheduled current: {reprStr (stLargeScheduled.scheduler.current.map SeLe4n.ThreadId.toNat)}"
+
+      let stMultiEndpoint : SystemState :=
+        { st1 with
+          objects := fun oid =>
+            if oid = demoEndpoint then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+            else if oid = 31 then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+            else st1.objects oid
+        }
+      match SeLe4n.Kernel.endpointSend demoEndpoint 4 stMultiEndpoint with
+      | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
+      | .ok (_, stEp1) =>
+          match SeLe4n.Kernel.endpointSend 31 5 stEp1 with
+          | .error err => IO.println s!"multi-endpoint send B error: {reprStr err}"
+          | .ok (_, stEp2) =>
+              match SeLe4n.Kernel.endpointReceive demoEndpoint stEp2 with
+              | .error err => IO.println s!"multi-endpoint receive A error: {reprStr err}"
+              | .ok (senderA, stEp3) =>
+                  match SeLe4n.Kernel.endpointReceive 31 stEp3 with
+                  | .error err => IO.println s!"multi-endpoint receive B error: {reprStr err}"
+                  | .ok (senderB, _) =>
+                      IO.println s!"multi-endpoint receive senders: {senderA}, {senderB}"
+
+      let chainRoot : ServiceId := 205
+      let chainL4 : ServiceId := 204
+      let chainL3 : ServiceId := 203
+      let chainL2 : ServiceId := 202
+      let chainL1 : ServiceId := 201
+      let chainTop : ServiceId := 200
+      let stServiceChain : SystemState :=
+        { st1 with
+          services := fun sid =>
+            if sid = chainRoot then
+              some {
+                identity := { sid := chainRoot, backingObject := 12, owner := 10 }
+                status := .running
+                dependencies := []
+                isolatedFrom := []
+              }
+            else if sid = chainL4 then
+              some {
+                identity := { sid := chainL4, backingObject := 12, owner := 10 }
+                status := .running
+                dependencies := [chainRoot]
+                isolatedFrom := []
+              }
+            else if sid = chainL3 then
+              some {
+                identity := { sid := chainL3, backingObject := 12, owner := 10 }
+                status := .running
+                dependencies := [chainL4]
+                isolatedFrom := []
+              }
+            else if sid = chainL2 then
+              some {
+                identity := { sid := chainL2, backingObject := 12, owner := 10 }
+                status := .running
+                dependencies := [chainL3]
+                isolatedFrom := []
+              }
+            else if sid = chainL1 then
+              some {
+                identity := { sid := chainL1, backingObject := 12, owner := 10 }
+                status := .running
+                dependencies := [chainL2]
+                isolatedFrom := []
+              }
+            else if sid = chainTop then
+              some {
+                identity := { sid := chainTop, backingObject := 12, owner := 10 }
+                status := .stopped
+                dependencies := [chainL1]
+                isolatedFrom := []
+              }
+            else
+              st1.services sid
+        }
+      match SeLe4n.Kernel.serviceStart chainTop allowAll stServiceChain with
+      | .error err => IO.println s!"service dependency chain start error: {reprStr err}"
+      | .ok (_, stChainStarted) =>
+          IO.println s!"service dependency chain depth-5 start status: {reprStr <| (SeLe4n.Model.lookupService stChainStarted chainTop).map ServiceGraphEntry.status}"
+
+      match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll 0 st1 with
+      | .error err => IO.println s!"boundary memory low-address error: {reprStr err}"
+      | .ok (byte, _) => IO.println s!"boundary memory low-address byte: {reprStr byte}"
+      match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll 18446744073709551615 st1 with
+      | .error err => IO.println s!"boundary memory high-address error: {reprStr err}"
+      | .ok (byte, _) => IO.println s!"boundary memory high-address byte: {reprStr byte}"
+
       match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
           (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
       | .error err =>
