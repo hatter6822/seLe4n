@@ -9,7 +9,7 @@
 **Post-audit remediation note (M7 WS-A1/WS-A2):**
 - WS-A1 is complete: Tier 3 is promoted into CI and nightly determinism + CI policy documentation are present (`.github/workflows/lean_action_ci.yml`, `.github/workflows/nightly_determinism.yml`, `docs/CI_POLICY.md`).
 - WS-A2 is complete: IPC transition operations are split into `SeLe4n/Kernel/IPC/Operations.lean` and invariant/proof obligations remain in `SeLe4n/Kernel/IPC/Invariant.lean` behind a stable `SeLe4n/Kernel/API.lean` facade.
-- Findings in this audit remain a historical snapshot at audit-time version 0.8.0; authoritative current status for active remediation closure is tracked in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` and `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`.
+- Findings in this audit remain a historical snapshot at audit-time version 0.8.0; authoritative current status for active remediation closure is tracked in `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` and `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`.
 
 ## Executive Summary
 
@@ -257,7 +257,7 @@ percentage.
 | `docs/SEL4_SPEC.md` | 372 | Normative specification baseline, acceptance criteria |
 | `docs/DEVELOPMENT.md` | 369 | Contributor workflow, proof engineering standards |
 | `docs/TESTING_FRAMEWORK_PLAN.md` | 139 | Active testing baseline, tier signal map |
-| `docs/PROJECT_AUDIT.md` | 143 | Historical end-to-end quality audit snapshot |
+| `docs/audits/PROJECT_AUDIT.md` | 143 | Historical end-to-end quality audit snapshot |
 | `docs/LICENSE_REVIEW.md` | 65 | MIT license adoption review |
 | `docs/gitbook/` (26 chapters) | ~1,100 | Long-form handbook |
 | `tests/scenarios/README.md` | 73 | Fixture maintenance workflow |

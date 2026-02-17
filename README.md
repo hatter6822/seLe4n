@@ -18,7 +18,7 @@ For normative milestones, acceptance criteria, and scope decisions, use
 
 M7 exit-gate status is complete: WS-A1..WS-A8 are closed with CI/test/documentation evidence and the remediation handoff package published in [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md).
 
-For remediation closure details, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+For remediation closure details, use [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
 
 ## Start here (contributor IA)
 
@@ -29,11 +29,11 @@ For remediation closure details, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](d
 - **5) Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 - **Hardware-boundary contract policy (WS-A5):** [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md)
 - **Information-flow proof trajectory roadmap (WS-A8):** [`docs/INFORMATION_FLOW_ROADMAP.md`](docs/INFORMATION_FLOW_ROADMAP.md)
-- **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
-- **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
+- **Historical end-to-end audit snapshot (superseded):** [`docs/audits/PROJECT_AUDIT.md`](docs/audits/PROJECT_AUDIT.md)
+- **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/audits/REPOSITORY_AUDIT.md`](docs/audits/REPOSITORY_AUDIT.md)
 - **M7 execution outcomes and workstreams (completed slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
 - **M7 closeout packet (exit-gate artifact):** [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md)
-- **Audit remediation workstreams (M7+ execution plan):** [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md)
+- **Audit remediation workstreams (M7+ execution plan):** [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)

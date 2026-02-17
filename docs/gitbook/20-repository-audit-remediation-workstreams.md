@@ -1,10 +1,10 @@
 # Repository Audit Remediation Workstreams
 
 This chapter is the execution companion to the full repository audit in
-[`docs/REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md).
+[`docs/audits/REPOSITORY_AUDIT.md`](../audits/REPOSITORY_AUDIT.md).
 
 For the implementation plan that defines each workstream in detail, use:
-[`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](../AUDIT_REMEDIATION_WORKSTREAMS.md).
+[`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](../audits/AUDIT_REMEDIATION_WORKSTREAMS.md).
 
 For current-slice target outcomes and closure gates, use:
 [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md).

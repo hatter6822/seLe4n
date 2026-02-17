@@ -58,7 +58,7 @@
 ## [0.8.17] - 2026-02-17
 
 ### Documentation/GitBook sync audit hardening
-- Closed remaining WS-A6-era documentation drift by marking WS-A4 as completed in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` to match existing closure evidence and the active-slice status pages.
+- Closed remaining WS-A6-era documentation drift by marking WS-A4 as completed in `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` to match existing closure evidence and the active-slice status pages.
 - Updated `docs/gitbook/13-future-slices-and-delivery-plan.md` so M7 workstream statuses are synchronized with current slice reality (WS-A1..WS-A6 completed, WS-A7 in progress, WS-A8 planned).
 - Bumped package patch version to `0.8.17` and synchronized the root README version marker.
 
@@ -153,7 +153,7 @@ All notable changes to this project are documented in this file.
 ### Documentation
 - Added root `CONTRIBUTING.md` pointer to canonical contributor workflow in `docs/DEVELOPMENT.md`.
 - Added root `CHANGELOG.md` for chronological release notes and milestone-delivery traceability.
-- Added post-audit remediation note in `docs/REPOSITORY_AUDIT.md` clarifying WS-A1 CI hardening landed after the audit snapshot.
+- Added post-audit remediation note in `docs/audits/REPOSITORY_AUDIT.md` clarifying WS-A1 CI hardening landed after the audit snapshot.
 
 ### CI / Quality Gates
 - Added Tier 3/WS-A1 documentation anchor checks for CI policy/workflow artifacts and root contributor/changelog discoverability in `scripts/test_tier3_invariant_surface.sh`.
