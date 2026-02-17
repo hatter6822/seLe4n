@@ -56,6 +56,12 @@ fi
 
 ensure_shellcheck
 
+# If elan was previously installed with --no-modify-path, load it before probing.
+if [ -f "${ELAN_ENV_FILE}" ]; then
+  # shellcheck disable=SC1090
+  source "${ELAN_ENV_FILE}"
+fi
+
 if ! command -v elan >/dev/null 2>&1; then
   echo "[setup] elan not found; installing to ${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
   curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
@@ -77,7 +83,11 @@ if [ -z "${TOOLCHAIN}" ]; then
 fi
 
 echo "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
-elan toolchain install "${TOOLCHAIN}" >/dev/null
+if ! elan toolchain list | tr -d '\r' | grep -Fxq "${TOOLCHAIN}"; then
+  elan toolchain install "${TOOLCHAIN}" >/dev/null
+else
+  echo "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
+fi
 elan default "${TOOLCHAIN}" >/dev/null
 
 if ! command -v lake >/dev/null 2>&1; then
