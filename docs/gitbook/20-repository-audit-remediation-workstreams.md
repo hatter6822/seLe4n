@@ -1,5 +1,9 @@
 # Repository Audit Remediation Workstreams
 
+> Historical note: this chapter documents the completed M7 remediation portfolio.
+> For active planning against the 2026-02 comprehensive audit, use
+> [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
+
 This chapter is the execution companion to the full repository audit in
 [`docs/audits/REPOSITORY_AUDIT.md`](../audits/REPOSITORY_AUDIT.md).
 

@@ -12,6 +12,8 @@
 ## Active planning and execution
 
 - [Specification & Roadmap](05-specification-and-roadmap.md)
+- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
 - [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
 - [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)

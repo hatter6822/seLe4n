@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1] - 2026-02-17
+
+### Comprehensive-audit workstream execution kickoff readiness
+- Expanded `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` into a detailed execution contract with per-workstream goals, prerequisites, implementation slices, evidence contracts, and exit criteria for WS-B1..WS-B11.
+- Added explicit portfolio readiness gates (G0 kickoff readiness and G1 hardware-entry readiness) and clarified that the current slice is centered on WS-B execution kickoff.
+- Synchronized root README, audit index, and GitBook planning chapter wording so active-slice status consistently reflects comprehensive-audit workstream execution readiness.
+- Bumped package patch version from `0.9.0` to **`0.9.1`**.
+
 ## [0.9.0] - 2026-02-17
 
 ### CI security-scan reliability follow-up
