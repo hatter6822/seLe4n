@@ -3,75 +3,60 @@
 seLe4n is a Lean 4 formalization project for an executable, machine-checked model of core
 [seL4 microkernel](https://sel4.systems) semantics.
 
-## Current development stage
+## Current state (authoritative snapshot)
 
-- **Active slice:** comprehensive-audit WS-B workstream execution kickoff (planning-complete to execution-ready transition).
-- **Most recently completed slice:** M7 audit remediation workstreams (WS-A1 through WS-A8 completed).
-- **Previous completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
+- **Active development slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio kickoff/execution).
+- **Most recently completed slice:** M7 audit remediation (WS-A1..WS-A8 complete).
+- **Previous completed slice:** M6 architecture-boundary assumptions/adapters.
+- **Current package version:** `0.9.1` (`lakefile.toml`).
 
-For normative milestones, acceptance criteria, and scope decisions, use
-[`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
+Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
 
-- **Current package version:** `0.9.1` (see `lakefile.toml`).
+## Start here (new contributors)
 
-### M7 closeout status and next-slice kickoff
+1. **Development workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+2. **Testing and CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
+3. **Comprehensive audit workstream plan (current slice):**
+   [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+4. **GitBook navigation hub:** [`docs/gitbook/README.md`](docs/gitbook/README.md)
+5. **Contribution mechanics:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
-M7 exit-gate status is complete: WS-A1..WS-A8 are closed with CI/test/documentation evidence and the remediation handoff package published in [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md).
+- Contribution guide (root pointer): [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Change history: [`CHANGELOG.md`](CHANGELOG.md)
 
-For remediation closure details, use [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+## Current slice workstreams (WS-B)
+
+Use this as the quick index. Full contracts and dependencies are in the audit planning backbone.
+
+- **WS-B1:** VSpace + memory model foundation
+- **WS-B2:** Generative + negative testing expansion
+- **WS-B3:** Main trace harness refactor
+- **WS-B4:** Remaining type-wrapper migration
+- **WS-B5:** CSpace guard/radix semantics completion
+- **WS-B6:** Notification-object IPC completion
+- **WS-B7:** Information-flow proof-track start
+- **WS-B8:** Documentation automation/consolidation
+- **WS-B9:** Threat model + security hardening
+- **WS-B10:** CI maturity upgrades
+- **WS-B11:** Scenario framework finalization
+
+Primary reference:
+[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
 
 
-### Comprehensive audit planning baseline (2026-02)
+## Legacy semantic anchor note
 
-For planning all follow-on workstreams from the comprehensive audit, use:
+The M3.5 IPC-scheduler handshake semantics remain part of the stable regression surface and are still exercised through `Main.lean` trace fixtures and Tier 3 anchor checks.
 
-- Findings and recommendations: [`docs/audits/COMPREHENSIVE_AUDIT_2026_02.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02.md)
-- Canonical execution-planning matrix: [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
-- GitBook planning chapter: [`docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`](docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md)
-
-## Start here (contributor IA)
-
-- **1) Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
-- **2) Contribution guide:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- **3) Change history:** [`CHANGELOG.md`](CHANGELOG.md)
-- **4) Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
-- **5) Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
-- **Hardware-boundary contract policy (WS-A5):** [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md)
-- **Information-flow proof trajectory roadmap (WS-A8):** [`docs/INFORMATION_FLOW_ROADMAP.md`](docs/INFORMATION_FLOW_ROADMAP.md)
-- **Historical end-to-end audit snapshot (superseded):** [`docs/audits/PROJECT_AUDIT.md`](docs/audits/PROJECT_AUDIT.md)
-- **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/audits/REPOSITORY_AUDIT.md`](docs/audits/REPOSITORY_AUDIT.md)
-- **M7 execution outcomes and workstreams (completed slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
-- **M7 closeout packet (exit-gate artifact):** [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md)
-- **Audit remediation workstreams (historical M7 plan):** [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
-- **Comprehensive audit workstream planning backbone (active):** [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
-- **Documentation/GitBook sync + coverage matrix:** [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
-- **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
-- **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
-- **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
-- **Completed slice archive (M4-B):** [`docs/gitbook/16-completed-slice-m4b.md`](docs/gitbook/16-completed-slice-m4b.md)
-- **Next slice development path (post-M7):** [`docs/gitbook/22-next-slice-development-path.md`](docs/gitbook/22-next-slice-development-path.md)
-- **Project usage/value guide:** [`docs/gitbook/17-project-usage-value.md`](docs/gitbook/17-project-usage-value.md)
-- **Architecture and module map:** [`docs/gitbook/03-architecture-and-module-map.md`](docs/gitbook/03-architecture-and-module-map.md)
-- **Codebase deep reference:** [`docs/gitbook/11-codebase-reference.md`](docs/gitbook/11-codebase-reference.md)
-- **Proof and invariant map:** [`docs/gitbook/12-proof-and-invariant-map.md`](docs/gitbook/12-proof-and-invariant-map.md)
-- **Hardware direction (Raspberry Pi 5 first):** [`docs/gitbook/10-path-to-real-hardware-mobile-first.md`](docs/gitbook/10-path-to-real-hardware-mobile-first.md)
-
-## Quick start
-
-### 1) Install Lean tooling
+## Quick setup
 
 ```bash
 ./scripts/setup_lean_env.sh
-```
-
-### 2) Build and run
-
-```bash
 lake build
 lake exe sele4n
 ```
 
-### 3) Validate changes
+## Validation commands
 
 ```bash
 ./scripts/test_fast.sh
@@ -80,21 +65,18 @@ lake exe sele4n
 ./scripts/test_nightly.sh
 ```
 
-## Repository map
+## Codebase map
 
-- `SeLe4n/Prelude.lean` — IDs, aliases, kernel monad foundations.
-- `SeLe4n/Machine.lean` — abstract machine state and primitive updates.
-- `SeLe4n/Model/Object.lean` / `SeLe4n/Model/State.lean` — object/state semantics.
-- `SeLe4n/Kernel/Scheduler/*.lean` — scheduler operations and invariants.
-- `SeLe4n/Kernel/Capability/*.lean` — capability/CSpace operations and invariants.
-- `SeLe4n/Kernel/IPC/*.lean` — endpoint IPC semantics and invariants.
-- `SeLe4n/Kernel/Lifecycle/*.lean` — lifecycle/retype semantics and invariants.
-- `SeLe4n/Kernel/Service/*.lean` — service orchestration transitions and policy-surface invariants.
-- `SeLe4n/Kernel/Architecture/Assumptions.lean` — WS-M6-A assumption inventory, typed contract references (`ContractRef`), architecture-boundary contract skeletons, and runtime-branch decidability witnesses used by adapters.
-- `SeLe4n/Kernel/Architecture/Adapter.lean` — WS-M6-B deterministic adapter APIs (`adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory`) with explicit bound-context error mapping.
-- `SeLe4n/Kernel/Architecture/Invariant.lean` — WS-M6-C proof-layer integration hooks (`proofLayerInvariantBundle`) and local/composed preservation theorems for adapter success/failure paths.
-- `Main.lean` — executable scenario traces.
+- `SeLe4n/Prelude.lean` — typed identifiers + monad foundations
+- `SeLe4n/Machine.lean` — machine state and primitive update helpers
+- `SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean` — core model entities and kernel/system state
+- `SeLe4n/Kernel/Scheduler/*` — scheduler transitions and invariants
+- `SeLe4n/Kernel/Capability/*` — CSpace/capability transitions and invariants
+- `SeLe4n/Kernel/IPC/*` — endpoint IPC transitions and invariants
+- `SeLe4n/Kernel/Lifecycle/*` — lifecycle/retype transitions and invariants
+- `SeLe4n/Kernel/Service/*` — service orchestration, policy checks, composed invariants
+- `SeLe4n/Kernel/Architecture/*` — architecture assumptions, adapter semantics, boundary invariants
+- `Main.lean` — executable trace/demo harness
+- `tests/fixtures/main_trace_smoke.expected` — stable trace expectation anchors
+- `scripts/test_tier*.sh` — tiered quality gates used by CI and local workflows
 
-## License
-
-This project is licensed under the MIT License. See [`LICENSE`](./LICENSE).

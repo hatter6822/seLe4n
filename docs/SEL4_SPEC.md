@@ -1,372 +1,119 @@
 # seLe4n Specification and Milestone Plan
 
-## 1. Purpose
+## 1) Purpose
 
-This document is the normative specification baseline for seLe4n.
+This document is the **normative scope and acceptance source** for milestone state,
+active-slice intent, and change-control expectations.
 
-It defines:
+Companion planning and execution documents:
 
-1. What milestone behavior is already closed and considered stable.
-2. The **current delivery slice** (M7 audit remediation workstreams) with concrete target outcomes.
-3. The **completed predecessor slice** recap (M6) plus post-remediation hardware directional planning so work continues without roadmap drift.
-4. Acceptance criteria and non-goals for focused, reviewable implementation.
-5. Change-control expectations for code, proofs, executable traces, and docs.
-6. A forward plan for the next milestone family so contributors can stage work intentionally.
-
-Current stage: **M7 audit-remediation workstreams are complete (WS-A1 through WS-A8 closed), and active execution has transitioned to the post-M7 hardware-oriented next slice (Raspberry Pi 5 first)**.
+- comprehensive-audit findings:
+  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02.md`](./audits/COMPREHENSIVE_AUDIT_2026_02.md)
+- comprehensive-audit workstream execution plan:
+  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
 
 ---
 
-## 2. Milestone map
+## 2) Milestone status map (current)
 
-- **Bootstrap (complete)**: executable model skeleton and transition style.
-- **M1 (complete)**: scheduler integrity bundle and preservation.
-- **M2 (complete)**: typed CSpace operations + capability lifecycle authority invariants.
-- **M3 (complete)**: endpoint send/receive seed semantics + IPC invariant seed bundle.
-- **M3.5 (complete)**: waiting/handshake IPC semantics + scheduler coherence contract.
-- **M4-A (complete)**: lifecycle/retype transition foundations + initial lifecycle invariants.
-- **M4-B (complete)**: lifecycle-capability composition hardening and richer scenario coverage.
-- **M5 (complete)**: service-graph semantics and policy-oriented authority constraints.
-- **M6 (complete)**: architecture-binding interfaces and hardware-facing assumption hardening.
-- **M7 (complete)**: repository-audit remediation hardening (WS-A1 through WS-A8) with CI/security/platform readiness gates operational.
+- **M4-A:** complete (lifecycle/retype foundations)
+- **M4-B:** complete (lifecycle-capability composition hardening)
+- M4-B (complete) baseline is retained for historical compatibility checks
+- **M5:** complete (service graph + policy surfaces + proof package)
+- **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
+- **M7:** complete (audit remediation WS-A1..WS-A8)
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B1..WS-B11)
 
 ---
 
-## 3. Stable baseline contracts (must not regress)
+## 3) Stable baseline contracts (must not regress)
 
-The following contracts are considered stable and preserved while audit remediation workstreams are implemented:
+1. deterministic transition semantics across scheduler/capability/IPC/lifecycle/service surfaces,
+2. M3.5 IPC-scheduler handshake behavior and associated invariant/trace anchors,
+3. layered invariants with local and composed preservation theorem entry points,
+4. architecture-boundary assumptions and adapter error mapping introduced in M6,
+5. fixture-backed executable evidence for key success/failure traces,
+6. tiered testing quality gates used by local and CI workflows.
 
-1. M1 scheduler invariant bundle and entrypoint preservation theorems.
-2. M2 capability/CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and
-   composed capability invariant bundle.
-3. M3 endpoint APIs (`endpointSend`, `endpointReceive`) and IPC seed invariant layering.
-4. M3.5 waiting-receiver handshake behavior and scheduler-contract predicate surfaces.
-5. Tier 0/1/2 required test gates and CI invocation through repository scripts.
-
-Any intentional baseline changes must be documented in this file, `docs/DEVELOPMENT.md`, and
-`README.md` in the same commit range.
+Any intentional deviation requires explicit spec-level change note in the PR.
 
 ---
 
-## 4. Completed slice baseline: M4-A lifecycle/retype foundations
+## 4) Active slice specification: comprehensive-audit WS-B portfolio
 
-### 4.1 Objective
+### 4.1 Slice objective
 
-Introduce the first deterministic object lifecycle/retype transition surface and machine-checked
-safety scaffolding that connects object-store evolution with capability references.
+Close comprehensive-audit recommendations while preserving determinism,
+proof hygiene, contributor usability, and hardware-readiness trajectory.
 
-### 4.2 Why now
+### 4.2 Workstream inventory
 
-M3.5 established IPC-scheduler coherence. The next major safety risk is object lifecycle evolution:
-without typed lifecycle transitions and invariants, capability reasoning can drift away from object
-state evolution.
+- **WS-B1:** VSpace + memory model foundation
+- **WS-B2:** Generative + negative testing expansion
+- **WS-B3:** Main trace harness refactor
+- **WS-B4:** Remaining type-wrapper migration
+- **WS-B5:** CSpace semantics completion (guard/radix)
+- **WS-B6:** Notification-object IPC completion
+- **WS-B7:** Information-flow proof-track start
+- **WS-B8:** Documentation automation + consolidation
+- **WS-B9:** Threat model and security hardening
+- **WS-B10:** CI maturity upgrades
+- **WS-B11:** Scenario framework finalization
 
-### 4.3 M4-A target outcomes (all required)
+### 4.3 Sequencing constraints
 
-1. **Lifecycle transition API**
-   - add at least one executable lifecycle/retype operation with explicit success/error outcomes,
-   - ensure deterministic state updates and architecture-neutral semantics,
-   - ensure unauthorized and illegal-state failures are first-class, testable branches.
+- **P1:** WS-B4 + WS-B3 + WS-B8
+- **P2:** WS-B1 + WS-B5 + WS-B6 + WS-B2
+- **P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
-2. **Object identity + aliasing invariants**
-   - define invariants preventing invalid object identity reuse in active scope,
-   - define invariants constraining aliasing after lifecycle transitions,
-   - separate identity constraints from capability-reference constraints for compositional proofs.
+### 4.4 Acceptance expectations for WS-B work
 
-3. **Capability-object coherence invariants**
-   - specify that capability references remain type-compatible and target-valid after lifecycle
-     updates,
-   - ensure lifecycle updates preserve authority monotonicity assumptions already used by M2,
-   - expose these constraints as reusable theorem assumptions for next-slice composition.
+A workstream-ready PR should include:
 
-4. **Local helper lemmas + preservation theorem entrypoints**
-   - provide transition-local lookup/membership helper lemmas near lifecycle transitions to keep
-     proof scripts concise,
-   - provide machine-checked `<transition>_preserves_<invariant>` entrypoints for each new
-     lifecycle transition,
-   - include at least one composed theorem over lifecycle + existing capability invariant bundle.
+1. clear recommendation/workstream mapping,
+2. executable/test/proof evidence appropriate to scope,
+3. no regression to stable contracts,
+4. synchronized documentation and GitBook state,
+5. explicit deferred items and owning follow-up workstream.
 
-5. **Executable + fixture evidence**
-   - extend `Main.lean` with lifecycle success and failure stories,
-   - update `tests/fixtures/main_trace_smoke.expected` with stable semantic fragments if behavior
-     output changes intentionally,
-   - keep traces readable enough for regression triage by non-authors.
-
-### 4.4 M4-A delivery quality bar
-
-A change is M4-A complete only when all of the following are true:
-
-1. transition semantics compile and are deterministic,
-2. invariants are named, factored, and directly referenced by preservation theorems,
-3. executable trace evidence demonstrates behavior shape for at least one success and one failure,
-4. docs identify deferred work explicitly rather than implying hidden completion.
-
-### 4.5 M4-A acceptance criteria
-
-1. `./scripts/test_fast.sh` succeeds.
-2. `./scripts/test_smoke.sh` succeeds.
-3. `lake build` succeeds.
-4. `lake exe sele4n` succeeds and includes lifecycle behavior evidence.
-5. Hygiene scan is clean:
-   - `rg -n "axiom|sorry|TODO" SeLe4n Main.lean`.
-6. Lifecycle invariants are named, documented, and composed with existing bundle structure.
-7. Preservation theorem entrypoints compile without introducing proof placeholders.
-
-### 4.6 Explicit non-goals (M4-A)
-
-- Full allocator/heap policy modeling.
-- Architecture-specific MMU/ASID internals.
-- Full reply-cap protocol redesign.
-- End-to-end C refinement correspondence.
-- General policy engine redesign.
+Authoritative detail for per-workstream goals, dependencies, and evidence gates:
+[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
 
 ---
 
-## 5. Completed predecessor slice: M4-B lifecycle-capability composition hardening
+## 5) Current implementation surface inventory
 
-### 5.1 Objective
+Primary code layout:
 
-Strengthen lifecycle semantics by integrating lifecycle updates with capability revocation/deletion
-flows and proving stronger stale-reference exclusion properties.
-
-### 5.2 M4-B target outcomes
-
-1. **Lifecycle + revoke/delete composition**
-   - define at least one composed transition story where lifecycle and capability lifecycle
-     operations interact explicitly,
-   - prove semantic ordering assumptions (retype-before-delete, delete-before-reuse) through
-     executable transition contracts.
-
-2. **Stale reference exclusion invariants**
-   - add invariants ruling out stale capability references to retired/retyped object identities,
-   - connect stale-reference exclusion to existing aliasing and authority constraints.
-
-3. **Cross-bundle preservation theorem surface**
-   - prove composed preservation covering lifecycle invariants plus capability lifecycle authority
-     invariants,
-   - keep theorem surfaces layered so M5 policy reasoning can reuse them without rewrite.
-
-4. **Error-path completeness**
-   - include explicit failure-path theorems (invalid type, stale object reference, illegal
-     authority),
-   - ensure error paths preserve baseline invariant bundles and do not silently weaken assumptions.
-
-5. **Scenario + testing growth**
-   - expand executable scenarios to include success and failure lifecycle stories,
-   - extend Tier 3 checks with M4-specific theorem/bundle anchors,
-   - document scenario intent in docs so failures are diagnosable by milestone.
-
-### 5.3 M4-B acceptance baseline
-
-1. Existing required gates remain green (`test_fast`, `test_smoke`).
-2. M4-A lifecycle contracts remain intact while M4-B features land.
-3. Tier 2 fixture remains stable and intentional.
-4. Tier 3 includes lifecycle-capability composition anchors.
-5. Documentation clearly updates next-slice roadmap direction (M5 preview).
-
-### 5.4 M4-B planned delivery sequence
-
-1. introduce composeable lifecycle/capability transition helpers,
-2. codify stale-reference invariants and local helper lemmas,
-3. prove local preservation for new helpers,
-4. prove composed cross-bundle preservation,
-5. extend executable traces and fixture anchors,
-6. publish docs updates and remaining M5 debt.
-
-
-### 5.5 M4-B workstream acceptance matrix
-
-For review clarity, M4-B evidence should map to these five workstreams:
-
-1. **WS-A semantics** ✅ **completed**: lifecycle-capability composed transition behavior is deterministic and
-   includes explicit failure branches.
-2. **WS-B invariants** ✅ **completed**: stale-reference exclusion is formalized as named components
-   and linked to identity/authority assumptions.
-3. **WS-C proofs** ✅ **completed**: local-first preservation is complete, then composed cross-bundle preservation is
-   proven without placeholder debt.
-4. **WS-D executable evidence** ✅ **completed**: `Main.lean` includes composition success/failure scenarios and Tier
-   2 fixture anchors capture stable semantics.
-5. **WS-E testing anchors** ✅ **completed**: Tier 3 includes M4-B theorem/bundle symbols, nightly extension
-   candidates are staged in Tier 4 entrypoints, and failure triage references exact script commands.
-
-### 5.6 M4-B completion evidence checklist
-
-A PR series claiming M4-B completion should include all of:
-
-- explicit transition semantics covering lifecycle + revoke/delete interaction,
-- stale-reference exclusion invariants and helper lemmas,
-- success-path and failure-path preservation theorem entrypoints,
-- fixture-backed executable scenarios for composed behavior,
-- Tier 3 anchor updates for new theorem/bundle surfaces,
-- synchronized docs describing what is complete and what is deferred to M5.
+- foundational model: `SeLe4n/Prelude.lean`, `SeLe4n/Machine.lean`, `SeLe4n/Model/*`
+- kernel semantics:
+  - scheduler: `SeLe4n/Kernel/Scheduler/*`
+  - capability/CSpace: `SeLe4n/Kernel/Capability/*`
+  - IPC/endpoints: `SeLe4n/Kernel/IPC/*`
+  - lifecycle/retype: `SeLe4n/Kernel/Lifecycle/*`
+  - service orchestration/policy: `SeLe4n/Kernel/Service/*`
+  - architecture boundary: `SeLe4n/Kernel/Architecture/*`
+- aggregate API entrypoint: `SeLe4n/Kernel/API.lean`
+- executable evidence harness: `Main.lean`
+- testing/trace anchors: `tests/fixtures/main_trace_smoke.expected`, `scripts/test_tier*.sh`
 
 ---
 
-## 6. Completed slice baseline: M5 service graph + policy surfaces
+## 6) Change-control policy
 
-### 6.1 M5 target direction: service graph + policy surfaces
+For milestone/scope/acceptance changes:
 
-The completed milestone family (M5) delivered operational realism while preserving theorem layering:
-
-1. model service restart/isolation stories that exercise lifecycle+IPC+capability composition,
-2. introduce policy-friendly authority constraints without replacing existing invariants,
-3. prepare architecture-binding interfaces as explicit assumptions rather than implicit behavior.
-
-### 6.2 M5 entry requirements (already satisfied)
-
-- M4-B stale-reference properties are merged and stable,
-- lifecycle-capability composition traces are fixture-backed,
-- invariant bundles expose reusable theorem surfaces for policy composition.
-
-
-### 6.3 M5 execution tracks (completed)
-
-1. **Service-graph modeling track** ✅ **completed baseline**
-   - service identity/status/dependency/isolation model and deterministic state helpers are implemented,
-   - orchestration and policy work consume this stable surface.
-2. **Orchestration transition track** ✅ **completed baseline**
-   - deterministic `serviceStart`, `serviceStop`, and `serviceRestart` transitions are implemented,
-   - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches are executable,
-   - staged success/failure ordering helper theorems are available for restart composition.
-3. **Policy decomposition track** ✅ **completed baseline**
-   - reusable policy predicates and authority surfaces are implemented in
-     `SeLe4n/Kernel/Service/Invariant.lean`,
-   - bridge lemmas connect policy assumptions to lifecycle/capability bundles,
-   - policy denial branches are explicitly represented as check-only (non-mutation) outcomes.
-4. **Proof-package track (WS-M5-D)** ✅ **completed baseline**
-   - local preservation theorem entrypoints are available for `serviceStart`, `serviceStop`, and
-     `serviceRestart`,
-   - composed service+lifecycle+capability preservation is exposed via
-     `serviceLifecycleCapabilityInvariantBundle`,
-   - explicit failure-path preservation theorem coverage exists for start/stop/restart branches.
-5. **Evidence/testing track (WS-M5-E)** ✅ **completed baseline**
-   - executable trace coverage includes service restart success, policy denial, dependency failure,
-     and explicit isolation-edge checks,
-   - fixture anchors in `tests/fixtures/main_trace_smoke.expected` are updated with semantic intent
-     rationale in `tests/scenarios/README.md`,
-   - Tier 3 and Tier 4 candidate checks include M5 evidence-line anchors.
-6. **Documentation closeout track (WS-M5-F)** ✅ **completed baseline**
-   - spec/README/GitBook are synchronized to reflect M5 completion and M6 handoff,
-   - achieved outcomes and explicit M6 deferrals are documented as milestone boundaries.
-
-### 6.4 M5 closeout outcomes and M6 deferrals
-
-M5 closeout delivers deterministic service orchestration semantics, policy-surface predicates,
-composed preservation theorem coverage, and fixture-backed executable evidence as stable baseline
-contracts for the next slice.
-
-M6 explicitly owns the deferred architecture-binding scope:
-
-1. make architecture assumptions first-class interface artifacts,
-2. define proof-carrying adapters from architecture-neutral semantics,
-3. harden hardware-facing boot/runtime boundary assumptions with explicit contracts.
-
-### 6.5 M6 execution workstreams (completed recap)
-
-M6 work is tracked through the following workstreams:
-
-1. **WS-M6-A — assumption inventory + boundary extraction** ✅ **completed**
-   - architecture-facing assumptions are enumerated in `SeLe4n/Kernel/Architecture/Assumptions.lean` via `ArchAssumption` and `assumptionInventory`,
-   - boundary contract skeletons are explicit via `BootBoundaryContract`, `RuntimeBoundaryContract`, and `InterruptBoundaryContract` with first-class `ContractRef` obligations,
-   - transition/invariant mapping is captured in `assumptionTransitionMap` and `assumptionInvariantMap`.
-2. **WS-M6-B — interface API + adapter semantics** ✅ **completed**
-   - deterministic adapter behavior now lands in `SeLe4n/Kernel/Architecture/Adapter.lean`,
-   - unsupported/invalid bound-context branches are explicit via `mapAdapterError` and adapter entrypoints,
-   - runtime boundary contracts provide decidability witnesses so adapter branching is executable.
-3. **WS-M6-C — proof integration** ✅ **completed**
-   - adapter assumptions are connected to local and composed invariant-preservation hooks in `SeLe4n/Kernel/Architecture/Invariant.lean` via `proofLayerInvariantBundle` and adapter-path preservation theorems.
-4. **WS-M6-D — evidence + test anchor continuity** ✅ **completed**
-   - extend executable traces, fixtures, and Tier 3 symbol checks for new claims.
-5. **WS-M6-E — docs + handoff packaging** ✅ **completed**
-   - roadmap/stage markers are synchronized across root docs and GitBook,
-   - post-M6 unlocks and M7 deferrals are explicitly recorded,
-   - risk register updates are mapped to architecture-boundary contract surfaces.
-
-### 6.6 Post-M6 first-hardware target
-
-The first real hardware architecture focus after M6 is **Raspberry Pi 5**.
-Post-M6 slices should instantiate M6 contracts for Raspberry Pi 5 constraints without resetting
-architecture-neutral theorem layering.
-
-### 6.7 Risks and mitigations retained from the M4-B → M5 handoff
-
-1. **Risk: composition proofs become monolithic and brittle**
-   - mitigation: require local-first preservation entrypoints before composed proof merges.
-2. **Risk: executable traces lag theorem behavior**
-   - mitigation: gate composed semantic changes with fixture updates in same PR range.
-3. **Risk: roadmap claims outrun test coverage**
-   - mitigation: require Tier 3 symbol anchors for each newly claimed bundle surface.
+1. update this file first,
+2. update README + Development guide + relevant GitBook chapters in the same PR,
+3. include rationale, risk note, and evidence commands,
+4. avoid “future-tense” status wording when state is not yet delivered.
 
 ---
 
-## 7. Change-control policy
+## 7) PR evidence checklist
 
-When milestone scope or theorem/API surfaces change:
-
-1. Update docs in the same commit range.
-2. Keep stage markers synchronized across README, spec, development guide, and GitBook roadmap.
-3. Record deferred work and destination milestone explicitly.
-4. Do not claim slice completion without executable + theorem evidence.
-5. Keep acceptance criteria actionable and command-verifiable.
-
----
-
-## 8. PR evidence checklist
-
-- [ ] New/updated transition definitions for claimed slice are present.
-- [ ] Invariant components are named and integrated into bundle structure.
-- [ ] Preservation theorem entrypoints compile.
-- [ ] `lake build` executed successfully.
-- [ ] `lake exe sele4n` executed successfully.
-- [ ] Hygiene scan (`axiom|sorry|TODO`) executed and clean.
-- [ ] `./scripts/test_fast.sh` and `./scripts/test_smoke.sh` executed.
-- [ ] Docs updated to match current and next slice.
-- [ ] Remaining proof debt (if any) is explicitly stated.
-
----
-
-## 9. Implementation surface inventory (for contributors)
-
-The current milestone contract spans these concrete module families:
-
-1. **Foundations**
-   - `Prelude` (IDs + kernel monad),
-   - `Machine` (machine-state helpers),
-   - `Model/Object`, `Model/State` (typed object store and global system state).
-
-2. **Scheduler contract**
-   - scheduler transitions and M1 invariants/bundle surfaces.
-
-3. **Capability contract**
-   - CSpace lookup/insert/mint/delete/revoke,
-   - attenuation + lifecycle authority component invariants,
-   - capability bundle preservation entrypoints.
-
-4. **IPC contract**
-   - endpoint send/await-receive/receive transitions,
-   - endpoint/IPC invariants,
-   - M3.5 scheduler coherence predicates and bundle composition.
-
-5. **Lifecycle contract (M4)**
-   - lifecycle/retype transition operation(s),
-   - lifecycle identity/aliasing + capability-reference invariant components,
-   - local + composed lifecycle preservation entrypoints.
-
-6. **Executable evidence contract**
-   - `Main.lean` scenario path,
-   - Tier 2 fixture-backed semantic fragment checks.
-
-M6 work must extend this surface without regressing any closed milestone contract.
-
----
-
-## 10. Documentation acceptance expectations
-
-A PR claiming meaningful M6 progress must include:
-
-1. updates to normative docs (`README`, spec, development guide),
-2. updates to GitBook roadmap and slice pages affected by semantic change,
-3. explicit mention of whether fixture changes were required,
-4. explicit mention of which invariant bundles were touched and why,
-5. explicit statement of remaining proof debt, if any,
-6. explicit note about post-slice path (what lands next and what remains deferred).
+- [ ] Workstream ID and objective stated.
+- [ ] Relevant checks executed and reported.
+- [ ] Theorem/invariant/trace surfaces remain coherent.
+- [ ] Documentation synchronized.
+- [ ] Deferred scope (if any) explicitly recorded.
