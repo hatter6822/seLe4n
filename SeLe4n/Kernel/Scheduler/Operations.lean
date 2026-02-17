@@ -145,6 +145,10 @@ theorem schedule_preserves_wellFormed
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
               simp [schedulerWellFormed, queueCurrentConsistent]
+          | vspaceRoot root =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [schedulerWellFormed, queueCurrentConsistent]
 
 theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -182,6 +186,10 @@ theorem schedule_preserves_queueCurrentConsistent
               cases hStep
               simp [queueCurrentConsistent]
           | cnode cn =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [queueCurrentConsistent]
+          | vspaceRoot root =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
               simp [queueCurrentConsistent]
@@ -237,6 +245,9 @@ theorem schedule_preserves_runQueueUnique
           | cnode cn =>
               exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
                 simpa [schedule, hRun, hObj] using hStep)
+          | vspaceRoot root =>
+              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
+                simpa [schedule, hRun, hObj] using hStep)
 
 theorem schedule_preserves_currentThreadValid
     (st st' : SystemState)
@@ -261,6 +272,9 @@ theorem schedule_preserves_currentThreadValid
               exact setCurrentThread_none_preserves_currentThreadValid st st' (by
                 simpa [schedule, hRun, hObj] using hStep)
           | cnode cn =>
+              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
+                simpa [schedule, hRun, hObj] using hStep)
+          | vspaceRoot root =>
               exact setCurrentThread_none_preserves_currentThreadValid st st' (by
                 simpa [schedule, hRun, hObj] using hStep)
 

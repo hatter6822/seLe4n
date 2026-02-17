@@ -92,6 +92,74 @@ structure CNode where
   slots : List (SeLe4n.Slot × Capability)
   deriving Repr, DecidableEq
 
+/-- Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
+
+This intentionally models only one-level deterministic lookup semantics for WS-B1.
+Hierarchical page-table levels are deferred behind this stable executable surface. -/
+structure VSpaceRoot where
+  asid : SeLe4n.ASID
+  mappings : List (SeLe4n.VAddr × SeLe4n.PAddr)
+  deriving Repr, DecidableEq
+
+namespace VSpaceRoot
+
+def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
+  (root.mappings.find? (fun entry => entry.fst = vaddr)).map Prod.snd
+
+def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Option VSpaceRoot :=
+  match lookup root vaddr with
+  | some _ => none
+  | none => some { root with mappings := (vaddr, paddr) :: root.mappings }
+
+def unmapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option VSpaceRoot :=
+  match lookup root vaddr with
+  | none => none
+  | some _ =>
+      let mappings' := root.mappings.filter (fun entry => entry.fst ≠ vaddr)
+      some { root with mappings := mappings' }
+
+def noVirtualOverlap (root : VSpaceRoot) : Prop :=
+  ∀ v p₁ p₂,
+    (v, p₁) ∈ root.mappings →
+    (v, p₂) ∈ root.mappings →
+    p₁ = p₂
+
+theorem noVirtualOverlap_empty (asid : SeLe4n.ASID) :
+    noVirtualOverlap { asid := asid, mappings := [] } := by
+  intro v p₁ p₂ hIn₁
+  simp at hIn₁
+
+theorem lookup_unmapPage_eq_none
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.lookup vaddr = none := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some p =>
+      simp [hLookup] at hUnmap
+      cases hUnmap
+      unfold lookup
+      simp
+
+theorem lookup_mapPage_eq
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.lookup vaddr = some paddr := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some p => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      unfold lookup
+      simp
+
+end VSpaceRoot
+
 namespace CNode
 
 def empty : CNode :=
@@ -144,12 +212,14 @@ inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)
   | cnode (c : CNode)
+  | vspaceRoot (v : VSpaceRoot)
   deriving Repr, DecidableEq
 
 inductive KernelObjectType where
   | tcb
   | endpoint
   | cnode
+  | vspaceRoot
   deriving Repr, DecidableEq
 
 namespace KernelObject
@@ -158,6 +228,7 @@ def objectType : KernelObject → KernelObjectType
   | .tcb _ => .tcb
   | .endpoint _ => .endpoint
   | .cnode _ => .cnode
+  | .vspaceRoot _ => .vspaceRoot
 
 end KernelObject
 

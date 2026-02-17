@@ -60,6 +60,8 @@ def bootstrapState : SystemState :=
         })
       else if oid = 11 then
         some (.cnode CNode.empty)
+      else if oid = 20 then
+        some (.vspaceRoot { asid := 1, mappings := [] })
       else if oid = demoEndpoint then
         some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
       else
@@ -116,6 +118,7 @@ def bootstrapState : SystemState :=
         else if oid = 10 then some .cnode
         else if oid = 12 then some .tcb
         else if oid = 11 then some .cnode
+        else if oid = 20 then some .vspaceRoot
         else if oid = demoEndpoint then some .endpoint
         else none
       capabilityRefs := fun ref =>
@@ -158,6 +161,20 @@ def main : IO Unit := do
       | .error err => IO.println s!"adapter read success path error: {reprStr err}"
       | .ok (byte, _) =>
           IO.println s!"adapter read success path byte: {reprStr byte}"
+
+      match SeLe4n.Kernel.Architecture.vspaceMapPage 1 4096 8192 st1 with
+      | .error err => IO.println s!"vspace map error: {reprStr err}"
+      | .ok (_, stV1) =>
+          match SeLe4n.Kernel.Architecture.vspaceLookup 1 4096 stV1 with
+          | .error err => IO.println s!"vspace lookup error: {reprStr err}"
+          | .ok (paddr, stV2) =>
+              IO.println s!"vspace lookup mapped paddr: {reprStr paddr}"
+              match SeLe4n.Kernel.Architecture.vspaceUnmapPage 1 4096 stV2 with
+              | .error err => IO.println s!"vspace unmap error: {reprStr err}"
+              | .ok (_, stV3) =>
+                  match SeLe4n.Kernel.Architecture.vspaceLookup 1 4096 stV3 with
+                  | .error err => IO.println s!"vspace lookup after unmap branch: {reprStr err}"
+                  | .ok (resolved, _) => IO.println s!"unexpected vspace lookup after unmap: {reprStr resolved}"
       match SeLe4n.Kernel.Architecture.adapterWriteRegister SeLe4n.Testing.runtimeContractAcceptAll 7 99 st1 with
       | .error err => IO.println s!"adapter register write success path error: {reprStr err}"
       | .ok (_, stReg) =>

@@ -22,6 +22,10 @@ Optional staged nightly path:
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 ```
 
+Setup reliability note:
+
+- `./scripts/setup_lean_env.sh` retries `apt-get update` with primary distro sources if a third-party mirror is unavailable, reducing bootstrap friction in CI/dev containers.
+
 ## Current slice operating rules
 
 For milestone-moving PRs:
@@ -35,7 +39,7 @@ For milestone-moving PRs:
 ## Workstream sequence
 
 - **Phase P1:** WS-B4, WS-B3, WS-B8
-- **Phase P2:** WS-B1, WS-B5, WS-B6, WS-B2
+- **Phase P2:** WS-B5, WS-B6, WS-B2 (WS-B1 completed)
 - **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11
 
 ## Failure triage

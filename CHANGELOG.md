@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.4] - 2026-02-17
+
+### Bootstrap reliability + doc-sync hardening follow-up
+- Hardened `scripts/setup_lean_env.sh` apt bootstrap behavior: if `apt-get update` fails due an unavailable third-party source, the script now retries using primary distro sources only so required setup dependencies can still install deterministically.
+- Updated developer workflow docs and GitBook mirror to document the new setup fallback behavior and keep contributor guidance aligned with executable setup semantics.
+- Bumped package patch version to **`0.9.4`** and synchronized root version marker.
+
+## [0.9.3] - 2026-02-17
+
+### WS-B1 audit hardening and repository-wide synchronization pass
+- Corrected WS-B1 ASID/root modeling by replacing the previous malformed `asidBoundToRoot` relation with a proper existential relation and documenting the explicit bounded discovery-window assumption in code and ADR.
+- Added VSpace soundness/determinism anchors (`resolveAsidRoot_sound`, `vspaceLookup_deterministic`) and strengthened Tier-3 invariant-surface guards accordingly.
+- Performed a full documentation/GitBook consistency pass so phase sequencing and active-slice wording consistently reflect `WS-B1 completed` status across spec/development/workflow pages.
+- Updated audit index wording to align with the current `0.9.3` baseline and synchronized package version markers.
+
+## [0.9.2] - 2026-02-17
+
+### WS-B1 VSpace + memory model foundation completion
+- Implemented first-class VSpace modeling with `VSpaceRoot` kernel objects, deterministic map/unmap/lookup transitions, and explicit failure modes for ASID binding, mapping conflicts, and translation faults.
+- Added WS-B1 architecture invariant surface (`vspaceInvariantBundle`) and bounded translation predicate scaffold to anchor follow-on proof work.
+- Extended `Main.lean` executable trace and Tier 2 fixture expectations with deterministic VSpace map→lookup→unmap→fault coverage.
+- Published VSpace/memory abstraction ADR (`docs/VSPACE_MEMORY_MODEL_ADR.md`) and synchronized GitBook/state-tracking docs to mark WS-B1 completed in the active comprehensive-audit slice.
+- Bumped package patch version from `0.9.1` to **`0.9.2`**.
+
 ## [0.9.1] - 2026-02-17
 
 ### Comprehensive-audit workstream execution kickoff readiness

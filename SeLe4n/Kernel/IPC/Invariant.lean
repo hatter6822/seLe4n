@@ -103,6 +103,7 @@ theorem endpointSend_ok_as_storeObject
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state with
           | idle =>
@@ -134,6 +135,7 @@ theorem endpointAwaitReceive_ok_as_storeObject
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
             simp [hObj, hState, hQueue, hWait, storeObject] at hStep
@@ -155,6 +157,7 @@ theorem endpointReceive_ok_as_storeObject
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> simp [hObj, hState] at hStep
           case send =>
@@ -423,6 +426,7 @@ theorem endpointSend_result_wellFormed
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state with
           | idle =>
@@ -459,6 +463,7 @@ theorem endpointAwaitReceive_result_wellFormed
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
             simp [hObj, hState, hQueue, hWait, storeObject] at hStep
@@ -481,6 +486,7 @@ theorem endpointReceive_result_wellFormed
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> simp [hObj, hState] at hStep
           case send =>
@@ -615,6 +621,7 @@ theorem endpointSend_ok_implies_endpoint_object
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 
@@ -631,6 +638,7 @@ theorem endpointAwaitReceive_ok_implies_endpoint_object
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 
@@ -647,6 +655,7 @@ theorem endpointReceive_ok_implies_endpoint_object
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 

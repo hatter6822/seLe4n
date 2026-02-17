@@ -13,7 +13,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 ### High priority
 
-- **WS-B1:** VSpace + memory model foundation
+- **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion
 - **WS-B3:** Main trace harness refactor
 - **WS-B4:** Remaining type-wrapper migration
@@ -34,7 +34,7 @@ This is the GitBook mirror of the canonical planning backbone:
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8
-- **Phase P2:** WS-B1 + WS-B5 + WS-B6 + WS-B2
+- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ## 4) Evidence expectations for milestone-moving PRs
@@ -53,3 +53,11 @@ When status changes, update together:
 2. `README.md` active-slice snapshot
 3. `docs/SEL4_SPEC.md` milestone state
 4. this chapter
+
+
+## 6) WS-B1 closure evidence
+
+- executable VSpace transitions: `SeLe4n/Kernel/Architecture/VSpace.lean`,
+- VSpace invariant bundle and preservation anchors: `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`,
+- deterministic map/unmap trace path in `Main.lean` + fixture update,
+- ADR published: [`docs/VSPACE_MEMORY_MODEL_ADR.md`](../VSPACE_MEMORY_MODEL_ADR.md).

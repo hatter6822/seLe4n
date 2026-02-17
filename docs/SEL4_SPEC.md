@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B1..WS-B11)
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B2..WS-B11 pending; WS-B1 complete).
 
 ---
 
@@ -48,7 +48,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 
 ### 4.2 Workstream inventory
 
-- **WS-B1:** VSpace + memory model foundation
+- **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion
 - **WS-B3:** Main trace harness refactor
 - **WS-B4:** Remaining type-wrapper migration
@@ -63,7 +63,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 ### 4.3 Sequencing constraints
 
 - **P1:** WS-B4 + WS-B3 + WS-B8
-- **P2:** WS-B1 + WS-B5 + WS-B6 + WS-B2
+- **P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1 completed)
 - **P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ### 4.4 Acceptance expectations for WS-B work
