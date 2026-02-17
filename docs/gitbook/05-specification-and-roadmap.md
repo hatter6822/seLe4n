@@ -65,15 +65,16 @@ Detailed execution guidance: [M6 Execution Plan and Workstreams](18-m6-execution
 2. Boundary contracts are explicit enough to support Raspberry Pi 5-first instantiation work.
 3. Risk controls now focus on contract-instantiation discipline rather than boundary extraction.
 
-## 5. Current active slice preview: M7
+## 5. Current active slice preview: M7 audit remediation
 
-Current active direction is **Raspberry Pi 5-first binding and validation planning**.
+Current active direction is **repository-audit remediation workstreams (WS-A1 through WS-A8)**.
 
 Indicative outcomes:
 
-1. instantiate M6 adapter contracts for Raspberry Pi 5 assumptions,
-2. add platform-constraint evidence stories grounded in current model behavior,
-3. map trust boundaries for a minimal realistic deployment partition.
+1. promote CI/test gates and harden delivery controls,
+2. complete architecture and API-surface cleanup identified by the audit,
+3. improve type safety and test-scale coverage without regressing M1–M6 proofs,
+4. synchronize documentation and governance artifacts as measurable closure evidence.
 
 ## 6. Transition gates
 
@@ -94,15 +95,15 @@ Progress snapshot:
 2. interface artifacts preserve M1–M5 theorem layering ✅ (WS-M6-B and WS-M6-C complete),
 3. test obligations added without regressing required gates ✅ (WS-M6-D and WS-M6-E complete).
 
-### Gate: M6 → Raspberry Pi 5 binding slice (planned)
+### Gate: audit remediation → Raspberry Pi 5 binding slice (planned)
 
 Require all:
 
-1. boundary contracts can be instantiated without hidden assumptions,
-2. adapter failure semantics are explicit and theorem-addressed,
-3. documentation identifies platform obligations vs model guarantees.
+1. high-priority remediation workstreams are closed with evidence,
+2. CI and test obligations (including promoted proof-surface gates) are stable,
+3. documentation consistently marks audit remediation as complete and hardware-binding as next.
 
-## 7. Risk register (post-M6 updated)
+## 7. Risk register (post-M6 / remediation-active updated)
 
 1. **Semantic/proof skew**
    - risk: adapter semantics change without theorem updates,
@@ -114,8 +115,8 @@ Require all:
    - risk: architecture interfaces leak into unrelated invariants,
    - mitigation: require local interface contracts + bridge lemmas.
 4. **Hardware-path premature lock-in**
-   - risk: overfitting before contracts stabilize,
-   - mitigation: keep Raspberry Pi 5 work post-M6 and contract-driven.
+   - risk: overfitting before remediation controls stabilize,
+   - mitigation: keep Raspberry Pi 5 work post-remediation and contract-driven.
 
 ## 8. Contributor operating cadence
 

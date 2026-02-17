@@ -1,10 +1,15 @@
-# seLe4n End-to-End Project Audit
+# seLe4n End-to-End Project Audit (Historical Snapshot)
 
 This document records a full end-to-end quality audit over code, tests, and documentation surfaces.
 
+> **Historical note:** This audit is preserved as a prior-stage snapshot for traceability.
+> For the current audit baseline and active remediation program, see
+> [`docs/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md) and
+> [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md).
+
 ## 1) Executive assessment
 
-Overall verdict: **the repository is operationally healthy and correctly aligned with the documented M6-completed / M7-active milestone state**.
+Overall verdict: **the repository is operationally healthy and aligned with a M6-complete baseline and an active M7 audit-remediation delivery focus**.
 
 Specifically, this audit re-validated:
 
@@ -63,10 +68,10 @@ Framework quality properties verified:
 
 Current documentation set is synchronized around:
 
-- **Current slice:** M7 Raspberry Pi 5 binding prototype and platform-constraint evidence planning.
+- **Current slice:** M7 audit remediation workstreams (WS-A1 through WS-A8).
 - **Most recently completed slice:** M6 architecture-binding interfaces + assumption hardening (WS-M6-A through WS-M6-E completed).
 - **Historical context:** M4-B completion retained as predecessor reference.
-- **Forward path:** M6 workstreams and post-M6 hardware trajectory are documented and linked.
+- **Forward path:** audit remediation closeout precedes the Raspberry Pi 5 contract-instantiation track.
 
 ---
 
@@ -116,7 +121,7 @@ This obligation-based model is the correct notion of “full” for this reposit
 
 - Architecture-assumption interfaces and adapter proof-layer integration are now explicit and exported (WS-M6-A through WS-M6-C completed).
 - WS-M6-D evidence expansion is now closed with boundary success/failure trace anchors and fixture-backed semantics.
-- Preserve composability with already-closed M1–M6 invariant bundles while advancing M7 platform-binding instantiation incrementally.
+- Preserve composability with already-closed M1–M6 invariant bundles while closing M7 audit remediation workstreams incrementally.
 
 ### 6.2 Mid-term (post-M6 pre-hardware)
 

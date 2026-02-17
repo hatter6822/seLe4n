@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and M7 Raspberry Pi 5 binding prototype planning is active**.
+Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and the active M7 slice focuses on repository-audit remediation workstreams (WS-A1 through WS-A8)**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 
@@ -14,7 +14,7 @@ Primary goals for contributors:
 - preserve theorem-entrypoint continuity across milestones,
 - ship narrow, reviewable slices,
 - keep docs synchronized with active and next slice plans,
-- deliver M6 architecture-binding interfaces without regressing closed M1–M5 contracts.
+- deliver audit-remediation hardening without regressing closed M1–M6 contracts.
 
 ---
 
@@ -263,7 +263,7 @@ If a command is blocked by environment limitations, report the limitation and im
 - [ ] Scope fits one coherent milestone slice.
 - [ ] Transition APIs expose explicit success/error branching.
 - [ ] New invariants are named and documented.
-- [x] Preservation theorem entrypoints compile.
+- [ ] Preservation theorem entrypoints compile.
 - [ ] `lake build` executed.
 - [ ] `lake exe sele4n` executed.
 - [ ] Hygiene scan executed.

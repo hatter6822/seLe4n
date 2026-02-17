@@ -252,7 +252,7 @@ percentage.
 | `docs/SEL4_SPEC.md` | 372 | Normative specification baseline, acceptance criteria |
 | `docs/DEVELOPMENT.md` | 369 | Contributor workflow, proof engineering standards |
 | `docs/TESTING_FRAMEWORK_PLAN.md` | 139 | Active testing baseline, tier signal map |
-| `docs/PROJECT_AUDIT.md` | 143 | End-to-end quality audit |
+| `docs/PROJECT_AUDIT.md` | 143 | Historical end-to-end quality audit snapshot |
 | `docs/LICENSE_REVIEW.md` | 65 | MIT license adoption review |
 | `docs/gitbook/` (26 chapters) | ~1,100 | Long-form handbook |
 | `tests/scenarios/README.md` | 73 | Fixture maintenance workflow |
@@ -268,7 +268,7 @@ percentage.
 - **Explicit change-control policies.** SEL4_SPEC.md (lines 301–309) defines
   5 requirements for scope changes. DEVELOPMENT.md (lines 218–236) requires
   synchronized doc updates with any PR changing transitions or invariants.
-- **Obligation-based quality model.** PROJECT_AUDIT.md clearly articulates
+- **Obligation-based quality model.** Historical PROJECT_AUDIT.md clearly articulates
   why statement-coverage percentages are inappropriate for a theorem-proving
   project and defines 6 obligation categories instead.
 - **Milestone acceptance criteria are concrete.** Each completed milestone
