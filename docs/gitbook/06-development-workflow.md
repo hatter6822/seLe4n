@@ -40,7 +40,7 @@ When semantics or milestone boundaries change, keep these in sync:
 ## Current focus and immediate next focus
 
 - **Completed baseline slices:** M5 service-graph + policy surfaces, M6 architecture-binding interface preparation.
-- **Current delivery slice:** M7 audit remediation workstreams (WS-A1 through WS-A8).
+- **Current delivery slice:** post-M7 hardware-oriented next slice (M7 WS-A1..WS-A8 completed baseline).
 - **Current testing focus:** WS-A4 test architecture expansion evidence is complete and maintained as a regression contract.
 
 Contributors should treat M1–M6 theorem surfaces as stable interfaces and land M7 remediation work without reshaping already-closed contracts.

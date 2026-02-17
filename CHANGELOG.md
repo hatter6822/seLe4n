@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0] - 2026-02-17
+
+### M7 exit-gate closeout and next-slice activation
+- Published formal M7 closeout artifact `docs/M7_CLOSEOUT_PACKET.md` and GitBook mirror `docs/gitbook/23-m7-remediation-closeout-packet.md`, including dependency owners, accepted residual risks, and exit-gate checklist evidence.
+- Synchronized root docs/spec/development/testing/GitBook stage markers so M7 is completed baseline and post-M7 hardware-oriented next-slice execution is active.
+- Expanded Tier-3 documentation anchors to validate closeout packet presence and stage-state synchronization as part of required full-suite checks.
+- Bumped project version from `0.8.22` to **`0.9.0`** for the post-remediation minor release transition.
+
 ## [0.8.22] - 2026-02-17
 
 ### WS-A8 validation hardening and CI robustness

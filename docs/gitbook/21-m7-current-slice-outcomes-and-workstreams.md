@@ -1,6 +1,6 @@
 # M7 Current Slice Outcomes and Workstreams
 
-This chapter is the practical execution map for the active slice.
+This chapter is the practical execution map for the completed M7 slice (retained as closeout evidence).
 
 Use this chapter when you need to answer:
 
@@ -12,6 +12,8 @@ Use this chapter when you need to answer:
 For normative scope, always defer to [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
 For audit source findings, use [`docs/REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md).
 For implementation-level details, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](../AUDIT_REMEDIATION_WORKSTREAMS.md).
+
+M7 is now complete; the exit-gate closeout artifact is [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
 
 ## 1. M7 slice goal statement
 

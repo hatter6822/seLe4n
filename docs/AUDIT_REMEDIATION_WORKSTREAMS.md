@@ -1,7 +1,7 @@
 # Repository Audit Remediation Workstreams
 
 This plan translates findings in [`docs/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md)
-into execution-ready workstreams for the active M7 slice and the post-remediation handoff.
+into execution-ready workstreams for the (now completed) M7 slice and the post-remediation handoff.
 
 ## 1. Program goals
 
@@ -11,7 +11,7 @@ into execution-ready workstreams for the active M7 slice and the post-remediatio
 3. keep documentation, CI, and test evidence synchronized as first-class deliverables,
 4. produce a clean handoff contract for the first post-M7 hardware-facing slice.
 
-## 2. Current slice outcomes (M7-O1..M7-O8)
+## 2. Completed slice outcomes (M7-O1..M7-O8)
 
 | Outcome ID | Target outcome |
 |---|---|
@@ -224,6 +224,9 @@ Each checkpoint report should include:
 - confidence assessment for the M7 exit gate.
 
 ## 8. M7 exit package and next-slice handoff
+
+M7 closeout gate artifact: `docs/M7_CLOSEOUT_PACKET.md`.
+
 
 M7 closeout is valid only when:
 

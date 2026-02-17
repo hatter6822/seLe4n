@@ -11,7 +11,7 @@ Milestone status for planning purposes:
 - M4-B complete,
 - M5 complete,
 - **M6 complete**,
-- **M7 active (audit remediation workstreams)**.
+- **M7 complete (audit remediation workstreams)**.
 
 Post-M6 planning should build on existing transition and theorem surfaces rather than restructuring
 closed milestone contracts.
@@ -41,9 +41,9 @@ M6 scope: **architecture-binding interfaces and hardware-facing assumption harde
 
 Detailed archive: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-## 4. Current active slice: M7 audit remediation
+## 4. Completed remediation slice: M7 audit remediation
 
-Current active direction is **repository-audit remediation workstreams (WS-A1 through WS-A8)**.
+M7 remediation (WS-A1 through WS-A8) is now complete and serves as the immediate predecessor baseline for next-slice hardware-oriented work.
 
 ### M7 slice objectives
 
@@ -96,16 +96,17 @@ Verified signals:
 3. test obligations added without regressing required gates,
 4. WS-M6-D and WS-M6-E complete (including documentation synchronization and handoff packaging ✅ completed).
 
-### Gate: M7 → next slice (planned)
+### Gate: M7 → next slice (completed)
 
-Require all:
+Verified signals:
 
 1. high-priority remediation workstreams are closed with reproducible evidence,
 2. CI and test obligations (including promoted proof-surface gates) are stable,
 3. documentation consistently marks M7 as complete and next-slice path as active,
 4. hardware-path assumptions and ownership table are published.
+5. M7 closeout packet published (`docs/M7_CLOSEOUT_PACKET.md`).
 
-## 7. Risk register (remediation-active)
+## 7. Risk register (next-slice activation)
 
 1. **Semantic/proof skew**
    - risk: transition changes land without theorem updates,

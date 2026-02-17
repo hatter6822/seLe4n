@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and the active M7 slice focuses on repository-audit remediation workstreams (WS-A1 through WS-A8) with explicit outcome-based closure gates**.
+Current stage: **M7 audit-remediation closeout is complete (WS-A1 through WS-A8 closed), and active execution has moved to the post-M7 hardware-oriented next slice with Raspberry Pi 5 as first architecture focus**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 
@@ -14,7 +14,7 @@ Primary goals for contributors:
 - preserve theorem-entrypoint continuity across milestones,
 - ship narrow, reviewable slices,
 - keep docs synchronized with active and next slice plans,
-- deliver audit-remediation hardening without regressing closed M1–M6 contracts.
+- deliver next-slice expansion without regressing closed M1–M7 contracts.
 
 ---
 
@@ -231,9 +231,9 @@ Use this model for all milestone-moving work while M7 is active:
 ### 6.2.1 Current completion snapshot
 
 - ✅ **Completed:** WS-A1, WS-A2, WS-A3, WS-A4, WS-A5, WS-A6, WS-A7, WS-A8
-- 📝 **Planned follow-on:** post-M7 closeout packet + next-slice kickoff dependencies
+- 📝 **Planned follow-on:** next-slice kickoff dependencies execution (closeout packet is published)
 
-(Authoritative closure evidence remains in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` and GitBook chapter 21.)
+(Authoritative closure evidence is recorded in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md`, `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`, and `docs/M7_CLOSEOUT_PACKET.md`.)
 
 ### 6.3 Required checkpoint summary format
 
