@@ -9,16 +9,13 @@
 - [Architecture & Module Map](03-architecture-and-module-map.md)
 - [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-## Active planning and execution
+## Active slice and execution guidance
 
 - [Specification & Roadmap](05-specification-and-roadmap.md)
-- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-- [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
-- [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
-- [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
+- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
@@ -29,8 +26,11 @@
 - [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md)
 - [Project Usage and Value](17-project-usage-value.md)
 
-## Slice history archive
+## Historical archive
 
+- [M7 Current Slice Outcomes and Workstreams (Historical)](21-m7-current-slice-outcomes-and-workstreams.md)
+- [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
+- [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
 - [M6 Execution Plan and Workstreams (Closeout)](18-m6-execution-plan-and-workstreams.md)
 - [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
 - [Completed Slice: M4-A](08-completed-slice-m4a.md)

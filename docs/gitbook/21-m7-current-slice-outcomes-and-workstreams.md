@@ -1,4 +1,7 @@
-# M7 Current Slice Outcomes and Workstreams
+# M7 Current Slice Outcomes and Workstreams (Historical Archive)
+
+> Status note: M7 is complete and archived. Active execution now runs under the Comprehensive Audit 2026 WS-B portfolio.
+
 
 This chapter is the practical execution map for the completed M7 slice (retained as closeout evidence).
 

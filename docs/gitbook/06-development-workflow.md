@@ -2,85 +2,57 @@
 
 ## Daily contributor loop
 
+1. Pick one coherent WS-B target.
+2. Implement minimal code/proof changes.
+3. Run tiered checks from smallest scope upward.
+4. Synchronize docs in the same PR.
+5. Re-run validations before merge.
+
+## Required validation path
+
 ```bash
 ./scripts/test_fast.sh
 ./scripts/test_smoke.sh
-```
-
-Recommended deeper checks:
-
-```bash
-lake build
-lake exe sele4n
-rg -n "axiom|sorry|TODO" SeLe4n Main.lean
 ./scripts/test_full.sh
 ```
 
-## Milestone-oriented implementation pattern
+Optional staged nightly path:
 
-1. update/introduce transition,
-2. define/refine local invariant components,
-3. add helper lemmas near transition,
-4. prove local preservation,
-5. prove composed preservation,
-6. update executable scenario/fixture,
-7. update docs in same commit range,
-8. state “what this unlocks next” for the roadmap.
+```bash
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
+```
+
+## Current slice operating rules
+
+For milestone-moving PRs:
+
+- include WS-B ID(s),
+- show evidence commands,
+- map changes to workstream outcomes,
+- record deferrals and owner workstreams,
+- keep README/spec/development/GitBook status text synchronized.
+
+## Workstream sequence
+
+- **Phase P1:** WS-B4, WS-B3, WS-B8
+- **Phase P2:** WS-B1, WS-B5, WS-B6, WS-B2
+- **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11
+
+## Failure triage
+
+When checks fail:
+
+1. classify by tier (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`),
+2. fix semantic/proof root cause first,
+3. only then update fixtures or docs if behavior intentionally changed,
+4. re-run from smallest relevant tier upward.
 
 ## Documentation synchronization rule
 
-When semantics or milestone boundaries change, keep these in sync:
+Any behavior/proof/slice status change must update all impacted docs in one PR,
+including at minimum:
 
-- `README.md`,
-- `docs/SEL4_SPEC.md`,
-- `docs/DEVELOPMENT.md`,
-- `docs/TESTING_FRAMEWORK_PLAN.md`,
-- related `docs/gitbook/*` pages.
-
-## Current focus and immediate next focus
-
-- **Completed baseline slices:** M5 service-graph + policy surfaces, M6 architecture-binding interface preparation.
-- **Current delivery slice:** post-M7 hardware-oriented next slice (M7 WS-A1..WS-A8 completed baseline).
-- **Current testing focus:** WS-A4 test architecture expansion evidence is complete and maintained as a regression contract.
-
-Contributors should treat M1–M6 theorem surfaces as stable interfaces and land M7 remediation work without reshaping already-closed contracts.
-
-For architecture-boundary changes, follow the trusted-vs-test contract isolation rules in [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
-
-## Definition of done for milestone-moving PRs
-
-A PR that claims milestone movement should include:
-
-1. deterministic transition behavior,
-2. named invariant components,
-3. local and composed preservation theorem entrypoints,
-4. executable evidence and any fixture rationale,
-5. explicit deferred-work note tied to next slice.
-
-
-## M6 execution rhythm (recommended)
-
-For active-slice work, use a weekly rhythm:
-
-1. **Early week**: land semantic changes and local helper lemmas.
-2. **Mid week**: land local preservation theorem work.
-3. **Late week**: land composed preservation + executable/fixture updates.
-4. **Closeout**: run full test stack and sync all milestone docs.
-
-## Failure triage flow
-
-When a validation command fails:
-
-1. Identify tier (`HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`).
-2. Confirm whether failure is semantic drift, proof breakage, fixture drift, or missing anchor.
-3. Fix the root cause first; avoid patching fixture/tests before semantics stabilize.
-4. Re-run from smallest relevant tier upward (`test_fast` → `test_smoke` → `test_full`).
-
-## Milestone drift prevention checklist
-
-Before merging PRs that mention roadmap/slice movement:
-
-- update status markers in README/spec/development docs,
-- update GitBook slice chapter labels and navigation text,
-- ensure testing plan reflects current slice objectives,
-- state explicit deferred work and destination milestone.
+- `README.md`
+- `docs/SEL4_SPEC.md`
+- `docs/DEVELOPMENT.md`
+- affected GitBook chapter(s)
