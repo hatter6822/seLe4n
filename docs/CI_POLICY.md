@@ -1,6 +1,6 @@
 # CI Policy and Branch-Protection Contract
 
-This document is the canonical WS-A1 policy artifact for CI hardening.
+This document is the canonical CI policy artifact for WS-A1 and WS-A8 maturity gates.
 
 ## 1. Required checks (Tier 0–3)
 
@@ -52,3 +52,16 @@ In GitHub repository settings for `main`:
 - Tier 2 failures upload fixture diagnostics as CI artifacts.
 - Nightly determinism failures upload replay traces and diffs.
 - All tier scripts emit category-labeled output (`META`, `HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`) for fast triage.
+
+## 6. Platform and security baseline gates (WS-A8)
+
+The `Platform and Security Baseline` workflow (`.github/workflows/platform_security_baseline.yml`) provides:
+
+1. **Architecture-targeted CI signal** via `Platform Signal / ARM64 Fast Gate` on `ubuntu-24.04-arm` running `./scripts/test_fast.sh`.
+2. **Automated baseline security scanning** via `Security Signal / Secret + Dependency + CodeQL`, including:
+   - Gitleaks secret scanning,
+   - Trivy filesystem vulnerability scanning (HIGH/CRITICAL severities),
+   - CodeQL analysis for GitHub Actions workflows.
+
+This workflow runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
+For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.

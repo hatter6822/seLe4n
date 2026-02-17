@@ -324,4 +324,14 @@ run_check "DOC" rg -n "Required checks \(Tier 0–3\)|Deterministic replay evide
 run_check "DOC" rg -n "Tiered Tests / Full \(Tier 0 \+ Tier 1 \+ Tier 2 \+ Tier 3\)" .github/workflows/lean_action_ci.yml docs/CI_POLICY.md
 run_check "DOC" rg -n "Nightly Determinism|NIGHTLY_ENABLE_EXPERIMENTAL" .github/workflows/nightly_determinism.yml docs/CI_POLICY.md
 
+# WS-A8 closure anchors: platform/security baseline workflow + information-flow roadmap visibility.
+run_check "DOC" rg -n '^name: Platform and Security Baseline' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^\s*name: Platform Signal / ARM64 Fast Gate' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^\s*name: Security Signal / Secret \+ Dependency \+ CodeQL' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/AUDIT_REMEDIATION_WORKSTREAMS.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
+
 finalize_report

@@ -12,7 +12,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
-- **Current package version:** `0.8.20` (see `lakefile.toml`).
+- **Current package version:** `0.8.22` (see `lakefile.toml`).
 
 ### Current slice target outcomes (M7)
 
@@ -33,6 +33,7 @@ For workstream-level details and closure criteria, use [`docs/AUDIT_REMEDIATION_
 - **4) Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **5) Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 - **Hardware-boundary contract policy (WS-A5):** [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md)
+- **Information-flow proof trajectory roadmap (WS-A8):** [`docs/INFORMATION_FLOW_ROADMAP.md`](docs/INFORMATION_FLOW_ROADMAP.md)
 - **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
 - **M7 execution outcomes and workstreams (active slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)

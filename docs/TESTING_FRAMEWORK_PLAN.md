@@ -35,6 +35,8 @@ PR CI must call repository scripts directly and keep workflow logic thin.
 
 Branch-protection and required-check policy is documented in `docs/CI_POLICY.md`.
 
+WS-A8 platform/security baseline automation is provided by `.github/workflows/platform_security_baseline.yml` (ARM64 fast gate + baseline security scanning controls).
+
 Root contributor discoverability artifacts are `CONTRIBUTING.md` and `CHANGELOG.md`.
 
 ## 4. Baseline testing objectives inherited from M4-A

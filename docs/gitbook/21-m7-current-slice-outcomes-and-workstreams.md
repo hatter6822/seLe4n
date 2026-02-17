@@ -158,21 +158,21 @@ Concretely, M7 should leave the repository in a state where:
 - repeated proof patterns are parameterized ✅,
 - reviewers can identify preservation obligations faster ✅.
 
-### WS-A8 — Platform/security maturity for next slice readiness
+### WS-A8 — Platform/security maturity for next slice readiness ✅ completed
 
 **Intent:** avoid a large maturity cliff at hardware-binding start.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- establish architecture-relevant CI signals,
-- automate baseline scanning and security hygiene,
-- define information-flow proof trajectory.
+- architecture-targeted CI now includes `Platform Signal / ARM64 Fast Gate` in `.github/workflows/platform_security_baseline.yml` on `ubuntu-24.04-arm` running `./scripts/test_fast.sh`,
+- baseline automated security hygiene is active in CI via Gitleaks (secret scanning), Trivy (HIGH/CRITICAL vulnerability scanning), and CodeQL workflow analysis,
+- staged information-flow proof trajectory is now documented in `docs/INFORMATION_FLOW_ROADMAP.md` with explicit IF-M1..IF-M5 milestones and exit evidence.
 
-**DoD signals:**
+**DoD signals status:**
 
-- at least one architecture-targeted CI lane is operational,
-- scanning evidence is present in automation,
-- post-M7 security proof path is published.
+- at least one architecture-targeted CI lane is operational ✅,
+- scanning evidence is present in automation ✅,
+- post-M7 security proof path is published ✅.
 
 ## 4. Dependency and sequencing model
 
