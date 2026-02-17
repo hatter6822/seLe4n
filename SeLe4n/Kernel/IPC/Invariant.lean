@@ -650,6 +650,44 @@ theorem endpointReceive_ok_implies_endpoint_object
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 
+/-- Shared preservation helper for endpoint operations that perform one endpoint-object store.
+
+It captures the common proof skeleton used by send/await/receive scheduler-bundle theorems. -/
+theorem endpoint_store_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (hInv : schedulerInvariantBundle st)
+    (hStore : ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st'))
+    (hEndpointObj : ∃ ep, st.objects endpointId = some (.endpoint ep))
+    (hPreserveOther : ∀ oid, oid ≠ endpointId → st'.objects oid = st.objects oid) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  rcases hStore with ⟨ep', hStoreEq⟩
+  have hSchedEq : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStoreEq
+  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [hSchedEq] using hQueue
+  · simpa [hSchedEq] using hRunq
+  · cases hCurrent : st.scheduler.current with
+    | none =>
+        simp [currentThreadValid, hCurEq, hCurrent]
+    | some tid =>
+        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
+          simpa [currentThreadValid, hCurrent] using hCur
+        rcases hCurSome with ⟨tcb, hTcbObj⟩
+        have hTidNe : tid.toObjId ≠ endpointId := by
+          intro hEq
+          subst hEq
+          rcases hEndpointObj with ⟨ep, hEpObj⟩
+          rw [hEpObj] at hTcbObj
+          cases hTcbObj
+        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
+          rw [hPreserveOther tid.toObjId hTidNe]
+          exact hTcbObj
+        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+
+/-- Endpoint send preserves the scheduler invariant bundle. -/
 theorem endpointSend_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -657,32 +695,12 @@ theorem endpointSend_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  rcases hInv with ⟨hQueue, hRunq, hCur⟩
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
-  refine ⟨?_, ?_, ?_⟩
-  · simpa [hSchedEq] using hQueue
-  · simpa [hSchedEq] using hRunq
-  · cases hCurrent : st.scheduler.current with
-    | none =>
-        simp [currentThreadValid, hCurEq, hCurrent]
-    | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
-          simpa [currentThreadValid, hCurrent] using hCur
-        rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid.toObjId ≠ endpointId := by
-          intro hEq
-          subst hEq
-          rcases endpointSend_ok_implies_endpoint_object st st' tid.toObjId sender hStep with ⟨ep, hEpObj⟩
-          rw [hEpObj] at hTcbObj
-          cases hTcbObj
-        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
-          rw [endpointSend_preserves_other_objects st st' endpointId tid.toObjId sender hTidNe hStep]
-          exact hTcbObj
-        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
+    (endpointSend_ok_as_storeObject st st' endpointId sender hStep)
+    (endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep)
+    (fun oid hNe => endpointSend_preserves_other_objects st st' endpointId oid sender hNe hStep)
 
+/-- Endpoint await-receive preserves the scheduler invariant bundle. -/
 theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -690,32 +708,12 @@ theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  rcases hInv with ⟨hQueue, hRunq, hCur⟩
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
-  refine ⟨?_, ?_, ?_⟩
-  · simpa [hSchedEq] using hQueue
-  · simpa [hSchedEq] using hRunq
-  · cases hCurrent : st.scheduler.current with
-    | none =>
-        simp [currentThreadValid, hCurEq, hCurrent]
-    | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
-          simpa [currentThreadValid, hCurrent] using hCur
-        rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid.toObjId ≠ endpointId := by
-          intro hEq
-          subst hEq
-          rcases endpointAwaitReceive_ok_implies_endpoint_object st st' tid.toObjId receiver hStep with ⟨ep, hEpObj⟩
-          rw [hEpObj] at hTcbObj
-          cases hTcbObj
-        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
-          rw [endpointAwaitReceive_preserves_other_objects st st' endpointId tid.toObjId receiver hTidNe hStep]
-          exact hTcbObj
-        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
+    (endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep)
+    (endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep)
+    (fun oid hNe => endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hNe hStep)
 
+/-- Endpoint receive preserves the scheduler invariant bundle. -/
 theorem endpointReceive_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -723,31 +721,10 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     schedulerInvariantBundle st' := by
-  rcases hInv with ⟨hQueue, hRunq, hCur⟩
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' endpointId (.endpoint ep') hStore
-  have hCurEq : st'.scheduler.current = st.scheduler.current := by simp [hSchedEq]
-  refine ⟨?_, ?_, ?_⟩
-  · simpa [hSchedEq] using hQueue
-  · simpa [hSchedEq] using hRunq
-  · cases hCurrent : st.scheduler.current with
-    | none =>
-        simp [currentThreadValid, hCurEq, hCurrent]
-    | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
-          simpa [currentThreadValid, hCurrent] using hCur
-        rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid.toObjId ≠ endpointId := by
-          intro hEq
-          subst hEq
-          rcases endpointReceive_ok_implies_endpoint_object st st' tid.toObjId sender hStep with ⟨ep, hEpObj⟩
-          rw [hEpObj] at hTcbObj
-          cases hTcbObj
-        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
-          rw [endpointReceive_preserves_other_objects st st' endpointId tid.toObjId sender hTidNe hStep]
-          exact hTcbObj
-        simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
+  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
+    (endpointReceive_ok_as_storeObject st st' endpointId sender hStep)
+    (endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep)
+    (fun oid hNe => endpointReceive_preserves_other_objects st st' endpointId oid sender hNe hStep)
 
 
 end SeLe4n.Kernel

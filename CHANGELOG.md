@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.20] - 2026-02-17
+
+### Validation and documentation synchronization follow-up
+- Refined nightly-testing documentation (`docs/TESTING_FRAMEWORK_PLAN.md` and `docs/gitbook/07-testing-and-ci.md`) to match mode-aware Tier 4 status behavior in `scripts/test_nightly.sh` (default extension-point guidance vs executed signal when `NIGHTLY_ENABLE_EXPERIMENTAL=1`).
+- Re-validated smoke/full/nightly test tiers (default + experimental) to confirm repository and GitBook/testing docs remain synchronized with current M7 progress state.
+- Bumped package patch version to `0.8.20` and synchronized the root README version marker.
+
+## [0.8.19] - 2026-02-17
+
+### Audit hardening follow-up
+- Optimized `scripts/test_nightly.sh` reporting so Tier 4 status messaging is environment-aware: it now reports staged execution when `NIGHTLY_ENABLE_EXPERIMENTAL=1` and reports extension-point guidance only in default mode.
+- Re-ran full validation coverage (`test_smoke`, `test_full`, default `test_nightly`, experimental `test_nightly`, `lake build`, and executable trace run) to confirm repository, docs, and GitBook remain synchronized with current M7/WS-A7 status.
+- Bumped package patch version to `0.8.19` and synchronized the root README version marker.
+
+## [0.8.18] - 2026-02-17
+
+### WS-A7 proof maintainability completion
+- Completed WS-A7 by introducing shared helper theorem `endpoint_store_preserves_schedulerInvariantBundle` in `SeLe4n/Kernel/IPC/Invariant.lean`, reducing repeated scheduler-bundle proof blocks across endpoint send/await/receive preservation theorems.
+- Added concise theorem-purpose docstrings for the shared helper and endpoint scheduler-bundle preservation theorem entrypoints to improve proof-surface legibility for reviewers.
+- Updated development guide and GitBook workstream status pages to mark WS-A7 completed and move active focus to WS-A8.
+- Bumped package patch version to `0.8.18` and synchronized the root README version marker.
+
 ## [0.8.17] - 2026-02-17
 
 ### Documentation/GitBook sync audit hardening
