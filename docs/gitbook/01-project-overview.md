@@ -30,7 +30,7 @@ Closed baseline slices:
 
 Current active slice:
 
-- **M6 architecture-binding interfaces and hardware-facing assumption hardening**.
+- **M7 audit remediation workstreams (WS-A1 through WS-A8)**.
 
 ## 4. Architecture mental model
 
@@ -43,22 +43,22 @@ The codebase is organized as layered contracts:
 - **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
 - **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
 
-## 5. Current-slice outcomes (M6)
+## 5. Current-slice outcomes (M7 audit remediation)
 
-M6 is successful when contributors deliver all of the following:
+The active remediation slice is successful when contributors deliver all of the following:
 
-1. architecture assumptions converted to explicit interface artifacts,
-2. adapter theorem surfaces that preserve M1–M5 layering,
-3. hardened boot/runtime boundary contracts,
-4. test and evidence continuity without relaxing Tier 0–3 requirements.
+1. CI and quality-gate hardening (including Tier 3 promotion and cache/security hygiene),
+2. architecture/module cleanup and API boundary refinements,
+3. type-safety, testing-depth, and documentation-governance upgrades mapped to audit findings,
+4. traceable closure of audit criticisms/recommendations with synchronized code/proof/test/docs evidence.
 
-See the dedicated execution chapter: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
+See the dedicated execution chapter: [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md).
 
 ## 6. Hardware trajectory update
 
-The first real hardware architecture focus for seLe4n is **Raspberry Pi 5**. This direction
-follows M6 interface stabilization and emphasizes incremental binding without invalidating
-architecture-neutral proof investment.
+The first real hardware architecture focus for seLe4n remains **Raspberry Pi 5**. This direction
+now follows completion of the active audit-remediation workstreams and emphasizes incremental
+binding without invalidating architecture-neutral proof investment.
 
 See [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md).
 

@@ -5,9 +5,9 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M7 Raspberry Pi 5 binding prototype and platform-constraint evidence planning.
+- **Active slice:** M7 audit remediation workstreams (WS-A1 through WS-A8) with CI, architecture, type-safety, testing, and documentation hardening as the immediate execution focus.
 - **Most recently completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
-- **First real-hardware architecture focus:** Raspberry Pi 5 (post-M6 binding path).
+- **First real-hardware architecture focus:** Raspberry Pi 5 (post-remediation binding path).
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
@@ -16,7 +16,9 @@ For normative milestones, acceptance criteria, and scope decisions, use
 
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
-- **Latest end-to-end audit snapshot:** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
+- **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
+- **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
+- **Audit remediation workstreams (M7+ execution plan):** [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)

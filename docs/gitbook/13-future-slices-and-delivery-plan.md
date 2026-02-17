@@ -1,6 +1,6 @@
 # Future Slices and Delivery Plan
 
-This chapter captures the forward plan after M6 closeout and during active M7 planning/execution.
+This chapter captures the forward plan after M6 closeout with active M7 audit-remediation execution.
 
 ## 1. Planning assumptions
 
@@ -20,25 +20,27 @@ M6 closeout delivered:
 
 Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-## 3. Current active slice (M7): Raspberry Pi 5 first binding
+## 3. Current active slice (M7): audit remediation workstreams
 
 ### Target outcomes
 
-1. instantiate M6 interfaces for Raspberry Pi 5 assumptions,
-2. keep architecture-neutral invariants reusable,
-3. produce explicit mapping from platform assumptions to theorem obligations,
-4. validate minimal realistic scenario traces for platform-oriented boundaries.
+1. close high-priority CI, architecture, type-safety, and safety-boundary audit items,
+2. close medium-priority testing and documentation criticisms with measurable evidence,
+3. preserve architecture-neutral invariants and theorem entrypoint continuity,
+4. hand off a hardened baseline for the Raspberry Pi 5 contract-instantiation slice.
 
 ### Candidate workstreams
 
-- **WS-M7-A:** Raspberry Pi 5 assumption binding and interface instantiation,
-- **WS-M7-B:** platform-aware adapter evidence and failure-path modeling,
-- **WS-M7-C:** trust-boundary scenario package for a minimal deployment topology,
-- **WS-M7-D:** docs/testing/acceptance closeout for hardware-binding readiness.
+- **WS-A1:** CI hardening and quality-gate promotion,
+- **WS-A2:** architecture modularity and API-surface cleanup,
+- **WS-A3:** type-safety uplift for ID/pointer domains,
+- **WS-A4:** test architecture expansion,
+- **WS-A5:** hardware-boundary safety and test-only contract separation,
+- **WS-A6/WS-A7/WS-A8:** documentation, maintainability automation, and platform-security maturity preparation.
 
 ## 4. Mid-horizon slices (M8+ directional)
 
-1. subsystem integration plans consuming M6/M7 contracts,
+1. subsystem integration plans consuming M6 and remediation-hardened contracts,
 2. refinement evidence packaging from model claims to implementation obligations,
 3. platform-validation increments gated by stabilized interfaces and theorem anchors.
 
@@ -53,13 +55,13 @@ All required:
 3. required test tiers green,
 4. docs synchronized.
 
-### Gate B — Raspberry Pi 5 binding slice closeout
+### Gate B — Audit remediation slice closeout
 
 All required:
 
-1. M6 contracts instantiated for Raspberry Pi 5 constraints,
-2. failure semantics for bound adapters explicit,
-3. trust-boundary narrative backed by executable/test evidence.
+1. mapped audit criticisms/recommendations are explicitly closed,
+2. CI/test/doc governance controls are running as intended,
+3. next-slice hardware-binding prerequisites are documented and reviewable.
 
 ## 6. Risk register and mitigations
 

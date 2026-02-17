@@ -101,6 +101,40 @@ Conceptual dependency direction:
 
 `Prelude/Machine` → `Model` → `Scheduler/Capability/IPC transitions` → `Invariant composition` → `Main trace`
 
+### 3.1 Audit-focused dependency diagram (current state)
+
+```text
+SeLe4n.lean
+└── Kernel/API.lean
+    ├── Prelude.lean
+    ├── Machine.lean
+    ├── Model/Object.lean
+    ├── Model/State.lean
+    ├── Kernel/Scheduler/{Operations,Invariant}.lean
+    ├── Kernel/Capability/{Operations,Invariant}.lean
+    ├── Kernel/IPC/Invariant.lean   ← planned WS-A2 split
+    ├── Kernel/Lifecycle/{Operations,Invariant}.lean
+    ├── Kernel/Service/{Operations,Invariant}.lean
+    └── Kernel/Architecture/{Assumptions,Adapter,Invariant}.lean
+```
+
+### 3.2 Mermaid graph (documentation source of truth)
+
+```mermaid
+graph TD
+  P[Prelude + Machine] --> M[Model Object/State]
+  M --> S[Scheduler]
+  M --> C[Capability]
+  M --> I[IPC]
+  S --> B[Bundle Composition]
+  C --> B
+  I --> B
+  B --> L[Lifecycle]
+  L --> V[Service]
+  V --> A[Architecture Assumptions/Adapter/Invariant]
+  A --> X[API + Main executable traces]
+```
+
 This direction should be preserved to prevent proof cycles and maintain module readability.
 
 ## 4. Cross-cutting architectural rules

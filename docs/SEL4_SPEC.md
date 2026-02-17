@@ -7,13 +7,13 @@ This document is the normative specification baseline for seLe4n.
 It defines:
 
 1. What milestone behavior is already closed and considered stable.
-2. The **current delivery slice** (M7) with concrete target outcomes.
-3. The **completed predecessor slice** recap (M6) plus M7 directional planning so work continues without roadmap drift.
+2. The **current delivery slice** (M7 audit remediation workstreams) with concrete target outcomes.
+3. The **completed predecessor slice** recap (M6) plus post-remediation hardware directional planning so work continues without roadmap drift.
 4. Acceptance criteria and non-goals for focused, reviewable implementation.
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening is complete (WS-M6-A through WS-M6-E completed); M7 Raspberry Pi 5-first binding planning is active**.
+Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening is complete (WS-M6-A through WS-M6-E completed); the active M7 slice is audit remediation workstreams (WS-A1 through WS-A8)**.
 
 ---
 
@@ -33,7 +33,7 @@ Current stage: **M6 architecture-binding interfaces and hardware-facing assumpti
 
 ## 3. Stable baseline contracts (must not regress)
 
-The following contracts are considered stable and preserved while M7 planning/implementation evolves:
+The following contracts are considered stable and preserved while audit remediation workstreams are implemented:
 
 1. M1 scheduler invariant bundle and entrypoint preservation theorems.
 2. M2 capability/CSpace transition APIs (`lookup`, `insert`, `mint`, `delete`, `revoke`) and
@@ -314,7 +314,7 @@ When milestone scope or theorem/API surfaces change:
 
 - [ ] New/updated transition definitions for claimed slice are present.
 - [ ] Invariant components are named and integrated into bundle structure.
-- [x] Preservation theorem entrypoints compile.
+- [ ] Preservation theorem entrypoints compile.
 - [ ] `lake build` executed successfully.
 - [ ] `lake exe sele4n` executed successfully.
 - [ ] Hygiene scan (`axiom|sorry|TODO`) executed and clean.

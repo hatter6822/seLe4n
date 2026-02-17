@@ -1,7 +1,7 @@
 # Codebase Reference (Deep Developer Map)
 
 This chapter maps where semantics, proofs, and execution evidence live in the current repository.
-It also highlights where M6 and post-M6 (Raspberry Pi 5-first) work should land.
+It also highlights where M6 closeout artifacts, active audit-remediation work, and post-remediation Raspberry Pi 5 work should land.
 
 ## 1. Repository-level structure
 
