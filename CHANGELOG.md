@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.6] - 2026-02-17
+
+### WS-B2 negative-suite correctness hardening
+- Refined `tests/NegativeStateSuite.lean` endpoint coverage to test both `.endpointStateMismatch` (idle endpoint receive) and `.endpointQueueEmpty` (send-state empty queue) on explicit fixtures, removing the prior mislabeled assertion gap.
+- Re-ran full repository validation (`test_fast`, `test_smoke`, `test_full`, default/experimental `test_nightly`, and `audit_testing_framework`) to ensure code/docs/gitbook/test contracts remain synchronized and deterministic.
+- Bumped package patch version to **`0.9.6`** and synchronized root version markers.
+
+## [0.9.5] - 2026-02-17
+
+### WS-B2 generative + negative testing expansion completion
+- Added reusable bootstrap-state builder DSL in `SeLe4n/Testing/StateBuilder.lean` and a dedicated malformed-state executable suite in `tests/NegativeStateSuite.lean` (wired as `lake exe negative_state_suite`).
+- Extended smoke/full gates with `scripts/test_tier2_negative.sh` so negative-path assertions are required alongside trace fixtures.
+- Expanded nightly experimental candidates to persist per-seed stochastic probe logs and a replay manifest (`tests/artifacts/nightly/trace_sequence_probe_manifest.csv`) for deterministic triage.
+- Synchronized active-slice documentation and GitBook mirrors to mark WS-B2 as completed and record closure evidence in the comprehensive-audit workstream plan.
+- Bumped package patch version to **`0.9.5`** and synchronized root version markers.
+
 ## [0.9.4] - 2026-02-17
 
 ### Bootstrap reliability + doc-sync hardening follow-up
