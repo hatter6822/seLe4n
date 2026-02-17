@@ -1,6 +1,6 @@
 # M7 Current Slice Outcomes and Workstreams
 
-This chapter is the practical execution map for the active slice.
+This chapter is the practical execution map for the completed M7 slice (retained as closeout evidence).
 
 Use this chapter when you need to answer:
 
@@ -12,6 +12,8 @@ Use this chapter when you need to answer:
 For normative scope, always defer to [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
 For audit source findings, use [`docs/REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md).
 For implementation-level details, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](../AUDIT_REMEDIATION_WORKSTREAMS.md).
+
+M7 is now complete; the exit-gate closeout artifact is [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
 
 ## 1. M7 slice goal statement
 
@@ -158,21 +160,21 @@ Concretely, M7 should leave the repository in a state where:
 - repeated proof patterns are parameterized ✅,
 - reviewers can identify preservation obligations faster ✅.
 
-### WS-A8 — Platform/security maturity for next slice readiness
+### WS-A8 — Platform/security maturity for next slice readiness ✅ completed
 
 **Intent:** avoid a large maturity cliff at hardware-binding start.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- establish architecture-relevant CI signals,
-- automate baseline scanning and security hygiene,
-- define information-flow proof trajectory.
+- architecture-targeted CI now includes `Platform Signal / ARM64 Fast Gate` in `.github/workflows/platform_security_baseline.yml` on `ubuntu-24.04-arm` running `./scripts/test_fast.sh`,
+- baseline automated security hygiene is active in CI via Gitleaks (secret scanning), Trivy (HIGH/CRITICAL vulnerability scanning), and CodeQL workflow analysis,
+- staged information-flow proof trajectory is now documented in `docs/INFORMATION_FLOW_ROADMAP.md` with explicit IF-M1..IF-M5 milestones and exit evidence.
 
-**DoD signals:**
+**DoD signals status:**
 
-- at least one architecture-targeted CI lane is operational,
-- scanning evidence is present in automation,
-- post-M7 security proof path is published.
+- at least one architecture-targeted CI lane is operational ✅,
+- scanning evidence is present in automation ✅,
+- post-M7 security proof path is published ✅.
 
 ## 4. Dependency and sequencing model
 

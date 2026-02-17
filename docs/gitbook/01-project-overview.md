@@ -30,7 +30,7 @@ Closed baseline slices:
 
 Current active slice:
 
-- **M7 audit remediation workstreams (WS-A1 through WS-A8)**.
+- **Post-M7 hardware-oriented next slice (Raspberry Pi 5 first)** with M7 remediation treated as completed baseline.
 
 ## 4. Architecture mental model
 

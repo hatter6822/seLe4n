@@ -9,7 +9,7 @@ This document records a full end-to-end quality audit over code, tests, and docu
 
 ## 1) Executive assessment
 
-Overall verdict: **the repository is operationally healthy and aligned with a M6-complete baseline and an active M7 audit-remediation delivery focus**.
+Overall verdict: **the repository is operationally healthy and aligned with an M7-remediation-complete baseline and active post-M7 next-slice execution**.
 
 Specifically, this audit re-validated:
 
@@ -68,10 +68,10 @@ Framework quality properties verified:
 
 Current documentation set is synchronized around:
 
-- **Current slice:** M7 audit remediation workstreams (WS-A1 through WS-A8).
-- **Most recently completed slice:** M6 architecture-binding interfaces + assumption hardening (WS-M6-A through WS-M6-E completed).
+- **Current slice:** post-M7 hardware-oriented next slice (Raspberry Pi 5 first).
+- **Most recently completed slice:** M7 audit remediation workstreams (WS-A1 through WS-A8 completed).
+- **Previous completed slice:** M6 architecture-binding interfaces + assumption hardening (WS-M6-A through WS-M6-E completed).
 - **Historical context:** M4-B completion retained as predecessor reference.
-- **Forward path:** audit remediation closeout precedes the Raspberry Pi 5 contract-instantiation track.
 
 ---
 

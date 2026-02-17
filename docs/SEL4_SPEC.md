@@ -13,7 +13,7 @@ It defines:
 5. Change-control expectations for code, proofs, executable traces, and docs.
 6. A forward plan for the next milestone family so contributors can stage work intentionally.
 
-Current stage: **M6 architecture-binding interfaces and hardware-facing assumption hardening is complete (WS-M6-A through WS-M6-E completed); the active M7 slice is audit remediation workstreams (WS-A1 through WS-A8)**.
+Current stage: **M7 audit-remediation workstreams are complete (WS-A1 through WS-A8 closed), and active execution has transitioned to the post-M7 hardware-oriented next slice (Raspberry Pi 5 first)**.
 
 ---
 
@@ -28,6 +28,7 @@ Current stage: **M6 architecture-binding interfaces and hardware-facing assumpti
 - **M4-B (complete)**: lifecycle-capability composition hardening and richer scenario coverage.
 - **M5 (complete)**: service-graph semantics and policy-oriented authority constraints.
 - **M6 (complete)**: architecture-binding interfaces and hardware-facing assumption hardening.
+- **M7 (complete)**: repository-audit remediation hardening (WS-A1 through WS-A8) with CI/security/platform readiness gates operational.
 
 ---
 

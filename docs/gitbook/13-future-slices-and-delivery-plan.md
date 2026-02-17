@@ -38,7 +38,7 @@ Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-exe
 - **WS-A5:** hardware-boundary safety and test-only contract separation ✅ completed,
 - **WS-A6:** documentation IA and contributor UX ✅ completed,
 - **WS-A7:** proof documentation and maintainability automation ✅ completed,
-- **WS-A8:** platform-security maturity preparation (planned follow-on).
+- **WS-A8:** platform-security maturity preparation ✅ completed.
 
 Current closure source of truth for M7 outcomes/workstreams: [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md).
 

@@ -1,7 +1,7 @@
 # Repository Audit Remediation Workstreams
 
 This plan translates findings in [`docs/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md)
-into execution-ready workstreams for the active M7 slice and the post-remediation handoff.
+into execution-ready workstreams for the (now completed) M7 slice and the post-remediation handoff.
 
 ## 1. Program goals
 
@@ -11,7 +11,7 @@ into execution-ready workstreams for the active M7 slice and the post-remediatio
 3. keep documentation, CI, and test evidence synchronized as first-class deliverables,
 4. produce a clean handoff contract for the first post-M7 hardware-facing slice.
 
-## 2. Current slice outcomes (M7-O1..M7-O8)
+## 2. Completed slice outcomes (M7-O1..M7-O8)
 
 | Outcome ID | Target outcome |
 |---|---|
@@ -163,7 +163,7 @@ Increase theorem-level explainability while reducing repetitive proof boilerplat
 
 ---
 
-### WS-A8 — Platform and security maturity for post-remediation trajectory (Medium/Low)
+### WS-A8 — Platform and security maturity for post-remediation trajectory (Medium/Low) ✅ completed
 
 **Objective**
 Prepare for hardware realism and stronger security claims beyond capability invariants.
@@ -173,10 +173,15 @@ Prepare for hardware realism and stronger security claims beyond capability inva
 - maintain baseline SAST/secret scanning,
 - define staged information-flow model milestones.
 
-**Acceptance criteria**
-- architecture-targeted CI evidence exists pre-hardware binding,
-- security scans run automatically,
-- information-flow milestones are explicit and reviewable.
+**Closure evidence (implemented)**
+- architecture-targeted CI evidence now runs in `.github/workflows/platform_security_baseline.yml` via `Platform Signal / ARM64 Fast Gate` on `ubuntu-24.04-arm` with `./scripts/test_fast.sh`,
+- baseline security scanning is automated in the same workflow through Gitleaks (secret scan), Trivy (HIGH/CRITICAL repository scan), and CodeQL analysis for workflow security posture,
+- staged post-M7 information-flow proof milestones are published in `docs/INFORMATION_FLOW_ROADMAP.md` with explicit IF-M1..IF-M5 deliverables and exit evidence.
+
+**Acceptance criteria status**
+- architecture-targeted CI evidence exists pre-hardware binding ✅,
+- security scans run automatically ✅,
+- information-flow milestones are explicit and reviewable ✅.
 
 ## 5. Sequencing and dependency plan
 
@@ -219,6 +224,9 @@ Each checkpoint report should include:
 - confidence assessment for the M7 exit gate.
 
 ## 8. M7 exit package and next-slice handoff
+
+M7 closeout gate artifact: `docs/M7_CLOSEOUT_PACKET.md`.
+
 
 M7 closeout is valid only when:
 

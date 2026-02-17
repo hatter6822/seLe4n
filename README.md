@@ -5,25 +5,20 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** M7 audit remediation workstreams (WS-A1 through WS-A8) with outcome-driven closure targets across CI, architecture, type-safety, testing, and documentation hardening.
-- **Most recently completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
-- **First real-hardware architecture focus:** Raspberry Pi 5 (post-remediation binding path).
+- **Active slice:** post-M7 hardware-oriented development path (next slice) with Raspberry Pi 5 as first architecture focus.
+- **Most recently completed slice:** M7 audit remediation workstreams (WS-A1 through WS-A8 completed).
+- **Previous completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
-- **Current package version:** `0.8.20` (see `lakefile.toml`).
+- **Current package version:** `0.9.0` (see `lakefile.toml`).
 
-### Current slice target outcomes (M7)
+### M7 closeout status and next-slice kickoff
 
-1. enforce Tier 0–3 quality gates with deterministic and reproducible CI evidence,
-2. complete architecture/API boundary cleanup and preserve stable public surfaces,
-3. migrate high-risk identity/pointer aliases toward stronger type safety,
-4. broaden scenario/test evidence for scale and adversarial-style paths,
-5. isolate test-only permissive contracts from runtime-facing modules,
-6. align root docs and GitBook around active + next-slice execution plans.
+M7 exit-gate status is complete: WS-A1..WS-A8 are closed with CI/test/documentation evidence and the remediation handoff package published in [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md).
 
-For workstream-level details and closure criteria, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+For remediation closure details, use [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
 
 ## Start here (contributor IA)
 
@@ -33,9 +28,11 @@ For workstream-level details and closure criteria, use [`docs/AUDIT_REMEDIATION_
 - **4) Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **5) Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 - **Hardware-boundary contract policy (WS-A5):** [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md)
+- **Information-flow proof trajectory roadmap (WS-A8):** [`docs/INFORMATION_FLOW_ROADMAP.md`](docs/INFORMATION_FLOW_ROADMAP.md)
 - **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
-- **M7 execution outcomes and workstreams (active slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
+- **M7 execution outcomes and workstreams (completed slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
+- **M7 closeout packet (exit-gate artifact):** [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md)
 - **Audit remediation workstreams (M7+ execution plan):** [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)

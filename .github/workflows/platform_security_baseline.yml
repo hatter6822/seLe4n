@@ -1,0 +1,80 @@
+name: Platform and Security Baseline
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '38 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: platform-security-baseline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: read
+
+jobs:
+  architecture-arm64-fast:
+    name: Platform Signal / ARM64 Fast Gate
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-
+
+      - name: Setup Lean toolchain
+        run: ./scripts/setup_lean_env.sh
+
+      - name: Run architecture-targeted fast gate
+        run: ./scripts/test_fast.sh
+
+  security-baseline-scan:
+    name: Security Signal / Secret + Dependency + CodeQL
+    # security-events upload is not available to fork-origin pull_request runs
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy repository vulnerability scan
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: actions
+
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        continue-on-error: true

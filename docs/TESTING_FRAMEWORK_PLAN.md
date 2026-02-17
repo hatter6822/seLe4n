@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **M6 architecture-boundary delivery is complete (WS-M6-A through WS-M6-E complete); testing now guards audit-remediation execution work (WS-A1 through WS-A8) without regressing M1–M6 contracts. WS-A4 test architecture expansion is now implemented.**
+Current stage context: **M7 remediation closeout is complete (WS-A1 through WS-A8 closed); testing now guards post-M7 hardware-oriented next-slice execution without regressing M1–M7 contracts.**
 
 ## 2. Current enforced tiers
 
@@ -34,6 +34,8 @@ Recommended audit entrypoint for release/closeout confidence:
 PR CI must call repository scripts directly and keep workflow logic thin.
 
 Branch-protection and required-check policy is documented in `docs/CI_POLICY.md`.
+
+WS-A8 platform/security baseline automation is provided by `.github/workflows/platform_security_baseline.yml` (ARM64 fast gate + baseline security scanning controls).
 
 Root contributor discoverability artifacts are `CONTRIBUTING.md` and `CHANGELOG.md`.
 

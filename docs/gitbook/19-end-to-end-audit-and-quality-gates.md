@@ -10,7 +10,7 @@ For implementation sequencing tied to each criticism/recommendation, see
 
 ## 1. Current quality state
 
-seLe4n is currently in a **healthy and internally consistent state** for active M7 audit-remediation execution:
+seLe4n is currently in a **healthy and internally consistent state** for post-M7 next-slice execution on top of completed M7 remediation controls:
 
 - build graph compiles,
 - executable scenario traces pass fixture checks,
@@ -55,11 +55,11 @@ The framework self-audit confirms both sides of correctness:
 
 ## 5. Development path and quality evolution
 
-As M7 progresses:
+As next-slice work progresses:
 
 1. keep architecture-bound interfaces and proof-layer obligations synchronized (WS-M6-A through WS-M6-C now complete),
 2. preserve assumption-boundary fixture/trace coverage now closed under WS-M6-D,
-3. keep documentation synchronized in the same PR as any stage change (WS-M6-E focus),
+3. keep documentation synchronized in the same PR as any stage change (M7 closeout baseline + next-slice path),
 4. preserve deterministic replay and anchor discoverability as hard non-regression gates.
 
 This preserves continuity from M5 completion while safely increasing architecture realism.

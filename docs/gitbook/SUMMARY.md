@@ -13,6 +13,7 @@
 
 - [Specification & Roadmap](05-specification-and-roadmap.md)
 - [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
+- [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
 - [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)

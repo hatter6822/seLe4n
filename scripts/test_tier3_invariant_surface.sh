@@ -296,10 +296,10 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'Workstreams A\+B\+C\+D\+E complete|WS-A \+ WS-B \+ WS-C \+ WS-D \+ WS-E complete|WS-A/WS-B/WS-C/WS-D/WS-E are complete' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md
-run_check "DOC" rg -n 'Active slice:.*M7|Current slice:.*M7|Most recently completed slice:.*M6' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/09-m5-closeout-snapshot.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-E completed|M6-completed / M7-active milestone state' docs/PROJECT_AUDIT.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-C now complete|closed under WS-M6-D|WS-M6-E focus' docs/gitbook/19-end-to-end-audit-and-quality-gates.md
-run_check "DOC" rg -n 'WS-M6-A through WS-M6-E complete|without regressing M1–M6 contracts' docs/TESTING_FRAMEWORK_PLAN.md
+run_check "DOC" rg -n 'Active slice:.*post-M7|Current slice:.*post-M7|Most recently completed slice:.*M7|Previous completed slice:.*M6|M7 remediation is complete' README.md docs/gitbook/README.md docs/gitbook/SUMMARY.md docs/gitbook/23-m7-remediation-closeout-packet.md
+run_check "DOC" rg -n 'WS-M6-A through WS-M6-E completed|M7 remediation closeout is complete|post-M7 hardware-oriented next slice' docs/PROJECT_AUDIT.md docs/DEVELOPMENT.md docs/SEL4_SPEC.md README.md
+run_check "DOC" rg -n 'WS-M6-A through WS-M6-C now complete|closed under WS-M6-D|M7 closeout baseline|post-M7 next-slice execution' docs/gitbook/19-end-to-end-audit-and-quality-gates.md
+run_check "DOC" rg -n 'M7 remediation closeout is complete|without regressing M1–M7 contracts|WS-M6-A through WS-M6-E complete' docs/TESTING_FRAMEWORK_PLAN.md
 run_check "DOC" rg -n 'WS-M6-D and WS-M6-E complete|WS-M6-E: documentation synchronization and handoff packaging ✅ completed' docs/gitbook/05-specification-and-roadmap.md
 run_check "DOC" rg -n 'M6 architecture-binding interfaces and hardware-facing assumption hardening|M5 service-graph \+ policy surfaces' README.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md
 run_check "DOC" rg -n 'WS-M5-D|WS-M5-E|proof package ✅ \*\*completed\*\*|Evidence and validation ✅ \*\*completed\*\*|WS-M5-A/B/C/D/E complete|WS-M5-D — Proof completion ✅ \*\*completed\*\*' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/README.md docs/gitbook/09-m5-closeout-snapshot.md docs/gitbook/15-m5-development-blueprint.md docs/gitbook/12-proof-and-invariant-map.md docs/gitbook/13-future-slices-and-delivery-plan.md
@@ -317,11 +317,27 @@ run_check "DOC" rg -n 'Tier 4 fails \(`\./scripts/test_nightly\.sh` / `\./script
 # Full-suite contract should continue to include Tier 3.
 run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
 
+run_check "DOC" rg -n '^# M7 Remediation Closeout Packet' docs/M7_CLOSEOUT_PACKET.md docs/gitbook/23-m7-remediation-closeout-packet.md
+run_check "DOC" rg -n 'Next-slice kickoff dependencies and owners|Exit-gate checklist' docs/M7_CLOSEOUT_PACKET.md
+run_check "DOC" rg -n 'M7 Remediation Closeout Packet' docs/gitbook/SUMMARY.md README.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/20-repository-audit-remediation-workstreams.md
 run_check "DOC" rg -n "Contribution guide \(root pointer\)|Change history" README.md
 run_check "DOC" test -f CONTRIBUTING.md
 run_check "DOC" test -f CHANGELOG.md
 run_check "DOC" rg -n "Required checks \(Tier 0–3\)|Deterministic replay evidence" docs/CI_POLICY.md
 run_check "DOC" rg -n "Tiered Tests / Full \(Tier 0 \+ Tier 1 \+ Tier 2 \+ Tier 3\)" .github/workflows/lean_action_ci.yml docs/CI_POLICY.md
 run_check "DOC" rg -n "Nightly Determinism|NIGHTLY_ENABLE_EXPERIMENTAL" .github/workflows/nightly_determinism.yml docs/CI_POLICY.md
+
+# WS-A8 closure anchors: platform/security baseline workflow + information-flow roadmap visibility.
+run_check "DOC" rg -n '^name: Platform and Security Baseline' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^\s*name: Platform Signal / ARM64 Fast Gate' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^\s*name: Security Signal / Secret \+ Dependency \+ CodeQL' .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "^\s*pull-requests:\s*read" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "^\s*fetch-depth:\s*0" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "^\s*continue-on-error:\s*true" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/AUDIT_REMEDIATION_WORKSTREAMS.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
 
 finalize_report

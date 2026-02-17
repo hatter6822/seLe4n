@@ -69,10 +69,10 @@ The remediation program targets eight concrete repository outcomes:
    - preserved readability by keeping transition-specific obligations explicit in wrapper theorems.
    - status in active slice: **completed** (see chapter 21 closure evidence).
 
-8. **WS-A8 — Platform/security maturity for post-remediation path**
-   - add architecture-relevant CI expansion,
-   - establish baseline automated scanning,
-   - define staged information-flow roadmap milestones.
+8. **WS-A8 — Platform/security maturity for post-remediation path** ✅ completed
+   - added architecture-relevant CI expansion through ARM64 fast-gate automation,
+   - established baseline automated scanning (Gitleaks + Trivy + CodeQL),
+   - published staged information-flow roadmap milestones in `docs/INFORMATION_FLOW_ROADMAP.md`.
 
 ## 4. Sequencing model
 
@@ -115,3 +115,5 @@ When WS-A1..WS-A8 close, maintainers should publish a short remediation closeout
 - links to updated roadmap and hardware-path chapters.
 
 That packet is the gate artifact for starting the post-M7 hardware-facing slice.
+
+Closeout packet published: [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
