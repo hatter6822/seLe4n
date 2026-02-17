@@ -67,3 +67,4 @@ This workflow runs on pull requests, pushes to `main`, weekly schedule, and manu
 For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
+CodeQL analysis remains in the workflow for baseline static checks, but the analyze upload step is marked `continue-on-error` so repositories without Code Scanning enabled do not hard-fail the entire security lane.

@@ -334,6 +334,7 @@ run_check "DOC" rg -n '^\s*name: Security Signal / Secret \+ Dependency \+ CodeQ
 run_check "DOC" rg -n "if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository" .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n "^\s*pull-requests:\s*read" .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n "^\s*fetch-depth:\s*0" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "^\s*continue-on-error:\s*true" .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
