@@ -13,6 +13,10 @@ inductive KernelError where
   | schedulerInvariantViolation
   | endpointStateMismatch
   | endpointQueueEmpty
+  | asidNotBound
+  | vspaceRootInvalid
+  | mappingConflict
+  | translationFault
   | notImplemented
   deriving Repr, DecidableEq
 
@@ -69,6 +73,14 @@ def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
     match st.objects id with
     | none => .error .objectNotFound
     | some obj => .ok (obj, st)
+
+/-- Read a typed VSpace-root object from the global object store. -/
+def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
+  fun st =>
+    match st.objects id with
+    | some (.vspaceRoot root) => .ok (root, st)
+    | some _ => .error .vspaceRootInvalid
+    | none => .error .objectNotFound
 
 /-- Replace the object stored at `id` with `obj`. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=

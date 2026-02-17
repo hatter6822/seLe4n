@@ -79,7 +79,9 @@ theorem cspaceDeleteSlot_authority_reduction
       cases obj with
       | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
+
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
           simp [SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup_remove_eq_none]
@@ -105,7 +107,9 @@ theorem cspaceRevoke_local_target_reduction
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | endpoint ep => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
       | cnode cn =>
+
           let revokedRefs : List SlotRef :=
             (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
               (fun entry => { cnode := addr.cnode, slot := entry.fst })
@@ -201,7 +205,9 @@ theorem cspaceInsertSlot_lookup_eq
       cases obj with
       | tcb tcb => simp [cspaceInsertSlot, hObj] at hStep
       | endpoint ep => simp [cspaceInsertSlot, hObj] at hStep
+      | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
+
           simp [cspaceInsertSlot, hObj] at hStep
           cases hStep
           simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
@@ -228,7 +234,9 @@ theorem cspaceDeleteSlot_lookup_eq_none
       cases obj with
       | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
+
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
           simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
@@ -252,7 +260,9 @@ theorem cspaceRevoke_preserves_source
           cases obj with
           | tcb tcb => simp [hLookup, hObj] at hStep
           | endpoint ep => simp [hLookup, hObj] at hStep
+          | vspaceRoot root => simp [hLookup, hObj] at hStep
           | cnode cn =>
+
               let revokedRefs : List SlotRef :=
                 (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
                   (fun entry => { cnode := addr.cnode, slot := entry.fst })
@@ -541,6 +551,9 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
         rw [hNewObj] at hEndpoint
         cases hEndpoint
     | cnode _ =>
+        rw [hNewObj] at hEndpoint
+        cases hEndpoint
+    | vspaceRoot _ =>
         rw [hNewObj] at hEndpoint
         cases hEndpoint
     | endpoint newEp =>

@@ -1,55 +1,43 @@
-# scenario_id | risk_class | expected_trace_fragment
-# Scheduler + capability baseline
-WS-A4-SCHED-01 | scheduling-basic | scheduled thread: some 1
-WS-A4-CSPACE-01 | cspace-rights-preservation | source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-
-# Architecture adapter boundary behaviors
-WS-A4-ARCH-01 | boundary-timer-monotonicity | adapter timer success path value: 2
-WS-A4-ARCH-02 | boundary-invalid-context | adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
-WS-A4-ARCH-03 | boundary-unsupported-binding | adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
-WS-A4-ARCH-04 | boundary-memory-deny | adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
-WS-A4-ARCH-05 | boundary-memory-read | adapter read success path byte: 0
-WS-A4-ARCH-06 | boundary-register-write-success | adapter register write success path value: 99
-WS-A4-ARCH-07 | boundary-register-write-deny | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
-
-# Service lifecycle + policy/dependency edges
-WS-A4-SVC-01 | service-happy-path | service start api status: some (SeLe4n.Model.ServiceStatus.running)
-WS-A4-SVC-02 | service-policy-denial | service start denied branch: SeLe4n.Model.KernelError.policyDenied
-WS-A4-SVC-03 | service-dependency-violation | service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
-WS-A4-SVC-04 | service-restart-success | service restart status: some (SeLe4n.Model.ServiceStatus.running)
-WS-A4-SVC-05 | service-stop-policy-denial | service stop denied branch: SeLe4n.Model.KernelError.policyDenied
-WS-A4-SVC-06 | service-stop-illegal-state | service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
-WS-A4-SVC-07 | service-restart-stop-failure | service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
-WS-A4-SVC-08 | service-restart-start-failure | service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
-WS-A4-SVC-09 | service-isolation-enforced | service isolation api↔denied: true
-WS-A4-SVC-10 | service-isolation-nonisolated | service isolation api↔db: false
-
-# Lifecycle composition and alias guards
-WS-A4-LIFE-01 | lifecycle-authz-guard | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-WS-A4-LIFE-02 | lifecycle-metadata-coherence | lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
-WS-A4-LIFE-03 | lifecycle-retype-success | lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-WS-A4-LIFE-04 | lifecycle-cap-sibling-setup | created sibling cap with the same target
-WS-A4-LIFE-05 | lifecycle-composed-alias-guard | composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
-WS-A4-LIFE-06 | lifecycle-composed-authz-guard | composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-WS-A4-LIFE-07 | lifecycle-composed-success | composed revoke/delete/retype success
-WS-A4-LIFE-08 | lifecycle-revoke-observable | post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
-WS-A4-LIFE-09 | lifecycle-delete-observable | post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
-
-# IPC handshake + queue drain order
-WS-A4-IPC-01 | ipc-handshake-atomicity | handshake send matched waiting receiver
-WS-A4-IPC-02 | ipc-queued-senders | queued two senders on endpoint
-WS-A4-IPC-03 | ipc-first-sender-order | endpoint receive #1 sender: 1
-WS-A4-IPC-04 | ipc-second-sender-order | endpoint receive #2 sender: 2
-WS-A4-IPC-05 | ipc-empty-mismatch | endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
-
-# Capability mint result
-WS-A4-CSPACE-02 | cspace-mint-rights-narrowing | minted cap rights: [SeLe4n.Model.AccessRight.read]
-
-# WS-A4 scale-expansion scenarios from audit recommendation set (#10)
-WS-A4-SCALE-01 | cspace-deep-radix-tree | deep cnode radix fixture: some 12
-WS-A4-SCALE-02 | scheduler-large-run-queue | large runnable queue length: 12
-WS-A4-SCALE-03 | scheduler-large-run-queue-schedule | large queue scheduled current: some 1
-WS-A4-SCALE-04 | ipc-multiple-endpoints | multi-endpoint receive senders: 4, 5
-WS-A4-SCALE-05 | service-dependency-chain-depth5 | service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
-WS-A4-SCALE-06 | boundary-memory-low-address | boundary memory low-address byte: 0
-WS-A4-SCALE-07 | boundary-memory-high-address | boundary memory high-address byte: 0
+scheduled thread: some 1
+source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+adapter timer success path value: 2
+adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
+adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
+adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
+adapter read success path byte: 0
+vspace lookup mapped paddr: 8192
+vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
+adapter register write success path value: 99
+adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
+service start api status: some (SeLe4n.Model.ServiceStatus.running)
+service start denied branch: SeLe4n.Model.KernelError.policyDenied
+service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
+service restart status: some (SeLe4n.Model.ServiceStatus.running)
+service stop denied branch: SeLe4n.Model.KernelError.policyDenied
+service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
+service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
+service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
+service isolation api↔denied: true
+service isolation api↔db: false
+deep cnode radix fixture: some 12
+large runnable queue length: 12
+large queue scheduled current: some 1
+multi-endpoint receive senders: 4, 5
+service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
+boundary memory low-address byte: 0
+boundary memory high-address byte: 0
+lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
+lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+created sibling cap with the same target
+composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
+composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+composed revoke/delete/retype success
+post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
+post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
+handshake send matched waiting receiver
+queued two senders on endpoint
+endpoint receive #1 sender: 1
+endpoint receive #2 sender: 2
+endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
+minted cap rights: [SeLe4n.Model.AccessRight.read]

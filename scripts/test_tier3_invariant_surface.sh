@@ -9,6 +9,17 @@ parse_common_args "$@"
 cd "${REPO_ROOT}"
 
 # M6 WS-M6-A assumption inventory anchors.
+# WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
+run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def vspaceDiscoveryWindow' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceUnmapPage' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceLookup' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
+run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
+
 # M6 WS-M6-B adapter API anchors.
 run_check "INVARIANT" rg -n '^inductive AdapterErrorKind' SeLe4n/Kernel/Architecture/Adapter.lean
 run_check "INVARIANT" rg -n '^def mapAdapterError' SeLe4n/Kernel/Architecture/Adapter.lean

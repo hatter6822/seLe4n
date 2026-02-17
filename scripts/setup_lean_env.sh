@@ -18,7 +18,12 @@ run_pkg_install() {
 
 apt_update_once() {
   if [ "${APT_UPDATE_DONE}" -eq 0 ]; then
-    run_pkg_install apt-get update
+    if ! run_pkg_install apt-get update; then
+      echo "[setup] apt-get update failed; retrying with primary sources only (ignoring sourceparts)" >&2
+      run_pkg_install apt-get update \
+        -o Dir::Etc::sourceparts="-" \
+        -o APT::Get::List-Cleanup="0"
+    fi
     APT_UPDATE_DONE=1
   fi
 }

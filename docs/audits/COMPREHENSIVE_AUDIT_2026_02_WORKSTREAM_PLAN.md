@@ -73,9 +73,9 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: all WS-B workstreams are **Planned**; this slice is dedicated to kickoff and execution.
+Current portfolio status: **WS-B1 is Completed**; WS-B2..WS-B11 remain Planned/In Progress per active execution cadence.
 
-### WS-B1 — VSpace + memory model foundation (Planned)
+### WS-B1 — VSpace + memory model foundation (Completed)
 
 - **Goal:** formalize minimal but extensible virtual-memory semantics for page tables, ASID binding, and bounded memory access assumptions.
 - **Prerequisites:** WS-B4 wrapper migration complete for `ASID`, `VAddr`, `PAddr`.
@@ -89,6 +89,7 @@ Current portfolio status: all WS-B workstreams are **Planned**; this slice is de
   - `./scripts/test_full.sh`
   - new/updated invariant anchors in Tier 3 checks.
 - **Exit criteria:** deterministic map/unmap trace coverage, invariant preservation lemmas merged, ADR published.
+- **Closure evidence (2026-02-17):** `SeLe4n/Kernel/Architecture/VSpace*.lean` introduces map/unmap/lookup semantics + invariant bundle surface; `Main.lean` and `tests/fixtures/main_trace_smoke.expected` include map→lookup→unmap→fault trace anchors; ADR published at `docs/VSPACE_MEMORY_MODEL_ADR.md`.
 
 ### WS-B2 — Generative + negative testing expansion (Planned)
 

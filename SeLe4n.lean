@@ -8,3 +8,5 @@ import SeLe4n.Kernel.Architecture.Assumptions
 
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
+import SeLe4n.Kernel.Architecture.VSpace
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
