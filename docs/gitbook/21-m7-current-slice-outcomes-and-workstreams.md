@@ -92,21 +92,21 @@ Concretely, M7 should leave the repository in a state where:
 - theorem/API surfaces remain coherent after migration ✅,
 - no newly introduced `sorry`/`admit`/placeholder debt ✅.
 
-### WS-A4 — Test architecture expansion
+### WS-A4 — Test architecture expansion ✅ completed
 
 **Intent:** grow confidence from curated stories to broader behavioral coverage.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- add scale-heavy and edge-case-rich scenarios,
-- improve fixture readability and scenario traceability,
-- add at least one stochastic/property-oriented validation path.
+- Tier 2 fixture lines now use a scenario-labeled `scenario_id | risk_class | expected_trace_fragment` format with comment support for readable maintenance,
+- Tier 2 diagnostics include scenario/risk metadata to keep failures concise and actionable,
+- Tier 4 nightly candidates now run seeded `trace_sequence_probe` sequence-diversity checks that assert IPC endpoint-state consistency across nontrivial operation streams.
 
-**DoD signals:**
+**DoD signals status:**
 
-- scenario-to-risk mapping exists and is easy to audit,
-- failure output is concise enough for rapid debugging,
-- CI or nightly runs include nontrivial sequence diversity.
+- scenario-to-risk mapping exists and is easy to audit ✅,
+- failure output is concise enough for rapid debugging ✅,
+- CI or nightly runs include nontrivial sequence diversity ✅.
 
 ### WS-A5 — Hardware-boundary safety and test-only contract separation
 

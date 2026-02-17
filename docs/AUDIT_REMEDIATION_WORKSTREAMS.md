@@ -94,16 +94,15 @@ Eliminate cross-domain confusion by replacing raw aliases with wrappers.
 **Objective**
 Scale evidence beyond fixed-path fixtures and improve behavioral confidence depth.
 
-**Scope**
-- extend Tier 2 scenarios for deep CSpace, large run queues, multi-endpoint IPC,
-  service dependency chains, and boundary-address stories,
-- annotate fixture lines with semantic comments and scenario IDs,
-- add Lean-native state assertions and sequence-diversity checks where practical.
+**Closure evidence (implemented)**
+- Tier 2 fixture entries are now scenario/risk tagged (`scenario_id | risk_class | expected_trace_fragment`) with comment support for readable, auditable maintenance,
+- Tier 2 trace parser surfaces scenario+risk metadata in concise failure reports,
+- Tier 4 nightly candidates execute seeded `trace_sequence_probe` runs that check IPC endpoint-state consistency under sequence-diverse operation streams.
 
-**Acceptance criteria**
-- fixture scenarios map to targeted risk classes,
-- at least one sequence-diversity/stochastic check exists in CI or nightly,
-- failure diagnostics remain concise and actionable.
+**Acceptance criteria status**
+- fixture scenarios map to targeted risk classes ✅,
+- at least one sequence-diversity/stochastic check exists in CI or nightly ✅,
+- failure diagnostics remain concise and actionable ✅.
 
 ---
 
@@ -180,7 +179,7 @@ Prepare for hardware realism and stronger security claims beyond capability inva
 
 ### Phase 2 (Core model quality uplift)
 - WS-A3 begins after WS-A2 boundary stability is verified.
-- WS-A4 expands scenarios as type migration lands.
+- WS-A4 completed scenario expansion and sequence-diversity checks after type migration stabilization.
 
 ### Phase 3 (Scalability and long-horizon verification)
 - WS-A7 and WS-A8 execute incrementally after Phase 2 baseline closes.

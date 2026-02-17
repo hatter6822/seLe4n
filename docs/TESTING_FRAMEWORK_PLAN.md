@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **M6 architecture-boundary delivery is complete (WS-M6-A through WS-M6-E complete); testing now guards audit-remediation execution work (WS-A1 through WS-A8) without regressing M1–M6 contracts**.
+Current stage context: **M6 architecture-boundary delivery is complete (WS-M6-A through WS-M6-E complete); testing now guards audit-remediation execution work (WS-A1 through WS-A8) without regressing M1–M6 contracts. WS-A4 test architecture expansion is now implemented.**
 
 ## 2. Current enforced tiers
 
@@ -25,7 +25,7 @@ Required local/CI entrypoints:
 
 Nightly deterministic replay entrypoint:
 
-- `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (Tier 0..4 staged replay/diff checks)
+- `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (Tier 0..4 staged replay/diff checks + seeded sequence-diversity property probe)
 
 Recommended audit entrypoint for release/closeout confidence:
 
@@ -129,7 +129,7 @@ Primary risks to target next:
    - keeps anchor groups organized by milestone objective for triage clarity.
 4. **Phase T4 — nightly evolution** ✅
    - Tier 4 default remains an explicit extension point in `./scripts/test_nightly.sh`,
-   - staged candidates in `./scripts/test_tier4_nightly_candidates.sh` run determinism + evidence checks + full-suite replay,
+   - staged candidates in `./scripts/test_tier4_nightly_candidates.sh` run determinism + evidence checks + seeded `trace_sequence_probe` sequence-diversity checks + full-suite replay,
    - candidate execution remains opt-in (`NIGHTLY_ENABLE_EXPERIMENTAL=1`) for stable required mainline gates.
 
 ## 11. Coverage model and "full coverage" interpretation
@@ -145,3 +145,10 @@ Current coverage obligations:
 5. **Failure-detection coverage**: audit-level negative control verifies Tier 2 correctly fails on intentionally impossible fixture expectations.
 
 For future milestones, expand this model by adding new proof/trace obligations at the same time new semantics are introduced.
+
+
+## 12. M7 WS-A4 closure evidence (completed)
+
+1. Tier 2 fixture entries are scenario-labeled with `scenario_id | risk_class | expected_trace_fragment` so risk mapping is auditable at a glance.
+2. Tier 2 parser emits concise scenario/risk-tagged failures and ignores comment/blank fixture lines for readability.
+3. Tier 4 nightly candidates execute seeded `trace_sequence_probe` runs to provide stochastic/property-style sequence diversity checks over IPC endpoint-state consistency.

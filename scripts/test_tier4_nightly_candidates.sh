@@ -25,6 +25,7 @@ run_check "TRACE" bash -lc 'diff -u tests/artifacts/nightly/sele4n_run1.trace te
 run_check "TRACE" rg -n 'service restart status: some' tests/artifacts/nightly/sele4n_run1.trace
 run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/artifacts/nightly/sele4n_run1.trace
 run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/artifacts/nightly/sele4n_run1.trace
+run_check "TRACE" bash -lc "for seed in 7 13 29 47 101; do lake exe trace_sequence_probe \"\$seed\" 320; done"
 run_check "META" "${SCRIPT_DIR}/test_full.sh"
 
 finalize_report

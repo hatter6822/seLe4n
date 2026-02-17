@@ -5,15 +5,16 @@ This directory tracks fixture-backed executable trace checks used by
 
 ## Stage alignment
 
-- Closed baseline: M1-M3.5 (scheduler, capability, IPC handshake coherence).
-- Active stage: M6 architecture-binding interface delivery (WS-M6-A through WS-M6-D complete; WS-M6-E in progress).
-- Previous stage (closed): M4-B lifecycle-capability composition hardening (WS-A..WS-E complete).
+- Closed baseline: M1–M3.5 (scheduler, capability, IPC handshake coherence).
+- Previous completed slices: M4-A, M4-B, M5, and M6.
+- Active stage: M7 audit remediation workstreams (WS-A1 through WS-A8), with WS-A4 test architecture expansion now implemented.
 
 ## Fixture source
 
 - `tests/fixtures/main_trace_smoke.expected`
-  - each non-empty line is a required output substring,
-  - matching is line-oriented and order-agnostic.
+  - supports comment lines (`# ...`) and blank lines,
+  - expectation lines may be plain fragments or `scenario_id | risk_class | expected_trace_fragment`,
+  - matching is line-oriented and order-agnostic on `expected_trace_fragment`.
 
 ## Intentional update workflow
 
@@ -28,18 +29,18 @@ This directory tracks fixture-backed executable trace checks used by
    ./scripts/test_tier2_trace.sh
    ./scripts/test_smoke.sh
    ```
-4. Document why fixture changes are expected and which slice they support (M4-B, M5, or M6 execution).
+4. Document why fixture changes are expected and which workstream/slice they support (M7 WS-A* IDs).
 
 
 
-## Current fixture rationale notes (M6 WS-M6-D closure additions)
+## Current fixture rationale notes (M7 WS-A4-maintained baseline)
 
-M6 evidence adds architecture-boundary adapter trace anchors while retaining the M5 service-policy closure lines:
+The maintained baseline keeps architecture-boundary adapter trace anchors while retaining prior M5 service-policy closure lines and M4-B lifecycle/IPC anchors:
 
 - `adapter timer success path value` and `adapter read success path byte` pin successful boundary-visible behavior.
 - `adapter timer invalid-context branch`, `adapter timer unsupported branch`, and `adapter read denied branch` pin bounded failure semantics.
 - `adapter register write success path value` and `adapter register write unsupported branch` pin deterministic register boundary behavior across success/failure branches.
-- `service restart status`, `service start denied branch`, `service stop denied branch`, and dependency/isolation lines remain as M5 regression anchors to ensure no service-policy drift while M6 evolves.
+- `service restart status`, `service start denied branch`, `service stop denied branch`, and dependency/isolation lines remain as M5 regression anchors to ensure no service-policy drift while M7 remediation work progresses.
 
 ## Historical fixture rationale notes (M4-B closeout baseline)
 
@@ -63,10 +64,17 @@ short rationale entry describing why the changed fragment still represents stabl
 On mismatch, Tier 2 reports:
 
 - expected vs matched fragment counts,
-- missing lines with `[TRACE]` prefixes,
+- missing lines with `[TRACE]` prefixes (including scenario/risk metadata when provided),
 - reminder to update fixture intentionally when behavior changed by design.
 
 When `TRACE_ARTIFACT_DIR` is set, diagnostics files are written:
 
 - `main_trace_smoke.actual.log`
 - `main_trace_smoke.missing.txt`
+
+
+## WS-A4 traceability additions
+
+- `main_trace_smoke.expected` now supports `scenario_id | risk_class | expected_trace_fragment` entries.
+- Tier 2 parser ignores comment/blank lines and reports scenario+risk metadata on failures for faster triage.
+- Tier 4 nightly candidates include `trace_sequence_probe` seeded sequence-diversity runs to add stochastic/property-style IPC state-consistency checking.

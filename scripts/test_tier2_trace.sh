@@ -38,17 +38,52 @@ run_check "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
 expected_count=0
 matched_count=0
 
+trim_field() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
 while IFS= read -r expected_line || [[ -n "${expected_line}" ]]; do
   [[ -z "${expected_line}" ]] && continue
+  [[ "${expected_line}" =~ ^[[:space:]]*# ]] && continue
+
+  scenario_id=""
+  risk_class=""
+  expected_fragment="${expected_line}"
+
+  if [[ "${expected_line}" == *"|"* ]]; then
+    IFS='|' read -r raw_scenario raw_risk raw_fragment <<< "${expected_line}"
+    if [[ -n "${raw_fragment:-}" ]]; then
+      scenario_id="$(trim_field "${raw_scenario}")"
+      risk_class="$(trim_field "${raw_risk}")"
+      expected_fragment="$(trim_field "${raw_fragment}")"
+    fi
+  fi
+
+  if [[ -z "${expected_fragment}" ]]; then
+    record_failure "TRACE" "Fixture expectation line is empty after parsing: ${expected_line}"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      break
+    fi
+    continue
+  fi
+
   expected_count=$((expected_count + 1))
 
-  if grep -Fq "${expected_line}" "${TRACE_OUTPUT}"; then
+  if grep -Fq "${expected_fragment}" "${TRACE_OUTPUT}"; then
     matched_count=$((matched_count + 1))
     continue
   fi
 
-  printf '%s\n' "${expected_line}" >> "${MISSING_REPORT}"
-  record_failure "TRACE" "Missing expected trace line: ${expected_line}"
+  if [[ -n "${scenario_id}" || -n "${risk_class}" ]]; then
+    printf '%s\n' "${scenario_id} | ${risk_class} | ${expected_fragment}" >> "${MISSING_REPORT}"
+    record_failure "TRACE" "Missing expected trace line [${scenario_id}] (${risk_class}): ${expected_fragment}"
+  else
+    printf '%s\n' "${expected_fragment}" >> "${MISSING_REPORT}"
+    record_failure "TRACE" "Missing expected trace line: ${expected_fragment}"
+  fi
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
     break
   fi
