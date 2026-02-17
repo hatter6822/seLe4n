@@ -35,6 +35,7 @@ It also highlights where M6 closeout artifacts, active audit-remediation work, a
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
 - `SeLe4n/Kernel/Capability/Operations.lean`
 - `SeLe4n/Kernel/Capability/Invariant.lean`
+- `SeLe4n/Kernel/IPC/Operations.lean`
 - `SeLe4n/Kernel/IPC/Invariant.lean`
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`

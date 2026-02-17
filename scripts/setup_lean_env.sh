@@ -6,6 +6,23 @@ ELAN_HOME_DEFAULT="${HOME}/.elan"
 ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
 
+APT_UPDATE_DONE=0
+
+run_pkg_install() {
+  if command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+apt_update_once() {
+  if [ "${APT_UPDATE_DONE}" -eq 0 ]; then
+    run_pkg_install apt-get update
+    APT_UPDATE_DONE=1
+  fi
+}
+
 ensure_shellcheck() {
   if command -v shellcheck >/dev/null 2>&1; then
     return 0
@@ -13,16 +30,8 @@ ensure_shellcheck() {
 
   echo "[setup] shellcheck not found; attempting to install"
 
-  run_pkg_install() {
-    if command -v sudo >/dev/null 2>&1; then
-      sudo "$@"
-    else
-      "$@"
-    fi
-  }
-
   if command -v apt-get >/dev/null 2>&1; then
-    run_pkg_install apt-get update
+    apt_update_once
     run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck
   elif command -v dnf >/dev/null 2>&1; then
     run_pkg_install dnf install -y ShellCheck
@@ -51,16 +60,8 @@ ensure_ripgrep() {
 
   echo "[setup] ripgrep (rg) not found; attempting to install"
 
-  run_pkg_install() {
-    if command -v sudo >/dev/null 2>&1; then
-      sudo "$@"
-    else
-      "$@"
-    fi
-  }
-
   if command -v apt-get >/dev/null 2>&1; then
-    run_pkg_install apt-get update
+    apt_update_once
     run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep
   elif command -v dnf >/dev/null 2>&1; then
     run_pkg_install dnf install -y ripgrep

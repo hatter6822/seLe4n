@@ -63,20 +63,16 @@ Promote proof-surface and determinism checks to enforced CI gates while reducing
 
 ---
 
-### WS-A2 — Architecture modularity and API surface (High)
+### WS-A2 — Architecture modularity and API surface (High) ✅ completed
 
 **Objective**
 Keep module symmetry and maintain a stable syscall-facing facade.
 
-**Scope**
-- preserve IPC operations/invariant separation,
-- keep theorem names and imports stable where feasible,
-- keep `SeLe4n/Kernel/API.lean` as the explicit public boundary.
-
-**Acceptance criteria**
-- no semantic drift in Tier 2 traces,
-- Tier 3 anchors remain accurate and passing,
-- architecture docs reflect dependency and API-boundary changes.
+**Closure evidence (implemented)**
+- IPC transition semantics are now isolated in `SeLe4n/Kernel/IPC/Operations.lean`,
+- IPC invariant/proof obligations remain in `SeLe4n/Kernel/IPC/Invariant.lean`,
+- `SeLe4n/Kernel/API.lean` preserves a stable public import facade while exporting both IPC layers,
+- architecture docs now map IPC as `Kernel/IPC/{Operations,Invariant}.lean` with explicit dependency boundaries.
 
 ---
 
