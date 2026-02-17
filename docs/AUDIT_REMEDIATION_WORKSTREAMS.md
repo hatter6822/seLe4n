@@ -89,7 +89,7 @@ Eliminate cross-domain confusion by replacing raw aliases with wrappers.
 
 ---
 
-### WS-A4 — Test architecture expansion (Medium)
+### WS-A4 — Test architecture expansion (Medium) ✅ completed
 
 **Objective**
 Scale evidence beyond fixed-path fixtures and improve behavioral confidence depth.
