@@ -36,10 +36,10 @@ The remediation program targets eight concrete repository outcomes:
    - improve workflow determinism and cache efficiency,
    - document branch protection and required evidence flows.
 
-2. **WS-A2 — Architecture modularity and API surface**
-   - maintain operations/invariant symmetry,
-   - isolate and stabilize public API surfaces,
-   - reduce hidden coupling between modules.
+2. **WS-A2 — Architecture modularity and API surface** ✅ **completed**
+   - split IPC operations (`SeLe4n/Kernel/IPC/Operations.lean`) from invariant/proof surfaces (`SeLe4n/Kernel/IPC/Invariant.lean`),
+   - preserve `SeLe4n/Kernel/API.lean` as the stable public facade with explicit IPC exports,
+   - update architecture maps to document the now-symmetric module layout and dependency boundaries.
 
 3. **WS-A3 — Type-safety uplift for IDs/pointers**
    - migrate critical aliases to explicit wrappers,

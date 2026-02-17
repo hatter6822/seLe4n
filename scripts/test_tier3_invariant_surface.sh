@@ -72,7 +72,9 @@ run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantB
 run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-2 transition anchors must remain present.
-run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def endpointSend' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def endpointReceive' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-3 scheduler-contract predicate anchors must remain present.

@@ -59,21 +59,21 @@ Concretely, M7 should leave the repository in a state where:
 - no milestone-moving PR bypasses proof-surface checks ✅,
 - failed checks produce actionable diagnostics ✅.
 
-### WS-A2 — Architecture modularity and API surface
+### WS-A2 — Architecture modularity and API surface ✅ completed
 
 **Intent:** make subsystem boundaries composable for future platform binding work.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- maintain symmetry between operations and invariants,
-- keep external entrypoints stable via `SeLe4n/Kernel/API.lean`,
-- preserve theorem discoverability while moving internal modules.
+- IPC transitions are split into `SeLe4n/Kernel/IPC/Operations.lean` while proof/invariant obligations remain in `SeLe4n/Kernel/IPC/Invariant.lean`,
+- external entrypoints remain stable through `SeLe4n/Kernel/API.lean` with explicit IPC operations + invariant exports,
+- architecture maps/documentation now reflect the split and dependency direction without hidden IPC coupling.
 
-**DoD signals:**
+**DoD signals status:**
 
-- IPC layering is split and mapped in docs,
-- dependent imports are minimal and explicit,
-- no trace/theorem regression during refactors.
+- IPC layering is split and mapped in docs ✅,
+- dependent imports are minimal and explicit ✅,
+- no trace/theorem regression during refactors ✅.
 
 ### WS-A3 — Type-safety uplift for IDs and pointers
 

@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.7] - 2026-02-17
+
+### Tooling setup optimization
+- Refactored `scripts/setup_lean_env.sh` to share package-manager helpers and perform `apt-get update` at most once even when both `shellcheck` and `ripgrep` are missing.
+- Preserved all existing installer behavior while reducing duplicated setup work/noise in cold environments.
+
+## [0.8.6] - 2026-02-17
+
+### Audit/Sync hardening
+- Performed full post-WS-A2 repository validation sweep (`test_fast`, `test_smoke`, `test_full`, `test_nightly`) and confirmed all tiers pass without regressions.
+- Synchronized roadmap and audit-context docs so M7 status explicitly reflects WS-A1/WS-A2 as completed while preserving historical audit snapshot intent.
+- Clarified historical audit caveat language so architecture criticisms about IPC split are interpreted as pre-remediation findings, not current-state defects.
+
+## [0.8.5] - 2026-02-17
+
+### Architecture / API modularity (WS-A2)
+- Split IPC transition semantics into `SeLe4n/Kernel/IPC/Operations.lean` and retained invariant/proof obligations in `SeLe4n/Kernel/IPC/Invariant.lean` to restore operations/invariant symmetry.
+- Kept `SeLe4n/Kernel/API.lean` as the stable external facade while explicitly exporting IPC operations and invariant surfaces.
+- Updated development documentation and GitBook architecture maps/workstream tracking to mark WS-A2 complete with closure evidence.
+
 ## [0.8.4] - 2026-02-17
 
 ### CI / Tooling reliability

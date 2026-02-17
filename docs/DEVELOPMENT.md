@@ -228,6 +228,14 @@ Use this model for all milestone-moving work while M7 is active:
 - **Phase 2 (quality depth):** WS-A3 and WS-A4 after boundaries are stable.
 - **Phase 3 (trajectory hardening):** WS-A7 and WS-A8 once migration churn decreases.
 
+### 6.2.1 Current completion snapshot
+
+- ✅ **Completed:** WS-A1, WS-A2
+- ▶️ **Primary in-progress focus:** WS-A3, WS-A5
+- 📝 **Planned follow-on:** WS-A4, WS-A6, WS-A7, WS-A8
+
+(Authoritative closure evidence remains in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` and GitBook chapter 21.)
+
 ### 6.3 Required checkpoint summary format
 
 Checkpoint summaries should include:

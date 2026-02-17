@@ -62,8 +62,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 ### IPC subsystem
 
+- `SeLe4n/Kernel/IPC/Operations.lean`
+  - endpoint transitions (`send`, `awaitReceive`, `receive`).
 - `SeLe4n/Kernel/IPC/Invariant.lean`
-  - endpoint transitions (`send`, `awaitReceive`, `receive`),
   - endpoint + IPC invariants,
   - scheduler-coherence contract predicates,
   - preservation theorem entrypoints.
@@ -112,7 +113,7 @@ SeLe4n.lean
     ├── Model/State.lean
     ├── Kernel/Scheduler/{Operations,Invariant}.lean
     ├── Kernel/Capability/{Operations,Invariant}.lean
-    ├── Kernel/IPC/Invariant.lean   ← planned WS-A2 split
+    ├── Kernel/IPC/{Operations,Invariant}.lean
     ├── Kernel/Lifecycle/{Operations,Invariant}.lean
     ├── Kernel/Service/{Operations,Invariant}.lean
     └── Kernel/Architecture/{Assumptions,Adapter,Invariant}.lean
