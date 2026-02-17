@@ -41,6 +41,7 @@ The maintained baseline keeps architecture-boundary adapter trace anchors while 
 - `adapter timer invalid-context branch`, `adapter timer unsupported branch`, and `adapter read denied branch` pin bounded failure semantics.
 - `adapter register write success path value` and `adapter register write unsupported branch` pin deterministic register boundary behavior across success/failure branches.
 - `service restart status`, `service start denied branch`, `service stop denied branch`, and dependency/isolation lines remain as M5 regression anchors to ensure no service-policy drift while M7 remediation work progresses.
+- WS-A4 scale-expansion anchors now include deep CNode radix shape, large runnable queue scheduling, multi-endpoint IPC receives, depth-5 service dependency startup, and low/high boundary memory reads.
 
 ## Historical fixture rationale notes (M4-B closeout baseline)
 

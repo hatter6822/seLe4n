@@ -96,6 +96,7 @@ Scale evidence beyond fixed-path fixtures and improve behavioral confidence dept
 
 **Closure evidence (implemented)**
 - Tier 2 fixture entries are now scenario/risk tagged (`scenario_id | risk_class | expected_trace_fragment`) with comment support for readable, auditable maintenance,
+- Tier 2 fixtures now explicitly cover the audit-recommended scale set (deep CNode radix shape, large runnable queue, multiple IPC endpoints, depth-5 service dependency chain, boundary memory addresses),
 - Tier 2 trace parser surfaces scenario+risk metadata in concise failure reports,
 - Tier 4 nightly candidates execute seeded `trace_sequence_probe` runs that check IPC endpoint-state consistency under sequence-diverse operation streams.
 

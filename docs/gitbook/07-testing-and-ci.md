@@ -10,6 +10,7 @@
 - **Tier 2 (trace/behavior)**
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
   - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
+  - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
 - **Tier 3 (invariant and documentation anchor surface)**
   - validates critical theorem/bundle/doc anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
