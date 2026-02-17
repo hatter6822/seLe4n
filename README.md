@@ -12,7 +12,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
-- **Current package version:** `0.8.7` (see `lakefile.toml`).
+- **Current package version:** `0.8.10` (see `lakefile.toml`).
 
 ### Current slice target outcomes (M7)
 

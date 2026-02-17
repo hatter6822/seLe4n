@@ -30,7 +30,7 @@ resolves to a TCB in the object store. -/
 def currentThreadValid (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
-  | some tid => ∃ tcb : TCB, st.objects tid = some (.tcb tcb)
+  | some tid => ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb)
 
 /-- Invariant bundle that should eventually mirror seL4 proof obligations. -/
 def kernelInvariant (st : SystemState) : Prop :=

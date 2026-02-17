@@ -76,20 +76,16 @@ Keep module symmetry and maintain a stable syscall-facing facade.
 
 ---
 
-### WS-A3 — Type-safety uplift for IDs and pointers (High)
+### WS-A3 — Type-safety uplift for IDs and pointers (High) ✅ completed
 
 **Objective**
 Eliminate cross-domain confusion by replacing raw aliases with wrappers.
 
-**Scope**
-- migrate `ThreadId`, `ObjId`, `CPtr`, and `Slot` to newtypes,
-- update operation signatures and theorem statements,
-- add migration helper constructors/projections for proof ergonomics.
-
-**Acceptance criteria**
-- invalid cross-domain argument mixes fail at compile-time,
-- no net loss of theorem coverage,
-- no new placeholder debt (`sorry`/`admit`).
+**Closure evidence (implemented)**
+- migrated `ThreadId`, `ObjId`, `CPtr`, and `Slot` from `abbrev` aliases to dedicated wrapper structures in `SeLe4n/Prelude.lean`,
+- added explicit constructor/projection helpers (`ofNat`/`toNat`) and typed bridge instances used by existing theorem and transition surfaces,
+- adapted scheduler/IPC invariant typing so runnable-membership obligations are carried by `ThreadId` while object-store keys remain `ObjId`,
+- validated all test tiers (`test_fast`, `test_smoke`, `test_full`, `test_nightly`) with no placeholder debt introduced.
 
 ---
 
