@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.17] - 2026-02-17
+
+### Documentation/GitBook sync audit hardening
+- Closed remaining WS-A6-era documentation drift by marking WS-A4 as completed in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` to match existing closure evidence and the active-slice status pages.
+- Updated `docs/gitbook/13-future-slices-and-delivery-plan.md` so M7 workstream statuses are synchronized with current slice reality (WS-A1..WS-A6 completed, WS-A7 in progress, WS-A8 planned).
+- Bumped package patch version to `0.8.17` and synchronized the root README version marker.
+
+## [0.8.16] - 2026-02-17
+
+### WS-A6 documentation IA completion
+- Marked WS-A6 as completed across remediation planning and active-slice GitBook chapters with explicit closure evidence and DoD status updates.
+- Added a contributor-first 5-minute onboarding path in `CONTRIBUTING.md`, synchronized root `README.md` start-here ordering, and mirrored the same quickstart flow in `docs/gitbook/README.md`.
+- Updated M7 completion snapshot in `docs/DEVELOPMENT.md` to reflect WS-A6 closure and move active focus to WS-A7.
+
 ## [0.8.15] - 2026-02-17
 
 ### WS-A5 regression-guard refinement
