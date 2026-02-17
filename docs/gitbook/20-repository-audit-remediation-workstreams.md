@@ -63,10 +63,11 @@ The remediation program targets eight concrete repository outcomes:
    - aligned handbook structure with contributor entry flow via quickstart sequencing in `docs/gitbook/README.md`,
    - synchronized active/next slice status markers across root docs and GitBook workstream chapters.
 
-7. **WS-A7 — Proof documentation and maintainability automation**
-   - increase theorem docstring coverage,
-   - reduce repetitive proof patterns,
-   - preserve readability while improving changeability.
+7. **WS-A7 — Proof documentation and maintainability automation** ✅ **completed**
+   - added theorem-purpose docstrings for endpoint scheduler-bundle theorem entrypoints,
+   - consolidated repeated scheduler-bundle proof blocks through `endpoint_store_preserves_schedulerInvariantBundle`,
+   - preserved readability by keeping transition-specific obligations explicit in wrapper theorems.
+   - status in active slice: **completed** (see chapter 21 closure evidence).
 
 8. **WS-A8 — Platform/security maturity for post-remediation path**
    - add architecture-relevant CI expansion,

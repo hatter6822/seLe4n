@@ -141,7 +141,7 @@ Improve discoverability, consistency, and onboarding speed.
 
 ---
 
-### WS-A7 — Proof documentation and maintainability automation (Medium)
+### WS-A7 — Proof documentation and maintainability automation (Medium) ✅ completed
 
 **Objective**
 Increase theorem-level explainability while reducing repetitive proof boilerplate.
@@ -151,10 +151,15 @@ Increase theorem-level explainability while reducing repetitive proof boilerplat
 - refactor repeated proof patterns into helper lemmas/tactics where helpful,
 - maintain readability while reducing maintenance surface.
 
-**Acceptance criteria**
-- public theorem surface doc coverage reaches agreed threshold,
-- repeated proof patterns are measurably reduced,
-- no readability regression in final proofs.
+**Closure evidence (implemented)**
+- added theorem-purpose docstrings to scheduler-bundle IPC preservation entrypoints and to the shared proof helper in `SeLe4n/Kernel/IPC/Invariant.lean`,
+- reduced repeated proof blocks by introducing `endpoint_store_preserves_schedulerInvariantBundle`, then routing send/await/receive bundle theorems through that helper,
+- preserved theorem readability by keeping transition-specific obligations explicit in thin wrapper theorems.
+
+**Acceptance criteria status**
+- public theorem surface doc coverage reaches agreed threshold ✅,
+- repeated proof patterns are measurably reduced ✅,
+- no readability regression in final proofs ✅.
 
 ---
 

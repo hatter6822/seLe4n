@@ -142,21 +142,21 @@ Concretely, M7 should leave the repository in a state where:
 - GitBook hierarchy mirrors actual development flow ✅,
 - active slice status is consistent across canonical docs ✅.
 
-### WS-A7 — Proof documentation and maintainability automation
+### WS-A7 — Proof documentation and maintainability automation ✅ completed
 
 **Intent:** reduce proof fragility and increase theorem-level legibility.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- add concise theorem purpose docstrings,
-- eliminate copy-paste proof blocks via reusable helpers,
-- preserve readability while reducing maintenance surface.
+- theorem-purpose docstrings now annotate the shared endpoint-store scheduler-bundle helper and endpoint send/await/receive scheduler-bundle entrypoints in `SeLe4n/Kernel/IPC/Invariant.lean`,
+- repetitive scheduler-bundle proof blocks were consolidated into reusable helper theorem `endpoint_store_preserves_schedulerInvariantBundle`,
+- transition-specific obligations remain explicit in thin wrapper theorems, preserving review readability while reducing maintenance surface.
 
-**DoD signals:**
+**DoD signals status:**
 
-- public theorem surfaces are documented,
-- repeated proof patterns are parameterized,
-- reviewers can identify preservation obligations faster.
+- public theorem surfaces are documented ✅,
+- repeated proof patterns are parameterized ✅,
+- reviewers can identify preservation obligations faster ✅.
 
 ### WS-A8 — Platform/security maturity for next slice readiness
 

@@ -13,7 +13,7 @@ Current stage context: **M6 architecture-boundary delivery is complete (WS-M6-A 
 - **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
   including M4-A executable-anchor checks for lifecycle unauthorized/illegal-state/success trace fragments.
-- **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point)
+- **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)
 
 ## 3. Required entrypoints and CI contract
 

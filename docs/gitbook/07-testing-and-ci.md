@@ -16,6 +16,7 @@
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
 - **Tier 4 (nightly staged extension candidates)**
   - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + full-suite replay candidates,
+  - `./scripts/test_nightly.sh` uses mode-aware status messaging (default extension-point guidance vs explicit executed signal when `NIGHTLY_ENABLE_EXPERIMENTAL=1`),
   - includes seeded `trace_sequence_probe` sequence-diversity checks in experimental mode,
   - default remains explicit extension-point behavior unless `NIGHTLY_ENABLE_EXPERIMENTAL=1` is set.
 
