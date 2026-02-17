@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.16] - 2026-02-17
+
+### WS-A6 documentation IA completion
+- Marked WS-A6 as completed across remediation planning and active-slice GitBook chapters with explicit closure evidence and DoD status updates.
+- Added a contributor-first 5-minute onboarding path in `CONTRIBUTING.md`, synchronized root `README.md` start-here ordering, and mirrored the same quickstart flow in `docs/gitbook/README.md`.
+- Updated M7 completion snapshot in `docs/DEVELOPMENT.md` to reflect WS-A6 closure and move active focus to WS-A7.
+
 ## [0.8.15] - 2026-02-17
 
 ### WS-A5 regression-guard refinement

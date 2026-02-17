@@ -12,6 +12,14 @@ Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance
 
 Root contributor-entry docs: [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`CHANGELOG.md`](../CHANGELOG.md).
 
+## Contributor quickstart path (mirrors root README)
+
+1. [Development Workflow](06-development-workflow.md)
+2. [Testing & CI](07-testing-and-ci.md)
+3. [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
+4. [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
+5. [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md)
+
 ## Recommended navigation
 
 ### 1) Orientation

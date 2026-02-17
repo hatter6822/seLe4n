@@ -58,10 +58,10 @@ The remediation program targets eight concrete repository outcomes:
    - document trusted-contract policy and review expectations.
    - status in active slice: **completed** (see chapter 21 closure evidence).
 
-6. **WS-A6 — Documentation IA and contributor UX**
-   - standardize root-level contributor guidance,
-   - align handbook structure with current execution flow,
-   - keep active/next slice status synchronized everywhere.
+6. **WS-A6 — Documentation IA and contributor UX** ✅ **completed**
+   - standardized root-level contributor guidance with a 5-minute path in `CONTRIBUTING.md` and synchronized ordering in `README.md`,
+   - aligned handbook structure with contributor entry flow via quickstart sequencing in `docs/gitbook/README.md`,
+   - synchronized active/next slice status markers across root docs and GitBook workstream chapters.
 
 7. **WS-A7 — Proof documentation and maintainability automation**
    - increase theorem docstring coverage,

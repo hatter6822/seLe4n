@@ -126,21 +126,21 @@ Concretely, M7 should leave the repository in a state where:
 - policy is enforced by contributor checklist language ✅,
 - contract intent is unambiguous in code and docs ✅.
 
-### WS-A6 — Documentation IA and contributor UX
+### WS-A6 — Documentation IA and contributor UX ✅ completed
 
 **Intent:** make contributor onboarding and milestone navigation frictionless.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- keep root docs and handbook chapter ordering synchronized,
-- avoid stale slice markers,
-- capture current and next-slice context in every milestone chapter.
+- root onboarding now provides an explicit 5-minute contributor path in `CONTRIBUTING.md` and synchronized start-here ordering in `README.md`,
+- GitBook handbook index (`docs/gitbook/README.md`) now includes a contributor quickstart sequence that mirrors root entrypoints and active-slice chapters,
+- M7 status markers are synchronized across development docs, remediation workstream pages, and this active-slice chapter.
 
-**DoD signals:**
+**DoD signals status:**
 
-- a new contributor can find setup/workflow/testing path from root in minutes,
-- GitBook hierarchy mirrors actual development flow,
-- active slice status is consistent across canonical docs.
+- a new contributor can find setup/workflow/testing path from root in minutes ✅,
+- GitBook hierarchy mirrors actual development flow ✅,
+- active slice status is consistent across canonical docs ✅.
 
 ### WS-A7 — Proof documentation and maintainability automation
 

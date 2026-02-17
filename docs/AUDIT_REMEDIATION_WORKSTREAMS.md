@@ -124,20 +124,20 @@ Prevent accidental production use of permissive runtime contracts.
 
 ---
 
-### WS-A6 — Documentation IA refresh and contributor experience (Medium)
+### WS-A6 — Documentation IA refresh and contributor experience (Medium) ✅ completed
 
 **Objective**
 Improve discoverability, consistency, and onboarding speed.
 
-**Scope**
-- publish/maintain root contribution and change history artifacts,
-- synchronize root docs with GitBook navigation,
-- rebalance handbook chapters around active slice and next-slice path.
+**Closure evidence (implemented)**
+- root onboarding now includes an explicit 5-minute contributor path in `CONTRIBUTING.md` and synchronized start-here ordering in `README.md`,
+- GitBook handbook index now mirrors this path through a dedicated contributor quickstart sequence in `docs/gitbook/README.md`,
+- active-slice markers and completion snapshots are synchronized across root docs, remediation plan chapters, and current-slice chapter status.
 
-**Acceptance criteria**
-- new contributors find contribution policy from repo root,
-- slice progression is auditable in one navigation flow,
-- no conflicting active-slice markers remain.
+**Acceptance criteria status**
+- contribution policy and required workflow are discoverable from repo root ✅,
+- slice progression is auditable through one contributor-first navigation path ✅,
+- conflicting active-slice markers were removed/synchronized ✅.
 
 ---
 
