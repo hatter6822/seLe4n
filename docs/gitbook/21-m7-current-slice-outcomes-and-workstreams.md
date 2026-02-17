@@ -109,21 +109,22 @@ Concretely, M7 should leave the repository in a state where:
 - failure output is concise enough for rapid debugging ✅,
 - CI or nightly runs include nontrivial sequence diversity ✅.
 
-### WS-A5 — Hardware-boundary safety and test-only contract separation
+### WS-A5 — Hardware-boundary safety and test-only contract separation ✅ completed
 
 **Intent:** prevent permissive contracts from leaking into runtime-facing semantics.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- isolate permissive runtime contracts in testing-only namespaces,
-- encode import boundaries that make misuse obvious in review,
-- document trusted-contract policy and examples.
+- permissive runtime fixtures are moved into testing-only module `SeLe4n/Testing/RuntimeContractFixtures.lean` and exposed under `SeLe4n.Testing.*`,
+- `Main.lean` now consumes those test fixtures via explicit testing-module import instead of defining permissive contracts inline,
+- Tier 0 hygiene includes an import-boundary guard that fails if any `SeLe4n/` module references test-only runtime contract fixtures,
+- trusted-vs-test contract policy and contributor/reviewer checklist language are now published in `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`.
 
-**DoD signals:**
+**DoD signals status:**
 
-- no production path references permissive test contracts,
-- policy is enforced by contributor checklist language,
-- contract intent is unambiguous in code and docs.
+- no production path references permissive test contracts ✅,
+- policy is enforced by contributor checklist language ✅,
+- contract intent is unambiguous in code and docs ✅.
 
 ### WS-A6 — Documentation IA and contributor UX
 

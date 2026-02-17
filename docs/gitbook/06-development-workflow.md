@@ -45,6 +45,8 @@ When semantics or milestone boundaries change, keep these in sync:
 
 Contributors should treat M1–M6 theorem surfaces as stable interfaces and land M7 remediation work without reshaping already-closed contracts.
 
+For architecture-boundary changes, follow the trusted-vs-test contract isolation rules in [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
 ## Definition of done for milestone-moving PRs
 
 A PR that claims milestone movement should include:

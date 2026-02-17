@@ -52,10 +52,11 @@ The remediation program targets eight concrete repository outcomes:
    - incorporate stochastic/property-style checks where practical.
    - status in active slice: **completed** (see chapter 21 closure evidence).
 
-5. **WS-A5 — Hardware-boundary safety + test-only contracts**
+5. **WS-A5 — Hardware-boundary safety + test-only contracts** ✅ **completed**
    - isolate permissive contracts to test-only modules,
    - prevent accidental production-surface usage,
    - document trusted-contract policy and review expectations.
+   - status in active slice: **completed** (see chapter 21 closure evidence).
 
 6. **WS-A6 — Documentation IA and contributor UX**
    - standardize root-level contributor guidance,

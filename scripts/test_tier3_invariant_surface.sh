@@ -43,6 +43,15 @@ run_check "INVARIANT" rg -n '^theorem assumptionContractMap_nonempty' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem assumptionTransitionMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 
+
+# WS-A5 closure anchors: test-only contract fixture separation + policy visibility.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.RuntimeContractFixtures$' Main.lean
+run_check "INVARIANT" rg -n '^def runtimeContractAcceptAll' SeLe4n/Testing/RuntimeContractFixtures.lean
+run_check "INVARIANT" rg -n '^def runtimeContractDenyAll' SeLe4n/Testing/RuntimeContractFixtures.lean
+run_check "DOC" rg -n '^# Hardware Boundary Contract Policy' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
+run_check "DOC" rg -n 'SeLe4n/Kernel.*must not reference test-only runtime contract' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
+run_check "DOC" rg -n 'scripts/test_tier0_hygiene\.sh' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
+
 # WS-A3 boundary hardening anchors must remain explicit.
 run_check "INVARIANT" rg -n '^@\[inline\] def toObjId' SeLe4n/Prelude.lean
 run_check "INVARIANT" bash -lc "if rg -n '^instance : Coe ThreadId ObjId where' SeLe4n/Prelude.lean; then echo 'Implicit ThreadId -> ObjId coercion must remain absent.' >&2; exit 1; fi"

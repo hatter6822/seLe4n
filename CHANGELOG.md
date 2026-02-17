@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.15] - 2026-02-17
+
+### WS-A5 regression-guard refinement
+- Added Tier 3 invariant/doc anchors for WS-A5 closure evidence: fixture-module presence, `Main.lean` fixture import, and hardware-boundary policy guard language.
+- Preserved full Tier 0–4 validation after extending regression anchors.
+
+## [0.8.14] - 2026-02-17
+
+### WS-A5 audit follow-up hardening
+- Hardened Tier 0 import-boundary hygiene to include a non-`rg` fallback scan path, preventing false failures in environments where ripgrep is unavailable.
+- Tightened `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` wording so policy scope matches enforcement (`SeLe4n/Kernel`).
+
+## [0.8.13] - 2026-02-17
+
+### Hardware-boundary safety / WS-A5 completion
+- Isolated permissive runtime contract fixtures into `SeLe4n/Testing/RuntimeContractFixtures.lean` and updated `Main.lean` to consume them from a testing-only module.
+- Added Tier 0 hygiene boundary enforcement to fail if production modules under `SeLe4n/` reference test-only runtime contract fixtures.
+- Added `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` and synchronized remediation/GitBook workstream status to mark WS-A5 complete.
+
 ## [0.8.12] - 2026-02-17
 
 ### Testing / WS-A4 completion hardening
