@@ -17,6 +17,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  pull-requests: read
 
 jobs:
   architecture-arm64-fast:

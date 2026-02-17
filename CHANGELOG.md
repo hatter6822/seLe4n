@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1] - 2026-02-17
+
+### CI security-scan reliability fix
+- Fixed `Platform and Security Baseline` workflow permissions by adding `pull-requests: read`, resolving Gitleaks pull-request commit enumeration failures (`Resource not accessible by integration`) in the `Security Signal / Secret + Dependency + CodeQL` job.
+- Updated `docs/CI_POLICY.md` to document the `pull-requests: read` requirement and rationale for the Gitleaks PR scan path.
+- Added Tier 3 invariant/doc anchor coverage to ensure the workflow retains `pull-requests: read` in future refactors.
+- Bumped package version to `0.9.1` and synchronized README version marker.
+
 ## [0.9.0] - 2026-02-17
 
 ### M7 exit-gate closeout and next-slice activation

@@ -332,6 +332,7 @@ run_check "DOC" rg -n '^name: Platform and Security Baseline' .github/workflows/
 run_check "DOC" rg -n '^\s*name: Platform Signal / ARM64 Fast Gate' .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n '^\s*name: Security Signal / Secret \+ Dependency \+ CodeQL' .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n "if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository" .github/workflows/platform_security_baseline.yml
+run_check "DOC" rg -n "^\s*pull-requests:\s*read" .github/workflows/platform_security_baseline.yml
 run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
