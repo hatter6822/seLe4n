@@ -66,3 +66,4 @@ The `Platform and Security Baseline` workflow (`.github/workflows/platform_secur
 This workflow runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
 For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
+The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
