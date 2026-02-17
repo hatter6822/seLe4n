@@ -52,7 +52,7 @@ The active remediation slice is successful when contributors deliver all of the 
 3. type-safety, testing-depth, and documentation-governance upgrades mapped to audit findings,
 4. traceable closure of audit criticisms/recommendations with synchronized code/proof/test/docs evidence.
 
-See the dedicated execution chapter: [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md).
+See dedicated execution chapters: [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md) and [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md).
 
 ## 6. Hardware trajectory update
 

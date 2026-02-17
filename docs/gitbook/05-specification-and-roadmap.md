@@ -10,7 +10,8 @@ Milestone status for planning purposes:
 - M4-A complete,
 - M4-B complete,
 - M5 complete,
-- **M6 complete**.
+- **M6 complete**,
+- **M7 active (audit remediation workstreams)**.
 
 Post-M6 planning should build on existing transition and theorem surfaces rather than restructuring
 closed milestone contracts.
@@ -23,58 +24,57 @@ Contributors should treat these as stable unless a spec-level change is explicit
 2. layered invariant composition across scheduler/capability/IPC/lifecycle/service modules,
 3. local + composed preservation entrypoints for established transitions,
 4. fixture-backed executable traces for core success/failure stories,
-5. Tier 3 theorem/invariant symbol anchors for claimed surfaces.
+5. Tier 3 theorem/invariant symbol anchors for claimed surfaces,
+6. explicit architecture-boundary assumptions and adapter preservation hooks from M6.
 
 ## 3. Completed predecessor slice recap: M6
 
 M6 scope: **architecture-binding interfaces and hardware-facing assumption hardening**.
 
-### M6 target outcomes
+### M6 target outcomes (all complete)
 
-1. **Assumption extraction and interface definition**
-   - architecture-facing assumptions become explicit interfaces.
-2. **Adapter semantics and bounded error surfaces**
-   - adapter operations remain deterministic and failure-explicit.
-3. **Composed proof continuity**
-   - adapters connect to existing invariant bundles without flattening proof layering.
-4. **Hardware-boundary contract hardening**
-   - boot/runtime obligations are represented as concrete contracts.
-5. **Evidence continuity**
-   - tests and traces expand with no Tier 0–3 contract regression.
+1. assumption extraction and interface definition,
+2. adapter semantics and bounded error surfaces,
+3. composed proof continuity,
+4. hardware-boundary contract hardening,
+5. evidence continuity across test tiers.
 
-### M6 workstreams
+Detailed archive: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-- **WS-M6-A:** assumption inventory and boundary extraction ✅ completed (`SeLe4n/Kernel/Architecture/Assumptions.lean`),
-- **WS-M6-B:** interface API + adapter semantics ✅ completed (`SeLe4n/Kernel/Architecture/Adapter.lean`),
-- **WS-M6-C:** proof integration with existing bundles ✅ completed (`SeLe4n/Kernel/Architecture/Invariant.lean`),
-- **WS-M6-D:** executable evidence and test-anchor expansion ✅ completed (`Main.lean`, `tests/fixtures/main_trace_smoke.expected`, `scripts/test_tier3_invariant_surface.sh`),
-- **WS-M6-E:** documentation synchronization and handoff packaging ✅ completed.
-
-Detailed execution guidance: [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
-
-### Non-goals for M6
-
-- full platform bring-up,
-- architecture-specific performance tuning,
-- replacing M1–M5 theorem APIs unless required for soundness,
-- broad subsystem redesign not required for architecture-boundary clarity.
-
-## 4. M6 closeout handoff signals
-
-1. WS-M6-A through WS-M6-E are complete and traceable from docs to code/proofs/tests.
-2. Boundary contracts are explicit enough to support Raspberry Pi 5-first instantiation work.
-3. Risk controls now focus on contract-instantiation discipline rather than boundary extraction.
-
-## 5. Current active slice preview: M7 audit remediation
+## 4. Current active slice: M7 audit remediation
 
 Current active direction is **repository-audit remediation workstreams (WS-A1 through WS-A8)**.
 
-Indicative outcomes:
+### M7 slice objectives
 
-1. promote CI/test gates and harden delivery controls,
-2. complete architecture and API-surface cleanup identified by the audit,
-3. improve type safety and test-scale coverage without regressing M1–M6 proofs,
-4. synchronize documentation and governance artifacts as measurable closure evidence.
+1. harden CI/test gates and branch-policy evidence,
+2. improve architecture API clarity and module symmetry,
+3. complete high-value type-safety migration,
+4. expand test depth for scale and edge-heavy scenarios,
+5. isolate test-only contracts from runtime-facing paths,
+6. align root docs + handbook for current/next-slice clarity,
+7. improve proof maintainability and theorem explainability,
+8. establish platform/security readiness for the next slice.
+
+### M7 planning links
+
+- [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md)
+- [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
+- [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](../AUDIT_REMEDIATION_WORKSTREAMS.md)
+
+## 5. Next-slice preview (post-M7)
+
+After M7 closes, planned direction is a **hardware-oriented expansion slice** with Raspberry Pi 5
+as first architecture focus.
+
+Primary goals for that slice:
+
+1. bind explicit assumptions to platform-facing constraints,
+2. evolve adapters with architecture-specific specialization while preserving determinism,
+3. add architecture-targeted evidence tracks in CI/test layers,
+4. publish staged information-flow/security proof milestones.
+
+See [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md).
 
 ## 6. Transition gates
 
@@ -87,27 +87,28 @@ Verified signals:
 3. Tier 3 anchors include M5 theorem/invariant symbols,
 4. docs synchronized for M5 closure.
 
-### Gate: M5 → M6 (completed)
+### Gate: M6 closeout (completed)
 
-Progress snapshot:
+Verified signals:
 
-1. architecture assumptions explicit and reviewable ✅ (WS-M6-A complete),
-2. interface artifacts preserve M1–M5 theorem layering ✅ (WS-M6-B and WS-M6-C complete),
-3. test obligations added without regressing required gates ✅ (WS-M6-D and WS-M6-E complete).
+1. architecture assumptions explicit and reviewable,
+2. interface artifacts preserve M1–M5 theorem layering,
+3. test obligations added without regressing required gates.
 
-### Gate: audit remediation → Raspberry Pi 5 binding slice (planned)
+### Gate: M7 → next slice (planned)
 
 Require all:
 
-1. high-priority remediation workstreams are closed with evidence,
+1. high-priority remediation workstreams are closed with reproducible evidence,
 2. CI and test obligations (including promoted proof-surface gates) are stable,
-3. documentation consistently marks audit remediation as complete and hardware-binding as next.
+3. documentation consistently marks M7 as complete and next-slice path as active,
+4. hardware-path assumptions and ownership table are published.
 
-## 7. Risk register (post-M6 / remediation-active updated)
+## 7. Risk register (remediation-active)
 
 1. **Semantic/proof skew**
-   - risk: adapter semantics change without theorem updates,
-   - mitigation: enforce transition + theorem pairing in PR templates.
+   - risk: transition changes land without theorem updates,
+   - mitigation: enforce transition + theorem pairing and Tier 3 anchors.
 2. **Roadmap drift**
    - risk: docs describe conflicting active slices,
    - mitigation: synchronize README/spec/DEVELOPMENT/GitBook in one PR.
@@ -116,10 +117,10 @@ Require all:
    - mitigation: require local interface contracts + bridge lemmas.
 4. **Hardware-path premature lock-in**
    - risk: overfitting before remediation controls stabilize,
-   - mitigation: keep Raspberry Pi 5 work post-remediation and contract-driven.
+   - mitigation: keep platform work contract-driven and simulation-backed initially.
 
 ## 8. Contributor operating cadence
 
-1. per PR: state M6 workstream advanced + next unlock,
-2. per checkpoint: map changes to M6 outcome matrix,
+1. per PR: state workstream advanced + target outcome moved,
+2. per checkpoint: map changes to current-slice outcome matrix,
 3. per milestone closeout: publish delivered outcomes, deferrals, and risk updates.

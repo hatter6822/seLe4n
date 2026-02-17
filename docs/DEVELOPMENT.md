@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and the active M7 slice focuses on repository-audit remediation workstreams (WS-A1 through WS-A8)**.
+Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and the active M7 slice focuses on repository-audit remediation workstreams (WS-A1 through WS-A8) with explicit outcome-based closure gates**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 
@@ -200,7 +200,48 @@ milestone-moving PR unblocks.
 
 ---
 
-## 6. Proof engineering standards
+
+## 6. M7 execution operating model (active)
+
+Use this model for all milestone-moving work while M7 is active:
+
+1. bind every PR to one or more WS-A* workstream IDs,
+2. state which M7 outcome(s) are advanced,
+3. include reproducible command evidence,
+4. update docs/GitBook in the same PR range,
+5. include a one-line downstream unlock statement.
+
+### 6.1 M7 target outcomes
+
+- **M7-O1:** CI/proof gate enforcement and determinism evidence,
+- **M7-O2:** architecture/API boundary clarity and symmetry,
+- **M7-O3:** type-safe identity/pointer domains,
+- **M7-O4:** expanded scale and sequence-diversity testing,
+- **M7-O5:** strict separation of runtime vs test-only contracts,
+- **M7-O6:** synchronized contributor documentation and GitBook IA,
+- **M7-O7:** maintainable, documented theorem surfaces,
+- **M7-O8:** platform/security maturity baseline for post-M7 startup.
+
+### 6.2 Workstream sequencing policy
+
+- **Phase 1 (stabilization):** WS-A1, WS-A2, WS-A5, plus low-risk WS-A6 updates.
+- **Phase 2 (quality depth):** WS-A3 and WS-A4 after boundaries are stable.
+- **Phase 3 (trajectory hardening):** WS-A7 and WS-A8 once migration churn decreases.
+
+### 6.3 Required checkpoint summary format
+
+Checkpoint summaries should include:
+
+1. completed workstreams and moved outcomes,
+2. in-progress workstreams with blockers and mitigation,
+3. evidence commands run since last checkpoint,
+4. confidence signal for M7 exit readiness.
+
+For full workstream definitions, see [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](./gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+
+---
+
+## 7. Proof engineering standards
 
 1. Prefer explicit theorem statements and local proof structure over brittle tactic compression.
 2. Keep conjunction-heavy invariants factored into named components.
@@ -215,7 +256,7 @@ milestone-moving PR unblocks.
 
 ---
 
-## 7. Documentation responsibilities
+## 8. Documentation responsibilities
 
 Any PR changing transitions, invariants, milestone scope, or tests must update docs in the same
 commit range:
@@ -236,7 +277,7 @@ Docs should explicitly answer:
 
 ---
 
-## 8. Required contributor validation loop
+## 9. Required contributor validation loop
 
 Run before opening a PR:
 
@@ -258,7 +299,7 @@ If a command is blocked by environment limitations, report the limitation and im
 
 ---
 
-## 9. PR checklist (copy into PR descriptions)
+## 10. PR checklist (copy into PR descriptions)
 
 - [ ] Scope fits one coherent milestone slice.
 - [ ] Transition APIs expose explicit success/error branching.
@@ -274,7 +315,7 @@ If a command is blocked by environment limitations, report the limitation and im
 
 ---
 
-## 10. Codebase touch matrix (what to update when)
+## 11. Codebase touch matrix (what to update when)
 
 This section helps avoid partial updates when changing a subsystem.
 
@@ -342,7 +383,7 @@ Validation focus:
 
 ---
 
-## 11. Proof review checklist (maintainers)
+## 12. Proof review checklist (maintainers)
 
 When reviewing theorem changes, verify:
 
@@ -354,7 +395,7 @@ When reviewing theorem changes, verify:
 
 ---
 
-## 12. Documentation depth contract
+## 13. Documentation depth contract
 
 For any milestone movement, docs should answer all of:
 
