@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.4] - 2026-02-17
+
+### CI / Tooling reliability
+- Updated `scripts/setup_lean_env.sh` to install `ripgrep` (`rg`) when missing, matching Tier-3/Tier-4 script requirements and preventing CI failures where `rg` is unavailable.
+
 ## [0.8.3] - 2026-02-17
 
 ### CI / Tooling reliability
