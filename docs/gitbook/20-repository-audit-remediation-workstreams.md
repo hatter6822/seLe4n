@@ -46,10 +46,11 @@ The remediation program targets eight concrete repository outcomes:
    - enforce explicit object-store conversion boundaries via `ThreadId.toObjId`,
    - preserved theorem ergonomics with migration helpers and explicit conversion points.
 
-4. **WS-A4 — Test architecture expansion**
+4. **WS-A4 — Test architecture expansion** ✅ **completed**
    - add high-scale and edge-heavy scenarios,
    - improve fixture provenance and scenario traceability,
    - incorporate stochastic/property-style checks where practical.
+   - status in active slice: **completed** (see chapter 21 closure evidence).
 
 5. **WS-A5 — Hardware-boundary safety + test-only contracts**
    - isolate permissive contracts to test-only modules,

@@ -8,12 +8,14 @@
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.
 - **Tier 2 (trace/behavior)**
-  - executable scenario (`lake exe sele4n`) checked against stable fixture fragments.
+  - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
+  - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
 - **Tier 3 (invariant and documentation anchor surface)**
   - validates critical theorem/bundle/doc anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
 - **Tier 4 (nightly staged extension candidates)**
   - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + full-suite replay candidates,
+  - includes seeded `trace_sequence_probe` sequence-diversity checks in experimental mode,
   - default remains explicit extension-point behavior unless `NIGHTLY_ENABLE_EXPERIMENTAL=1` is set.
 
 ## Entrypoints and intent

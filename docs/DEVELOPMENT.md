@@ -230,9 +230,9 @@ Use this model for all milestone-moving work while M7 is active:
 
 ### 6.2.1 Current completion snapshot
 
-- ✅ **Completed:** WS-A1, WS-A2, WS-A3
+- ✅ **Completed:** WS-A1, WS-A2, WS-A3, WS-A4
 - ▶️ **Primary in-progress focus:** WS-A5
-- 📝 **Planned follow-on:** WS-A4, WS-A6, WS-A7, WS-A8
+- 📝 **Planned follow-on:** WS-A6, WS-A7, WS-A8
 
 (Authoritative closure evidence remains in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` and GitBook chapter 21.)
 
