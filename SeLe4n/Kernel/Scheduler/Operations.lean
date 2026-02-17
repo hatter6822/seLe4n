@@ -18,7 +18,7 @@ def schedule : Kernel Unit :=
     match st.scheduler.runnable with
     | [] => setCurrentThread none st
     | t :: _ =>
-        match st.objects t with
+        match st.objects t.toObjId with
         | some (.tcb _) => setCurrentThread (some t) st
         | _ => setCurrentThread none st
 
@@ -34,7 +34,7 @@ theorem schedule_eq_chooseThread_then_setCurrent :
           match next with
           | none => setCurrentThread none st'
           | some tid =>
-              match st'.objects tid with
+              match st'.objects tid.toObjId with
               | some (.tcb _) => setCurrentThread (some tid) st'
               | _ => setCurrentThread none st') := by
   funext st
@@ -42,7 +42,7 @@ theorem schedule_eq_chooseThread_then_setCurrent :
   | nil =>
       simp [schedule, chooseThread, setCurrentThread, hRun]
   | cons t ts =>
-      cases hObj : st.objects t <;>
+      cases hObj : st.objects t.toObjId <;>
       simp [schedule, chooseThread, setCurrentThread, hRun, hObj]
 
 theorem setCurrentThread_preserves_wellFormed
@@ -86,7 +86,7 @@ theorem setCurrentThread_none_preserves_currentThreadValid
 theorem setCurrentThread_some_preserves_currentThreadValid
     (st st' : SystemState)
     (tid : SeLe4n.ThreadId)
-    (hObj : ∃ tcb : TCB, st.objects tid = some (.tcb tcb))
+    (hObj : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb))
     (hStep : setCurrentThread (some tid) st = .ok ((), st')) :
     currentThreadValid st' := by
   simp [setCurrentThread] at hStep
@@ -126,7 +126,7 @@ theorem schedule_preserves_wellFormed
       cases hStep
       simp [schedulerWellFormed, queueCurrentConsistent]
   | cons t ts =>
-      cases hObj : st.objects t with
+      cases hObj : st.objects t.toObjId with
       | none =>
           simp [schedule, setCurrentThread, hRun, hObj] at hStep
           cases hStep
@@ -166,7 +166,7 @@ theorem schedule_preserves_queueCurrentConsistent
       cases hStep
       simp [queueCurrentConsistent]
   | cons t ts =>
-      cases hObj : st.objects t with
+      cases hObj : st.objects t.toObjId with
       | none =>
           simp [schedule, setCurrentThread, hRun, hObj] at hStep
           cases hStep
@@ -222,7 +222,7 @@ theorem schedule_preserves_runQueueUnique
       exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
         simpa [schedule, hRun] using hStep)
   | cons t ts =>
-      cases hObj : st.objects t with
+      cases hObj : st.objects t.toObjId with
       | none =>
           exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
             simpa [schedule, hRun, hObj] using hStep)
@@ -247,7 +247,7 @@ theorem schedule_preserves_currentThreadValid
       exact setCurrentThread_none_preserves_currentThreadValid st st' (by
         simpa [schedule, hRun] using hStep)
   | cons t ts =>
-      cases hObj : st.objects t with
+      cases hObj : st.objects t.toObjId with
       | none =>
           exact setCurrentThread_none_preserves_currentThreadValid st st' (by
             simpa [schedule, hRun, hObj] using hStep)

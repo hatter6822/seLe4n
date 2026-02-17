@@ -64,7 +64,8 @@ theorem tcb_lookup_of_endpoint_store
 endpoint-object stores do not alter runnable-set membership goals. -/
 theorem runnable_membership_of_endpoint_store
     (st st' : SystemState)
-    (endpointId tid : SeLe4n.ObjId)
+    (endpointId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId)
     (ep' : Endpoint)
     (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
     (hRun : tid ∈ st'.scheduler.runnable) :
@@ -77,7 +78,8 @@ theorem runnable_membership_of_endpoint_store
 endpoint-object stores do not alter non-runnable goals. -/
 theorem not_runnable_membership_of_endpoint_store
     (st st' : SystemState)
-    (endpointId tid : SeLe4n.ObjId)
+    (endpointId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId)
     (ep' : Endpoint)
     (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
     (hNotRun : tid ∉ st.scheduler.runnable) :
@@ -205,22 +207,22 @@ def ipcInvariant (st : SystemState) : Prop :=
 
 /-- Scheduler contract predicate #1 for M3.5: runnable threads are explicitly IPC-ready. -/
 def runnableThreadIpcReady (st : SystemState) : Prop :=
-  ∀ tid tcb,
-    st.objects tid = some (.tcb tcb) →
+  ∀ (tid : SeLe4n.ThreadId) tcb,
+    st.objects tid.toObjId = some (.tcb tcb) →
     tid ∈ st.scheduler.runnable →
     tcb.ipcState = .ready
 
 /-- Scheduler contract predicate #2 for M3.5: send-blocked threads are not runnable. -/
 def blockedOnSendNotRunnable (st : SystemState) : Prop :=
-  ∀ tid tcb endpointId,
-    st.objects tid = some (.tcb tcb) →
+  ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
+    st.objects tid.toObjId = some (.tcb tcb) →
     tcb.ipcState = .blockedOnSend endpointId →
     tid ∉ st.scheduler.runnable
 
 /-- Scheduler contract predicate #3 for M3.5: receive-blocked threads are not runnable. -/
 def blockedOnReceiveNotRunnable (st : SystemState) : Prop :=
-  ∀ tid tcb endpointId,
-    st.objects tid = some (.tcb tcb) →
+  ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
+    st.objects tid.toObjId = some (.tcb tcb) →
     tcb.ipcState = .blockedOnReceive endpointId →
     tid ∉ st.scheduler.runnable
 
@@ -242,8 +244,8 @@ theorem endpointSend_preserves_runnableThreadIpcReady
     runnableThreadIpcReady st' := by
   rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hRunOrig : tid ∈ st.scheduler.runnable :=
     runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
   exact hInv tid tcb hObjOrig hRunOrig
@@ -257,8 +259,8 @@ theorem endpointSend_preserves_blockedOnSendNotRunnable
     blockedOnSendNotRunnable st' := by
   rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -271,8 +273,8 @@ theorem endpointSend_preserves_blockedOnReceiveNotRunnable
     blockedOnReceiveNotRunnable st' := by
   rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -298,8 +300,8 @@ theorem endpointAwaitReceive_preserves_runnableThreadIpcReady
     runnableThreadIpcReady st' := by
   rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
   intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hRunOrig : tid ∈ st.scheduler.runnable :=
     runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
   exact hInv tid tcb hObjOrig hRunOrig
@@ -313,8 +315,8 @@ theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable
     blockedOnSendNotRunnable st' := by
   rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -327,8 +329,8 @@ theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable
     blockedOnReceiveNotRunnable st' := by
   rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -354,8 +356,8 @@ theorem endpointReceive_preserves_runnableThreadIpcReady
     runnableThreadIpcReady st' := by
   rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hRunOrig : tid ∈ st.scheduler.runnable :=
     runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
   exact hInv tid tcb hObjOrig hRunOrig
@@ -369,8 +371,8 @@ theorem endpointReceive_preserves_blockedOnSendNotRunnable
     blockedOnSendNotRunnable st' := by
   rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -383,8 +385,8 @@ theorem endpointReceive_preserves_blockedOnReceiveNotRunnable
     blockedOnReceiveNotRunnable st' := by
   rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
   intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid tcb ep' hStore hObj
+  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
+    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
   have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
   exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
 
@@ -667,17 +669,17 @@ theorem endpointSend_preserves_schedulerInvariantBundle
     | none =>
         simp [currentThreadValid, hCurEq, hCurrent]
     | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid = some (.tcb tcb) := by
+        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
           simpa [currentThreadValid, hCurrent] using hCur
         rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid ≠ endpointId := by
+        have hTidNe : tid.toObjId ≠ endpointId := by
           intro hEq
           subst hEq
-          rcases endpointSend_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+          rcases endpointSend_ok_implies_endpoint_object st st' tid.toObjId sender hStep with ⟨ep, hEpObj⟩
           rw [hEpObj] at hTcbObj
           cases hTcbObj
-        have hTcbObj' : st'.objects tid = some (.tcb tcb) := by
-          rw [endpointSend_preserves_other_objects st st' endpointId tid sender hTidNe hStep]
+        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
+          rw [endpointSend_preserves_other_objects st st' endpointId tid.toObjId sender hTidNe hStep]
           exact hTcbObj
         simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
 
@@ -700,17 +702,17 @@ theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
     | none =>
         simp [currentThreadValid, hCurEq, hCurrent]
     | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid = some (.tcb tcb) := by
+        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
           simpa [currentThreadValid, hCurrent] using hCur
         rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid ≠ endpointId := by
+        have hTidNe : tid.toObjId ≠ endpointId := by
           intro hEq
           subst hEq
-          rcases endpointAwaitReceive_ok_implies_endpoint_object st st' tid receiver hStep with ⟨ep, hEpObj⟩
+          rcases endpointAwaitReceive_ok_implies_endpoint_object st st' tid.toObjId receiver hStep with ⟨ep, hEpObj⟩
           rw [hEpObj] at hTcbObj
           cases hTcbObj
-        have hTcbObj' : st'.objects tid = some (.tcb tcb) := by
-          rw [endpointAwaitReceive_preserves_other_objects st st' endpointId tid receiver hTidNe hStep]
+        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
+          rw [endpointAwaitReceive_preserves_other_objects st st' endpointId tid.toObjId receiver hTidNe hStep]
           exact hTcbObj
         simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
 
@@ -733,17 +735,17 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
     | none =>
         simp [currentThreadValid, hCurEq, hCurrent]
     | some tid =>
-        have hCurSome : ∃ tcb : TCB, st.objects tid = some (.tcb tcb) := by
+        have hCurSome : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb) := by
           simpa [currentThreadValid, hCurrent] using hCur
         rcases hCurSome with ⟨tcb, hTcbObj⟩
-        have hTidNe : tid ≠ endpointId := by
+        have hTidNe : tid.toObjId ≠ endpointId := by
           intro hEq
           subst hEq
-          rcases endpointReceive_ok_implies_endpoint_object st st' tid sender hStep with ⟨ep, hEpObj⟩
+          rcases endpointReceive_ok_implies_endpoint_object st st' tid.toObjId sender hStep with ⟨ep, hEpObj⟩
           rw [hEpObj] at hTcbObj
           cases hTcbObj
-        have hTcbObj' : st'.objects tid = some (.tcb tcb) := by
-          rw [endpointReceive_preserves_other_objects st st' endpointId tid sender hTidNe hStep]
+        have hTcbObj' : st'.objects tid.toObjId = some (.tcb tcb) := by
+          rw [endpointReceive_preserves_other_objects st st' endpointId tid.toObjId sender hTidNe hStep]
           exact hTcbObj
         simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
 

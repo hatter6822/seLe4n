@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.10] - 2026-02-17
+
+### WS-A3 regression-guard hardening
+- Added Tier-3 invariant-surface guards that require explicit `ThreadId.toObjId` conversion entrypoint presence and fail if an implicit `ThreadId -> ObjId` coercion is reintroduced.
+- Revalidated full Tier 0-4 test coverage (`test_fast`, `test_smoke`, `test_full`, `test_nightly` with experimental candidates) after introducing the new guard.
+
+## [0.8.9] - 2026-02-17
+
+### WS-A3 audit follow-up hardening
+- Removed implicit `ThreadId -> ObjId` coercion and replaced it with explicit `ThreadId.toObjId` conversions at object-store boundaries to preserve stronger compile-time domain separation.
+- Updated scheduler and IPC proof/operation call sites to use explicit conversion points and kept all invariant bundles compiling without placeholder debt.
+- Synchronized GitBook planning chapters so WS-A3 completion state is consistent across current-slice and remediation overview pages.
+
+## [0.8.8] - 2026-02-17
+
+### M7 WS-A3 type-safety uplift
+- Migrated `ThreadId`, `ObjId`, `CPtr`, and `Slot` from raw `Nat` aliases to dedicated wrapper types with migration helpers (`ofNat`/`toNat`) and typed bridge instances where object-store indexing is intentional.
+- Updated scheduler/IPC invariant surfaces to keep thread-domain membership obligations typed as `ThreadId` while preserving object-store key discipline through `ObjId`.
+- Updated active-slice docs/GitBook to mark WS-A3 completed and synced current development status snapshots.
+
 ## [0.8.7] - 2026-02-17
 
 ### Tooling setup optimization

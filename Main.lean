@@ -163,7 +163,7 @@ def main : IO Unit := do
   match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st1) =>
-      IO.println s!"scheduled thread: {reprStr st1.scheduler.current}"
+      IO.println s!"scheduled thread: {reprStr (st1.scheduler.current.map SeLe4n.ThreadId.toNat)}"
       match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
       | .error err => IO.println s!"source lookup error: {reprStr err}"
       | .ok (srcCap, _) =>

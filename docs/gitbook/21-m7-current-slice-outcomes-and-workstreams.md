@@ -75,21 +75,22 @@ Concretely, M7 should leave the repository in a state where:
 - dependent imports are minimal and explicit ✅,
 - no trace/theorem regression during refactors ✅.
 
-### WS-A3 — Type-safety uplift for IDs and pointers
+### WS-A3 — Type-safety uplift for IDs and pointers ✅ completed
 
 **Intent:** remove classes of cross-domain misuse at compile time.
 
-**Execution focus now:**
+**Completed closure evidence:**
 
-- migrate high-risk aliases first (`ThreadId`, `ObjId`, `CPtr`, `Slot`),
-- preserve ergonomics with helper constructors/projections,
-- align theorem statements and executable traces after migration.
+- high-risk aliases (`ThreadId`, `ObjId`, `CPtr`, `Slot`) are migrated to wrapper types in `SeLe4n/Prelude.lean`,
+- migration ergonomics are preserved through explicit helper constructors/projections and typed bridging where object-store indexing is required,
+- scheduler/IPC theorem surfaces are adapted to keep thread-domain and object-domain obligations explicit while preserving bundle-level entrypoints,
+- validation coverage across Tier 0–4 scripts passes without introducing any placeholder debt.
 
-**DoD signals:**
+**DoD signals status:**
 
-- mixed-domain mistakes fail to typecheck,
-- migration does not introduce theorem API ambiguity,
-- no newly introduced `sorry`/`admit`/placeholder debt.
+- mixed-domain mistakes fail to typecheck ✅,
+- theorem/API surfaces remain coherent after migration ✅,
+- no newly introduced `sorry`/`admit`/placeholder debt ✅.
 
 ### WS-A4 — Test architecture expansion
 

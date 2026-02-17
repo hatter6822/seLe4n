@@ -33,7 +33,7 @@ Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-exe
 
 - **WS-A1:** CI hardening and quality-gate promotion ✅ completed,
 - **WS-A2:** architecture modularity and API-surface cleanup ✅ completed,
-- **WS-A3:** type-safety uplift for ID/pointer domains,
+- **WS-A3:** type-safety uplift for ID/pointer domains ✅ completed,
 - **WS-A4:** test architecture expansion,
 - **WS-A5:** hardware-boundary safety and test-only contract separation,
 - **WS-A6/WS-A7/WS-A8:** documentation, maintainability automation, and platform-security maturity preparation.

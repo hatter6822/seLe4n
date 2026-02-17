@@ -43,6 +43,10 @@ run_check "INVARIANT" rg -n '^theorem assumptionContractMap_nonempty' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem assumptionTransitionMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 
+# WS-A3 boundary hardening anchors must remain explicit.
+run_check "INVARIANT" rg -n '^@\[inline\] def toObjId' SeLe4n/Prelude.lean
+run_check "INVARIANT" bash -lc "if rg -n '^instance : Coe ThreadId ObjId where' SeLe4n/Prelude.lean; then echo 'Implicit ThreadId -> ObjId coercion must remain absent.' >&2; exit 1; fi"
+
 # Invariant bundle surface anchors (M1/M2/M3 composed entrypoints).
 run_check "INVARIANT" rg -n '^(def|abbrev) schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean

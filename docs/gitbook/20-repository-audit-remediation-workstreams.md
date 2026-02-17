@@ -41,10 +41,10 @@ The remediation program targets eight concrete repository outcomes:
    - preserve `SeLe4n/Kernel/API.lean` as the stable public facade with explicit IPC exports,
    - update architecture maps to document the now-symmetric module layout and dependency boundaries.
 
-3. **WS-A3 — Type-safety uplift for IDs/pointers**
-   - migrate critical aliases to explicit wrappers,
-   - prevent cross-domain misuse at compile time,
-   - preserve theorem ergonomics with migration helpers.
+3. **WS-A3 — Type-safety uplift for IDs/pointers** ✅ **completed**
+   - migrated critical aliases to explicit wrappers,
+   - enforce explicit object-store conversion boundaries via `ThreadId.toObjId`,
+   - preserved theorem ergonomics with migration helpers and explicit conversion points.
 
 4. **WS-A4 — Test architecture expansion**
    - add high-scale and edge-heavy scenarios,
