@@ -5,20 +5,29 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current development stage
 
-- **Active slice:** post-M7 hardware-oriented development path (next slice) with Raspberry Pi 5 as first architecture focus.
+- **Active slice:** comprehensive-audit WS-B workstream execution kickoff (planning-complete to execution-ready transition).
 - **Most recently completed slice:** M7 audit remediation workstreams (WS-A1 through WS-A8 completed).
 - **Previous completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E completed).
 
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
-- **Current package version:** `0.9.0` (see `lakefile.toml`).
+- **Current package version:** `0.9.1` (see `lakefile.toml`).
 
 ### M7 closeout status and next-slice kickoff
 
 M7 exit-gate status is complete: WS-A1..WS-A8 are closed with CI/test/documentation evidence and the remediation handoff package published in [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md).
 
 For remediation closure details, use [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+
+
+### Comprehensive audit planning baseline (2026-02)
+
+For planning all follow-on workstreams from the comprehensive audit, use:
+
+- Findings and recommendations: [`docs/audits/COMPREHENSIVE_AUDIT_2026_02.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02.md)
+- Canonical execution-planning matrix: [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+- GitBook planning chapter: [`docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`](docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md)
 
 ## Start here (contributor IA)
 
@@ -33,7 +42,9 @@ For remediation closure details, use [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS
 - **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/audits/REPOSITORY_AUDIT.md`](docs/audits/REPOSITORY_AUDIT.md)
 - **M7 execution outcomes and workstreams (completed slice):** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
 - **M7 closeout packet (exit-gate artifact):** [`docs/M7_CLOSEOUT_PACKET.md`](docs/M7_CLOSEOUT_PACKET.md)
-- **Audit remediation workstreams (M7+ execution plan):** [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
+- **Audit remediation workstreams (historical M7 plan):** [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
+- **Comprehensive audit workstream planning backbone (active):** [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+- **Documentation/GitBook sync + coverage matrix:** [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 - **Long-form handbook (GitBook):** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 - **M6 execution plan (completed slice):** [`docs/gitbook/18-m6-execution-plan-and-workstreams.md`](docs/gitbook/18-m6-execution-plan-and-workstreams.md)
 - **M5 closeout snapshot chapter:** [`docs/gitbook/09-m5-closeout-snapshot.md`](docs/gitbook/09-m5-closeout-snapshot.md)
