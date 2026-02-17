@@ -44,6 +44,44 @@ ensure_shellcheck() {
   fi
 }
 
+ensure_ripgrep() {
+  if command -v rg >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "[setup] ripgrep (rg) not found; attempting to install"
+
+  run_pkg_install() {
+    if command -v sudo >/dev/null 2>&1; then
+      sudo "$@"
+    else
+      "$@"
+    fi
+  }
+
+  if command -v apt-get >/dev/null 2>&1; then
+    run_pkg_install apt-get update
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep
+  elif command -v dnf >/dev/null 2>&1; then
+    run_pkg_install dnf install -y ripgrep
+  elif command -v yum >/dev/null 2>&1; then
+    run_pkg_install yum install -y epel-release
+    run_pkg_install yum install -y ripgrep
+  elif command -v pacman >/dev/null 2>&1; then
+    run_pkg_install pacman -Sy --noconfirm ripgrep
+  elif command -v brew >/dev/null 2>&1; then
+    brew install ripgrep
+  else
+    echo "error: ripgrep (rg) is required, but no supported package manager (apt, dnf, yum, pacman, brew) was found" >&2
+    exit 1
+  fi
+
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "error: ripgrep (rg) installation failed" >&2
+    exit 1
+  fi
+}
+
 if ! command -v curl >/dev/null 2>&1; then
   echo "error: curl is required to install elan" >&2
   exit 1
@@ -55,6 +93,13 @@ if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
 fi
 
 ensure_shellcheck
+ensure_ripgrep
+
+# If elan was previously installed with --no-modify-path, load it before probing.
+if [ -f "${ELAN_ENV_FILE}" ]; then
+  # shellcheck disable=SC1090
+  source "${ELAN_ENV_FILE}"
+fi
 
 if ! command -v elan >/dev/null 2>&1; then
   echo "[setup] elan not found; installing to ${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
@@ -77,7 +122,11 @@ if [ -z "${TOOLCHAIN}" ]; then
 fi
 
 echo "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
-elan toolchain install "${TOOLCHAIN}" >/dev/null
+if ! elan toolchain list | tr -d '\r' | grep -Fxq "${TOOLCHAIN}"; then
+  elan toolchain install "${TOOLCHAIN}" >/dev/null
+else
+  echo "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
+fi
 elan default "${TOOLCHAIN}" >/dev/null
 
 if ! command -v lake >/dev/null 2>&1; then

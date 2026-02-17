@@ -10,7 +10,7 @@ For implementation sequencing tied to each criticism/recommendation, see
 
 ## 1. Current quality state
 
-seLe4n is currently in a **healthy and internally consistent state** for M6 interface work:
+seLe4n is currently in a **healthy and internally consistent state** for active M7 audit-remediation execution:
 
 - build graph compiles,
 - executable scenario traces pass fixture checks,
@@ -55,7 +55,7 @@ The framework self-audit confirms both sides of correctness:
 
 ## 5. Development path and quality evolution
 
-As M6 progresses:
+As M7 progresses:
 
 1. keep architecture-bound interfaces and proof-layer obligations synchronized (WS-M6-A through WS-M6-C now complete),
 2. preserve assumption-boundary fixture/trace coverage now closed under WS-M6-D,

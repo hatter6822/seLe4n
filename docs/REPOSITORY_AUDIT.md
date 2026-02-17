@@ -2,9 +2,11 @@
 
 **Audit date:** 2026-02-17
 **Scope:** Complete repository — architecture, code quality, testing, documentation, CI/CD, security
-**Codebase version:** 0.8.0 (Lean 4.27.0, M6 complete / M7 active)
+**Codebase version at audit time:** 0.8.0 (Lean 4.27.0, M6 complete / M7 active)
 
 ---
+
+**Post-audit remediation note (M7 WS-A1):** Tier 3 has been promoted into CI, nightly determinism workflow and CI policy documentation are now present (`.github/workflows/lean_action_ci.yml`, `.github/workflows/nightly_determinism.yml`, `docs/CI_POLICY.md`).
 
 ## Executive Summary
 
@@ -300,7 +302,7 @@ percentage.
   to DEVELOPMENT.md) would improve discoverability.
 - **No CHANGELOG.** Milestone completions are documented in specs, but there
   is no single chronological record of what changed between versions.
-  `lakefile.toml` shows version 0.8.0 but there is no history of 0.1–0.7.
+  `lakefile.toml` showed version 0.8.0 at audit time, but there was no history of 0.1–0.7.
 - **Inline code documentation gaps.** 189 theorems lack docstrings. The
   proof engineering standards require "explicit theorem statements" but not
   theorem-level documentation. For a project whose primary artifact is
@@ -313,7 +315,7 @@ percentage.
 ### 5.1 Build System
 
 - **`lakefile.toml`** — Clean 11-line config. Single library (`SeLe4n`) and
-  executable (`sele4n`). Version 0.8.0.
+  executable (`sele4n`). Version 0.8.0 at audit time.
 - **`lean-toolchain`** — Pinned to `leanprover/lean4:v4.27.0`. Good for
   reproducibility.
 - **`lake-manifest.json`** — No external dependencies. Eliminates supply-chain

@@ -31,7 +31,7 @@ The remediation program targets eight concrete repository outcomes:
 
 ## 3. Workstream portfolio (WS-A1..WS-A8)
 
-1. **WS-A1 — CI hardening and quality gate promotion**
+1. **WS-A1 — CI hardening and quality gate promotion** ✅ **completed**
    - promote Tier 3 obligations to strict merge gates,
    - improve workflow determinism and cache efficiency,
    - document branch protection and required evidence flows.

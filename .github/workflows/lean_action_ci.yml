@@ -1,9 +1,15 @@
 name: Lean Action CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
+concurrency:
+  group: lean-action-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-fast:
@@ -12,6 +18,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -26,6 +43,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -43,3 +71,28 @@ jobs:
           path: |
             .ci-artifacts/trace/
             tests/fixtures/main_trace_smoke.expected
+
+  test-full:
+    name: Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)
+    runs-on: ubuntu-latest
+    needs: test-smoke
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-
+
+      - name: Setup Lean toolchain
+        run: ./scripts/setup_lean_env.sh
+
+      - name: Run full gate
+        run: ./scripts/test_full.sh

@@ -12,6 +12,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
+- **Current package version:** `0.8.4` (see `lakefile.toml`).
+
 ### Current slice target outcomes (M7)
 
 1. enforce Tier 0–3 quality gates with deterministic and reproducible CI evidence,
@@ -26,7 +28,10 @@ For workstream-level details and closure criteria, use [`docs/AUDIT_REMEDIATION_
 ## Start here
 
 - **Developer setup + workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+- **Contribution guide (root pointer):** [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Change history:** [`CHANGELOG.md`](CHANGELOG.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
+- **Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 - **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
 - **Audit remediation workstreams (M7+ execution plan):** [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md)

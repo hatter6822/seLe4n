@@ -39,7 +39,7 @@ into execution-ready workstreams for the active M7 slice and the post-remediatio
 
 ## 4. Detailed workstreams
 
-### WS-A1 — CI hardening and quality gate promotion (High)
+### WS-A1 — CI hardening and quality gate promotion (High) ✅ completed
 
 **Objective**
 Promote proof-surface and determinism checks to enforced CI gates while reducing pipeline latency.
@@ -55,6 +55,11 @@ Promote proof-surface and determinism checks to enforced CI gates while reducing
 - PRs cannot merge without Tier 0–3 passing,
 - deterministic replay runs are visible and auditable,
 - branch protection expectations are documented and discoverable.
+
+**Closure evidence (implemented)**
+- CI includes `Fast`, `Smoke`, and `Full` jobs with Tier 3 in the required path (`.github/workflows/lean_action_ci.yml`),
+- scheduled nightly replay workflow exists (`.github/workflows/nightly_determinism.yml`) with artifact retention,
+- branch-protection and required-check policy is codified in `docs/CI_POLICY.md`.
 
 ---
 
