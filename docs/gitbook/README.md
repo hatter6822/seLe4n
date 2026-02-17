@@ -4,8 +4,8 @@ This GitBook is the long-form documentation for seLe4n.
 
 ## Project stage snapshot
 
-- **Current slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-D complete; WS-M6-E in progress).
-- **Most recently completed slice:** M5 service-graph + policy surfaces.
+- **Current slice:** M7 Raspberry Pi 5 binding prototype and platform-constraint evidence planning.
+- **Most recently completed slice:** M6 architecture-binding interfaces and hardware-facing assumption hardening (WS-M6-A through WS-M6-E complete).
 - **First real hardware architecture focus:** Raspberry Pi 5 (post-M6 binding trajectory).
 
 Use [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as the canonical milestone/acceptance reference.

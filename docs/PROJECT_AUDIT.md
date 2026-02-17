@@ -4,7 +4,7 @@ This document records a full end-to-end quality audit over code, tests, and docu
 
 ## 1) Executive assessment
 
-Overall verdict: **the repository is operationally healthy and correctly aligned with the documented M6-active / M5-completed milestone state**.
+Overall verdict: **the repository is operationally healthy and correctly aligned with the documented M6-completed / M7-active milestone state**.
 
 Specifically, this audit re-validated:
 
@@ -63,8 +63,8 @@ Framework quality properties verified:
 
 Current documentation set is synchronized around:
 
-- **Current slice:** M6 architecture-binding interfaces + assumption hardening with WS-M6-A through WS-M6-D completed and WS-M6-E in progress.
-- **Most recently completed slice:** M5 service-graph + policy surfaces.
+- **Current slice:** M7 Raspberry Pi 5 binding prototype and platform-constraint evidence planning.
+- **Most recently completed slice:** M6 architecture-binding interfaces + assumption hardening (WS-M6-A through WS-M6-E completed).
 - **Historical context:** M4-B completion retained as predecessor reference.
 - **Forward path:** M6 workstreams and post-M6 hardware trajectory are documented and linked.
 
@@ -116,7 +116,7 @@ This obligation-based model is the correct notion of “full” for this reposit
 
 - Architecture-assumption interfaces and adapter proof-layer integration are now explicit and exported (WS-M6-A through WS-M6-C completed).
 - WS-M6-D evidence expansion is now closed with boundary success/failure trace anchors and fixture-backed semantics.
-- Preserve composability with already-closed M1–M5 invariant bundles while advancing WS-M6-E documentation/handoff completion.
+- Preserve composability with already-closed M1–M6 invariant bundles while advancing M7 platform-binding instantiation incrementally.
 
 ### 6.2 Mid-term (post-M6 pre-hardware)
 

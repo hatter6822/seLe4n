@@ -12,7 +12,7 @@
 ## Active planning and execution
 
 - [Specification & Roadmap](05-specification-and-roadmap.md)
-- [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md)
+- [M6 Execution Plan and Workstreams (Closeout)](18-m6-execution-plan-and-workstreams.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
 - [Codebase Reference](11-codebase-reference.md)

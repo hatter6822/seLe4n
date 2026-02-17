@@ -4,7 +4,7 @@
 
 This guide defines day-to-day implementation workflow and proof-engineering expectations.
 
-Current stage: **M6 architecture-binding interface preparation (active) with M5 service-graph + policy delivery fully closed (WS-M5-A through WS-M5-F complete)**.
+Current stage: **M6 architecture-binding interface preparation is complete (WS-M6-A through WS-M6-E closed), and M7 Raspberry Pi 5 binding prototype planning is active**.
 M4-B lifecycle-capability composition hardening is closed and treated as a stable dependency
 baseline.
 
@@ -150,10 +150,9 @@ Before maintainers mark M4-B complete, verify:
 
 ---
 
-## 5. Current slice planning discipline (M6)
+## 5. Transition planning discipline (M6 closeout → M7 start)
 
-To reduce milestone thrash, each M6 PR should state how it advances M6 outcomes while preserving
-closed milestone contracts:
+To reduce milestone thrash, each milestone-moving PR should state which closed outcomes it preserves and what next-slice outcomes it advances:
 
 1. architecture-assumption interfaces that remain explicit and reviewable,
 2. adapter-surface theorem hooks that preserve M1–M5 layering,
@@ -162,13 +161,13 @@ closed milestone contracts:
 A lightweight “what this unlocks next” paragraph is now expected in milestone-moving PRs.
 
 
-### 5.1 M6 narrative standard
+### 5.1 Milestone narrative standard
 
 For each milestone-moving PR, include a short section that states:
 
-1. what concrete M6 outcome moved,
+1. what concrete outcome moved (M6 closeout or M7 forward work),
 2. what evidence command validates that movement,
-3. what post-M6 dependency is now unblocked.
+3. what downstream dependency is now unblocked.
 
 ### 5.2 M6 workstream model
 
@@ -188,8 +187,10 @@ Use this workstream mapping for implementation planning and review checklists:
    - executable trace coverage now includes boundary success/failure branches in `Main.lean`,
    - fixture semantics and rationale are documented in `tests/scenarios/README.md` and anchored by `tests/fixtures/main_trace_smoke.expected`,
    - Tier 3 symbol/trace anchors now gate architecture-boundary evidence continuity.
-5. **WS-M6-E — docs and handoff packaging**
-   - keep README/spec/development/GitBook synchronized.
+5. **WS-M6-E — docs and handoff packaging** ✅ **completed**
+   - README/spec/development/GitBook stage markers are synchronized,
+   - explicit post-M6 unlocks and M7 deferrals are documented,
+   - risk register updates are tied directly to architecture-boundary contracts.
 
 ### 5.3 Hardware direction note
 
