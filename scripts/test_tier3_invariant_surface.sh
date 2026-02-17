@@ -19,6 +19,13 @@ run_check "INVARIANT" rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
 run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
+# WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
+run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
+run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
+run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
+
 
 # M6 WS-M6-B adapter API anchors.
 run_check "INVARIANT" rg -n '^inductive AdapterErrorKind' SeLe4n/Kernel/Architecture/Adapter.lean

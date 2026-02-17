@@ -10,7 +10,7 @@ Current stage context: **M7 remediation closeout is complete (WS-A1 through WS-A
 
 - **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
-- **Tier 2** fixture-backed executable smoke (`scripts/test_tier2_trace.sh`)
+- **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
   including M4-A executable-anchor checks for lifecycle unauthorized/illegal-state/success trace fragments.
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)
@@ -20,12 +20,12 @@ Current stage context: **M7 remediation closeout is complete (WS-A1 through WS-A
 Required local/CI entrypoints:
 
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2)
+- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks)
 - `./scripts/test_full.sh` (Tier 0 + Tier 1 + Tier 2 + Tier 3)
 
 Nightly deterministic replay entrypoint:
 
-- `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (Tier 0..4 staged replay/diff checks + seeded sequence-diversity property probe)
+- `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (Tier 0..4 staged replay/diff checks + seeded sequence-diversity probe with persisted seed logs/manifest replay artifacts)
 
 Recommended audit entrypoint for release/closeout confidence:
 

@@ -15,5 +15,6 @@ fi
 run_check "META" "${SCRIPT_DIR}/test_tier0_hygiene.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier1_build.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_trace.sh" "${sub_args[@]}"
+run_check "META" "${SCRIPT_DIR}/test_tier2_negative.sh" "${sub_args[@]}"
 
 finalize_report

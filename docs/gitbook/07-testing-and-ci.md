@@ -58,7 +58,7 @@ This keeps CI output clean while making local debugging much easier to scan.
 
 ## Why fixture checks matter
 
-Type-checking alone can miss semantic regressions. Tier 2 fixture checks ensure critical runtime
+Type-checking alone can miss semantic regressions. Tier 2 trace + negative-state checks ensure critical runtime
 stories remain visible and intentional, especially for milestone claims tied to executable behavior
 (e.g., mint/revoke/delete and IPC handshake flows).
 
@@ -72,7 +72,6 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 - **Tier 0 fails:** remove placeholder markers or fix script-level lint/hygiene issues.
 - **Tier 1 fails:** resolve first Lean compile/proof failure before chasing downstream errors.
-- **Tier 2 fails:** inspect missing fixture lines and decide if behavior change was accidental or
-  intentional.
+- **Tier 2 fails:** if `test_tier2_trace.sh` fails, inspect missing fixture lines; if `test_tier2_negative.sh` fails, inspect malformed-state guard semantics and expected error branches.
 - **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/doc anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
 - **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture/doc updates.
