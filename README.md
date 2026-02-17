@@ -12,7 +12,7 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 For normative milestones, acceptance criteria, and scope decisions, use
 [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md) as the source of truth.
 
-- **Current package version:** `0.8.10` (see `lakefile.toml`).
+- **Current package version:** `0.8.15` (see `lakefile.toml`).
 
 ### Current slice target outcomes (M7)
 
@@ -32,6 +32,7 @@ For workstream-level details and closure criteria, use [`docs/AUDIT_REMEDIATION_
 - **Change history:** [`CHANGELOG.md`](CHANGELOG.md)
 - **Testing tiers + CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 - **Branch protection + required checks policy (WS-A1):** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
+- **Hardware-boundary contract policy (WS-A5):** [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md)
 - **Historical end-to-end audit snapshot (superseded):** [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md)
 - **Current repository audit baseline (architecture/code/test/docs/CI/security):** [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md)
 - **Audit remediation workstreams (M7+ execution plan):** [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/AUDIT_REMEDIATION_WORKSTREAMS.md)

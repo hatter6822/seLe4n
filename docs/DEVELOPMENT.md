@@ -230,9 +230,9 @@ Use this model for all milestone-moving work while M7 is active:
 
 ### 6.2.1 Current completion snapshot
 
-- ✅ **Completed:** WS-A1, WS-A2, WS-A3, WS-A4
-- ▶️ **Primary in-progress focus:** WS-A5
-- 📝 **Planned follow-on:** WS-A6, WS-A7, WS-A8
+- ✅ **Completed:** WS-A1, WS-A2, WS-A3, WS-A4, WS-A5
+- ▶️ **Primary in-progress focus:** WS-A6
+- 📝 **Planned follow-on:** WS-A7, WS-A8
 
 (Authoritative closure evidence remains in `docs/AUDIT_REMEDIATION_WORKSTREAMS.md` and GitBook chapter 21.)
 
@@ -246,6 +246,8 @@ Checkpoint summaries should include:
 4. confidence signal for M7 exit readiness.
 
 For full workstream definitions, see [`docs/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md) and GitBook chapter [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](./gitbook/21-m7-current-slice-outcomes-and-workstreams.md).
+
+For trusted-vs-test runtime contract boundaries, follow [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](./HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
 
 ---
 

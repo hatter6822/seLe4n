@@ -107,19 +107,20 @@ Scale evidence beyond fixed-path fixtures and improve behavioral confidence dept
 
 ---
 
-### WS-A5 — Hardware-boundary safety and test-only contract separation (High)
+### WS-A5 — Hardware-boundary safety and test-only contract separation (High) ✅ completed
 
 **Objective**
 Prevent accidental production use of permissive runtime contracts.
 
-**Scope**
-- move permissive contracts into testing-only namespace/modules,
-- preserve clear import boundaries,
-- document trusted vs test-only contract usage rules.
+**Closure evidence (implemented)**
+- permissive runtime fixtures are isolated into `SeLe4n/Testing/RuntimeContractFixtures.lean` under the testing namespace (`SeLe4n.Testing.runtimeContractAcceptAll` / `runtimeContractDenyAll`),
+- executable trace driver usage in `Main.lean` now imports those fixtures directly from testing-only modules,
+- Tier 0 hygiene adds an explicit import-boundary guard that fails if `SeLe4n/` modules reference testing fixtures,
+- trusted-vs-test contract usage policy is documented in `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` with contributor/reviewer checklist language.
 
-**Acceptance criteria**
-- non-test modules do not import permissive contracts,
-- boundary policy is documented and visible in contributor workflow.
+**Acceptance criteria status**
+- non-test modules do not import permissive contracts ✅,
+- boundary policy is documented and visible in contributor workflow ✅.
 
 ---
 
