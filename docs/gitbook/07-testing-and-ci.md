@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B10 complete), with testing tiers enforcing regression protection and evidence continuity.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is complete (WS-B1 through WS-B11 complete), with testing tiers enforcing regression protection and evidence continuity.**
 
 ## Tier model
 
@@ -15,6 +15,7 @@ Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (W
   - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
   - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
+  - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.
 - **Tier 3 (invariant and documentation anchor surface)**
   - validates critical theorem/bundle/doc anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.

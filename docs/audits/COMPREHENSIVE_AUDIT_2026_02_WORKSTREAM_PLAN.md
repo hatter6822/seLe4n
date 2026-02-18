@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 are Completed**; WS-B11 remains Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1 through WS-B11 are Completed**.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -229,7 +229,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-
 - **Exit criteria:** CI governance decisions are codified with measurable reliability baselines.
 - **Closure evidence (2026-02-18):** CodeQL governance and branch-protection parity are now explicitly codified in `docs/CI_POLICY.md` (including informational/non-blocking rationale, required-check matrix, and telemetry artifact expectations), with the security workflow step renamed for policy traceability in `.github/workflows/platform_security_baseline.yml`; automated update cadence now includes Dependabot tracking for GitHub Actions (`.github/dependabot.yml`) and a scheduled Lean release monitor that opens proposal issues on upstream drift (`.github/workflows/lean_toolchain_update_proposal.yml`); CI timing + flake telemetry collection is now implemented through `scripts/ci_capture_timing.sh` and `scripts/ci_flake_probe.sh`, wired into `.github/workflows/lean_action_ci.yml`, `.github/workflows/nightly_determinism.yml`, and ARM64 fast-gate execution in `.github/workflows/platform_security_baseline.yml`; and telemetry baseline methodology/documentation is published in `docs/CI_TELEMETRY_BASELINE.md` with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.
 
-### WS-B11 — Scenario framework finalization (Planned)
+### WS-B11 — Scenario framework finalization (Completed)
 
 - **Goal:** resolve `tests/scenarios/` into an active framework or retire it with explicit replacement.
 - **Prerequisites:** WS-B2 scenario DSL and negative test assets.
@@ -242,6 +242,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-
   - `./scripts/test_smoke.sh`
   - `./scripts/test_nightly.sh`
 - **Exit criteria:** scenario strategy is explicit, exercised, and maintainable.
+- **Closure evidence (2026-02-18):** `tests/scenarios/scenario_catalog.json` now defines the canonical scenario metadata schema (scenario ID, subsystem, risk tags, replay tier, deterministic seed, and fixture anchor) with explicit ownership/cadence; `scripts/scenario_catalog.py` enforces schema and fixture-anchor validation and exports nightly replay seeds; `scripts/test_smoke.sh` runs catalog validation in default gates; `scripts/test_tier4_nightly_candidates.sh` now derives `trace_sequence_probe` replay seeds from the catalog and records generated seed manifests; and scenario governance documentation is finalized in `tests/scenarios/README.md` with synchronized status updates in root docs and GitBook chapter 24.
 
 ## 6) Portfolio-level readiness and release gates
 
@@ -288,7 +289,7 @@ To keep docs maintainable while scaling workstreams:
 
 ## 9) Immediate next planning actions
 
-1. Create WS-B1..WS-B11 issue backlog with owners and milestone tags.
-2. Start Phase P1 with WS-B4 + WS-B3 in parallel and WS-B8 as cross-cutting governance.
-3. Add a recurring planning review cadence (weekly) that updates only this file and milestone notes.
-4. Validate Gate G0 and then mark this portfolio as `Kickoff Ready`.
+1. Maintain WS-B closure evidence and keep this file as the canonical audit execution archive.
+2. Carry forward unresolved long-horizon items into the next slice planning board with explicit owners.
+3. Keep weekly planning cadence focused on post-WS-B hardware-entry readiness and regression telemetry.
+4. Preserve documentation/GitBook synchronization and versioned status updates on every future slice transition.

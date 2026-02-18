@@ -12,7 +12,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Active:** Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed)
+- **Completed:** Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1 through WS-B11 completed)
 
 ## 2) Stable contracts contributors must preserve
 
@@ -34,7 +34,7 @@ Current milestone state:
 - WS-B8: Documentation automation + consolidation ✅ completed
 - WS-B9: Threat model and security hardening ✅ completed
 - WS-B10: CI maturity upgrades ✅ completed
-- WS-B11: Scenario framework finalization
+- WS-B11: Scenario framework finalization ✅ completed
 
 Canonical execution plan:
 [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
@@ -46,7 +46,7 @@ Security baseline reference:
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 complete)
-- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
+- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (completed)
 
 ## 5) Historical context
 

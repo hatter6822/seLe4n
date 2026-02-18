@@ -4,9 +4,9 @@
 
 This guide is the day-to-day operating manual for contributors.
 
-It is aligned to the **current slice**:
+It is aligned to the **current completed slice**:
 
-- active: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed)**,
+- completed: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1 through WS-B11 completed)**,
 - completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
@@ -42,7 +42,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **WS-B8** — documentation automation + dedup ✅ completed
 - **WS-B9** — threat model/security hardening (**completed**)
 - **WS-B10** — CI maturity upgrades (**completed**)
-- **WS-B11** — scenario framework finalization
+- **WS-B11** — scenario framework finalization ✅ completed
 
 ### 3.2 Sequencing model
 
@@ -50,7 +50,7 @@ Use the planning phases from the workstream backbone:
 
 - **Phase P1:** WS-B4, WS-B3, WS-B8 (shape + hygiene stabilization; WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5, WS-B6, WS-B2 (semantic/model expansion; WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11 (assurance and operational maturity; WS-B7/WS-B9/WS-B10 completed)
+- **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11 (assurance and operational maturity; WS-B7/WS-B9/WS-B10/WS-B11 completed)
 
 ### 3.3 PR-to-workstream discipline
 
@@ -66,7 +66,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-B slice (prefer next unfinished stream: WS-B11 onward).
+1. Sync branch and choose one coherent WS-B slice (prefer the next documented priority in the active plan (all WS-B streams are complete)).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

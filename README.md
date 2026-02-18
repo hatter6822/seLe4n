@@ -5,10 +5,10 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current state (authoritative snapshot)
 
-- **Active development slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed).
+- **Current completed slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1 through WS-B11 completed).
 - **Most recently completed slice:** M7 audit remediation (WS-A1..WS-A8 complete).
 - **Previous completed slice:** M6 architecture-boundary assumptions/adapters.
-- **Current package version:** `0.9.29` (`lakefile.toml`).
+- **Current package version:** `0.9.32` (`lakefile.toml`).
 
 Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
 
@@ -38,7 +38,7 @@ Use this as the quick index. Full contracts and dependencies are in the audit pl
 - **WS-B8:** Documentation automation/consolidation ✅ completed
 - **WS-B9:** Threat model + security hardening ✅ completed
 - **WS-B10:** CI maturity upgrades ✅ completed
-- **WS-B11:** Scenario framework finalization
+- **WS-B11:** Scenario framework finalization ✅ completed
 
 Primary reference:
 [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).

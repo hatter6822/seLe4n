@@ -29,13 +29,13 @@ This is the GitBook mirror of the canonical planning backbone:
 ### Low priority
 
 - **WS-B10:** CI maturity upgrades ✅ completed
-- **WS-B11:** Scenario framework finalization
+- **WS-B11:** Scenario framework finalization ✅ completed
 
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (WS-B7/WS-B9/WS-B10 completed)
+- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (WS-B7/WS-B9/WS-B10/WS-B11 completed)
 
 ## 4) Evidence expectations for milestone-moving PRs
 
@@ -133,3 +133,12 @@ When status changes, update together:
 - Lean/toolchain update automation now includes Dependabot for GitHub Actions (`.github/dependabot.yml`) and scheduled Lean release drift proposals via `.github/workflows/lean_toolchain_update_proposal.yml`.
 - CI timing + flake telemetry is now collected by `scripts/ci_capture_timing.sh` and `scripts/ci_flake_probe.sh`, wired into Lean CI and nightly workflows.
 - Canonical telemetry interpretation guidance is published in [`docs/CI_TELEMETRY_BASELINE.md`](../CI_TELEMETRY_BASELINE.md) with GitBook mirror [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md).
+
+## 16) WS-B11 closure evidence
+
+- scenario metadata is now canonicalized in `tests/scenarios/scenario_catalog.json` with explicit fields for scenario IDs, subsystem ownership, risk tags, replay tier, deterministic seeds, and fixture anchors.
+- `scripts/scenario_catalog.py` enforces schema and fixture-anchor validation (`validate`) and exports nightly deterministic seeds (`nightly-seeds`).
+- smoke and nightly paths now exercise the scenario framework directly:
+  - `scripts/test_smoke.sh` runs catalog validation,
+  - `scripts/test_tier4_nightly_candidates.sh` materializes nightly seeds from the catalog and replays `trace_sequence_probe` from generated metadata.
+- maintenance ownership and cadence are documented in `tests/scenarios/README.md` (`testing-maintainers`, `per-slice` review).

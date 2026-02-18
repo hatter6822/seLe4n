@@ -5,7 +5,7 @@
 This GitBook is the long-form guide for architecture, workflow, and milestone context.
 
 ## Current project state
-- **Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed).
+- **Current completed slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1 through WS-B11 completed).
 - **Latest completed slice:** M7 remediation (WS-A1..WS-A8 complete).
 - **Previous completed slice:** M6 architecture-boundary hardening.
 

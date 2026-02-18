@@ -28,9 +28,9 @@ Closed baseline slices:
 - M4-B lifecycle-capability composition hardening,
 - M5 service-graph and policy-surface completion.
 
-Current active slice:
+Current completed slice:
 
-- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed and WS-B11 in planned/in-progress execution.
+- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1 through WS-B11 completed.
 
 ## 4. Architecture mental model
 
@@ -45,7 +45,7 @@ The codebase is organized as layered contracts:
 
 ## 5. Current-slice outcomes (Comprehensive Audit 2026-02 / WS-B)
 
-The active slice is successful when contributors deliver all of the following:
+The completed slice is successful when contributors deliver all of the following:
 
 1. closure of comprehensive-audit recommendations via WS-B workstreams,
 2. deterministic CI + trace reproducibility preserved through every workstream increment,
