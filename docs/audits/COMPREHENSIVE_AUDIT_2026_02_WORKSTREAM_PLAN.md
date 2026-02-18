@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, and WS-B4 are Completed**; WS-B5..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 are Completed**; WS-B6..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -137,7 +137,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, and WS-B4 are Completed**; WS-B
 - **Exit criteria:** no remaining raw alias usage in target surfaces; invariant layer compiles without coercion shortcuts.
 - **Closure evidence (2026-02-18):** `SeLe4n/Prelude.lean` now upgrades `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr` from `Nat` aliases to wrapper structures with `ofNat`/`toNat` helpers and explicit `ToString`/`OfNat` compatibility instances; `scripts/test_tier0_hygiene.sh` now fails if any of these regress to `abbrev ... := Nat`; full validation gates pass under `scripts/test_fast.sh` and `scripts/test_full.sh`.
 
-### WS-B5 — CSpace semantics completion (Planned)
+### WS-B5 — CSpace semantics completion (Completed)
 
 - **Goal:** model guard/radix-based CNode traversal and resolution outcomes with clear error branches.
 - **Prerequisites:** WS-B4 wrapper migration for capability pointers/slots stability.
@@ -150,6 +150,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, and WS-B4 are Completed**; WS-B
   - `./scripts/test_smoke.sh`
   - `./scripts/test_full.sh`
 - **Exit criteria:** CSpace resolution behavior is executable, tested, and invariant-preserving.
+- **Closure evidence (2026-02-18):** `SeLe4n/Model/Object.lean` now defines executable guard/radix `CNode.resolveSlot` semantics with explicit depth/guard/slot failure taxonomy; `SeLe4n/Kernel/Capability/Operations.lean` adds `CSpacePathAddr` plus `cspaceResolvePath`/`cspaceLookupPath` so pointer-path traversal is modeled separately from direct slot lookup; `tests/NegativeStateSuite.lean` adds path-resolution positive/negative checks for depth mismatch and guard mismatch failures under `scripts/test_tier2_negative.sh`; `tests/fixtures/main_trace_smoke.expected` now anchors source/deep-path guard-radix trace outputs via `scripts/test_tier2_trace.sh`; full validation gates (`scripts/test_smoke.sh`, `scripts/test_full.sh`) pass with the completed semantics.
 
 ### WS-B6 — IPC completeness with notifications (Planned)
 
@@ -168,7 +169,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, and WS-B4 are Completed**; WS-B
 ### WS-B7 — Information-flow proof track start (Planned)
 
 - **Goal:** land IF-M1 formal baseline and decomposition plan for noninterference progression.
-- **Prerequisites:** WS-B1 and WS-B5 completion (state model and CSpace semantics available).
+- **Prerequisites:** WS-B1 and WS-B5 completion (state model and CSpace semantics available). ✅ satisfied
 - **Implementation slices:**
   1. Define confidentiality/integrity labels and state projection helpers.
   2. Publish IF-M1 theorem targets and assumptions ledger.
@@ -252,7 +253,7 @@ Required before declaring kickoff-ready:
 
 First hardware-facing entry gate remains:
 
-- `WS-B1 + WS-B2 + WS-B5` complete,
+- `WS-B1 + WS-B2 + WS-B5` complete ✅,
 - Tier 4 nightly determinism signal stable,
 - architecture assumptions and risk log updated.
 

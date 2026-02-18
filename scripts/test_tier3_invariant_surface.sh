@@ -27,6 +27,13 @@ run_check "INVARIANT" rg -n '^structure Badge' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure ASID' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure VAddr' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure PAddr' SeLe4n/Prelude.lean
+# WS-B5 closure anchors: CSpace guard/radix path resolution surface.
+run_check "INVARIANT" rg -n '^inductive ResolveError' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def resolveSlot' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def cspaceResolvePath' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceLookupPath' SeLe4n/Kernel/Capability/Operations.lean
+run_check "DOC" rg -n '^### WS-B5 — CSpace semantics completion \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean

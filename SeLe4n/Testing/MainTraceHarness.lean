@@ -7,6 +7,8 @@ open SeLe4n.Model
 namespace SeLe4n.Testing
 
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
+def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := 10, cptr := 0, depth := 0 }
+def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := 10, cptr := 1, depth := 0 }
 def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 5 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
@@ -199,6 +201,15 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
         if oid = 200 then some (.cnode deepRadixCNode) else st1.objects oid
     }
   IO.println s!"deep cnode radix fixture: {reprStr <| (stDeepCNode.objects 200).map (fun obj => match obj with | .cnode cn => cn.radix | _ => 0)}"
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := 200, cptr := 13312, depth := 14 } stDeepCNode with
+  | .error err => IO.println s!"deep cnode path lookup error: {reprStr err}"
+  | .ok (cap, _) => IO.println s!"deep cnode path lookup rights: {reprStr cap.rights}"
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := 200, cptr := 1024, depth := 4 } stDeepCNode with
+  | .error err => IO.println s!"deep cnode path bad-depth branch: {reprStr err}"
+  | .ok (cap, _) => IO.println s!"unexpected deep cnode path bad-depth success: {reprStr cap}"
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := 200, cptr := 9216, depth := 14 } stDeepCNode with
+  | .error err => IO.println s!"deep cnode path guard-mismatch branch: {reprStr err}"
+  | .ok (cap, _) => IO.println s!"unexpected deep cnode path guard success: {reprStr cap}"
 
   let largeRunnable : List SeLe4n.ThreadId :=
     (List.range 12).map (fun i => SeLe4n.ThreadId.ofNat (i + 1))
@@ -391,6 +402,12 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"source lookup error: {reprStr err}"
   | .ok (srcCap, _) =>
       IO.println s!"source cap rights before mint: {reprStr srcCap.rights}"
+  match SeLe4n.Kernel.cspaceLookupPath rootPath st1 with
+  | .error err => IO.println s!"source path lookup error: {reprStr err}"
+  | .ok (srcCap, _) => IO.println s!"source path lookup rights: {reprStr srcCap.rights}"
+  match SeLe4n.Kernel.cspaceLookupPath rootPathAlias st1 with
+  | .error err => IO.println s!"source path alias branch error: {reprStr err}"
+  | .ok (srcCap, _) => IO.println s!"source path alias lookup rights: {reprStr srcCap.rights}"
 
   runCapabilityAndArchitectureTrace st1
   runServiceAndStressTrace st1

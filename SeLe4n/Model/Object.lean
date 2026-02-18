@@ -162,8 +162,36 @@ end VSpaceRoot
 
 namespace CNode
 
+inductive ResolveError where
+  | depthMismatch
+  | guardMismatch
+  deriving Repr, DecidableEq
+
 def empty : CNode :=
   { guard := 0, radix := 0, slots := [] }
+
+/-- Number of addressable slots represented by this CNode radix width. -/
+def slotCount (node : CNode) : Nat :=
+  2 ^ node.radix
+
+/-- Resolve a CPtr/depth pair into the local slot index using guard/radix semantics.
+
+`depth` is interpreted as the number of low-order bits consumed at this CNode level.
+Those bits split into:
+- `radix` slot-index bits,
+- `depth - radix` guard bits, which must equal `node.guard`. -/
+def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (depth : Nat) : Except ResolveError SeLe4n.Slot :=
+  if depth < node.radix then
+    .error .depthMismatch
+  else
+    let guardWidth := depth - node.radix
+    let slotCount := node.slotCount
+    let slotNat := cptr.toNat % slotCount
+    let guardBits := (cptr.toNat / slotCount) % (2 ^ guardWidth)
+    if guardBits = node.guard then
+      .ok (SeLe4n.Slot.ofNat slotNat)
+    else
+      .error .guardMismatch
 
 def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
   (node.slots.find? (fun entry => entry.fst = slot)).map Prod.snd
@@ -190,6 +218,15 @@ theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot) :
     (node.remove slot).lookup slot = none := by
   unfold remove lookup
   simp
+
+theorem resolveSlot_depthMismatch
+    (node : CNode)
+    (cptr : SeLe4n.CPtr)
+    (depth : Nat)
+    (hDepth : depth < node.radix) :
+    node.resolveSlot cptr depth = .error .depthMismatch := by
+  unfold resolveSlot
+  simp [hDepth]
 
 theorem lookup_revokeTargetLocal_source_eq_lookup
     (node : CNode)

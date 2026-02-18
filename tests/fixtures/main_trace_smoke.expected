@@ -1,5 +1,7 @@
 scheduled thread: some 1
 source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+source path alias lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
 adapter timer success path value: 2
 adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
 adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
@@ -20,6 +22,9 @@ service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolatio
 service isolation api↔denied: true
 service isolation api↔db: false
 deep cnode radix fixture: some 12
+deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
+deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
+deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
 large runnable queue length: 12
 large queue scheduled current: some 1
 multi-endpoint receive senders: 4, 5

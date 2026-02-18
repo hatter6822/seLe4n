@@ -12,7 +12,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Active:** Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, and WS-B4 completed)
+- **Active:** Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 completed)
 
 ## 2) Stable contracts contributors must preserve
 
@@ -28,7 +28,7 @@ Current milestone state:
 - WS-B2: Generative + negative testing expansion ✅ completed
 - WS-B3: Main trace harness refactor ✅ completed
 - WS-B4: Remaining type-wrapper migration ✅ completed
-- WS-B5: CSpace guard/radix completion
+- WS-B5: CSpace guard/radix completion ✅ completed
 - WS-B6: Notification-object IPC completion
 - WS-B7: Information-flow proof-track start
 - WS-B8: Documentation automation + consolidation
@@ -42,7 +42,7 @@ Canonical execution plan:
 ## 4) Sequencing model
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
-- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2 complete)
+- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5 complete)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ## 5) Historical context

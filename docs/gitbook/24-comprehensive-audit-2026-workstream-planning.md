@@ -20,7 +20,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 ### Medium priority
 
-- **WS-B5:** CSpace guard/radix semantics completion
+- **WS-B5:** CSpace guard/radix semantics completion ✅ completed
 - **WS-B6:** Notification-object IPC completion
 - **WS-B7:** Information-flow proof-track start
 - **WS-B8:** Documentation automation + consolidation
@@ -34,7 +34,7 @@ This is the GitBook mirror of the canonical planning backbone:
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
-- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2 completed)
+- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ## 4) Evidence expectations for milestone-moving PRs
@@ -80,3 +80,11 @@ When status changes, update together:
 - `SeLe4n/Prelude.lean` upgrades `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr` from `Nat` aliases to dedicated wrapper structures with explicit `ofNat`/`toNat` helpers.
 - Compatibility ergonomics are preserved via targeted `OfNat` and `ToString` instances, so existing deterministic fixtures remain readable while retaining type separation.
 - Tier 0 now includes a WS-B4 regression guard in `scripts/test_tier0_hygiene.sh` that fails if any of the migrated wrappers revert to `abbrev ... := Nat`.
+
+
+## 10) WS-B5 closure evidence
+
+- `SeLe4n/Model/Object.lean` now includes `CNode.resolveSlot` with explicit guard/radix resolution and depth/guard failure branches.
+- `SeLe4n/Kernel/Capability/Operations.lean` adds `CSpacePathAddr`, `cspaceResolvePath`, and `cspaceLookupPath` so CSpace pointer-path traversal is executable alongside direct slot lookups.
+- `tests/NegativeStateSuite.lean` now enforces WS-B5 negative-path checks for depth mismatch and guard mismatch outcomes in `scripts/test_tier2_negative.sh`.
+- `tests/fixtures/main_trace_smoke.expected` now includes source/deep CSpace path anchors enforced by `scripts/test_tier2_trace.sh`.
