@@ -1,3 +1,12 @@
+## [0.9.29] - 2026-02-18
+
+### WS-B10 docs-sync offline/restricted-environment fallback fix
+- Updated `scripts/test_docs_sync.sh` to treat `setup_lean_env.sh` as **best-effort** by default when `lake` is missing, so docs-sync still validates navigation/link consistency on offline or restricted environments where Lean setup cannot complete.
+- Added explicit strict mode: `DOCS_SYNC_REQUIRE_LEAN_SETUP=1` now makes setup failure fatal for environments that require Lean setup enforcement during docs-sync.
+- Kept existing explicit opt-out: `DOCS_SYNC_SKIP_LEAN_SETUP=1` skips Lean setup and doc-gen4 probing intentionally.
+- Synchronized testing docs (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/gitbook/07-testing-and-ci.md`) to describe best-effort vs strict behavior.
+- Bumped patch version to **`0.9.29`** and synchronized root version marker in `README.md`.
+
 ## [0.9.28] - 2026-02-18
 
 ### WS-B10 docs-sync reliability refinement

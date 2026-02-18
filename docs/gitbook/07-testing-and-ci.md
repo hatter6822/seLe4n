@@ -6,7 +6,7 @@ Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (W
 
 - **Tier 0 (hygiene)**
   - marker scan for forbidden placeholders (`axiom|sorry|TODO`) in tracked proof surface,
-  - documentation synchronization automation (`scripts/test_docs_sync.sh`: navigation generation + markdown-link checks + auto Lean setup for doc-gen4 probe when `lake` is missing),
+  - documentation synchronization automation (`scripts/test_docs_sync.sh`: navigation generation + markdown-link checks + best-effort Lean setup for doc-gen4 probe when `lake` is missing (strict mode via `DOCS_SYNC_REQUIRE_LEAN_SETUP=1`)),
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.

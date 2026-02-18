@@ -8,7 +8,7 @@ Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (W
 
 ## 2. Current enforced tiers
 
-- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, including docs-sync automation via `scripts/test_docs_sync.sh` with auto Lean setup for doc-gen4 probe when `lake` is missing)
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, including docs-sync automation via `scripts/test_docs_sync.sh` with best-effort Lean setup for doc-gen4 probe when `lake` is missing (strict mode via `DOCS_SYNC_REQUIRE_LEAN_SETUP=1`))
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
 - **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
