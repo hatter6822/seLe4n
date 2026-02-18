@@ -41,9 +41,17 @@ def format_readme(manifest: dict) -> str:
     lines.append("## Where to find current workstream detail")
     lines.append("")
     lines.append("- Canonical execution matrix:")
-    lines.append("  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)")
+    workstream_doc = manifest.get("current_workstream_doc", {
+        "label": "docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md",
+        "path": "../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md",
+    })
+    lines.append(f"  [`{workstream_doc['label']}`]({workstream_doc['path']})")
     lines.append("- GitBook planning chapter:")
-    lines.append("  [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)")
+    planning_chapter = manifest.get("current_workstream_chapter", {
+        "title": "Comprehensive Audit 2026 Workstream Planning",
+        "path": "24-comprehensive-audit-2026-workstream-planning.md",
+    })
+    lines.append(f"  [{planning_chapter['title']}]({planning_chapter['path']})")
     lines.append("")
     lines.append("## Historical slice archive")
     lines.append("")

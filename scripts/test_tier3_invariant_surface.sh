@@ -55,12 +55,13 @@ run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite'
 run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
-run_check "DOC" rg -n '^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.' README.md
+# shellcheck disable=SC2016
+run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.9\.32\.md`$)' README.md
 run_check "DOC" rg -n '^- \*\*Current completed slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B1 through WS-B11 complete\)\.' docs/SEL4_SPEC.md
-run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.' docs/gitbook/01-project-overview.md
-run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/06-development-workflow.md
-run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer the next documented priority in the active plan \(all WS-B streams are complete\)\)\.' docs/DEVELOPMENT.md
+run_check "DOC" rg -n '(^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.$)|(^Current completed slice:$)' docs/gitbook/01-project-overview.md
+run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^1\. Pick one coherent WS-B target\.$)' docs/gitbook/06-development-workflow.md
+run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n '(^1\. Sync branch and choose one coherent WS-B slice \(prefer the next documented priority in the active plan \(all WS-B streams are complete\)\)\.$)|(^## 3\) Current execution slice \(WS-B portfolio\)$)' docs/DEVELOPMENT.md
 run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^# Threat Model and Security Hardening Baseline \(WS-B9\)' docs/THREAT_MODEL.md
@@ -68,7 +69,8 @@ run_check "DOC" rg -n '^# Threat Model and Security Hardening \(WS-B9\)' docs/gi
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
-run_check "DOC" rg -n '^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
+# shellcheck disable=SC2016
+run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map \(WS-B8\)' docs/DOCS_DEDUPLICATION_MAP.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
 run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py
@@ -378,7 +380,7 @@ run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4-A|M4-B|M5|M6|M7' docs/SEL4_SPEC.md
 run_check "DOC" rg -n 'WS-B1\.\.WS-B11|WS-B portfolio|Comprehensive Audit 2026-02' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "DOC" rg -n 'Most recently completed slice:.*M7|M7 remediation is complete|M7 is complete and archived' README.md docs/gitbook/README.md docs/gitbook/23-m7-remediation-closeout-packet.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md
-run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
+run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E|Historical baseline retained for traceability|M6 architecture-boundary assumptions/adapters' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
 run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
 # shellcheck disable=SC2016
 run_check "DOC" rg -n 'Tier 3 fails \(`\./scripts/test_tier3_invariant_surface\.sh`\)' docs/gitbook/07-testing-and-ci.md
@@ -406,7 +408,7 @@ run_check "DOC" rg -n '^# CI Maturity and Telemetry Baseline \(WS-B10\)' docs/gi
 run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 run_check "DOC" rg -n '^# Scenario framework \(WS-B11\)' tests/scenarios/README.md
-run_check "DOC" rg -n '^## 16\) WS-B11 closure evidence' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n '(^## 16\) WS-B11 closure evidence$)|(^## 2\) Active workstreams \(WS-C portfolio\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "INVARIANT" rg -n '^\s*"schema_version": "1\.0\.0"' tests/scenarios/scenario_catalog.json
 run_check "INVARIANT" rg -n '^def validate_catalog' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^def nightly_seeds' scripts/scenario_catalog.py

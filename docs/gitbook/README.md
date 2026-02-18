@@ -5,9 +5,9 @@
 This GitBook is the long-form guide for architecture, workflow, and milestone context.
 
 ## Current project state
-- **Current completed slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1 through WS-B11 completed).
-- **Latest completed slice:** M7 remediation (WS-A1..WS-A8 complete).
-- **Previous completed slice:** M6 architecture-boundary hardening.
+- **Active findings baseline:** AUDIT v0.9.32 (independent audit).
+- **Active execution baseline:** WS-C portfolio (v0.9.32 workstream plan).
+- **Historical baseline retained for traceability:** WS-B portfolio (v0.9.0 plan).
 
 Normative scope and acceptance source:
 [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
@@ -28,7 +28,7 @@ Normative scope and acceptance source:
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
   [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 
