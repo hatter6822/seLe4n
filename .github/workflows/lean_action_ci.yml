@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
         uses: actions/cache@v5
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
         uses: actions/cache@v5
@@ -92,7 +92,7 @@ jobs:
     needs: [docs-automation, test-fast]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
         uses: actions/cache@v5
@@ -136,7 +136,7 @@ jobs:
     needs: test-smoke
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
         uses: actions/cache@v5
