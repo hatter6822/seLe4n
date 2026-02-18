@@ -12,7 +12,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Completed:** Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1 through WS-B11 completed)
+- **Active:** Comprehensive Audit v0.9.32 WS-C execution kickoff (Phase P0/P1 transition; execution is beginning on current workstreams)
 
 ## 2) Stable contracts contributors must preserve
 
@@ -22,37 +22,34 @@ Current milestone state:
 4. fixture-backed executable evidence,
 5. tiered testing gates used in CI and local workflows.
 
-## 3) Active workstream portfolio (WS-B)
+## 3) Active workstream portfolio (WS-C)
 
-- WS-B1: VSpace + memory model foundation ✅ completed
-- WS-B2: Generative + negative testing expansion ✅ completed
-- WS-B3: Main trace harness refactor ✅ completed
-- WS-B4: Remaining type-wrapper migration ✅ completed
-- WS-B5: CSpace guard/radix completion ✅ completed
-- WS-B6: Notification-object IPC completion ✅ completed
-- WS-B7: Information-flow proof-track start ✅ completed
-- WS-B8: Documentation automation + consolidation ✅ completed
-- WS-B9: Threat model and security hardening ✅ completed
-- WS-B10: CI maturity upgrades ✅ completed
-- WS-B11: Scenario framework finalization ✅ completed
+- WS-C1: IPC handshake correctness (critical; kickoff starting)
+- WS-C2: Scheduler semantic fidelity (high; queued after initial blockers)
+- WS-C3: Proof-surface de-tautologization (critical; kickoff starting)
+- WS-C4: Test validity hardening (high; kickoff starting)
+- WS-C5: Information-flow assurance (critical; Phase P2 target)
+- WS-C6: CI and supply-chain hardening (medium; Phase P3 target)
+- WS-C7: Model structure and maintainability (medium; Phase P3 target)
+- WS-C8: Documentation and GitBook consolidation (high; in progress)
 
 Canonical execution plan:
 [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
 Security baseline reference:
-[Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md).
+[Threat Model and Security Hardening](28-threat-model-and-security-hardening.md).
 
 ## 4) Sequencing model
 
-- **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
-- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 complete)
-- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (completed)
+- **Phase P0:** WS-C8 baseline reset + active-plan publication (in progress)
+- **Phase P1:** WS-C1 + WS-C3 + core WS-C2 + fixture-repair WS-C4 (execution beginning)
+- **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
+- **Phase P3:** WS-C6 + WS-C7 sustainment hardening
 
 ## 5) Historical context
 
-M7 and earlier slice chapters remain valuable references for delivered patterns,
+WS-B and earlier slice chapters remain valuable references for delivered patterns,
 but are archival in status. Use them for precedent, not active scope ownership.
-
 
 ## 6) M6 closeout continuity note
 

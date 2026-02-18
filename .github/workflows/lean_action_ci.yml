@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.elan
@@ -38,7 +38,7 @@ jobs:
 
       - name: Upload generated API docs (if present)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: api-docs-preview
           path: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload CI telemetry (docs lane)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-docs
           path: .ci-artifacts/telemetry/
@@ -59,10 +59,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.elan
@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload CI telemetry (fast lane)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-fast
           path: .ci-artifacts/telemetry/
@@ -92,10 +92,10 @@ jobs:
     needs: [docs-automation, test-fast]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.elan
@@ -115,7 +115,7 @@ jobs:
 
       - name: Upload trace fixture diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trace-fixture-diagnostics
           path: |
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload CI telemetry (smoke lane)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-smoke
           path: .ci-artifacts/telemetry/
@@ -136,10 +136,10 @@ jobs:
     needs: test-smoke
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Restore Lean and Lake caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.elan
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload CI telemetry (full lane)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-full
           path: .ci-artifacts/telemetry/

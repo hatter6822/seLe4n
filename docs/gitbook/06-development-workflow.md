@@ -2,7 +2,7 @@
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-B target.
+1. Pick one coherent WS-C target (prioritize Phase P1 blockers first).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
@@ -30,7 +30,7 @@ Setup reliability note:
 
 For milestone-moving PRs:
 
-- include WS-B ID(s),
+- include WS-C ID(s),
 - show evidence commands,
 - map changes to workstream outcomes,
 - record deferrals and owner workstreams,
@@ -38,9 +38,10 @@ For milestone-moving PRs:
 
 ## Workstream sequence
 
-- **Phase P1:** WS-B4, WS-B3, WS-B8 (WS-B3/WS-B4/WS-B8 completed)
-- **Phase P2:** WS-B5, WS-B6, WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11 (WS-B7/WS-B9/WS-B10/WS-B11 completed)
+- **Phase P0:** WS-C8 baseline reset/documentation synchronization (in progress)
+- **Phase P1:** WS-C1, WS-C3, core WS-C2 work, and WS-C4 fixture repairs (execution beginning)
+- **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
+- **Phase P3:** WS-C6 + WS-C7 sustainability hardening
 
 ## Failure triage
 

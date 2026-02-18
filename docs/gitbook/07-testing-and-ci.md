@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is complete (WS-B1 through WS-B11 complete), with testing tiers enforcing regression protection and evidence continuity.**
+Current stage context: **Comprehensive Audit v0.9.32 WS-C execution is beginning (Phase P0/P1 transition), with testing tiers enforcing regression protection and evidence continuity as execution ramps across current workstreams.**
 
 ## Tier model
 
