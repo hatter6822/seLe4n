@@ -224,7 +224,7 @@ Each workstream PR must include:
 | Workstream | Status | Owner | Notes |
 |---|---|---|---|
 | WS-C1 | Completed | Kernel IPC | Notification badge accumulation + waiter ipcState transitions + Tier-2/Tier-3 evidence refreshed. |
-| WS-C2 | Planned | Unassigned | Priority scheduling and yield semantics. |
+| WS-C2 | Completed | Kernel Scheduler | Priority-aware `chooseThread`, explicit scheduler invariant failures, and yield queue-rotation semantics with refreshed Tier-1/Tier-2 evidence. |
 | WS-C3 | Planned | Unassigned | Remove tautological determinism theorems and publish tracked theorem obligations. |
 | WS-C4 | Planned | Unassigned | Invariant-valid tests + post-op checks + generators. |
 | WS-C5 | Planned | Unassigned | First noninterference preservation theorem. |

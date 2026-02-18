@@ -20,7 +20,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 ### Critical/high correctness and assurance
 
 - **WS-C1:** IPC handshake correctness (critical; completed — notification badge OR accumulation + waiter ipcState transitions validated)
-- **WS-C2:** Scheduler semantic fidelity (high)
+- **WS-C2:** Scheduler semantic fidelity (high, completed)
 - **WS-C3:** Proof-surface de-tautologization (critical; execution beginning)
   - remove tautological `vspaceLookup_deterministic` and `projectState_deterministic`,
   - add module docstrings clarifying determinism as a meta-property of pure Lean,

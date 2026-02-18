@@ -4,27 +4,70 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Choose the first runnable thread, if any. -/
+private def chooseBestRunnable
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+  match runnable with
+  | [] => .ok best
+  | tid :: rest =>
+      match objects tid.toObjId with
+      | some (.tcb tcb) =>
+          let best' :=
+            match best with
+            | none => some (tid, tcb.priority)
+            | some (_, bestPrio) =>
+                if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+          chooseBestRunnable objects rest best'
+      | _ => .error .schedulerInvariantViolation
+
+private def rotateCurrentToBack
+    (current : Option SeLe4n.ThreadId)
+    (runnable : List SeLe4n.ThreadId) : Except KernelError (List SeLe4n.ThreadId) :=
+  match current with
+  | none => .ok runnable
+  | some tid =>
+      if tid ∈ runnable then
+        .ok (runnable.erase tid ++ [tid])
+      else
+        .error .schedulerInvariantViolation
+
+/-- Choose the highest-priority runnable thread. Tie-breaking is deterministic: the first
+thread in runnable-order wins when priorities are equal. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match st.scheduler.runnable with
-    | [] => .ok (none, st)
-    | t :: _ => .ok (some t, st)
+    match chooseBestRunnable st.objects st.scheduler.runnable none with
+    | .error e => .error e
+    | .ok none => .ok (none, st)
+    | .ok (some (tid, _)) => .ok (some tid, st)
 
-/-- Simple scheduler step for the bootstrap model. If the selected runnable TID does not map
-to a TCB object, the scheduler clears `current` instead of selecting an invalid thread. -/
+/-- Scheduler step for the bootstrap model.
+
+Failure modes are explicit:
+- malformed runnable entries (non-TCB object IDs) surface as `schedulerInvariantViolation`,
+- selecting a thread not present in runnable also surfaces as `schedulerInvariantViolation`. -/
 def schedule : Kernel Unit :=
   fun st =>
-    match st.scheduler.runnable with
-    | [] => setCurrentThread none st
-    | t :: _ =>
-        match st.objects t.toObjId with
-        | some (.tcb _) => setCurrentThread (some t) st
-        | _ => setCurrentThread none st
+    match chooseThread st with
+    | .error e => .error e
+    | .ok (none, st') => setCurrentThread none st'
+    | .ok (some tid, st') =>
+        match st'.objects tid.toObjId with
+        | some (.tcb _) =>
+            if tid ∈ st'.scheduler.runnable then
+              setCurrentThread (some tid) st'
+            else
+              .error .schedulerInvariantViolation
+        | _ => .error .schedulerInvariantViolation
 
-/-- Placeholder syscall dispatcher with one implemented path for now. -/
+/-- Yield semantics: move the current thread to the end of the runnable queue, then schedule. -/
 def handleYield : Kernel Unit :=
-  schedule
+  fun st =>
+    match rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
+    | .error e => .error e
+    | .ok runnable' =>
+        let st' := { st with scheduler := { st.scheduler with runnable := runnable' } }
+        schedule st'
 
 theorem schedule_eq_chooseThread_then_setCurrent :
     schedule = (fun st =>
@@ -35,15 +78,19 @@ theorem schedule_eq_chooseThread_then_setCurrent :
           | none => setCurrentThread none st'
           | some tid =>
               match st'.objects tid.toObjId with
-              | some (.tcb _) => setCurrentThread (some tid) st'
-              | _ => setCurrentThread none st') := by
+              | some (.tcb _) =>
+                  if tid ∈ st'.scheduler.runnable then
+                    setCurrentThread (some tid) st'
+                  else
+                    .error .schedulerInvariantViolation
+              | _ => .error .schedulerInvariantViolation) := by
   funext st
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      simp [schedule, chooseThread, setCurrentThread, hRun]
-  | cons t ts =>
-      cases hObj : st.objects t.toObjId <;>
-      simp [schedule, chooseThread, setCurrentThread, hRun, hObj]
+  cases hChoose : chooseThread st with
+  | error e => simp [schedule, hChoose]
+  | ok pair =>
+      cases pair with
+      | mk next st' =>
+          cases next <;> simp [schedule, hChoose]
 
 theorem setCurrentThread_preserves_wellFormed
     (st st' : SystemState)
@@ -93,66 +140,58 @@ theorem setCurrentThread_some_preserves_currentThreadValid
   cases hStep
   simpa [currentThreadValid] using hObj
 
-theorem chooseThread_returns_runnable_or_none
+theorem chooseThread_preserves_state
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (hStep : chooseThread st = .ok (next, st')) :
-    st' = st ∧
-      ((next = none ∧ st.scheduler.runnable = []) ∨
-       ∃ tid, next = some tid ∧ tid ∈ st.scheduler.runnable) := by
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      simp [chooseThread, hRun] at hStep
-      rcases hStep with ⟨hNext, hSt⟩
-      have hNext' : next = none := hNext.symm
-      subst hNext'
-      subst hSt
-      exact ⟨rfl, Or.inl ⟨rfl, rfl⟩⟩
-  | cons t ts =>
-      simp [chooseThread, hRun] at hStep
-      rcases hStep with ⟨hNext, hSt⟩
-      have hNext' : next = some t := hNext.symm
-      subst hNext'
-      subst hSt
-      exact ⟨rfl, Or.inr ⟨t, rfl, by simp⟩⟩
+    st' = st := by
+  unfold chooseThread at hStep
+  cases hPick : chooseBestRunnable st.objects st.scheduler.runnable none with
+  | error e => simp [hPick] at hStep
+  | ok best =>
+      cases best with
+      | none =>
+          rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
+      | some pair =>
+          cases pair with
+          | mk tid prio =>
+              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+              simpa using hSt.symm
 
-theorem schedule_preserves_wellFormed
+ theorem schedule_preserves_wellFormed
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      simp [schedule, setCurrentThread, hRun] at hStep
-      cases hStep
-      simp [schedulerWellFormed, queueCurrentConsistent]
-  | cons t ts =>
-      cases hObj : st.objects t.toObjId with
-      | none =>
-          simp [schedule, setCurrentThread, hRun, hObj] at hStep
-          cases hStep
-          simp [schedulerWellFormed, queueCurrentConsistent]
-      | some obj =>
-          cases obj with
-          | tcb tcb =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          cases next with
+          | none =>
+              have hSet : setCurrentThread none stChoose = .ok ((), st') := by
+                simpa [hChoose] using hStep
+              simp [setCurrentThread] at hSet
+              cases hSet
               simp [schedulerWellFormed, queueCurrentConsistent]
-          | endpoint ep =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [schedulerWellFormed, queueCurrentConsistent]
-          | notification ntfn =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [schedulerWellFormed, queueCurrentConsistent]
-          | cnode cn =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [schedulerWellFormed, queueCurrentConsistent]
-          | vspaceRoot root =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [schedulerWellFormed, queueCurrentConsistent]
+          | some tid =>
+              cases hObj : stChoose.objects tid.toObjId with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
+                      · simp [hChoose, hObj, hMem] at hStep
+                        have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
+                          simpa [hChoose, hObj, hMem] using hStep
+                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hMem hSet
+                      · simp [hChoose, hObj, hMem] at hStep
+                  | endpoint ep => simp [hChoose, hObj] at hStep
+                  | notification ntfn => simp [hChoose, hObj] at hStep
+                  | cnode cn => simp [hChoose, hObj] at hStep
+                  | vspaceRoot root => simp [hChoose, hObj] at hStep
 
 theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -160,53 +199,14 @@ theorem chooseThread_preserves_queueCurrentConsistent
     (hConsistent : queueCurrentConsistent st.scheduler)
     (hStep : chooseThread st = .ok (next, st')) :
     queueCurrentConsistent st'.scheduler := by
-  rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
-  subst hSt
+  rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hConsistent
 
 theorem schedule_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     queueCurrentConsistent st'.scheduler := by
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      simp [schedule, setCurrentThread, hRun] at hStep
-      cases hStep
-      simp [queueCurrentConsistent]
-  | cons t ts =>
-      cases hObj : st.objects t.toObjId with
-      | none =>
-          simp [schedule, setCurrentThread, hRun, hObj] at hStep
-          cases hStep
-          simp [queueCurrentConsistent]
-      | some obj =>
-          cases obj with
-          | tcb tcb =>
-              exact setCurrentThread_preserves_queueCurrentConsistent st st' t
-                (by simp [hRun])
-                (by simpa [schedule, hRun, hObj] using hStep)
-          | endpoint ep =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [queueCurrentConsistent]
-          | notification ntfn =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [queueCurrentConsistent]
-          | cnode cn =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [queueCurrentConsistent]
-          | vspaceRoot root =>
-              simp [schedule, setCurrentThread, hRun, hObj] at hStep
-              cases hStep
-              simp [queueCurrentConsistent]
-
-theorem handleYield_preserves_queueCurrentConsistent
-    (st st' : SystemState)
-    (hStep : handleYield st = .ok ((), st')) :
-    queueCurrentConsistent st'.scheduler := by
-  simpa [handleYield] using schedule_preserves_queueCurrentConsistent st st' hStep
+  simpa [schedulerWellFormed, queueCurrentConsistent] using schedule_preserves_wellFormed st st' hStep
 
 theorem chooseThread_preserves_runQueueUnique
     (st st' : SystemState)
@@ -214,8 +214,7 @@ theorem chooseThread_preserves_runQueueUnique
     (hUnique : runQueueUnique st.scheduler)
     (hStep : chooseThread st = .ok (next, st')) :
     runQueueUnique st'.scheduler := by
-  rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
-  subst hSt
+  rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hUnique
 
 theorem chooseThread_preserves_currentThreadValid
@@ -224,8 +223,7 @@ theorem chooseThread_preserves_currentThreadValid
     (hValid : currentThreadValid st)
     (hStep : chooseThread st = .ok (next, st')) :
     currentThreadValid st' := by
-  rcases chooseThread_returns_runnable_or_none st st' next hStep with ⟨hSt, _⟩
-  subst hSt
+  rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hValid
 
 theorem schedule_preserves_runQueueUnique
@@ -233,83 +231,134 @@ theorem schedule_preserves_runQueueUnique
     (hUnique : runQueueUnique st.scheduler)
     (hStep : schedule st = .ok ((), st')) :
     runQueueUnique st'.scheduler := by
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-        simpa [schedule, hRun] using hStep)
-  | cons t ts =>
-      cases hObj : st.objects t.toObjId with
-      | none =>
-          exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-            simpa [schedule, hRun, hObj] using hStep)
-      | some obj =>
-          cases obj with
-          | tcb tcb =>
-              exact setCurrentThread_preserves_runQueueUnique st st' (some t) hUnique (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | endpoint ep =>
-              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | notification ntfn =>
-              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | cnode cn =>
-              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | vspaceRoot root =>
-              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
-                simpa [schedule, hRun, hObj] using hStep)
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          have hChooseState : stChoose = st :=
+            chooseThread_preserves_state st stChoose next hChoose
+          have hUniqueChoose : runQueueUnique stChoose.scheduler := by
+            simpa [hChooseState] using hUnique
+          cases next with
+          | none =>
+              exact setCurrentThread_preserves_runQueueUnique stChoose st' none hUniqueChoose (by
+                simpa [hChoose] using hStep)
+          | some tid =>
+              cases hObj : stChoose.objects tid.toObjId with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
+                      · exact setCurrentThread_preserves_runQueueUnique stChoose st' (some tid) hUniqueChoose (by
+                          simpa [hChoose, hObj, hMem] using hStep)
+                      · simp [hChoose, hObj, hMem] at hStep
+                  | endpoint ep => simp [hChoose, hObj] at hStep
+                  | notification ntfn => simp [hChoose, hObj] at hStep
+                  | cnode cn => simp [hChoose, hObj] at hStep
+                  | vspaceRoot root => simp [hChoose, hObj] at hStep
 
 theorem schedule_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     currentThreadValid st' := by
-  cases hRun : st.scheduler.runnable with
-  | nil =>
-      exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-        simpa [schedule, hRun] using hStep)
-  | cons t ts =>
-      cases hObj : st.objects t.toObjId with
-      | none =>
-          exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-            simpa [schedule, hRun, hObj] using hStep)
-      | some obj =>
-          cases obj with
-          | tcb tcb =>
-              exact setCurrentThread_some_preserves_currentThreadValid st st' t
-                ⟨tcb, hObj⟩
-                (by simpa [schedule, hRun, hObj] using hStep)
-          | endpoint ep =>
-              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | notification ntfn =>
-              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | cnode cn =>
-              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-                simpa [schedule, hRun, hObj] using hStep)
-          | vspaceRoot root =>
-              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
-                simpa [schedule, hRun, hObj] using hStep)
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          have hChooseState : stChoose = st :=
+            chooseThread_preserves_state st stChoose next hChoose
+          cases next with
+          | none =>
+              exact setCurrentThread_none_preserves_currentThreadValid stChoose st' (by
+                simpa [hChoose] using hStep)
+          | some tid =>
+              cases hObj : stChoose.objects tid.toObjId with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
+                      · exact setCurrentThread_some_preserves_currentThreadValid stChoose st' tid
+                          ⟨tcb, hObj⟩
+                          (by simpa [hChoose, hObj, hMem] using hStep)
+                      · simp [hChoose, hObj, hMem] at hStep
+                  | endpoint ep => simp [hChoose, hObj] at hStep
+                  | notification ntfn => simp [hChoose, hObj] at hStep
+                  | cnode cn => simp [hChoose, hObj] at hStep
+                  | vspaceRoot root => simp [hChoose, hObj] at hStep
 
 theorem handleYield_preserves_wellFormed
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
-  simpa [handleYield] using schedule_preserves_wellFormed st st' hStep
+  unfold handleYield at hStep
+  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
+  | error e => simp [hRotate] at hStep
+  | ok runnable' =>
+      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
+      exact schedule_preserves_wellFormed stMoved st' hSched
+
+theorem handleYield_preserves_queueCurrentConsistent
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    queueCurrentConsistent st'.scheduler := by
+  simpa [schedulerWellFormed, queueCurrentConsistent] using handleYield_preserves_wellFormed st st' hStep
 
 theorem handleYield_preserves_runQueueUnique
     (st st' : SystemState)
     (hUnique : runQueueUnique st.scheduler)
     (hStep : handleYield st = .ok ((), st')) :
     runQueueUnique st'.scheduler := by
-  simpa [handleYield] using schedule_preserves_runQueueUnique st st' hUnique hStep
+  unfold handleYield at hStep
+  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
+  | error e => simp [hRotate] at hStep
+  | ok runnable' =>
+      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      have hMovedUnique : runQueueUnique stMoved.scheduler := by
+        by_cases hCur : st.scheduler.current = none
+        · have hRunEq : runnable' = st.scheduler.runnable := by
+            simpa [rotateCurrentToBack, hCur] using hRotate.symm
+          subst runnable'
+          simpa [stMoved, runQueueUnique] using hUnique
+        · rcases Option.ne_none_iff_exists'.mp hCur with ⟨tid, hTid⟩
+          simp [rotateCurrentToBack, hTid] at hRotate
+          split at hRotate
+          · rename_i hMem
+            cases hRotate
+            have hErase : (st.scheduler.runnable.erase tid).Nodup := hUnique.erase tid
+            have hNotMemErase : tid ∉ st.scheduler.runnable.erase tid := by
+              exact List.Nodup.not_mem_erase (a := tid) hUnique
+            have hApp : (st.scheduler.runnable.erase tid ++ [tid]).Nodup := by
+              refine List.nodup_append.2 ?_
+              refine ⟨hErase, by simp, ?_⟩
+              intro x hx y hy
+              have hyTid : y = tid := by simpa using hy
+              subst hyTid
+              intro hEq
+              subst hEq
+              exact hNotMemErase hx
+            simpa [stMoved, runQueueUnique, hTid, hMem] using hApp
+          · simp at hRotate
+      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
+      exact schedule_preserves_runQueueUnique stMoved st' hMovedUnique hSched
 
 theorem handleYield_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadValid st' := by
-  simpa [handleYield] using schedule_preserves_currentThreadValid st st' hStep
+  unfold handleYield at hStep
+  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
+  | error e => simp [hRotate] at hStep
+  | ok runnable' =>
+      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
+      exact schedule_preserves_currentThreadValid stMoved st' hSched
 
 theorem chooseThread_preserves_kernelInvariant
     (st st' : SystemState)
@@ -337,7 +386,9 @@ theorem handleYield_preserves_kernelInvariant
     (hInv : kernelInvariant st)
     (hStep : handleYield st = .ok ((), st')) :
     kernelInvariant st' := by
-  simpa [handleYield] using schedule_preserves_kernelInvariant st st' hInv hStep
+  exact ⟨handleYield_preserves_queueCurrentConsistent st st' hStep,
+    handleYield_preserves_runQueueUnique st st' hInv.2.1 hStep,
+    handleYield_preserves_currentThreadValid st st' hStep⟩
 
 theorem chooseThread_preserves_schedulerInvariantBundle
     (st st' : SystemState)
@@ -360,6 +411,5 @@ theorem handleYield_preserves_schedulerInvariantBundle
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   exact handleYield_preserves_kernelInvariant st st' hInv hStep
-
 
 end SeLe4n.Kernel

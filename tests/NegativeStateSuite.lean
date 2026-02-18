@@ -199,17 +199,51 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
     .endpointStateMismatch
 
+  let schedPriorityState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 7 (.tcb {
+        tid := 7
+        priority := 10
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        ipcState := .ready
+      })
+      |>.withObject 8 (.tcb {
+        tid := 8
+        priority := 42
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        ipcState := .ready
+      })
+      |>.withRunnable [7, 8]
+      |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
+      |>.build)
+  let (_, stPriorityScheduled) ← expectOk "schedule chooses highest-priority runnable"
+    (SeLe4n.Kernel.schedule schedPriorityState)
+  if stPriorityScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+    IO.println "positive check passed [schedule priority order]: current = tid 8"
+  else
+    throw <| IO.userError "schedule priority order expected current = tid 8"
+
+  let (_, stYielded) ← expectOk "yield rotates current within runnable queue"
+    (SeLe4n.Kernel.handleYield schedPriorityState)
+  if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 7] then
+    IO.println "positive check passed [yield runnable rotation]: [8,7]"
+  else
+    throw <| IO.userError "yield runnable rotation expected [8,7]"
+
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
-  let (_, stScheduled) ← expectOk "schedule malformed runnable target"
+  expectError "schedule malformed runnable target"
     (SeLe4n.Kernel.schedule malformedSched)
-  if stScheduled.scheduler.current = none then
-    IO.println "negative check passed [scheduler invalid runnable fallback]: current = none"
-  else
-    throw <| IO.userError "scheduler invalid runnable fallback expected current = none"
+    .schedulerInvariantViolation
 
 end SeLe4n.Testing
 
