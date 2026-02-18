@@ -55,12 +55,12 @@ run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite'
 run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
-run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed\)\.' README.md
-run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 complete\)\.' docs/SEL4_SPEC.md
-run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed and WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
+run_check "DOC" rg -n '^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.' README.md
+run_check "DOC" rg -n '^- \*\*Current completed slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B1 through WS-B11 complete\)\.' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.' docs/gitbook/01-project-overview.md
 run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/06-development-workflow.md
 run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B11 onward\)\.' docs/DEVELOPMENT.md
+run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer the next documented priority in the active plan \(all WS-B streams are complete\)\)\.' docs/DEVELOPMENT.md
 run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^# Threat Model and Security Hardening Baseline \(WS-B9\)' docs/THREAT_MODEL.md
@@ -68,7 +68,7 @@ run_check "DOC" rg -n '^# Threat Model and Security Hardening \(WS-B9\)' docs/gi
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
-run_check "DOC" rg -n '^- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` \(WS-B10 completed\)\.' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
+run_check "DOC" rg -n '^- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map \(WS-B8\)' docs/DOCS_DEDUPLICATION_MAP.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
 run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py
@@ -403,7 +403,14 @@ run_check "DOC" rg -n 'WS-B10 CodeQL policy decision|informational/non-blocking'
 run_check "DOC" rg -n 'lean_toolchain_update_proposal\.yml|dependabot\.yml' docs/CI_POLICY.md docs/CI_TELEMETRY_BASELINE.md
 run_check "DOC" rg -n 'ci_capture_timing\.sh|ci_flake_probe\.sh' docs/CI_TELEMETRY_BASELINE.md .github/workflows/lean_action_ci.yml .github/workflows/nightly_determinism.yml
 run_check "DOC" rg -n '^# CI Maturity and Telemetry Baseline \(WS-B10\)' docs/gitbook/29-ci-maturity-and-telemetry-baseline.md
-run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Planned\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+
+run_check "DOC" rg -n '^# Scenario framework \(WS-B11\)' tests/scenarios/README.md
+run_check "DOC" rg -n '^## 16\) WS-B11 closure evidence' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "INVARIANT" rg -n '^\s*"schema_version": "1\.0\.0"' tests/scenarios/scenario_catalog.json
+run_check "INVARIANT" rg -n '^def validate_catalog' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def nightly_seeds' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^run_check "META" python3 "\$\{SCRIPT_DIR\}/scenario_catalog.py" validate' scripts/test_smoke.sh
 
 # WS-A8 closure anchors: platform/security baseline workflow + information-flow roadmap visibility.
 run_check "DOC" rg -n '^name: Platform and Security Baseline' .github/workflows/platform_security_baseline.yml

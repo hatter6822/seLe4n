@@ -1,0 +1,110 @@
+{
+  "schema_version": "1.0.0",
+  "owner": "testing-maintainers",
+  "review_cadence": "per-slice",
+  "scenarios": [
+    {
+      "id": "SCN-CAP-ROOT-PATH",
+      "subsystem": "capability",
+      "risk_tags": ["correctness", "regression"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]"
+    },
+    {
+      "id": "SCN-ARCH-TIMER-INVALID",
+      "subsystem": "architecture",
+      "risk_tags": ["negative", "safety"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState"
+    },
+    {
+      "id": "SCN-VSPACE-UNMAP-FAULT",
+      "subsystem": "vspace",
+      "risk_tags": ["correctness", "regression"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault"
+    },
+    {
+      "id": "SCN-SVC-POLICY-DENY",
+      "subsystem": "service",
+      "risk_tags": ["security", "policy"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "service start denied branch: SeLe4n.Model.KernelError.policyDenied"
+    },
+    {
+      "id": "SCN-CSPACE-DEEP-RADIX",
+      "subsystem": "cspace",
+      "risk_tags": ["correctness", "scale"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]"
+    },
+    {
+      "id": "SCN-SCHED-LARGE-QUEUE",
+      "subsystem": "scheduler",
+      "risk_tags": ["scale", "performance"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "large runnable queue length: 12"
+    },
+    {
+      "id": "SCN-IPC-MULTI-ENDPOINT",
+      "subsystem": "ipc",
+      "risk_tags": ["integration", "regression"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "multi-endpoint receive senders: 4, 5"
+    },
+    {
+      "id": "SCN-SVC-DEPTH-5-CHAIN",
+      "subsystem": "service",
+      "risk_tags": ["integration", "scale"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)"
+    },
+    {
+      "id": "SCN-ARCH-HIGH-ADDRESS",
+      "subsystem": "architecture",
+      "risk_tags": ["boundary", "safety"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "boundary memory high-address byte: 0"
+    },
+    {
+      "id": "SCN-SEQ-SEED-7",
+      "subsystem": "trace-sequence",
+      "risk_tags": ["stochastic", "regression"],
+      "replay_tier": "nightly",
+      "deterministic_seed": 7,
+      "expected_trace_fragment": "service isolation api↔denied: true"
+    },
+    {
+      "id": "SCN-SEQ-SEED-13",
+      "subsystem": "trace-sequence",
+      "risk_tags": ["stochastic", "regression"],
+      "replay_tier": "nightly",
+      "deterministic_seed": 13,
+      "expected_trace_fragment": "service isolation api↔denied: true"
+    },
+    {
+      "id": "SCN-SEQ-SEED-29",
+      "subsystem": "trace-sequence",
+      "risk_tags": ["stochastic", "regression"],
+      "replay_tier": "nightly",
+      "deterministic_seed": 29,
+      "expected_trace_fragment": "service isolation api↔denied: true"
+    },
+    {
+      "id": "SCN-SEQ-SEED-47",
+      "subsystem": "trace-sequence",
+      "risk_tags": ["stochastic", "regression"],
+      "replay_tier": "nightly",
+      "deterministic_seed": 47,
+      "expected_trace_fragment": "service isolation api↔denied: true"
+    },
+    {
+      "id": "SCN-SEQ-SEED-101",
+      "subsystem": "trace-sequence",
+      "risk_tags": ["stochastic", "regression"],
+      "replay_tier": "nightly",
+      "deterministic_seed": 101,
+      "expected_trace_fragment": "service isolation api↔denied: true"
+    }
+  ]
+}

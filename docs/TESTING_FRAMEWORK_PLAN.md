@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B10 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is complete (WS-B1 through WS-B11 complete); testing now guards delivered workstream behavior without regressing M1–M7 contracts.**
 
 ## 2. Current enforced tiers
 

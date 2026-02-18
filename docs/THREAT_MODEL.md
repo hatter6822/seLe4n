@@ -83,7 +83,7 @@ Residual risks accepted in this phase:
 Follow-on work ownership:
 
 - **WS-B10:** CI maturity policy ✅ completed (CodeQL policy and telemetry baseline codified).
-- **WS-B11:** scenario framework hardening for security-tagged replay coverage.
+- **WS-B11:** scenario framework hardening for security-tagged replay coverage is implemented via the canonical scenario catalog in `tests/scenarios/scenario_catalog.json` and nightly seed replay integration in `scripts/test_tier4_nightly_candidates.sh`.
 - **Future IF slices:** formalize confidentiality/integrity guarantees against this threat model.
 
 ## 7) Validation hooks
