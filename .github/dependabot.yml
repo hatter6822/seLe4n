@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:20"
+    labels:
+      - dependencies
+      - ci
+      - ws-b10
+    commit-message:
+      prefix: "ci"
+

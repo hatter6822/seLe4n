@@ -1,7 +1,7 @@
 {
   "description": "This GitBook is the long-form guide for architecture, workflow, and milestone context.",
   "current_state_bullets": [
-    "**Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 completed).",
+    "**Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 completed).",
     "**Latest completed slice:** M7 remediation (WS-A1..WS-A8 complete).",
     "**Previous completed slice:** M6 architecture-boundary hardening."
   ],
@@ -33,6 +33,10 @@
     {
       "title": "Threat Model and Security Hardening (WS-B9)",
       "path": "28-threat-model-and-security-hardening.md"
+    },
+    {
+      "title": "CI Maturity and Telemetry Baseline (WS-B10)",
+      "path": "29-ci-maturity-and-telemetry-baseline.md"
     },
     {
       "title": "Documentation Sync and Coverage Matrix",
@@ -91,6 +95,10 @@
         {
           "title": "Threat Model and Security Hardening (WS-B9)",
           "path": "28-threat-model-and-security-hardening.md"
+        },
+        {
+          "title": "CI Maturity and Telemetry Baseline (WS-B10)",
+          "path": "29-ci-maturity-and-telemetry-baseline.md"
         },
         {
           "title": "Documentation Sync and Coverage Matrix",

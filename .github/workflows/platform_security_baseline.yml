@@ -42,7 +42,15 @@ jobs:
         run: ./scripts/setup_lean_env.sh
 
       - name: Run architecture-targeted fast gate
-        run: ./scripts/test_fast.sh
+        run: ./scripts/ci_capture_timing.sh arm64-fast ./scripts/test_fast.sh
+
+      - name: Upload CI telemetry (arm64 lane)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-arm64-fast
+          path: .ci-artifacts/telemetry/
+          if-no-files-found: ignore
 
   security-baseline-scan:
     name: Security Signal / Secret + Dependency + CodeQL
@@ -75,6 +83,6 @@ jobs:
         with:
           languages: actions
 
-      - name: Run CodeQL analysis
+      - name: Run CodeQL analysis (informational; see docs/CI_POLICY.md)
         uses: github/codeql-action/analyze@v3
         continue-on-error: true

@@ -34,7 +34,7 @@ jobs:
         run: ./scripts/setup_lean_env.sh
 
       - name: Run documentation synchronization checks
-        run: ./scripts/test_docs_sync.sh
+        run: ./scripts/ci_capture_timing.sh docs-sync ./scripts/test_docs_sync.sh
 
       - name: Upload generated API docs (if present)
         if: always()
@@ -44,6 +44,14 @@ jobs:
           path: |
             .lake/build/doc/
             .lake/build/doc-gen4/
+          if-no-files-found: ignore
+
+      - name: Upload CI telemetry (docs lane)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-docs
+          path: .ci-artifacts/telemetry/
           if-no-files-found: ignore
 
   test-fast:
@@ -68,7 +76,15 @@ jobs:
         run: ./scripts/setup_lean_env.sh
 
       - name: Run fast gate
-        run: ./scripts/test_fast.sh
+        run: ./scripts/ci_capture_timing.sh fast ./scripts/test_fast.sh
+
+      - name: Upload CI telemetry (fast lane)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-fast
+          path: .ci-artifacts/telemetry/
+          if-no-files-found: ignore
 
   test-smoke:
     name: Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)
@@ -95,7 +111,7 @@ jobs:
       - name: Run smoke gate
         env:
           TRACE_ARTIFACT_DIR: .ci-artifacts/trace
-        run: ./scripts/test_smoke.sh
+        run: ./scripts/ci_capture_timing.sh smoke ./scripts/test_smoke.sh
 
       - name: Upload trace fixture diagnostics on failure
         if: failure()
@@ -105,6 +121,14 @@ jobs:
           path: |
             .ci-artifacts/trace/
             tests/fixtures/main_trace_smoke.expected
+
+      - name: Upload CI telemetry (smoke lane)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-smoke
+          path: .ci-artifacts/telemetry/
+          if-no-files-found: ignore
 
   test-full:
     name: Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)
@@ -129,4 +153,12 @@ jobs:
         run: ./scripts/setup_lean_env.sh
 
       - name: Run full gate
-        run: ./scripts/test_full.sh
+        run: ./scripts/ci_capture_timing.sh full ./scripts/test_full.sh
+
+      - name: Upload CI telemetry (full lane)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-full
+          path: .ci-artifacts/telemetry/
+          if-no-files-found: ignore

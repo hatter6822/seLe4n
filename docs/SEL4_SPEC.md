@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B10..WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 complete).
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 complete).
 
 ---
 
@@ -57,7 +57,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 - **WS-B7:** Information-flow proof-track start ✅ completed
 - **WS-B8:** Documentation automation + consolidation ✅ completed
 - **WS-B9:** Threat model and security hardening ✅ completed
-- **WS-B10:** CI maturity upgrades
+- **WS-B10:** CI maturity upgrades ✅ completed
 - **WS-B11:** Scenario framework finalization
 
 ### 4.3 Sequencing constraints

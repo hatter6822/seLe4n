@@ -1,6 +1,6 @@
 # CI Policy and Branch-Protection Contract
 
-This document is the canonical CI policy artifact for WS-A1 and WS-A8 maturity gates.
+This document is the canonical CI policy artifact for WS-A1, WS-A8, and WS-B10 CI maturity gates.
 
 ## 1. Required checks (Tier 0–3)
 
@@ -55,6 +55,8 @@ In GitHub repository settings for `main`:
 - Tier 2 failures upload fixture diagnostics as CI artifacts.
 - Nightly determinism failures upload replay traces and diffs.
 - All tier scripts emit category-labeled output (`META`, `HYGIENE`, `BUILD`, `TRACE`, `INVARIANT`) for fast triage.
+- WS-B10 telemetry artifacts must be uploaded from CI lanes to `.ci-artifacts/telemetry/` and include `timing.jsonl` entries produced by `scripts/ci_capture_timing.sh`.
+- Nightly telemetry must include repeat-run flake probe output (`flake_probe.jsonl`, `flake_summary.txt`) produced by `scripts/ci_flake_probe.sh`.
 
 ## 6. Platform and security baseline gates (WS-A8)
 
@@ -80,3 +82,30 @@ tracked in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 
 The setup bootstrap path now requires checksum verification for the downloaded elan installer
 (`scripts/setup_lean_env.sh`: `ELAN_INSTALLER_SHA256`) before execution.
+
+
+## 8. WS-B10 CodeQL policy decision
+
+CodeQL remains **informational/non-blocking** in the security baseline workflow.
+
+Rationale:
+
+1. repository-level Code Scanning enablement is not guaranteed in every execution environment,
+2. failing hard on analyze upload would create false-negative CI reliability without improving code correctness signal,
+3. Gitleaks + Trivy still provide hard-fail security gates for secrets and HIGH/CRITICAL findings.
+
+Re-evaluation trigger:
+
+- Once Code Scanning availability is guaranteed for this repository across required environments, `continue-on-error` should be removed and CodeQL promoted to a required blocking gate.
+
+## 9. WS-B10 toolchain update automation
+
+Toolchain-update cadence is automated through:
+
+- `.github/dependabot.yml` for GitHub Actions dependency updates,
+- `.github/workflows/lean_toolchain_update_proposal.yml` for weekly Lean release drift proposals (issue creation when `lean-toolchain` lags upstream).
+
+## 10. WS-B10 timing + flake telemetry baseline
+
+Canonical telemetry baseline documentation is published in `docs/CI_TELEMETRY_BASELINE.md`
+with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.

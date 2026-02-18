@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 are Completed**; WS-B10..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, WS-B9, and WS-B10 are Completed**; WS-B11 remains Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -214,7 +214,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-
 - **Exit criteria:** threat model and hardening controls documented, testable, and linked from roadmap.
 - **Closure evidence (2026-02-18):** canonical threat assumptions and trust-boundary controls are now published in `docs/THREAT_MODEL.md` with GitBook mirror `docs/gitbook/28-threat-model-and-security-hardening.md`; repository secret/artifact hygiene is tightened by `.gitignore` denylist expansion for local secret files and scanner outputs; `scripts/setup_lean_env.sh` now downloads the elan installer to a temporary file and enforces `ELAN_INSTALLER_SHA256` verification before execution (replacing direct `curl | sh` behavior); CI/security policy linkage is documented in `docs/CI_POLICY.md`; and Tier 3 invariant/doc anchors in `scripts/test_tier3_invariant_surface.sh` enforce the WS-B9 security-surface markers.
 
-### WS-B10 — CI maturity upgrades (Planned)
+### WS-B10 — CI maturity upgrades (Completed)
 
 - **Goal:** improve CI observability, policy clarity, and update cadence without destabilizing required gates.
 - **Prerequisites:** WS-B8 doc governance hooks available.
@@ -227,6 +227,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-
   - `./scripts/test_full.sh`
   - `./scripts/test_nightly.sh`
 - **Exit criteria:** CI governance decisions are codified with measurable reliability baselines.
+- **Closure evidence (2026-02-18):** CodeQL governance and branch-protection parity are now explicitly codified in `docs/CI_POLICY.md` (including informational/non-blocking rationale, required-check matrix, and telemetry artifact expectations), with the security workflow step renamed for policy traceability in `.github/workflows/platform_security_baseline.yml`; automated update cadence now includes Dependabot tracking for GitHub Actions (`.github/dependabot.yml`) and a scheduled Lean release monitor that opens proposal issues on upstream drift (`.github/workflows/lean_toolchain_update_proposal.yml`); CI timing + flake telemetry collection is now implemented through `scripts/ci_capture_timing.sh` and `scripts/ci_flake_probe.sh`, wired into `.github/workflows/lean_action_ci.yml`, `.github/workflows/nightly_determinism.yml`, and ARM64 fast-gate execution in `.github/workflows/platform_security_baseline.yml`; and telemetry baseline methodology/documentation is published in `docs/CI_TELEMETRY_BASELINE.md` with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.
 
 ### WS-B11 — Scenario framework finalization (Planned)
 

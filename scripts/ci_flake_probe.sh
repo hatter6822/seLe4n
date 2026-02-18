@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -lt 3 ]]; then
+  echo "usage: $0 <probe-id> <attempts>=2+ <command...>" >&2
+  exit 2
+fi
+
+probe_id="$1"
+attempts="$2"
+shift 2
+
+if [[ "$attempts" -lt 2 ]]; then
+  echo "attempt count must be >=2" >&2
+  exit 2
+fi
+
+artifact_dir="${CI_TELEMETRY_ARTIFACT_DIR:-.ci-artifacts/telemetry}"
+mkdir -p "${artifact_dir}"
+log_path="${artifact_dir}/flake_probe.jsonl"
+
+all_same=1
+first_exit=""
+
+for attempt in $(seq 1 "$attempts"); do
+  start_epoch="$(date -u +%s)"
+  start_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  set +e
+  "$@"
+  exit_code="$?"
+  set -e
+
+  end_epoch="$(date -u +%s)"
+  end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  duration_s="$((end_epoch - start_epoch))"
+
+  command_json="$(printf '%s\n' "$*" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))')"
+  printf '{"probe_id":"%s","attempt":%s,"command":%s,"start":"%s","end":"%s","duration_seconds":%s,"exit_code":%s}\n' \
+    "$probe_id" "$attempt" "$command_json" "$start_iso" "$end_iso" "$duration_s" "$exit_code" >> "$log_path"
+
+  if [[ -z "$first_exit" ]]; then
+    first_exit="$exit_code"
+  elif [[ "$exit_code" -ne "$first_exit" ]]; then
+    all_same=0
+  fi
+
+done
+
+summary_path="${artifact_dir}/flake_summary.txt"
+if [[ "$all_same" -eq 1 ]]; then
+  echo "${probe_id}: stable (${attempts} attempts, exit=${first_exit})" >> "$summary_path"
+else
+  echo "${probe_id}: flaky signal detected (${attempts} attempts, mixed exit codes)" >> "$summary_path"
+fi
+
+if [[ "$first_exit" -ne 0 ]]; then
+  echo "[CI-TELEMETRY] probe=${probe_id} initial attempt failed with exit=${first_exit}" >&2
+  exit "$first_exit"
+fi
