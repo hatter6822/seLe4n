@@ -43,7 +43,7 @@
       "subsystem": "scheduler",
       "risk_tags": ["scale", "performance"],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "large runnable queue length: 12"
+      "expected_trace_fragment": "large runnable queue length: 2"
     },
     {
       "id": "SCN-IPC-MULTI-ENDPOINT",

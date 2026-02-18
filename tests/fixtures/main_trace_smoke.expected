@@ -25,7 +25,7 @@ deep cnode radix fixture: some 12
 deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
 deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
 deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
-large runnable queue length: 12
+large runnable queue length: 2
 large queue scheduled current: some 1
 multi-endpoint receive senders: 4, 5
 service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)

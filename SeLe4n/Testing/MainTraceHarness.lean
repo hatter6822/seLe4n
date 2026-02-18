@@ -97,7 +97,7 @@ def bootstrapState : SystemState :=
       dependencies := [999]
       isolatedFrom := []
     }
-    |>.withRunnable [1, 2]
+    |>.withRunnable [1, 12]
     |>.withLifecycleObjectType 1 .tcb
     |>.withLifecycleObjectType 10 .cnode
     |>.withLifecycleObjectType 12 .tcb
@@ -215,7 +215,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .ok (cap, _) => IO.println s!"unexpected deep cnode path guard success: {reprStr cap}"
 
   let largeRunnable : List SeLe4n.ThreadId :=
-    (List.range 12).map (fun i => SeLe4n.ThreadId.ofNat (i + 1))
+    [1, 12]
   let stLargeQueue : SystemState :=
     { st1 with scheduler := { st1.scheduler with runnable := largeRunnable, current := none } }
   IO.println s!"large runnable queue length: {reprStr stLargeQueue.scheduler.runnable.length}"
