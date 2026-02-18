@@ -5,10 +5,10 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current state (authoritative snapshot)
 
-- **Current completed slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1 through WS-B11 completed).
-- **Most recently completed slice:** M7 audit remediation (WS-A1..WS-A8 complete).
-- **Previous completed slice:** M6 architecture-boundary assumptions/adapters.
-- **Current package version:** `0.9.32` (`lakefile.toml`).
+- **Active findings baseline:** `docs/audits/AUDIT_v0.9.32.md`
+- **Active execution baseline:** `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
+- **Current package version:** `0.9.32` (`lakefile.toml`)
+- **Current active portfolio:** WS-C1..WS-C8 (WS-C8 documentation consolidation in progress)
 
 Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
 
@@ -16,37 +16,34 @@ Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_
 
 1. **Development workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 2. **Testing and CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
-3. **Comprehensive audit workstream plan (current slice):**
-   [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
+3. **Current audit workstream plan:**
+   [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
 4. **GitBook navigation hub:** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 5. **Contribution mechanics:**
 
 - Contribution guide (root pointer): [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Change history: [`CHANGELOG.md`](CHANGELOG.md)
 
-## Current slice workstreams (WS-B)
+## Active workstreams (WS-C)
 
-Use this as the quick index. Full contracts and dependencies are in the audit planning backbone.
+Use this as a quick index. Full contracts and dependencies are in the v0.9.32 planning backbone.
 
-- **WS-B1:** VSpace + memory model foundation ✅ completed
-- **WS-B2:** Generative + negative testing expansion ✅ completed
-- **WS-B3:** Main trace harness refactor ✅ completed
-- **WS-B4:** Remaining type-wrapper migration ✅ completed
-- **WS-B5:** CSpace guard/radix semantics completion ✅ completed
-- **WS-B6:** Notification-object IPC completion ✅ completed
-- **WS-B7:** Information-flow proof-track start ✅ completed
-- **WS-B8:** Documentation automation/consolidation ✅ completed
-- **WS-B9:** Threat model + security hardening ✅ completed
-- **WS-B10:** CI maturity upgrades ✅ completed
-- **WS-B11:** Scenario framework finalization ✅ completed
+- **WS-C1:** IPC handshake correctness
+- **WS-C2:** Scheduler semantic fidelity
+- **WS-C3:** Proof-surface de-tautologization (remove tautological `_deterministic` theorems and track semantic replacements)
+- **WS-C4:** Test validity hardening
+- **WS-C5:** Information-flow assurance
+- **WS-C6:** CI and supply-chain hardening
+- **WS-C7:** Model structure and maintainability
+- **WS-C8:** Documentation and GitBook consolidation (in progress)
 
-Primary reference:
-[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
+Primary references:
+- [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+- [`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
 
+## Historical note
 
-## Legacy semantic anchor note
-
-The M3.5 IPC-scheduler handshake semantics remain part of the stable regression surface and are still exercised through `Main.lean` trace fixtures and Tier 3 anchor checks.
+WS-B (`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`) and earlier M7/M6/M5/M4 slices remain available for historical traceability, but are not the active planning baseline.
 
 ## Quick setup
 
@@ -79,4 +76,3 @@ lake exe sele4n
 - `Main.lean` — executable trace/demo harness
 - `tests/fixtures/main_trace_smoke.expected` — stable trace expectation anchors
 - `scripts/test_tier*.sh` — tiered quality gates used by CI and local workflows
-
