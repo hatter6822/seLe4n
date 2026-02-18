@@ -19,7 +19,7 @@ Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_
 3. **Comprehensive audit workstream plan (current slice):**
    [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
 4. **GitBook navigation hub:** [`docs/gitbook/README.md`](docs/gitbook/README.md)
-5. **Contribution mechanics:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
+5. **Contribution mechanics:**
 
 - Contribution guide (root pointer): [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Change history: [`CHANGELOG.md`](CHANGELOG.md)
