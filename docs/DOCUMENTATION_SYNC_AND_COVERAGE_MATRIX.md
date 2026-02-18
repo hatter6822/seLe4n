@@ -15,6 +15,7 @@ Use this file during planning and PR review to verify that docs, GitBook, and te
 | Milestones, scope, acceptance | `docs/SEL4_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook chapter summarizes and links back. |
 | Comprehensive audit findings | `docs/audits/COMPREHENSIVE_AUDIT_2026_02.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Keep findings canonical in audits dir; avoid duplicating full audit prose in chapters. |
 | Comprehensive audit execution portfolio | `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Workstream status tables live in canonical plan; GitBook only navigates/summarizes. |
+| Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map lives in root docs; chapter is entrypoint only. |
 | M7 historical remediation closeout | `docs/M7_CLOSEOUT_PACKET.md` + `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` | `21-m7-current-slice-outcomes-and-workstreams.md`, `23-m7-remediation-closeout-packet.md`, `20-repository-audit-remediation-workstreams.md` | Keep marked as historical context for post-M7 planning, not active baseline. |
 | Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Workflow command changes must be reflected in both files in same PR. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require root docs + GitBook updates together. |
@@ -26,6 +27,7 @@ Use this file during planning and PR review to verify that docs, GitBook, and te
 | Validation area | Command | What it verifies |
 |---|---|---|
 | Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom`/`TODO` debt in proof surface; no test contract leakage into production kernel modules. |
+| Documentation sync automation | `./scripts/test_docs_sync.sh` | GitBook navigation generation is reproducible/committed and local markdown links resolve. |
 | Lean build soundness | `./scripts/test_tier1_build.sh` | Project compiles successfully via `lake build`. |
 | End-to-end executable trace fixture | `./scripts/test_tier2_trace.sh` | Runtime trace still satisfies fixture expectations and scenario/risk-tagged entries. |
 | Negative/adversarial malformed-state suite | `./scripts/test_tier2_negative.sh` | Malformed capability/object/IPC/VSpace/scheduler states fail safely with explicit modeled errors. |
@@ -47,7 +49,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`.
+- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` (WS-B8 completed).
 - Historical closeout baseline: M7 remediation docs (`AUDIT_REMEDIATION_WORKSTREAMS.md`, `M7_CLOSEOUT_PACKET.md`).
 - Current quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 

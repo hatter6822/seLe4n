@@ -1,11 +1,12 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B7 complete), with testing tiers enforcing regression protection and evidence continuity.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B8 complete), with testing tiers enforcing regression protection and evidence continuity.**
 
 ## Tier model
 
 - **Tier 0 (hygiene)**
   - marker scan for forbidden placeholders (`axiom|sorry|TODO`) in tracked proof surface,
+  - documentation synchronization automation (`scripts/test_docs_sync.sh`: navigation generation + markdown-link checks),
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.
@@ -36,7 +37,7 @@ Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (W
 
 CI should execute these repository scripts directly to avoid local/CI drift.
 
-Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md).
+Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md), including the `Docs Automation / Navigation + Links + DocGen Probe` required lane.
 
 WS-A8 baseline maturity automation is implemented in `.github/workflows/platform_security_baseline.yml`, adding an ARM64 fast-gate CI signal and automated baseline security scanning controls.
 

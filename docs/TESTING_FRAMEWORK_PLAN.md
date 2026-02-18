@@ -4,11 +4,11 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B7 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B8 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
 
 ## 2. Current enforced tiers
 
-- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`)
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, including docs-sync automation via `scripts/test_docs_sync.sh`)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
 - **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
@@ -33,7 +33,7 @@ Recommended audit entrypoint for release/closeout confidence:
 
 PR CI must call repository scripts directly and keep workflow logic thin.
 
-Branch-protection and required-check policy is documented in `docs/CI_POLICY.md`.
+Branch-protection and required-check policy is documented in `docs/CI_POLICY.md` (including the docs-automation CI lane).
 
 WS-A8 platform/security baseline automation is provided by `.github/workflows/platform_security_baseline.yml` (ARM64 fast gate + baseline security scanning controls).
 

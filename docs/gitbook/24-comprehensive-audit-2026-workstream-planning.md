@@ -23,7 +23,7 @@ This is the GitBook mirror of the canonical planning backbone:
 - **WS-B5:** CSpace guard/radix semantics completion ✅ completed
 - **WS-B6:** Notification-object IPC completion ✅ completed
 - **WS-B7:** Information-flow proof-track start ✅ completed
-- **WS-B8:** Documentation automation + consolidation
+- **WS-B8:** Documentation automation + consolidation ✅ completed
 - **WS-B9:** Threat model and security hardening
 
 ### Low priority
@@ -33,7 +33,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 ## 3) Sequencing
 
-- **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
+- **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
@@ -109,3 +109,12 @@ When status changes, update together:
 - Tier 2 includes IF-M1 runtime sanity checks via `tests/InformationFlowSuite.lean` (`lake exe information_flow_suite`) in `scripts/test_tier2_negative.sh`.
 - Tier 3 invariant/doc anchors now check IF-M1 surfaces in `scripts/test_tier3_invariant_surface.sh`.
 
+
+
+## 13) WS-B8 closure evidence
+
+- GitBook navigation pages are generated from `docs/gitbook/navigation_manifest.json` via `scripts/generate_doc_navigation.py` (`docs/gitbook/README.md`, `docs/gitbook/SUMMARY.md`).
+- Markdown link validation now runs in `scripts/check_markdown_links.py` through `scripts/test_docs_sync.sh`, and Tier 0 executes it by default via `scripts/test_tier0_hygiene.sh`.
+- CI now includes a docs lane (`Docs Automation / Navigation + Links + DocGen Probe`) in `.github/workflows/lean_action_ci.yml` to enforce documentation automation before smoke/full lanes.
+- Root↔GitBook dedup ownership is captured in [`docs/DOCS_DEDUPLICATION_MAP.md`](../DOCS_DEDUPLICATION_MAP.md) and mirrored in chapter 27.
+- Planning/doc PR checklist enforcement is codified in `.github/pull_request_template.md`.

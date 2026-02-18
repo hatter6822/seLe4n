@@ -38,7 +38,7 @@ For milestone-moving PRs:
 
 ## Workstream sequence
 
-- **Phase P1:** WS-B4, WS-B3, WS-B8
+- **Phase P1:** WS-B4, WS-B3, WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5, WS-B6, WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
 - **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11
 
