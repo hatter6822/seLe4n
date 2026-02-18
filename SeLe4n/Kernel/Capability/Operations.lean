@@ -7,6 +7,13 @@ open SeLe4n.Model
 /-- Address of a capability slot in the modeled CSpace. -/
 abbrev CSpaceAddr := SlotRef
 
+/-- Address of a guard/radix resolved pointer in the modeled CSpace. -/
+structure CSpacePathAddr where
+  cnode : SeLe4n.ObjId
+  cptr : SeLe4n.CPtr
+  depth : Nat
+  deriving Repr, DecidableEq
+
 /-- Rights attenuation policy for the M2 foundation slice.
 
 `derived.rights` must be a subset of `parent.rights`; targets are preserved by mint-like
@@ -23,6 +30,24 @@ def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
         match st.objects addr.cnode with
         | some (.cnode _) => .error .invalidCapability
         | _ => .error .objectNotFound
+
+/-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics. -/
+def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
+  fun st =>
+    match st.objects addr.cnode with
+    | some (.cnode cn) =>
+        match cn.resolveSlot addr.cptr addr.depth with
+        | .ok slot => .ok ({ cnode := addr.cnode, slot := slot }, st)
+        | .error .depthMismatch => .error .illegalState
+        | .error .guardMismatch => .error .invalidCapability
+    | _ => .error .objectNotFound
+
+/-- Lookup a capability via guard/radix resolution from a CSpace pointer path. -/
+def cspaceLookupPath (addr : CSpacePathAddr) : Kernel Capability :=
+  fun st =>
+    match cspaceResolvePath addr st with
+    | .error e => .error e
+    | .ok (resolved, st') => cspaceLookupSlot resolved st'
 
 /-- Insert or replace a capability in `(cnode, slot)`. -/
 def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=

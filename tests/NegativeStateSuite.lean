@@ -8,13 +8,17 @@ namespace SeLe4n.Testing
 private def endpointId : SeLe4n.ObjId := 40
 private def cnodeId : SeLe4n.ObjId := 10
 private def wrongTypeId : SeLe4n.ObjId := 99
+private def guardedCnodeId : SeLe4n.ObjId := 55
 private def sendEmptyEndpointId : SeLe4n.ObjId := 41
 private def asidPrimary : SeLe4n.ASID := 2
 private def vaddrPrimary : SeLe4n.VAddr := 4096
 private def paddrPrimary : SeLe4n.PAddr := 12288
 
 private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := 0 }
+private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := 0, depth := 0 }
+private def guardedPathBadDepth : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := 0, depth := 1 }
 private def badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := 0 }
+private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := 0, depth := 3 }
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
@@ -31,11 +35,23 @@ private def baseState : SystemState :=
       ]
     })
     |>.withObject wrongTypeId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject guardedCnodeId (.cnode {
+      guard := 1
+      radix := 2
+      slots := [
+        (1, {
+          target := .object endpointId
+          rights := [.read]
+          badge := none
+        })
+      ]
+    })
     |>.withObject sendEmptyEndpointId (.endpoint { state := .send, queue := [], waitingReceiver := none })
     |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := [] })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType wrongTypeId .endpoint
+    |>.withLifecycleObjectType guardedCnodeId .cnode
     |>.withLifecycleObjectType sendEmptyEndpointId .endpoint
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
@@ -68,6 +84,17 @@ private def runNegativeChecks : IO Unit := do
   expectError "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
     .objectNotFound
+  let _ ← expectOk "lookup path resolved"
+    (SeLe4n.Kernel.cspaceLookupPath slot0Path baseState)
+
+  expectError "lookup path depth mismatch"
+    (SeLe4n.Kernel.cspaceLookupPath guardedPathBadDepth baseState)
+    .illegalState
+
+  expectError "lookup path guard mismatch"
+    (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
+    .invalidCapability
+
 
   expectError "endpoint receive idle-state mismatch"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)

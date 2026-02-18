@@ -30,7 +30,7 @@ Closed baseline slices:
 
 Current active slice:
 
-- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1, WS-B2, WS-B3, and WS-B4 completed and WS-B5..WS-B11 in planned/in-progress execution.
+- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 completed and WS-B6..WS-B11 in planned/in-progress execution.
 
 ## 4. Architecture mental model
 
