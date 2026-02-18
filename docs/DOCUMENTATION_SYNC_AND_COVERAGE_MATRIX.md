@@ -49,7 +49,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` (WS-B8 completed).
+- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` (WS-B9 completed).
 - Historical closeout baseline: M7 remediation docs (`AUDIT_REMEDIATION_WORKSTREAMS.md`, `M7_CLOSEOUT_PACKET.md`).
 - Current quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 

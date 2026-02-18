@@ -71,3 +71,12 @@ For fork-origin pull requests, the security-scan job is conditionally skipped be
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
 CodeQL analysis remains in the workflow for baseline static checks, but the analyze upload step is marked `continue-on-error` so repositories without Code Scanning enabled do not hard-fail the entire security lane.
+
+
+## 7. WS-B9 threat-model baseline linkage
+
+Threat assumptions and trust-boundary controls for setup/bootstrap and repository hygiene are
+tracked in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
+
+The setup bootstrap path now requires checksum verification for the downloaded elan installer
+(`scripts/setup_lean_env.sh`: `ELAN_INSTALLER_SHA256`) before execution.

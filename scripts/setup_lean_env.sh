@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ELAN_HOME_DEFAULT="${HOME}/.elan"
 ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
+ELAN_INSTALLER_URL="https://raw.githubusercontent.com/leanprover/elan/87f5ec2f5627dd3df16b346733147412c3ddeef1/elan-init.sh"
+# WS-B9 hardening anchor: commit-pinned installer URL + hash must be updated together intentionally.
+ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43eda9264"
 
 APT_UPDATE_DONE=0
 
@@ -25,6 +28,18 @@ apt_update_once() {
         -o APT::Get::List-Cleanup="0"
     fi
     APT_UPDATE_DONE=1
+  fi
+}
+
+compute_sha256() {
+  local target_file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${target_file}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${target_file}" | awk '{print $1}'
+  else
+    echo "error: neither sha256sum nor shasum is available for installer verification" >&2
+    exit 1
   fi
 }
 
@@ -109,8 +124,21 @@ fi
 
 if ! command -v elan >/dev/null 2>&1; then
   echo "[setup] elan not found; installing to ${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
-  curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
-    | sh -s -- -y --no-modify-path
+  elan_installer="$(mktemp)"
+  trap 'rm -f "${elan_installer}"' EXIT
+  curl -fsSL "${ELAN_INSTALLER_URL}" -o "${elan_installer}"
+
+  installer_sha256="$(compute_sha256 "${elan_installer}")"
+  if [ "${installer_sha256}" != "${ELAN_INSTALLER_SHA256}" ]; then
+    echo "error: elan installer checksum verification failed" >&2
+    echo "  expected: ${ELAN_INSTALLER_SHA256}" >&2
+    echo "  actual:   ${installer_sha256}" >&2
+    exit 1
+  fi
+
+  sh "${elan_installer}" -y --no-modify-path
+  rm -f "${elan_installer}"
+  trap - EXIT
 fi
 
 if [ -f "${ELAN_ENV_FILE}" ]; then
