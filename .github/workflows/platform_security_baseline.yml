@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload CI telemetry (arm64 lane)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-arm64-fast
           path: .ci-artifacts/telemetry/
