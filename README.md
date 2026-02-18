@@ -28,7 +28,7 @@ Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_
 
 Use this as a quick index. Full contracts and dependencies are in the v0.9.32 planning backbone.
 
-- **WS-C1:** IPC handshake correctness
+- **WS-C1:** IPC handshake correctness ✅ completed (notification badge accumulation + waiter ipcState transitions landed)
 - **WS-C2:** Scheduler semantic fidelity
 - **WS-C3:** Proof-surface de-tautologization (remove tautological `_deterministic` theorems and track semantic replacements)
 - **WS-C4:** Test validity hardening

@@ -16,6 +16,19 @@ private def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSt
   else
     { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
 
+private def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+  match st.objects tid.toObjId with
+  | some (.tcb tcb) => some tcb
+  | _ => none
+
+private def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .ok st
+  | some tcb =>
+      match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
 /-- Add a sender to an endpoint wait queue with explicit state transition. -/
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
@@ -86,12 +99,19 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
-            | .ok ((), st') => .ok ((), ensureRunnable st' waiter)
+            | .ok ((), st') =>
+                match storeTcbIpcState st' waiter .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | [] =>
+            let mergedBadge : SeLe4n.Badge :=
+              match ntfn.pendingBadge with
+              | some existing => SeLe4n.Badge.ofNat (existing.toNat ||| badge.toNat)
+              | none => badge
             let ntfn' : Notification := {
               state := .active
               waitingThreads := []
-              pendingBadge := some badge
+              pendingBadge := some mergedBadge
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -109,7 +129,10 @@ def notificationWait
             let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
-            | .ok ((), st') => .ok (some badge, st')
+            | .ok ((), st') =>
+                match storeTcbIpcState st' waiter .ready with
+                | .error e => .error e
+                | .ok st'' => .ok (some badge, st'')
         | none =>
             let ntfn' : Notification := {
               state := .waiting
@@ -118,7 +141,10 @@ def notificationWait
             }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
-            | .ok ((), st') => .ok (none, removeRunnable st' waiter)
+            | .ok ((), st') =>
+                match storeTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+                | .error e => .error e
+                | .ok st'' => .ok (none, removeRunnable st'' waiter)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

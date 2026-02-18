@@ -12,7 +12,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Active:** Comprehensive Audit v0.9.32 WS-C execution kickoff (Phase P0/P1 transition; execution is beginning on current workstreams)
+- **Active:** Comprehensive Audit v0.9.32 WS-C execution (WS-C1 complete; WS-C8 documentation consolidation in progress)
 
 ## 2) Stable contracts contributors must preserve
 
@@ -24,7 +24,7 @@ Current milestone state:
 
 ## 3) Active workstream portfolio (WS-C)
 
-- WS-C1: IPC handshake correctness (critical; kickoff starting)
+- WS-C1: IPC handshake correctness (critical; completed for notification badge accumulation and waiter ipcState wiring)
 - WS-C2: Scheduler semantic fidelity (high; queued after initial blockers)
 - WS-C3: Proof-surface de-tautologization (critical; kickoff starting)
 - WS-C4: Test validity hardening (high; kickoff starting)
@@ -42,7 +42,7 @@ Security baseline reference:
 ## 4) Sequencing model
 
 - **Phase P0:** WS-C8 baseline reset + active-plan publication (in progress)
-- **Phase P1:** WS-C1 + WS-C3 + core WS-C2 + fixture-repair WS-C4 (execution beginning)
+- **Phase P1:** WS-C3 + core WS-C2 + fixture-repair WS-C4 (WS-C1 complete)
 - **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
 - **Phase P3:** WS-C6 + WS-C7 sustainment hardening
 

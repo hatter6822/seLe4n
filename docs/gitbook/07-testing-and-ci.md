@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit v0.9.32 WS-C execution is beginning (Phase P0/P1 transition), with testing tiers enforcing regression protection and evidence continuity as execution ramps across current workstreams.**
+Current stage context: **Comprehensive Audit v0.9.32 WS-C execution with WS-C1 completed and WS-C8 documentation consolidation in progress; testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
