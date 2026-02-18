@@ -1,4 +1,4 @@
-# Documentation Deduplication Map (WS-B8)
+# Documentation Deduplication Map (WS-C8)
 
 This document defines the canonical-vs-mirror split used to reduce drift between root docs and GitBook.
 
@@ -13,14 +13,14 @@ This document defines the canonical-vs-mirror split used to reduce drift between
 | Topic | Canonical root file(s) | GitBook mirror chapter(s) | Mirror rule |
 |---|---|---|---|
 | Active scope, milestones, and acceptance | `docs/SEL4_SPEC.md` | `docs/gitbook/05-specification-and-roadmap.md` | Keep normative decisions in spec; chapter is digest + links only. |
-| Current execution workstreams | `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` | `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md` | Keep status/closure evidence canonical in audit plan; chapter tracks concise progress bullets. |
+| Current execution workstreams | `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` | `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md` | Keep status/closure evidence canonical in audit plan; chapter tracks concise progress bullets. |
 | Contributor workflow expectations | `docs/DEVELOPMENT.md` | `docs/gitbook/06-development-workflow.md` | Keep checklists canonical in root doc; mirror chapter keeps lightweight guidance. |
 | Test/CI evidence contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `docs/gitbook/07-testing-and-ci.md` | Root docs own gate semantics and policy details; chapter links and summarizes. |
 | Documentation synchronization governance | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `docs/gitbook/25-documentation-sync-and-coverage-matrix.md`, `docs/gitbook/27-documentation-deduplication-map.md` | Keep canonical matrices in root; GitBook points readers at canonical tables. |
 
 ## 3) Automation hooks
 
-WS-B8 automation is intentionally simple and reproducible:
+WS-C8 automation is intentionally simple and reproducible:
 
 1. `scripts/generate_doc_navigation.py` generates `docs/gitbook/README.md` and `docs/gitbook/SUMMARY.md` from `docs/gitbook/navigation_manifest.json`.
 2. `scripts/check_markdown_links.py` validates local markdown links across tracked `*.md` files.
@@ -29,7 +29,7 @@ WS-B8 automation is intentionally simple and reproducible:
 
 ## 4) PR checklist additions (planning/doc changes)
 
-For planning/docs workstreams (including WS-B8+), PRs should explicitly confirm:
+For planning/docs workstreams (including WS-C8+), PRs should explicitly confirm:
 
 - canonical root docs were updated first,
 - GitBook mirrors were synchronized in the same PR,

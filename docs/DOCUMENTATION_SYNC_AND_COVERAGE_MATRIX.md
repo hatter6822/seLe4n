@@ -50,7 +50,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C portfolio).
+- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C portfolio; execution kickoff in progress).
 - Active findings baseline: `AUDIT_v0.9.32.md`.
 - Historical baseline retained for traceability: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
