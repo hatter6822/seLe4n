@@ -17,7 +17,7 @@ Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_
 1. **Development workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 2. **Testing and CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 3. **Comprehensive audit workstream plan (current slice):**
-   [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+   [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
 4. **GitBook navigation hub:** [`docs/gitbook/README.md`](docs/gitbook/README.md)
 5. **Contribution mechanics:**
 
@@ -41,7 +41,7 @@ Use this as the quick index. Full contracts and dependencies are in the audit pl
 - **WS-B11:** Scenario framework finalization ✅ completed
 
 Primary reference:
-[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
 
 
 ## Legacy semantic anchor note

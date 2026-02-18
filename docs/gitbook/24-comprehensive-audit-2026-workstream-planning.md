@@ -1,7 +1,7 @@
 # Comprehensive Audit 2026 Workstream Planning
 
 This is the GitBook mirror of the canonical planning backbone:
-[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](../audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
 
 ## 1) Why this chapter exists
 
@@ -49,7 +49,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 When status changes, update together:
 
-1. `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` (canonical)
+1. `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` (canonical)
 2. `README.md` active-slice snapshot
 3. `docs/SEL4_SPEC.md` milestone state
 4. this chapter

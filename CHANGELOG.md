@@ -82,7 +82,7 @@
 ### WS-B7 audit optimization and IF-M1 test-surface hardening
 - Added executable IF-M1 runtime assertions in `tests/InformationFlowSuite.lean` and wired them into Tier 2 negative validation via `lake exe information_flow_suite` in `scripts/test_tier2_negative.sh`, strengthening regression coverage for label-flow and observer-projection behavior.
 - Expanded Tier 3 invariant anchors to enforce the new IF runtime suite presence and Tier 2 wiring (`scripts/test_tier3_invariant_surface.sh`).
-- Synchronized testing/docs/GitBook evidence for the strengthened WS-B7 validation surface (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/gitbook/07-testing-and-ci.md`, `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`, `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`).
+- Synchronized testing/docs/GitBook evidence for the strengthened WS-B7 validation surface (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/gitbook/07-testing-and-ci.md`, `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`, `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`).
 - Bumped patch version to **`0.9.20`** and synchronized root version marker in `README.md`.
 
 ## [0.9.19] - 2026-02-18
@@ -156,7 +156,7 @@
 
 ### Documentation synchronization hardening (WS-B4 follow-through)
 - Audited and corrected stale GitBook/archive status language so active-slice references now consistently point to the Comprehensive Audit 2026-02 WS-B portfolio and mark older M7/post-M7 transition pages as historical context.
-- Updated historical audit metadata pointers in `docs/audits/PROJECT_AUDIT.md` so readers are directed to the current comprehensive-audit baseline and workstream execution backbone.
+- Updated historical audit metadata pointers in `docs/audits/AUDIT_v0.9.0.md` so readers are directed to the current comprehensive-audit baseline and workstream execution backbone.
 - Bumped package patch version to **`0.9.11`** and synchronized root version marker in `README.md`.
 
 ## [0.9.10] - 2026-02-18
@@ -234,7 +234,7 @@
 ## [0.9.1] - 2026-02-17
 
 ### Comprehensive-audit workstream execution kickoff readiness
-- Expanded `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` into a detailed execution contract with per-workstream goals, prerequisites, implementation slices, evidence contracts, and exit criteria for WS-B1..WS-B11.
+- Expanded `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` into a detailed execution contract with per-workstream goals, prerequisites, implementation slices, evidence contracts, and exit criteria for WS-B1..WS-B11.
 - Added explicit portfolio readiness gates (G0 kickoff readiness and G1 hardware-entry readiness) and clarified that the current slice is centered on WS-B execution kickoff.
 - Synchronized root README, audit index, and GitBook planning chapter wording so active-slice status consistently reflects comprehensive-audit workstream execution readiness.
 - Bumped package patch version from `0.9.0` to **`0.9.1`**.
@@ -297,7 +297,7 @@
 ## [0.8.17] - 2026-02-17
 
 ### Documentation/GitBook sync audit hardening
-- Closed remaining WS-A6-era documentation drift by marking WS-A4 as completed in `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` to match existing closure evidence and the active-slice status pages.
+- Closed remaining WS-A6-era documentation drift by marking WS-A4 as completed in `docs/M7_CLOSEOUT_PACKET.md` to match existing closure evidence and the active-slice status pages.
 - Updated `docs/gitbook/13-future-slices-and-delivery-plan.md` so M7 workstream statuses are synchronized with current slice reality (WS-A1..WS-A6 completed, WS-A7 in progress, WS-A8 planned).
 - Bumped package patch version to `0.8.17` and synchronized the root README version marker.
 
@@ -392,7 +392,7 @@ All notable changes to this project are documented in this file.
 ### Documentation
 - Added root `CONTRIBUTING.md` pointer to canonical contributor workflow in `docs/DEVELOPMENT.md`.
 - Added root `CHANGELOG.md` for chronological release notes and milestone-delivery traceability.
-- Added post-audit remediation note in `docs/audits/REPOSITORY_AUDIT.md` clarifying WS-A1 CI hardening landed after the audit snapshot.
+- Added post-audit remediation note in `docs/audits/AUDIT_v0.8.0.md` clarifying WS-A1 CI hardening landed after the audit snapshot.
 
 ### CI / Quality Gates
 - Added Tier 3/WS-A1 documentation anchor checks for CI policy/workflow artifacts and root contributor/changelog discoverability in `scripts/test_tier3_invariant_surface.sh`.

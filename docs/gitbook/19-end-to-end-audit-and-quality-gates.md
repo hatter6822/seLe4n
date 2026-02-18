@@ -2,8 +2,9 @@
 
 This chapter summarizes the current audit posture across implementation, testing framework behavior, and documentation fidelity.
 
-For the full audit narratives, see historical [`docs/audits/PROJECT_AUDIT.md`](../audits/PROJECT_AUDIT.md) and
-current [`docs/audits/REPOSITORY_AUDIT.md`](../audits/REPOSITORY_AUDIT.md).
+For the full audit narratives, see [`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md),
+[`docs/audits/AUDIT_v0.9.0.md`](../audits/AUDIT_v0.9.0.md), and
+[`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md).
 
 For implementation sequencing tied to each criticism/recommendation, see
 [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md).

@@ -10,7 +10,7 @@ If you are new to the repository, use this order:
 2. **Testing tiers + expectations:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI required checks policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Current M7 slice outcomes:** [`docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`](docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md)
-5. **Execution workstream definitions:** [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md)
+5. **Execution workstream definitions:** [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
 
 For a full chapter map, use the handbook index in [`docs/gitbook/README.md`](docs/gitbook/README.md).
 

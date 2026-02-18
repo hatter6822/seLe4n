@@ -13,10 +13,10 @@ Use this file during planning and PR review to verify that docs, GitBook, and te
 | Topic | Canonical document | GitBook chapter(s) | Sync rule |
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/SEL4_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook chapter summarizes and links back. |
-| Comprehensive audit findings | `docs/audits/COMPREHENSIVE_AUDIT_2026_02.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Keep findings canonical in audits dir; avoid duplicating full audit prose in chapters. |
-| Comprehensive audit execution portfolio | `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Workstream status tables live in canonical plan; GitBook only navigates/summarizes. |
+| Comprehensive audit findings | `docs/audits/AUDIT_v0.9.0.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Keep findings canonical in audits dir; avoid duplicating full audit prose in chapters. |
+| Comprehensive audit execution portfolio | `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Workstream status tables live in canonical plan; GitBook only navigates/summarizes. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map lives in root docs; chapter is entrypoint only. |
-| M7 historical remediation closeout | `docs/M7_CLOSEOUT_PACKET.md` + `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` | `21-m7-current-slice-outcomes-and-workstreams.md`, `23-m7-remediation-closeout-packet.md`, `20-repository-audit-remediation-workstreams.md` | Keep marked as historical context for post-M7 planning, not active baseline. |
+| M7 historical remediation closeout | `docs/M7_CLOSEOUT_PACKET.md` | `21-m7-current-slice-outcomes-and-workstreams.md`, `23-m7-remediation-closeout-packet.md`, `20-repository-audit-remediation-workstreams.md` | Keep marked as historical context for post-M7 planning, not active baseline. |
 | Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Workflow command changes must be reflected in both files in same PR. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require root docs + GitBook updates together. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Keep normative constraints in policy doc; chapter links policy and planning implications. |
@@ -49,7 +49,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md` (WS-B11 completed).
-- Historical closeout baseline: M7 remediation docs (`AUDIT_REMEDIATION_WORKSTREAMS.md`, `M7_CLOSEOUT_PACKET.md`).
+- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` (WS-B11 completed).
+- Historical closeout baseline: `M7_CLOSEOUT_PACKET.md` and its mirrored GitBook summaries.
 - Current quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 

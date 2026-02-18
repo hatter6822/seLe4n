@@ -8,9 +8,9 @@ active-slice intent, and change-control expectations.
 Companion planning and execution documents:
 
 - comprehensive-audit findings:
-  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02.md`](./audits/COMPREHENSIVE_AUDIT_2026_02.md)
+  [`docs/audits/AUDIT_v0.9.0.md`](./audits/AUDIT_v0.9.0.md)
 - comprehensive-audit workstream execution plan:
-  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
 
 ---
 
@@ -77,7 +77,7 @@ A workstream-ready PR should include:
 5. explicit deferred items and owning follow-up workstream.
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
 
 Security assumptions and trust boundaries for WS-B9 are documented in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 

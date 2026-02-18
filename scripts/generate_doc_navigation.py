@@ -41,7 +41,7 @@ def format_readme(manifest: dict) -> str:
     lines.append("## Where to find current workstream detail")
     lines.append("")
     lines.append("- Canonical execution matrix:")
-    lines.append("  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](../audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)")
+    lines.append("  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)")
     lines.append("- GitBook planning chapter:")
     lines.append("  [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)")
     lines.append("")
