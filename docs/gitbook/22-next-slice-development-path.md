@@ -1,9 +1,9 @@
-# Next Slice Development Path (Post-M7)
+# Next Slice Development Path (Post-M7, Historical Candidate)
 
-This chapter describes the expected development path after M7 audit remediation closes.
+This chapter preserves the originally proposed post-M7 transition path for traceability.
 
-The immediate objective after M7 is to start a hardware-oriented slice with lower integration risk,
-using Raspberry Pi 5 as the first concrete architecture target.
+The active execution portfolio has since moved to Comprehensive Audit 2026-02 WS-B workstreams.
+Use this page as historical directional planning context, not as active status.
 
 ## 1. Why this path exists
 
@@ -55,7 +55,7 @@ Build a first hardware-instantiation lane that demonstrates:
 
 ## 4. Entry criteria from M7
 
-The next slice should not start until these conditions are true:
+A future hardware-focused slice should not start until these conditions are true:
 
 1. M7 high-priority outcomes are fully closed,
 2. CI baseline includes reliable quality gates and deterministic replay,

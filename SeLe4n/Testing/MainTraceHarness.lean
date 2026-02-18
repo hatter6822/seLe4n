@@ -131,7 +131,7 @@ private def runCapabilityAndArchitectureTrace (st1 : SystemState) : IO Unit := d
       match SeLe4n.Kernel.Architecture.vspaceLookup 1 4096 stV1 with
       | .error err => IO.println s!"vspace lookup error: {reprStr err}"
       | .ok (paddr, stV2) =>
-          IO.println s!"vspace lookup mapped paddr: {reprStr paddr}"
+          IO.println s!"vspace lookup mapped paddr: {paddr.toNat}"
           match SeLe4n.Kernel.Architecture.vspaceUnmapPage 1 4096 stV2 with
           | .error err => IO.println s!"vspace unmap error: {reprStr err}"
           | .ok (_, stV3) =>

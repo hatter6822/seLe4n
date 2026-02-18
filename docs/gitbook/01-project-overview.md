@@ -30,7 +30,7 @@ Closed baseline slices:
 
 Current active slice:
 
-- **Post-M7 hardware-oriented next slice (Raspberry Pi 5 first)** with M7 remediation treated as completed baseline.
+- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1, WS-B2, WS-B3, and WS-B4 completed and WS-B5..WS-B11 in planned/in-progress execution.
 
 ## 4. Architecture mental model
 
@@ -43,16 +43,16 @@ The codebase is organized as layered contracts:
 - **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
 - **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
 
-## 5. Current-slice outcomes (M7 audit remediation)
+## 5. Current-slice outcomes (Comprehensive Audit 2026-02 / WS-B)
 
-The active remediation slice is successful when contributors deliver all of the following:
+The active slice is successful when contributors deliver all of the following:
 
-1. CI and quality-gate hardening (including Tier 3 promotion and cache/security hygiene),
-2. architecture/module cleanup and API boundary refinements,
-3. type-safety, testing-depth, and documentation-governance upgrades mapped to audit findings,
-4. traceable closure of audit criticisms/recommendations with synchronized code/proof/test/docs evidence.
+1. closure of comprehensive-audit recommendations via WS-B workstreams,
+2. deterministic CI + trace reproducibility preserved through every workstream increment,
+3. theorem/invariant surfaces remain discoverable and preservation-focused,
+4. synchronized updates across README/spec/development guide/GitBook + audit planning artifacts.
 
-See dedicated execution chapters: [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md) and [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md).
+See dedicated execution chapters: [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
 
 ## 6. Hardware trajectory update
 

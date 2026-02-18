@@ -23,7 +23,7 @@ def boundedAddressTranslation (st : SystemState) (bound : Nat) : Prop :=
   ∀ oid root v p,
     st.objects oid = some (.vspaceRoot root) →
     (v, p) ∈ root.mappings →
-    p < bound
+    p.toNat < bound
 
 /-- WS-B1 architecture/VSpace invariant bundle entrypoint. -/
 def vspaceInvariantBundle (st : SystemState) : Prop :=

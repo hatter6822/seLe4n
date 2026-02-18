@@ -3,13 +3,15 @@
 This document records a full end-to-end quality audit over code, tests, and documentation surfaces.
 
 > **Historical note:** This audit is preserved as a prior-stage snapshot for traceability.
-> For the current audit baseline and active remediation program, see
-> [`docs/audits/REPOSITORY_AUDIT.md`](./REPOSITORY_AUDIT.md) and
+> For the current audit baseline and active execution portfolio, see
+> [`docs/audits/COMPREHENSIVE_AUDIT_2026_02.md`](./COMPREHENSIVE_AUDIT_2026_02.md) and
+> [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+> M7 remediation detail remains archived in
 > [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](./AUDIT_REMEDIATION_WORKSTREAMS.md).
 
 ## 1) Executive assessment
 
-Overall verdict: **the repository is operationally healthy and aligned with an M7-remediation-complete baseline and active post-M7 next-slice execution**.
+Overall verdict: **the repository is operationally healthy and aligned with an M7-remediation-complete baseline and post-M7 transition readiness**.
 
 Specifically, this audit re-validated:
 
@@ -68,7 +70,7 @@ Framework quality properties verified:
 
 Current documentation set is synchronized around:
 
-- **Current slice:** post-M7 hardware-oriented next slice (Raspberry Pi 5 first).
+- **Historical then-current slice context:** post-M7 hardware-oriented next-slice candidate (Raspberry Pi 5 first).
 - **Most recently completed slice:** M7 audit remediation workstreams (WS-A1 through WS-A8 completed).
 - **Previous completed slice:** M6 architecture-binding interfaces + assumption hardening (WS-M6-A through WS-M6-E completed).
 - **Historical context:** M4-B completion retained as predecessor reference.

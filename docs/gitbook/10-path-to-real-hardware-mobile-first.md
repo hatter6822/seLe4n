@@ -33,17 +33,17 @@ The path to real hardware is staged and contract-driven:
 - deterministic success/failure semantics and executable evidence,
 - testing tiers and CI contracts.
 
-### Stage H1 — Current execution (M6)
+### Stage H1 — Completed architecture-boundary baseline (M6)
 
 - extract architecture assumptions as explicit interfaces,
 - define proof-carrying adapters from architecture-neutral semantics,
 - harden boot/runtime boundary obligations as concrete contracts.
 
-### Stage H2 — Raspberry Pi 5 contract instantiation (post-M6)
+### Stage H2 — Active audit-driven model deepening (WS-B portfolio)
 
-- instantiate M6 interfaces for Raspberry Pi 5 constraints,
-- map platform assumptions to theorem obligations,
-- keep core theorem surfaces reusable.
+- close comprehensive-audit execution workstreams (currently WS-B5 onward),
+- preserve typed domain separation and deterministic traces while expanding semantics,
+- maintain theorem and documentation synchronization for hardware-readiness progression.
 
 ### Stage H3 — Minimal platform-oriented trust partition
 
@@ -76,7 +76,7 @@ The path to real hardware is staged and contract-driven:
 4. **Roadmap ambiguity**
    - mitigation: keep README/spec/GitBook synchronized on Raspberry Pi 5-first direction.
 
-## 6. What contributors can do now
+## 6. What contributors can do now (active WS-B context)
 
 - align milestone PRs to M6 workstreams,
 - document architecture assumptions explicitly,

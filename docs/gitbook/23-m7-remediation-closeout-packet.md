@@ -8,7 +8,7 @@ Canonical closeout packet: [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.
 
 - WS-A1 through WS-A8: ✅ completed.
 - M7 exit gate: ✅ satisfied.
-- Next slice activation: ✅ post-M7 hardware-oriented path is now active.
+- Next slice activation: ✅ transitioned to the Comprehensive Audit 2026-02 WS-B execution portfolio (hardware-oriented path retained as future directional plan).
 
 ## 2. Handoff essentials
 

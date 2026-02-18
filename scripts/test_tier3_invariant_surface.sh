@@ -19,6 +19,14 @@ run_check "INVARIANT" rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
 run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
+# WS-B4 closure anchors: wrapper structures must remain explicit.
+run_check "INVARIANT" rg -n '^structure DomainId' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Priority' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Irq' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Badge' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure ASID' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure VAddr' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure PAddr' SeLe4n/Prelude.lean
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean

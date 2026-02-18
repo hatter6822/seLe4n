@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, and WS-B3 are Completed**; WS-B4..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, and WS-B4 are Completed**; WS-B5..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -122,7 +122,7 @@ Current portfolio status: **WS-B1, WS-B2, and WS-B3 are Completed**; WS-B4..WS-B
 - **Exit criteria:** harness decomposition merged with no trace-regression drift and clearer failure localization.
 - **Closure evidence (2026-02-17):** `Main.lean` now delegates execution to `SeLe4n/Testing/MainTraceHarness.lean`, which extracts trace orchestration into dedicated harness functions (`runCapabilityAndArchitectureTrace`, `runServiceAndStressTrace`, `runLifecycleAndEndpointTrace`); bootstrap construction is now list/builder-based through `SeLe4n/Testing/StateBuilder.lean`; Tier 2 fixture output remains stable (`tests/fixtures/main_trace_smoke.expected`) with `scripts/test_tier2_trace.sh` and `scripts/test_full.sh` passing against the refactored harness.
 
-### WS-B4 — Remaining type wrapper migration (Planned)
+### WS-B4 — Remaining type wrapper migration (Completed)
 
 - **Goal:** complete wrapper-typed domain separation across remaining scalar aliases.
 - **Prerequisites:** none (P1 starter).
@@ -135,6 +135,7 @@ Current portfolio status: **WS-B1, WS-B2, and WS-B3 are Completed**; WS-B4..WS-B
   - `./scripts/test_fast.sh`
   - `./scripts/test_full.sh`
 - **Exit criteria:** no remaining raw alias usage in target surfaces; invariant layer compiles without coercion shortcuts.
+- **Closure evidence (2026-02-18):** `SeLe4n/Prelude.lean` now upgrades `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr` from `Nat` aliases to wrapper structures with `ofNat`/`toNat` helpers and explicit `ToString`/`OfNat` compatibility instances; `scripts/test_tier0_hygiene.sh` now fails if any of these regress to `abbrev ... := Nat`; full validation gates pass under `scripts/test_fast.sh` and `scripts/test_full.sh`.
 
 ### WS-B5 — CSpace semantics completion (Planned)
 

@@ -1,3 +1,24 @@
+## [0.9.12] - 2026-02-18
+
+### WS-B documentation/test-sync audit hardening
+- Audited and corrected stale testing/hardware-direction status language so active-slice references consistently describe Comprehensive Audit 2026-02 WS-B execution rather than post-M7 next-slice wording.
+- Added Tier 3 WS-B4 closure anchors in `scripts/test_tier3_invariant_surface.sh` that assert wrapper-structure presence for `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr`.
+- Bumped package patch version to **`0.9.12`** and synchronized root version marker in `README.md`.
+
+## [0.9.11] - 2026-02-18
+
+### Documentation synchronization hardening (WS-B4 follow-through)
+- Audited and corrected stale GitBook/archive status language so active-slice references now consistently point to the Comprehensive Audit 2026-02 WS-B portfolio and mark older M7/post-M7 transition pages as historical context.
+- Updated historical audit metadata pointers in `docs/audits/PROJECT_AUDIT.md` so readers are directed to the current comprehensive-audit baseline and workstream execution backbone.
+- Bumped package patch version to **`0.9.11`** and synchronized root version marker in `README.md`.
+
+## [0.9.10] - 2026-02-18
+
+### WS-B4 completion / remaining wrapper migration
+- Upgraded `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr` in `SeLe4n/Prelude.lean` from `Nat` aliases to dedicated wrapper structures with explicit migration helpers (`ofNat`/`toNat`) and compatibility instances (`OfNat`, `ToString`).
+- Added a Tier 0 WS-B4 regression guard in `scripts/test_tier0_hygiene.sh` that fails if any of the migrated wrappers regress to `abbrev ... := Nat`.
+- Synchronized active-slice status across root docs/spec/development guide/GitBook and canonical workstream planning docs to mark WS-B4 complete.
+
 # Changelog
 
 ## [0.9.9] - 2026-02-17
