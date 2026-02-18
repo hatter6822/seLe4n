@@ -1,3 +1,22 @@
+## [0.9.25] - 2026-02-18
+
+### WS-B9 post-audit documentation synchronization hardening
+- Corrected documentation-sync baseline drift by updating `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` to reflect WS-B9 completion in the active planning baseline summary.
+- Updated GitBook chapter 25 (`docs/gitbook/25-documentation-sync-and-coverage-matrix.md`) to explicitly call out WS-B9 synchronization expectations.
+- Extended Tier 3 anchor enforcement in `scripts/test_tier3_invariant_surface.sh` to require the updated documentation-sync baseline marker and added a targeted ShellCheck suppression (`SC2016`) for the literal regex line.
+- Re-ran full validation gates (`test_fast`, `test_full`, default + experimental `test_nightly`) to verify end-to-end consistency.
+- Bumped patch version to **`0.9.25`** and synchronized root version marker in `README.md`.
+
+## [0.9.24] - 2026-02-18
+
+### WS-B9 threat model and security hardening completion
+- Published the canonical security baseline document at `docs/THREAT_MODEL.md` and added GitBook mirror chapter `docs/gitbook/28-threat-model-and-security-hardening.md`.
+- Hardened bootstrap supply-chain behavior in `scripts/setup_lean_env.sh` by replacing remote `curl | sh` execution with temporary-file download + SHA-256 verification (`ELAN_INSTALLER_SHA256`) before installer execution.
+- Expanded `.gitignore` to block common local secret/config files and scanner outputs from being committed.
+- Synchronized active-slice/workstream status across README/spec/development/workstream-plan/GitBook pages to mark WS-B9 completed.
+- Extended Tier 3 invariant/doc anchors to enforce WS-B9 security surfaces (threat model presence + setup checksum markers).
+- Bumped patch version to **`0.9.24`** and synchronized root version marker in `README.md`.
+
 ## [0.9.23] - 2026-02-18
 
 ### WS-B8 post-review refinement and CI/doc-policy synchronization

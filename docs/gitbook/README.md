@@ -5,7 +5,7 @@
 This GitBook is the long-form guide for architecture, workflow, and milestone context.
 
 ## Current project state
-- **Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 completed).
+- **Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 completed).
 - **Latest completed slice:** M7 remediation (WS-A1..WS-A8 complete).
 - **Previous completed slice:** M6 architecture-boundary hardening.
 
@@ -20,8 +20,9 @@ Normative scope and acceptance source:
 4. [Development Workflow](06-development-workflow.md)
 5. [Testing & CI](07-testing-and-ci.md)
 6. [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-7. [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-8. [Codebase Reference](11-codebase-reference.md)
+7. [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
+8. [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
+9. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
 

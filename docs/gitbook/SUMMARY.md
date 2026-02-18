@@ -18,6 +18,7 @@
 - [Testing & CI](07-testing-and-ci.md)
 - [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 - [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
+- [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 - [Codebase Reference](11-codebase-reference.md)

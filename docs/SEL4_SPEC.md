@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B9..WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 complete).
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B10..WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 complete).
 
 ---
 
@@ -56,7 +56,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 - **WS-B6:** Notification-object IPC completion ✅ completed
 - **WS-B7:** Information-flow proof-track start ✅ completed
 - **WS-B8:** Documentation automation + consolidation ✅ completed
-- **WS-B9:** Threat model and security hardening
+- **WS-B9:** Threat model and security hardening ✅ completed
 - **WS-B10:** CI maturity upgrades
 - **WS-B11:** Scenario framework finalization
 
@@ -78,6 +78,8 @@ A workstream-ready PR should include:
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+
+Security assumptions and trust boundaries for WS-B9 are documented in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 
 ---
 

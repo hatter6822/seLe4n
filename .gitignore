@@ -1,2 +1,21 @@
 /.lake
 /tests/artifacts
+
+# WS-B9 security hardening: local secret/config artifacts should never be committed.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.csr
+*.kubeconfig
+*.secret
+secrets/
+
+# Local scanner/tool outputs
+.trivy/
+trivy-report*.json
+gitleaks-report*.json

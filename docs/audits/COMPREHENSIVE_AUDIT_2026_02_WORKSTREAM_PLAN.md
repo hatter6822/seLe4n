@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 are Completed**; WS-B9..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 are Completed**; WS-B10..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -198,7 +198,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and
 - **Exit criteria:** reproducible doc synchronization workflow with automated guardrails.
 - **Closure evidence (2026-02-18):** `scripts/generate_doc_navigation.py` now generates canonical GitBook navigation pages (`docs/gitbook/README.md`, `docs/gitbook/SUMMARY.md`) from `docs/gitbook/navigation_manifest.json`; markdown-link automation is enforced by `scripts/check_markdown_links.py` and `scripts/test_docs_sync.sh`, wired into Tier 0 via `scripts/test_tier0_hygiene.sh` and into CI via the new `Docs Automation / Navigation + Links + DocGen Probe` lane in `.github/workflows/lean_action_ci.yml`; dedup governance is published in `docs/DOCS_DEDUPLICATION_MAP.md` with GitBook mirror `docs/gitbook/27-documentation-deduplication-map.md`; and planning PR checklist enforcement is codified in `.github/pull_request_template.md`.
 
-### WS-B9 — Threat model and security hardening (Planned)
+### WS-B9 — Threat model and security hardening (Completed)
 
 - **Goal:** formalize threat assumptions and tighten baseline supply-chain/security controls.
 - **Prerequisites:** none (can overlap P2/P3).
@@ -212,6 +212,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and
   - `./scripts/test_full.sh`
   - security workflow checks in CI policy anchors.
 - **Exit criteria:** threat model and hardening controls documented, testable, and linked from roadmap.
+- **Closure evidence (2026-02-18):** canonical threat assumptions and trust-boundary controls are now published in `docs/THREAT_MODEL.md` with GitBook mirror `docs/gitbook/28-threat-model-and-security-hardening.md`; repository secret/artifact hygiene is tightened by `.gitignore` denylist expansion for local secret files and scanner outputs; `scripts/setup_lean_env.sh` now downloads the elan installer to a temporary file and enforces `ELAN_INSTALLER_SHA256` verification before execution (replacing direct `curl | sh` behavior); CI/security policy linkage is documented in `docs/CI_POLICY.md`; and Tier 3 invariant/doc anchors in `scripts/test_tier3_invariant_surface.sh` enforce the WS-B9 security-surface markers.
 
 ### WS-B10 — CI maturity upgrades (Planned)
 

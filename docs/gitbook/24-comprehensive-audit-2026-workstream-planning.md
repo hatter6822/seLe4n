@@ -24,7 +24,7 @@ This is the GitBook mirror of the canonical planning backbone:
 - **WS-B6:** Notification-object IPC completion ✅ completed
 - **WS-B7:** Information-flow proof-track start ✅ completed
 - **WS-B8:** Documentation automation + consolidation ✅ completed
-- **WS-B9:** Threat model and security hardening
+- **WS-B9:** Threat model and security hardening ✅ completed
 
 ### Low priority
 
@@ -35,7 +35,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
+- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (WS-B7/WS-B9 completed)
 
 ## 4) Evidence expectations for milestone-moving PRs
 
@@ -118,3 +118,11 @@ When status changes, update together:
 - CI now includes a docs lane (`Docs Automation / Navigation + Links + DocGen Probe`) in `.github/workflows/lean_action_ci.yml` to enforce documentation automation before smoke/full lanes.
 - Root↔GitBook dedup ownership is captured in [`docs/DOCS_DEDUPLICATION_MAP.md`](../DOCS_DEDUPLICATION_MAP.md) and mirrored in chapter 27.
 - Planning/doc PR checklist enforcement is codified in `.github/pull_request_template.md`.
+
+
+## 14) WS-B9 closure evidence
+
+- Threat assumptions/trust boundaries are now canonicalized in [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md) with GitBook mirror [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md).
+- Repository hygiene now excludes common local secret/config and scanner artifacts via `.gitignore` denylist expansion.
+- `scripts/setup_lean_env.sh` now enforces installer integrity by downloading elan installer content to a temporary file and validating `ELAN_INSTALLER_SHA256` before execution.
+- CI policy linkage is synchronized in [`docs/CI_POLICY.md`](../CI_POLICY.md), and Tier 3 invariant/doc anchors continuously enforce WS-B9 security-surface markers.

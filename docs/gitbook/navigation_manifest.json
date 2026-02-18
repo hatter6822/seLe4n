@@ -1,66 +1,179 @@
 {
   "description": "This GitBook is the long-form guide for architecture, workflow, and milestone context.",
   "current_state_bullets": [
-    "**Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 completed).",
+    "**Active slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, WS-B8, and WS-B9 completed).",
     "**Latest completed slice:** M7 remediation (WS-A1..WS-A8 complete).",
     "**Previous completed slice:** M6 architecture-boundary hardening."
   ],
   "recommended_reading": [
-    { "title": "Project Overview", "path": "01-project-overview.md" },
-    { "title": "Architecture & Module Map", "path": "03-architecture-and-module-map.md" },
-    { "title": "Specification & Roadmap", "path": "05-specification-and-roadmap.md" },
-    { "title": "Development Workflow", "path": "06-development-workflow.md" },
-    { "title": "Testing & CI", "path": "07-testing-and-ci.md" },
-    { "title": "Comprehensive Audit 2026 Workstream Planning", "path": "24-comprehensive-audit-2026-workstream-planning.md" },
-    { "title": "Documentation Sync and Coverage Matrix", "path": "25-documentation-sync-and-coverage-matrix.md" },
-    { "title": "Codebase Reference", "path": "11-codebase-reference.md" }
+    {
+      "title": "Project Overview",
+      "path": "01-project-overview.md"
+    },
+    {
+      "title": "Architecture & Module Map",
+      "path": "03-architecture-and-module-map.md"
+    },
+    {
+      "title": "Specification & Roadmap",
+      "path": "05-specification-and-roadmap.md"
+    },
+    {
+      "title": "Development Workflow",
+      "path": "06-development-workflow.md"
+    },
+    {
+      "title": "Testing & CI",
+      "path": "07-testing-and-ci.md"
+    },
+    {
+      "title": "Comprehensive Audit 2026 Workstream Planning",
+      "path": "24-comprehensive-audit-2026-workstream-planning.md"
+    },
+    {
+      "title": "Threat Model and Security Hardening (WS-B9)",
+      "path": "28-threat-model-and-security-hardening.md"
+    },
+    {
+      "title": "Documentation Sync and Coverage Matrix",
+      "path": "25-documentation-sync-and-coverage-matrix.md"
+    },
+    {
+      "title": "Codebase Reference",
+      "path": "11-codebase-reference.md"
+    }
   ],
   "summary_sections": [
     {
       "section": "Orientation",
       "pages": [
-        { "title": "Project Overview", "path": "01-project-overview.md" },
-        { "title": "Microkernel and seL4 Primer", "path": "02-microkernel-and-sel4-primer.md" },
-        { "title": "Architecture & Module Map", "path": "03-architecture-and-module-map.md" },
-        { "title": "Project Design Deep Dive", "path": "04-project-design-deep-dive.md" }
+        {
+          "title": "Project Overview",
+          "path": "01-project-overview.md"
+        },
+        {
+          "title": "Microkernel and seL4 Primer",
+          "path": "02-microkernel-and-sel4-primer.md"
+        },
+        {
+          "title": "Architecture & Module Map",
+          "path": "03-architecture-and-module-map.md"
+        },
+        {
+          "title": "Project Design Deep Dive",
+          "path": "04-project-design-deep-dive.md"
+        }
       ]
     },
     {
       "section": "Active slice and execution guidance",
       "pages": [
-        { "title": "Specification & Roadmap", "path": "05-specification-and-roadmap.md" },
-        { "title": "Development Workflow", "path": "06-development-workflow.md" },
-        { "title": "Testing & CI", "path": "07-testing-and-ci.md" },
-        { "title": "Comprehensive Audit 2026 Workstream Planning", "path": "24-comprehensive-audit-2026-workstream-planning.md" },
-        { "title": "WS-B1 ADR: VSpace + Bounded Memory Model Foundation", "path": "26-ws-b1-vspace-memory-adr.md" },
-        { "title": "Documentation Sync and Coverage Matrix", "path": "25-documentation-sync-and-coverage-matrix.md" },
-        { "title": "Documentation Deduplication Map", "path": "27-documentation-deduplication-map.md" },
-        { "title": "Codebase Reference", "path": "11-codebase-reference.md" },
-        { "title": "Proof and Invariant Map", "path": "12-proof-and-invariant-map.md" },
-        { "title": "End-to-End Audit and Quality Gates", "path": "19-end-to-end-audit-and-quality-gates.md" }
+        {
+          "title": "Specification & Roadmap",
+          "path": "05-specification-and-roadmap.md"
+        },
+        {
+          "title": "Development Workflow",
+          "path": "06-development-workflow.md"
+        },
+        {
+          "title": "Testing & CI",
+          "path": "07-testing-and-ci.md"
+        },
+        {
+          "title": "Comprehensive Audit 2026 Workstream Planning",
+          "path": "24-comprehensive-audit-2026-workstream-planning.md"
+        },
+        {
+          "title": "WS-B1 ADR: VSpace + Bounded Memory Model Foundation",
+          "path": "26-ws-b1-vspace-memory-adr.md"
+        },
+        {
+          "title": "Threat Model and Security Hardening (WS-B9)",
+          "path": "28-threat-model-and-security-hardening.md"
+        },
+        {
+          "title": "Documentation Sync and Coverage Matrix",
+          "path": "25-documentation-sync-and-coverage-matrix.md"
+        },
+        {
+          "title": "Documentation Deduplication Map",
+          "path": "27-documentation-deduplication-map.md"
+        },
+        {
+          "title": "Codebase Reference",
+          "path": "11-codebase-reference.md"
+        },
+        {
+          "title": "Proof and Invariant Map",
+          "path": "12-proof-and-invariant-map.md"
+        },
+        {
+          "title": "End-to-End Audit and Quality Gates",
+          "path": "19-end-to-end-audit-and-quality-gates.md"
+        }
       ]
     },
     {
       "section": "Transition and long-horizon path",
       "pages": [
-        { "title": "Next Slice Development Path (Post-M7)", "path": "22-next-slice-development-path.md" },
-        { "title": "Path to Real Hardware (Raspberry Pi 5 First)", "path": "10-path-to-real-hardware-mobile-first.md" },
-        { "title": "Project Usage and Value", "path": "17-project-usage-value.md" }
+        {
+          "title": "Next Slice Development Path (Post-M7)",
+          "path": "22-next-slice-development-path.md"
+        },
+        {
+          "title": "Path to Real Hardware (Raspberry Pi 5 First)",
+          "path": "10-path-to-real-hardware-mobile-first.md"
+        },
+        {
+          "title": "Project Usage and Value",
+          "path": "17-project-usage-value.md"
+        }
       ]
     },
     {
       "section": "Historical archive",
       "pages": [
-        { "title": "M7 Current Slice Outcomes and Workstreams (Historical)", "path": "21-m7-current-slice-outcomes-and-workstreams.md" },
-        { "title": "M7 Remediation Closeout Packet", "path": "23-m7-remediation-closeout-packet.md" },
-        { "title": "Repository Audit Remediation Workstreams", "path": "20-repository-audit-remediation-workstreams.md" },
-        { "title": "M6 Execution Plan and Workstreams (Closeout)", "path": "18-m6-execution-plan-and-workstreams.md" },
-        { "title": "M5 Closeout Snapshot", "path": "09-m5-closeout-snapshot.md" },
-        { "title": "Completed Slice: M4-A", "path": "08-completed-slice-m4a.md" },
-        { "title": "Completed Slice: M4-B", "path": "16-completed-slice-m4b.md" },
-        { "title": "M4-B Execution Playbook", "path": "14-m4b-execution-playbook.md" },
-        { "title": "Future Slices and Delivery Plan", "path": "13-future-slices-and-delivery-plan.md" },
-        { "title": "M5 Development Blueprint", "path": "15-m5-development-blueprint.md" }
+        {
+          "title": "M7 Current Slice Outcomes and Workstreams (Historical)",
+          "path": "21-m7-current-slice-outcomes-and-workstreams.md"
+        },
+        {
+          "title": "M7 Remediation Closeout Packet",
+          "path": "23-m7-remediation-closeout-packet.md"
+        },
+        {
+          "title": "Repository Audit Remediation Workstreams",
+          "path": "20-repository-audit-remediation-workstreams.md"
+        },
+        {
+          "title": "M6 Execution Plan and Workstreams (Closeout)",
+          "path": "18-m6-execution-plan-and-workstreams.md"
+        },
+        {
+          "title": "M5 Closeout Snapshot",
+          "path": "09-m5-closeout-snapshot.md"
+        },
+        {
+          "title": "Completed Slice: M4-A",
+          "path": "08-completed-slice-m4a.md"
+        },
+        {
+          "title": "Completed Slice: M4-B",
+          "path": "16-completed-slice-m4b.md"
+        },
+        {
+          "title": "M4-B Execution Playbook",
+          "path": "14-m4b-execution-playbook.md"
+        },
+        {
+          "title": "Future Slices and Delivery Plan",
+          "path": "13-future-slices-and-delivery-plan.md"
+        },
+        {
+          "title": "M5 Development Blueprint",
+          "path": "15-m5-development-blueprint.md"
+        }
       ]
     }
   ]
