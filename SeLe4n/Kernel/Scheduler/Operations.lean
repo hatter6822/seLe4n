@@ -141,6 +141,10 @@ theorem schedule_preserves_wellFormed
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
               simp [schedulerWellFormed, queueCurrentConsistent]
+          | notification ntfn =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [schedulerWellFormed, queueCurrentConsistent]
           | cnode cn =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
@@ -182,6 +186,10 @@ theorem schedule_preserves_queueCurrentConsistent
                 (by simp [hRun])
                 (by simpa [schedule, hRun, hObj] using hStep)
           | endpoint ep =>
+              simp [schedule, setCurrentThread, hRun, hObj] at hStep
+              cases hStep
+              simp [queueCurrentConsistent]
+          | notification ntfn =>
               simp [schedule, setCurrentThread, hRun, hObj] at hStep
               cases hStep
               simp [queueCurrentConsistent]
@@ -242,6 +250,9 @@ theorem schedule_preserves_runQueueUnique
           | endpoint ep =>
               exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
                 simpa [schedule, hRun, hObj] using hStep)
+          | notification ntfn =>
+              exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
+                simpa [schedule, hRun, hObj] using hStep)
           | cnode cn =>
               exact setCurrentThread_preserves_runQueueUnique st st' none hUnique (by
                 simpa [schedule, hRun, hObj] using hStep)
@@ -269,6 +280,9 @@ theorem schedule_preserves_currentThreadValid
                 ⟨tcb, hObj⟩
                 (by simpa [schedule, hRun, hObj] using hStep)
           | endpoint ep =>
+              exact setCurrentThread_none_preserves_currentThreadValid st st' (by
+                simpa [schedule, hRun, hObj] using hStep)
+          | notification ntfn =>
               exact setCurrentThread_none_preserves_currentThreadValid st st' (by
                 simpa [schedule, hRun, hObj] using hStep)
           | cnode cn =>

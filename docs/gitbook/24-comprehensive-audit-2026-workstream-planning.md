@@ -21,7 +21,7 @@ This is the GitBook mirror of the canonical planning backbone:
 ### Medium priority
 
 - **WS-B5:** CSpace guard/radix semantics completion ✅ completed
-- **WS-B6:** Notification-object IPC completion
+- **WS-B6:** Notification-object IPC completion ✅ completed
 - **WS-B7:** Information-flow proof-track start
 - **WS-B8:** Documentation automation + consolidation
 - **WS-B9:** Threat model and security hardening
@@ -34,7 +34,7 @@ This is the GitBook mirror of the canonical planning backbone:
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
-- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5 completed)
+- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ## 4) Evidence expectations for milestone-moving PRs
@@ -88,3 +88,11 @@ When status changes, update together:
 - `SeLe4n/Kernel/Capability/Operations.lean` adds `CSpacePathAddr`, `cspaceResolvePath`, and `cspaceLookupPath` so CSpace pointer-path traversal is executable alongside direct slot lookups.
 - `tests/NegativeStateSuite.lean` now enforces WS-B5 negative-path checks for depth mismatch and guard mismatch outcomes in `scripts/test_tier2_negative.sh`.
 - `tests/fixtures/main_trace_smoke.expected` now includes source/deep CSpace path anchors enforced by `scripts/test_tier2_trace.sh`.
+
+## 11) WS-B6 closure evidence
+
+- `SeLe4n/Model/Object.lean` now includes `NotificationState` + `Notification` and extends `KernelObject` with a notification variant.
+- `SeLe4n/Kernel/IPC/Operations.lean` adds executable `notificationSignal` and `notificationWait` semantics with runnable-queue interactions (block on wait, wake on signal).
+- `SeLe4n/Kernel/IPC/Invariant.lean` now includes `notificationQueueWellFormed`/`notificationInvariant`, and `ipcInvariant` now covers both endpoint and notification object classes.
+- `SeLe4n/Testing/MainTraceHarness.lean` and `tests/fixtures/main_trace_smoke.expected` now exercise composed endpoint + notification flows.
+- `tests/NegativeStateSuite.lean` adds positive/negative notification-path checks in Tier 2 negative validation.

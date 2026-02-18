@@ -79,6 +79,7 @@ theorem cspaceDeleteSlot_authority_reduction
       cases obj with
       | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
 
@@ -107,6 +108,7 @@ theorem cspaceRevoke_local_target_reduction
       cases obj with
       | tcb tcb => simp [hObj] at hStep
       | endpoint ep => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
       | cnode cn =>
 
@@ -205,6 +207,7 @@ theorem cspaceInsertSlot_lookup_eq
       cases obj with
       | tcb tcb => simp [cspaceInsertSlot, hObj] at hStep
       | endpoint ep => simp [cspaceInsertSlot, hObj] at hStep
+      | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
 
@@ -234,6 +237,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
       cases obj with
       | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
+      | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
 
@@ -260,6 +264,7 @@ theorem cspaceRevoke_preserves_source
           cases obj with
           | tcb tcb => simp [hLookup, hObj] at hStep
           | endpoint ep => simp [hLookup, hObj] at hStep
+          | notification ntfn => simp [hLookup, hObj] at hStep
           | vspaceRoot root => simp [hLookup, hObj] at hStep
           | cnode cn =>
 
@@ -536,34 +541,43 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
     (newObj : KernelObject)
     (hInv : ipcInvariant st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     ipcInvariant st' := by
-  intro oid ep hEndpoint
-  by_cases hEq : oid = target
-  · subst hEq
-    have hObjAtTarget : st'.objects oid = some newObj := by
-      rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
-        ⟨_, _, _, _, _, _, hStore⟩
-      exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
-    rw [hObjAtTarget] at hEndpoint
-    cases hNewObj : newObj with
-    | tcb _ =>
-        rw [hNewObj] at hEndpoint
-        cases hEndpoint
-    | cnode _ =>
-        rw [hNewObj] at hEndpoint
-        cases hEndpoint
-    | vspaceRoot _ =>
-        rw [hNewObj] at hEndpoint
-        cases hEndpoint
-    | endpoint newEp =>
-        rw [hNewObj] at hEndpoint
-        cases hEndpoint
-        exact hNewObjEndpointInv ep hNewObj
-  · have hPreserved : st'.objects oid = st.objects oid :=
-      lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
-    have hEndpointSt : st.objects oid = some (.endpoint ep) := by simpa [hPreserved] using hEndpoint
-    exact hInv oid ep hEndpointSt
+  rcases hInv with ⟨hEndpointInv, hNotificationInv⟩
+  refine ⟨?_, ?_⟩
+  · intro oid ep hEndpoint
+    by_cases hEq : oid = target
+    · subst hEq
+      have hObjAtTarget : st'.objects oid = some newObj := by
+        rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
+          ⟨_, _, _, _, _, _, hStore⟩
+        exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
+      have hSomeEq : some newObj = some (.endpoint ep) := by
+        simpa [hObjAtTarget] using hEndpoint
+      have hNewObjEq : newObj = .endpoint ep := by
+        injection hSomeEq
+      exact hNewObjEndpointInv ep hNewObjEq
+    · have hPreserved : st'.objects oid = st.objects oid :=
+        lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
+      have hEndpointSt : st.objects oid = some (.endpoint ep) := by simpa [hPreserved] using hEndpoint
+      exact hEndpointInv oid ep hEndpointSt
+  · intro oid ntfn hNtfn
+    by_cases hEq : oid = target
+    · subst hEq
+      have hObjAtTarget : st'.objects oid = some newObj := by
+        rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
+          ⟨_, _, _, _, _, _, hStore⟩
+        exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
+      have hSomeEq : some newObj = some (.notification ntfn) := by
+        simpa [hObjAtTarget] using hNtfn
+      have hNewObjEq : newObj = .notification ntfn := by
+        injection hSomeEq
+      exact hNewObjNotificationInv ntfn hNewObjEq
+    · have hPreserved : st'.objects oid = st.objects oid :=
+        lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
+      have hNtfnSt : st.objects oid = some (.notification ntfn) := by simpa [hPreserved] using hNtfn
+      exact hNotificationInv oid ntfn hNtfnSt
 
 theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
@@ -572,6 +586,7 @@ theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
     (newObj : KernelObject)
     (hInv : m3IpcSeedInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hCurrentValid : currentThreadValid st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     m3IpcSeedInvariantBundle st' := by
@@ -580,7 +595,7 @@ theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap hStep
-  · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hStep
+  · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hNewObjNotificationInv hStep
 
 theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
     (st st' : SystemState)
@@ -589,6 +604,7 @@ theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
     (newObj : KernelObject)
     (hInv : m4aLifecycleInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
+    (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
@@ -597,7 +613,7 @@ theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence⟩
   have hM3' : m3IpcSeedInvariantBundle st' :=
     lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle st st' authority target newObj hM3
-      hNewObjEndpointInv hCurrentValid hStep
+      hNewObjEndpointInv hNewObjNotificationInv hCurrentValid hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle hStep

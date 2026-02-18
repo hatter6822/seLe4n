@@ -104,6 +104,7 @@ theorem endpointSend_ok_as_storeObject
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state with
           | idle =>
@@ -136,6 +137,7 @@ theorem endpointAwaitReceive_ok_as_storeObject
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
             simp [hObj, hState, hQueue, hWait, storeObject] at hStep
@@ -158,6 +160,7 @@ theorem endpointReceive_ok_as_storeObject
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> simp [hObj, hState] at hStep
           case send =>
@@ -202,11 +205,25 @@ def endpointObjectValid (ep : Endpoint) : Prop :=
 def endpointInvariant (ep : Endpoint) : Prop :=
   endpointQueueWellFormed ep ∧ endpointObjectValid ep
 
+/-- Notification-local queue/state consistency for WS-B6. -/
+def notificationQueueWellFormed (ntfn : Notification) : Prop :=
+  match ntfn.state with
+  | .idle => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge = none
+  | .waiting => ntfn.waitingThreads ≠ [] ∧ ntfn.pendingBadge = none
+  | .active => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.isSome
+
+/-- Notification safety bundle for IPC completeness. -/
+def notificationInvariant (ntfn : Notification) : Prop :=
+  notificationQueueWellFormed ntfn
+
 /-- Global IPC seed invariant entrypoint. -/
 def ipcInvariant (st : SystemState) : Prop :=
-  ∀ oid ep,
+  (∀ oid ep,
     st.objects oid = some (.endpoint ep) →
-    endpointInvariant ep
+    endpointInvariant ep) ∧
+  (∀ oid ntfn,
+    st.objects oid = some (.notification ntfn) →
+    notificationInvariant ntfn)
 
 /-- Scheduler contract predicate #1 for M3.5: runnable threads are explicitly IPC-ready. -/
 def runnableThreadIpcReady (st : SystemState) : Prop :=
@@ -427,6 +444,7 @@ theorem endpointSend_result_wellFormed
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state with
           | idle =>
@@ -464,6 +482,7 @@ theorem endpointAwaitReceive_result_wellFormed
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
             simp [hObj, hState, hQueue, hWait, storeObject] at hStep
@@ -487,6 +506,7 @@ theorem endpointReceive_result_wellFormed
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> simp [hObj, hState] at hStep
           case send =>
@@ -546,21 +566,33 @@ theorem endpointSend_preserves_ipcInvariant
     (hInv : ipcInvariant st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     ipcInvariant st' := by
-  intro oid ep hObj
-  rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
-  by_cases hEq : oid = endpointId
-  · subst hEq
-    have hCast : ep = epNew := by
-      rw [hStored] at hObj
-      cases hObj
-      rfl
-    have hObjValidNew : endpointObjectValid epNew :=
-      endpointObjectValid_of_queueWellFormed epNew hWfNew
-    simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-  · have hUnchanged : st'.objects oid = st.objects oid := by
-      exact endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
-    have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-    exact hInv oid ep hOrig
+  rcases hInv with ⟨hEndpointInv, hNotificationInv⟩
+  refine ⟨?_, ?_⟩
+  · intro oid ep hObj
+    rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
+    by_cases hEq : oid = endpointId
+    · subst hEq
+      have hCast : ep = epNew := by
+        rw [hStored] at hObj
+        cases hObj
+        rfl
+      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
+      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
+      exact hEndpointInv oid ep hOrig
+  · intro oid ntfn hObj
+    by_cases hEq : oid = endpointId
+    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
+        simpa [hEq] using hObj
+      rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
+      rw [hStored] at hObjAtEndpoint
+      cases hObjAtEndpoint
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
+      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
+      exact hNotificationInv oid ntfn hOrig
 
 theorem endpointAwaitReceive_preserves_ipcInvariant
     (st st' : SystemState)
@@ -569,21 +601,33 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
     (hInv : ipcInvariant st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     ipcInvariant st' := by
-  intro oid ep hObj
-  rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, hWfNew⟩
-  by_cases hEq : oid = endpointId
-  · subst hEq
-    have hCast : ep = epNew := by
-      rw [hStored] at hObj
-      cases hObj
-      rfl
-    have hObjValidNew : endpointObjectValid epNew :=
-      endpointObjectValid_of_queueWellFormed epNew hWfNew
-    simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-  · have hUnchanged : st'.objects oid = st.objects oid := by
-      exact endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hEq hStep
-    have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-    exact hInv oid ep hOrig
+  rcases hInv with ⟨hEndpointInv, hNotificationInv⟩
+  refine ⟨?_, ?_⟩
+  · intro oid ep hObj
+    rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, hWfNew⟩
+    by_cases hEq : oid = endpointId
+    · subst hEq
+      have hCast : ep = epNew := by
+        rw [hStored] at hObj
+        cases hObj
+        rfl
+      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hEq hStep
+      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
+      exact hEndpointInv oid ep hOrig
+  · intro oid ntfn hObj
+    by_cases hEq : oid = endpointId
+    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
+        simpa [hEq] using hObj
+      rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, _⟩
+      rw [hStored] at hObjAtEndpoint
+      cases hObjAtEndpoint
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hEq hStep
+      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
+      exact hNotificationInv oid ntfn hOrig
 
 theorem endpointReceive_preserves_ipcInvariant
     (st st' : SystemState)
@@ -592,21 +636,33 @@ theorem endpointReceive_preserves_ipcInvariant
     (hInv : ipcInvariant st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     ipcInvariant st' := by
-  intro oid ep hObj
-  rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
-  by_cases hEq : oid = endpointId
-  · subst hEq
-    have hCast : ep = epNew := by
-      rw [hStored] at hObj
-      cases hObj
-      rfl
-    have hObjValidNew : endpointObjectValid epNew :=
-      endpointObjectValid_of_queueWellFormed epNew hWfNew
-    simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-  · have hUnchanged : st'.objects oid = st.objects oid := by
-      exact endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
-    have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-    exact hInv oid ep hOrig
+  rcases hInv with ⟨hEndpointInv, hNotificationInv⟩
+  refine ⟨?_, ?_⟩
+  · intro oid ep hObj
+    rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
+    by_cases hEq : oid = endpointId
+    · subst hEq
+      have hCast : ep = epNew := by
+        rw [hStored] at hObj
+        cases hObj
+        rfl
+      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
+      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
+      exact hEndpointInv oid ep hOrig
+  · intro oid ntfn hObj
+    by_cases hEq : oid = endpointId
+    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
+        simpa [hEq] using hObj
+      rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
+      rw [hStored] at hObjAtEndpoint
+      cases hObjAtEndpoint
+    · have hUnchanged : st'.objects oid = st.objects oid :=
+        endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
+      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
+      exact hNotificationInv oid ntfn hOrig
 
 theorem endpointSend_ok_implies_endpoint_object
     (st st' : SystemState)
@@ -622,6 +678,7 @@ theorem endpointSend_ok_implies_endpoint_object
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 
@@ -639,6 +696,7 @@ theorem endpointAwaitReceive_ok_implies_endpoint_object
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 
@@ -656,6 +714,7 @@ theorem endpointReceive_ok_implies_endpoint_object
       | tcb tcb => simp [hObj] at hStep
       | cnode cn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           refine ⟨ep, rfl⟩
 

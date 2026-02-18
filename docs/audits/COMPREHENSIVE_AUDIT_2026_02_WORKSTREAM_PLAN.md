@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 are Completed**; WS-B6..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 are Completed**; WS-B7..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -152,7 +152,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 are Completed*
 - **Exit criteria:** CSpace resolution behavior is executable, tested, and invariant-preserving.
 - **Closure evidence (2026-02-18):** `SeLe4n/Model/Object.lean` now defines executable guard/radix `CNode.resolveSlot` semantics with explicit depth/guard/slot failure taxonomy; `SeLe4n/Kernel/Capability/Operations.lean` adds `CSpacePathAddr` plus `cspaceResolvePath`/`cspaceLookupPath` so pointer-path traversal is modeled separately from direct slot lookup; `tests/NegativeStateSuite.lean` adds path-resolution positive/negative checks for depth mismatch and guard mismatch failures under `scripts/test_tier2_negative.sh`; `tests/fixtures/main_trace_smoke.expected` now anchors source/deep-path guard-radix trace outputs via `scripts/test_tier2_trace.sh`; full validation gates (`scripts/test_smoke.sh`, `scripts/test_full.sh`) pass with the completed semantics.
 
-### WS-B6 — IPC completeness with notifications (Planned)
+### WS-B6 — IPC completeness with notifications (Completed)
 
 - **Goal:** add notification-object semantics so IPC model covers endpoint + notification split.
 - **Prerequisites:** WS-B3 refactor (for cleaner scenario wiring).
@@ -165,6 +165,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 are Completed*
   - `./scripts/test_smoke.sh`
   - `./scripts/test_full.sh`
 - **Exit criteria:** notification semantics integrated through API, proofs, and trace fixtures.
+- **Closure evidence (2026-02-18):** `SeLe4n/Model/Object.lean` now includes `NotificationState`/`Notification` plus `KernelObject.notification` and `ThreadIpcState.blockedOnNotification`; `SeLe4n/Kernel/IPC/Operations.lean` adds executable `notificationSignal` and `notificationWait` semantics with runnable-queue interactions (block on wait, wake on signal); `SeLe4n/Kernel/IPC/Invariant.lean` extends the IPC invariant surface with `notificationQueueWellFormed`/`notificationInvariant` and global endpoint+notification coverage; `tests/NegativeStateSuite.lean` adds notification negative/positive checks; and `SeLe4n/Testing/MainTraceHarness.lean` + `tests/fixtures/main_trace_smoke.expected` now exercise composed endpoint/notification trace paths under `scripts/test_smoke.sh` and `scripts/test_full.sh`.
 
 ### WS-B7 — Information-flow proof track start (Planned)
 

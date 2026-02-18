@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current slice**:
 
-- active: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, and WS-B5 completed)**,
+- active: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 completed)**,
 - completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
@@ -37,7 +37,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **WS-B3** — `Main.lean` trace-harness refactor (**completed**)
 - **WS-B4** — remaining type wrapper migration (**completed**)
 - **WS-B5** — CSpace guard/radix completion (**completed**)
-- **WS-B6** — notification object semantics
+- **WS-B6** — notification object semantics (**completed**)
 - **WS-B7** — information-flow proof-track initiation
 - **WS-B8** — documentation automation + dedup
 - **WS-B9** — threat model/security hardening
@@ -49,7 +49,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 Use the planning phases from the workstream backbone:
 
 - **Phase P1:** WS-B4, WS-B3, WS-B8 (shape + hygiene stabilization; WS-B3/WS-B4 completed)
-- **Phase P2:** WS-B5, WS-B6, WS-B2 (semantic/model expansion; WS-B1/WS-B2/WS-B5 completed)
+- **Phase P2:** WS-B5, WS-B6, WS-B2 (semantic/model expansion; WS-B1/WS-B2/WS-B5/WS-B6 completed)
 - **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11 (assurance and operational maturity)
 
 ### 3.3 PR-to-workstream discipline
@@ -66,7 +66,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-B slice (prefer next unfinished stream: WS-B6 onward).
+1. Sync branch and choose one coherent WS-B slice (prefer next unfinished stream: WS-B7 onward).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

@@ -62,6 +62,7 @@ inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
+  | blockedOnNotification (notification : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -84,6 +85,21 @@ structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
   waitingReceiver : Option SeLe4n.ThreadId := none
+  deriving Repr, DecidableEq
+
+inductive NotificationState where
+  | idle
+  | waiting
+  | active
+  deriving Repr, DecidableEq
+
+/-- Minimal notification object model for WS-B6.
+
+`active` stores a single pending badge, while `waiting` tracks blocked receivers. -/
+structure Notification where
+  state : NotificationState
+  waitingThreads : List SeLe4n.ThreadId
+  pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 structure CNode where
@@ -248,6 +264,7 @@ end CNode
 inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)
+  | notification (n : Notification)
   | cnode (c : CNode)
   | vspaceRoot (v : VSpaceRoot)
   deriving Repr, DecidableEq
@@ -255,6 +272,7 @@ inductive KernelObject where
 inductive KernelObjectType where
   | tcb
   | endpoint
+  | notification
   | cnode
   | vspaceRoot
   deriving Repr, DecidableEq
@@ -264,6 +282,7 @@ namespace KernelObject
 def objectType : KernelObject → KernelObjectType
   | .tcb _ => .tcb
   | .endpoint _ => .endpoint
+  | .notification _ => .notification
   | .cnode _ => .cnode
   | .vspaceRoot _ => .vspaceRoot
 

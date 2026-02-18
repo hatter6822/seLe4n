@@ -4,6 +4,18 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+private def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  {
+    st with
+      scheduler := { st.scheduler with runnable := st.scheduler.runnable.filter (· ≠ tid) }
+  }
+
+private def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  if tid ∈ st.scheduler.runnable then
+    st
+  else
+    { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
+
 /-- Add a sender to an endpoint wait queue with explicit state transition. -/
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
@@ -56,6 +68,57 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
         | .send, _, some _ => .error .endpointStateMismatch
         | .idle, _, _ => .error .endpointStateMismatch
         | .receive, _, _ => .error .endpointStateMismatch
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- Signal a notification: wake one waiter or mark one pending badge. -/
+def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
+  fun st =>
+    match st.objects notificationId with
+    | some (.notification ntfn) =>
+        match ntfn.waitingThreads with
+        | waiter :: rest =>
+            let nextState : NotificationState := if rest.isEmpty then .idle else .waiting
+            let ntfn' : Notification := {
+              state := nextState
+              waitingThreads := rest
+              pendingBadge := none
+            }
+            match storeObject notificationId (.notification ntfn') st with
+            | .error e => .error e
+            | .ok ((), st') => .ok ((), ensureRunnable st' waiter)
+        | [] =>
+            let ntfn' : Notification := {
+              state := .active
+              waitingThreads := []
+              pendingBadge := some badge
+            }
+            storeObject notificationId (.notification ntfn') st
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- Wait on a notification: consume pending badge or block the caller. -/
+def notificationWait
+    (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
+  fun st =>
+    match st.objects notificationId with
+    | some (.notification ntfn) =>
+        match ntfn.pendingBadge with
+        | some badge =>
+            let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+            match storeObject notificationId (.notification ntfn') st with
+            | .error e => .error e
+            | .ok ((), st') => .ok (some badge, st')
+        | none =>
+            let ntfn' : Notification := {
+              state := .waiting
+              waitingThreads := ntfn.waitingThreads ++ [waiter]
+              pendingBadge := none
+            }
+            match storeObject notificationId (.notification ntfn') st with
+            | .error e => .error e
+            | .ok ((), st') => .ok (none, removeRunnable st' waiter)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

@@ -45,4 +45,6 @@ queued two senders on endpoint
 endpoint receive #1 sender: 1
 endpoint receive #2 sender: 2
 endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
+notification wait #1 result: none
+notification wait #2 result: some { val := 123 }
 minted cap rights: [SeLe4n.Model.AccessRight.read]

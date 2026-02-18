@@ -1,3 +1,31 @@
+## [0.9.18] - 2026-02-18
+
+### WS-B6 audit hardening follow-up
+- Hardened Tier 3 documentation-synchronization guards in `scripts/test_tier3_invariant_surface.sh` so active-slice/phase-status wording for WS-B6 completion is continuously checked across README/spec/development guide/GitBook pages.
+- Re-ran fast/full/nightly validation lanes to confirm no behavioral regressions and deterministic test stability under the tightened documentation anchors.
+- Bumped patch version to **`0.9.18`** and synchronized root version marker in `README.md`.
+
+## [0.9.17] - 2026-02-18
+
+### WS-B6 post-merge synchronization audit
+- Performed a full repository audit pass after WS-B6 merge and revalidated all quality tiers, including nightly default and nightly experimental determinism lanes.
+- Fixed remaining documentation/GitBook status drift so WS-B6 completion is reflected consistently in:
+  - `docs/gitbook/01-project-overview.md`,
+  - `docs/gitbook/06-development-workflow.md`,
+  - `docs/DEVELOPMENT.md`.
+- Updated next-workstream guidance to point to WS-B7 as the next unfinished stream.
+- Bumped patch version to **`0.9.17`** and synchronized the root version marker in `README.md`.
+
+## [0.9.16] - 2026-02-18
+
+### WS-B6 IPC completeness with notifications
+- Added notification-object IPC model coverage in `SeLe4n/Model/Object.lean`: `NotificationState`, `Notification`, `KernelObject.notification`, `KernelObjectType.notification`, and `ThreadIpcState.blockedOnNotification`.
+- Implemented executable notification transitions in `SeLe4n/Kernel/IPC/Operations.lean` with `notificationWait`/`notificationSignal` semantics and explicit scheduler runnable-queue interactions.
+- Extended IPC invariant surfaces (`SeLe4n/Kernel/IPC/Invariant.lean`) so global `ipcInvariant` now covers both endpoint and notification object classes.
+- Expanded regression evidence with notification paths in `SeLe4n/Testing/MainTraceHarness.lean`, `tests/NegativeStateSuite.lean`, and `tests/fixtures/main_trace_smoke.expected`, and added WS-B6 Tier 3 anchors in `scripts/test_tier3_invariant_surface.sh`.
+- Marked WS-B6 as completed across root docs/spec/development guide and GitBook planning mirrors.
+- Bumped patch version to **`0.9.16`** and synchronized root version marker in `README.md`.
+
 ## [0.9.15] - 2026-02-18
 
 ### WS-B5 semantic-correctness refinement
