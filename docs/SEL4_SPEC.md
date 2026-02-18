@@ -1,9 +1,26 @@
 # seL4 Microkernel Specification Summary
 
-This document provides a detailed summary of the seL4 microkernel specification. seL4
-(Secure Embedded L4) is a third-generation, high-assurance, capability-based microkernel
-in the L4 family. It is the world's first operating-system kernel with a machine-checked
-proof of functional correctness.
+> **Scope disclaimer.** This document describes the **upstream seL4 microkernel** --
+> the production C/assembly kernel developed by the seL4 Foundation and originally by
+> NICTA/Data61 at UNSW Sydney. It is a reference summary of seL4's published
+> specification, **not** a description of the seLe4n Lean 4 formalization project
+> contained in this repository.
+>
+> For seLe4n project-specific documentation (milestones, workstreams, acceptance
+> criteria, and model scope), see:
+>
+> - Project overview and active workstreams: [`../README.md`](../README.md)
+> - Development workflow: [`DEVELOPMENT.md`](./DEVELOPMENT.md)
+> - Active audit and workstream plan: [`audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+> - GitBook navigation: [`gitbook/README.md`](./gitbook/README.md)
+
+---
+
+seL4 (Secure Embedded L4) is a third-generation, high-assurance, capability-based
+microkernel in the L4 family. It is the world's first operating-system kernel with a
+machine-checked proof of functional correctness. Everything below summarizes the
+upstream seL4 specification and published reference material; it does not describe
+seLe4n's current model coverage.
 
 ---
 
@@ -741,7 +758,27 @@ seL4 and its L4 predecessors have been deployed in:
 
 ---
 
+## Relationship to seLe4n
+
+This document exists within the seLe4n repository as a reference for contributors
+working on the Lean 4 formalization. The seLe4n project incrementally models selected
+seL4 semantic surfaces (scheduler, capabilities, IPC, lifecycle, VSpace) in Lean 4 with
+the goal of machine-checked proofs of key properties. seLe4n does **not** attempt to
+replicate the full seL4 C implementation or proof corpus; it is an independent
+formalization effort.
+
+For the mapping between upstream seL4 concepts described above and seLe4n's current
+model coverage, see:
+
+- [`gitbook/02-microkernel-and-sel4-primer.md`](./gitbook/02-microkernel-and-sel4-primer.md) -- how seLe4n relates to seL4.
+- [`gitbook/05-specification-and-roadmap.md`](./gitbook/05-specification-and-roadmap.md) -- seLe4n project milestones and roadmap.
+- [`audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) -- active workstream plan.
+
+---
+
 ## References
+
+All references below point to upstream seL4 Foundation resources, not to seLe4n.
 
 - [seL4 Reference Manual](https://sel4.systems/Info/Docs/seL4-manual-latest.pdf)
 - [seL4 Whitepaper](https://sel4.systems/About/seL4-whitepaper.pdf)
