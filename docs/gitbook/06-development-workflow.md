@@ -39,7 +39,7 @@ For milestone-moving PRs:
 ## Workstream sequence
 
 - **Phase P0:** WS-C8 baseline reset/documentation synchronization (in progress)
-- **Phase P1:** WS-C1, WS-C3, core WS-C2 work, and WS-C4 fixture repairs (execution beginning)
+- **Phase P1:** WS-C3, core WS-C2 work, and WS-C4 fixture repairs (WS-C1 complete)
 - **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
 - **Phase P3:** WS-C6 + WS-C7 sustainability hardening
 

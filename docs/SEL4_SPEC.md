@@ -155,7 +155,7 @@ combinations or variants of these.
 | `seL4_ReplyRecv(src, msgInfo, sender)` | Atomic reply + receive (combined for efficiency). |
 | `seL4_Yield()` | Donate the remaining timeslice to another thread of the same priority. |
 
-- **WS-C1:** IPC handshake correctness (critical; kickoff starting)
+- **WS-C1:** IPC handshake correctness (critical; completed for notification badge accumulation and waiter ipcState wiring)
 - **WS-C2:** Scheduler semantic fidelity (high; queued after correctness blockers)
 - **WS-C3:** Proof-surface de-tautologization (critical; kickoff starting)
 - **WS-C4:** Test validity hardening (high; kickoff starting)
@@ -169,7 +169,7 @@ combinations or variants of these.
 - `seL4_Poll(src, sender)` -- non-blocking variant of `seL4_Wait`.
 
 - **P0:** WS-C8 baseline reset + active-plan publication (in progress)
-- **P1:** WS-C1 + WS-C3 + core WS-C2 + fixture-repair WS-C4 (execution beginning)
+- **P1:** WS-C3 + core WS-C2 + fixture-repair WS-C4 (WS-C1 completed)
 - **P2:** WS-C5 + remaining WS-C4 assurance expansion
 - **P3:** WS-C6 + WS-C7 sustainment hardening
 

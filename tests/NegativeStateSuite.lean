@@ -48,6 +48,24 @@ private def baseState : SystemState :=
       ]
     })
     |>.withObject sendEmptyEndpointId (.endpoint { state := .send, queue := [], waitingReceiver := none })
+    |>.withObject 7 (.tcb {
+      tid := 7
+      priority := 42
+      domain := 0
+      cspaceRoot := cnodeId
+      vspaceRoot := 20
+      ipcBuffer := 4096
+      ipcState := .ready
+    })
+    |>.withObject 8 (.tcb {
+      tid := 8
+      priority := 41
+      domain := 0
+      cspaceRoot := cnodeId
+      vspaceRoot := 20
+      ipcBuffer := 8192
+      ipcState := .ready
+    })
     |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := [] })
     |>.withLifecycleObjectType endpointId .endpoint
@@ -55,9 +73,12 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType wrongTypeId .endpoint
     |>.withLifecycleObjectType guardedCnodeId .cnode
     |>.withLifecycleObjectType sendEmptyEndpointId .endpoint
+    |>.withLifecycleObjectType 7 .tcb
+    |>.withLifecycleObjectType 8 .tcb
     |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
+    |>.withRunnable [7, 8]
     |>.build)
 
 private def expectError
@@ -128,14 +149,43 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "notification wait #1 expected none"
 
+  match stN1.objects (SeLe4n.ThreadId.ofNat 7).toObjId with
+  | some (.tcb tcb) =>
+      if tcb.ipcState = .blockedOnNotification notificationId then
+        IO.println "positive check passed [notification wait #1 blocks thread ipcState]"
+      else
+        throw <| IO.userError "notification wait #1 expected blockedOnNotification ipcState"
+  | _ => throw <| IO.userError "notification wait #1 expected waiter tcb"
+
   let (_, stN2) ← expectOk "notification signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 55) stN1)
+
+
+  match stN2.objects (SeLe4n.ThreadId.ofNat 7).toObjId with
+  | some (.tcb tcb) =>
+      if tcb.ipcState = .ready then
+        IO.println "positive check passed [notification signal wake sets waiter ipcState ready]"
+      else
+        throw <| IO.userError "notification signal wake expected waiter ipcState ready"
+  | _ => throw <| IO.userError "notification signal wake expected waiter tcb"
 
   let (_, stN3) ← expectOk "notification signal stores active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
 
+  let (_, stN4) ← expectOk "notification signal accumulates active badge"
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 5) stN3)
+
+  match stN4.objects notificationId with
+  | some (.notification ntfn) =>
+      let expected := SeLe4n.Badge.ofNat (66 ||| 5)
+      if ntfn.pendingBadge = some expected then
+        IO.println "positive check passed [notification signal accumulates active badge via OR]"
+      else
+        throw <| IO.userError "notification active badge accumulation mismatch"
+  | _ => throw <| IO.userError "notification signal expected notification object"
+
   let (waitBadge2, _) ← expectOk "notification wait consumes active badge"
-    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN3)
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN4)
   if waitBadge2 = none then
     throw <| IO.userError "notification wait #2 expected delivered badge"
   else
