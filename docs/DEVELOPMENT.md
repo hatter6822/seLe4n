@@ -4,14 +4,14 @@
 
 This guide is the day-to-day operating manual for contributors.
 
-It is aligned to the **current completed slice**:
+It is aligned to the **current active slice**:
 
-- completed: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1 through WS-B11 completed)**,
+- active: **Comprehensive Audit v0.9.32 WS-C execution kickoff (Phase P0/P1 transition; execution beginning on current workstreams)**,
 - completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
 Canonical planning source:
-[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ---
 
@@ -28,29 +28,27 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Current execution slice (WS-B portfolio)
+## 3) Current execution slice (WS-C portfolio)
 
 ### 3.1 Workstreams and intent
 
-- **WS-B1** — VSpace/memory model foundation (**completed**)
-- **WS-B2** — generative + negative testing expansion (**completed**)
-- **WS-B3** — `Main.lean` trace-harness refactor (**completed**)
-- **WS-B4** — remaining type wrapper migration (**completed**)
-- **WS-B5** — CSpace guard/radix completion (**completed**)
-- **WS-B6** — notification object semantics (**completed**)
-- **WS-B7** — information-flow proof-track initiation (**completed**)
-- **WS-B8** — documentation automation + dedup ✅ completed
-- **WS-B9** — threat model/security hardening (**completed**)
-- **WS-B10** — CI maturity upgrades (**completed**)
-- **WS-B11** — scenario framework finalization ✅ completed
+- **WS-C1** — IPC handshake correctness (**execution beginning**)
+- **WS-C2** — scheduler semantic fidelity (**queued after initial blockers**)
+- **WS-C3** — proof-surface de-tautologization (**execution beginning**)
+- **WS-C4** — test validity hardening (**execution beginning**)
+- **WS-C5** — information-flow assurance (**Phase P2 target**)
+- **WS-C6** — CI and supply-chain hardening (**Phase P3 target**)
+- **WS-C7** — model structure and maintainability (**Phase P3 target**)
+- **WS-C8** — documentation/GitBook consolidation (**in progress**)
 
 ### 3.2 Sequencing model
 
 Use the planning phases from the workstream backbone:
 
-- **Phase P1:** WS-B4, WS-B3, WS-B8 (shape + hygiene stabilization; WS-B3/WS-B4/WS-B8 completed)
-- **Phase P2:** WS-B5, WS-B6, WS-B2 (semantic/model expansion; WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7, WS-B9, WS-B10, WS-B11 (assurance and operational maturity; WS-B7/WS-B9/WS-B10/WS-B11 completed)
+- **Phase P0:** WS-C8 baseline reset/documentation synchronization (in progress)
+- **Phase P1:** WS-C1, WS-C3, core WS-C2 work, and WS-C4 fixture repairs (execution beginning)
+- **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
+- **Phase P3:** WS-C6 + WS-C7 sustainability hardening
 
 ### 3.3 PR-to-workstream discipline
 
@@ -66,7 +64,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-B slice (prefer the next documented priority in the active plan (all WS-B streams are complete)).
+1. Sync branch and choose one coherent WS-C slice (prefer next priority in the active plan, starting with P1 blockers).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

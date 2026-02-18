@@ -8,9 +8,9 @@ active-slice intent, and change-control expectations.
 Companion planning and execution documents:
 
 - comprehensive-audit findings:
-  [`docs/audits/AUDIT_v0.9.0.md`](./audits/AUDIT_v0.9.0.md)
+  [`docs/audits/AUDIT_v0.9.32.md`](./audits/AUDIT_v0.9.32.md)
 - comprehensive-audit workstream execution plan:
-  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
 
 ---
 
@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current completed slice:** post-M7 comprehensive-audit execution portfolio (WS-B1 through WS-B11 complete).
+- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution kickoff (Phase P0/P1 transition; execution now beginning on WS-C workstreams).
 
 ---
 
@@ -39,7 +39,7 @@ Any intentional deviation requires explicit spec-level change note in the PR.
 
 ---
 
-## 4) Active slice specification: comprehensive-audit WS-B portfolio
+## 4) Active slice specification: comprehensive-audit WS-C portfolio
 
 ### 4.1 Slice objective
 
@@ -48,25 +48,23 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 
 ### 4.2 Workstream inventory
 
-- **WS-B1:** VSpace + memory model foundation ✅ completed
-- **WS-B2:** Generative + negative testing expansion ✅ completed
-- **WS-B3:** Main trace harness refactor ✅ completed
-- **WS-B4:** Remaining type-wrapper migration ✅ completed
-- **WS-B5:** CSpace semantics completion (guard/radix) ✅ completed
-- **WS-B6:** Notification-object IPC completion ✅ completed
-- **WS-B7:** Information-flow proof-track start ✅ completed
-- **WS-B8:** Documentation automation + consolidation ✅ completed
-- **WS-B9:** Threat model and security hardening ✅ completed
-- **WS-B10:** CI maturity upgrades ✅ completed
-- **WS-B11:** Scenario framework finalization ✅ completed
+- **WS-C1:** IPC handshake correctness (critical; kickoff starting)
+- **WS-C2:** Scheduler semantic fidelity (high; queued after correctness blockers)
+- **WS-C3:** Proof-surface de-tautologization (critical; kickoff starting)
+- **WS-C4:** Test validity hardening (high; kickoff starting)
+- **WS-C5:** Information-flow assurance (critical; Phase P2 target)
+- **WS-C6:** CI and supply-chain hardening (medium; Phase P3 target)
+- **WS-C7:** Model structure and maintainability (medium; Phase P3 target)
+- **WS-C8:** Documentation and GitBook consolidation (high; in progress)
 
 ### 4.3 Sequencing constraints
 
-- **P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
-- **P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (completed)
+- **P0:** WS-C8 baseline reset + active-plan publication (in progress)
+- **P1:** WS-C1 + WS-C3 + core WS-C2 + fixture-repair WS-C4 (execution beginning)
+- **P2:** WS-C5 + remaining WS-C4 assurance expansion
+- **P3:** WS-C6 + WS-C7 sustainment hardening
 
-### 4.4 Acceptance expectations for WS-B work
+### 4.4 Acceptance expectations for WS-C work
 
 A workstream-ready PR should include:
 
@@ -77,9 +75,9 @@ A workstream-ready PR should include:
 5. explicit deferred items and owning follow-up workstream.
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
-Security assumptions and trust boundaries for WS-B9 are documented in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
+Security assumptions and trust boundaries for active and historical slices are documented in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 
 ---
 
