@@ -16,7 +16,7 @@ This is the GitBook mirror of the canonical planning backbone:
 - **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion ✅ completed
 - **WS-B3:** Main trace harness refactor ✅ completed
-- **WS-B4:** Remaining type-wrapper migration
+- **WS-B4:** Remaining type-wrapper migration ✅ completed
 
 ### Medium priority
 
@@ -33,7 +33,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 ## 3) Sequencing
 
-- **Phase P1:** WS-B4 + WS-B3 + WS-B8
+- **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
@@ -73,3 +73,10 @@ When status changes, update together:
 - `Main.lean` now provides a minimal executable entrypoint and delegates trace orchestration to `SeLe4n/Testing/MainTraceHarness.lean` (with dedicated scenario functions),
 - bootstrap state construction moved to list/builder composition via `SeLe4n/Testing/StateBuilder.lean`,
 - Tier 2 trace fixture expectations remain stable (`tests/fixtures/main_trace_smoke.expected`) under `scripts/test_tier2_trace.sh` and full-suite execution.
+
+
+## 9) WS-B4 closure evidence
+
+- `SeLe4n/Prelude.lean` upgrades `DomainId`, `Priority`, `Irq`, `Badge`, `ASID`, `VAddr`, and `PAddr` from `Nat` aliases to dedicated wrapper structures with explicit `ofNat`/`toNat` helpers.
+- Compatibility ergonomics are preserved via targeted `OfNat` and `ToString` instances, so existing deterministic fixtures remain readable while retaining type separation.
+- Tier 0 now includes a WS-B4 regression guard in `scripts/test_tier0_hygiene.sh` that fails if any of the migrated wrappers revert to `abbrev ... := Nat`.

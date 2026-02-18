@@ -46,13 +46,67 @@ instance : ToString ThreadId where
 end ThreadId
 
 /-- Scheduling domain identifier. -/
-abbrev DomainId := Nat
+structure DomainId where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace DomainId
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : DomainId := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (id : DomainId) : Nat := id.val
+
+instance instOfNat (n : Nat) : OfNat DomainId n where
+  ofNat := ⟨n⟩
+
+instance : ToString DomainId where
+  toString id := toString id.toNat
+
+end DomainId
 
 /-- Scheduling priority level. -/
-abbrev Priority := Nat
+structure Priority where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace Priority
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : Priority := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (prio : Priority) : Nat := prio.val
+
+instance instOfNat (n : Nat) : OfNat Priority n where
+  ofNat := ⟨n⟩
+
+instance : ToString Priority where
+  toString prio := toString prio.toNat
+
+end Priority
 
 /-- Interrupt request line identifier. -/
-abbrev Irq := Nat
+structure Irq where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace Irq
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : Irq := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (irq : Irq) : Nat := irq.val
+
+instance instOfNat (n : Nat) : OfNat Irq n where
+  ofNat := ⟨n⟩
+
+instance : ToString Irq where
+  toString irq := toString irq.toNat
+
+end Irq
 
 /-- Capability-space pointer value. -/
 structure CPtr where
@@ -97,16 +151,88 @@ instance : ToString Slot where
 end Slot
 
 /-- Endpoint or notification badge value. -/
-abbrev Badge := Nat
+structure Badge where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace Badge
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : Badge := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (badge : Badge) : Nat := badge.val
+
+instance instOfNat (n : Nat) : OfNat Badge n where
+  ofNat := ⟨n⟩
+
+instance : ToString Badge where
+  toString badge := toString badge.toNat
+
+end Badge
 
 /-- Address-space identifier. -/
-abbrev ASID := Nat
+structure ASID where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace ASID
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : ASID := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (asid : ASID) : Nat := asid.val
+
+instance instOfNat (n : Nat) : OfNat ASID n where
+  ofNat := ⟨n⟩
+
+instance : ToString ASID where
+  toString asid := toString asid.toNat
+
+end ASID
 
 /-- Virtual-memory address in the abstract model. -/
-abbrev VAddr := Nat
+structure VAddr where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace VAddr
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : VAddr := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (addr : VAddr) : Nat := addr.val
+
+instance instOfNat (n : Nat) : OfNat VAddr n where
+  ofNat := ⟨n⟩
+
+instance : ToString VAddr where
+  toString addr := toString addr.toNat
+
+end VAddr
 
 /-- Physical-memory address in the abstract model. -/
-abbrev PAddr := Nat
+structure PAddr where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace PAddr
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : PAddr := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (addr : PAddr) : Nat := addr.val
+
+instance instOfNat (n : Nat) : OfNat PAddr n where
+  ofNat := ⟨n⟩
+
+instance : ToString PAddr where
+  toString addr := toString addr.toNat
+
+end PAddr
 
 /-- A tiny state/error monad used for executable kernel skeletons. -/
 abbrev KernelM (σ ε α : Type) := σ → Except ε (α × σ)

@@ -1,6 +1,6 @@
 # Future Slices and Delivery Plan
 
-This chapter captures the forward plan after M6 closeout with active M7 audit-remediation execution.
+This chapter captures long-horizon planning context and is maintained as historical bridge material after M6/M7 closeout.
 
 ## 1. Planning assumptions
 
@@ -20,7 +20,7 @@ M6 closeout delivered:
 
 Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-execution-plan-and-workstreams.md).
 
-## 3. Current active slice (M7): audit remediation workstreams
+## 3. Historical slice recap (M7): audit remediation workstreams
 
 ### Target outcomes
 
@@ -41,6 +41,8 @@ Closeout details are maintained in [M6 Execution Plan and Workstreams](18-m6-exe
 - **WS-A8:** platform-security maturity preparation ✅ completed.
 
 Current closure source of truth for M7 outcomes/workstreams: [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md).
+
+For the currently active slice and execution matrix, use [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
 
 ## 4. Mid-horizon slices (M8+ directional)
 

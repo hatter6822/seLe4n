@@ -5,10 +5,10 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 ## Current state (authoritative snapshot)
 
-- **Active development slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, and WS-B3 completed).
+- **Active development slice:** Comprehensive Audit 2026-02 execution (WS-B portfolio; WS-B1, WS-B2, WS-B3, and WS-B4 completed).
 - **Most recently completed slice:** M7 audit remediation (WS-A1..WS-A8 complete).
 - **Previous completed slice:** M6 architecture-boundary assumptions/adapters.
-- **Current package version:** `0.9.9` (`lakefile.toml`).
+- **Current package version:** `0.9.12` (`lakefile.toml`).
 
 Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
 
@@ -31,7 +31,7 @@ Use this as the quick index. Full contracts and dependencies are in the audit pl
 - **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion ✅ completed
 - **WS-B3:** Main trace harness refactor ✅ completed
-- **WS-B4:** Remaining type-wrapper migration
+- **WS-B4:** Remaining type-wrapper migration ✅ completed
 - **WS-B5:** CSpace guard/radix semantics completion
 - **WS-B6:** Notification-object IPC completion
 - **WS-B7:** Information-flow proof-track start

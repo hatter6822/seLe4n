@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **M7 remediation closeout is complete (WS-A1 through WS-A8 closed); testing now guards post-M7 hardware-oriented next-slice execution without regressing M1–M7 contracts.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B4 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
 
 ## 2. Current enforced tiers
 
