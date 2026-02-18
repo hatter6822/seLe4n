@@ -28,6 +28,8 @@ else
   run_check "HYGIENE" bash -lc 'if grep -nE "abbrev (DomainId|Priority|Irq|Badge|ASID|VAddr|PAddr) := Nat" SeLe4n/Prelude.lean; then echo "WS-B4 regression: remaining scalar wrappers must stay structure-based." >&2; exit 1; fi'
 fi
 
+run_check "HYGIENE" "${SCRIPT_DIR}/test_docs_sync.sh"
+
 if command -v shellcheck >/dev/null 2>&1; then
   run_check "HYGIENE" shellcheck scripts/*.sh
 else

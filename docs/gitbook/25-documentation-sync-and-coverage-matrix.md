@@ -19,6 +19,7 @@ Use this chapter when reviewing or planning documentation-heavy changes to ensur
 - planning docs (`docs/audits/*` + active planning chapters),
 - workflow/test policy docs (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md`, chapter 07),
 - roadmap/spec docs (`docs/SEL4_SPEC.md`, chapter 05, next-slice chapter 22).
+- dedup ownership docs (`docs/DOCS_DEDUPLICATION_MAP.md`, chapter 27).
 
 ## 3) Validation minimum
 

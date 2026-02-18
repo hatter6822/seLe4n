@@ -6,12 +6,14 @@ This document is the canonical CI policy artifact for WS-A1 and WS-A8 maturity g
 
 For pull requests into `main`, branch protection should require all of the following checks:
 
-1. `Tiered Tests / Fast (Tier 0 + Tier 1)`
-2. `Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)`
-3. `Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)`
+1. `Docs Automation / Navigation + Links + DocGen Probe`
+2. `Tiered Tests / Fast (Tier 0 + Tier 1)`
+3. `Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)`
+4. `Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)`
 
-These checks are produced by `.github/workflows/lean_action_ci.yml` and enforce the repository test scripts directly:
+These checks are produced by `.github/workflows/lean_action_ci.yml` and enforce the repository scripts directly:
 
+- `./scripts/test_docs_sync.sh`
 - `./scripts/test_fast.sh`
 - `./scripts/test_smoke.sh`
 - `./scripts/test_full.sh`
@@ -41,6 +43,7 @@ In GitHub repository settings for `main`:
 1. Enable **Require a pull request before merging**.
 2. Enable **Require status checks to pass before merging**.
 3. Mark these checks as required:
+   - `Docs Automation / Navigation + Links + DocGen Probe`
    - `Tiered Tests / Fast (Tier 0 + Tier 1)`
    - `Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)`
    - `Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)`

@@ -55,12 +55,19 @@ run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite'
 run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
-run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 completed\)\.' README.md
-run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B8\.\.WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 complete\)\.' docs/SEL4_SPEC.md
-run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 completed and WS-B8\.\.WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
+run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 completed\)\.' README.md
+run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B9\.\.WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 complete\)\.' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, WS-B7, and WS-B8 completed and WS-B9\.\.WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
 run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/06-development-workflow.md
 run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B8 onward\)\.' docs/DEVELOPMENT.md
+run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B9 onward\)\.' docs/DEVELOPMENT.md
+run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^# Documentation Deduplication Map \(WS-B8\)' docs/DOCS_DEDUPLICATION_MAP.md
+run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
+run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py
+run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/check_markdown_links.py
+run_check "INVARIANT" rg -n '^run_check "HYGIENE" "\$\{SCRIPT_DIR\}/test_docs_sync\.sh"' scripts/test_tier0_hygiene.sh
+run_check "INVARIANT" rg -n '^[[:space:]]+name: Docs Automation / Navigation \+ Links \+ DocGen Probe' .github/workflows/lean_action_ci.yml
 
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
@@ -381,6 +388,8 @@ run_check "DOC" rg -n 'Contribution guide|Change history' README.md
 run_check "DOC" test -f CONTRIBUTING.md
 run_check "DOC" test -f CHANGELOG.md
 run_check "DOC" rg -n 'Required checks \(Tier 0–3\)|Deterministic replay evidence' docs/CI_POLICY.md
+run_check "DOC" rg -n 'Docs Automation / Navigation \+ Links \+ DocGen Probe' .github/workflows/lean_action_ci.yml docs/CI_POLICY.md docs/gitbook/07-testing-and-ci.md
+run_check "DOC" rg -n 'Tier 0.*docs-sync automation' docs/TESTING_FRAMEWORK_PLAN.md
 run_check "DOC" rg -n 'Tiered Tests / Full \(Tier 0 \+ Tier 1 \+ Tier 2 \+ Tier 3\)' .github/workflows/lean_action_ci.yml docs/CI_POLICY.md
 run_check "DOC" rg -n 'Nightly Determinism|NIGHTLY_ENABLE_EXPERIMENTAL' .github/workflows/nightly_determinism.yml docs/CI_POLICY.md
 
