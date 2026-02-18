@@ -1,3 +1,11 @@
+## [0.9.26] - 2026-02-18
+
+### WS-B9 bootstrap reproducibility fix (immutable elan installer URL)
+- Fixed `scripts/setup_lean_env.sh` to use a commit-pinned `ELAN_INSTALLER_URL` for `elan-init.sh` instead of the moving `master` branch URL.
+- Kept `ELAN_INSTALLER_SHA256` aligned with the pinned commit artifact so fresh bootstrap remains reproducible and does not break when upstream `master` changes.
+- Clarified the hardening anchor comment to require intentional paired updates of installer URL and checksum.
+- Bumped patch version to **`0.9.26`** and synchronized root version marker in `README.md`.
+
 ## [0.9.25] - 2026-02-18
 
 ### WS-B9 post-audit documentation synchronization hardening
