@@ -22,7 +22,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 - **WS-B5:** CSpace guard/radix semantics completion ✅ completed
 - **WS-B6:** Notification-object IPC completion ✅ completed
-- **WS-B7:** Information-flow proof-track start
+- **WS-B7:** Information-flow proof-track start ✅ completed
 - **WS-B8:** Documentation automation + consolidation
 - **WS-B9:** Threat model and security hardening
 
@@ -34,7 +34,7 @@ This is the GitBook mirror of the canonical planning backbone:
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
-- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 completed)
+- **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
 - **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ## 4) Evidence expectations for milestone-moving PRs
@@ -96,3 +96,16 @@ When status changes, update together:
 - `SeLe4n/Kernel/IPC/Invariant.lean` now includes `notificationQueueWellFormed`/`notificationInvariant`, and `ipcInvariant` now covers both endpoint and notification object classes.
 - `SeLe4n/Testing/MainTraceHarness.lean` and `tests/fixtures/main_trace_smoke.expected` now exercise composed endpoint + notification flows.
 - `tests/NegativeStateSuite.lean` adds positive/negative notification-path checks in Tier 2 negative validation.
+
+## 12) WS-B7 closure evidence
+
+- IF-M1 baseline primitives are implemented in:
+  - `SeLe4n/Kernel/InformationFlow/Policy.lean` (labels + flow relation + algebraic lemmas),
+  - `SeLe4n/Kernel/InformationFlow/Projection.lean` (observer projection + low-equivalence scaffold).
+- theorem targets and assumptions ledger are published in [`docs/IF_M1_BASELINE_PACKAGE.md`](../IF_M1_BASELINE_PACKAGE.md).
+- roadmap/proof-map sync now includes IF-M1 completion markers in:
+  - `docs/INFORMATION_FLOW_ROADMAP.md`,
+  - `docs/gitbook/12-proof-and-invariant-map.md`.
+- Tier 2 includes IF-M1 runtime sanity checks via `tests/InformationFlowSuite.lean` (`lake exe information_flow_suite`) in `scripts/test_tier2_negative.sh`.
+- Tier 3 invariant/doc anchors now check IF-M1 surfaces in `scripts/test_tier3_invariant_surface.sh`.
+

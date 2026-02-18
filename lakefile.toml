@@ -1,5 +1,5 @@
 name = "seLe4n"
-version = "0.9.18"
+version = "0.9.21"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -16,3 +16,7 @@ root = "tests.TraceSequenceProbe"
 [[lean_exe]]
 name = "negative_state_suite"
 root = "tests.NegativeStateSuite"
+
+[[lean_exe]]
+name = "information_flow_suite"
+root = "tests.InformationFlowSuite"

@@ -4,13 +4,13 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B4 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B7 complete); testing now guards active workstream delivery without regressing M1–M7 contracts.**
 
 ## 2. Current enforced tiers
 
 - **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
-- **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`)
+- **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`)
 - **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
   including M4-A executable-anchor checks for lifecycle unauthorized/illegal-state/success trace fragments.
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)

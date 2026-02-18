@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 are Completed**; WS-B7..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 are Completed**; WS-B8..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -167,7 +167,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 are Com
 - **Exit criteria:** notification semantics integrated through API, proofs, and trace fixtures.
 - **Closure evidence (2026-02-18):** `SeLe4n/Model/Object.lean` now includes `NotificationState`/`Notification` plus `KernelObject.notification` and `ThreadIpcState.blockedOnNotification`; `SeLe4n/Kernel/IPC/Operations.lean` adds executable `notificationSignal` and `notificationWait` semantics with runnable-queue interactions (block on wait, wake on signal); `SeLe4n/Kernel/IPC/Invariant.lean` extends the IPC invariant surface with `notificationQueueWellFormed`/`notificationInvariant` and global endpoint+notification coverage; `tests/NegativeStateSuite.lean` adds notification negative/positive checks; and `SeLe4n/Testing/MainTraceHarness.lean` + `tests/fixtures/main_trace_smoke.expected` now exercise composed endpoint/notification trace paths under `scripts/test_smoke.sh` and `scripts/test_full.sh`.
 
-### WS-B7 — Information-flow proof track start (Planned)
+### WS-B7 — Information-flow proof track start (Completed)
 
 - **Goal:** land IF-M1 formal baseline and decomposition plan for noninterference progression.
 - **Prerequisites:** WS-B1 and WS-B5 completion (state model and CSpace semantics available). ✅ satisfied
@@ -180,6 +180,7 @@ Current portfolio status: **WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 are Com
   - `./scripts/test_full.sh`
   - `rg -n "IF-M1|information-flow" docs/INFORMATION_FLOW_ROADMAP.md docs/gitbook/12-proof-and-invariant-map.md`
 - **Exit criteria:** IF-M1 package merged with explicit theorem backlog and assumptions.
+- **Closure evidence (2026-02-18):** IF-M1 formal primitives are now implemented in `SeLe4n/Kernel/InformationFlow/Policy.lean` (`SecurityLabel`, `securityFlowsTo`, reflexive/transitive policy lemmas) and `SeLe4n/Kernel/InformationFlow/Projection.lean` (`projectState`, `lowEquivalent`, equivalence-style helper lemmas); theorem targets and assumptions ledger are published in `docs/IF_M1_BASELINE_PACKAGE.md`; milestone roadmap + GitBook proof map are synchronized in `docs/INFORMATION_FLOW_ROADMAP.md` and `docs/gitbook/12-proof-and-invariant-map.md`; Tier 2 negative coverage now includes `tests/InformationFlowSuite.lean` via `lake exe information_flow_suite` in `scripts/test_tier2_negative.sh`; Tier 3 anchors enforce IF-M1 entrypoint/doc presence via `scripts/test_tier3_invariant_surface.sh`; and full validation gates (`scripts/test_fast.sh`, `scripts/test_smoke.sh`, `scripts/test_full.sh`, `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh`, `lake build`) pass with WS-B7 integrated.
 
 ### WS-B8 — Documentation automation + consolidation (Planned)
 

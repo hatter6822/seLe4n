@@ -34,7 +34,7 @@ Initial information-flow statements should cover:
 
 ## 4. Milestone trajectory
 
-## IF-M1 — Policy lattice and labeling primitives
+## IF-M1 — Policy lattice and labeling primitives ✅ completed (WS-B7)
 
 Deliverables:
 
@@ -47,6 +47,12 @@ Exit evidence:
 - Lean module compiles,
 - policy relation lemmas are machine-checked,
 - no regressions in existing tiered tests.
+
+Delivered anchors (WS-B7 closeout):
+
+- `SeLe4n/Kernel/InformationFlow/Policy.lean`
+- `SeLe4n/Kernel/InformationFlow/Projection.lean`
+- `docs/IF_M1_BASELINE_PACKAGE.md`
 
 ## IF-M2 — Two-run relational state framework
 

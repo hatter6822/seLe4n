@@ -1,3 +1,27 @@
+## [0.9.21] - 2026-02-18
+
+### WS-B7 synchronization audit follow-up
+- Corrected remaining GitBook planning drift for WS-B7 completion by updating chapter 24 Phase P2 status to include WS-B7 completion state.
+- Extended Tier 3 doc anchors to enforce this chapter-24 Phase P2 synchronization in `scripts/test_tier3_invariant_surface.sh`, preventing regression in future doc updates.
+- Re-ran full and nightly validation/audit lanes to confirm repository-wide determinism and documentation consistency remain intact.
+- Bumped patch version to **`0.9.21`** and synchronized root version marker in `README.md`.
+
+## [0.9.20] - 2026-02-18
+
+### WS-B7 audit optimization and IF-M1 test-surface hardening
+- Added executable IF-M1 runtime assertions in `tests/InformationFlowSuite.lean` and wired them into Tier 2 negative validation via `lake exe information_flow_suite` in `scripts/test_tier2_negative.sh`, strengthening regression coverage for label-flow and observer-projection behavior.
+- Expanded Tier 3 invariant anchors to enforce the new IF runtime suite presence and Tier 2 wiring (`scripts/test_tier3_invariant_surface.sh`).
+- Synchronized testing/docs/GitBook evidence for the strengthened WS-B7 validation surface (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/gitbook/07-testing-and-ci.md`, `docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`, `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`).
+- Bumped patch version to **`0.9.20`** and synchronized root version marker in `README.md`.
+
+## [0.9.19] - 2026-02-18
+
+### WS-B7 information-flow proof-track start completion
+- Implemented IF-M1 formal baseline modules in `SeLe4n/Kernel/InformationFlow/Policy.lean` and `SeLe4n/Kernel/InformationFlow/Projection.lean`, including security-label lattice primitives, flow-relation algebraic lemmas, observer projection helpers, and low-equivalence scaffolding.
+- Wired information-flow modules into the aggregate kernel API (`SeLe4n/Kernel/API.lean`) and expanded Tier 3 invariant/doc anchors in `scripts/test_tier3_invariant_surface.sh` to continuously enforce IF-M1 surface and WS-B7 status synchronization.
+- Published IF-M1 theorem targets + assumptions ledger in `docs/IF_M1_BASELINE_PACKAGE.md`, marked WS-B7 complete in canonical planning/spec/development/README/GitBook pages, and added WS-B7 closure evidence sections in planning mirrors.
+- Bumped patch version to **`0.9.19`** and synchronized root version marker in `README.md`.
+
 ## [0.9.18] - 2026-02-18
 
 ### WS-B6 audit hardening follow-up

@@ -41,11 +41,26 @@ run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operatio
 run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
-run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 completed\)\.' README.md
-run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B7\.\.WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 complete\)\.' docs/SEL4_SPEC.md
-run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 completed and WS-B7\.\.WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
-run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 completed\)' docs/gitbook/06-development-workflow.md
-run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B7 onward\)\.' docs/DEVELOPMENT.md
+
+# WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
+run_check "INVARIANT" rg -n '^inductive Confidentiality' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^structure SecurityLabel' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem securityFlowsTo_trans' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^private def runInformationFlowChecks' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
+run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
+run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
+run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 completed\)\.' README.md
+run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B8\.\.WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 complete\)\.' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 completed and WS-B8\.\.WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
+run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/06-development-workflow.md
+run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B8 onward\)\.' docs/DEVELOPMENT.md
 
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
