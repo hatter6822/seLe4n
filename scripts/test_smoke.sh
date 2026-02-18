@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/test_lib.sh"
 
 parse_common_args "$@"
+cd "${REPO_ROOT}"
 
 sub_args=()
 if [[ "${CONTINUE_MODE}" -eq 1 ]]; then

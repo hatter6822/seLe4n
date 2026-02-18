@@ -21,6 +21,7 @@ mkdir -p "${ARTIFACT_DIR}"
 
 run_check "META" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate
 run_check "META" bash -lc "python3 '${SCRIPT_DIR}/scenario_catalog.py' nightly-seeds > '${ARTIFACT_DIR}/scenario_seeds.txt'"
+run_check "META" bash -lc "if [[ ! -s '${ARTIFACT_DIR}/scenario_seeds.txt' ]] || ! rg -q '[0-9]' '${ARTIFACT_DIR}/scenario_seeds.txt'; then echo 'error: no nightly seeds found in scenario catalog' >&2; exit 1; fi"
 
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run1.trace'
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run2.trace'
