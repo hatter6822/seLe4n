@@ -37,14 +37,14 @@ jobs:
 
       - name: Upload nightly trace artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nightly-trace-artifacts
           path: tests/artifacts/nightly/
 
       - name: Upload nightly CI telemetry
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-telemetry-nightly
           path: .ci-artifacts/telemetry/
