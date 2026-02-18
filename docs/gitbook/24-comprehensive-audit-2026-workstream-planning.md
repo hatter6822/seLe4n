@@ -15,7 +15,7 @@ This is the GitBook mirror of the canonical planning backbone:
 
 - **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion ✅ completed
-- **WS-B3:** Main trace harness refactor
+- **WS-B3:** Main trace harness refactor ✅ completed
 - **WS-B4:** Remaining type-wrapper migration
 
 ### Medium priority
@@ -67,3 +67,9 @@ When status changes, update together:
 - bootstrap-state builder DSL published in `SeLe4n/Testing/StateBuilder.lean`,
 - malformed-state negative suite published in `tests/NegativeStateSuite.lean` and enforced in smoke/full gates via `scripts/test_tier2_negative.sh`,
 - nightly experimental replay now persists stochastic seed logs and `trace_sequence_probe_manifest.csv` for deterministic triage.
+
+## 8) WS-B3 closure evidence
+
+- `Main.lean` now provides a minimal executable entrypoint and delegates trace orchestration to `SeLe4n/Testing/MainTraceHarness.lean` (with dedicated scenario functions),
+- bootstrap state construction moved to list/builder composition via `SeLe4n/Testing/StateBuilder.lean`,
+- Tier 2 trace fixture expectations remain stable (`tests/fixtures/main_trace_smoke.expected`) under `scripts/test_tier2_trace.sh` and full-suite execution.

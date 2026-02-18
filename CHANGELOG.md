@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.9] - 2026-02-17
+
+### WS-B3 scenario-function decomposition and end-to-end sync audit
+- Refined `SeLe4n/Testing/MainTraceHarness.lean` by decomposing the large monolithic `runMainTraceFrom` body into dedicated scenario functions (`runCapabilityAndArchitectureTrace`, `runServiceAndStressTrace`, `runLifecycleAndEndpointTrace`) while preserving stable trace output ordering and semantics.
+- Re-ran complete repository validation (fast/smoke/full/nightly default+experimental and `audit_testing_framework`) to verify deterministic trace behavior and full documentation/test anchor consistency.
+- Bumped package patch version to **`0.9.9`** and synchronized root version markers.
+
+## [0.9.8] - 2026-02-17
+
+### WS-B3 post-merge audit and synchronization hardening
+- Removed an unused `TraceStep` alias from `SeLe4n/Testing/MainTraceHarness.lean` to keep the extracted harness surface minimal and intentional.
+- Synchronized remaining GitBook active-slice status text (`docs/gitbook/README.md`) so WS-B3 completion state matches README/spec/development/workstream-plan snapshots.
+- Re-ran full validation coverage (`test_fast`, `test_smoke`, `test_full`, default+experimental `test_nightly`, and `audit_testing_framework`) to verify full-repository consistency.
+- Bumped package patch version to **`0.9.8`** and synchronized root version markers.
+
+## [0.9.7] - 2026-02-17
+
+### WS-B3 main trace harness refactor completion
+- Refactored the executable trace harness by extracting orchestration from `Main.lean` into `SeLe4n/Testing/MainTraceHarness.lean`, keeping scenario execution composable and auditable while retaining deterministic behavior.
+- Replaced ad hoc bootstrap state construction with list-driven builder composition using `SeLe4n/Testing/StateBuilder.lean` in the main harness bootstrap path.
+- Updated audit/spec/development/README/GitBook status tracking to mark WS-B3 completed and record closure evidence.
+- Bumped package patch version to **`0.9.7`** and synchronized root version markers.
+
 ## [0.9.6] - 2026-02-17
 
 ### WS-B2 negative-suite correctness hardening
