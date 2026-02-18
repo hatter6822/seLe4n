@@ -28,14 +28,14 @@ This is the GitBook mirror of the canonical planning backbone:
 
 ### Low priority
 
-- **WS-B10:** CI maturity upgrades
+- **WS-B10:** CI maturity upgrades ✅ completed
 - **WS-B11:** Scenario framework finalization
 
 ## 3) Sequencing
 
 - **Phase P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4/WS-B8 completed)
 - **Phase P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
-- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (WS-B7/WS-B9 completed)
+- **Phase P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11 (WS-B7/WS-B9/WS-B10 completed)
 
 ## 4) Evidence expectations for milestone-moving PRs
 
@@ -126,3 +126,10 @@ When status changes, update together:
 - Repository hygiene now excludes common local secret/config and scanner artifacts via `.gitignore` denylist expansion.
 - `scripts/setup_lean_env.sh` now enforces installer integrity by downloading elan installer content to a temporary file and validating `ELAN_INSTALLER_SHA256` before execution.
 - CI policy linkage is synchronized in [`docs/CI_POLICY.md`](../CI_POLICY.md), and Tier 3 invariant/doc anchors continuously enforce WS-B9 security-surface markers.
+
+## 15) WS-B10 closure evidence
+
+- CodeQL required-vs-informational policy is explicitly documented in [`docs/CI_POLICY.md`](../CI_POLICY.md) and reflected in workflow step naming at `.github/workflows/platform_security_baseline.yml`.
+- Lean/toolchain update automation now includes Dependabot for GitHub Actions (`.github/dependabot.yml`) and scheduled Lean release drift proposals via `.github/workflows/lean_toolchain_update_proposal.yml`.
+- CI timing + flake telemetry is now collected by `scripts/ci_capture_timing.sh` and `scripts/ci_flake_probe.sh`, wired into Lean CI and nightly workflows.
+- Canonical telemetry interpretation guidance is published in [`docs/CI_TELEMETRY_BASELINE.md`](../CI_TELEMETRY_BASELINE.md) with GitBook mirror [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md).

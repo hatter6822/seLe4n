@@ -10,7 +10,7 @@ This chapter is a concise navigation entry. Keep normative synchronization rules
 
 Use this chapter when reviewing or planning documentation-heavy changes to ensure:
 
-- current workstream status remains synchronized through WS-B9 completion,
+- current workstream status remains synchronized through WS-B10 completion,
 - root docs and GitBook remain in sync,
 - workstream planning references point to canonical files,
 - testing evidence expectations are applied consistently.

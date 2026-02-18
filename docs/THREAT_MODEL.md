@@ -82,7 +82,7 @@ Residual risks accepted in this phase:
 
 Follow-on work ownership:
 
-- **WS-B10:** CI maturity policy (including re-evaluation of CodeQL blocking posture).
+- **WS-B10:** CI maturity policy ✅ completed (CodeQL policy and telemetry baseline codified).
 - **WS-B11:** scenario framework hardening for security-tagged replay coverage.
 - **Future IF slices:** formalize confidentiality/integrity guarantees against this threat model.
 

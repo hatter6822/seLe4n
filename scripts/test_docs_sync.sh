@@ -17,6 +17,20 @@ fi
 
 python3 "${SCRIPT_DIR}/check_markdown_links.py"
 
+# Keep docs-sync deterministic even when invoked before build/test scripts by
+# ensuring Lean tooling is available for the optional doc-gen4 probe.
+if ! command -v lake >/dev/null 2>&1; then
+  if [[ "${DOCS_SYNC_SKIP_LEAN_SETUP:-0}" == "1" ]]; then
+    echo "DOCS_SYNC_SKIP_LEAN_SETUP=1: skipping Lean setup; doc-gen4 probe disabled in this run."
+  elif [[ -x "${SCRIPT_DIR}/setup_lean_env.sh" ]]; then
+    echo "lake not found; running setup_lean_env.sh for docs-sync doc-gen4 probe"
+    "${SCRIPT_DIR}/setup_lean_env.sh"
+    export PATH="${HOME}/.elan/bin:${PATH}"
+  else
+    echo "lake not available and setup_lean_env.sh is missing; skipping optional doc-gen4 invocation."
+  fi
+fi
+
 if command -v lake >/dev/null 2>&1; then
   if lake exe doc-gen4 --help >/dev/null 2>&1; then
     lake exe doc-gen4 SeLe4n

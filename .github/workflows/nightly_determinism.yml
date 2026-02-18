@@ -30,7 +30,10 @@ jobs:
       - name: Run nightly gate with deterministic replay candidates
         env:
           NIGHTLY_ENABLE_EXPERIMENTAL: '1'
-        run: ./scripts/test_nightly.sh
+        run: ./scripts/ci_capture_timing.sh nightly ./scripts/test_nightly.sh
+
+      - name: Collect nightly smoke flake telemetry (2 attempts)
+        run: ./scripts/ci_flake_probe.sh nightly-smoke-repeat 2 ./scripts/test_smoke.sh
 
       - name: Upload nightly trace artifacts
         if: always()
@@ -38,3 +41,11 @@ jobs:
         with:
           name: nightly-trace-artifacts
           path: tests/artifacts/nightly/
+
+      - name: Upload nightly CI telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-telemetry-nightly
+          path: .ci-artifacts/telemetry/
+          if-no-files-found: ignore
