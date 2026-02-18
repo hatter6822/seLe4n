@@ -13,8 +13,8 @@ Use this chapter when you need to answer:
 - and what evidence is required before M7 can close.
 
 For normative scope, always defer to [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
-For audit source findings, use [`docs/audits/REPOSITORY_AUDIT.md`](../audits/REPOSITORY_AUDIT.md).
-For implementation-level details, use [`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](../audits/AUDIT_REMEDIATION_WORKSTREAMS.md).
+For audit source findings, use [`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md).
+For implementation-level details, use [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
 
 M7 is now complete; the exit-gate closeout artifact is [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
 

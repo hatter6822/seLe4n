@@ -11,7 +11,7 @@ It is aligned to the **current completed slice**:
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
 Canonical planning source:
-[`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](./audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
 
 ---
 

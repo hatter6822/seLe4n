@@ -1,7 +1,7 @@
 # Comprehensive Audit 2026-02 — Workstream Planning Backbone
 
 This document is the execution-planning companion to
-[`COMPREHENSIVE_AUDIT_2026_02.md`](./COMPREHENSIVE_AUDIT_2026_02.md).
+[`AUDIT_v0.9.0.md`](./AUDIT_v0.9.0.md).
 
 It is intentionally operational: it turns the audit recommendations into
 an ordered portfolio of workstreams with dependencies, measurable evidence gates,

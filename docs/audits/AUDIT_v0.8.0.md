@@ -9,7 +9,7 @@
 **Post-audit remediation note (M7 WS-A1/WS-A2):**
 - WS-A1 is complete: Tier 3 is promoted into CI and nightly determinism + CI policy documentation are present (`.github/workflows/lean_action_ci.yml`, `.github/workflows/nightly_determinism.yml`, `docs/CI_POLICY.md`).
 - WS-A2 is complete: IPC transition operations are split into `SeLe4n/Kernel/IPC/Operations.lean` and invariant/proof obligations remain in `SeLe4n/Kernel/IPC/Invariant.lean` behind a stable `SeLe4n/Kernel/API.lean` facade.
-- Findings in this audit remain a historical snapshot at audit-time version 0.8.0; authoritative current status for active remediation closure is tracked in `docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md` and `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`.
+- Findings in this audit remain a historical snapshot at audit-time version 0.8.0; authoritative current status for historical remediation closure is tracked in `docs/M7_CLOSEOUT_PACKET.md` and `docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md`.
 
 ## Executive Summary
 
@@ -257,7 +257,7 @@ percentage.
 | `docs/SEL4_SPEC.md` | 372 | Normative specification baseline, acceptance criteria |
 | `docs/DEVELOPMENT.md` | 369 | Contributor workflow, proof engineering standards |
 | `docs/TESTING_FRAMEWORK_PLAN.md` | 139 | Active testing baseline, tier signal map |
-| `docs/audits/PROJECT_AUDIT.md` | 143 | Historical end-to-end quality audit snapshot |
+| `docs/audits/AUDIT_v0.9.0.md` | 764 | Comprehensive end-to-end quality audit snapshot |
 | `docs/licensing_research/LICENSE_REVIEW.md` | 65 | MIT license adoption review |
 | `docs/gitbook/` (26 chapters) | ~1,100 | Long-form handbook |
 | `tests/scenarios/README.md` | 73 | Fixture maintenance workflow |
@@ -273,7 +273,7 @@ percentage.
 - **Explicit change-control policies.** SEL4_SPEC.md (lines 301–309) defines
   5 requirements for scope changes. DEVELOPMENT.md (lines 218–236) requires
   synchronized doc updates with any PR changing transitions or invariants.
-- **Obligation-based quality model.** Historical PROJECT_AUDIT.md clearly articulates
+- **Obligation-based quality model.** Historical audit narratives clearly articulate
   why statement-coverage percentages are inappropriate for a theorem-proving
   project and defines 6 obligation categories instead.
 - **Milestone acceptance criteria are concrete.** Each completed milestone

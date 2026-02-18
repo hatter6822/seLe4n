@@ -28,7 +28,7 @@ Normative scope and acceptance source:
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md`](../audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
   [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 

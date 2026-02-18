@@ -5,10 +5,10 @@
 > [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
 This chapter is the execution companion to the full repository audit in
-[`docs/audits/REPOSITORY_AUDIT.md`](../audits/REPOSITORY_AUDIT.md).
+[`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md).
 
-For the implementation plan that defines each workstream in detail, use:
-[`docs/audits/AUDIT_REMEDIATION_WORKSTREAMS.md`](../audits/AUDIT_REMEDIATION_WORKSTREAMS.md).
+For the active implementation plan that defines each comprehensive-audit workstream in detail, use:
+[`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md).
 
 For current-slice target outcomes and closure gates, use:
 [M7 Current Slice Outcomes and Workstreams](21-m7-current-slice-outcomes-and-workstreams.md).
