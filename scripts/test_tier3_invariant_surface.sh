@@ -34,6 +34,19 @@ run_check "INVARIANT" rg -n '^def cspaceResolvePath' SeLe4n/Kernel/Capability/Op
 run_check "INVARIANT" rg -n '^def cspaceLookupPath' SeLe4n/Kernel/Capability/Operations.lean
 run_check "DOC" rg -n '^### WS-B5 — CSpace semantics completion \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
 
+# WS-B6 closure anchors: notification IPC object model and transition surface.
+run_check "INVARIANT" rg -n '^inductive NotificationState' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^structure Notification' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' docs/audits/COMPREHENSIVE_AUDIT_2026_02_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^- \*\*Active development slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 completed\)\.' README.md
+run_check "DOC" rg -n '^- \*\*Current active slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B7\.\.WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 complete\)\.' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 completed and WS-B7\.\.WS-B11 in planned/in-progress execution\.' docs/gitbook/01-project-overview.md
+run_check "DOC" rg -n '^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 completed\)' docs/gitbook/06-development-workflow.md
+run_check "DOC" rg -n '^1\. Sync branch and choose one coherent WS-B slice \(prefer next unfinished stream: WS-B7 onward\)\.' docs/DEVELOPMENT.md
+
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean

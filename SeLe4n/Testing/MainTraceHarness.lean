@@ -13,6 +13,7 @@ def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 5 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
+def demoNotification : SeLe4n.ObjId := 31
 
 def svcDb : ServiceId := 100
 def svcApi : ServiceId := 101
@@ -59,6 +60,7 @@ def bootstrapState : SystemState :=
     |>.withObject 11 (.cnode CNode.empty)
     |>.withObject 20 (.vspaceRoot { asid := 1, mappings := [] })
     |>.withObject demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withService svcDb {
       identity := { sid := svcDb, backingObject := 12, owner := 10 }
       status := .running
@@ -102,6 +104,7 @@ def bootstrapState : SystemState :=
     |>.withLifecycleObjectType 11 .cnode
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleObjectType demoEndpoint .endpoint
+    |>.withLifecycleObjectType demoNotification .notification
     |>.withLifecycleCapabilityRef rootSlot (.object 1)
     |>.withLifecycleCapabilityRef lifecycleAuthSlot (.object 12)
   ).build
@@ -391,7 +394,21 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
                                           | .error err =>
                                               IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
                                           | .ok (sender3, _) =>
-                                              IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
+                                                IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
+                                          match SeLe4n.Kernel.notificationWait demoNotification 2 st11 with
+                                          | .error err => IO.println s!"notification wait #1 error: {reprStr err}"
+                                          | .ok (badge, st12) =>
+                                              IO.println s!"notification wait #1 result: {reprStr badge}"
+                                              match SeLe4n.Kernel.notificationSignal demoNotification 99 st12 with
+                                              | .error err => IO.println s!"notification signal #1 error: {reprStr err}"
+                                              | .ok (_, st13) =>
+                                                  match SeLe4n.Kernel.notificationSignal demoNotification 123 st13 with
+                                                  | .error err => IO.println s!"notification signal #2 error: {reprStr err}"
+                                                  | .ok (_, st14) =>
+                                                      match SeLe4n.Kernel.notificationWait demoNotification 2 st14 with
+                                                      | .error err => IO.println s!"notification wait #2 error: {reprStr err}"
+                                                      | .ok (badge2, _) =>
+                                                          IO.println s!"notification wait #2 result: {reprStr badge2}"
       match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
       | .error err => IO.println s!"cspace lookup error: {reprStr err}"
       | .ok (cap, _) =>

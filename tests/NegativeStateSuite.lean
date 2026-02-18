@@ -10,6 +10,7 @@ private def cnodeId : SeLe4n.ObjId := 10
 private def wrongTypeId : SeLe4n.ObjId := 99
 private def guardedCnodeId : SeLe4n.ObjId := 55
 private def sendEmptyEndpointId : SeLe4n.ObjId := 41
+private def notificationId : SeLe4n.ObjId := 42
 private def asidPrimary : SeLe4n.ASID := 2
 private def vaddrPrimary : SeLe4n.VAddr := 4096
 private def paddrPrimary : SeLe4n.PAddr := 12288
@@ -47,12 +48,14 @@ private def baseState : SystemState :=
       ]
     })
     |>.withObject sendEmptyEndpointId (.endpoint { state := .send, queue := [], waitingReceiver := none })
+    |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := [] })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType wrongTypeId .endpoint
     |>.withLifecycleObjectType guardedCnodeId .cnode
     |>.withLifecycleObjectType sendEmptyEndpointId .endpoint
+    |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.build)
@@ -117,6 +120,30 @@ private def runNegativeChecks : IO Unit := do
 
   let (_, stAwait) ← expectOk "await receive handshake seed"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+
+  let (waitBadge, stN1) ← expectOk "notification wait blocks with none"
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) baseState)
+  if waitBadge = none then
+    IO.println "positive check passed [notification wait #1 none]"
+  else
+    throw <| IO.userError "notification wait #1 expected none"
+
+  let (_, stN2) ← expectOk "notification signal wakes waiter"
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 55) stN1)
+
+  let (_, stN3) ← expectOk "notification signal stores active badge"
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
+
+  let (waitBadge2, _) ← expectOk "notification wait consumes active badge"
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN3)
+  if waitBadge2 = none then
+    throw <| IO.userError "notification wait #2 expected delivered badge"
+  else
+    IO.println "positive check passed [notification wait #2 delivered badge]"
+
+  expectError "notification wait wrong object type"
+    (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
+    .invalidCapability
 
   expectError "await receive second waiter mismatch"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
