@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B4 complete), with testing tiers enforcing regression protection and evidence continuity.**
+Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (WS-B1 through WS-B7 complete), with testing tiers enforcing regression protection and evidence continuity.**
 
 ## Tier model
 
@@ -11,6 +11,7 @@ Current stage context: **Comprehensive Audit 2026-02 WS-B execution is active (W
   - full `lake build` to verify definitions, theorem scripts, and module integration.
 - **Tier 2 (trace/behavior)**
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
+  - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
   - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
 - **Tier 3 (invariant and documentation anchor surface)**
@@ -74,6 +75,6 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 - **Tier 0 fails:** remove placeholder markers or fix script-level lint/hygiene issues.
 - **Tier 1 fails:** resolve first Lean compile/proof failure before chasing downstream errors.
-- **Tier 2 fails:** if `test_tier2_trace.sh` fails, inspect missing fixture lines; if `test_tier2_negative.sh` fails, inspect malformed-state guard semantics and expected error branches.
+- **Tier 2 fails:** if `test_tier2_trace.sh` fails, inspect missing fixture lines; if `test_tier2_negative.sh` fails, inspect malformed-state or IF-M1 runtime assertions (`negative_state_suite` / `information_flow_suite`) and expected branch behavior.
 - **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/doc anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
 - **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture/doc updates.

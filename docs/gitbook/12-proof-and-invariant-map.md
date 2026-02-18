@@ -142,3 +142,19 @@ Proof-package entrypoints now extend the M5 policy surface to full local + compo
 This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
+
+## 10. IF-M1 information-flow baseline layering (WS-B7 complete)
+
+Information-flow proof-track entrypoints now exist with explicit local decomposition:
+
+- policy lattice/labels:
+  - `Confidentiality`, `Integrity`, `SecurityLabel`,
+  - `confidentialityFlowsTo`, `integrityFlowsTo`, `securityFlowsTo`,
+  - algebraic lemmas: `securityFlowsTo_refl`, `securityFlowsTo_trans`.
+- observer projection helpers:
+  - `projectState`, `projectObjects`, `projectRunnable`, `projectCurrent`,
+  - relation scaffold: `lowEquivalent` with `refl/symm/trans` lemmas.
+
+This keeps IF-M1 aligned with the repository's local-first theorem discipline:
+first provide reusable policy + projection primitives, then stage transition-level
+noninterference claims in IF-M2/IF-M3.

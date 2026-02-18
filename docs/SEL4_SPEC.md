@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B7..WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, and WS-B6 complete).
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B8..WS-B11 pending/in progress; WS-B1, WS-B2, WS-B3, WS-B4, WS-B5, WS-B6, and WS-B7 complete).
 
 ---
 
@@ -54,7 +54,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 - **WS-B4:** Remaining type-wrapper migration ✅ completed
 - **WS-B5:** CSpace semantics completion (guard/radix) ✅ completed
 - **WS-B6:** Notification-object IPC completion ✅ completed
-- **WS-B7:** Information-flow proof-track start
+- **WS-B7:** Information-flow proof-track start ✅ completed
 - **WS-B8:** Documentation automation + consolidation
 - **WS-B9:** Threat model and security hardening
 - **WS-B10:** CI maturity upgrades
@@ -63,7 +63,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 ### 4.3 Sequencing constraints
 
 - **P1:** WS-B4 + WS-B3 + WS-B8 (WS-B3/WS-B4 completed)
-- **P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 completed)
+- **P2:** WS-B5 + WS-B6 + WS-B2 (WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed)
 - **P3:** WS-B7 + WS-B9 + WS-B10 + WS-B11
 
 ### 4.4 Acceptance expectations for WS-B work
