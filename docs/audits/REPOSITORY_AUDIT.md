@@ -258,7 +258,7 @@ percentage.
 | `docs/DEVELOPMENT.md` | 369 | Contributor workflow, proof engineering standards |
 | `docs/TESTING_FRAMEWORK_PLAN.md` | 139 | Active testing baseline, tier signal map |
 | `docs/audits/PROJECT_AUDIT.md` | 143 | Historical end-to-end quality audit snapshot |
-| `docs/LICENSE_REVIEW.md` | 65 | MIT license adoption review |
+| `docs/licensing_research/LICENSE_REVIEW.md` | 65 | MIT license adoption review |
 | `docs/gitbook/` (26 chapters) | ~1,100 | Long-form handbook |
 | `tests/scenarios/README.md` | 73 | Fixture maintenance workflow |
 
@@ -363,7 +363,7 @@ percentage.
 - **No secrets in repository.** No `.env` files, API keys, or credentials.
 - **`.gitignore` correctly excludes build artifacts.**
 - **MIT license cleanly adopted** with documented review
-  (`LICENSE_REVIEW.md`).
+  (`docs/licensing_research/LICENSE_REVIEW.md`).
 - **Proof-level security properties.** `capabilityInvariantBundle` proves
   slot uniqueness, lookup soundness, and attenuation rules. These are
   compile-time-verified security invariants — stronger than any runtime
