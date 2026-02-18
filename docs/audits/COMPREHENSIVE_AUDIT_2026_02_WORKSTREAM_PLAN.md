@@ -73,7 +73,7 @@ Rationale: convert expanded model coverage into long-term assurance and delivery
 ## 5) Detailed workstream execution contracts
 
 Status key: `Planned` → `In Progress` → `Completed`.
-Current portfolio status: **WS-B1 and WS-B2 are Completed**; WS-B3..WS-B11 remain Planned/In Progress per active execution cadence.
+Current portfolio status: **WS-B1, WS-B2, and WS-B3 are Completed**; WS-B4..WS-B11 remain Planned/In Progress per active execution cadence.
 
 ### WS-B1 — VSpace + memory model foundation (Completed)
 
@@ -107,7 +107,7 @@ Current portfolio status: **WS-B1 and WS-B2 are Completed**; WS-B3..WS-B11 remai
 - **Exit criteria:** negative-path suite lands with deterministic seeds and documented replay procedure.
 - **Closure evidence (2026-02-17):** `SeLe4n/Testing/StateBuilder.lean` introduces a reusable bootstrap-state builder DSL; `tests/NegativeStateSuite.lean` and `scripts/test_tier2_negative.sh` add malformed-state and negative-path assertions in required smoke/full gates; `scripts/test_tier4_nightly_candidates.sh` now persists seeded `trace_sequence_probe` logs plus `trace_sequence_probe_manifest.csv` for deterministic replay triage.
 
-### WS-B3 — Main trace harness refactor (Planned)
+### WS-B3 — Main trace harness refactor (Completed)
 
 - **Goal:** reduce `Main.lean` orchestration complexity and make scenario construction composable and auditable.
 - **Prerequisites:** none (can start immediately).
@@ -120,6 +120,7 @@ Current portfolio status: **WS-B1 and WS-B2 are Completed**; WS-B3..WS-B11 remai
   - `./scripts/test_tier2_trace.sh`
   - `./scripts/test_full.sh`
 - **Exit criteria:** harness decomposition merged with no trace-regression drift and clearer failure localization.
+- **Closure evidence (2026-02-17):** `Main.lean` now delegates execution to `SeLe4n/Testing/MainTraceHarness.lean`, which extracts trace orchestration into dedicated harness functions (`runCapabilityAndArchitectureTrace`, `runServiceAndStressTrace`, `runLifecycleAndEndpointTrace`); bootstrap construction is now list/builder-based through `SeLe4n/Testing/StateBuilder.lean`; Tier 2 fixture output remains stable (`tests/fixtures/main_trace_smoke.expected`) with `scripts/test_tier2_trace.sh` and `scripts/test_full.sh` passing against the refactored harness.
 
 ### WS-B4 — Remaining type wrapper migration (Planned)
 

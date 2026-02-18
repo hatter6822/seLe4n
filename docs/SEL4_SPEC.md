@@ -22,7 +22,7 @@ Companion planning and execution documents:
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B3..WS-B11 pending/in progress; WS-B1 and WS-B2 complete).
+- **Current active slice:** post-M7 comprehensive-audit execution portfolio (WS-B4..WS-B11 pending/in progress; WS-B1, WS-B2, and WS-B3 complete).
 
 ---
 
@@ -50,7 +50,7 @@ proof hygiene, contributor usability, and hardware-readiness trajectory.
 
 - **WS-B1:** VSpace + memory model foundation ✅ completed
 - **WS-B2:** Generative + negative testing expansion ✅ completed
-- **WS-B3:** Main trace harness refactor
+- **WS-B3:** Main trace harness refactor ✅ completed
 - **WS-B4:** Remaining type-wrapper migration
 - **WS-B5:** CSpace semantics completion (guard/radix)
 - **WS-B6:** Notification-object IPC completion

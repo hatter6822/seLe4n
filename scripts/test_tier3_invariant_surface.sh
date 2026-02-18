@@ -25,6 +25,11 @@ run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/T
 run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
+run_check "INVARIANT" rg -n '^def runMainTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^def bootstrapState' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runCapabilityAndArchitectureTrace" SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runServiceAndStressTrace" SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runLifecycleAndEndpointTrace" SeLe4n/Testing/MainTraceHarness.lean
 
 
 # M6 WS-M6-B adapter API anchors.
@@ -63,7 +68,8 @@ run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Ke
 
 
 # WS-A5 closure anchors: test-only contract fixture separation + policy visibility.
-run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.RuntimeContractFixtures$' Main.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.MainTraceHarness$' Main.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.RuntimeContractFixtures$' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^def runtimeContractAcceptAll' SeLe4n/Testing/RuntimeContractFixtures.lean
 run_check "INVARIANT" rg -n '^def runtimeContractDenyAll' SeLe4n/Testing/RuntimeContractFixtures.lean
 run_check "DOC" rg -n '^# Hardware Boundary Contract Policy' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
@@ -258,32 +264,32 @@ run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serv
 run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
 
 # M3.5 step-7 executable demonstration closure anchors.
-run_check "TRACE" rg -n 'adapter timer success path value' Main.lean
-run_check "TRACE" rg -n 'adapter timer invalid-context branch' Main.lean
-run_check "TRACE" rg -n 'adapter timer unsupported branch' Main.lean
-run_check "TRACE" rg -n 'adapter read denied branch' Main.lean
-run_check "TRACE" rg -n 'adapter read success path byte' Main.lean
-run_check "TRACE" rg -n 'adapter register write success path value' Main.lean
-run_check "TRACE" rg -n 'adapter register write unsupported branch' Main.lean
+run_check "TRACE" rg -n 'adapter timer success path value' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter timer invalid-context branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter timer unsupported branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter read denied branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter read success path byte' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter register write success path value' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'adapter register write unsupported branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter read denied branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter read success path byte: 0' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter register write success path value: 99' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' Main.lean
-run_check "TRACE" rg -n 'handshake send matched waiting receiver' Main.lean
+run_check "TRACE" rg -n 'endpointAwaitReceive demoEndpoint 2' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'handshake send matched waiting receiver' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'serviceStart svcApi allowAll' Main.lean
-run_check "TRACE" rg -n 'service start denied branch' Main.lean
-run_check "TRACE" rg -n 'service start dependency branch' Main.lean
-run_check "TRACE" rg -n 'service restart status' Main.lean
-run_check "TRACE" rg -n 'service stop denied branch' Main.lean
-run_check "TRACE" rg -n 'service stop illegal-state branch' Main.lean
-run_check "TRACE" rg -n 'service restart stop-stage failure' Main.lean
-run_check "TRACE" rg -n 'service restart start-stage failure' Main.lean
-run_check "TRACE" rg -n 'service isolation api↔denied' Main.lean
-run_check "TRACE" rg -n 'service isolation api↔db' Main.lean
+run_check "TRACE" rg -n 'serviceStart svcApi allowAll' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service start denied branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service start dependency branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service restart status' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service stop denied branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service stop illegal-state branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service restart stop-stage failure' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service restart start-stage failure' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service isolation api↔denied' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service isolation api↔db' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service restart status: some' tests/fixtures/main_trace_smoke.expected
@@ -293,14 +299,14 @@ run_check "TRACE" rg -n 'service restart stop-stage failure: SeLe4n.Model.Kernel
 run_check "TRACE" rg -n 'service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service isolation api↔db: false' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' Main.lean
-run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' Main.lean
-run_check "TRACE" rg -n 'lifecycle retype success object kind' Main.lean
-run_check "TRACE" rg -n 'composed transition alias guard \(expected error\)' Main.lean
-run_check "TRACE" rg -n 'composed transition unauthorized branch' Main.lean
-run_check "TRACE" rg -n 'composed revoke/delete/retype success' Main.lean
-run_check "TRACE" rg -n 'post-revoke sibling lookup' Main.lean
-run_check "TRACE" rg -n 'post-delete lookup \(expected error\)' Main.lean
+run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'lifecycle retype success object kind' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'composed transition alias guard \(expected error\)' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'composed transition unauthorized branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'composed revoke/delete/retype success' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'post-revoke sibling lookup' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'post-delete lookup \(expected error\)' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype success object kind: some \(SeLe4n.Model.KernelObjectType.endpoint\)' tests/fixtures/main_trace_smoke.expected

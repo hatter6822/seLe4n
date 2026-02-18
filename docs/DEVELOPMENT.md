@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current slice**:
 
-- active: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1 and WS-B2 completed)**,
+- active: **Comprehensive Audit 2026-02 workstream execution (WS-B portfolio; WS-B1, WS-B2, and WS-B3 completed)**,
 - completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
@@ -34,7 +34,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 - **WS-B1** — VSpace/memory model foundation (**completed**)
 - **WS-B2** — generative + negative testing expansion (**completed**)
-- **WS-B3** — `Main.lean` trace-harness refactor
+- **WS-B3** — `Main.lean` trace-harness refactor (**completed**)
 - **WS-B4** — remaining type wrapper migration
 - **WS-B5** — CSpace guard/radix completion
 - **WS-B6** — notification object semantics
@@ -66,7 +66,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-B slice (prefer next unfinished stream: WS-B3 onward).
+1. Sync branch and choose one coherent WS-B slice (prefer next unfinished stream: WS-B4 onward).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.
