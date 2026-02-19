@@ -1,5 +1,14 @@
 import SeLe4n.Model.State
 
+/-!
+WS-C3 proof-surface note:
+
+Determinism of pure Lean definitions is a meta-property of evaluation, so object-level
+tautologies of the form `f x = f x` are not accepted as semantic evidence in this model.
+VSpace semantic obligations are tracked via TPI-001 in
+`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
+-/
+
 namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
@@ -53,11 +62,5 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
         match root.lookup vaddr with
         | none => .error .translationFault
         | some paddr => .ok (paddr, st)
-
-theorem vspaceLookup_deterministic
-    (asid : SeLe4n.ASID)
-    (vaddr : SeLe4n.VAddr)
-    (st : SystemState) :
-    vspaceLookup asid vaddr st = vspaceLookup asid vaddr st := rfl
 
 end SeLe4n.Kernel.Architecture

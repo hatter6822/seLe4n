@@ -1,3 +1,13 @@
+## [0.10.0] - 2026-02-18
+
+### WS-C3 completion hardening + docs-sync reliability + portfolio synchronization
+- Finalized WS-C3 proof-surface cleanup by removing tautological determinism theorems from VSpace and IF projection modules, while preserving tracked semantic obligations in TPI-001/TPI-002.
+- Added module-level WS-C3 notes in affected Lean modules to clarify determinism-as-meta-property guidance and prevent future tautological theorem regressions.
+- Hardened Tier 3 anchors to assert both removal of deprecated tautological theorems and presence of WS-C3 proof-surface notes, alongside synchronized active-slice status anchors.
+- Improved docs-sync reliability in non-login shells by sourcing `${HOME}/.elan/env` when available before probing `lake`, reducing unnecessary setup churn and external mirror warnings when Lean is already installed.
+- Synchronized root docs and GitBook status text to reflect WS-C3 completion and current P1 continuation focus on WS-C4.
+- Bumped minor version to **`0.10.0`** and synchronized root version marker in `README.md`.
+
 ## [0.9.29] - 2026-02-18
 
 ### WS-B10 docs-sync offline/restricted-environment fallback fix

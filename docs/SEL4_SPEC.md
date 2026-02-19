@@ -57,7 +57,7 @@ is mediated exclusively by capabilities.
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution kickoff (Phase P0/P1 transition; execution now beginning on WS-C workstreams).
+- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 completed; WS-C4+ follow-on execution in progress).
 
 ---
 
@@ -157,7 +157,7 @@ combinations or variants of these.
 
 - **WS-C1:** IPC handshake correctness (critical; completed for notification badge accumulation and waiter ipcState wiring)
 - **WS-C2:** Scheduler semantic fidelity (high; completed)
-- **WS-C3:** Proof-surface de-tautologization (critical; kickoff starting)
+- **WS-C3:** Proof-surface de-tautologization (critical; completed)
 - **WS-C4:** Test validity hardening (high; kickoff starting)
 - **WS-C5:** Information-flow assurance (critical; Phase P2 target)
 - **WS-C6:** CI and supply-chain hardening (medium; Phase P3 target)
@@ -169,7 +169,7 @@ combinations or variants of these.
 - `seL4_Poll(src, sender)` -- non-blocking variant of `seL4_Wait`.
 
 - **P0:** WS-C8 baseline reset + active-plan publication (in progress)
-- **P1:** WS-C3 + fixture-repair WS-C4 (WS-C1 + WS-C2 completed)
+- **P1:** WS-C4 fixture-repair continuation with WS-C3 already closed (WS-C1 + WS-C2 + WS-C3 completed)
 - **P2:** WS-C5 + remaining WS-C4 assurance expansion
 - **P3:** WS-C6 + WS-C7 sustainment hardening
 

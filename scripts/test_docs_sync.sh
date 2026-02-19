@@ -17,6 +17,12 @@ fi
 
 python3 "${SCRIPT_DIR}/check_markdown_links.py"
 
+# Prefer an already-installed elan toolchain in non-login shells.
+if [[ -f "${HOME}/.elan/env" ]]; then
+  # shellcheck disable=SC1091
+  source "${HOME}/.elan/env"
+fi
+
 # Keep docs-sync deterministic when possible by attempting Lean setup before the
 # optional doc-gen4 probe. Setup remains best-effort by default so docs-sync can
 # still validate navigation/link consistency on restricted/offline environments.
