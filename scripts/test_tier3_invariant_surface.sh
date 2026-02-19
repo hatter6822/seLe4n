@@ -11,7 +11,8 @@ cd "${REPO_ROOT}"
 # M6 WS-M6-A assumption inventory anchors.
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
 run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object.lean
-run_check "INVARIANT" rg -n '^def vspaceDiscoveryWindow' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^\s*st.objectIndex.findSome\?' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceUnmapPage' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceLookup' SeLe4n/Kernel/Architecture/VSpace.lean
@@ -30,6 +31,7 @@ run_check "INVARIANT" rg -n '^structure Badge' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure ASID' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure VAddr' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure PAddr' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure ServiceId' SeLe4n/Prelude.lean
 # WS-B5 closure anchors: CSpace guard/radix path resolution surface.
 run_check "INVARIANT" rg -n '^inductive ResolveError' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveSlot' SeLe4n/Model/Object.lean
@@ -73,7 +75,7 @@ run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
 # shellcheck disable=SC2016
-run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio; WS-C1..WS-C6 completed, WS-C8 actively progressing\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
+run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio; WS-C1..WS-C7 completed, WS-C8 actively progressing\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
 run_check "DOC" rg -n '(^# Documentation Deduplication Map \(WS-B8\)$)|(^# Documentation Deduplication Map \(WS-C8\)$)' docs/DOCS_DEDUPLICATION_MAP.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
 run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py

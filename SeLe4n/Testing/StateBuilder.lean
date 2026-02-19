@@ -68,6 +68,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
     objects := listLookup builder.objects
+    objectIndex := builder.objects.map Prod.fst
     services := listLookup builder.services
     scheduler := {
       runnable := builder.runnable

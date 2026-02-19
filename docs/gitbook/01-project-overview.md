@@ -36,7 +36,7 @@ Previous completed audit portfolio:
 
 Current active portfolio:
 
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C6 completed; WS-C7..WS-C8 in progress.
+- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C7 completed; WS-C8 in progress.
 
 ## 4. Architecture mental model
 

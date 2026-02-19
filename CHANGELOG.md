@@ -1,3 +1,23 @@
+## [0.10.7] - 2026-02-19
+
+### Documentation correctness and WS-C7 refinement follow-up
+- Audited and corrected remaining ADR/GitBook drift where WS-B1 material still implied bounded ASID discovery is current behavior.
+- Amended VSpace ADR + GitBook mirror to explicitly record WS-C7 superseding the bounded scan with `SystemState.objectIndex` traversal in `resolveAsidRoot`.
+- Synchronized root/spec version markers to **`0.10.7`**.
+- Re-ran docs sync + full + nightly experimental validation to confirm end-to-end consistency.
+
+## [0.10.6] - 2026-02-19
+
+### Added
+- Added WS-C7 architecture decision record for finite object-store migration staging and compatibility notes (`docs/FINITE_OBJECT_STORE_ADR.md`) with a synced GitBook completion chapter.
+
+### Changed
+- Migrated `ServiceId` from a `Nat` alias to a typed wrapper in `SeLe4n/Prelude.lean` to restore identifier-domain separation.
+- Added finite `objectIndex` tracking to `SystemState` and `BootstrapBuilder`, and rewired VSpace ASID-root resolution to use indexed object discovery instead of bounded range scanning.
+- Consolidated shared store-object helper lemmas into `Model/State.lean` and reused them from lifecycle invariant helpers.
+- Updated active portfolio docs/GitBook to mark WS-C7 completed.
+- Bumped patch version to **`0.10.6`** and synchronized version markers.
+
 ## [0.10.5] - 2026-02-19
 
 ### WS-C6 refinement follow-up: status precision + telemetry/doc anchor tightening

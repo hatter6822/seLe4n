@@ -28,6 +28,7 @@
 - [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)
+- [WS-C7 Model Structure and Maintainability (Completed)](30-ws-c7-model-structure-and-maintainability.md)
 
 ## Transition and long-horizon path
 

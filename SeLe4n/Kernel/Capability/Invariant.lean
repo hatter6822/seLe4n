@@ -123,6 +123,8 @@ theorem cspaceRevoke_local_target_reduction
                     some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
                   else
                     st.objects oid,
+              objectIndex :=
+                if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
               lifecycle :=
                 {
                   st.lifecycle with
@@ -279,6 +281,8 @@ theorem cspaceRevoke_preserves_source
                         some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
                       else
                         st.objects oid,
+                  objectIndex :=
+                    if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
                   lifecycle :=
                     {
                       st.lifecycle with
