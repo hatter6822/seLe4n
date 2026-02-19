@@ -12,7 +12,7 @@ Use this chapter when you need to answer:
 - how we sequence delivery,
 - and what evidence is required before M7 can close.
 
-For normative scope, always defer to [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+For normative scope, always defer to [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 For audit source findings, use [`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md).
 For implementation-level details, use [`docs/M7_CLOSEOUT_PACKET.md`](../M7_CLOSEOUT_PACKET.md).
 

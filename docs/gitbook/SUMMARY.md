@@ -4,27 +4,30 @@
 
 - [seLe4n Handbook](README.md)
 
-## Orientation
+## Getting started
 
 - [Project Overview](01-project-overview.md)
 - [Microkernel and seL4 Primer](02-microkernel-and-sel4-primer.md)
 - [Architecture & Module Map](03-architecture-and-module-map.md)
 - [Project Design Deep Dive](04-project-design-deep-dive.md)
 
-## Active slice and execution guidance
+## Development essentials
 
 - [Specification & Roadmap](05-specification-and-roadmap.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
-- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-- [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
-- [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
-- [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
-- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-- [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
+
+## Active workstreams and planning
+
+- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
+- [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
+- [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
+- [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
+- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
+- [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 
 ## Transition and long-horizon path
 

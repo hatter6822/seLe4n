@@ -1,7 +1,8 @@
 # Specification and Roadmap
 
-This chapter is the GitBook-facing translation of the normative spec in
-[`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+This chapter is the GitBook-facing translation of the normative project spec in
+[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md). For the original seL4 microkernel
+specification, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
 ## 1) Status snapshot
 
@@ -12,7 +13,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Active:** Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 complete; WS-C8 documentation consolidation in progress)
+- **Active:** Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 complete; WS-C8 documentation consolidation in progress)
 
 ## 2) Stable contracts contributors must preserve
 

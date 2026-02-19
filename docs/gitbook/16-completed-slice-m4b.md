@@ -20,7 +20,7 @@ soundness issue is identified.
 
 ## Relationship to adjacent docs
 
-- For acceptance criteria and formal milestone scope: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+- For acceptance criteria and formal milestone scope: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 - For execution details and reusable delivery pattern: [M4-B Execution Playbook](14-m4b-execution-playbook.md).
 - For handoff context: [M5 Closeout Snapshot](09-m5-closeout-snapshot.md),
   [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md), and
