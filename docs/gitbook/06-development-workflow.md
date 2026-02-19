@@ -41,7 +41,7 @@ For milestone-moving PRs:
 - **Phase P0:** WS-C8 baseline reset/documentation synchronization (in progress)
 - **Phase P1:** WS-C4 fixture repairs complete (WS-C1 + WS-C2 + WS-C3 + WS-C4 complete)
 - **Phase P2:** WS-C5 assurance expansion (completed)
-- **Phase P3:** WS-C7 sustainability hardening (WS-C6 completed)
+- **Phase P3:** WS-C7 sustainability hardening (completed)
 
 ## Failure triage
 

@@ -206,7 +206,7 @@ Deliver a semantically faithful and evidence-backed seL4 model by:
 - **Gate G0 (planning readiness):** this file + README + GitBook chapter 24 + documentation matrix all reference `AUDIT_v0.9.32` as active baseline.
 - **Gate G1 (correctness readiness):** WS-C1/C2/C3 critical items merged with passing Tier 0–3.
 - **Gate G2 (assurance readiness):** WS-C4/C5 evidence merged; at least one nontrivial noninterference preservation theorem in tree.
-- **Gate G3 (sustainment readiness):** WS-C6/C7 merged; CI hardening and architecture ADR accepted.
+- **Gate G3 (sustainment readiness):** WS-C6/C7 merged; CI hardening and WS-C7 architecture ADR accepted.
 
 ## 7) Workstream template (apply to each WS-C*)
 
@@ -229,7 +229,7 @@ Each workstream PR must include:
 | WS-C4 | Completed | Testing | Invariant-valid fixtures, executable post-step invariant assertions, and reproducible generative probe coverage merged with smoke/full/tier4 evidence. |
 | WS-C5 | Completed | Information Flow | Added observer-scoped service visibility filtering and `endpointSend_preserves_lowEquivalent` theorem with Tier-2/Tier-3 evidence. |
 | WS-C6 | Completed | CI & Supply Chain | Architecture-safe cache keys, toolchain tag format sanitization, default 3-attempt flake probes, and bounded hygiene marker regex. |
-| WS-C7 | Planned | Unassigned | Finite store + maintainability refactor track. |
+| WS-C7 | Completed | Kernel Architecture | ServiceId wrapper migration, finite object-index tracking, VSpace lookup cleanup, and maintainability ADR evidence merged. |
 | WS-C8 | In Progress | Documentation | Documentation/GitBook re-baseline and detailed workstream specification. |
 
 ## 9) Canonical companion documents
