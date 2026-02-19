@@ -59,7 +59,7 @@ Quick index. Full contracts and dependencies are in the v0.9.32 planning backbon
 - **WS-C4:** Test validity hardening -- completed
 - **WS-C5:** Information-flow assurance -- completed
 - **WS-C6:** CI and supply-chain hardening -- completed
-- **WS-C7:** Model structure and maintainability
+- **WS-C7:** Model structure and maintainability -- completed
 - **WS-C8:** Documentation and GitBook consolidation (in progress)
 
 Primary references:
