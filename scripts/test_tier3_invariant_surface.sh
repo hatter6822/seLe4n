@@ -413,7 +413,7 @@ run_check "DOC" rg -n '^# CI Maturity and Telemetry Baseline \(WS-B10\)' docs/gi
 run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 run_check "DOC" rg -n '^# Scenario framework \(WS-B11\)' tests/scenarios/README.md
-run_check "DOC" rg -n '(^## 16\) WS-B11 closure evidence$)|(^## 2\) Active workstreams \(WS-C portfolio\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n '(^## Active planning \(v0\.11\.0 — WS-D\)$)|(^## 16\) WS-B11 closure evidence$)|(^## 2\) Active workstreams \(WS-C portfolio\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "INVARIANT" rg -n '^\s*"schema_version": "1\.0\.0"' tests/scenarios/scenario_catalog.json
 run_check "INVARIANT" rg -n '^def validate_catalog' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^def nightly_seeds' scripts/scenario_catalog.py
