@@ -14,9 +14,9 @@ Use this file during planning and PR review to keep documentation status aligned
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active audit findings baseline | `docs/audits/AUDIT_v0.9.32.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
-| Active workstream execution portfolio | `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
-| Tracked theorem obligations (active) | `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Keep theorem tickets and closure status in audits dir; GitBook chapter references active obligations only. |
+| Active audit findings baseline | `docs/audits/AUDIT_v0.11.0.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md`, `32-v0.11.0-audit-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
+| Active workstream execution portfolio | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `32-v0.11.0-audit-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
+| Tracked theorem obligations (active) | `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | `32-v0.11.0-audit-workstream-planning.md` | Keep theorem tickets and closure status in audits dir; GitBook chapter references active obligations only. |
 | Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |
 | Historical execution portfolio | `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` | archive chapters in GitBook | Keep clearly marked as historical, not active. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
@@ -53,7 +53,8 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C portfolio; WS-C1..WS-C8 completed).
-- Active findings baseline: `AUDIT_v0.9.32.md`.
+- Active planning baseline: `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (WS-D portfolio; WS-D1..WS-D6 planned).
+- Active findings baseline: `AUDIT_v0.11.0.md`.
+- Prior completed portfolio: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C1..WS-C8 completed).
 - Historical baseline retained for traceability: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.

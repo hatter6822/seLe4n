@@ -14,7 +14,7 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 1. [Project Identity](#1-project-identity)
 2. [Current State Snapshot](#2-current-state-snapshot)
 3. [Milestone History](#3-milestone-history)
-4. [Active Workstream Portfolio (WS-C)](#4-active-workstream-portfolio-ws-c)
+4. [Active Workstream Portfolio (WS-D)](#4-active-workstream-portfolio-ws-d)
 5. [Execution Phases](#5-execution-phases)
 6. [Acceptance Expectations](#6-acceptance-expectations)
 7. [Non-Negotiable Baseline Contracts](#7-non-negotiable-baseline-contracts)
@@ -41,10 +41,10 @@ claims, and planning artifacts.
 ## 2. Current State Snapshot
 
 - **Current package version:** `0.11.0` (`lakefile.toml`)
-- **Active findings baseline:** [`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md)
-- **Active execution baseline:** [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
-- **Current active portfolio:** WS-C1..WS-C8 (all workstreams completed)
-- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 + WS-C8 completed).
+- **Active findings baseline:** [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md)
+- **Active execution baseline:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+- **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
+- **Prior completed portfolio:** WS-C1..WS-C8 (all completed)
 
 ---
 
@@ -71,46 +71,43 @@ on the semantic and proof foundations of the previous one.
 ### 3.2 Completed Audit Portfolios
 
 - **WS-B portfolio** (v0.9.0 workstream plan): WS-B1 through WS-B11 completed.
-  Comprehensive Audit 2026-02 execution.
+- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C8 completed.
 
 ### 3.3 Active Audit Portfolio
 
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C8 completed.
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D6 planned.
 
 ---
 
-## 4. Active Workstream Portfolio (WS-C)
+## 4. Active Workstream Portfolio (WS-D)
 
-### 4.1 Critical/High Correctness and Assurance
+### 4.1 Critical/High — Test Validity and Security Assurance
 
-- **WS-C1:** IPC handshake correctness (critical; **completed** -- notification badge OR
-  accumulation + waiter ipcState transitions validated)
-- **WS-C2:** Scheduler semantic fidelity (high; **completed**)
-- **WS-C3:** Proof-surface de-tautologization (critical; **completed** -- tautological
-  `_deterministic` theorems removed; tracked replacements remain in TPI-001/TPI-002)
-- **WS-C4:** Test validity hardening (high; **completed** -- invariant-valid fixtures,
-  post-op invariant assertions, and reproducible probe execution)
-- **WS-C5:** Information-flow assurance (critical; **completed** -- observer-scoped
-  service projection + endpoint-send low-equivalence preservation theorem)
+- **WS-D1:** Test error handling and validity (critical/high; **planned** — F-01, F-03, F-04)
+- **WS-D2:** Information-flow enforcement and proof (high; **planned** — F-02, F-05)
 
-### 4.2 Platform and Sustainability
+### 4.2 Medium — Proof Completion and Kernel Hardening
 
-- **WS-C6:** CI and supply-chain hardening (medium; completed)
-- **WS-C7:** Model structure and maintainability (medium; completed)
-- **WS-C8:** Documentation and GitBook consolidation (high; **completed**)
+- **WS-D3:** Proof gap closure (medium; **planned** — F-06, F-08, F-16; carries TPI-001 from WS-C)
+- **WS-D4:** Kernel design hardening (medium; **planned** — F-07, F-11, F-12)
+- **WS-D5:** Test infrastructure expansion (medium; **planned** — F-09, F-10)
+
+### 4.3 Low — Infrastructure Polish
+
+- **WS-D6:** CI/CD and documentation polish (low; **planned** — F-13, F-14, F-15, F-17)
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 
 ---
 
 ## 5. Execution Phases
 
-- **Phase P0:** WS-C8 baseline reset + active-plan publication (completed)
-- **Phase P1:** WS-C4 fixture-repair completion with WS-C3 already closed
-  (WS-C1 + WS-C2 + WS-C3 + WS-C4 completed)
-- **Phase P2:** WS-C5 assurance expansion (completed)
-- **Phase P3:** WS-C7 sustainment hardening (completed)
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (current)
+- **Phase P1:** WS-D1 test validity restoration (critical/high)
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high)
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
+- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 
 ---
 
@@ -118,7 +115,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 ### 6.1 Per-Workstream Acceptance Gates
 
-Each WS-C workstream has defined entry/exit criteria in the canonical workstream plan.
+Each WS-D workstream has defined entry/exit criteria in the canonical workstream plan.
 Common acceptance patterns:
 
 1. implementation compiles and passes tiered validation,
@@ -158,14 +155,16 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 | Artifact | Path |
 |---|---|
-| Findings baseline | [`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md) |
-| Execution baseline (WS-C) | [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) |
-| Tracked theorem obligations | [`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md) |
+| Findings baseline | [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) |
+| Execution baseline (WS-D) | [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
+| Tracked theorem obligations | [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md) |
 
 ### 8.2 Historical Baselines (Retained for Traceability)
 
 | Artifact | Path |
 |---|---|
+| Historical findings (v0.9.32) | [`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md) |
+| Historical execution (WS-C) | [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) |
 | Historical findings (v0.9.0) | [`docs/audits/AUDIT_v0.9.0.md`](../audits/AUDIT_v0.9.0.md) |
 | Historical execution (WS-B) | [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md) |
 | Historical findings (v0.8.0) | [`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md) |

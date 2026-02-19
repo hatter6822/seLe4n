@@ -1,4 +1,8 @@
-# AUDIT v0.9.32 — Tracked Proof Issues and Follow-up Obligations
+# AUDIT v0.9.32 — Tracked Proof Issues and Follow-up Obligations (Historical)
+
+> **Note:** This document is historical. The active proof obligation tracker is
+> [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
+> TPI-001 (OPEN) is carried forward to TPI-D05. TPI-002 (CLOSED) is extended by TPI-D01..D03.
 
 This document tracks proof obligations intentionally deferred during WS-C execution and carried forward after WS-C1..WS-C8 completion.
 

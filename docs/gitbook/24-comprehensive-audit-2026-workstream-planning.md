@@ -1,50 +1,46 @@
 # Comprehensive Audit 2026 Workstream Planning
 
-Canonical planning source:
-[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+## Active planning (v0.11.0 — WS-D)
 
-Tracked proof obligations source:
-[`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md).
+The current active execution baseline is the **WS-D portfolio** based on the v0.11.0 audit.
 
-This chapter is intentionally concise and navigational. It summarizes active workstream status and points to canonical details.
+- Canonical planning source: [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+- Tracked proof obligations: [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md)
+- Detailed GitBook chapter: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md)
 
-## 1) Active planning baseline
+### WS-D quick index
 
-- **Findings baseline:** `AUDIT_v0.9.32.md`
-- **Execution baseline:** `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
-- **Tracked theorem obligations:** `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
-- **Current planning stage:** Phase P3 sustainment closeout complete (WS-C7 + WS-C8 completed; WS-C portfolio closed).
+| Workstream | Priority | Findings | Status |
+|---|---|---|---|
+| WS-D1 Test error handling and validity | Critical/High | F-01, F-03, F-04 | Planned |
+| WS-D2 Information-flow enforcement and proof | High | F-02, F-05 | Planned |
+| WS-D3 Proof gap closure | Medium | F-06, F-08, F-16 | Planned |
+| WS-D4 Kernel design hardening | Medium | F-07, F-11, F-12 | Planned |
+| WS-D5 Test infrastructure expansion | Medium | F-09, F-10 | Planned |
+| WS-D6 CI/CD and documentation polish | Low | F-13, F-14, F-15, F-17 | Planned |
 
-## 2) Active workstreams (WS-C portfolio)
+## Historical: WS-C portfolio (v0.9.32 — completed)
 
-### Critical/high correctness and assurance
+The WS-C portfolio has been completed and is retained for traceability.
 
-- **WS-C1:** IPC handshake correctness (critical; completed — notification badge OR accumulation + waiter ipcState transitions validated)
-- **WS-C2:** Scheduler semantic fidelity (high, completed)
-- **WS-C3:** Proof-surface de-tautologization (critical; completed)
-  - removed tautological `vspaceLookup_deterministic` and `projectState_deterministic`,
-  - added module docstrings clarifying determinism as a meta-property of pure Lean,
-  - replacement theorem obligations continue in `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
-- **WS-C4:** Test validity hardening (high; completed)
-- **WS-C5:** Information-flow assurance (critical; completed — observer-scoped service projection + endpoint-send low-equivalence preservation theorem)
+- Historical planning source: [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+- Historical proof obligations: [`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
 
-### Platform and sustainability
+### WS-C completed summary
 
-- **WS-C6:** CI and supply-chain hardening (medium; completed)
-- **WS-C7:** Model structure and maintainability (medium; completed — finite object-index staging + `ServiceId` wrapper migration + VSpace lookup cleanup + ADR delivered)
-- **WS-C8:** Documentation and GitBook consolidation (high, completed)
+- **WS-C1:** IPC handshake correctness -- completed
+- **WS-C2:** Scheduler semantic fidelity -- completed
+- **WS-C3:** Proof-surface de-tautologization -- completed
+- **WS-C4:** Test validity hardening -- completed
+- **WS-C5:** Information-flow assurance -- completed
+- **WS-C6:** CI and supply-chain hardening -- completed
+- **WS-C7:** Model structure and maintainability -- completed
+- **WS-C8:** Documentation and GitBook consolidation -- completed
 
-## 3) Updating status
+## Updating status
 
-When any WS-C status changes, update all of the following in the same PR:
+When any WS-D status changes, update all surfaces listed in the [v0.11.0 workstream chapter](32-v0.11.0-audit-workstream-planning.md#4-updating-status).
 
-1. `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (canonical source)
-2. `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` (if theorem obligations/status changed)
-3. `README.md` (current state + quick index)
-4. `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`
-5. `docs/CLAIM_EVIDENCE_INDEX.md` (when baseline claims/evidence mapping changes)
-6. this chapter (`24-comprehensive-audit-2026-workstream-planning.md`)
+## Historical references
 
-## 4) Historical references
-
-The WS-B portfolio (`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`) is retained for provenance and completed-history context only; it is no longer the active planning baseline.
+The WS-B portfolio (`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`) is retained for provenance and completed-history context only.

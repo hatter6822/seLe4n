@@ -20,10 +20,11 @@
 
 ## Current state (authoritative snapshot)
 
-- **Active findings baseline:** `docs/audits/AUDIT_v0.9.32.md`
-- **Active execution baseline:** `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
+- **Active findings baseline:** `docs/audits/AUDIT_v0.11.0.md`
+- **Active execution baseline:** `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`
 - **Current package version:** `0.11.0` (`lakefile.toml`)
-- **Current active portfolio:** WS-C1..WS-C8 (all workstreams completed)
+- **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
+- **Prior completed portfolio:** WS-C1..WS-C8 (all completed)
 
 ## Specifications
 
@@ -64,22 +65,24 @@ Additional resources:
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 
-## Active workstreams (WS-C)
+## Active workstreams (WS-D)
 
-Quick index. Full contracts and dependencies are in the v0.9.32 planning backbone.
+Quick index. Full contracts and dependencies are in the v0.11.0 planning backbone.
 
-- **WS-C1:** IPC handshake correctness -- completed
-- **WS-C2:** Scheduler semantic fidelity -- completed
-- **WS-C3:** Proof-surface de-tautologization -- completed
-- **WS-C4:** Test validity hardening -- completed
-- **WS-C5:** Information-flow assurance -- completed
-- **WS-C6:** CI and supply-chain hardening -- completed
-- **WS-C7:** Model structure and maintainability -- completed
-- **WS-C8:** Documentation and GitBook consolidation -- completed
+- **WS-D1:** Test error handling and validity -- planned (Critical/High; F-01, F-03, F-04)
+- **WS-D2:** Information-flow enforcement and proof -- planned (High; F-02, F-05)
+- **WS-D3:** Proof gap closure -- planned (Medium; F-06, F-08, F-16)
+- **WS-D4:** Kernel design hardening -- planned (Medium; F-07, F-11, F-12)
+- **WS-D5:** Test infrastructure expansion -- planned (Medium; F-09, F-10)
+- **WS-D6:** CI/CD and documentation polish -- planned (Low; F-13, F-14, F-15, F-17)
 
 Primary references:
-- [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
-- [`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
+- [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+- [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md)
+
+## Completed workstreams (WS-C, historical)
+
+- **WS-C1..WS-C8:** all completed. See [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ## Codebase map
 
@@ -101,4 +104,4 @@ Primary references:
 
 ## Historical note
 
-WS-B (`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`) and earlier M7/M6/M5/M4 slices remain available for historical traceability, but are not the active planning baseline. See the GitBook Historical Archive section for full context.
+WS-C (`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`), WS-B (`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`), and earlier M7/M6/M5/M4 slices remain available for historical traceability, but are not the active planning baseline. See the GitBook Historical Archive section for full context.

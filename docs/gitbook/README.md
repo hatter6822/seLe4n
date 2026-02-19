@@ -5,8 +5,9 @@
 This GitBook is the long-form guide for architecture, workflow, and milestone context.
 
 ## Current project state
-- **Active findings baseline:** AUDIT v0.9.32 (independent audit).
-- **Active execution baseline:** WS-C portfolio (v0.9.32 workstream plan).
+- **Active findings baseline:** AUDIT v0.11.0 (end-to-end repository audit).
+- **Active execution baseline:** WS-D portfolio (v0.11.0 workstream plan).
+- **Prior completed portfolio:** WS-C (v0.9.32 workstream plan, all completed).
 - **Historical baseline retained for traceability:** WS-B portfolio (v0.9.0 plan).
 
 Specification documents:
@@ -22,15 +23,15 @@ Specification documents:
 4. [Specification & Roadmap](05-specification-and-roadmap.md)
 5. [Development Workflow](06-development-workflow.md)
 6. [Testing & CI](07-testing-and-ci.md)
-7. [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+7. [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md)
 8. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
-  [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+  [v0.11.0 Audit Workstream Planning (WS-D)](32-v0.11.0-audit-workstream-planning.md)
 
 ## Historical slice archive
 
