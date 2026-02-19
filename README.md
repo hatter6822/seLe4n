@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" alt="seLe4n logo" width="200" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo_dark.png" />
+    <img src="assets/logo.png" alt="seLe4n logo" width="200" />
+  </picture>
 </p>
 
 <p align="center">
