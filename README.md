@@ -1,7 +1,22 @@
-# seLe4n
+<p align="center">
+  <img src="assets/logo.png" alt="seLe4n logo" width="200" />
+</p>
 
-seLe4n is a Lean 4 formalization project for an executable, machine-checked model of core
-[seL4 microkernel](https://sel4.systems) semantics.
+<h1 align="center">seLe4n</h1>
+
+<p align="center">
+  <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
+  <img src="https://img.shields.io/badge/version-0.10.5-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/Lean-v4.27.0-blueviolet" alt="Lean 4" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
+  <img src="https://img.shields.io/github/last-commit/hatter6822/seLe4n" alt="Last commit" />
+</p>
+
+<p align="center">
+  A Lean 4 formalization project for an executable, machine-checked model of core
+  <a href="https://sel4.systems">seL4 microkernel</a> semantics.
+</p>
 
 ## Current state (authoritative snapshot)
 
