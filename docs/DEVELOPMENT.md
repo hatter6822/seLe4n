@@ -28,29 +28,34 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Current execution slice (WS-C portfolio)
+## 3) Current execution slice (WS-D portfolio)
 
 ### 3.1 Workstreams and intent
 
-- **WS-C1** — IPC handshake correctness (**completed: notification OR semantics + waiter ipcState wiring**)
-- **WS-C2** — scheduler semantic fidelity (**completed**)
-- **WS-C3** — proof-surface de-tautologization (**completed: tautological proof removal + module-level proof-surface disclaimers + tracked obligations linkage**)
-- **WS-C4** — test validity hardening (**completed**)
-- **WS-C5** — information-flow assurance (**completed: service visibility projection policy + endpoint-send low-equivalence preservation theorem**)
-- **WS-C6** — CI and supply-chain hardening (**completed: architecture-safe cache keys + toolchain-tag format validation + stronger flake probe defaults + bounded Tier-0 hygiene regex**)
-- **WS-C7** — model structure and maintainability (**completed**)
-- **WS-C8** — documentation/GitBook consolidation (**completed**)
+- **WS-D1** — Test error handling and validity (**planned** — F-01, F-03, F-04)
+- **WS-D2** — Information-flow enforcement and proof (**planned** — F-02, F-05)
+- **WS-D3** — Proof gap closure (**planned** — F-06, F-08, F-16)
+- **WS-D4** — Kernel design hardening (**planned** — F-07, F-11, F-12)
+- **WS-D5** — Test infrastructure expansion (**planned** — F-09, F-10)
+- **WS-D6** — CI/CD and documentation polish (**planned** — F-13, F-14, F-15, F-17)
+
+Canonical detail: [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 
 ### 3.2 Sequencing model
 
 Use the planning phases from the workstream backbone:
 
-- **Phase P0:** WS-C8 baseline reset/documentation synchronization (completed)
-- **Phase P1:** WS-C4 fixture repairs completed (WS-C1 + WS-C2 + WS-C3 + WS-C4 complete)
-- **Phase P2:** WS-C5 assurance expansion (completed)
-- **Phase P3:** WS-C7 sustainability hardening (completed)
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (current)
+- **Phase P1:** WS-D1 test validity restoration (critical/high)
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high)
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
+- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 
-### 3.3 PR-to-workstream discipline
+### 3.3 Prior completed portfolio (WS-C, historical)
+
+WS-C1..WS-C8 completed. See [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+
+### 3.4 PR-to-workstream discipline
 
 Every milestone-moving PR should include:
 
@@ -64,7 +69,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-C slice (prefer next priority in the active plan, starting with P1 blockers).
+1. Sync branch and choose one coherent WS-D slice (prefer next priority in the active plan, starting with P1 blockers).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

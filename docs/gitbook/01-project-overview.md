@@ -30,13 +30,14 @@ Closed baseline slices:
 - M6 architecture-boundary assumptions/adapters/invariant hooks,
 - M7 audit remediation (WS-A1..WS-A8).
 
-Previous completed audit portfolio:
+Completed audit portfolios:
 
 - **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1 through WS-B11 completed.
+- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C8 completed.
 
 Current active portfolio:
 
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C8 completed.
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D6 planned.
 
 ## 4. Architecture mental model
 
