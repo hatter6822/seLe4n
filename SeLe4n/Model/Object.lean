@@ -171,6 +171,118 @@ theorem lookup_mapPage_eq
       unfold lookup
       simp
 
+/-- Successful `mapPage` preserves ASID identity. -/
+theorem mapPage_preserves_asid
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.asid = root.asid := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none => simp [hLookup] at hMap; cases hMap; rfl
+
+/-- Successful `unmapPage` preserves ASID identity. -/
+theorem unmapPage_preserves_asid
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.asid = root.asid := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ => simp [hLookup] at hUnmap; cases hUnmap; rfl
+
+/-- Helper: if `lookup root vaddr = none`, then no entry `(vaddr, _)` exists in
+`root.mappings`. -/
+private theorem lookup_none_not_mem
+    (root : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hLookup : lookup root vaddr = none)
+    (hMem : (vaddr, paddr) ∈ root.mappings) :
+    False := by
+  unfold lookup at hLookup
+  have hFind : root.mappings.find? (fun entry => entry.fst = vaddr) ≠ none := by
+    intro hNone
+    have := List.find?_eq_none.mp hNone (vaddr, paddr) hMem
+    simp at this
+  cases h : root.mappings.find? (fun entry => entry.fst = vaddr) with
+  | none => exact hFind h
+  | some entry => simp [h] at hLookup
+
+/-- Successful `mapPage` preserves `noVirtualOverlap`.
+
+`mapPage` only succeeds when the virtual address is unmapped (returns `none` on
+conflict). The new mapping `(vaddr, paddr)` is prepended. Since `vaddr` was not
+in any existing entry (lookup returned `none`), the new mapping cannot create
+an overlap with existing entries, and the pair `(vaddr, paddr)` appears exactly
+once. -/
+theorem mapPage_preserves_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hNoOverlap : noVirtualOverlap root)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    noVirtualOverlap root' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp at hIn₁ hIn₂
+      rcases hIn₁ with ⟨rfl, rfl⟩ | hIn₁
+      · -- p₁ from new entry (v = vaddr, p₁ = paddr)
+        rcases hIn₂ with ⟨_, rfl⟩ | hIn₂
+        · rfl
+        · exact absurd hIn₂ (lookup_none_not_mem root v p₂ hLookup)
+      · rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
+        · -- p₂ from new entry, p₁ from old => contradicts lookup = none
+          exact absurd hIn₁ (lookup_none_not_mem root v p₁ hLookup)
+        · exact hNoOverlap v p₁ p₂ hIn₁ hIn₂
+
+/-- Successful `unmapPage` preserves `noVirtualOverlap`.
+
+`unmapPage` filters out all entries with the given virtual address. Since the
+result is a subset of the original mappings, the non-overlap property is
+preserved. -/
+theorem unmapPage_preserves_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hNoOverlap : noVirtualOverlap root)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    noVirtualOverlap root' := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ =>
+      simp [hLookup] at hUnmap
+      cases hUnmap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp [List.mem_filter] at hIn₁ hIn₂
+      exact hNoOverlap v p₁ p₂ hIn₁.1 hIn₂.1
+
+/-- Mapping a virtual address that does not conflict does not affect lookup of
+a different virtual address. -/
+theorem lookup_mapPage_ne
+    (root root' : VSpaceRoot)
+    (vaddr vaddr' : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hNe : vaddr ≠ vaddr')
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.lookup vaddr' = root.lookup vaddr' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      unfold lookup
+      simp [hNe]
+
 end VSpaceRoot
 
 namespace CNode

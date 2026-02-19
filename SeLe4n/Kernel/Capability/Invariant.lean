@@ -394,6 +394,78 @@ theorem cspaceAttenuationRule_holds :
   intro parent child rights badge hMint
   exact mintDerivedCap_attenuates parent child rights badge hMint
 
+-- ============================================================================
+-- F-06 Badge-override safety theorems (WS-D3)
+-- ============================================================================
+
+/-- Badge override in `mintDerivedCap` does not affect rights attenuation.
+
+The derived capability's rights are always a subset of the parent's rights,
+regardless of what badge value is supplied. This holds because `mintDerivedCap`
+checks `rightsSubset` independently of the badge parameter. -/
+theorem mintDerivedCap_badge_independent_rights_attenuation
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    ∀ right, right ∈ child.rights → right ∈ parent.rights := by
+  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  exact hAtt.2
+
+/-- Badge override in `mintDerivedCap` preserves the parent's target.
+
+The derived capability always names the same target as the parent, regardless
+of badge override. Badge values are identity-tagged metadata; they cannot
+redirect authority to a different object. -/
+theorem mintDerivedCap_badge_preserves_target
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.target = parent.target := by
+  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  exact hAtt.1
+
+/-- A minted capability's rights are a subset of the parent's rights,
+regardless of badge override.
+
+This is the F-06 obligation from `AUDIT_v0.11.0.md`: prove that the derived
+capability's rights are a subset of the parent's rights even when badge
+override is used. The proof decomposes through `cspaceMint_child_attenuates`
+which itself relies on `mintDerivedCap_attenuates`. -/
+theorem cspaceMint_attenuates_rights
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.2⟩
+
+/-- Badge override in `cspaceMint` does not grant access to objects outside the
+parent capability's authority scope.
+
+This is the F-06 no-escalation obligation: the derived capability's target is
+always identical to the parent's target, so badge override cannot redirect
+authority to a different object. -/
+theorem cspaceMint_badge_no_escalation
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.target = parent.target := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.1⟩
 
 theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
     lifecycleAuthorityMonotonicity st := by
