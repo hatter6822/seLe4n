@@ -31,9 +31,15 @@ jobs:
               repo: 'lean4'
             })
             const latestTag = release.tag_name
+            const tagPattern = /^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
 
             core.info(`Pinned toolchain: ${localRaw}`)
             core.info(`Latest lean4 release: ${latestTag}`)
+
+            if (!tagPattern.test(latestTag)) {
+              core.setFailed(`Unexpected lean4 release tag format: ${latestTag}`)
+              return
+            }
 
             if (localVersion === latestTag) {
               core.info('Toolchain is already up to date; no proposal issue will be created.')

@@ -52,8 +52,8 @@ Deliver a semantically faithful and evidence-backed seL4 model by:
 
 ### Phase P3 — sustainability
 
-- WS-C6 + WS-C7.
-- Goal: operational reliability and maintainable model architecture.
+- WS-C7 (WS-C6 completed).
+- Goal: maintainable model architecture after CI/supply-chain hardening is merged.
 
 ## 5) Detailed execution contracts
 
@@ -228,7 +228,7 @@ Each workstream PR must include:
 | WS-C3 | Completed | Proof Surface | Tautological determinism theorems removed; module-level meta-property notes added; tracked obligations remain in TPI-001/TPI-002. |
 | WS-C4 | Completed | Testing | Invariant-valid fixtures, executable post-step invariant assertions, and reproducible generative probe coverage merged with smoke/full/tier4 evidence. |
 | WS-C5 | Completed | Information Flow | Added observer-scoped service visibility filtering and `endpointSend_preserves_lowEquivalent` theorem with Tier-2/Tier-3 evidence. |
-| WS-C6 | Planned | Unassigned | CI cache/sanitization/flake/hygiene tightening. |
+| WS-C6 | Completed | CI & Supply Chain | Architecture-safe cache keys, toolchain tag format sanitization, default 3-attempt flake probes, and bounded hygiene marker regex. |
 | WS-C7 | Planned | Unassigned | Finite store + maintainability refactor track. |
 | WS-C8 | In Progress | Documentation | Documentation/GitBook re-baseline and detailed workstream specification. |
 

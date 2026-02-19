@@ -30,7 +30,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 
 ### Platform and sustainability
 
-- **WS-C6:** CI and supply-chain hardening (medium)
+- **WS-C6:** CI and supply-chain hardening (medium; completed)
 - **WS-C7:** Model structure and maintainability (medium)
 - **WS-C8:** Documentation and GitBook consolidation (high, in progress)
 

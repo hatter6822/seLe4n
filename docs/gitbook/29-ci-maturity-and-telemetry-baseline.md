@@ -14,7 +14,7 @@ Canonical source: [`docs/CI_TELEMETRY_BASELINE.md`](../CI_TELEMETRY_BASELINE.md)
 
 - CI artifacts under `.ci-artifacts/telemetry/`,
 - `timing.jsonl` for durations and exits,
-- `flake_probe.jsonl` + `flake_summary.txt` for repeat-run stability signals.
+- `flake_probe.jsonl` + `flake_summary.txt` for repeat-run stability signals (nightly smoke uses default 3 attempts).
 
 ## Policy
 

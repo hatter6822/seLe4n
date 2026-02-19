@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -lt 3 ]]; then
-  echo "usage: $0 <probe-id> <attempts>=2+ <command...>" >&2
+if [[ "$#" -lt 2 ]]; then
+  echo "usage: $0 <probe-id> [attempts>=2] <command...>" >&2
   exit 2
 fi
 
 probe_id="$1"
-attempts="$2"
-shift 2
+shift 1
+
+attempts="${CI_FLAKE_PROBE_ATTEMPTS:-3}"
+if [[ "$#" -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+  attempts="$1"
+  shift 1
+fi
+
+if [[ "$#" -eq 0 ]]; then
+  echo "usage: $0 <probe-id> [attempts>=2] <command...>" >&2
+  exit 2
+fi
 
 if [[ "$attempts" -lt 2 ]]; then
   echo "attempt count must be >=2" >&2
