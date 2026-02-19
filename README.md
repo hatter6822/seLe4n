@@ -7,8 +7,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 - **Active findings baseline:** `docs/audits/AUDIT_v0.9.32.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.10.3` (`lakefile.toml`)
-- **Current active portfolio:** WS-C1..WS-C8 (WS-C1..WS-C5 completed; WS-C8 documentation consolidation in progress)
+- **Current package version:** `0.10.5` (`lakefile.toml`)
+- **Current active portfolio:** WS-C1..WS-C8 (WS-C1..WS-C6 completed; WS-C7 planned; WS-C8 documentation consolidation in progress)
 
 ## Specifications
 
@@ -58,7 +58,7 @@ Quick index. Full contracts and dependencies are in the v0.9.32 planning backbon
 - **WS-C3:** Proof-surface de-tautologization -- completed
 - **WS-C4:** Test validity hardening -- completed
 - **WS-C5:** Information-flow assurance -- completed
-- **WS-C6:** CI and supply-chain hardening
+- **WS-C6:** CI and supply-chain hardening -- completed
 - **WS-C7:** Model structure and maintainability
 - **WS-C8:** Documentation and GitBook consolidation (in progress)
 

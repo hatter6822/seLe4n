@@ -20,9 +20,9 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -32,8 +32,8 @@ jobs:
           NIGHTLY_ENABLE_EXPERIMENTAL: '1'
         run: ./scripts/ci_capture_timing.sh nightly ./scripts/test_nightly.sh
 
-      - name: Collect nightly smoke flake telemetry (2 attempts)
-        run: ./scripts/ci_flake_probe.sh nightly-smoke-repeat 2 ./scripts/test_smoke.sh
+      - name: Collect nightly smoke flake telemetry (default 3 attempts)
+        run: ./scripts/ci_flake_probe.sh nightly-smoke-repeat ./scripts/test_smoke.sh
 
       - name: Upload nightly trace artifacts
         if: always()

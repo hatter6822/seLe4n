@@ -26,9 +26,9 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -68,9 +68,9 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -101,9 +101,9 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
@@ -145,9 +145,9 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
