@@ -6,12 +6,12 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 + WS-C8 completed)**,
-- completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
-- completed predecessor before that: **M6 architecture-boundary hardening**.
+- active: **v0.11.0 WS-D execution (WS-D1 completed; WS-D2..WS-D6 planned)**,
+- completed predecessor: **WS-C portfolio (WS-C1..WS-C8 completed)**,
+- completed predecessor before that: **M7 remediation (WS-A1..WS-A8)**.
 
 Canonical planning source:
-[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 
 ---
 
