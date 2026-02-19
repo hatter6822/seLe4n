@@ -7,7 +7,7 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_v0.11.0.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-D portfolio status (WS-D1 completed; WS-D2..WS-D6 planned). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-D portfolio status (WS-D1, WS-D2 completed; WS-D3..WS-D6 planned). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
 | IPC/scheduler/capability/info-flow invariants remain in active proof surface. | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh` | Direct symbol + theorem + doc anchor checks. |
@@ -28,9 +28,9 @@ The following categories of theorems exist in the proof surface. Claims about pr
 
 | ID | Description | Workstream | Status |
 |---|---|---|---|
-| TPI-D01 | Scheduler non-interference preservation | WS-D2 | OPEN |
-| TPI-D02 | Capability operations non-interference preservation | WS-D2 | OPEN |
-| TPI-D03 | Lifecycle operations non-interference preservation | WS-D2 | OPEN |
+| TPI-D01 | Scheduler non-interference preservation | WS-D2 | CLOSED |
+| TPI-D02 | Capability operations non-interference preservation | WS-D2 | CLOSED |
+| TPI-D03 | Lifecycle operations non-interference preservation | WS-D2 | CLOSED |
 | TPI-D04 | Badge-override safety in cspaceMint | WS-D3 | OPEN |
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | OPEN |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | OPEN |

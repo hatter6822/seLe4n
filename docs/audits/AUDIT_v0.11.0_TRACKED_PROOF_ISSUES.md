@@ -10,97 +10,71 @@ Status legend:
 
 ---
 
-## Issue TPI-D01 (OPEN) — Non-interference preservation for scheduler operations
+## Issue TPI-D01 (CLOSED) — Non-interference preservation for scheduler operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Only `endpointSend_preserves_lowEquivalent` exists. No theorem proves that scheduler operations preserve low-equivalence for unrelated observers.
+- **Resolution:** Implemented `chooseThread_preserves_lowEquivalent` in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The proof shows that `chooseThread` does not modify system state, so low-equivalence is trivially preserved. No `sorry` debt.
 
-Required theorem obligation:
+Closed theorem:
 
 ```lean
-/-- Choosing the next thread does not leak high-domain scheduling
-    decisions to a low-clearance observer. -/
-theorem schedulerChooseThread_preserves_lowEquivalent
+theorem chooseThread_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hR1 : ∃ r1, schedulerChooseThread s₁ = .ok r1)
-    (hR2 : ∃ r2, schedulerChooseThread s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (schedulerChooseThread s₁).toOption.get!.2
-      (schedulerChooseThread s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
+    (hLow : lowEquivalent ctx observer s₁ s₂) :
+    ∀ (tid₁ : ThreadId) (st₁' : SystemState)
+      (tid₂ : ThreadId) (st₂' : SystemState),
+      chooseThread s₁ = .ok (tid₁, st₁') →
+      chooseThread s₂ = .ok (tid₂, st₂') →
+      lowEquivalent ctx observer st₁' st₂'
 ```
 
 ---
 
-## Issue TPI-D02 (OPEN) — Non-interference preservation for capability operations
+## Issue TPI-D02 (CLOSED) — Non-interference preservation for capability operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Capability operations (`cspaceMint`, `cspaceRevoke`) have no non-interference preservation proofs.
+- **Resolution:** Implemented `cspaceMint_preserves_lowEquivalent` and `cspaceRevoke_preserves_lowEquivalent` in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The mint proof decomposes through `cspaceInsertSlot` preservation helpers; the revoke proof uses `clearCapabilityRefsState` preservation lemmas. No `sorry` debt.
 
-Required theorem obligations:
+Closed theorem obligations:
 
 ```lean
-/-- Minting a capability by a high-domain authority does not affect
-    a low observer's view of the system. -/
 theorem cspaceMint_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
-    (authority target : ObjId) (srcSlot destSlot : Slot)
-    (newRights : CapRights) (newBadge : Badge)
-    (s₁ s₂ : SystemState)
+    (src dst : CSpaceAddr) (rights : List AccessRight)
+    (badge : Option Badge) (s₁ s₂ : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer authority)
-    (hR1 : ∃ r1, cspaceMint authority target srcSlot destSlot newRights newBadge s₁ = .ok r1)
-    (hR2 : ∃ r2, cspaceMint authority target srcSlot destSlot newRights newBadge s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (cspaceMint authority target srcSlot destSlot newRights newBadge s₁).toOption.get!.2
-      (cspaceMint authority target srcSlot destSlot newRights newBadge s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
+    (hObs : ¬ objectObservable ctx observer src.cnode)
+    -- ... (proves low-equivalence preserved when mint acts on unobservable CNode)
 
-/-- Revoking capabilities by a high-domain authority preserves
-    a low observer's view. -/
 theorem cspaceRevoke_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
-    (cnodeId : ObjId) (slot : Slot)
-    (s₁ s₂ : SystemState)
+    (addr : CSpaceAddr) (s₁ s₂ : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer cnodeId)
-    (hR1 : ∃ r1, cspaceRevoke cnodeId slot s₁ = .ok r1)
-    (hR2 : ∃ r2, cspaceRevoke cnodeId slot s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (cspaceRevoke cnodeId slot s₁).toOption.get!.2
-      (cspaceRevoke cnodeId slot s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
+    (hObs : ¬ objectObservable ctx observer addr.cnode)
+    -- ... (proves low-equivalence preserved when revoke acts on unobservable CNode)
 ```
 
 ---
 
-## Issue TPI-D03 (OPEN) — Non-interference preservation for lifecycle operations
+## Issue TPI-D03 (CLOSED) — Non-interference preservation for lifecycle operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Lifecycle operations have no non-interference proofs. Retyping could leak metadata to unauthorized observers.
+- **Resolution:** Implemented `lifecycleRetypeObject_preserves_lowEquivalent` in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The proof delegates to the shared `storeObject_at_unobservable_preserves_lowEquivalent` infrastructure. No `sorry` debt.
 
-Required theorem obligation:
+Closed theorem obligation:
 
 ```lean
-/-- Retyping an object by a high-domain authority does not affect
-    a low observer's view. -/
 theorem lifecycleRetypeObject_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
-    (authority untypedId : ObjId) (newType : ObjectType) (newId : ObjId)
+    (srcId newId : ObjId) (newType : KernelObjectType)
     (s₁ s₂ : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer authority)
-    (hR1 : ∃ r1, lifecycleRetypeObject authority untypedId newType newId s₁ = .ok r1)
-    (hR2 : ∃ r2, lifecycleRetypeObject authority untypedId newType newId s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (lifecycleRetypeObject authority untypedId newType newId s₁).toOption.get!.2
-      (lifecycleRetypeObject authority untypedId newType newId s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
+    (hObs : ¬ objectObservable ctx observer newId)
+    -- ... (proves low-equivalence preserved when retype stores to unobservable ID)
 ```
 
 ---

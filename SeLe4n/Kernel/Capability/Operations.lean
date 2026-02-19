@@ -60,6 +60,79 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
         | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
     | _ => .error .objectNotFound
 
+theorem cspaceInsertSlot_preserves_scheduler
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          have hSchedStore : ∀ st₁ st₂, storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st₁ = .ok ((), st₂) → st₂.scheduler = st₁.scheduler :=
+            fun _ _ h => storeObject_scheduler_eq _ _ _ _ h
+          cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hSchedMid := hSchedStore st stMid hStore
+              have hSchedRef := storeCapabilityRef_preserves_scheduler stMid st' addr (some cap.target) hStep
+              rw [hSchedRef, hSchedMid]
+
+theorem cspaceInsertSlot_preserves_services
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.services = st.services := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hSvcMid := storeObject_preserves_services st stMid addr.cnode (.cnode (cn.insert addr.slot cap)) hStore
+              have hSvcRef := storeCapabilityRef_preserves_services stMid st' addr (some cap.target) hStep
+              rw [hSvcRef, hSvcMid]
+
+theorem cspaceInsertSlot_preserves_objects_ne
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (oid : SeLe4n.ObjId)
+    (hNe : oid ≠ addr.cnode)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hObjMid := storeObject_objects_ne st stMid addr.cnode oid (.cnode (cn.insert addr.slot cap)) hNe hStore
+              have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+              rw [← hObjMid]; exact congrFun hObjRef oid
+
 theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     (st : SystemState)
     (addr : CSpaceAddr)
