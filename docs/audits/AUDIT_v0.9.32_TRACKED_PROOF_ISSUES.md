@@ -1,6 +1,6 @@
 # AUDIT v0.9.32 — Tracked Proof Issues and Follow-up Obligations
 
-This document tracks proof obligations intentionally deferred while WS-C1..WS-C8 are executed.
+This document tracks proof obligations intentionally deferred during WS-C execution and carried forward after WS-C1..WS-C8 completion.
 
 Status legend:
 

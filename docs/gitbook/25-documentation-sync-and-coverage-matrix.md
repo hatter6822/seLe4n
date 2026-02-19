@@ -20,7 +20,8 @@ Use this chapter during doc/planning reviews to ensure:
 - planning docs (`docs/audits/AUDIT_v0.9.32*.md`, including tracked proof issues + chapter 24),
 - workflow/test policy docs (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md`, chapter 07),
 - roadmap/spec docs (`docs/spec/SELE4N_SPEC.md`, `docs/spec/SEL4_SPEC.md`, chapter 05, chapter 22),
-- dedup ownership docs (`docs/DOCS_DEDUPLICATION_MAP.md`, chapter 27).
+- dedup ownership docs (`docs/DOCS_DEDUPLICATION_MAP.md`, chapter 27),
+- claim/evidence index (`docs/CLAIM_EVIDENCE_INDEX.md`, chapter 31).
 
 ## 3) Validation minimum
 

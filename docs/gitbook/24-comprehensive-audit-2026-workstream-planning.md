@@ -13,7 +13,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 - **Findings baseline:** `AUDIT_v0.9.32.md`
 - **Execution baseline:** `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
 - **Tracked theorem obligations:** `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
-- **Current planning stage:** Phase P3 sustainment closeout (WS-C7 completed; documentation baseline maintenance remains active in WS-C8).
+- **Current planning stage:** Phase P3 sustainment closeout complete (WS-C7 + WS-C8 completed; WS-C portfolio closed).
 
 ## 2) Active workstreams (WS-C portfolio)
 
@@ -32,7 +32,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 
 - **WS-C6:** CI and supply-chain hardening (medium; completed)
 - **WS-C7:** Model structure and maintainability (medium; completed — finite object-index staging + `ServiceId` wrapper migration + VSpace lookup cleanup + ADR delivered)
-- **WS-C8:** Documentation and GitBook consolidation (high, in progress)
+- **WS-C8:** Documentation and GitBook consolidation (high, completed)
 
 ## 3) Updating status
 
@@ -42,7 +42,8 @@ When any WS-C status changes, update all of the following in the same PR:
 2. `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` (if theorem obligations/status changed)
 3. `README.md` (current state + quick index)
 4. `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`
-5. this chapter (`24-comprehensive-audit-2026-workstream-planning.md`)
+5. `docs/CLAIM_EVIDENCE_INDEX.md` (when baseline claims/evidence mapping changes)
+6. this chapter (`24-comprehensive-audit-2026-workstream-planning.md`)
 
 ## 4) Historical references
 

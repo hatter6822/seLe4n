@@ -1,3 +1,19 @@
+## [0.11.0] - 2026-02-19
+
+### WS-C8 post-merge audit refinement and minor release
+- Performed an end-to-end documentation/codebase synchronization audit after WS-C8 completion and corrected residual status drift in the seLe4n spec (`WS-C portfolio` summary now consistently states WS-C1..WS-C8 completed).
+- Refined carried-forward proof-issue tracker wording to reflect that WS-C execution is complete and obligations remain intentionally tracked post-closeout.
+- Revalidated docs automation + smoke/full/nightly experimental gates to confirm runtime, proof-surface, and documentation anchors are synchronized.
+- Bumped minor version to **`0.11.0`** and synchronized version markers in root/spec metadata.
+
+## [0.10.8] - 2026-02-19
+
+### WS-C8 documentation and GitBook consolidation completion
+- Marked WS-C8 as completed across canonical planning docs, root guides, and GitBook mirrors so active portfolio status is consistently closed (WS-C1..WS-C8 complete).
+- Added a canonical claim/evidence audit index (`docs/CLAIM_EVIDENCE_INDEX.md`) plus a GitBook pointer chapter (`docs/gitbook/31-claim-vs-evidence-index.md`).
+- Refreshed documentation ownership/synchronization matrices and planning companion links to include the new claim/evidence index.
+- Bumped patch version to **`0.10.8`** and synchronized version markers.
+
 ## [0.10.7] - 2026-02-19
 
 ### Documentation correctness and WS-C7 refinement follow-up

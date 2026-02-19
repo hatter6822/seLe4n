@@ -23,8 +23,8 @@
 
 - **Active findings baseline:** `docs/audits/AUDIT_v0.9.32.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.10.7` (`lakefile.toml`)
-- **Current active portfolio:** WS-C1..WS-C8 (WS-C1..WS-C7 completed; WS-C8 documentation consolidation in progress)
+- **Current package version:** `0.11.0` (`lakefile.toml`)
+- **Current active portfolio:** WS-C1..WS-C8 (all workstreams completed)
 
 ## Specifications
 
@@ -76,7 +76,7 @@ Quick index. Full contracts and dependencies are in the v0.9.32 planning backbon
 - **WS-C5:** Information-flow assurance -- completed
 - **WS-C6:** CI and supply-chain hardening -- completed
 - **WS-C7:** Model structure and maintainability -- completed
-- **WS-C8:** Documentation and GitBook consolidation (in progress)
+- **WS-C8:** Documentation and GitBook consolidation -- completed
 
 Primary references:
 - [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)

@@ -230,7 +230,7 @@ Each workstream PR must include:
 | WS-C5 | Completed | Information Flow | Added observer-scoped service visibility filtering and `endpointSend_preserves_lowEquivalent` theorem with Tier-2/Tier-3 evidence. |
 | WS-C6 | Completed | CI & Supply Chain | Architecture-safe cache keys, toolchain tag format sanitization, default 3-attempt flake probes, and bounded hygiene marker regex. |
 | WS-C7 | Completed | Kernel Architecture | ServiceId wrapper migration, finite object-index tracking, VSpace lookup cleanup, and maintainability ADR evidence merged. |
-| WS-C8 | In Progress | Documentation | Documentation/GitBook re-baseline and detailed workstream specification. |
+| WS-C8 | Completed | Documentation | Documentation/GitBook consolidation closed with claim/evidence index and root↔GitBook sync matrix refresh. |
 
 ## 9) Canonical companion documents
 
@@ -238,3 +238,4 @@ Each workstream PR must include:
 - Tracked theorem obligations: [`AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
 - Prior historical plan (superseded for active planning): [`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./AUDIT_v0.9.0_WORKSTREAM_PLAN.md)
 - Documentation synchronization policy: [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
+- Claim/evidence audit index: [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md)
