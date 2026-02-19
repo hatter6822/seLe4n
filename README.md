@@ -7,8 +7,8 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 
 - **Active findings baseline:** `docs/audits/AUDIT_v0.9.32.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.10.0` (`lakefile.toml`)
-- **Current active portfolio:** WS-C1..WS-C8 (WS-C8 documentation consolidation in progress)
+- **Current package version:** `0.10.2` (`lakefile.toml`)
+- **Current active portfolio:** WS-C1..WS-C8 (WS-C1..WS-C4 completed; WS-C8 documentation consolidation in progress)
 
 Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
 
@@ -31,7 +31,7 @@ Use this as a quick index. Full contracts and dependencies are in the v0.9.32 pl
 - **WS-C1:** IPC handshake correctness ✅ completed (notification badge accumulation + waiter ipcState transitions landed)
 - **WS-C2:** Scheduler semantic fidelity ✅
 - **WS-C3:** Proof-surface de-tautologization ✅ completed (tautological `_deterministic` theorems removed; tracked replacements remain in TPI-001/TPI-002)
-- **WS-C4:** Test validity hardening
+- **WS-C4:** Test validity hardening ✅ completed (invariant-valid fixtures, post-op invariant assertions, and reproducible probe execution)
 - **WS-C5:** Information-flow assurance
 - **WS-C6:** CI and supply-chain hardening
 - **WS-C7:** Model structure and maintainability

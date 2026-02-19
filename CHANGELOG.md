@@ -1,3 +1,21 @@
+## [0.10.2] - 2026-02-19
+
+### WS-C4 hardening follow-up: invariant precision and negative-fixture cleanup
+- Refined invariant utility API with `stateInvariantChecksFor`/`assertStateInvariantsFor` so suites can validate exact fixture object inventories instead of relying only on a broad discovery window.
+- Removed negative-suite `invariantView` masking and reworked the empty-send endpoint case into a dedicated malformed test state, preserving strict invariant checks for all success-path fixtures.
+- Updated generative and trace harness callers to use explicit invariant object sets for stronger test validity guarantees and clearer intent.
+- Re-ran smoke/full/tier4 candidate gates to confirm deterministic behavior and documentation/test synchronization after the hardening refactor.
+- Bumped patch version to **`0.10.2`** and synchronized root version markers.
+
+## [0.10.1] - 2026-02-19
+
+### WS-C4 test validity hardening + workstream status sync
+- Added executable invariant check utilities for scheduler + IPC validity and reusable state assertions used by runtime suites.
+- Hardened negative and generative trace suites with post-success invariant assertions while preserving explicit invalid-fixture negative coverage.
+- Added baseline invariant assertions at main trace harness entry points.
+- Marked WS-C4 as completed across the active audit plan, root docs, and GitBook mirrors; synchronized Tier-3 documentation anchors accordingly.
+- Bumped patch version to **`0.10.1`** and synchronized root version markers.
+
 ## [0.10.0] - 2026-02-18
 
 ### WS-C3 completion hardening + docs-sync reliability + portfolio synchronization
@@ -177,6 +195,13 @@
 - Synchronized active-slice status across root docs/spec/development guide/GitBook and canonical workstream planning docs to mark WS-B4 complete.
 
 # Changelog
+
+## 2026-02-19 — WS-C4 test validity hardening + documentation sync
+
+- Completed **WS-C4 (Test validity hardening)** by adding executable invariant checks, asserting invariant validity at test fixture entry points, and enforcing post-success invariant checks in the negative state suite and trace probe.
+- Hardened `MainTraceHarness` by asserting baseline and post-schedule invariant validity before running the smoke trace sequence.
+- Updated active workstream status references across root docs and GitBook pages to mark WS-C4 as completed and reflect the next active execution focus.
+- Bumped patch version to **`0.10.1`** and synchronized root version markers.
 
 ## [0.9.9] - 2026-02-17
 
