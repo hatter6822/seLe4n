@@ -11,6 +11,10 @@
       "path": "01-project-overview.md"
     },
     {
+      "title": "Microkernel and seL4 Primer",
+      "path": "02-microkernel-and-sel4-primer.md"
+    },
+    {
       "title": "Architecture & Module Map",
       "path": "03-architecture-and-module-map.md"
     },
@@ -31,25 +35,13 @@
       "path": "24-comprehensive-audit-2026-workstream-planning.md"
     },
     {
-      "title": "Threat Model and Security Hardening (WS-B9)",
-      "path": "28-threat-model-and-security-hardening.md"
-    },
-    {
-      "title": "CI Maturity and Telemetry Baseline (WS-B10)",
-      "path": "29-ci-maturity-and-telemetry-baseline.md"
-    },
-    {
-      "title": "Documentation Sync and Coverage Matrix",
-      "path": "25-documentation-sync-and-coverage-matrix.md"
-    },
-    {
       "title": "Codebase Reference",
       "path": "11-codebase-reference.md"
     }
   ],
   "summary_sections": [
     {
-      "section": "Orientation",
+      "section": "Getting started",
       "pages": [
         {
           "title": "Project Overview",
@@ -70,7 +62,7 @@
       ]
     },
     {
-      "section": "Active slice and execution guidance",
+      "section": "Development essentials",
       "pages": [
         {
           "title": "Specification & Roadmap",
@@ -85,12 +77,25 @@
           "path": "07-testing-and-ci.md"
         },
         {
+          "title": "Codebase Reference",
+          "path": "11-codebase-reference.md"
+        },
+        {
+          "title": "Proof and Invariant Map",
+          "path": "12-proof-and-invariant-map.md"
+        }
+      ]
+    },
+    {
+      "section": "Active workstreams and planning",
+      "pages": [
+        {
           "title": "Comprehensive Audit 2026 Workstream Planning",
           "path": "24-comprehensive-audit-2026-workstream-planning.md"
         },
         {
-          "title": "WS-B1 ADR: VSpace + Bounded Memory Model Foundation",
-          "path": "26-ws-b1-vspace-memory-adr.md"
+          "title": "End-to-End Audit and Quality Gates",
+          "path": "19-end-to-end-audit-and-quality-gates.md"
         },
         {
           "title": "Threat Model and Security Hardening (WS-B9)",
@@ -101,24 +106,16 @@
           "path": "29-ci-maturity-and-telemetry-baseline.md"
         },
         {
+          "title": "WS-B1 ADR: VSpace + Bounded Memory Model Foundation",
+          "path": "26-ws-b1-vspace-memory-adr.md"
+        },
+        {
           "title": "Documentation Sync and Coverage Matrix",
           "path": "25-documentation-sync-and-coverage-matrix.md"
         },
         {
           "title": "Documentation Deduplication Map",
           "path": "27-documentation-deduplication-map.md"
-        },
-        {
-          "title": "Codebase Reference",
-          "path": "11-codebase-reference.md"
-        },
-        {
-          "title": "Proof and Invariant Map",
-          "path": "12-proof-and-invariant-map.md"
-        },
-        {
-          "title": "End-to-End Audit and Quality Gates",
-          "path": "19-end-to-end-audit-and-quality-gates.md"
         }
       ]
     },

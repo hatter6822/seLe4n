@@ -105,7 +105,7 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 For changes that alter behavior, theorem surfaces, or slice status, update in the same PR:
 
 1. `README.md`
-2. `docs/SEL4_SPEC.md`
+2. `docs/spec/SELE4N_SPEC.md` (and `docs/spec/SEL4_SPEC.md` if seL4 reference material changes)
 3. `docs/DEVELOPMENT.md`
 4. impacted GitBook chapter(s) and `docs/gitbook/SUMMARY.md` if IA changes
 5. any directly affected audit/workstream status document

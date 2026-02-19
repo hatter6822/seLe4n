@@ -21,7 +21,7 @@ Build a first hardware-instantiation lane that demonstrates:
 
 ## 3. Proposed workstreams for the next slice
 
-> Naming is provisional until ratified in `docs/SEL4_SPEC.md`.
+> Naming is provisional until ratified in `docs/spec/SELE4N_SPEC.md`.
 
 ### WS-N1 — Assumption-to-platform binding package
 

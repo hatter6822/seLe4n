@@ -12,7 +12,8 @@ Use this file during planning and PR review to keep documentation status aligned
 
 | Topic | Canonical document | GitBook chapter(s) | Sync rule |
 |---|---|---|---|
-| Milestones, scope, acceptance | `docs/SEL4_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
+| Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
+| seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
 | Active audit findings baseline | `docs/audits/AUDIT_v0.9.32.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
 | Active workstream execution portfolio | `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
 | Tracked theorem obligations (active) | `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Keep theorem tickets and closure status in audits dir; GitBook chapter references active obligations only. |

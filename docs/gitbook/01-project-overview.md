@@ -26,11 +26,17 @@ Closed baseline slices:
 - M3.5 waiting handshake + scheduler coherence,
 - M4-A lifecycle/retype foundations,
 - M4-B lifecycle-capability composition hardening,
-- M5 service-graph and policy-surface completion.
+- M5 service-graph and policy-surface completion,
+- M6 architecture-boundary assumptions/adapters/invariant hooks,
+- M7 audit remediation (WS-A1..WS-A8).
 
-Current completed slice:
+Previous completed audit portfolio:
 
 - **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1 through WS-B11 completed.
+
+Current active portfolio:
+
+- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C5 completed; WS-C6..WS-C8 in progress.
 
 ## 4. Architecture mental model
 
@@ -43,14 +49,17 @@ The codebase is organized as layered contracts:
 - **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
 - **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
 
-## 5. Current-slice outcomes (Comprehensive Audit 2026-02 / WS-B)
+## 5. Current-slice outcomes (WS-C portfolio)
 
-The completed slice is successful when contributors deliver all of the following:
+The active slice is successful when contributors deliver all of the following:
 
-1. closure of comprehensive-audit recommendations via WS-B workstreams,
+1. closure of comprehensive-audit recommendations via WS-C workstreams,
 2. deterministic CI + trace reproducibility preserved through every workstream increment,
 3. theorem/invariant surfaces remain discoverable and preservation-focused,
 4. synchronized updates across README/spec/development guide/GitBook + audit planning artifacts.
+
+For full project scope and milestone details, see [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
+For the seL4 microkernel reference, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
 See dedicated execution chapters: [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
 

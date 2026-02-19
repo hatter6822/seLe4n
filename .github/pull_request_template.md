@@ -17,7 +17,7 @@
 - [ ] GitBook mirrors synchronized in the same PR (`docs/gitbook/*`)
 - [ ] Generated navigation files refreshed (`scripts/generate_doc_navigation.py`)
 - [ ] Markdown-link automation passed (`scripts/test_docs_sync.sh`)
-- [ ] Active slice/workstream status synchronized across `README.md`, `docs/SEL4_SPEC.md`, `docs/DEVELOPMENT.md`, and `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`
+- [ ] Active slice/workstream status synchronized across `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/DEVELOPMENT.md`, and `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`
 - [ ] Any deferrals explicitly linked to owning workstream
 
 ## Risks / follow-ups

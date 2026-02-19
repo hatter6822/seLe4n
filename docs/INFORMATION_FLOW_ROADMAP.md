@@ -109,7 +109,7 @@ Deliverables:
 Exit evidence:
 
 - handoff checklist from model claims to platform obligations,
-- documentation sync across `docs/DEVELOPMENT.md`, `docs/SEL4_SPEC.md`, and GitBook next-slice chapter,
+- documentation sync across `docs/DEVELOPMENT.md`, `docs/spec/SELE4N_SPEC.md`, and GitBook next-slice chapter,
 - reproducible command evidence included in closeout PR.
 
 ## 5. Implementation guardrails

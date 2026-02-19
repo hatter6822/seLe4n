@@ -30,8 +30,10 @@ def format_readme(manifest: dict) -> str:
     for bullet in manifest["current_state_bullets"]:
         lines.append(f"- {bullet}")
     lines.append("")
-    lines.append("Normative scope and acceptance source:")
-    lines.append("[`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).")
+    lines.append("Specification documents:")
+    lines.append("")
+    lines.append("- **seLe4n project spec:** [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) -- normative scope, milestones, and acceptance criteria.")
+    lines.append("- **seL4 microkernel reference:** [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md) -- detailed summary of the original seL4 kernel semantics.")
     lines.append("")
     lines.append("## Recommended reading path (new developers)")
     lines.append("")

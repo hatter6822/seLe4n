@@ -10,7 +10,7 @@ hardening, theorem expansion, executable evidence, and test/doc synchronization.
 
 Use this with:
 
-- `docs/SEL4_SPEC.md` for normative scope,
+- `docs/spec/SELE4N_SPEC.md` for normative scope,
 - `docs/DEVELOPMENT.md` for proof and workflow standards,
 - `docs/TESTING_FRAMEWORK_PLAN.md` for tiered validation contracts.
 
