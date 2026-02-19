@@ -58,10 +58,10 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - **WS-D1:** Fix all three broken/weak executable test suites. **Completed.**
 - All three findings (F-01, F-03, F-04) resolved. Tier 0-3 gates pass.
 
-### Phase P2 — information-flow enforcement and proof (High)
+### Phase P2 — information-flow enforcement and proof (completed)
 
-- **WS-D2:** Wire policy enforcement into kernel operations; extend non-interference proofs beyond endpoint send.
-- Goal: close the gap between stated security aspirations and machine-checked evidence.
+- **WS-D2:** Wire policy enforcement into kernel operations; extend non-interference proofs beyond endpoint send. **Completed.**
+- All acceptance criteria met: `securityFlowsTo` enforced in three operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`), four additional non-interference theorems proved (`chooseThread`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetypeObject`), enforcement boundary documented. Tier 0-3 gates pass.
 
 ### Phase P3 — proof completion and kernel hardening (Medium)
 
@@ -405,7 +405,7 @@ Each workstream PR must include:
 | Workstream | Status | Priority | Findings | Notes |
 |---|---|---|---|---|
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
-| WS-D2 | Planned | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. |
+| WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed: enforcement in 3 operations, 4 additional non-interference theorems. |
 | WS-D3 | Planned | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). Carries TPI-001 from WS-C. |
 | WS-D4 | Planned | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, atomicity, double-wait). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
@@ -414,10 +414,10 @@ Each workstream PR must include:
 ## 9) Dependency graph
 
 ```
-Phase P0 (done)        Phase P1 (done)  Phase P2 (now)   Phase P3              Phase P4
+Phase P0 (done)        Phase P1 (done)  Phase P2 (done)  Phase P3 (now)        Phase P4
 ───────────────        ────────         ────────         ──────────            ────────
 Baseline transition → WS-D1 ─────────→ WS-D2 ─────────→ WS-D3 ──────────────→ WS-D5
-                      (completed)       │                WS-D4 (parallel) ────→ WS-D6
+                      (completed)       (completed)      WS-D4 (parallel) ────→ WS-D6
                                         │                  ↑
                                         └──────────────────┘
 ```

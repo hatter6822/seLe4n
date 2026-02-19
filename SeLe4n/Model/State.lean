@@ -17,6 +17,7 @@ inductive KernelError where
   | vspaceRootInvalid
   | mappingConflict
   | translationFault
+  | flowDenied
   | notImplemented
   deriving Repr, DecidableEq
 
@@ -206,6 +207,38 @@ theorem setServiceStatusState_preserves_objects
   unfold setServiceStatusState lookupService
   cases hSvc : st.services sid <;> simp [storeServiceState]
 
+theorem storeObject_preserves_services
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.services = st.services := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+theorem storeCapabilityRef_preserves_scheduler
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
+
+theorem storeCapabilityRef_preserves_services
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.services = st.services := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
+
 theorem storeCapabilityRef_preserves_objects
     (st st' : SystemState)
     (ref : SlotRef)
@@ -241,6 +274,45 @@ theorem clearCapabilityRefs_preserves_objects
   unfold clearCapabilityRefs at hStep
   cases hStep
   simpa using clearCapabilityRefsState_preserves_objects refs st
+
+theorem clearCapabilityRefsState_preserves_scheduler
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).scheduler = st.scheduler := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simpa [clearCapabilityRefsState] using
+        ih {
+          st with
+            lifecycle := {
+              st.lifecycle with
+                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+            }
+        }
+
+theorem clearCapabilityRefsState_preserves_services
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).services = st.services := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simpa [clearCapabilityRefsState] using
+        ih {
+          st with
+            lifecycle := {
+              st.lifecycle with
+                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+            }
+        }
+
+theorem clearCapabilityRefsState_lookupService
+    (refs : List SlotRef)
+    (st : SystemState)
+    (sid : ServiceId) :
+    lookupService (clearCapabilityRefsState refs st) sid = lookupService st sid := by
+  simp [lookupService, clearCapabilityRefsState_preserves_services]
 
 theorem storeCapabilityRef_lookup_eq
     (st st' : SystemState)

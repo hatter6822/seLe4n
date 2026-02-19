@@ -217,6 +217,83 @@ private def runInformationFlowChecks : IO Unit := do
   expect "both observers see public service"
     (adminSvc2.isSome && publicSvc2.isSome)
 
+  -- === WS-D2 enforcement boundary checks (F-02) ===
+
+  -- endpointSendChecked: public sender to public endpoint should succeed (same-domain flow)
+  let publicEndpointState :=
+    (BootstrapBuilder.empty
+      |>.withObject 10 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withRunnable [1]
+      |>.withCurrent (some 1)
+      |>.build)
+
+  let publicCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  -- Same-domain send should be allowed (same result as unchecked)
+  let checkedResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
+  expect "same-domain endpointSendChecked equals unchecked send"
+    (match checkedResult, uncheckedResult with
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects 10 = s₂.objects 10
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  -- Cross-domain send (secret sender → public endpoint) should be denied
+  let secretSenderCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun tid => if tid = 1 then secretLabel else publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let deniedResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
+  expect "secret-to-public endpointSendChecked returns flowDenied"
+    (match deniedResult with
+      | .error .flowDenied => true
+      | _ => false)
+
+  -- cspaceMintChecked: same-domain mint should be allowed
+  let mintState :=
+    (BootstrapBuilder.empty
+      |>.withObject 100 (.cnode { guard := 0, radix := 8, slots := [(0, { target := .object 200, rights := [.read, .write], badge := none })] })
+      |>.withObject 101 (.cnode { guard := 0, radix := 8, slots := [] })
+      |>.build)
+
+  let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := 100, slot := 0 }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := 101, slot := 0 }
+
+  let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr [.read] none mintState
+  let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr [.read] none mintState
+  expect "same-domain cspaceMintChecked matches unchecked mint"
+    (match checkedMint, uncheckedMint with
+      | .ok _, .ok _ => true
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  -- Cross-domain mint should be denied
+  let crossDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = 100 then secretLabel else publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr [.read] none mintState
+  expect "secret-to-public cspaceMintChecked returns flowDenied"
+    (match deniedMint with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "information-flow enforcement boundary checks passed [WS-D2 F-02]"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=

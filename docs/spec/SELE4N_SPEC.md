@@ -40,7 +40,7 @@ claims, and planning artifacts.
 
 ## 2. Current State Snapshot
 
-- **Current package version:** `0.11.0` (`lakefile.toml`)
+- **Current package version:** `0.11.1` (`lakefile.toml`)
 - **Active findings baseline:** [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md)
 - **Active execution baseline:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
 - **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
@@ -84,7 +84,7 @@ on the semantic and proof foundations of the previous one.
 ### 4.1 Critical/High — Test Validity and Security Assurance
 
 - **WS-D1:** Test error handling and validity (critical/high; **completed** — F-01, F-03, F-04)
-- **WS-D2:** Information-flow enforcement and proof (high; **planned** — F-02, F-05)
+- **WS-D2:** Information-flow enforcement and proof (high; **completed** — F-02, F-05)
 
 ### 4.2 Medium — Proof Completion and Kernel Hardening
 
@@ -105,7 +105,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 - **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
 - **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — current
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
 - **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
 - **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 

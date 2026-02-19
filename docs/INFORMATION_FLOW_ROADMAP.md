@@ -68,7 +68,7 @@ Exit evidence:
 - reusable relation helpers reduce duplicate proof burden,
 - local theorem docs explain observer model.
 
-## IF-M3 — Transition-level noninterference seeds
+## IF-M3 — Transition-level noninterference seeds ✅ completed (WS-D2)
 
 Deliverables:
 
@@ -83,6 +83,15 @@ Exit evidence:
 - transition-specific two-run theorems compile,
 - theorem naming aligns with existing preservation naming style,
 - failure-path behavior is included in relational statements.
+
+Delivered theorems (WS-D2 closeout):
+
+- `chooseThread_preserves_lowEquivalent` — scheduler non-interference (TPI-D01).
+- `endpointSend_preserves_lowEquivalent` — IPC endpoint non-interference (existing, simplified via shared infrastructure).
+- `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02).
+- `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02).
+- `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle retype non-interference (TPI-D03).
+- Shared infrastructure: `storeObject_at_unobservable_preserves_lowEquivalent`.
 
 ## IF-M4 — Bundle-level composition
 

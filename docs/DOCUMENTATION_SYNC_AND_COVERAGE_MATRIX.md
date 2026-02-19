@@ -53,7 +53,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (WS-D portfolio; WS-D1 completed, WS-D2..WS-D6 planned).
+- Active planning baseline: `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (WS-D portfolio; WS-D1, WS-D2 completed; WS-D3..WS-D6 planned).
 - Active findings baseline: `AUDIT_v0.11.0.md`.
 - Prior completed portfolio: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C1..WS-C8 completed).
 - Historical baseline retained for traceability: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md`.
