@@ -120,6 +120,10 @@
         {
           "title": "WS-C7 Model Structure and Maintainability (Completed)",
           "path": "30-ws-c7-model-structure-and-maintainability.md"
+        },
+        {
+          "title": "Claim vs Evidence Index",
+          "path": "31-claim-vs-evidence-index.md"
         }
       ]
     },

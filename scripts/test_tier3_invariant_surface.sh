@@ -75,7 +75,7 @@ run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
 # shellcheck disable=SC2016
-run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio; WS-C1..WS-C7 completed, WS-C8 actively progressing\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
+run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio; WS-C1..WS-C8 completed\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
 run_check "DOC" rg -n '(^# Documentation Deduplication Map \(WS-B8\)$)|(^# Documentation Deduplication Map \(WS-C8\)$)' docs/DOCS_DEDUPLICATION_MAP.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
 run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py

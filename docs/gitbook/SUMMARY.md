@@ -29,6 +29,7 @@
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 - [WS-C7 Model Structure and Maintainability (Completed)](30-ws-c7-model-structure-and-maintainability.md)
+- [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
 
 ## Transition and long-horizon path
 

@@ -18,6 +18,7 @@ This document defines the canonical-vs-mirror split used to reduce drift between
 | Contributor workflow expectations | `docs/DEVELOPMENT.md` | `docs/gitbook/06-development-workflow.md` | Keep checklists canonical in root doc; mirror chapter keeps lightweight guidance. |
 | Test/CI evidence contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `docs/gitbook/07-testing-and-ci.md` | Root docs own gate semantics and policy details; chapter links and summarizes. |
 | Documentation synchronization governance | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `docs/gitbook/25-documentation-sync-and-coverage-matrix.md`, `docs/gitbook/27-documentation-deduplication-map.md` | Keep canonical matrices in root; GitBook points readers at canonical tables. |
+| Claim/audit evidence mapping | `docs/CLAIM_EVIDENCE_INDEX.md` | `docs/gitbook/31-claim-vs-evidence-index.md` | Root file owns claim→evidence rows; GitBook chapter remains a pointer only. |
 
 ## 3) Automation hooks
 
@@ -36,4 +37,5 @@ For planning/docs workstreams (including WS-C8+), PRs should explicitly confirm:
 - GitBook mirrors were synchronized in the same PR,
 - generated navigation outputs were regenerated,
 - markdown-link checks passed,
-- active-slice status text is consistent across README/spec/development/workstream plan/chapter 24.
+- active-slice status text is consistent across README/spec/development/workstream plan/chapter 24,
+- claim/evidence rows are updated when baseline claims or validation commands change.

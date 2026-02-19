@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit v0.9.32 WS-C execution with WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 completed and WS-C8 documentation consolidation in progress; testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **Comprehensive Audit v0.9.32 WS-C execution with WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 + WS-C8 completed; testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 

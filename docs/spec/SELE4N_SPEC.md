@@ -40,11 +40,11 @@ claims, and planning artifacts.
 
 ## 2. Current State Snapshot
 
-- **Current package version:** `0.10.7` (`lakefile.toml`)
+- **Current package version:** `0.11.0` (`lakefile.toml`)
 - **Active findings baseline:** [`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md)
 - **Active execution baseline:** [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
-- **Current active portfolio:** WS-C1..WS-C8 (WS-C1..WS-C7 completed; WS-C8 in progress)
-- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 completed; WS-C8 in progress).
+- **Current active portfolio:** WS-C1..WS-C8 (all workstreams completed)
+- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 + WS-C8 completed).
 
 ---
 
@@ -75,8 +75,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.3 Active Audit Portfolio
 
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C5 completed;
-  WS-C8 in progress (WS-C7 completed).
+- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C8 completed.
 
 ---
 
@@ -98,7 +97,7 @@ on the semantic and proof foundations of the previous one.
 
 - **WS-C6:** CI and supply-chain hardening (medium; completed)
 - **WS-C7:** Model structure and maintainability (medium; completed)
-- **WS-C8:** Documentation and GitBook consolidation (high; **in progress**)
+- **WS-C8:** Documentation and GitBook consolidation (high; **completed**)
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
@@ -107,7 +106,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 ## 5. Execution Phases
 
-- **Phase P0:** WS-C8 baseline reset + active-plan publication (in progress)
+- **Phase P0:** WS-C8 baseline reset + active-plan publication (completed)
 - **Phase P1:** WS-C4 fixture-repair completion with WS-C3 already closed
   (WS-C1 + WS-C2 + WS-C3 + WS-C4 completed)
 - **Phase P2:** WS-C5 assurance expansion (completed)
