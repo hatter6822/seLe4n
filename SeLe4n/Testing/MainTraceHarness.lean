@@ -1,6 +1,7 @@
 import SeLe4n
 import SeLe4n.Testing.RuntimeContractFixtures
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.InvariantChecks
 
 open SeLe4n.Model
 
@@ -21,6 +22,9 @@ def svcDenied : ServiceId := 102
 def svcBroken : ServiceId := 103
 def svcRestart : ServiceId := 104
 def svcRestartBroken : ServiceId := 105
+
+def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
+  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, 200]
 
 def bootstrapState : SystemState :=
   (SeLe4n.Testing.BootstrapBuilder.empty
@@ -415,6 +419,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"minted cap rights: {reprStr cap.rights}"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
+  assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
   | .error err => IO.println s!"source lookup error: {reprStr err}"
   | .ok (srcCap, _) =>
@@ -431,9 +436,11 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runLifecycleAndEndpointTrace st1
 
 def runMainTrace : IO Unit := do
+  assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState
   match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st1) =>
+      assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1
       IO.println s!"scheduled thread: {reprStr (st1.scheduler.current.map SeLe4n.ThreadId.toNat)}"
       runMainTraceFrom st1
 

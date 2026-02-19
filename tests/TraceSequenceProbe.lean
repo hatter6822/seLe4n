@@ -1,4 +1,5 @@
 import SeLe4n
+import SeLe4n.Testing.InvariantChecks
 
 open SeLe4n.Model
 
@@ -40,6 +41,15 @@ def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   | .receive, true, true => true
   | _, _, _ => false
 
+def probeInvariantObjectIds : List SeLe4n.ObjId := [probeEndpointId]
+
+def checkStateInvariants (st : SystemState) : Except String Unit :=
+  let failures := (stateInvariantChecksFor probeInvariantObjectIds st).filterMap fun (label, ok) => if ok then none else some label
+  if failures.isEmpty then
+    .ok ()
+  else
+    .error s!"state invariant mismatch: {reprStr failures}"
+
 def checkEndpointConsistency (st : SystemState) : Except String Unit :=
   match st.objects probeEndpointId with
   | some (.endpoint ep) =>
@@ -67,6 +77,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : SystemSta
 
 partial def runProbeLoop (steps : Nat) (seed : Nat) (st : SystemState) : Except String Unit := do
   checkEndpointConsistency st
+  checkStateInvariants st
   if steps = 0 then
     .ok ()
   else

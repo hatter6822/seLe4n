@@ -1,5 +1,6 @@
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.InvariantChecks
 
 open SeLe4n.Model
 
@@ -47,7 +48,6 @@ private def baseState : SystemState :=
         })
       ]
     })
-    |>.withObject sendEmptyEndpointId (.endpoint { state := .send, queue := [], waitingReceiver := none })
     |>.withObject 7 (.tcb {
       tid := 7
       priority := 42
@@ -72,7 +72,6 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType wrongTypeId .endpoint
     |>.withLifecycleObjectType guardedCnodeId .cnode
-    |>.withLifecycleObjectType sendEmptyEndpointId .endpoint
     |>.withLifecycleObjectType 7 .tcb
     |>.withLifecycleObjectType 8 .tcb
     |>.withLifecycleObjectType notificationId .notification
@@ -80,6 +79,18 @@ private def baseState : SystemState :=
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.withRunnable [7, 8]
     |>.build)
+
+private def invariantObjectIds : List SeLe4n.ObjId :=
+  [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 7, 8]
+
+private def sendEmptyEndpointState : SystemState :=
+  { baseState with
+    objects := fun oid =>
+      if oid = sendEmptyEndpointId then
+        some (.endpoint { state := .send, queue := [], waitingReceiver := none })
+      else
+        baseState.objects oid
+  }
 
 private def expectError
     (label : String)
@@ -94,6 +105,18 @@ private def expectError
       else
         throw <| IO.userError s!"{label}: expected {reprStr expected}, got {reprStr err}"
 
+private def expectOkState
+    (label : String)
+    (actual : Except KernelError (α × SystemState)) : IO (α × SystemState) :=
+  match actual with
+  | .ok result => do
+      IO.println s!"positive check passed [{label}]"
+      let (_, st) := result
+      assertStateInvariantsFor label invariantObjectIds st
+      pure result
+  | .error err =>
+      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+
 private def expectOk
     (label : String)
     (actual : Except KernelError α) : IO α :=
@@ -105,6 +128,7 @@ private def expectOk
       throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
 
 private def runNegativeChecks : IO Unit := do
+  assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectError "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
     .objectNotFound
@@ -125,24 +149,24 @@ private def runNegativeChecks : IO Unit := do
     .endpointStateMismatch
 
   expectError "endpoint receive send-state empty queue"
-    (SeLe4n.Kernel.endpointReceive sendEmptyEndpointId baseState)
+    (SeLe4n.Kernel.endpointReceive sendEmptyEndpointId sendEmptyEndpointState)
     .endpointQueueEmpty
 
   expectError "vspace lookup missing asid"
     (SeLe4n.Kernel.Architecture.vspaceLookup 99 vaddrPrimary baseState)
     .asidNotBound
 
-  let (_, stMapped) ← expectOk "vspace map initial"
+  let (_, stMapped) ← expectOkState "vspace map initial"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary baseState)
 
   expectError "vspace duplicate map conflict"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary stMapped)
     .mappingConflict
 
-  let (_, stAwait) ← expectOk "await receive handshake seed"
+  let (_, stAwait) ← expectOkState "await receive handshake seed"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
-  let (waitBadge, stN1) ← expectOk "notification wait blocks with none"
+  let (waitBadge, stN1) ← expectOkState "notification wait blocks with none"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) baseState)
   if waitBadge = none then
     IO.println "positive check passed [notification wait #1 none]"
@@ -157,7 +181,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification wait #1 expected blockedOnNotification ipcState"
   | _ => throw <| IO.userError "notification wait #1 expected waiter tcb"
 
-  let (_, stN2) ← expectOk "notification signal wakes waiter"
+  let (_, stN2) ← expectOkState "notification signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 55) stN1)
 
 
@@ -169,10 +193,10 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification signal wake expected waiter ipcState ready"
   | _ => throw <| IO.userError "notification signal wake expected waiter tcb"
 
-  let (_, stN3) ← expectOk "notification signal stores active badge"
+  let (_, stN3) ← expectOkState "notification signal stores active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
 
-  let (_, stN4) ← expectOk "notification signal accumulates active badge"
+  let (_, stN4) ← expectOkState "notification signal accumulates active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 5) stN3)
 
   match stN4.objects notificationId with
@@ -184,7 +208,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification active badge accumulation mismatch"
   | _ => throw <| IO.userError "notification signal expected notification object"
 
-  let (waitBadge2, _) ← expectOk "notification wait consumes active badge"
+  let (waitBadge2, _) ← expectOkState "notification wait consumes active badge"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN4)
   if waitBadge2 = none then
     throw <| IO.userError "notification wait #2 expected delivered badge"
@@ -222,14 +246,14 @@ private def runNegativeChecks : IO Unit := do
       |>.withRunnable [7, 8]
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
       |>.build)
-  let (_, stPriorityScheduled) ← expectOk "schedule chooses highest-priority runnable"
+  let (_, stPriorityScheduled) ← expectOkState "schedule chooses highest-priority runnable"
     (SeLe4n.Kernel.schedule schedPriorityState)
   if stPriorityScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule priority order]: current = tid 8"
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
-  let (_, stYielded) ← expectOk "yield rotates current within runnable queue"
+  let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
   if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 7] then
     IO.println "positive check passed [yield runnable rotation]: [8,7]"
