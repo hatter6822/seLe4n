@@ -11,7 +11,7 @@ If you are new to the repository, use this order:
 3. **CI required checks policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Project scope + active workstreams:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
 5. **seL4 microkernel reference:** [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md)
-6. **Workstream execution plan:** [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+6. **Workstream execution plan:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
 
 For a full chapter map, use the handbook index in [`docs/gitbook/README.md`](docs/gitbook/README.md).
 

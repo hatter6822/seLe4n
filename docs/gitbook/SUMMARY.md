@@ -21,6 +21,7 @@
 
 ## Active workstreams and planning
 
+- [v0.11.0 Audit Workstream Planning (WS-D)](32-v0.11.0-audit-workstream-planning.md)
 - [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
 - [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
