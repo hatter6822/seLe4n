@@ -10,20 +10,20 @@ This GitBook is the long-form guide for architecture, workflow, and milestone co
 - **Historical baseline retained for traceability:** WS-B portfolio (v0.9.0 plan).
 
 Normative scope and acceptance source:
-[`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
+Upstream seL4 microkernel reference:
+[`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
 ## Recommended reading path (new developers)
 
 1. [Project Overview](01-project-overview.md)
-2. [Architecture & Module Map](03-architecture-and-module-map.md)
-3. [Specification & Roadmap](05-specification-and-roadmap.md)
-4. [Development Workflow](06-development-workflow.md)
-5. [Testing & CI](07-testing-and-ci.md)
-6. [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-7. [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
-8. [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
-9. [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-10. [Codebase Reference](11-codebase-reference.md)
+2. [Microkernel and seL4 Primer](02-microkernel-and-sel4-primer.md)
+3. [Architecture & Module Map](03-architecture-and-module-map.md)
+4. [Specification & Roadmap](05-specification-and-roadmap.md)
+5. [Development Workflow](06-development-workflow.md)
+6. [Testing & CI](07-testing-and-ci.md)
+7. [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+8. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
 

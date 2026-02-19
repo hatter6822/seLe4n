@@ -1,7 +1,10 @@
 # Specification and Roadmap
 
-This chapter is the GitBook-facing translation of the normative spec in
-[`docs/SEL4_SPEC.md`](../SEL4_SPEC.md).
+This chapter is the GitBook-facing translation of the normative project spec in
+[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
+
+For the upstream seL4 microkernel reference, see
+[`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
 ## 1) Status snapshot
 

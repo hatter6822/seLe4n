@@ -20,7 +20,7 @@ Plan and execute workstreams that close **all recommendations and criticisms** f
 
 See also the documentation/test synchronization index: [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
 
-- Treat [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md) as normative scope/acceptance source.
+- Treat [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) as normative scope/acceptance source.
 - Treat this file as the **portfolio planner** and each workstream as execution slices.
 - Keep root docs concise and link-forward to canonical pages (avoid duplicated long-form policy text).
 - Every workstream PR must include: recommendation IDs closed, test/proof evidence, and doc synchronization.

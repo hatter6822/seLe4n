@@ -254,7 +254,8 @@ percentage.
 | Document | Lines | Purpose |
 |----------|-------|---------|
 | `README.md` | 72 | Quick start, repository map, milestone status |
-| `docs/SEL4_SPEC.md` | 372 | Normative specification baseline, acceptance criteria |
+| `docs/spec/SELE4N_SPEC.md` | -- | Normative specification baseline, acceptance criteria |
+| `docs/spec/SEL4_SPEC.md` | -- | Upstream seL4 microkernel reference |
 | `docs/DEVELOPMENT.md` | 369 | Contributor workflow, proof engineering standards |
 | `docs/TESTING_FRAMEWORK_PLAN.md` | 139 | Active testing baseline, tier signal map |
 | `docs/audits/AUDIT_v0.9.0.md` | 764 | Comprehensive end-to-end quality audit snapshot |
@@ -265,12 +266,12 @@ percentage.
 ### 4.2 Strengths
 
 - **Multiple entry points for different readers.** README for quick start,
-  DEVELOPMENT.md for contributors, SEL4_SPEC.md for normative baseline,
+  DEVELOPMENT.md for contributors, SELE4N_SPEC.md for normative baseline,
   GitBook for long-form orientation.
 - **Excellent cross-document synchronization.** M6 completion status, M7
   active status, Raspberry Pi 5 hardware direction, and test script
   references are consistent across all documents checked.
-- **Explicit change-control policies.** SEL4_SPEC.md (lines 301–309) defines
+- **Explicit change-control policies.** SELE4N_SPEC.md defines
   5 requirements for scope changes. DEVELOPMENT.md (lines 218–236) requires
   synchronized doc updates with any PR changing transitions or invariants.
 - **Obligation-based quality model.** Historical audit narratives clearly articulate
@@ -292,7 +293,7 @@ percentage.
   relationship (Scheduler -> Capability -> IPC -> Lifecycle -> Service ->
   Architecture) is implicit in import chains but never drawn.
 - **Pre-filled checklist item inconsistency.** Both `DEVELOPMENT.md:266` and
-  `SEL4_SPEC.md:317` have one item marked `[x] Preservation theorem
+  `SELE4N_SPEC.md` (formerly `SEL4_SPEC.md:317`) have one item marked `[x] Preservation theorem
   entrypoints compile.` while all other items remain `[ ]`. This is
   ambiguous: is it a template that contributors should leave checked, or
   was it accidentally committed?

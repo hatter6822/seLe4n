@@ -75,7 +75,7 @@ Deferred to M6:
 
 - historical context: [Completed Slice: M4-A](08-completed-slice-m4a.md)
 - immediate predecessor contracts: [Completed Slice: M4-B](16-completed-slice-m4b.md)
-- normative scope and acceptance criteria: [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md)
+- normative scope and acceptance criteria: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - broader roadmap: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
 
 

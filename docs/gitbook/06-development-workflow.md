@@ -58,6 +58,6 @@ Any behavior/proof/slice status change must update all impacted docs in one PR,
 including at minimum:
 
 - `README.md`
-- `docs/SEL4_SPEC.md`
+- `docs/spec/SELE4N_SPEC.md`
 - `docs/DEVELOPMENT.md`
 - affected GitBook chapter(s)

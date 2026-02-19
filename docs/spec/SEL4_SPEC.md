@@ -5,6 +5,10 @@ This document provides a detailed summary of the seL4 microkernel specification.
 in the L4 family. It is the world's first operating-system kernel with a machine-checked
 proof of functional correctness.
 
+This is a reference document for understanding the upstream seL4 design that seLe4n
+formalizes. For the seLe4n project's own specification, scope, milestones, and acceptance
+criteria, see [`docs/spec/SELE4N_SPEC.md`](./SELE4N_SPEC.md).
+
 ---
 
 ## Table of Contents
@@ -36,10 +40,8 @@ seL4 keeps only the minimal mechanisms required in kernel mode:
 - **Capability-based access control** mediating all authority in the system.
 - **Virtual memory primitives** providing hardware-level address-space management.
 
-- comprehensive-audit findings:
-  [`docs/audits/AUDIT_v0.9.32.md`](./audits/AUDIT_v0.9.32.md)
-- comprehensive-audit workstream execution plan:
-  [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+All policy (resource allocation, process management, driver management) is pushed to
+user-level components. The kernel enforces mechanism; user code defines policy.
 
 ---
 
@@ -51,13 +53,26 @@ is mediated exclusively by capabilities.
 
 ### 2.1 Platform-Independent Objects
 
-- **M4-A:** complete (lifecycle/retype foundations)
-- **M4-B:** complete (lifecycle-capability composition hardening)
-- M4-B (complete) baseline is retained for historical compatibility checks
-- **M5:** complete (service graph + policy surfaces + proof package)
-- **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
-- **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 completed; WS-C4+ follow-on execution in progress).
+| Object Type | Description |
+|---|---|
+| **Untyped** | Raw physical memory from which all other objects are created. |
+| **TCB** | Thread control block representing a schedulable execution context. |
+| **Endpoint** | Synchronous IPC rendezvous point for message passing. |
+| **Notification** | Asynchronous signalling object (binary semaphore array). |
+| **CNode** | Capability storage node containing a table of capability slots. |
+| **Reply** | (MCS only) Explicit reply capability object for IPC. |
+| **SchedContext** | (MCS only) CPU time budget encapsulation. |
+
+### 2.2 Architecture-Dependent Objects
+
+| Object Type | Description |
+|---|---|
+| **VSpace / PageDirectory / PML4** | Top-level paging structure (name varies by architecture). |
+| **PageTable** | Intermediate paging structure. |
+| **Frame (Page)** | Physical memory frame mappable into a virtual address space. |
+| **ASID Pool / ASID Control** | Address space identifier management. |
+| **IOPageTable / IODevice** | (x86 with IOMMU) DMA isolation structures. |
+| **VCPU** | Virtual CPU for hardware virtualization support. |
 
 ---
 
@@ -136,7 +151,7 @@ sender's badge, enabling sender identification. A badged capability is treated a
 
 ---
 
-## 4) Active slice specification: comprehensive-audit WS-C portfolio
+## 4. System Call Interface
 
 seL4 has a minimal system call interface. Logically, the kernel provides only three
 fundamental operations: **Send**, **Receive**, and **Yield**. All other calls are
@@ -155,25 +170,13 @@ combinations or variants of these.
 | `seL4_ReplyRecv(src, msgInfo, sender)` | Atomic reply + receive (combined for efficiency). |
 | `seL4_Yield()` | Donate the remaining timeslice to another thread of the same priority. |
 
-- **WS-C1:** IPC handshake correctness (critical; completed for notification badge accumulation and waiter ipcState wiring)
-- **WS-C2:** Scheduler semantic fidelity (high; completed)
-- **WS-C3:** Proof-surface de-tautologization (critical; completed)
-- **WS-C4:** Test validity hardening (high; kickoff starting)
-- **WS-C5:** Information-flow assurance (critical; Phase P2 target)
-- **WS-C6:** CI and supply-chain hardening (medium; Phase P3 target)
-- **WS-C7:** Model structure and maintainability (medium; Phase P3 target)
-- **WS-C8:** Documentation and GitBook consolidation (high; in progress)
+### 4.2 Notification-Specific Convenience Calls
 
 - `seL4_Signal(dest)` -- equivalent to `seL4_Send` on a Notification capability.
 - `seL4_Wait(src, sender)` -- equivalent to `seL4_Recv` on a Notification.
 - `seL4_Poll(src, sender)` -- non-blocking variant of `seL4_Wait`.
 
-- **P0:** WS-C8 baseline reset + active-plan publication (in progress)
-- **P1:** WS-C4 fixture-repair continuation with WS-C3 already closed (WS-C1 + WS-C2 + WS-C3 completed)
-- **P2:** WS-C5 + remaining WS-C4 assurance expansion
-- **P3:** WS-C6 + WS-C7 sustainment hardening
-
-### 4.4 Acceptance expectations for WS-C work
+### 4.3 MCS System Calls
 
 | System Call | Description |
 |---|---|
@@ -186,11 +189,6 @@ combinations or variants of these.
 
 `seL4_Reply` is removed as a standalone syscall in MCS; replies are always performed
 through explicit Reply objects.
-
-Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
-
-Security assumptions and trust boundaries for active and historical slices are documented in [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 
 ---
 
@@ -355,11 +353,11 @@ The root paging structure type is architecture-dependent:
 
 | Architecture | Top-Level Object | Paging Levels |
 |---|---|---|
-| x86_64 | PML4 | PML4 → PDPT → PageDirectory → PageTable → Frame |
-| IA-32 | PageDirectory | PageDirectory → PageTable → Frame |
-| AArch32 | PageDirectory | PageDirectory → PageTable → Frame |
-| AArch64 | VSpace | VSpace → PageTable → PageTable → PageTable → Frame |
-| RISC-V | PageTable | PageTable (at all levels) → Frame |
+| x86_64 | PML4 | PML4 -> PDPT -> PageDirectory -> PageTable -> Frame |
+| IA-32 | PageDirectory | PageDirectory -> PageTable -> Frame |
+| AArch32 | PageDirectory | PageDirectory -> PageTable -> Frame |
+| AArch64 | VSpace | VSpace -> PageTable -> PageTable -> PageTable -> Frame |
+| RISC-V | PageTable | PageTable (at all levels) -> Frame |
 
 ### 7.2 Page Mapping
 
@@ -635,17 +633,17 @@ seL4's verification is structured as a refinement proof chain in **Isabelle/HOL*
 
 ```
 Abstract Specification (Isabelle/HOL)
-        │
-        │  Functional Correctness Refinement
-        ▼
+        |
+        |  Functional Correctness Refinement
+        v
 Executable Specification (Haskell prototype)
-        │
-        │  Refinement
-        ▼
+        |
+        |  Refinement
+        v
 C Implementation (~10K SLOC)
-        │
-        │  Binary Verification (automated)
-        ▼
+        |
+        |  Binary Verification (automated)
+        v
 Machine Code (binary)
 ```
 

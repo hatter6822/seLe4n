@@ -12,7 +12,8 @@ This document defines the canonical-vs-mirror split used to reduce drift between
 
 | Topic | Canonical root file(s) | GitBook mirror chapter(s) | Mirror rule |
 |---|---|---|---|
-| Active scope, milestones, and acceptance | `docs/SEL4_SPEC.md` | `docs/gitbook/05-specification-and-roadmap.md` | Keep normative decisions in spec; chapter is digest + links only. |
+| Active scope, milestones, and acceptance | `docs/spec/SELE4N_SPEC.md` | `docs/gitbook/05-specification-and-roadmap.md` | Keep normative decisions in spec; chapter is digest + links only. |
+| Upstream seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `docs/gitbook/02-microkernel-and-sel4-primer.md` | Reference document; chapter summarizes and links back. |
 | Current execution workstreams | `docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` | `docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md` | Keep status/closure evidence canonical in audit plan; chapter tracks concise progress bullets. |
 | Contributor workflow expectations | `docs/DEVELOPMENT.md` | `docs/gitbook/06-development-workflow.md` | Keep checklists canonical in root doc; mirror chapter keeps lightweight guidance. |
 | Test/CI evidence contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `docs/gitbook/07-testing-and-ci.md` | Root docs own gate semantics and policy details; chapter links and summarizes. |

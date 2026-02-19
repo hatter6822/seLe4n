@@ -17,14 +17,15 @@
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
 - [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-- [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
 - [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
-- [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
-- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-- [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
+
+## Documentation governance
+
+- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
+- [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 
 ## Transition and long-horizon path
 
@@ -34,6 +35,8 @@
 
 ## Historical archive
 
+- [WS-B1 ADR: VSpace + Bounded Memory Model Foundation (WS-B)](26-ws-b1-vspace-memory-adr.md)
+- [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
 - [M7 Current Slice Outcomes and Workstreams (Historical)](21-m7-current-slice-outcomes-and-workstreams.md)
 - [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
 - [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)

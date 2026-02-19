@@ -10,19 +10,27 @@ seLe4n is a Lean 4 formalization project for an executable, machine-checked mode
 - **Current package version:** `0.10.0` (`lakefile.toml`)
 - **Current active portfolio:** WS-C1..WS-C8 (WS-C8 documentation consolidation in progress)
 
-Normative scope and acceptance criteria live in [`docs/SEL4_SPEC.md`](docs/SEL4_SPEC.md).
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project scope, milestones, and acceptance criteria |
+| [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) | Upstream seL4 microkernel specification reference |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Day-to-day contributor workflow |
+| [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md) | Testing tier contract (Tier 0-4) |
+| [`docs/CI_POLICY.md`](docs/CI_POLICY.md) | CI/CD policy and required checks |
+| [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) | Active workstream execution plan |
+| [`docs/gitbook/README.md`](docs/gitbook/README.md) | GitBook handbook index |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor onboarding guide |
+| [`CHANGELOG.md`](CHANGELOG.md) | Version history |
 
 ## Start here (new contributors)
 
-1. **Development workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
-2. **Testing and CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
-3. **Current audit workstream plan:**
-   [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
-4. **GitBook navigation hub:** [`docs/gitbook/README.md`](docs/gitbook/README.md)
-5. **Contribution mechanics:**
-
-- Contribution guide (root pointer): [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Change history: [`CHANGELOG.md`](CHANGELOG.md)
+1. **Project scope:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
+2. **Development workflow:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+3. **Testing and CI contract:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
+4. **Active workstream plan:** [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+5. **Contribution mechanics:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Active workstreams (WS-C)
 
@@ -64,15 +72,16 @@ lake exe sele4n
 
 ## Codebase map
 
-- `SeLe4n/Prelude.lean` — typed identifiers + monad foundations
-- `SeLe4n/Machine.lean` — machine state and primitive update helpers
-- `SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean` — core model entities and kernel/system state
-- `SeLe4n/Kernel/Scheduler/*` — scheduler transitions and invariants
-- `SeLe4n/Kernel/Capability/*` — CSpace/capability transitions and invariants
-- `SeLe4n/Kernel/IPC/*` — endpoint IPC transitions and invariants
-- `SeLe4n/Kernel/Lifecycle/*` — lifecycle/retype transitions and invariants
-- `SeLe4n/Kernel/Service/*` — service orchestration, policy checks, composed invariants
-- `SeLe4n/Kernel/Architecture/*` — architecture assumptions, adapter semantics, boundary invariants
-- `Main.lean` — executable trace/demo harness
-- `tests/fixtures/main_trace_smoke.expected` — stable trace expectation anchors
-- `scripts/test_tier*.sh` — tiered quality gates used by CI and local workflows
+- `SeLe4n/Prelude.lean` -- typed identifiers + monad foundations
+- `SeLe4n/Machine.lean` -- machine state and primitive update helpers
+- `SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean` -- core model entities and kernel/system state
+- `SeLe4n/Kernel/Scheduler/*` -- scheduler transitions and invariants
+- `SeLe4n/Kernel/Capability/*` -- CSpace/capability transitions and invariants
+- `SeLe4n/Kernel/IPC/*` -- endpoint IPC transitions and invariants
+- `SeLe4n/Kernel/Lifecycle/*` -- lifecycle/retype transitions and invariants
+- `SeLe4n/Kernel/Service/*` -- service orchestration, policy checks, composed invariants
+- `SeLe4n/Kernel/Architecture/*` -- architecture assumptions, adapter semantics, boundary invariants
+- `SeLe4n/Kernel/InformationFlow/*` -- information-flow policy and projection
+- `Main.lean` -- executable trace/demo harness
+- `tests/fixtures/main_trace_smoke.expected` -- stable trace expectation anchors
+- `scripts/test_tier*.sh` -- tiered quality gates used by CI and local workflows

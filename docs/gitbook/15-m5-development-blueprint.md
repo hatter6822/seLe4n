@@ -21,7 +21,7 @@ failure paths).
 
 ## 2. Development entry checklist (required before coding)
 
-1. confirm acceptance criteria in [`docs/SEL4_SPEC.md`](../SEL4_SPEC.md),
+1. confirm acceptance criteria in [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md),
 2. map planned changes to one or more M5 workstreams,
 3. define theorem names and invariant component names up front,
 4. define expected trace outputs before modifying fixtures,

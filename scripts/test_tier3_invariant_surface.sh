@@ -60,7 +60,7 @@ run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ 
 run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
 # shellcheck disable=SC2016
 run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.9\.32\.md`$)' README.md
-run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B1 through WS-B11 complete\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution kickoff \(Phase P0/P1 transition; execution now beginning on WS-C workstreams\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution \(WS-C1 \+ WS-C2 \+ WS-C3 completed; WS-C4\+ follow-on execution in progress\)\.$)' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution \(WS-C1 \+ WS-C2 \+ WS-C3 completed; WS-C4\+ follow-on execution in progress\)\.$)' docs/spec/SELE4N_SPEC.md
 run_check "DOC" rg -n '(^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.$)|(^Current completed slice:$)' docs/gitbook/01-project-overview.md
 run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^1\. Pick one coherent WS-B target\.$)|(^1\. Pick one coherent WS-C target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P2:\*\* WS-C5 \+ remaining WS-C4 assurance expansion$)' docs/gitbook/06-development-workflow.md
 run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; execution beginning\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; completed — notification badge OR accumulation \+ waiter ipcState transitions validated\)$)|(^- \*\*WS-C3:\*\* Proof-surface de-tautologization \(critical; completed\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
@@ -379,9 +379,9 @@ run_check "TRACE" rg -n 'post-revoke sibling lookup: SeLe4n.Model.KernelError.in
 run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
 
 # Active milestone docs should stay synchronized for both current and next slices.
-run_check "DOC" rg -n 'M3\.5' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'M4-A|M4-B|M5|M6|M7' docs/SEL4_SPEC.md
-run_check "DOC" rg -n 'WS-B1\.\.WS-B11|WS-B portfolio|Comprehensive Audit 2026-02' README.md docs/SEL4_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n 'M3\.5' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md
+run_check "DOC" rg -n 'M4-A|M4-B|M5|M6|M7' docs/spec/SELE4N_SPEC.md
+run_check "DOC" rg -n 'WS-B1\.\.WS-B11|WS-B portfolio|Comprehensive Audit 2026-02' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "DOC" rg -n 'Most recently completed slice:.*M7|M7 remediation is complete|M7 is complete and archived' README.md docs/gitbook/README.md docs/gitbook/23-m7-remediation-closeout-packet.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md
 run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E|Historical baseline retained for traceability|M6 architecture-boundary assumptions/adapters' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
 run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
@@ -396,7 +396,7 @@ run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
 run_check "DOC" rg -n '^# M7 Remediation Closeout Packet' docs/M7_CLOSEOUT_PACKET.md docs/gitbook/23-m7-remediation-closeout-packet.md
 run_check "DOC" rg -n 'Next-slice kickoff dependencies and owners|Exit-gate checklist' docs/M7_CLOSEOUT_PACKET.md
 run_check "DOC" rg -n 'M7 Remediation Closeout Packet' docs/gitbook/SUMMARY.md docs/gitbook/23-m7-remediation-closeout-packet.md
-run_check "DOC" rg -n 'Contribution guide|Change history' README.md
+run_check "DOC" rg -n 'Contribution guide|Contribution mechanics|Change history|CONTRIBUTING\.md|CHANGELOG\.md' README.md
 run_check "DOC" test -f CONTRIBUTING.md
 run_check "DOC" test -f CHANGELOG.md
 run_check "DOC" rg -n 'Required checks \(Tier 0–3\)|Deterministic replay evidence' docs/CI_POLICY.md
