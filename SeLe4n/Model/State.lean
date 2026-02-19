@@ -42,6 +42,7 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  objectIndex : List SeLe4n.ObjId
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
@@ -57,6 +58,7 @@ instance : Inhabited SystemState where
   default := {
     machine := default
     objects := fun _ => none
+    objectIndex := []
     services := fun _ => none
     scheduler := default
     irqHandlers := fun _ => none
@@ -99,7 +101,8 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
             else
               st.lifecycle.capabilityRefs ref
       }
-    .ok ((), { st with objects := objects', lifecycle := lifecycle' })
+    let objectIndex' := if id ∈ st.objectIndex then st.objectIndex else id :: st.objectIndex
+    .ok ((), { st with objects := objects', objectIndex := objectIndex', lifecycle := lifecycle' })
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
@@ -249,6 +252,38 @@ theorem storeCapabilityRef_lookup_eq
   simp at hStep
   cases hStep
   simp
+
+
+theorem storeObject_objects_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects id = some obj := by
+  unfold storeObject at hStore
+  cases hStore
+  simp
+
+theorem storeObject_objects_ne
+    (st st' : SystemState)
+    (id oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hNe : oid ≠ id)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold storeObject at hStore
+  cases hStore
+  simp [hNe]
+
+theorem storeObject_scheduler_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
 
 theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)

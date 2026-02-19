@@ -79,10 +79,8 @@ theorem lifecycle_storeObject_objects_eq
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects id = some obj := by
-  unfold storeObject at hStore
-  cases hStore
-  simp
+    st'.objects id = some obj :=
+  SeLe4n.Model.storeObject_objects_eq st st' id obj hStore
 
 theorem lifecycle_storeObject_objects_ne
     (st st' : SystemState)
@@ -90,20 +88,16 @@ theorem lifecycle_storeObject_objects_ne
     (obj : KernelObject)
     (hNe : oid ≠ id)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
-  unfold storeObject at hStore
-  cases hStore
-  simp [hNe]
+    st'.objects oid = st.objects oid :=
+  SeLe4n.Model.storeObject_objects_ne st st' id oid obj hNe hStore
 
 theorem lifecycle_storeObject_scheduler_eq
     (st st' : SystemState)
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.scheduler = st.scheduler := by
-  unfold storeObject at hStore
-  cases hStore
-  rfl
+    st'.scheduler = st.scheduler :=
+  SeLe4n.Model.storeObject_scheduler_eq st st' id obj hStore
 
 theorem cspaceLookupSlot_ok_state_eq
     (st : SystemState)

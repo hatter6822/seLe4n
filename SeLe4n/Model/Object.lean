@@ -2,9 +2,6 @@ import SeLe4n.Prelude
 
 namespace SeLe4n.Model
 
-/-- Identifier for modeled services in the M5 service graph layer. -/
-abbrev ServiceId := Nat
-
 /-- High-level service runtime status for orchestration-level reasoning. -/
 inductive ServiceStatus where
   | stopped

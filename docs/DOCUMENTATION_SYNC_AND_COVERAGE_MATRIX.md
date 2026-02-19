@@ -19,6 +19,7 @@ Use this file during planning and PR review to keep documentation status aligned
 | Tracked theorem obligations (active) | `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Keep theorem tickets and closure status in audits dir; GitBook chapter references active obligations only. |
 | Historical execution portfolio | `docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md` | archive chapters in GitBook | Keep clearly marked as historical, not active. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
+| Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | `30-ws-c7-model-structure-and-maintainability.md` | ADR is canonical; GitBook chapter stays concise and links back. |
 | Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Command/process changes must update both. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require synchronized updates. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
@@ -51,7 +52,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C portfolio; WS-C1..WS-C6 completed, WS-C8 actively progressing).
+- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (WS-C portfolio; WS-C1..WS-C7 completed, WS-C8 actively progressing).
 - Active findings baseline: `AUDIT_v0.9.32.md`.
 - Historical baseline retained for traceability: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.

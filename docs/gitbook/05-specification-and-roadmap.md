@@ -13,7 +13,7 @@ Current milestone state:
 - M5 complete
 - M6 complete
 - M7 complete
-- **Active:** Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 complete; WS-C8 documentation consolidation in progress)
+- **Active:** Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 complete; WS-C8 documentation consolidation in progress)
 
 ## 2) Stable contracts contributors must preserve
 
@@ -31,7 +31,7 @@ Current milestone state:
 - WS-C4: Test validity hardening (high; completed)
 - WS-C5: Information-flow assurance (critical; completed — observer-scoped service projection + endpoint-send low-equivalence preservation theorem)
 - WS-C6: CI and supply-chain hardening (medium; completed)
-- WS-C7: Model structure and maintainability (medium; Phase P3 target)
+- WS-C7: Model structure and maintainability (medium; completed)
 - WS-C8: Documentation and GitBook consolidation (high; in progress)
 
 Canonical execution plan:
@@ -45,7 +45,7 @@ Security baseline reference:
 - **Phase P0:** WS-C8 baseline reset + active-plan publication (in progress)
 - **Phase P1:** WS-C4 fixture-repair completion (WS-C1 + WS-C2 + WS-C3 + WS-C4 complete)
 - **Phase P2:** WS-C5 assurance expansion (completed)
-- **Phase P3:** WS-C7 sustainment hardening (WS-C6 completed)
+- **Phase P3:** WS-C7 sustainment hardening (completed)
 
 ## 5) Historical context
 

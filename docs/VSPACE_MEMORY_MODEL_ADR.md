@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-02-17
+Accepted — 2026-02-17 (amended 2026-02-19 by WS-C7)
 
 ## Context
 
@@ -28,9 +28,10 @@ proof-friendly and explicitly extensible.
    - bounded-translation predicate (`boundedAddressTranslation`).
 4. Keep page-table hierarchy abstract for now; this ADR commits only to a stable
    map/unmap/lookup interface and explicit failure taxonomy.
-5. Use a bounded ASID-discovery window (`vspaceDiscoveryWindow = 4096`) while
-   object storage remains function-encoded; replace this with a direct finite-map
-   ASID index in follow-on state-model work.
+5. (Historical WS-B1 baseline) Use a bounded ASID-discovery window while object storage remains
+   function-encoded.
+6. (WS-C7 amendment) Replace bounded numeric scanning with explicit object-index traversal
+   (`SystemState.objectIndex`) for ASID-root discovery (`resolveAsidRoot`).
 
 ## Consequences
 
@@ -46,11 +47,14 @@ proof-friendly and explicitly extensible.
 - Hardware-precise MMU/TLB invalidation behavior.
 - Tight coupling to physical memory frame allocator semantics.
 
-These remain tracked as post-WS-B1 expansions, including finite-map ASID indexing.
+These remain tracked as post-WS-B1 expansions; WS-C7 has already removed the bounded
+discovery-window hack in favor of explicit object indexing, while full finite-map ASID indexing
+remains future work.
 
 ## Verification evidence
 
 - `SeLe4n/Kernel/Architecture/VSpace.lean`
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
+- `docs/FINITE_OBJECT_STORE_ADR.md` (WS-C7 object-index staging ADR)
 - `Main.lean` VSpace trace steps
 - `tests/fixtures/main_trace_smoke.expected`

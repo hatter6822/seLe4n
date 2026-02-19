@@ -108,6 +108,27 @@ instance : ToString Irq where
 
 end Irq
 
+/-- Identifier for graph-level services in the orchestration layer. -/
+structure ServiceId where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace ServiceId
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : ServiceId := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (id : ServiceId) : Nat := id.val
+
+instance instOfNat (n : Nat) : OfNat ServiceId n where
+  ofNat := ⟨n⟩
+
+instance : ToString ServiceId where
+  toString id := toString id.toNat
+
+end ServiceId
+
 /-- Capability-space pointer value. -/
 structure CPtr where
   val : Nat

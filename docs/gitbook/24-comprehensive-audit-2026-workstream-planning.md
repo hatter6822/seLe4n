@@ -13,7 +13,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 - **Findings baseline:** `AUDIT_v0.9.32.md`
 - **Execution baseline:** `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
 - **Tracked theorem obligations:** `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
-- **Current planning stage:** Phase P2 assurance execution (WS-C5 closed; documentation baseline maintenance remains active in WS-C8).
+- **Current planning stage:** Phase P3 sustainment closeout (WS-C7 completed; documentation baseline maintenance remains active in WS-C8).
 
 ## 2) Active workstreams (WS-C portfolio)
 
@@ -31,7 +31,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 ### Platform and sustainability
 
 - **WS-C6:** CI and supply-chain hardening (medium; completed)
-- **WS-C7:** Model structure and maintainability (medium)
+- **WS-C7:** Model structure and maintainability (medium; completed — finite object-index staging + `ServiceId` wrapper migration + VSpace lookup cleanup + ADR delivered)
 - **WS-C8:** Documentation and GitBook consolidation (high, in progress)
 
 ## 3) Updating status

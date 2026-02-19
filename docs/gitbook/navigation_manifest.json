@@ -116,6 +116,10 @@
         {
           "title": "Documentation Deduplication Map",
           "path": "27-documentation-deduplication-map.md"
+        },
+        {
+          "title": "WS-C7 Model Structure and Maintainability (Completed)",
+          "path": "30-ws-c7-model-structure-and-maintainability.md"
         }
       ]
     },
