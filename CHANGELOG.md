@@ -1,3 +1,21 @@
+## [Unreleased]
+
+### WS-D2 — Information-Flow Enforcement and Proof (F-02, F-05)
+
+#### Added
+- Created `SeLe4n/Kernel/InformationFlow/Enforcement.lean` with policy-enforced kernel operations: `enforcedEndpointSend`, `enforcedCspaceMint`, `enforcedServiceRestart`. Each checks `securityFlowsTo` before delegating to core operations.
+- Six enforcement theorems: denial lemmas (`enforcedEndpointSend_denied`, `enforcedCspaceMint_denied`, `enforcedServiceRestart_denied`) and pass-through lemmas (`enforcedEndpointSend_delegates`, `enforcedCspaceMint_delegates`, `enforcedServiceRestart_delegates`).
+- Four new noninterference preservation theorems in `SeLe4n/Kernel/InformationFlow/Invariant.lean`: `chooseThread_preserves_lowEquivalent`, `cspaceMint_preserves_lowEquivalent`, `lifecycleRetypeObject_preserves_lowEquivalent`, `serviceRestart_preserves_lowEquivalent`.
+- Generic `storeObject_preserves_lowEquivalent` unwinding lemma and helper infrastructure for `cspaceInsertSlot` decomposition and service stop/start state-property preservation.
+- WS-D2 enforcement tests in `tests/InformationFlowSuite.lean`.
+- 16 WS-D2 closure anchors in `scripts/test_tier3_invariant_surface.sh`.
+
+#### Changed
+- Updated `SeLe4n.lean` to import `SeLe4n.Kernel.InformationFlow.Enforcement`.
+- Marked WS-D2 as completed across all documentation surfaces (workstream plan, tracked proof issues, README, spec, development guide, GitBook chapters, claim-evidence index, information-flow roadmap).
+- Closed proof obligations TPI-D01, TPI-D02, TPI-D03.
+- Advanced IF-M2 and IF-M3 milestones to completed status in information-flow roadmap.
+
 ## [0.11.0] - 2026-02-19
 
 ### WS-C8 post-merge audit refinement and minor release

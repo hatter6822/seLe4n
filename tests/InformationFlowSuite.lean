@@ -217,6 +217,63 @@ private def runInformationFlowChecks : IO Unit := do
   expect "both observers see public service"
     (adminSvc2.isSome && publicSvc2.isSome)
 
+  -- === WS-D2: Information-flow enforcement checks ===
+  IO.println "\n--- WS-D2 enforcement layer tests ---"
+
+  -- Enforcement denial: high sender cannot send to low endpoint
+  let highSenderLabel : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => secretLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+  let enforcedSendResult := SeLe4n.Kernel.enforcedEndpointSend highSenderLabel 1 1 sampleState
+  expect "enforced endpoint send denied: high sender to low endpoint"
+    (match enforcedSendResult with
+     | .error _ => true
+     | .ok _ => false)
+
+  -- Enforcement pass-through: low sender to low endpoint
+  let lowSenderLabel : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+  let enforcedSendAllowed := SeLe4n.Kernel.enforcedEndpointSend lowSenderLabel 1 1 sampleState
+  -- The send might fail for other reasons (no endpoint ready), but it should NOT be policyDenied
+  expect "enforced endpoint send passes policy check when labels allow"
+    (match enforcedSendAllowed with
+     | .error .policyDenied => false
+     | _ => true)
+
+  -- Enforcement denial: high CNode mint to low CNode
+  let highCNodeLabel : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = 10 then secretLabel else publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := 20, slot := 0 }
+  let enforcedMintResult := SeLe4n.Kernel.enforcedCspaceMint highCNodeLabel src dst [] none sampleState
+  expect "enforced cspace mint denied: high source to low destination"
+    (match enforcedMintResult with
+     | .error _ => true
+     | .ok _ => false)
+
+  -- Enforcement denial: low orchestrator cannot restart high service
+  let lowOrchLabel : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => secretLabel }
+  let policyAllow : SeLe4n.Kernel.ServicePolicy := fun _ => true
+  let enforcedRestartResult := SeLe4n.Kernel.enforcedServiceRestart lowOrchLabel 1 1 policyAllow policyAllow sampleState
+  expect "enforced service restart denied: low orchestrator to high service"
+    (match enforcedRestartResult with
+     | .error _ => true
+     | .ok _ => false)
+
+  IO.println "--- WS-D2 enforcement layer tests complete ---"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=

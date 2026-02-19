@@ -12,8 +12,8 @@ The current active execution baseline is the **WS-D portfolio** based on the v0.
 
 | Workstream | Priority | Findings | Status |
 |---|---|---|---|
-| WS-D1 Test error handling and validity | Critical/High | F-01, F-03, F-04 | Planned |
-| WS-D2 Information-flow enforcement and proof | High | F-02, F-05 | Planned |
+| WS-D1 Test error handling and validity | Critical/High | F-01, F-03, F-04 | **Completed** |
+| WS-D2 Information-flow enforcement and proof | High | F-02, F-05 | **Completed** |
 | WS-D3 Proof gap closure | Medium | F-06, F-08, F-16 | Planned |
 | WS-D4 Kernel design hardening | Medium | F-07, F-11, F-12 | Planned |
 | WS-D5 Test infrastructure expansion | Medium | F-09, F-10 | Planned |

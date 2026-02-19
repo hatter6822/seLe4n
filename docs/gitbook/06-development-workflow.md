@@ -38,10 +38,10 @@ For milestone-moving PRs:
 
 ## Workstream sequence (WS-D)
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (current)
-- **Phase P1:** WS-D1 test validity restoration (critical/high)
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high)
-- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
+- **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — current
 - **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 
 ## Failure triage

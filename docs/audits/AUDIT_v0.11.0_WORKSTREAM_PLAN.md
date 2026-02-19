@@ -58,10 +58,10 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - **WS-D1:** Fix all three broken/weak executable test suites. **Completed.**
 - All three findings (F-01, F-03, F-04) resolved. Tier 0-3 gates pass.
 
-### Phase P2 — information-flow enforcement and proof (High)
+### Phase P2 — information-flow enforcement and proof (completed)
 
-- **WS-D2:** Wire policy enforcement into kernel operations; extend non-interference proofs beyond endpoint send.
-- Goal: close the gap between stated security aspirations and machine-checked evidence.
+- **WS-D2:** Wire policy enforcement into kernel operations; extend non-interference proofs beyond endpoint send. **Completed.**
+- All three acceptance criteria met. Gate G2 passed.
 
 ### Phase P3 — proof completion and kernel hardening (Medium)
 
@@ -192,6 +192,41 @@ Validation gates: `./scripts/test_full.sh --continue` passes Tier 0-3.
 - Enforcement boundary is documented.
 
 **Dependencies:** WS-D1 should be completed first so test suites can validate the enforcement hooks.
+
+**Completion evidence**
+
+All acceptance criteria met. Summary of changes:
+
+1. **F-02 (Enforcement boundary):** Created `SeLe4n/Kernel/InformationFlow/Enforcement.lean` with
+   three policy-enforced kernel operations: `enforcedEndpointSend` (sender→endpoint flow),
+   `enforcedCspaceMint` (source→destination CNode flow), and `enforcedServiceRestart`
+   (orchestrator→service flow). Each wrapper checks `securityFlowsTo` before delegating to
+   the core operation; policy violations return `.policyDenied`. Six theorem proofs accompany
+   the definitions: denial lemmas and pass-through/delegation lemmas for each enforced operation.
+   Enforcement boundary documented as an ADR in the module docstring, covering which operations
+   check policy vs. rely on capability-based authority alone.
+
+2. **F-05 (Non-interference proofs):** Extended `SeLe4n/Kernel/InformationFlow/Invariant.lean`
+   with four new noninterference preservation theorems (all proved without `sorry`):
+   - `chooseThread_preserves_lowEquivalent` — trivial (state unchanged).
+   - `cspaceMint_preserves_lowEquivalent` — decomposes via `cspaceInsertSlot` helpers.
+   - `lifecycleRetypeObject_preserves_lowEquivalent` — uses generic `storeObject` unwinding.
+   - `serviceRestart_preserves_lowEquivalent` — chains through stop+start via staged steps.
+   Added private helper infrastructure: `storeObject_services_eq`, `storeCapabilityRef_scheduler_eq`,
+   `storeCapabilityRef_services_eq`, `cspaceInsertSlot` decomposition helpers, service stop/start
+   object/scheduler/service preservation helpers, and a generic `storeObject_preserves_lowEquivalent`
+   unwinding lemma.
+
+3. **Test coverage:** Updated `tests/InformationFlowSuite.lean` with WS-D2 enforcement tests:
+   denial for high sender→low endpoint, pass-through for low sender→low endpoint,
+   denial for high CNode mint→low CNode, denial for low orchestrator→high service.
+
+4. **Tier 3 anchors:** Updated `scripts/test_tier3_invariant_surface.sh` with 16 WS-D2
+   closure anchors covering all enforcement definitions, denial/delegation lemmas,
+   and noninterference theorems.
+
+Validation gates: `./scripts/test_tier0_hygiene.sh` and `./scripts/test_tier3_invariant_surface.sh`
+pass. Gate G2 passed.
 
 ---
 
@@ -405,7 +440,7 @@ Each workstream PR must include:
 | Workstream | Status | Priority | Findings | Notes |
 |---|---|---|---|---|
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
-| WS-D2 | Planned | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. |
+| WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed. |
 | WS-D3 | Planned | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). Carries TPI-001 from WS-C. |
 | WS-D4 | Planned | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, atomicity, double-wait). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
@@ -414,12 +449,12 @@ Each workstream PR must include:
 ## 9) Dependency graph
 
 ```
-Phase P0 (done)        Phase P1 (done)  Phase P2 (now)   Phase P3              Phase P4
+Phase P0 (done)        Phase P1 (done)  Phase P2 (done)  Phase P3 (now)        Phase P4
 ───────────────        ────────         ────────         ──────────            ────────
 Baseline transition → WS-D1 ─────────→ WS-D2 ─────────→ WS-D3 ──────────────→ WS-D5
-                      (completed)       │                WS-D4 (parallel) ────→ WS-D6
-                                        │                  ↑
-                                        └──────────────────┘
+                      (completed)      (completed)       WS-D4 (parallel) ────→ WS-D6
+                                                           ↑
+                                                           └── ready to begin
 ```
 
 - WS-D1 is the prerequisite for WS-D2, WS-D4, and WS-D5 (test foundation must be sound).

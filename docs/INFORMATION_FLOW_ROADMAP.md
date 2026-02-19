@@ -54,7 +54,7 @@ Delivered anchors (WS-B7 closeout):
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
 - `docs/IF_M1_BASELINE_PACKAGE.md`
 
-## IF-M2 — Two-run relational state framework
+## IF-M2 — Two-run relational state framework ✅ completed (WS-D2)
 
 Deliverables:
 
@@ -68,7 +68,15 @@ Exit evidence:
 - reusable relation helpers reduce duplicate proof burden,
 - local theorem docs explain observer model.
 
-## IF-M3 — Transition-level noninterference seeds
+Delivered anchors (WS-D2 closeout):
+
+- `lowEquivalent` relational predicate in `Projection.lean` (IF-M1)
+- `storeObject_preserves_lowEquivalent` generic unwinding lemma in `Invariant.lean`
+- `cspaceInsertSlot_ok_decompose`, `cspaceInsertSlot_ok_objects_ne`, `cspaceInsertSlot_ok_scheduler_eq`, `cspaceInsertSlot_ok_services_eq` helpers
+- `serviceStop_ok_objects_eq`, `serviceStop_ok_scheduler_eq`, `serviceStop_ok_services_ne` helpers
+- `serviceStart_ok_objects_eq`, `serviceStart_ok_scheduler_eq`, `serviceStart_ok_services_ne` helpers
+
+## IF-M3 — Transition-level noninterference seeds ✅ completed (WS-D2)
 
 Deliverables:
 
@@ -83,6 +91,19 @@ Exit evidence:
 - transition-specific two-run theorems compile,
 - theorem naming aligns with existing preservation naming style,
 - failure-path behavior is included in relational statements.
+
+Delivered theorems (WS-D2 closeout):
+
+- `endpointSend_preserves_lowEquivalent` (IF-M1 seed, retained)
+- `chooseThread_preserves_lowEquivalent` (scheduler)
+- `cspaceMint_preserves_lowEquivalent` (capability mutation)
+- `lifecycleRetypeObject_preserves_lowEquivalent` (lifecycle)
+- `serviceRestart_preserves_lowEquivalent` (service orchestration)
+
+Enforcement boundary (F-02) delivered in `SeLe4n/Kernel/InformationFlow/Enforcement.lean`:
+
+- `enforcedEndpointSend`, `enforcedCspaceMint`, `enforcedServiceRestart`
+- Denial and delegation lemmas for each
 
 ## IF-M4 — Bundle-level composition
 

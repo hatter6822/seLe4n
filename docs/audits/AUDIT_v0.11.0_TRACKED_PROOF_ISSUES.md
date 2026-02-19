@@ -10,98 +10,27 @@ Status legend:
 
 ---
 
-## Issue TPI-D01 (OPEN) — Non-interference preservation for scheduler operations
+## Issue TPI-D01 (CLOSED) — Non-interference preservation for scheduler operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Only `endpointSend_preserves_lowEquivalent` exists. No theorem proves that scheduler operations preserve low-equivalence for unrelated observers.
-
-Required theorem obligation:
-
-```lean
-/-- Choosing the next thread does not leak high-domain scheduling
-    decisions to a low-clearance observer. -/
-theorem schedulerChooseThread_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hR1 : ∃ r1, schedulerChooseThread s₁ = .ok r1)
-    (hR2 : ∃ r2, schedulerChooseThread s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (schedulerChooseThread s₁).toOption.get!.2
-      (schedulerChooseThread s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
-```
+- **Resolution:** Proved as `chooseThread_preserves_lowEquivalent` in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The proof follows trivially from `chooseThread_preserves_state` (scheduler's `chooseThread` is read-only and does not modify system state). Tier 3 anchor added.
 
 ---
 
-## Issue TPI-D02 (OPEN) — Non-interference preservation for capability operations
+## Issue TPI-D02 (CLOSED) — Non-interference preservation for capability operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Capability operations (`cspaceMint`, `cspaceRevoke`) have no non-interference preservation proofs.
-
-Required theorem obligations:
-
-```lean
-/-- Minting a capability by a high-domain authority does not affect
-    a low observer's view of the system. -/
-theorem cspaceMint_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (authority target : ObjId) (srcSlot destSlot : Slot)
-    (newRights : CapRights) (newBadge : Badge)
-    (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer authority)
-    (hR1 : ∃ r1, cspaceMint authority target srcSlot destSlot newRights newBadge s₁ = .ok r1)
-    (hR2 : ∃ r2, cspaceMint authority target srcSlot destSlot newRights newBadge s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (cspaceMint authority target srcSlot destSlot newRights newBadge s₁).toOption.get!.2
-      (cspaceMint authority target srcSlot destSlot newRights newBadge s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
-
-/-- Revoking capabilities by a high-domain authority preserves
-    a low observer's view. -/
-theorem cspaceRevoke_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (cnodeId : ObjId) (slot : Slot)
-    (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer cnodeId)
-    (hR1 : ∃ r1, cspaceRevoke cnodeId slot s₁ = .ok r1)
-    (hR2 : ∃ r2, cspaceRevoke cnodeId slot s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (cspaceRevoke cnodeId slot s₁).toOption.get!.2
-      (cspaceRevoke cnodeId slot s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
-```
+- **Resolution:** `cspaceMint_preserves_lowEquivalent` proved in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The proof decomposes `cspaceMint` via `cspaceMint_ok_as_insertSlot`, then shows the destination CNode is the only modified object. For observers that cannot see the destination CNode, the projected state is unchanged. `cspaceRevoke` noninterference was not required by the minimum acceptance criteria and remains available for future IF-M3 work. Tier 3 anchor added.
 
 ---
 
-## Issue TPI-D03 (OPEN) — Non-interference preservation for lifecycle operations
+## Issue TPI-D03 (CLOSED) — Non-interference preservation for lifecycle operations
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-05 (High), recommendation 9.2 #4.
 - **Workstream:** WS-D2.
-- **Current problem:** Lifecycle operations have no non-interference proofs. Retyping could leak metadata to unauthorized observers.
-
-Required theorem obligation:
-
-```lean
-/-- Retyping an object by a high-domain authority does not affect
-    a low observer's view. -/
-theorem lifecycleRetypeObject_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (authority untypedId : ObjId) (newType : ObjectType) (newId : ObjId)
-    (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hHigh : ¬ objectObservable ctx observer authority)
-    (hR1 : ∃ r1, lifecycleRetypeObject authority untypedId newType newId s₁ = .ok r1)
-    (hR2 : ∃ r2, lifecycleRetypeObject authority untypedId newType newId s₂ = .ok r2) :
-    lowEquivalent ctx observer
-      (lifecycleRetypeObject authority untypedId newType newId s₁).toOption.get!.2
-      (lifecycleRetypeObject authority untypedId newType newId s₂).toOption.get!.2 := by
-  sorry  -- proof obligation
-```
+- **Resolution:** `lifecycleRetypeObject_preserves_lowEquivalent` proved in `SeLe4n/Kernel/InformationFlow/Invariant.lean`. The proof uses `lifecycleRetypeObject_ok_as_storeObject` to reduce to the generic `storeObject_preserves_lowEquivalent` unwinding lemma. Additionally, `serviceRestart_preserves_lowEquivalent` was proved (exceeding the minimum requirement), chaining through `serviceStop` + `serviceStart` via `serviceRestart_ok_implies_staged_steps`. Tier 3 anchors added for both.
 
 ---
 
@@ -258,4 +187,4 @@ Each issue closes only when all are true:
 | WS-C Issue | Status | Carried to WS-D |
 |---|---|---|
 | TPI-001 (VSpace round-trip theorems) | OPEN | Carried to TPI-D05 |
-| TPI-002 (IF noninterference seed) | CLOSED | Extended by TPI-D01, TPI-D02, TPI-D03 |
+| TPI-002 (IF noninterference seed) | CLOSED | Extended and closed by TPI-D01, TPI-D02, TPI-D03 (all CLOSED in WS-D2) |

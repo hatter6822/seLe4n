@@ -432,4 +432,24 @@ run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/M7_CLOSEOUT_PACKET.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
 
+# WS-D2 closure anchors: information-flow enforcement layer + noninterference proof expansion.
+# F-02: Enforcement boundary must exist with ≥3 enforced operations.
+run_check "INVARIANT" rg -n '^def enforcedEndpointSend' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^def enforcedCspaceMint' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^def enforcedServiceRestart' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedEndpointSend_denied' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedCspaceMint_denied' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedServiceRestart_denied' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedEndpointSend_delegates' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedCspaceMint_delegates' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+run_check "INVARIANT" rg -n '^theorem enforcedServiceRestart_delegates' SeLe4n/Kernel/InformationFlow/Enforcement.lean
+# F-05: ≥3 additional noninterference theorems beyond endpointSend.
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem chooseThread_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+# Enforcement module must be imported via root barrel.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.Enforcement$' SeLe4n.lean
+
 finalize_report
