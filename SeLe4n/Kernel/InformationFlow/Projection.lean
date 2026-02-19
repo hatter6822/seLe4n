@@ -34,8 +34,17 @@ def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe
   securityFlowsTo (ctx.threadLabelOf tid) observer.clearance
 
 /-- Service projection keeps only status because service identity is carried by `ServiceId`. -/
-def projectServiceStatus (st : SystemState) : ServiceId → Option ServiceStatus :=
-  fun sid => (lookupService st sid).map ServiceGraphEntry.status
+def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
+  securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance
+
+/-- Service projection keeps only observer-visible statuses keyed by `ServiceId`. -/
+def projectServiceStatus (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    ServiceId → Option ServiceStatus :=
+  fun sid =>
+    if serviceObservable ctx observer sid then
+      (lookupService st sid).map ServiceGraphEntry.status
+    else
+      none
 
 /-- Project object store to observer-visible subset. -/
 def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
@@ -64,7 +73,7 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
-    services := projectServiceStatus st
+    services := projectServiceStatus ctx observer st
   }
 
 /-- Two states are low-equivalent when their observer projections are equal. -/

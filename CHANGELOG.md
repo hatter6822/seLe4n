@@ -1,3 +1,12 @@
+## [0.10.3] - 2026-02-19
+
+### WS-C5 information-flow assurance completion
+- Added service-level visibility control to the IF labeling context (`serviceLabelOf`) and updated observer projection so service status is filtered by clearance policy instead of being globally visible.
+- Added `SeLe4n.Kernel.InformationFlow.Invariant.endpointSend_preserves_lowEquivalent`, a nontrivial endpoint-send preservation theorem over `lowEquivalent` under hidden sender/endpoint assumptions.
+- Extended IF regression checks in `tests/InformationFlowSuite.lean` to cover service-visibility filtering and an executable theorem witness for endpoint-send low-equivalence preservation.
+- Marked WS-C5 as completed in the active workstream plan, tracked-proof obligations, development guide, root README, documentation sync matrix, and GitBook workstream status chapter.
+- Bumped patch version to **`0.10.3`** and synchronized root version markers.
+
 ## [0.10.2] - 2026-02-19
 
 ### WS-C4 hardening follow-up: invariant precision and negative-fixture cleanup

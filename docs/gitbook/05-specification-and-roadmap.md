@@ -28,7 +28,7 @@ Current milestone state:
 - WS-C2: Scheduler semantic fidelity (high; completed)
 - WS-C3: Proof-surface de-tautologization (critical; completed)
 - WS-C4: Test validity hardening (high; completed)
-- WS-C5: Information-flow assurance (critical; Phase P2 target)
+- WS-C5: Information-flow assurance (critical; completed — observer-scoped service projection + endpoint-send low-equivalence preservation theorem)
 - WS-C6: CI and supply-chain hardening (medium; Phase P3 target)
 - WS-C7: Model structure and maintainability (medium; Phase P3 target)
 - WS-C8: Documentation and GitBook consolidation (high; in progress)
@@ -43,7 +43,7 @@ Security baseline reference:
 
 - **Phase P0:** WS-C8 baseline reset + active-plan publication (in progress)
 - **Phase P1:** WS-C4 fixture-repair completion (WS-C1 + WS-C2 + WS-C3 + WS-C4 complete)
-- **Phase P2:** WS-C5 assurance expansion
+- **Phase P2:** WS-C5 assurance expansion (completed)
 - **Phase P3:** WS-C6 + WS-C7 sustainment hardening
 
 ## 5) Historical context

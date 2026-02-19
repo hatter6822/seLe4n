@@ -45,6 +45,7 @@ private def sampleLabeling : SeLe4n.Kernel.LabelingContext :=
     objectLabelOf := fun oid => if oid = 2 then secretLabel else publicLabel
     threadLabelOf := fun tid => if tid = 2 then secretLabel else publicLabel
     endpointLabelOf := fun _ => publicLabel
+    serviceLabelOf := fun sid => if sid = 1 then secretLabel else publicLabel
   }
 
 private def runInformationFlowChecks : IO Unit := do
@@ -82,9 +83,12 @@ private def runInformationFlowChecks : IO Unit := do
   let serviceBefore := (SeLe4n.Kernel.projectState sampleLabeling reviewer sampleState).services 1
   let serviceAfter := (SeLe4n.Kernel.projectState sampleLabeling reviewer redactedState).services 1
 
-  -- service projection is intentionally status-only and independent from security labels.
-  expect "service-only mutation is visible in observer projection"
-    (decide (serviceBefore ≠ serviceAfter))
+  expect "public observer cannot see secret service status"
+    (serviceBefore = none)
+
+  expect "service-only mutation is hidden when service is above observer"
+    (decide (serviceBefore = serviceAfter))
+
 
 end SeLe4n.Testing
 

@@ -57,7 +57,7 @@ is mediated exclusively by capabilities.
 - **M5:** complete (service graph + policy surfaces + proof package)
 - **M6:** complete (architecture-boundary assumptions/adapters/invariant hooks)
 - **M7:** complete (audit remediation WS-A1..WS-A8)
-- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 completed; WS-C5+ follow-on execution in progress).
+- **Current active slice:** comprehensive-audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 completed; WS-C6+ follow-on execution in progress).
 
 ---
 
@@ -159,7 +159,7 @@ combinations or variants of these.
 - **WS-C2:** Scheduler semantic fidelity (high; completed)
 - **WS-C3:** Proof-surface de-tautologization (critical; completed)
 - **WS-C4:** Test validity hardening (high; completed)
-- **WS-C5:** Information-flow assurance (critical; Phase P2 target)
+- **WS-C5:** Information-flow assurance (critical; completed — observer-scoped service projection + endpoint-send low-equivalence preservation theorem)
 - **WS-C6:** CI and supply-chain hardening (medium; Phase P3 target)
 - **WS-C7:** Model structure and maintainability (medium; Phase P3 target)
 - **WS-C8:** Documentation and GitBook consolidation (high; in progress)
@@ -170,7 +170,7 @@ combinations or variants of these.
 
 - **P0:** WS-C8 baseline reset + active-plan publication (in progress)
 - **P1:** WS-C4 fixture-repair completion with WS-C3 already closed (WS-C1 + WS-C2 + WS-C3 + WS-C4 completed)
-- **P2:** WS-C5 assurance expansion
+- **P2:** WS-C5 assurance expansion (completed)
 - **P3:** WS-C6 + WS-C7 sustainment hardening
 
 ### 4.4 Acceptance expectations for WS-C work

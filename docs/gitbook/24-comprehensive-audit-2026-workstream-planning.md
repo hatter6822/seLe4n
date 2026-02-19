@@ -13,7 +13,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 - **Findings baseline:** `AUDIT_v0.9.32.md`
 - **Execution baseline:** `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
 - **Tracked theorem obligations:** `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
-- **Current planning stage:** Phase P1 completion (WS-C3 and WS-C4 closed; documentation baseline maintenance remains active in WS-C8).
+- **Current planning stage:** Phase P2 assurance execution (WS-C5 closed; documentation baseline maintenance remains active in WS-C8).
 
 ## 2) Active workstreams (WS-C portfolio)
 
@@ -26,7 +26,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
   - added module docstrings clarifying determinism as a meta-property of pure Lean,
   - replacement theorem obligations continue in `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
 - **WS-C4:** Test validity hardening (high; completed)
-- **WS-C5:** Information-flow assurance (critical)
+- **WS-C5:** Information-flow assurance (critical; completed — observer-scoped service projection + endpoint-send low-equivalence preservation theorem)
 
 ### Platform and sustainability
 

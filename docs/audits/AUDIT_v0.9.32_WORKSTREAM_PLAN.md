@@ -227,7 +227,7 @@ Each workstream PR must include:
 | WS-C2 | Completed | Kernel Scheduler | Priority-aware `chooseThread`, explicit scheduler invariant failures, and yield queue-rotation semantics with refreshed Tier-1/Tier-2 evidence. |
 | WS-C3 | Completed | Proof Surface | Tautological determinism theorems removed; module-level meta-property notes added; tracked obligations remain in TPI-001/TPI-002. |
 | WS-C4 | Completed | Testing | Invariant-valid fixtures, executable post-step invariant assertions, and reproducible generative probe coverage merged with smoke/full/tier4 evidence. |
-| WS-C5 | Planned | Unassigned | First noninterference preservation theorem. |
+| WS-C5 | Completed | Information Flow | Added observer-scoped service visibility filtering and `endpointSend_preserves_lowEquivalent` theorem with Tier-2/Tier-3 evidence. |
 | WS-C6 | Planned | Unassigned | CI cache/sanitization/flake/hygiene tightening. |
 | WS-C7 | Planned | Unassigned | Finite store + maintainability refactor track. |
 | WS-C8 | In Progress | Documentation | Documentation/GitBook re-baseline and detailed workstream specification. |

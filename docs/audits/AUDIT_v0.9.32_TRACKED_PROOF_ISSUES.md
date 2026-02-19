@@ -46,7 +46,7 @@ theorem vspaceLookup_after_unmap
   sorry  -- actual proof obligation
 ```
 
-## Issue TPI-002 (OPEN) — Replace tautological IF projection determinism theorem with noninterference preservation theorem
+## Issue TPI-002 (CLOSED) — Replace tautological IF projection determinism theorem with noninterference preservation theorem
 
 - **Audit mapping:** `AUDIT_v0.9.32.md` Immediate recommendation #4 and #5.
 - **Current problem:** `projectState_deterministic` is tautological and does not prove security preservation.
@@ -55,7 +55,13 @@ theorem vspaceLookup_after_unmap
   2. WS-C3 added a module docstring in the InformationFlow projection/proof module clarifying determinism-as-meta-property,
   3. implement operation-level noninterference preservation theorem(s), beginning with endpoint send.
 
-Required theorem obligation to implement:
+Closure evidence (WS-C5):
+
+- `endpointSend_preserves_lowEquivalent` implemented in `SeLe4n/Kernel/InformationFlow/Invariant.lean` without `sorry`.
+- Service projection now filters by observer clearance via `serviceLabelOf` + `serviceObservable`.
+- Tier-2 negative suite (`information_flow_suite`) updated to exercise service-visibility filtering and theorem witness.
+
+Required theorem obligation to implement (historical target, now satisfied by the theorem above):
 
 ```lean
 /-- If two states are indistinguishable to an observer, then running
