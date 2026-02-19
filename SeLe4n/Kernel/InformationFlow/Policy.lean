@@ -55,6 +55,7 @@ structure LabelingContext where
   objectLabelOf : SeLe4n.ObjId → SecurityLabel
   threadLabelOf : SeLe4n.ThreadId → SecurityLabel
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
+  serviceLabelOf : ServiceId → SecurityLabel
 
 /-- Minimal default labeling: everything is publicly observable and untrusted. -/
 def defaultLabelingContext : LabelingContext :=
@@ -62,6 +63,7 @@ def defaultLabelingContext : LabelingContext :=
     objectLabelOf := fun _ => SecurityLabel.publicLabel
     threadLabelOf := fun _ => SecurityLabel.publicLabel
     endpointLabelOf := fun _ => SecurityLabel.publicLabel
+    serviceLabelOf := fun _ => SecurityLabel.publicLabel
   }
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
