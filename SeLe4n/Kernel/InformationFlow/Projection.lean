@@ -1,5 +1,14 @@
 import SeLe4n.Kernel.InformationFlow.Policy
 
+/-!
+WS-C3 proof-surface note:
+
+Determinism of pure Lean definitions is a meta-property, so tautological equalities
+such as `f x = f x` do not constitute security evidence.
+Tracked replacement obligations for the information-flow projection surface live in
+TPI-002 (`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`).
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -61,13 +70,6 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
 /-- Two states are low-equivalent when their observer projections are equal. -/
 def lowEquivalent (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop :=
   projectState ctx observer s₁ = projectState ctx observer s₂
-
-theorem projectState_deterministic
-    (ctx : LabelingContext)
-    (observer : IfObserver)
-    (st : SystemState) :
-    projectState ctx observer st = projectState ctx observer st := by
-  rfl
 
 theorem lowEquivalent_refl
     (ctx : LabelingContext)

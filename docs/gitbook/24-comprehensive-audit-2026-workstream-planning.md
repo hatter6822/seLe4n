@@ -13,7 +13,7 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 - **Findings baseline:** `AUDIT_v0.9.32.md`
 - **Execution baseline:** `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`
 - **Tracked theorem obligations:** `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
-- **Current planning stage:** Phase P0/P1 transition (documentation baseline reset complete/in progress, and execution is beginning on current correctness-blocker workstreams).
+- **Current planning stage:** Phase P1 continuation (WS-C3 closed; WS-C4 correctness/test-hardening execution ongoing with documentation baseline maintenance in WS-C8).
 
 ## 2) Active workstreams (WS-C portfolio)
 
@@ -21,10 +21,10 @@ This chapter is intentionally concise and navigational. It summarizes active wor
 
 - **WS-C1:** IPC handshake correctness (critical; completed — notification badge OR accumulation + waiter ipcState transitions validated)
 - **WS-C2:** Scheduler semantic fidelity (high, completed)
-- **WS-C3:** Proof-surface de-tautologization (critical; execution beginning)
-  - remove tautological `vspaceLookup_deterministic` and `projectState_deterministic`,
-  - add module docstrings clarifying determinism as a meta-property of pure Lean,
-  - track replacement theorem obligations in `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
+- **WS-C3:** Proof-surface de-tautologization (critical; completed)
+  - removed tautological `vspaceLookup_deterministic` and `projectState_deterministic`,
+  - added module docstrings clarifying determinism as a meta-property of pure Lean,
+  - replacement theorem obligations continue in `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
 - **WS-C4:** Test validity hardening (high; execution beginning)
 - **WS-C5:** Information-flow assurance (critical)
 

@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 completed; WS-C8 documentation consolidation remains in progress)**,
+- active: **Comprehensive Audit v0.9.32 WS-C execution (WS-C1 + WS-C2 + WS-C3 completed; WS-C8 documentation consolidation remains in progress)**,
 - completed predecessor: **M7 remediation (WS-A1..WS-A8)**,
 - completed predecessor before that: **M6 architecture-boundary hardening**.
 
@@ -34,7 +34,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 - **WS-C1** — IPC handshake correctness (**completed: notification OR semantics + waiter ipcState wiring**)
 - **WS-C2** — scheduler semantic fidelity (**completed**)
-- **WS-C3** — proof-surface de-tautologization (**execution beginning**)
+- **WS-C3** — proof-surface de-tautologization (**completed: tautological proof removal + module-level proof-surface disclaimers + tracked obligations linkage**)
 - **WS-C4** — test validity hardening (**execution beginning**)
 - **WS-C5** — information-flow assurance (**Phase P2 target**)
 - **WS-C6** — CI and supply-chain hardening (**Phase P3 target**)
@@ -46,7 +46,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 Use the planning phases from the workstream backbone:
 
 - **Phase P0:** WS-C8 baseline reset/documentation synchronization (in progress)
-- **Phase P1:** WS-C3 and WS-C4 fixture repairs (WS-C1 + WS-C2 complete)
+- **Phase P1:** WS-C4 fixture repairs (WS-C1 + WS-C2 + WS-C3 complete)
 - **Phase P2:** WS-C5 + remaining WS-C4 assurance expansion
 - **Phase P3:** WS-C6 + WS-C7 sustainability hardening
 

@@ -15,7 +15,10 @@ run_check "INVARIANT" rg -n '^def vspaceDiscoveryWindow' SeLe4n/Kernel/Architect
 run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceUnmapPage' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceLookup' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" bash -lc "! rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/Architecture/VSpace.lean"
+run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic' SeLe4n/Kernel/InformationFlow/Projection.lean"
+run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
 run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
@@ -57,10 +60,10 @@ run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ 
 run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
 # shellcheck disable=SC2016
 run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* Comprehensive Audit 2026-02 execution \(WS-B portfolio; WS-B1 through WS-B11 completed\)\.$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.9\.32\.md`$)' README.md
-run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B1 through WS-B11 complete\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution kickoff \(Phase P0/P1 transition; execution now beginning on WS-C workstreams\)\.$)' docs/SEL4_SPEC.md
+run_check "DOC" rg -n '(^- \*\*Current completed slice:\*\* post-M7 comprehensive-audit execution portfolio \(WS-B1 through WS-B11 complete\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution kickoff \(Phase P0/P1 transition; execution now beginning on WS-C workstreams\)\.$)|(^- \*\*Current active slice:\*\* comprehensive-audit v0\.9\.32 WS-C execution \(WS-C1 \+ WS-C2 \+ WS-C3 completed; WS-C4\+ follow-on execution in progress\)\.$)' docs/SEL4_SPEC.md
 run_check "DOC" rg -n '(^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.$)|(^Current completed slice:$)' docs/gitbook/01-project-overview.md
 run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5, WS-B6, WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^1\. Pick one coherent WS-B target\.$)|(^1\. Pick one coherent WS-C target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P2:\*\* WS-C5 \+ remaining WS-C4 assurance expansion$)' docs/gitbook/06-development-workflow.md
-run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; execution beginning\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; completed — notification badge OR accumulation \+ waiter ipcState transitions validated\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
+run_check "DOC" rg -n '(^- \*\*Phase P2:\*\* WS-B5 \+ WS-B6 \+ WS-B2 \(WS-B1/WS-B2/WS-B5/WS-B6 complete; WS-B7 completed\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; execution beginning\)$)|(^- \*\*WS-C1:\*\* IPC handshake correctness \(critical; completed — notification badge OR accumulation \+ waiter ipcState transitions validated\)$)|(^- \*\*WS-C3:\*\* Proof-surface de-tautologization \(critical; completed\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "DOC" rg -n '(^1\. Sync branch and choose one coherent WS-B slice \(prefer the next documented priority in the active plan \(all WS-B streams are complete\)\)\.$)|(^## 3\) Current execution slice \(WS-B portfolio\)$)|(^1\. Sync branch and choose one coherent WS-C slice \(prefer next priority in the active plan, starting with P1 blockers\)\.$)|(^## 3\) Current execution slice \(WS-C portfolio\)$)' docs/DEVELOPMENT.md
 run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
@@ -70,7 +73,7 @@ run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
 # shellcheck disable=SC2016
-run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio(; execution kickoff in progress)?\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
+run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` \(WS-B11 completed\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio(; execution kickoff in progress)?\)\.$)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` \(WS-C portfolio; WS-C3 completed, WS-C4/WS-C8 actively progressing\)\.$)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
 run_check "DOC" rg -n '(^# Documentation Deduplication Map \(WS-B8\)$)|(^# Documentation Deduplication Map \(WS-C8\)$)' docs/DOCS_DEDUPLICATION_MAP.md
 run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
 run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py
