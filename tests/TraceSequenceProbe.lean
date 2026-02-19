@@ -60,35 +60,91 @@ def checkEndpointConsistency (st : SystemState) : Except String Unit :=
   | some obj => .error s!"probe endpoint object changed unexpectedly: {reprStr obj}"
   | none => .error "probe endpoint object missing"
 
-def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : SystemState :=
+/-- Outcome of a single probe step, distinguishing actual mutations from expected failures
+and unexpected failures. -/
+inductive StepOutcome where
+  | mutated (st' : SystemState)
+  | expectedFailure (err : KernelError)
+  | unexpectedFailure (err : KernelError) (detail : String)
+
+/-- Classify a KernelError as expected or unexpected for the probe context.
+
+Expected errors: state-mismatch and empty-queue errors are normal when the random
+operation doesn't match the current endpoint state machine position.
+
+Unexpected errors: objectNotFound and invalidCapability should never occur because
+the probe operates on a known endpoint object at a fixed ObjId. -/
+def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
+  match err with
+  | .endpointStateMismatch => .expectedFailure err
+  | .endpointQueueEmpty => .expectedFailure err
+  | .objectNotFound =>
+      .unexpectedFailure err s!"objectNotFound during {reprStr op}: probe endpoint (oid={probeEndpointId}) should always exist"
+  | .invalidCapability =>
+      .unexpectedFailure err s!"invalidCapability during {reprStr op}: probe endpoint (oid={probeEndpointId}) should be an endpoint object"
+  | other =>
+      .unexpectedFailure other s!"unexpected error {reprStr other} during {reprStr op}"
+
+/-- Execute one probe operation with error-aware classification.
+
+Unlike the original `stepOp` which silently returned unchanged state on any error,
+this function classifies each error and returns a structured outcome. -/
+def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
   match op with
   | .send =>
       match SeLe4n.Kernel.endpointSend probeEndpointId tid st with
-      | .ok (_, st') => st'
-      | .error _ => st
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .send err
   | .awaitReceive =>
       match SeLe4n.Kernel.endpointAwaitReceive probeEndpointId tid st with
-      | .ok (_, st') => st'
-      | .error _ => st
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .awaitReceive err
   | .receive =>
       match SeLe4n.Kernel.endpointReceive probeEndpointId st with
-      | .ok (_, st') => st'
-      | .error _ => st
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .receive err
 
-partial def runProbeLoop (steps : Nat) (seed : Nat) (st : SystemState) : Except String Unit := do
+/-- Accumulated probe statistics for reporting. -/
+structure ProbeStats where
+  totalSteps : Nat
+  mutations : Nat
+  expectedFailures : Nat
+  unexpectedFailures : List String
+  deriving Repr
+
+instance : Inhabited ProbeStats where
+  default := { totalSteps := 0, mutations := 0, expectedFailures := 0, unexpectedFailures := [] }
+
+partial def runProbeLoop (steps : Nat) (seed : Nat) (st : SystemState)
+    (stats : ProbeStats) : Except String (ProbeStats × SystemState) := do
   checkEndpointConsistency st
   checkStateInvariants st
   if steps = 0 then
-    .ok ()
+    .ok (stats, st)
   else
     let next := nextRand seed
     let op := pickOp next
     let tid := pickThreadId next
-    let st' := stepOp op tid st
-    runProbeLoop (steps - 1) next st'
+    let stats' := { stats with totalSteps := stats.totalSteps + 1 }
+    match stepOp op tid st with
+    | .mutated st' =>
+        -- Invariant checks run here on the ACTUALLY MUTATED state
+        runProbeLoop (steps - 1) next st' { stats' with mutations := stats'.mutations + 1 }
+    | .expectedFailure _ =>
+        -- State unchanged; skip redundant invariant re-check on the no-op state
+        runProbeLoop (steps - 1) next st { stats' with expectedFailures := stats'.expectedFailures + 1 }
+    | .unexpectedFailure _ detail =>
+        -- Record the unexpected failure but continue probing to collect all failures
+        let stats'' := { stats' with unexpectedFailures := stats'.unexpectedFailures ++ [detail] }
+        runProbeLoop (steps - 1) next st stats''
 
-def runProbe (seed : Nat) (steps : Nat) : Except String Unit :=
-  runProbeLoop steps seed probeBaseState
+def runProbe (seed : Nat) (steps : Nat) : Except String ProbeStats := do
+  let (stats, _) ← runProbeLoop steps seed probeBaseState default
+  -- After the loop, report any unexpected failures as a probe failure
+  if stats.unexpectedFailures.isEmpty then
+    .ok stats
+  else
+    .error s!"probe completed with {stats.unexpectedFailures.length} unexpected failure(s): {reprStr stats.unexpectedFailures}"
 
 end SeLe4n.Testing
 
@@ -101,7 +157,7 @@ def main (args : List String) : IO Unit := do
   let seed := parseNatArg (args.getD 0 "7") 7
   let steps := parseNatArg (args.getD 1 "250") 250
   match SeLe4n.Testing.runProbe seed steps with
-  | .ok _ =>
-      IO.println s!"trace sequence probe passed: seed={seed}, steps={steps}"
+  | .ok stats =>
+      IO.println s!"trace sequence probe passed: seed={seed}, steps={steps}, mutations={stats.mutations}, expectedFailures={stats.expectedFailures}, unexpectedFailures=0"
   | .error msg =>
       throw <| IO.userError s!"trace sequence probe failed: seed={seed}, steps={steps}, detail={msg}"

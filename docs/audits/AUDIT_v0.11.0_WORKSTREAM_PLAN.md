@@ -47,16 +47,16 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 
 ## 4) Execution phases
 
-### Phase P0 — baseline transition (now)
+### Phase P0 — baseline transition (completed)
 
 - Publish this v0.11.0 planning backbone.
 - Demote WS-C portfolio to completed historical record.
 - Update all cross-references (README, spec, GitBook, sync matrix).
 
-### Phase P1 — test validity restoration (Critical/High)
+### Phase P1 — test validity restoration (completed)
 
-- **WS-D1:** Fix all three broken/weak executable test suites.
-- Goal: eliminate false confidence from silent error suppression and tautological assertions.
+- **WS-D1:** Fix all three broken/weak executable test suites. **Completed.**
+- All three findings (F-01, F-03, F-04) resolved. Tier 0-3 gates pass.
 
 ### Phase P2 — information-flow enforcement and proof (High)
 
@@ -122,6 +122,31 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - NegativeStateSuite checks pre-conditions and post-conditions for every state mutation.
 - InformationFlowSuite compares distinct states and tests observer discrimination.
 - All tier 0-3 tests pass.
+
+**Completion evidence**
+
+All acceptance criteria met. Summary of changes:
+
+1. **F-01 (TraceSequenceProbe):** Replaced silent `| .error _ => st` with structured
+   `StepOutcome` type (`mutated | expectedFailure | unexpectedFailure`). Error classification
+   distinguishes expected state-mismatch errors from unexpected objectNotFound/invalidCapability
+   errors. Invariant checks run only after actual state mutations, not after no-ops. Seed is
+   configurable via CLI arguments. Probe reports mutation/expected/unexpected counts.
+
+2. **F-03 (NegativeStateSuite):** Added badge precondition assertion (badge=66 verified
+   before accumulation with badge=5). VSpace map test verifies mapping creation via subsequent
+   `vspaceLookup`. Yield test asserts which thread is `current` after rotation. Notification
+   wait #2 checks TCB `ipcState` is `.ready` after consuming badge. Signal wake checks waiter
+   TCB `ipcState` transitions to `.ready`.
+
+3. **F-04 (InformationFlowSuite):** Removed tautological `lowEquivalent st st` reflexivity
+   witness. Replaced with distinct-state comparison (`sampleState` vs `altState`) that differs
+   in secret components but projects identically for a public observer. Added public-visible
+   service entry (`publicServiceEntry`) with explicit `projectServiceStatus` coverage. Added
+   observer discrimination tests verifying admin sees objects/services/threads that public
+   observer cannot.
+
+Validation gates: `./scripts/test_full.sh --continue` passes Tier 0-3.
 
 ---
 
@@ -379,7 +404,7 @@ Each workstream PR must include:
 
 | Workstream | Status | Priority | Findings | Notes |
 |---|---|---|---|---|
-| WS-D1 | Planned | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. |
+| WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
 | WS-D2 | Planned | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. |
 | WS-D3 | Planned | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). Carries TPI-001 from WS-C. |
 | WS-D4 | Planned | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, atomicity, double-wait). |
@@ -389,10 +414,10 @@ Each workstream PR must include:
 ## 9) Dependency graph
 
 ```
-Phase P0 (now)         Phase P1         Phase P2         Phase P3              Phase P4
+Phase P0 (done)        Phase P1 (done)  Phase P2 (now)   Phase P3              Phase P4
 ───────────────        ────────         ────────         ──────────            ────────
 Baseline transition → WS-D1 ─────────→ WS-D2 ─────────→ WS-D3 ──────────────→ WS-D5
-                                        │                WS-D4 (parallel) ────→ WS-D6
+                      (completed)       │                WS-D4 (parallel) ────→ WS-D6
                                         │                  ↑
                                         └──────────────────┘
 ```
