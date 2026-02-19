@@ -156,8 +156,19 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.vspaceLookup 99 vaddrPrimary baseState)
     .asidNotBound
 
+  -- F-03 fix: VSpace map test — verify mapping was actually created via subsequent lookup
   let (_, stMapped) ← expectOkState "vspace map initial"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary baseState)
+
+  -- Verify the mapping was actually created by looking it up
+  match SeLe4n.Kernel.Architecture.vspaceLookup asidPrimary vaddrPrimary stMapped with
+  | .ok (paddr, _) =>
+      if paddr = paddrPrimary then
+        IO.println "positive check passed [vspace map creates retrievable mapping]"
+      else
+        throw <| IO.userError s!"vspace map created wrong mapping: expected paddr={reprStr paddrPrimary}, got {reprStr paddr}"
+  | .error err =>
+      throw <| IO.userError s!"vspace lookup after map failed: {reprStr err} — mapping was not created"
 
   expectError "vspace duplicate map conflict"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary stMapped)
@@ -166,6 +177,7 @@ private def runNegativeChecks : IO Unit := do
   let (_, stAwait) ← expectOkState "await receive handshake seed"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
+  -- F-03 fix: Notification wait — consistently check TCB ipcState across ALL variants
   let (waitBadge, stN1) ← expectOkState "notification wait blocks with none"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) baseState)
   if waitBadge = none then
@@ -196,6 +208,15 @@ private def runNegativeChecks : IO Unit := do
   let (_, stN3) ← expectOkState "notification signal stores active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
 
+  -- F-03 fix: Badge accumulation — assert badge value BEFORE final signal
+  match stN3.objects notificationId with
+  | some (.notification ntfn) =>
+      if ntfn.pendingBadge = some (SeLe4n.Badge.ofNat 66) then
+        IO.println "positive check passed [notification badge precondition: badge=66 before accumulation]"
+      else
+        throw <| IO.userError s!"notification badge precondition mismatch: expected some 66, got {reprStr ntfn.pendingBadge}"
+  | _ => throw <| IO.userError "notification badge precondition expected notification object"
+
   let (_, stN4) ← expectOkState "notification signal accumulates active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 5) stN3)
 
@@ -208,12 +229,22 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification active badge accumulation mismatch"
   | _ => throw <| IO.userError "notification signal expected notification object"
 
-  let (waitBadge2, _) ← expectOkState "notification wait consumes active badge"
+  -- F-03 fix: Notification wait #2 — check TCB ipcState after consuming badge
+  let (waitBadge2, stN5) ← expectOkState "notification wait consumes active badge"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN4)
   if waitBadge2 = none then
     throw <| IO.userError "notification wait #2 expected delivered badge"
   else
     IO.println "positive check passed [notification wait #2 delivered badge]"
+
+  -- Verify waiter TCB ipcState is ready after consuming badge (not blocked)
+  match stN5.objects (SeLe4n.ThreadId.ofNat 8).toObjId with
+  | some (.tcb tcb) =>
+      if tcb.ipcState = .ready then
+        IO.println "positive check passed [notification wait #2 consumer ipcState ready]"
+      else
+        throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {reprStr tcb.ipcState}"
+  | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
 
   expectError "notification wait wrong object type"
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
@@ -253,12 +284,19 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
   if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 7] then
     IO.println "positive check passed [yield runnable rotation]: [8,7]"
   else
     throw <| IO.userError "yield runnable rotation expected [8,7]"
+
+  -- Verify which thread is current after yield (should be tid 8, the highest priority)
+  if stYielded.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+    IO.println "positive check passed [yield current thread]: current = tid 8 (highest priority after rotation)"
+  else
+    throw <| IO.userError s!"yield current thread expected tid 8, got {reprStr stYielded.scheduler.current}"
 
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty

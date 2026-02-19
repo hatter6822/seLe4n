@@ -69,7 +69,7 @@ Additional resources:
 
 Quick index. Full contracts and dependencies are in the v0.11.0 planning backbone.
 
-- **WS-D1:** Test error handling and validity -- planned (Critical/High; F-01, F-03, F-04)
+- **WS-D1:** Test error handling and validity -- **completed** (Critical/High; F-01, F-03, F-04)
 - **WS-D2:** Information-flow enforcement and proof -- planned (High; F-02, F-05)
 - **WS-D3:** Proof gap closure -- planned (Medium; F-06, F-08, F-16)
 - **WS-D4:** Kernel design hardening -- planned (Medium; F-07, F-11, F-12)
