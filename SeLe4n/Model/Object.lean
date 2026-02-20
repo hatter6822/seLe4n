@@ -203,13 +203,11 @@ theorem lookup_eq_none_not_mem
     (hNone : lookup root vaddr = none) :
     (vaddr, paddr) ∉ root.mappings := by
   unfold lookup at hNone
-  simp [Option.map_eq_none'] at hNone
+  rw [Option.map_eq_none_iff] at hNone
+  rw [List.find?_eq_none] at hNone
   intro hMem
-  have hFind : root.mappings.find? (fun entry => entry.fst = vaddr) ≠ none := by
-    intro hEq
-    have := List.find?_eq_none.mp hEq ⟨vaddr, paddr⟩ hMem
-    simp at this
-  exact hFind hNone
+  have := hNone ⟨vaddr, paddr⟩ hMem
+  simp at this
 
 /-- F-08 helper: a successful `mapPage` preserves the no-virtual-overlap invariant.
     Since `mapPage` only succeeds when `lookup root vaddr = none` (no existing mapping
@@ -229,11 +227,19 @@ theorem mapPage_noVirtualOverlap
       cases hMap
       intro v p₁ p₂ hIn₁ hIn₂
       simp [List.mem_cons] at hIn₁ hIn₂
-      rcases hIn₁ with ⟨rfl, rfl⟩ | hIn₁ <;> rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
-      · rfl
-      · exact absurd hIn₂ (lookup_eq_none_not_mem root vaddr p₂ hLookup)
-      · exact absurd hIn₁ (lookup_eq_none_not_mem root vaddr p₁ hLookup)
-      · exact hOverlap v p₁ p₂ hIn₁ hIn₂
+      cases hIn₁ with
+      | inl h₁ =>
+        cases hIn₂ with
+        | inl h₂ => rw [h₁.2, h₂.2]
+        | inr h₂ =>
+          exfalso
+          exact lookup_eq_none_not_mem root _ p₂ hLookup (h₁.1 ▸ h₂)
+      | inr h₁ =>
+        cases hIn₂ with
+        | inl h₂ =>
+          exfalso
+          exact lookup_eq_none_not_mem root _ p₁ hLookup (h₂.1 ▸ h₁)
+        | inr h₂ => exact hOverlap v p₁ p₂ h₁ h₂
 
 /-- F-08 helper: a successful `unmapPage` preserves the no-virtual-overlap invariant.
     Since `unmapPage` only removes entries, it cannot create new overlap. -/
@@ -284,13 +290,14 @@ theorem lookup_unmapPage_ne
       simp [hLookup] at hUnmap
       cases hUnmap
       unfold lookup
-      simp [List.find?_filter]
+      simp only
       congr 1
-      apply List.filter_congr
-      intro x hx
-      simp
-      intro hEq
-      exact hNe ∘ hEq.symm ▸ (·)
+      rw [List.find?_filter]
+      congr 1
+      funext x
+      by_cases hx : x.fst = vaddr'
+      · simp [hx, Ne.symm hNe]
+      · simp [hx]
 
 end VSpaceRoot
 

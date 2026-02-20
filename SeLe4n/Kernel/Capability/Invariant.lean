@@ -367,6 +367,34 @@ theorem mintDerivedCap_rights_attenuated
     ∀ right, right ∈ child.rights → right ∈ parent.rights :=
   (mintDerivedCap_attenuates parent child rights badge hMint).2
 
+theorem cspaceMint_child_attenuates
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      capAttenuates parent child := by
+  unfold cspaceMint at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hMint : mintDerivedCap parent rights badge with
+      | error e => simp [hSrc, hMint] at hStep
+      | ok child =>
+          have hAtt : capAttenuates parent child :=
+            mintDerivedCap_attenuates parent child rights badge hMint
+          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
+            simpa [hSrc, hMint] using hStep
+          refine ⟨parent, child, ?_, ?_, hAtt⟩
+          · rfl
+          · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
+
 /-- F-06 badge-safety theorem #1 (TPI-D04): A minted capability's rights are a subset of
     the parent's rights, regardless of what badge is specified during `cspaceMint`.
     Badge override cannot escalate the derived capability's access rights. -/
@@ -400,34 +428,6 @@ theorem cspaceMint_badge_override_target_preserved
   rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
     ⟨parent, child, hSrc, hDst, hAtt⟩
   exact ⟨parent, child, hSrc, hDst, hAtt.1⟩
-
-theorem cspaceMint_child_attenuates
-    (st st' : SystemState)
-    (src dst : CSpaceAddr)
-    (rights : List AccessRight)
-    (badge : Option SeLe4n.Badge)
-    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
-    ∃ parent child,
-      cspaceLookupSlot src st = .ok (parent, st) ∧
-      cspaceLookupSlot dst st' = .ok (child, st') ∧
-      capAttenuates parent child := by
-  unfold cspaceMint at hStep
-  cases hSrc : cspaceLookupSlot src st with
-  | error e => simp [hSrc] at hStep
-  | ok pair =>
-      rcases pair with ⟨parent, st1⟩
-      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
-      subst st1
-      cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
-      | ok child =>
-          have hAtt : capAttenuates parent child :=
-            mintDerivedCap_attenuates parent child rights badge hMint
-          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
-          refine ⟨parent, child, ?_, ?_, hAtt⟩
-          · rfl
-          · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
 
 theorem cspaceSlotUnique_holds (st : SystemState) :
     cspaceSlotUnique st := by

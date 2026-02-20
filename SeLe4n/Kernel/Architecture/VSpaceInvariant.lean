@@ -28,14 +28,6 @@ namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
 
-/-- ASID roots in the bounded discovery window are unique. -/
-def vspaceAsidRootsUnique (st : SystemState) : Prop :=
-  ∀ oid₁ oid₂ root₁ root₂,
-    st.objects oid₁ = some (.vspaceRoot root₁) →
-    st.objects oid₂ = some (.vspaceRoot root₂) →
-    root₁.asid = root₂.asid →
-    oid₁ = oid₂
-
 /-- Every modeled VSpace root preserves deterministic non-overlap for virtual mappings. -/
 def vspaceRootNonOverlap (st : SystemState) : Prop :=
   ∀ oid root,
@@ -110,8 +102,8 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
           -- 1. vspaceAsidRootsUnique st'
           · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
             by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
-            · exact h₁.symm.trans h₂
-            · subst h₁
+            · exact h₁.trans h₂.symm
+            · rw [h₁] at hObj₁
               rw [hObjEq] at hObj₁; cases hObj₁
               rw [hObjNe oid₂ h₂] at hObj₂
               exfalso
@@ -119,7 +111,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 hUniq rootId oid₂ root r₂ hObjRoot hObj₂
                   (hAsidPreserved.symm ▸ hAsidEq)
               exact h₂ this.symm
-            · subst h₂
+            · rw [h₂] at hObj₂
               rw [hObjEq] at hObj₂; cases hObj₂
               rw [hObjNe oid₁ h₁] at hObj₁
               exfalso
@@ -133,7 +125,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
           -- 2. vspaceRootNonOverlap st'
           · intro oid r hObj
             by_cases hEq : oid = rootId
-            · subst hEq
+            · rw [hEq] at hObj
               rw [hObjEq] at hObj; cases hObj
               exact VSpaceRoot.mapPage_noVirtualOverlap root root' vaddr paddr
                 (hNoOverlap rootId root hObjRoot) hMapRoot
@@ -174,8 +166,8 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           -- 1. vspaceAsidRootsUnique st'
           · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
             by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
-            · exact h₁.symm.trans h₂
-            · subst h₁
+            · exact h₁.trans h₂.symm
+            · rw [h₁] at hObj₁
               rw [hObjEq] at hObj₁; cases hObj₁
               rw [hObjNe oid₂ h₂] at hObj₂
               exfalso
@@ -183,7 +175,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
                 hUniq rootId oid₂ root r₂ hObjRoot hObj₂
                   (hAsidPreserved.symm ▸ hAsidEq)
               exact h₂ this.symm
-            · subst h₂
+            · rw [h₂] at hObj₂
               rw [hObjEq] at hObj₂; cases hObj₂
               rw [hObjNe oid₁ h₁] at hObj₁
               exfalso
@@ -197,7 +189,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           -- 2. vspaceRootNonOverlap st'
           · intro oid r hObj
             by_cases hEq : oid = rootId
-            · subst hEq
+            · rw [hEq] at hObj
               rw [hObjEq] at hObj; cases hObj
               exact VSpaceRoot.unmapPage_noVirtualOverlap root root' vaddr
                 (hNoOverlap rootId root hObjRoot) hUnmapRoot
@@ -255,7 +247,7 @@ theorem vspaceLookup_map_other
     (hNe : vaddr ≠ vaddr')
     (hInv : vspaceInvariantBundle st)
     (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr' st' = vspaceLookup asid vaddr' st := by
+    (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceMapPage at hStep
   cases hResolve : resolveAsidRoot st asid with
   | none => simp [hResolve] at hStep
@@ -281,7 +273,8 @@ theorem vspaceLookup_map_other
               hObjEq (hAsidPreserved.trans hAsidRoot) (hIdxEq ▸ hMemIdx) hInv'.1
           have hLookupNe : root'.lookup vaddr' = root.lookup vaddr' :=
             VSpaceRoot.lookup_mapPage_ne root root' vaddr vaddr' paddr hNe hMapRoot
-          simp [vspaceLookup, hResolve', hResolve, hLookupNe]
+          simp [vspaceLookup, hResolve', hResolve, hLookupNe, Except.map]
+          cases root.lookup vaddr' <;> rfl
 
 /-- TPI-001 round-trip #3: After a successful `vspaceUnmapPage`, `vspaceLookup` on the
     unmapped vaddr returns a translation fault (no mapping). -/
@@ -326,7 +319,7 @@ theorem vspaceLookup_unmap_other
     (hNe : vaddr ≠ vaddr')
     (hInv : vspaceInvariantBundle st)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr' st' = vspaceLookup asid vaddr' st := by
+    (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceUnmapPage at hStep
   cases hResolve : resolveAsidRoot st asid with
   | none => simp [hResolve] at hStep
@@ -352,6 +345,7 @@ theorem vspaceLookup_unmap_other
               hObjEq (hAsidPreserved.trans hAsidRoot) (hIdxEq ▸ hMemIdx) hInv'.1
           have hLookupNe : root'.lookup vaddr' = root.lookup vaddr' :=
             VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hUnmapRoot
-          simp [vspaceLookup, hResolve', hResolve, hLookupNe]
+          simp [vspaceLookup, hResolve', hResolve, hLookupNe, Except.map]
+          cases root.lookup vaddr' <;> rfl
 
 end SeLe4n.Kernel.Architecture

@@ -60,6 +60,14 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
 -- ============================================================================
 
+/-- ASID roots in the bounded discovery window are unique. -/
+def vspaceAsidRootsUnique (st : SystemState) : Prop :=
+  ∀ oid₁ oid₂ root₁ root₂,
+    st.objects oid₁ = some (.vspaceRoot root₁) →
+    st.objects oid₂ = some (.vspaceRoot root₂) →
+    root₁.asid = root₂.asid →
+    oid₁ = oid₂
+
 /-- Extract concrete object-store facts from a successful `resolveAsidRoot` result. -/
 theorem resolveAsidRoot_some_implies
     (st : SystemState) (asid : SeLe4n.ASID)
@@ -67,10 +75,11 @@ theorem resolveAsidRoot_some_implies
     (hResolve : resolveAsidRoot st asid = some (rootId, root)) :
     st.objects rootId = some (.vspaceRoot root) ∧ root.asid = asid ∧ rootId ∈ st.objectIndex := by
   unfold resolveAsidRoot at hResolve
-  induction st.objectIndex with
-  | nil => simp [List.findSome?] at hResolve
+  generalize st.objectIndex = idx at hResolve ⊢
+  induction idx with
+  | nil => simp [List.findSome?_nil] at hResolve
   | cons a rest ih =>
-      simp only [List.findSome?] at hResolve
+      simp only [List.findSome?_cons] at hResolve
       split at hResolve
       · next hMatch =>
         cases hObjA : st.objects a with
@@ -85,7 +94,7 @@ theorem resolveAsidRoot_some_implies
                   rcases hMatch with ⟨rfl, rfl⟩
                   simp at hResolve
                   rcases hResolve with ⟨rfl, rfl⟩
-                  exact ⟨hObjA, hAsidEq, List.mem_cons_self _ _⟩
+                  exact ⟨hObjA, hAsidEq, List.mem_cons_self⟩
                 · simp at hMatch
             | tcb _ | cnode _ | endpoint _ | notification _ =>
                 simp [hObjA] at hMatch
@@ -106,10 +115,11 @@ theorem resolveAsidRoot_of_unique_root
     (hUniq : vspaceAsidRootsUnique st) :
     resolveAsidRoot st asid = some (rootId, root) := by
   unfold resolveAsidRoot
-  induction st.objectIndex with
-  | nil => exact absurd hMem (List.not_mem_nil _)
+  generalize st.objectIndex = idx at hMem ⊢
+  induction idx with
+  | nil => exact absurd hMem List.not_mem_nil
   | cons a rest ih =>
-      simp only [List.findSome?]
+      simp only [List.findSome?_cons]
       by_cases hEq : a = rootId
       · subst hEq
         simp [hObj, hAsid]
