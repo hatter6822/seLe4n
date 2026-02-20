@@ -1,5 +1,22 @@
 import SeLe4n.Model.State
 
+/-!
+# Scheduler Invariant Bundle (M1)
+
+This module defines the scheduler invariant components and their bundle entrypoint.
+
+## Proof scope qualification (F-16)
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `chooseThread_preserves_*`, `schedule_preserves_*`, `handleYield_preserves_*` (in `Scheduler/Operations.lean`) |
+| **Error-case / identity preservation** | None (scheduler transitions are total in the modeled slice) |
+
+All scheduler invariant preservation theorems are substantive: they prove that
+a successful scheduler transition preserves the invariant bundle over genuinely
+changed state (queue rotation, current-thread selection).
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

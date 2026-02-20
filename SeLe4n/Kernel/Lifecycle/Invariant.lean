@@ -1,5 +1,24 @@
 import SeLe4n.Kernel.Lifecycle.Operations
 
+/-!
+# Lifecycle Invariant Bundle (M4-A / M4-B)
+
+This module defines the lifecycle invariant components (identity/aliasing, capability-reference
+consistency, stale-reference exclusion) and transition-level preservation theorems.
+
+## Proof scope qualification (F-16)
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`, `lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`, `lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant` |
+| **Structural bridge** | `lifecycleInvariantBundle_of_metadata_consistent`, `lifecycleMetadataConsistent_of_lifecycleInvariantBundle`, `lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle`, `lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle` |
+| **Error-case / identity preservation** | None modeled separately; lifecycle retype transitions fail or succeed atomically |
+
+All lifecycle preservation theorems are substantive: they prove that a successful
+`lifecycleRetypeObject` preserves the invariant bundle over genuinely changed state
+(object-type metadata and capability-reference metadata updates).
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

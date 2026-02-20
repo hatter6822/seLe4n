@@ -1,6 +1,26 @@
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.IPC.Operations
 
+/-!
+# IPC Invariant Bundle (M3 / M3.5)
+
+This module defines the IPC invariant components (endpoint queue well-formedness,
+endpoint object validity, notification queue consistency), the IPC-scheduler coherence
+contract predicates, and transition-level preservation theorems for IPC operations.
+
+## Proof scope qualification (F-16)
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `endpointSend_preserves_ipcInvariant`, `endpointAwaitReceive_preserves_ipcInvariant`, `endpointReceive_preserves_ipcInvariant`, `endpointSend_preserves_ipcSchedulerContractPredicates`, `endpointAwaitReceive_preserves_ipcSchedulerContractPredicates`, `endpointReceive_preserves_ipcSchedulerContractPredicates`, `endpointSend_preserves_schedulerInvariantBundle`, `endpointAwaitReceive_preserves_schedulerInvariantBundle`, `endpointReceive_preserves_schedulerInvariantBundle` |
+| **Structural decomposition** | `endpointSend_ok_as_storeObject`, `endpointAwaitReceive_ok_as_storeObject`, `endpointReceive_ok_as_storeObject`, `endpointSend_result_wellFormed`, `endpointAwaitReceive_result_wellFormed`, `endpointReceive_result_wellFormed`, `endpointObjectValid_of_queueWellFormed` |
+| **Error-case / identity preservation** | None modeled separately; error paths return unchanged state by definition |
+
+All IPC preservation theorems are substantive: they prove that successful IPC transitions
+preserve the invariant bundle and IPC-scheduler coherence predicates over genuinely changed
+state (endpoint queue modification, scheduler membership consistency).
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

@@ -1,6 +1,25 @@
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
 
+/-!
+# Capability Invariant Bundle (M2)
+
+This module defines the capability invariant components, the composed bundle entrypoint,
+and transition-level preservation theorems for CSpace operations.
+
+## Proof scope qualification (F-16)
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `cspaceMint_child_attenuates`, `cspaceInsertSlot_lookup_eq`, `cspaceDeleteSlot_authority_reduction`, `cspaceRevoke_local_target_reduction`, `cspaceRevoke_preserves_source` |
+| **Badge-safety (F-06/TPI-D04)** | `mintDerivedCap_target_preserved`, `mintDerivedCap_rights_attenuated`, `cspaceMint_badge_override_rights_attenuated`, `cspaceMint_badge_override_target_preserved` |
+| **Error-case / identity preservation** | None modeled separately; error paths return unchanged state by definition |
+
+All capability preservation theorems are substantive: they prove structural
+safety properties (attenuation, target preservation, authority reduction) over
+state genuinely modified by CSpace transitions.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -327,6 +346,60 @@ theorem mintDerivedCap_attenuates
     · rfl
     · exact rightsSubset_sound rights parent.rights hSubset
   · simp [mintDerivedCap, hSubset] at hMint
+
+/-- F-06 badge-safety helper: `mintDerivedCap` preserves the parent capability target
+    regardless of the badge parameter. Badge override is orthogonal to object authority. -/
+theorem mintDerivedCap_target_preserved
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.target = parent.target :=
+  (mintDerivedCap_attenuates parent child rights badge hMint).1
+
+/-- F-06 badge-safety helper: `mintDerivedCap` attenuates rights regardless of the badge
+    parameter. Badge override cannot escalate the derived capability's access rights. -/
+theorem mintDerivedCap_rights_attenuated
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    ∀ right, right ∈ child.rights → right ∈ parent.rights :=
+  (mintDerivedCap_attenuates parent child rights badge hMint).2
+
+/-- F-06 badge-safety theorem #1 (TPI-D04): A minted capability's rights are a subset of
+    the parent's rights, regardless of what badge is specified during `cspaceMint`.
+    Badge override cannot escalate the derived capability's access rights. -/
+theorem cspaceMint_badge_override_rights_attenuated
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.2⟩
+
+/-- F-06 badge-safety theorem #2 (TPI-D04): Badge override in `cspaceMint` does not grant
+    access to objects outside the parent capability's authority scope. The derived capability's
+    target is identical to the parent's target regardless of the badge parameter. -/
+theorem cspaceMint_badge_override_target_preserved
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.target = parent.target := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.1⟩
 
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)

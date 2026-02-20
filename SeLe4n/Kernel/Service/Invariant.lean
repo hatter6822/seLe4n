@@ -2,6 +2,26 @@ import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
 
+/-!
+# Service Invariant Bundle (M5)
+
+This module defines the service-lifecycle-capability composed invariant bundle
+and transition-level preservation theorems for service start/stop/restart.
+
+## Proof scope qualification (F-16)
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle`, `serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle`, `serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle` |
+| **Error-case preservation** | `serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle`, `serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`, `serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`, `serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle` |
+| **Bridge / policy** | `servicePolicySurfaceInvariant_of_lifecycleInvariant`, `policyBackingObjectTyped_of_lifecycleInvariant`, `policyOwnerAuthoritySlotPresent_of_lifecycleInvariant`, `serviceStart_policyDenied_separates_check_from_mutation`, `serviceStop_policyDenied_separates_check_from_mutation` |
+
+The error-case preservation theorems are trivially true (the state is unchanged on
+failure). They exist for completeness of the success/failure case split pattern.
+The success-path theorems are substantive: they prove that service status transitions
+preserve the composed invariant bundle over genuinely mutated state.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

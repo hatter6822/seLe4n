@@ -143,7 +143,48 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 10. Architecture/VSpace invariant layering (M6 + WS-D3 complete)
+
+VSpace invariant components and preservation:
+
+- `vspaceAsidRootsUnique` — at most one VSpaceRoot per ASID in the object store,
+- `vspaceRootNonOverlap` — no virtual-address overlap within any VSpaceRoot mappings,
+- `vspaceInvariantBundle` — conjunction of the above two components.
+
+Preservation shape (error-case):
+
+- `vspaceMapPage_error_preserves_vspaceInvariantBundle`
+- `vspaceUnmapPage_error_preserves_vspaceInvariantBundle`
+
+Preservation shape (success, WS-D3/F-08):
+
+- `vspaceMapPage_success_preserves_vspaceInvariantBundle`
+- `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`
+
+Round-trip theorems (WS-D3/F-08, TPI-D05/TPI-001):
+
+- `vspaceLookup_after_map` — map then lookup same vaddr yields mapped paddr,
+- `vspaceLookup_map_other` — map does not affect lookup of a different vaddr,
+- `vspaceLookup_after_unmap` — unmap then lookup yields translationFault,
+- `vspaceLookup_unmap_other` — unmap does not affect lookup of a different vaddr.
+
+Supporting infrastructure:
+
+- VSpaceRoot helper lemmas in `Model/Object.lean` (`mapPage_asid_eq`, `unmapPage_asid_eq`, `lookup_eq_none_not_mem`, `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`, `lookup_mapPage_ne`, `lookup_unmapPage_ne`),
+- resolveAsidRoot characterization in `Architecture/VSpace.lean` (`resolveAsidRoot_some_implies`, `resolveAsidRoot_of_unique_root`, `storeObject_objectIndex_eq_of_mem`).
+
+## 11. Capability badge-safety proofs (WS-D3/F-06 complete)
+
+Badge-override safety theorems in `Capability/Invariant.lean` (TPI-D04):
+
+- `mintDerivedCap_target_preserved` — target preserved regardless of badge,
+- `mintDerivedCap_rights_attenuated` — rights attenuated regardless of badge,
+- `cspaceMint_badge_override_rights_attenuated` — end-to-end: mint cannot escalate rights,
+- `cspaceMint_badge_override_target_preserved` — end-to-end: mint cannot change target.
+
+These extend the existing `mintDerivedCap_attenuates` / `cspaceMint_child_attenuates` foundations.
+
+## 12. IF-M1 information-flow baseline layering (WS-B7 complete)
 
 Information-flow proof-track entrypoints now exist with explicit local decomposition:
 

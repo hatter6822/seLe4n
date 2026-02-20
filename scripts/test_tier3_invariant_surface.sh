@@ -21,6 +21,39 @@ run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architectu
 run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic' SeLe4n/Kernel/InformationFlow/Projection.lean"
 run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+
+# WS-D3/F-08 closure anchors: VSpace success preservation + round-trip theorems (TPI-D05).
+run_check "INVARIANT" rg -n '^theorem vspaceMapPage_success_preserves_vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_map' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_map_other' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_unmap' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_unmap_other' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+# WS-D3/F-08 supporting infrastructure: resolveAsidRoot characterization + VSpaceRoot helpers.
+run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_some_implies' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_of_unique_root' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_objectIndex_eq_of_mem' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^theorem mapPage_asid_eq' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem unmapPage_asid_eq' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem mapPage_noVirtualOverlap' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem unmapPage_noVirtualOverlap' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem lookup_mapPage_ne' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem lookup_unmapPage_ne' SeLe4n/Model/Object.lean
+# WS-D3/F-06 closure anchors: badge-override safety proofs (TPI-D04).
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_target_preserved' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_rights_attenuated' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_target_preserved' SeLe4n/Kernel/Capability/Invariant.lean
+# WS-D3/F-16 closure anchors: proof scope qualification docstrings in Invariant modules.
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n 'Proof scope qualification' SeLe4n/Kernel/InformationFlow/Invariant.lean
+
 run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
 run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
 # WS-B4 closure anchors: wrapper structures must remain explicit.
