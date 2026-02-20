@@ -47,6 +47,16 @@ Preservation shape:
 
 - operation-level `*_preserves_capabilityInvariantBundle` for lookup/insert/mint/delete/revoke.
 
+Badge-override safety (WS-D3 / F-06 / TPI-D04):
+
+- `mintDerivedCap_rights_attenuated_with_badge_override`
+- `mintDerivedCap_target_preserved_with_badge_override`
+- `cspaceMint_badge_override_safe`
+
+These theorems prove that badge override in `cspaceMint` cannot escalate privilege:
+the derived capability always has the same target as the parent and attenuated rights,
+regardless of what badge is supplied.
+
 ## 4. IPC invariants (M3)
 
 Component level:
@@ -143,7 +153,26 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 10. VSpace invariant preservation and round-trip theorems (WS-D3 complete)
+
+VSpace invariant preservation is now proven for both success and error paths:
+
+- `vspaceMapPage_success_preserves_vspaceInvariantBundle`
+- `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`
+- `vspaceMapPage_error_asidNotBound_preserves_vspaceInvariantBundle` (trivial)
+- `vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle` (trivial)
+
+Round-trip functional-correctness theorems (TPI-001 / TPI-D05):
+
+- `vspaceLookup_after_map`: mapping then looking up yields the mapped address.
+- `vspaceLookup_map_other`: mapping does not affect lookup of a different virtual address.
+- `vspaceLookup_after_unmap`: after unmap, lookup fails with `translationFault`.
+
+Supporting VSpaceRoot-level lemmas in `Model/Object.lean`:
+`mapPage_preserves_asid`, `unmapPage_preserves_asid`, `mapPage_preserves_noVirtualOverlap`,
+`unmapPage_preserves_noVirtualOverlap`, `lookup_mapPage_other`.
+
+## 11. IF-M1 information-flow baseline layering (WS-B7 complete)
 
 Information-flow proof-track entrypoints now exist with explicit local decomposition:
 

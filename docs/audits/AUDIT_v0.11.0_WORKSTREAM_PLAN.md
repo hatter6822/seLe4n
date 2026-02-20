@@ -245,6 +245,40 @@ Validation gates: `./scripts/test_full.sh --continue` passes Tier 0-3.
 
 **Dependencies:** None (proof work is independent of test fixes).
 
+**Completion evidence**
+
+All acceptance criteria met. Summary of changes:
+
+1. **F-06 (Badge-override safety):** Added three badge-override safety theorems to
+   `SeLe4n/Kernel/Capability/Invariant.lean`:
+   - `mintDerivedCap_rights_attenuated_with_badge_override`: rights attenuation holds
+     regardless of badge supplied.
+   - `mintDerivedCap_target_preserved_with_badge_override`: target identity is always
+     preserved by `mintDerivedCap`, so badge override cannot redirect authority.
+   - `cspaceMint_badge_override_safe`: composed kernel-operation-level theorem witnessing
+     that derived capability has same target and attenuated rights regardless of badge.
+   All proofs delegate to `mintDerivedCap_attenuates` (no `sorry`). TPI-D04 closed.
+
+2. **F-08 (VSpace success preservation + TPI-001 round-trip):** Added five VSpaceRoot-level
+   helper lemmas to `SeLe4n/Model/Object.lean` (`mapPage_preserves_asid`,
+   `unmapPage_preserves_asid`, `mapPage_preserves_noVirtualOverlap`,
+   `unmapPage_preserves_noVirtualOverlap`, `lookup_mapPage_other`). Added two success-path
+   invariant preservation theorems and three round-trip theorems to
+   `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`:
+   - `vspaceMapPage_success_preserves_vspaceInvariantBundle`
+   - `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`
+   - `vspaceLookup_after_map` (TPI-001 obligation 1)
+   - `vspaceLookup_map_other` (TPI-001 obligation 2)
+   - `vspaceLookup_after_unmap` (TPI-001 obligation 3)
+   All proofs are complete without `sorry`. TPI-D05 and TPI-001 closed.
+
+3. **F-16 (Proof scope documentation):** Added `/-! ... -/` module-level docstrings to all
+   8 `Invariant.lean` files classifying every theorem into one of four categories:
+   substantive preservation, non-interference, structural/bridge, or error-case (trivially
+   true). Updated `docs/CLAIM_EVIDENCE_INDEX.md` proof claim qualification table.
+
+Validation gates: `./scripts/test_full.sh` passes Tier 0-3.
+
 ---
 
 ### WS-D4 — Kernel Design Hardening
@@ -406,7 +440,7 @@ Each workstream PR must include:
 |---|---|---|---|---|
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
 | WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed: enforcement in 3 operations, 4 additional non-interference theorems. |
-| WS-D3 | Planned | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). Carries TPI-001 from WS-C. |
+| WS-D3 | **Completed** | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). TPI-D04, TPI-D05, TPI-001 all closed. |
 | WS-D4 | Planned | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, atomicity, double-wait). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
 | WS-D6 | Planned | Low | F-13, F-14, F-15, F-17 | CI/CD polish and documentation governance. F-13 likely already resolved. |

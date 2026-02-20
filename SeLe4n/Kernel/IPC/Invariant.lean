@@ -1,3 +1,35 @@
+/-!
+# IPC Invariant Preservation Proofs
+
+This module contains invariant definitions and preservation theorems for the IPC
+(inter-process communication) subsystem, including endpoint and notification
+well-formedness, and IPC-scheduler coherence contracts.
+
+## Proof classification (WS-D3 / F-16)
+
+**Substantive preservation theorems** (high assurance — prove invariant preservation
+over *changed* state after a *successful* operation):
+- `endpointSend_preserves_ipcInvariant`
+- `endpointAwaitReceive_preserves_ipcInvariant`
+- `endpointReceive_preserves_ipcInvariant`
+- `endpointSend_preserves_ipcSchedulerContractPredicates` (and per-component)
+- `endpointAwaitReceive_preserves_ipcSchedulerContractPredicates` (and per-component)
+- `endpointReceive_preserves_ipcSchedulerContractPredicates` (and per-component)
+- `endpointSend_preserves_schedulerInvariantBundle`
+- `endpointAwaitReceive_preserves_schedulerInvariantBundle`
+- `endpointReceive_preserves_schedulerInvariantBundle`
+
+**Structural / functional-correctness theorems** (high assurance):
+- `endpointSend_result_wellFormed`
+- `endpointAwaitReceive_result_wellFormed`
+- `endpointReceive_result_wellFormed`
+- `endpointObjectValid_of_queueWellFormed`
+- all `*_ok_implies_endpoint_object` lemmas
+
+All theorems in this module are substantive: they prove invariant preservation over
+state that is actually modified by successful endpoint operations. There are no
+error-case preservation theorems in this module.
+-/
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.IPC.Operations
 

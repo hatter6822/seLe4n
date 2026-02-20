@@ -33,8 +33,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ### 3.1 Workstreams and intent
 
 - **WS-D1** — Test error handling and validity (**completed** — F-01, F-03, F-04)
-- **WS-D2** — Information-flow enforcement and proof (**planned** — F-02, F-05)
-- **WS-D3** — Proof gap closure (**planned** — F-06, F-08, F-16)
+- **WS-D2** — Information-flow enforcement and proof (**completed** — F-02, F-05)
+- **WS-D3** — Proof gap closure (**completed** — F-06, F-08, F-16)
 - **WS-D4** — Kernel design hardening (**planned** — F-07, F-11, F-12)
 - **WS-D5** — Test infrastructure expansion (**planned** — F-09, F-10)
 - **WS-D6** — CI/CD and documentation polish (**planned** — F-13, F-14, F-15, F-17)
@@ -47,8 +47,8 @@ Use the planning phases from the workstream backbone:
 
 - **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
 - **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — current
-- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — WS-D3 **completed**, WS-D4 next
 - **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 
 ### 3.3 Prior completed portfolio (WS-C, historical)

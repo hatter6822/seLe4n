@@ -1,3 +1,17 @@
+/-!
+# Architecture Boundary Invariant Proofs
+
+This module contains architecture-boundary invariant definitions and theorems for
+the adapter/architecture boundary subsystem, including hardware-boundary contracts
+and global invariant composition.
+
+## Proof classification (WS-D3 / F-16)
+
+Theorems in this module compose the subsystem-level invariants into global
+architecture-boundary bundles. Preservation is inherited from the subsystem modules
+(IPC, Capability, Lifecycle, Service, Scheduler, VSpace). See individual subsystem
+invariant modules for per-theorem classification.
+-/
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Service.Invariant
 

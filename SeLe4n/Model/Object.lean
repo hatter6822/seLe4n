@@ -171,6 +171,107 @@ theorem lookup_mapPage_eq
       unfold lookup
       simp
 
+/-- `mapPage` preserves the ASID identity of the VSpace root. -/
+theorem mapPage_preserves_asid
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.asid = root.asid := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none => simp [hLookup] at hMap; cases hMap; rfl
+
+/-- `unmapPage` preserves the ASID identity of the VSpace root. -/
+theorem unmapPage_preserves_asid
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.asid = root.asid := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ => simp [hLookup] at hUnmap; cases hUnmap; rfl
+
+/-- Mapping a fresh page preserves the no-virtual-overlap invariant.
+
+When `mapPage` succeeds, `lookup root vaddr = none` meaning no existing mapping at
+`vaddr`. The new mappings list is `(vaddr, paddr) :: root.mappings`. For any virtual
+address `v`, if two physical addresses are in the new list, they must agree because:
+- if `v = vaddr`, the only mapping at `v` is the new `(vaddr, paddr)` entry (the old
+  list had no mapping at `vaddr`),
+- if `v ≠ vaddr`, both mappings come from the original list where `noVirtualOverlap` held. -/
+theorem mapPage_preserves_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hOverlap : noVirtualOverlap root)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    noVirtualOverlap root' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp at hIn₁ hIn₂
+      rcases hIn₁ with ⟨rfl, rfl⟩ | hIn₁
+      · rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
+        · rfl
+        · -- v = vaddr, p₂ from old list: contradicts lookup = none
+          unfold lookup at hLookup
+          have hFound := List.find?_isSome.mpr ⟨(vaddr, p₂), hIn₂, by simp⟩
+          simp at hLookup
+          rw [hLookup] at hFound
+          simp at hFound
+      · rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
+        · -- v = vaddr, p₁ from old list: contradicts lookup = none
+          unfold lookup at hLookup
+          have hFound := List.find?_isSome.mpr ⟨(vaddr, p₁), hIn₁, by simp⟩
+          simp at hLookup
+          rw [hLookup] at hFound
+          simp at hFound
+        · exact hOverlap v p₁ p₂ hIn₁ hIn₂
+
+/-- Unmapping a page preserves the no-virtual-overlap invariant.
+
+Filtering removes entries; any two remaining entries with the same virtual address
+were also both present in the original list where `noVirtualOverlap` held. -/
+theorem unmapPage_preserves_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hOverlap : noVirtualOverlap root)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    noVirtualOverlap root' := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ =>
+      simp [hLookup] at hUnmap
+      cases hUnmap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp at hIn₁ hIn₂
+      exact hOverlap v p₁ p₂ hIn₁.2 hIn₂.2
+
+/-- Mapping at `vaddr` does not affect lookup of a different virtual address `vaddr'`. -/
+theorem lookup_mapPage_other
+    (root root' : VSpaceRoot)
+    (vaddr vaddr' : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hNe : vaddr ≠ vaddr')
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.lookup vaddr' = root.lookup vaddr' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      unfold lookup
+      simp [hNe]
+
 end VSpaceRoot
 
 namespace CNode
