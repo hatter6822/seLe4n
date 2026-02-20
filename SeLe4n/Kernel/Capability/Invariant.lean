@@ -402,27 +402,6 @@ theorem mintDerivedCap_target_preserved_with_badge_override
   have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
   exact hAtt.1
 
-/-- Composed badge-override safety for `cspaceMint`: after a successful mint with
-arbitrary badge override, the derived capability in the destination slot has the
-same target as the parent and attenuated rights.
-
-This theorem witnesses the full F-06 obligation at the kernel-operation level:
-badge override in `cspaceMint` cannot escalate privilege. -/
-theorem cspaceMint_badge_override_safe
-    (st st' : SystemState)
-    (src dst : CSpaceAddr)
-    (rights : List AccessRight)
-    (badge : Option SeLe4n.Badge)
-    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
-    ∃ parent child,
-      cspaceLookupSlot src st = .ok (parent, st) ∧
-      cspaceLookupSlot dst st' = .ok (child, st') ∧
-      child.target = parent.target ∧
-      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
-  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
-    ⟨parent, child, hSrc, hDst, hAtt⟩
-  exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
-
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -450,6 +429,27 @@ theorem cspaceMint_child_attenuates
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
           · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
+
+/-- Composed badge-override safety for `cspaceMint`: after a successful mint with
+arbitrary badge override, the derived capability in the destination slot has the
+same target as the parent and attenuated rights.
+
+This theorem witnesses the full F-06 obligation at the kernel-operation level:
+badge override in `cspaceMint` cannot escalate privilege. -/
+theorem cspaceMint_badge_override_safe
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.target = parent.target ∧
+      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
 
 theorem cspaceSlotUnique_holds (st : SystemState) :
     cspaceSlotUnique st := by

@@ -177,7 +177,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
           -- Extract the old root from resolveAsidRoot
           have hOldObj : st.objects rootId = some (.vspaceRoot root) := by
             unfold resolveAsidRoot at hResolve
-            have := List.findSome?_eq_some.mp hResolve
+            have := List.exists_of_findSome?_eq_some hResolve
             rcases this with ⟨_, _, hBody⟩
             split at hBody <;> simp_all
             split at hBody <;> simp_all
@@ -215,7 +215,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             simpa [hResolve, hUnmap] using hStep
           have hOldObj : st.objects rootId = some (.vspaceRoot root) := by
             unfold resolveAsidRoot at hResolve
-            have := List.findSome?_eq_some.mp hResolve
+            have := List.exists_of_findSome?_eq_some hResolve
             rcases this with ⟨_, _, hBody⟩
             split at hBody <;> simp_all
             split at hBody <;> simp_all
@@ -243,37 +243,36 @@ private theorem resolveAsidRoot_after_storeObject
     (hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st')) :
     resolveAsidRoot st' root.asid = some (rootId, root') := by
   unfold resolveAsidRoot at hResolve ⊢
-  have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
-    storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
   unfold storeObject at hStore
   cases hStore
-  -- st'.objectIndex is either st.objectIndex or rootId :: st.objectIndex
-  simp only
-  -- We need to show findSome? returns (rootId, root') on the new objectIndex
-  have hOrigFound := List.findSome?_eq_some.mp hResolve
-  rcases hOrigFound with ⟨oid, hOidMem, hBody⟩
-  -- The original resolveAsidRoot found rootId in the original objectIndex
+  -- Extract list decomposition from original resolve
+  obtain ⟨l₁, oid, l₂, hDecomp, hFoid, hNoneBefore⟩ :=
+    List.findSome?_eq_some_iff.mp hResolve
+  -- oid = rootId (since f oid returned some (rootId, root))
   have hOidIsRoot : oid = rootId := by
-    split at hBody <;> simp_all
-    split at hBody <;> simp_all
+    split at hFoid <;> simp_all
+    split at hFoid <;> simp_all
     rename_i r _ _ hObj _ hAsidCheck
-    have hRootInOld : st.objects oid = some (.vspaceRoot r) := hObj
-    -- From the resolve, r.asid = root.asid and the found root is `root`
     have : (oid, r) = (rootId, root) := by
-      simp at hBody; exact hBody
+      simp at hFoid; exact hFoid
     exact this.1
   subst hOidIsRoot
-  -- Now show findSome? on new index finds rootId with root'
-  apply List.findSome?_eq_some.mpr
+  -- Reconstruct findSome? for the new state using the full decomposition
+  rw [List.findSome?_eq_some_iff]
   by_cases hMem : rootId ∈ st.objectIndex
-  · -- objectIndex unchanged
+  · -- objectIndex unchanged (= l₁ ++ rootId :: l₂)
     simp [hMem]
-    refine ⟨rootId, hOidMem, ?_⟩
-    simp [hObjEq, hAsid]
+    refine ⟨l₁, rootId, l₂, hDecomp, ?_, ?_⟩
+    · simp [hAsid]
+    · intro x hx
+      have hNe : x ≠ rootId := by intro heq; subst heq; simp_all
+      simp [hNe]
+      exact hNoneBefore x hx
   · -- objectIndex = rootId :: st.objectIndex
     simp [hMem]
-    refine ⟨rootId, List.mem_cons_self _ _, ?_⟩
-    simp [hObjEq, hAsid]
+    refine ⟨[], rootId, st.objectIndex, rfl, ?_, ?_⟩
+    · simp [hAsid]
+    · intro x hx; exact absurd hx (List.not_mem_nil x)
 
 /-- Mapping a page and then looking it up yields the mapped physical address.
 
