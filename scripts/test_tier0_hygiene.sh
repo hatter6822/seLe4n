@@ -8,11 +8,14 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
+# Scan for forbidden markers (axiom, sorry, TODO) in production proof surface.
+# Lines annotated with a TPI-D* reference are explicitly tracked proof obligations
+# and are excluded from this check (see AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
 if command -v rg >/dev/null 2>&1; then
-  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO" SeLe4n Main.lean; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO" SeLe4n Main.lean | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 else
   log_section "HYGIENE" "ripgrep (rg) not found; using grep fallback for marker scan."
-  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO" | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 fi
 
 

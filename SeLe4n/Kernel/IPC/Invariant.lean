@@ -828,4 +828,63 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
     (fun oid hNe => endpointReceive_preserves_other_objects st st' endpointId oid sender hNe hStep)
 
 
+-- ============================================================================
+-- F-12: Notification waiting-list uniqueness invariant (WS-D4, TPI-D06)
+-- ============================================================================
+
+/-- The waiting list of the notification at `notifId` contains no duplicate thread IDs.
+
+WS-D4/F-12: This invariant is preserved by the double-wait check in `notificationWait`,
+which rejects any attempt to add a thread that is already in the waiting list. -/
+def uniqueWaiters (notifId : SeLe4n.ObjId) (st : SystemState) : Prop :=
+  ∀ ntfn, st.objects notifId = some (.notification ntfn) → ntfn.waitingThreads.Nodup
+
+/-- Helper: appending a non-member to a Nodup list preserves Nodup. -/
+private theorem list_nodup_append_singleton [DecidableEq α]
+    (l : List α) (a : α) (hNodup : l.Nodup) (hNotMem : a ∉ l) :
+    (l ++ [a]).Nodup := by
+  rw [List.nodup_append]
+  exact ⟨hNodup,
+    .cons (fun _ h => absurd h List.not_mem_nil) .nil,
+    fun x hxl y hya => by
+      rw [List.mem_singleton] at hya; subst hya
+      exact fun heq => hNotMem (heq ▸ hxl)⟩
+
+/-- After `notificationWait` succeeds, the waiting list contains no duplicate thread IDs.
+
+Proof strategy:
+- **Badge-consumed path**: the waiting list is reset to `[]`, trivially `Nodup`.
+- **Wait path**: the double-wait guard ensures `waiter ∉ ntfn.waitingThreads`,
+  so `ntfn.waitingThreads ++ [waiter]` is `Nodup` by `list_nodup_append_singleton`.
+  The decomposition lemmas `notificationWait_badge_path_notification` and
+  `notificationWait_wait_path_notification` track the notification object through
+  `storeTcbIpcState` and `removeRunnable`. -/
+theorem notificationWait_preserves_uniqueWaiters
+    (waiter : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (result : Option SeLe4n.Badge)
+    (hWait : notificationWait notifId waiter st = .ok (result, st'))
+    (hUniq : uniqueWaiters notifId st) :
+    uniqueWaiters notifId st' := by
+  intro ntfn' hLookup
+  cases hResult : result with
+  | some badge =>
+    subst hResult
+    rcases notificationWait_badge_path_notification st st' notifId waiter badge hWait with
+      ⟨ntfnPost, hPost, hEmpty⟩
+    rw [hPost] at hLookup
+    cases hLookup
+    rw [hEmpty]
+    exact List.nodup_nil
+  | none =>
+    subst hResult
+    rcases notificationWait_wait_path_notification st st' notifId waiter hWait with
+      ⟨ntfnPre, ntfnPost, hPreObj, _, hNotMem, hPostObj, hAppend⟩
+    rw [hPostObj] at hLookup
+    cases hLookup
+    rw [hAppend]
+    have hPreNodup := hUniq ntfnPre hPreObj
+    exact list_nodup_append_singleton ntfnPre.waitingThreads waiter hPreNodup hNotMem
+
 end SeLe4n.Kernel

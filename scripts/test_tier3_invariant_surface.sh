@@ -345,6 +345,27 @@ run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_some_implies' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_of_unique_root' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceAsidRootsUnique' SeLe4n/Kernel/Architecture/VSpace.lean
 
+# WS-D4 F-07 service dependency cycle detection anchors must remain present.
+run_check "INVARIANT" rg -n '^def serviceBfsFuel' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/Invariant.lean
+
+# WS-D4 F-11 serviceRestart failure-semantics anchors must remain present.
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_discards_state' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_from_start_phase' SeLe4n/Kernel/Service/Invariant.lean
+
+# WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
+run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
+
 # WS-D3 F-16 module docstring classification anchors must remain present.
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean

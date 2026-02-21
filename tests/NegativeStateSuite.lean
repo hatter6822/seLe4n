@@ -307,6 +307,65 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.schedule malformedSched)
     .schedulerInvariantViolation
 
+  -- ==========================================================================
+  -- WS-D4 F-12: Double-wait prevention in notificationWait
+  -- ==========================================================================
+
+  -- stN1 already has thread 7 in the waiting list (from "notification wait blocks with none")
+  expectError "notification double-wait prevention"
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
+    .alreadyWaiting
+
+  -- ==========================================================================
+  -- WS-D4 F-07: Service dependency cycle detection
+  -- ==========================================================================
+
+  let svcIdA : ServiceId := ⟨100⟩
+  let svcIdB : ServiceId := ⟨101⟩
+  let svcEntryA : ServiceGraphEntry := {
+    identity := { sid := svcIdA, backingObject := 200, owner := 300 }
+    status := .stopped
+    dependencies := []
+    isolatedFrom := []
+  }
+  let svcEntryB : ServiceGraphEntry := {
+    identity := { sid := svcIdB, backingObject := 201, owner := 301 }
+    status := .stopped
+    dependencies := []
+    isolatedFrom := []
+  }
+  let svcState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withService svcIdA svcEntryA
+      |>.withService svcIdB svcEntryB
+      |>.build)
+
+  -- Self-dependency should be rejected
+  expectError "service dependency self-loop rejection"
+    (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdA svcState)
+    .cyclicDependency
+
+  -- Non-existent dependency target should be rejected
+  let svcIdMissing : ServiceId := ⟨999⟩
+  expectError "service dependency missing target rejection"
+    (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdMissing svcState)
+    .objectNotFound
+
+  -- Register A → B (should succeed)
+  let regResult := SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcState
+  match regResult with
+  | .ok (_, svcStateAB) => do
+    IO.println "positive check passed [service dependency A→B registration]"
+    -- Now registering B → A should create a cycle and be rejected
+    expectError "service dependency cycle detection B→A"
+      (SeLe4n.Kernel.serviceRegisterDependency svcIdB svcIdA svcStateAB)
+      .cyclicDependency
+    -- Idempotent re-registration of A → B should succeed
+    let _ ← expectOk "service dependency idempotent re-registration"
+      (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcStateAB)
+  | .error err =>
+    throw <| IO.userError s!"service dependency A→B registration failed: {reprStr err}"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=
