@@ -143,7 +143,54 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete)
+
+VSpace invariant bundle preservation is now proven for both success and error paths:
+
+- **Error-path preservation** (trivially true, error returns unchanged state):
+  - `vspaceMapPage_error_asidNotBound_preserves_vspaceInvariantBundle`
+  - `vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle`
+- **Success-path preservation** (substantive — prove invariant preservation over changed state):
+  - `vspaceMapPage_success_preserves_vspaceInvariantBundle`
+  - `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`
+- **Round-trip / functional-correctness theorems** (TPI-001 closure):
+  - `vspaceLookup_after_map`: map then lookup yields mapped address
+  - `vspaceLookup_map_other`: map at vaddr doesn't affect lookup at different vaddr'
+  - `vspaceLookup_after_unmap`: after unmap, lookup fails with translationFault
+  - `vspaceLookup_unmap_other`: unmap at vaddr doesn't affect lookup at different vaddr'
+
+Supporting infrastructure in `VSpace.lean`:
+- `resolveAsidRoot_some_implies` — extracts object-store facts from successful ASID resolution
+- `resolveAsidRoot_of_unique_root` — characterization lemma enabling round-trip proofs
+- `storeObject_objectIndex_eq_of_mem` — objectIndex stability for in-place updates
+
+## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
+
+Badge-override safety in `cspaceMint` is now fully proven:
+
+- `mintDerivedCap_rights_attenuated_with_badge_override` — rights attenuation holds regardless of badge
+- `mintDerivedCap_target_preserved_with_badge_override` — target identity preserved regardless of badge
+- `cspaceMint_badge_override_safe` — composed kernel-operation-level safety witness
+
+The core insight: `mintDerivedCap` checks `rightsSubset` and sets `target := parent.target`
+unconditionally — the `badge` parameter only affects the `.badge` field of the child capability,
+which is notification-signaling metadata, not authority scope.
+
+## 12. Proof classification docstrings (WS-D3 / F-16 complete)
+
+All seven `Invariant.lean` files now contain module-level `/-! ... -/` docstrings that classify
+every theorem into one of these categories:
+
+| Category | Assurance level |
+|---|---|
+| **Substantive preservation** | High — proves invariant preservation over changed state |
+| **Error-case preservation** | Low — trivially true (unchanged state) |
+| **Non-interference** | Critical — proves high-domain operations don't leak to low observers |
+| **Badge-safety** | High — proves badge override cannot escalate privilege |
+| **Structural / bridge** | High — proves decomposition/composition relationships |
+| **Round-trip / functional-correctness** | High — proves semantic contracts between operations |
+
+## 13. IF-M1 information-flow baseline layering (WS-B7 complete)
 
 Information-flow proof-track entrypoints now exist with explicit local decomposition:
 

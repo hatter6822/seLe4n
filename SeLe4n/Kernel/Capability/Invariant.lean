@@ -1,6 +1,47 @@
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
 
+/-!
+# Capability Invariant Preservation Proofs (M2)
+
+This module defines the capability invariant components, the composed bundle entrypoint,
+and transition-level preservation theorems for CSpace operations. It also contains
+cross-subsystem composed bundles (M3, M3.5, M4-A).
+
+## Proof scope qualification (F-16)
+
+**Substantive preservation theorems** (high assurance — prove invariant preservation
+over *changed* state after a *successful* operation):
+- `cspaceMint_preserves_capabilityInvariantBundle`
+- `cspaceInsertSlot_preserves_capabilityInvariantBundle`
+- `cspaceDeleteSlot_preserves_capabilityInvariantBundle`
+- `cspaceRevoke_preserves_capabilityInvariantBundle`
+- `lifecycleRetypeObject_preserves_capabilityInvariantBundle`
+- `lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle`
+- all `endpointSend/AwaitReceive/Receive_preserves_capabilityInvariantBundle`
+- composed bundle preservation theorems (`m3IpcSeed`, `m35`, `m4a`)
+
+**Badge-override safety theorems** (high assurance — F-06 / TPI-D04):
+- `mintDerivedCap_rights_attenuated_with_badge_override`
+- `mintDerivedCap_target_preserved_with_badge_override`
+- `cspaceMint_badge_override_safe`
+
+**Structural / functional-correctness theorems** (high assurance):
+- `mintDerivedCap_attenuates`
+- `cspaceMint_child_attenuates`
+- `cspaceDeleteSlot_authority_reduction`
+- `cspaceRevoke_local_target_reduction`
+- `cspaceRevoke_preserves_source`
+
+**Error-case preservation theorems** (trivially true — the error path returns
+unchanged state, so any pre-state invariant holds trivially in the post-state):
+- `lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle`
+- `cspaceLookupSlot_preserves_capabilityInvariantBundle` (read-only, no mutation)
+
+Error-case theorems are retained for proof-surface completeness and compositional
+coverage, but they do not constitute meaningful security evidence.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -328,6 +369,41 @@ theorem mintDerivedCap_attenuates
     · exact rightsSubset_sound rights parent.rights hSubset
   · simp [mintDerivedCap, hSubset] at hMint
 
+-- ============================================================================
+-- F-06 / TPI-D04: Badge-override safety in cspaceMint
+-- ============================================================================
+
+/-- Badge override does not affect rights attenuation: a minted capability's rights
+are always a subset of the parent's rights, regardless of what badge is supplied.
+
+This is a direct consequence of `mintDerivedCap` checking `rightsSubset` before
+constructing the child capability and setting `child.target = parent.target`
+unconditionally. -/
+theorem mintDerivedCap_rights_attenuated_with_badge_override
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    ∀ right, right ∈ child.rights → right ∈ parent.rights := by
+  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  exact hAtt.2
+
+/-- Badge override preserves target identity: a minted capability always names the
+same target as the parent, regardless of the badge supplied. Badge override cannot
+enable a capability holder to access objects outside the authority granted by the
+parent capability.
+
+This is the core F-06 safety property: badge is metadata that affects notification
+signaling semantics, not capability authority scope. -/
+theorem mintDerivedCap_target_preserved_with_badge_override
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.target = parent.target := by
+  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  exact hAtt.1
+
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -355,6 +431,27 @@ theorem cspaceMint_child_attenuates
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
           · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
+
+/-- Composed badge-override safety for `cspaceMint`: after a successful mint with
+arbitrary badge override, the derived capability in the destination slot has the
+same target as the parent and attenuated rights.
+
+This theorem witnesses the full F-06 obligation at the kernel-operation level:
+badge override in `cspaceMint` cannot escalate privilege. -/
+theorem cspaceMint_badge_override_safe
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.target = parent.target ∧
+      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+    ⟨parent, child, hSrc, hDst, hAtt⟩
+  exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
 
 theorem cspaceSlotUnique_holds (st : SystemState) :
     cspaceSlotUnique st := by

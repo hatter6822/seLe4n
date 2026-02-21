@@ -1,5 +1,23 @@
 import SeLe4n.Model.State
 
+/-!
+# Scheduler Invariant Definitions
+
+This module contains invariant definitions for the scheduler subsystem: queue
+uniqueness, current-thread validity, and queue/current consistency.
+
+## Proof scope qualification (F-16)
+
+**Structural theorems** (high assurance):
+- `schedulerWellFormed_iff_queueCurrentConsistent`
+- `queueCurrentConsistent_when_no_current`
+
+Scheduler *preservation* theorems (e.g. `chooseThread_preserves_*`,
+`schedule_preserves_*`, `handleYield_preserves_*`) live in the IPC and Capability
+invariant modules where they compose with cross-subsystem bundles. This module
+provides only the invariant definitions and basic structural lemmas.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
