@@ -218,21 +218,17 @@ theorem mapPage_preserves_noVirtualOverlap
       intro v p₁ p₂ hIn₁ hIn₂
       simp at hIn₁ hIn₂
       rcases hIn₁ with ⟨rfl, rfl⟩ | hIn₁
-      · rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
+      · rcases hIn₂ with ⟨_, rfl⟩ | hIn₂
         · rfl
         · -- v = vaddr, p₂ from old list: contradicts lookup = none
           unfold lookup at hLookup
-          have hFound := List.find?_isSome.mpr ⟨(vaddr, p₂), hIn₂, by simp⟩
           simp at hLookup
-          rw [hLookup] at hFound
-          simp at hFound
+          exact absurd rfl (hLookup v p₂ hIn₂)
       · rcases hIn₂ with ⟨rfl, rfl⟩ | hIn₂
         · -- v = vaddr, p₁ from old list: contradicts lookup = none
           unfold lookup at hLookup
-          have hFound := List.find?_isSome.mpr ⟨(vaddr, p₁), hIn₁, by simp⟩
           simp at hLookup
-          rw [hLookup] at hFound
-          simp at hFound
+          exact absurd rfl (hLookup v p₁ hIn₁)
         · exact hOverlap v p₁ p₂ hIn₁ hIn₂
 
 /-- Unmapping a page preserves the no-virtual-overlap invariant.
@@ -253,7 +249,7 @@ theorem unmapPage_preserves_noVirtualOverlap
       cases hUnmap
       intro v p₁ p₂ hIn₁ hIn₂
       simp at hIn₁ hIn₂
-      exact hOverlap v p₁ p₂ hIn₁.2 hIn₂.2
+      exact hOverlap v p₁ p₂ hIn₁.1 hIn₂.1
 
 /-- Mapping at `vaddr` does not affect lookup of a different virtual address `vaddr'`. -/
 theorem lookup_mapPage_other

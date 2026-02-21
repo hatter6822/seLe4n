@@ -1,3 +1,5 @@
+import SeLe4n.Kernel.Lifecycle.Operations
+
 /-!
 # Lifecycle Invariant Preservation Proofs
 
@@ -28,7 +30,6 @@ All theorems in this module are substantive: they prove structural decomposition
 properties or invariant preservation over state modified by successful retype
 operations. There are no error-case preservation theorems in this module.
 -/
-import SeLe4n.Kernel.Lifecycle.Operations
 
 namespace SeLe4n.Kernel
 

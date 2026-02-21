@@ -1,3 +1,9 @@
+import SeLe4n.Kernel.InformationFlow.Projection
+import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.Capability.Invariant
+import SeLe4n.Kernel.Scheduler.Operations
+import SeLe4n.Kernel.Lifecycle.Operations
+
 /-!
 # Information-Flow Non-Interference Proofs
 
@@ -21,11 +27,6 @@ high-domain operation preserves low-equivalence for unrelated observers):
 All theorems in this module are substantive non-interference proofs. There are no
 error-case preservation theorems.
 -/
-import SeLe4n.Kernel.InformationFlow.Projection
-import SeLe4n.Kernel.IPC.Invariant
-import SeLe4n.Kernel.Capability.Invariant
-import SeLe4n.Kernel.Scheduler.Operations
-import SeLe4n.Kernel.Lifecycle.Operations
 
 namespace SeLe4n.Kernel
 

@@ -1,3 +1,6 @@
+import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Service.Invariant
+
 /-!
 # Architecture Boundary Invariant Proofs
 
@@ -12,8 +15,6 @@ architecture-boundary bundles. Preservation is inherited from the subsystem modu
 (IPC, Capability, Lifecycle, Service, Scheduler, VSpace). See individual subsystem
 invariant modules for per-theorem classification.
 -/
-import SeLe4n.Kernel.Architecture.Adapter
-import SeLe4n.Kernel.Service.Invariant
 
 namespace SeLe4n.Kernel.Architecture
 

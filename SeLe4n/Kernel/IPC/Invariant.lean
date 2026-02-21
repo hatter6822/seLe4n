@@ -1,3 +1,6 @@
+import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Kernel.IPC.Operations
+
 /-!
 # IPC Invariant Preservation Proofs
 
@@ -30,8 +33,6 @@ All theorems in this module are substantive: they prove invariant preservation o
 state that is actually modified by successful endpoint operations. There are no
 error-case preservation theorems in this module.
 -/
-import SeLe4n.Kernel.Scheduler.Invariant
-import SeLe4n.Kernel.IPC.Operations
 
 namespace SeLe4n.Kernel
 

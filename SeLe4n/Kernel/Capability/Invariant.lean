@@ -1,3 +1,6 @@
+import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.Lifecycle.Invariant
+
 /-!
 # Capability Invariant Preservation Proofs
 
@@ -37,8 +40,6 @@ unchanged state, so any pre-state invariant holds trivially in the post-state):
 Error-case theorems are retained for proof-surface completeness and compositional
 coverage, but they do not constitute meaningful security evidence.
 -/
-import SeLe4n.Kernel.IPC.Invariant
-import SeLe4n.Kernel.Lifecycle.Invariant
 
 namespace SeLe4n.Kernel
 

@@ -1,3 +1,5 @@
+import SeLe4n.Kernel.Architecture.VSpace
+
 /-!
 # VSpace Invariant Preservation Proofs
 
@@ -25,7 +27,6 @@ unchanged state, so any pre-state invariant holds trivially in the post-state):
 Error-case theorems are retained for proof-surface completeness and compositional
 coverage, but they do not constitute meaningful security evidence.
 -/
-import SeLe4n.Kernel.Architecture.VSpace
 
 namespace SeLe4n.Kernel.Architecture
 
@@ -99,24 +100,24 @@ private theorem storeObject_vspaceRoot_preserves_asidRootsUnique
   · rw [h₁, h₂]
   · subst h₁
     have hR₁ : r₁ = newRoot := by
-      have := storeObject_objects_eq st st' rootId (.vspaceRoot newRoot) hStore
+      have := storeObject_objects_eq st st' oid₁ (.vspaceRoot newRoot) hStore
       rw [this] at hObj₁; cases hObj₁; rfl
     have hR₂Orig : st.objects oid₂ = some (.vspaceRoot r₂) := by
-      rw [storeObject_objects_ne st st' rootId oid₂ (.vspaceRoot newRoot) h₂ hStore] at hObj₂
+      rw [storeObject_objects_ne st st' oid₁ oid₂ (.vspaceRoot newRoot) h₂ hStore] at hObj₂
       exact hObj₂
     subst hR₁
     rw [hAsid] at hAsidEq
-    exact hUnique rootId oid₂ oldRoot r₂ hOldObj hR₂Orig hAsidEq
+    exact hUnique oid₁ oid₂ oldRoot r₂ hOldObj hR₂Orig hAsidEq
   · subst h₂
     have hR₂ : r₂ = newRoot := by
-      have := storeObject_objects_eq st st' rootId (.vspaceRoot newRoot) hStore
+      have := storeObject_objects_eq st st' oid₂ (.vspaceRoot newRoot) hStore
       rw [this] at hObj₂; cases hObj₂; rfl
     have hR₁Orig : st.objects oid₁ = some (.vspaceRoot r₁) := by
-      rw [storeObject_objects_ne st st' rootId oid₁ (.vspaceRoot newRoot) h₁ hStore] at hObj₁
+      rw [storeObject_objects_ne st st' oid₂ oid₁ (.vspaceRoot newRoot) h₁ hStore] at hObj₁
       exact hObj₁
     subst hR₂
     rw [hAsid] at hAsidEq
-    exact hUnique oid₁ rootId r₁ oldRoot hR₁Orig hOldObj hAsidEq
+    exact hUnique oid₁ oid₂ r₁ oldRoot hR₁Orig hOldObj hAsidEq
   · have hR₁Orig : st.objects oid₁ = some (.vspaceRoot r₁) := by
       rw [storeObject_objects_ne st st' rootId oid₁ (.vspaceRoot newRoot) h₁ hStore] at hObj₁
       exact hObj₁
@@ -139,7 +140,7 @@ private theorem storeObject_vspaceRoot_preserves_rootNonOverlap
   by_cases hEq : oid = rootId
   · subst hEq
     have hR : root = newRoot := by
-      have := storeObject_objects_eq st st' rootId (.vspaceRoot newRoot) hStore
+      have := storeObject_objects_eq st st' oid (.vspaceRoot newRoot) hStore
       rw [this] at hObj; cases hObj; rfl
     subst hR
     exact hNewOverlap
@@ -180,7 +181,6 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
             have := List.exists_of_findSome?_eq_some hResolve
             rcases this with ⟨_, _, hBody⟩
             split at hBody <;> simp_all
-            split at hBody <;> simp_all
           have hAsid := VSpaceRoot.mapPage_preserves_asid root root' vaddr paddr hMap
           have hNewOverlap := VSpaceRoot.mapPage_preserves_noVirtualOverlap
             root root' vaddr paddr (hNonOverlap rootId root hOldObj) hMap
@@ -218,7 +218,6 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             have := List.exists_of_findSome?_eq_some hResolve
             rcases this with ⟨_, _, hBody⟩
             split at hBody <;> simp_all
-            split at hBody <;> simp_all
           have hAsid := VSpaceRoot.unmapPage_preserves_asid root root' vaddr hUnmap
           have hNewOverlap := VSpaceRoot.unmapPage_preserves_noVirtualOverlap
             root root' vaddr (hNonOverlap rootId root hOldObj) hUnmap
@@ -236,43 +235,39 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
 the new root object. -/
 private theorem resolveAsidRoot_after_storeObject
     (st st' : SystemState)
+    (asid : SeLe4n.ASID)
     (rootId : SeLe4n.ObjId)
     (root root' : VSpaceRoot)
     (hAsid : root'.asid = root.asid)
-    (hResolve : resolveAsidRoot st root.asid = some (rootId, root))
+    (hResolve : resolveAsidRoot st asid = some (rootId, root))
     (hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st')) :
-    resolveAsidRoot st' root.asid = some (rootId, root') := by
+    resolveAsidRoot st' asid = some (rootId, root') := by
+  have hRootAsid : root.asid = asid := by
+    unfold resolveAsidRoot at hResolve
+    have ⟨_, _, hBody⟩ := List.exists_of_findSome?_eq_some hResolve
+    split at hBody <;> simp_all
+    obtain ⟨h1, -, rfl⟩ := hBody
+    exact h1
   unfold resolveAsidRoot at hResolve ⊢
   unfold storeObject at hStore
   cases hStore
-  -- Extract list decomposition from original resolve
   obtain ⟨l₁, oid, l₂, hDecomp, hFoid, hNoneBefore⟩ :=
     List.findSome?_eq_some_iff.mp hResolve
-  -- oid = rootId (since f oid returned some (rootId, root))
   have hOidIsRoot : oid = rootId := by
     split at hFoid <;> simp_all
-    split at hFoid <;> simp_all
-    rename_i r _ _ hObj _ hAsidCheck
-    have : (oid, r) = (rootId, root) := by
-      simp at hFoid; exact hFoid
-    exact this.1
   subst hOidIsRoot
-  -- Reconstruct findSome? for the new state using the full decomposition
+  have hMemIndex : oid ∈ st.objectIndex := by
+    rw [hDecomp]; exact List.mem_append_right l₁ List.mem_cons_self
+  simp [hMemIndex]
   rw [List.findSome?_eq_some_iff]
-  by_cases hMem : rootId ∈ st.objectIndex
-  · -- objectIndex unchanged (= l₁ ++ rootId :: l₂)
-    simp [hMem]
-    refine ⟨l₁, rootId, l₂, hDecomp, ?_, ?_⟩
-    · simp [hAsid]
-    · intro x hx
-      have hNe : x ≠ rootId := by intro heq; subst heq; simp_all
-      simp [hNe]
-      exact hNoneBefore x hx
-  · -- objectIndex = rootId :: st.objectIndex
-    simp [hMem]
-    refine ⟨[], rootId, st.objectIndex, rfl, ?_, ?_⟩
-    · simp [hAsid]
-    · intro x hx; exact absurd hx (List.not_mem_nil x)
+  refine ⟨l₁, oid, l₂, hDecomp, ?_, ?_⟩
+  · simp [hAsid, hRootAsid]
+  · intro x hx
+    have hNe : x ≠ oid := by
+      intro heq; subst heq
+      rw [hNoneBefore x hx] at hFoid; simp at hFoid
+    simp [hNe]
+    exact hNoneBefore x hx
 
 /-- Mapping a page and then looking it up yields the mapped physical address.
 
@@ -297,7 +292,7 @@ theorem vspaceLookup_after_map
           have hAsid := VSpaceRoot.mapPage_preserves_asid root root' vaddr paddr hMap
           have hLookupRoot := VSpaceRoot.lookup_mapPage_eq root root' vaddr paddr hMap
           have hResolve' := resolveAsidRoot_after_storeObject
-            st st' rootId root root' hAsid hResolve hStore
+            st st' asid rootId root root' hAsid hResolve hStore
           unfold vspaceLookup
           rw [hResolve']
           simp [hLookupRoot]
@@ -312,7 +307,8 @@ theorem vspaceLookup_map_other
     (paddr : SeLe4n.PAddr)
     (hNe : vaddr ≠ vaddr')
     (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr' st' = vspaceLookup asid vaddr' st := by
+    (vspaceLookup asid vaddr' st').map Prod.fst =
+    (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceMapPage at hStep
   cases hResolve : resolveAsidRoot st asid with
   | none => simp [hResolve] at hStep
@@ -327,10 +323,11 @@ theorem vspaceLookup_map_other
           have hLookupOther := VSpaceRoot.lookup_mapPage_other
             root root' vaddr vaddr' paddr hNe hMap
           have hResolve' := resolveAsidRoot_after_storeObject
-            st st' rootId root root' hAsid hResolve hStore
+            st st' asid rootId root root' hAsid hResolve hStore
           unfold vspaceLookup
           rw [hResolve, hResolve']
           simp [hLookupOther]
+          cases root.lookup vaddr' <;> simp [Except.map]
 
 /-- After unmapping a page, looking up the same virtual address fails with `translationFault`.
 
@@ -354,7 +351,7 @@ theorem vspaceLookup_after_unmap
           have hAsid := VSpaceRoot.unmapPage_preserves_asid root root' vaddr hUnmap
           have hLookupNone := VSpaceRoot.lookup_unmapPage_eq_none root root' vaddr hUnmap
           have hResolve' := resolveAsidRoot_after_storeObject
-            st st' rootId root root' hAsid hResolve hStore
+            st st' asid rootId root root' hAsid hResolve hStore
           unfold vspaceLookup
           rw [hResolve']
           simp [hLookupNone]

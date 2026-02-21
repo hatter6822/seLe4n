@@ -1,3 +1,5 @@
+import SeLe4n.Model.State
+
 /-!
 # Scheduler Invariant Definitions
 
@@ -15,7 +17,6 @@ Scheduler *preservation* theorems (e.g. `chooseThread_preserves_*`,
 invariant modules where they compose with cross-subsystem bundles. This module
 provides only the invariant definitions and basic structural lemmas.
 -/
-import SeLe4n.Model.State
 
 namespace SeLe4n.Kernel
 
