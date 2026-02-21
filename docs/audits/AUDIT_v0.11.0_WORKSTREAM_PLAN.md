@@ -63,9 +63,10 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - **WS-D2:** Wire policy enforcement into kernel operations; extend non-interference proofs beyond endpoint send. **Completed.**
 - All acceptance criteria met: `securityFlowsTo` enforced in three operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`), four additional non-interference theorems proved (`chooseThread`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetypeObject`), enforcement boundary documented. Tier 0-3 gates pass.
 
-### Phase P3 — proof completion and kernel hardening (Medium)
+### Phase P3 — proof completion and kernel hardening (in progress)
 
-- **WS-D3:** Close remaining proof gaps (badge safety, VSpace success preservation).
+- **WS-D3:** Close remaining proof gaps (badge safety, VSpace success preservation). **Completed.**
+- All three findings (F-06, F-08, F-16) resolved. TPI-D04 and TPI-D05 closed. TPI-001 obligations from WS-C fully discharged. Four round-trip theorems proved. Seven Invariant.lean files annotated with proof-scope docstrings. Tier 0-3 gates pass.
 - **WS-D4:** Harden kernel design (cycle detection, atomicity, double-wait).
 - Goal: meaningful proof coverage and defensive kernel semantics.
 
@@ -245,6 +246,36 @@ Validation gates: `./scripts/test_full.sh --continue` passes Tier 0-3.
 
 **Dependencies:** None (proof work is independent of test fixes).
 
+**Completion evidence**
+
+All acceptance criteria met. Summary of changes:
+
+1. **F-06 (Badge-override safety in cspaceMint):** Three badge-safety theorems added
+   to `Capability/Invariant.lean`: `mintDerivedCap_rights_attenuated_with_badge_override`
+   (rights attenuation holds regardless of badge), `mintDerivedCap_target_preserved_with_badge_override`
+   (target identity preserved regardless of badge), and `cspaceMint_badge_override_safe`
+   (composed kernel-operation-level safety: badge override in cspaceMint cannot escalate privilege).
+   All proved without `sorry`. TPI-D04 closed.
+
+2. **F-08 (VSpace successful-operation preservation):** Two success-path preservation
+   theorems added to `VSpaceInvariant.lean`: `vspaceMapPage_success_preserves_vspaceInvariantBundle`
+   and `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`. Both prove invariant
+   preservation over genuinely modified state. Supporting infrastructure added:
+   - `resolveAsidRoot_some_implies` and `resolveAsidRoot_of_unique_root` (VSpace.lean)
+   - `storeObject_objectIndex_eq_of_mem` (VSpace.lean)
+   - VSpaceRoot helper theorems: `mapPage_asid_eq`, `unmapPage_asid_eq`, `lookup_eq_none_not_mem`,
+     `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`, `lookup_mapPage_ne`, `lookup_unmapPage_ne`
+     (Object.lean)
+   Four TPI-001 round-trip theorems proved: `vspaceLookup_after_map`, `vspaceLookup_map_other`,
+   `vspaceLookup_after_unmap`, `vspaceLookup_unmap_other`. All proved without `sorry`. TPI-D05 and
+   TPI-001 closed.
+
+3. **F-16 (Document trivial error-preservation proof scope):** Module-level `/-! ... -/`
+   docstrings added to all seven `Invariant.lean` files (Scheduler, IPC, Capability,
+   Lifecycle, InformationFlow, Service, Architecture, VSpaceInvariant). Each docstring
+   classifies every theorem as substantive preservation, error-case preservation (trivially
+   true), structural/bridge, non-interference, or badge-safety. Claim-evidence index updated.
+
 ---
 
 ### WS-D4 — Kernel Design Hardening
@@ -406,7 +437,7 @@ Each workstream PR must include:
 |---|---|---|---|---|
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
 | WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed: enforcement in 3 operations, 4 additional non-interference theorems. |
-| WS-D3 | Planned | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). Carries TPI-001 from WS-C. |
+| WS-D3 | **Completed** | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). TPI-001 closed. Gate G3 (proof) passed. |
 | WS-D4 | Planned | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, atomicity, double-wait). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
 | WS-D6 | Planned | Low | F-13, F-14, F-15, F-17 | CI/CD polish and documentation governance. F-13 likely already resolved. |

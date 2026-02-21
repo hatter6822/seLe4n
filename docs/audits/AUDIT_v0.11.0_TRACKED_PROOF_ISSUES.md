@@ -79,98 +79,109 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
 
 ---
 
-## Issue TPI-D04 (OPEN) — Badge-override safety in cspaceMint
+## Issue TPI-D04 (CLOSED) — Badge-override safety in cspaceMint
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-06 (Medium), recommendation 9.2 #5.
 - **Workstream:** WS-D3.
-- **Current problem:** `cspaceMint` allows badge override from parent. No proof that this cannot enable privilege escalation.
+- **Resolution:** Three badge-safety theorems implemented in `SeLe4n/Kernel/Capability/Invariant.lean`.
+  The proofs decompose through `mintDerivedCap_attenuates` (the existing attenuation lemma) and
+  show that the `badge` parameter in `mintDerivedCap` affects only `.badge` of the child — the
+  `rightsSubset` check and `target := parent.target` assignment are badge-independent. No `sorry` debt.
 
-Required theorem obligations:
+Closed theorem obligations:
 
 ```lean
-/-- A minted capability's rights are a subset of the parent's rights,
-    regardless of badge override. -/
-theorem cspaceMint_attenuates_rights
-    (authority target : ObjId) (srcSlot destSlot : Slot)
-    (newRights : CapRights) (newBadge : Badge)
-    (st st' : SystemState)
-    (hMint : cspaceMint authority target srcSlot destSlot newRights newBadge st = .ok ((), st'))
-    (parentCap : Capability)
-    (hSrc : lookupSlot target srcSlot st = some parentCap) :
-    newRights.isSubsetOf parentCap.rights = true := by
-  sorry  -- proof obligation
+/-- Rights attenuation holds regardless of badge override. -/
+theorem mintDerivedCap_rights_attenuated_with_badge_override
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    ∀ right, right ∈ child.rights → right ∈ parent.rights
 
-/-- Badge override in mint does not grant access to objects
-    outside the parent capability's authority scope. -/
-theorem cspaceMint_badge_no_escalation
-    (authority target : ObjId) (srcSlot destSlot : Slot)
-    (newRights : CapRights) (newBadge : Badge)
+/-- Target identity preserved regardless of badge override. -/
+theorem mintDerivedCap_target_preserved_with_badge_override
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.target = parent.target
+
+/-- Composed kernel-operation-level safety: badge override cannot escalate privilege. -/
+theorem cspaceMint_badge_override_safe
     (st st' : SystemState)
-    (hMint : cspaceMint authority target srcSlot destSlot newRights newBadge st = .ok ((), st'))
-    (derivedCap : Capability)
-    (hDest : lookupSlot target destSlot st' = some derivedCap) :
-    derivedCap.targetId = (lookupSlot target srcSlot st).get!.targetId := by
-  sorry  -- proof obligation
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.target = parent.target ∧
+      (∀ right, right ∈ child.rights → right ∈ parent.rights)
 ```
 
 ---
 
-## Issue TPI-D05 (OPEN) — VSpace successful-operation invariant preservation
+## Issue TPI-D05 (CLOSED) — VSpace successful-operation invariant preservation
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-08 (Medium), recommendation 9.2 #6.
 - **Workstream:** WS-D3.
 - **Carries forward:** TPI-001 from `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
-- **Current problem:** Only error-case preservation is proven for `vspaceMapPage` and `vspaceUnmapPage`. No theorem proves a *successful* operation preserves the invariant bundle.
+- **Resolution:** Two success-path invariant preservation theorems and four round-trip theorems
+  implemented in `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`. Supporting infrastructure:
+  `resolveAsidRoot_some_implies` and `resolveAsidRoot_of_unique_root` extraction/characterization
+  lemmas in `VSpace.lean`; `storeObject_objectIndex_eq_of_mem` for post-state objectIndex stability;
+  seven VSpaceRoot helper theorems in `Object.lean` (`mapPage_asid_eq`, `unmapPage_asid_eq`,
+  `lookup_eq_none_not_mem`, `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`,
+  `lookup_mapPage_ne`, `lookup_unmapPage_ne`). No `sorry` debt. TPI-001 fully closed.
 
-Required theorem obligations:
-
-```lean
-/-- A successful vspaceMapPage preserves the VSpace invariant bundle. -/
-theorem vspaceMapPage_success_preserves_invariantBundle
-    (asid : ASID) (vaddr : VAddr) (paddr : PAddr)
-    (st st' : SystemState)
-    (hMap : vspaceMapPage asid vaddr paddr st = .ok ((), st'))
-    (hInv : vspaceInvariantBundle st) :
-    vspaceInvariantBundle st' := by
-  sorry  -- proof obligation
-
-/-- A successful vspaceUnmapPage preserves the VSpace invariant bundle. -/
-theorem vspaceUnmapPage_success_preserves_invariantBundle
-    (asid : ASID) (vaddr : VAddr)
-    (st st' : SystemState)
-    (hUnmap : vspaceUnmapPage asid vaddr st = .ok ((), st'))
-    (hInv : vspaceInvariantBundle st) :
-    vspaceInvariantBundle st' := by
-  sorry  -- proof obligation
-```
-
-Additionally, close the TPI-001 round-trip obligations from WS-C:
+Closed theorem obligations:
 
 ```lean
-/-- Mapping a page and then looking it up yields the mapped address. -/
+/-- Successful vspaceMapPage preserves VSpace invariant bundle. -/
+theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
+    vspaceInvariantBundle st'
+
+/-- Successful vspaceUnmapPage preserves VSpace invariant bundle. -/
+theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    vspaceInvariantBundle st'
+
+/-- TPI-001 #1: map then lookup yields mapped address. -/
 theorem vspaceLookup_after_map
-    (asid : ASID) (vaddr : VAddr) (paddr : PAddr)
-    (st st' : SystemState)
-    (hMap : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr st' = .ok (paddr, st') := by
-  sorry  -- proof obligation
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
+    vspaceLookup asid vaddr st' = .ok (paddr, st')
 
-/-- Mapping vaddr does not affect lookup of a different vaddr'. -/
+/-- TPI-001 #2: map at vaddr does not affect lookup at different vaddr'. -/
 theorem vspaceLookup_map_other
-    (asid : ASID) (vaddr vaddr' : VAddr) (paddr : PAddr)
-    (st st' : SystemState)
-    (hNe : vaddr ≠ vaddr')
-    (hMap : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr' st' = vspaceLookup asid vaddr' st := by
-  sorry  -- proof obligation
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr vaddr' : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (hNe : vaddr ≠ vaddr')
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
+    (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst
 
-/-- After unmap, lookup fails with translationFault. -/
+/-- TPI-001 #3: after unmap, lookup fails with translationFault. -/
 theorem vspaceLookup_after_unmap
-    (asid : ASID) (vaddr : VAddr)
-    (st st' : SystemState)
-    (hUnmap : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
-    vspaceLookup asid vaddr st' = .error .translationFault := by
-  sorry  -- proof obligation
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    vspaceLookup asid vaddr st' = .error .translationFault
+
+/-- TPI-001 #4: unmap at vaddr does not affect lookup at different vaddr'. -/
+theorem vspaceLookup_unmap_other
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr vaddr' : SeLe4n.VAddr)
+    (hNe : vaddr ≠ vaddr')
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst
 ```
 
 ---
@@ -231,5 +242,5 @@ Each issue closes only when all are true:
 
 | WS-C Issue | Status | Carried to WS-D |
 |---|---|---|
-| TPI-001 (VSpace round-trip theorems) | OPEN | Carried to TPI-D05 |
+| TPI-001 (VSpace round-trip theorems) | CLOSED | Resolved by TPI-D05 (four round-trip theorems proved) |
 | TPI-002 (IF noninterference seed) | CLOSED | Extended by TPI-D01, TPI-D02, TPI-D03 |

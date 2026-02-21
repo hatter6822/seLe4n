@@ -2,6 +2,46 @@ import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
 
+/-!
+# Service Invariant Preservation Proofs
+
+This module contains policy-surface definitions and preservation theorems for the
+service orchestration subsystem, including cross-subsystem composition with lifecycle
+and capability invariants.
+
+## Proof scope qualification (F-16)
+
+**Substantive preservation theorems** (high assurance — prove invariant preservation
+over *changed* state after a *successful* operation):
+- `serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `storeServiceState_preserves_servicePolicySurfaceInvariant`
+- `storeServiceState_preserves_lifecycleInvariantBundle`
+- `storeServiceState_preserves_capabilityInvariantBundle`
+
+**Structural / bridge theorems** (high assurance):
+- `servicePolicySurfaceInvariant_of_lifecycleInvariant`
+- `policyBackingObjectTyped_of_lifecycleInvariant`
+- `policyOwnerAuthoritySlotPresent_of_lifecycleInvariant`
+- `policyOwnerAuthoritySlotPresent_of_capabilityLookup`
+- `serviceLifecycleCapabilityInvariantBundle_of_components`
+
+**Check-vs-mutation separation theorems** (high assurance):
+- `serviceStart_policyDenied_separates_check_from_mutation`
+- `serviceStop_policyDenied_separates_check_from_mutation`
+
+**Error-case preservation theorems** (trivially true — the error path returns
+unchanged state):
+- `serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`
+- `serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle`
+
+Error-case theorems are retained for proof-surface completeness and compositional
+coverage, but they do not constitute meaningful security evidence.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

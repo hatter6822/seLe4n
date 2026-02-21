@@ -1,6 +1,31 @@
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Service.Invariant
 
+/-!
+# Architecture Boundary Invariant Proofs (M6)
+
+This module defines the composed `proofLayerInvariantBundle` entrypoint that composes
+all active subsystem invariant bundles, and the `AdapterProofHooks` structure that
+ties architecture-adapter transitions to invariant preservation.
+
+## Proof scope qualification (F-16)
+
+Theorems in this module compose the subsystem-level invariants into global
+architecture-boundary bundles. Preservation is inherited from the subsystem modules
+(IPC, Capability, Lifecycle, Service, Scheduler, VSpace). See individual subsystem
+invariant modules for per-theorem classification.
+
+| Category | Theorems |
+|---|---|
+| **Substantive preservation** | `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle`, `adapterReadMemory_ok_preserves_proofLayerInvariantBundle` |
+| **Error-case preservation** | `adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle`, `adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle` |
+
+The error-case preservation theorems are trivially true (the state is unchanged on
+error). The success-path theorems are substantive: they prove that adapter transitions
+satisfying the `RuntimeBoundaryContract` and `AdapterProofHooks` obligations preserve
+the composed invariant bundle over genuinely changed state.
+-/
+
 namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model

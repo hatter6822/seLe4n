@@ -1,5 +1,36 @@
 import SeLe4n.Kernel.Lifecycle.Operations
 
+/-!
+# Lifecycle Invariant Preservation Proofs
+
+This module contains invariant definitions and preservation theorems for the
+lifecycle (object retype) subsystem, including identity/aliasing, capability-reference,
+and stale-reference exclusion invariants.
+
+## Proof scope qualification (F-16)
+
+**Substantive preservation theorems** (high assurance — prove invariant preservation
+over *changed* state after a *successful* operation):
+- `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`
+- `lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`
+- `lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant`
+
+**Structural / bridge theorems** (high assurance — prove decomposition and composition
+relationships between invariant layers):
+- `lifecycleIdentityNoTypeAliasConflict_of_exact`
+- `lifecycleCapabilityRefObjectTargetBacked_of_exact`
+- `lifecycleInvariantBundle_of_metadata_consistent`
+- `lifecycleMetadataConsistent_of_lifecycleInvariantBundle`
+- `lifecycleCapabilityRefObjectTargetTypeAligned_of_exact`
+- `lifecycleCapabilityRefNoTypeAliasConflict_of_identity`
+- `lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle`
+- `lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle`
+
+All theorems in this module are substantive: they prove structural decomposition
+properties or invariant preservation over state modified by successful retype
+operations. There are no error-case preservation theorems in this module.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

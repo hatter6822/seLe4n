@@ -4,6 +4,30 @@ import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Lifecycle.Operations
 
+/-!
+# Information-Flow Non-Interference Proofs
+
+This module contains non-interference theorems proving that high-domain kernel
+operations do not leak information to low-clearance observers.
+
+## Proof scope qualification (F-16)
+
+**Non-interference theorems** (critical for security assurance — prove that a
+high-domain operation preserves low-equivalence for unrelated observers):
+- `endpointSend_preserves_lowEquivalent`
+- `chooseThread_preserves_lowEquivalent` (WS-D2 / TPI-D01)
+- `cspaceMint_preserves_lowEquivalent` (WS-D2 / TPI-D02)
+- `cspaceRevoke_preserves_lowEquivalent` (WS-D2 / TPI-D02)
+- `lifecycleRetypeObject_preserves_lowEquivalent` (WS-D2 / TPI-D03)
+
+**Shared proof infrastructure** (high assurance):
+- `storeObject_at_unobservable_preserves_lowEquivalent` — generic proof skeleton
+  for any `storeObject`-based operation at a non-observable ID.
+
+All theorems in this module are substantive non-interference proofs. There are no
+error-case preservation theorems.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

@@ -56,4 +56,106 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
         | none => .error .translationFault
         | some paddr => .ok (paddr, st)
 
+-- ============================================================================
+-- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
+-- ============================================================================
+
+/-- ASID roots in the bounded discovery window are unique. -/
+def vspaceAsidRootsUnique (st : SystemState) : Prop :=
+  ∀ oid₁ oid₂ root₁ root₂,
+    st.objects oid₁ = some (.vspaceRoot root₁) →
+    st.objects oid₂ = some (.vspaceRoot root₂) →
+    root₁.asid = root₂.asid →
+    oid₁ = oid₂
+
+/-- Extract concrete object-store facts from a successful `resolveAsidRoot` result. -/
+theorem resolveAsidRoot_some_implies
+    (st : SystemState) (asid : SeLe4n.ASID)
+    (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
+    (hResolve : resolveAsidRoot st asid = some (rootId, root)) :
+    st.objects rootId = some (.vspaceRoot root) ∧ root.asid = asid ∧ rootId ∈ st.objectIndex := by
+  unfold resolveAsidRoot at hResolve
+  generalize st.objectIndex = idx at hResolve ⊢
+  induction idx with
+  | nil => simp [List.findSome?_nil] at hResolve
+  | cons a rest ih =>
+      simp only [List.findSome?_cons] at hResolve
+      split at hResolve
+      · next hMatch =>
+        cases hObjA : st.objects a with
+        | none => simp [hObjA] at hMatch
+        | some obj =>
+            cases obj with
+            | vspaceRoot r =>
+                simp only [hObjA] at hMatch
+                split at hMatch
+                · next hAsidEq =>
+                  simp at hMatch
+                  rcases hMatch with ⟨rfl, rfl⟩
+                  simp at hResolve
+                  rcases hResolve with ⟨rfl, rfl⟩
+                  exact ⟨hObjA, hAsidEq, List.mem_cons_self⟩
+                · simp at hMatch
+            | tcb _ | cnode _ | endpoint _ | notification _ =>
+                simp [hObjA] at hMatch
+      · next hNone =>
+        rcases ih hResolve with ⟨hObj, hAsid, hMem⟩
+        exact ⟨hObj, hAsid, List.mem_cons_of_mem a hMem⟩
+
+/-- Characterization lemma: given ASID-uniqueness, object-store membership, and objectIndex
+    membership, `resolveAsidRoot` returns exactly the expected root.
+
+    This is the key lemma enabling round-trip theorems for VSpace operations. -/
+theorem resolveAsidRoot_of_unique_root
+    (st : SystemState) (asid : SeLe4n.ASID)
+    (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
+    (hObj : st.objects rootId = some (.vspaceRoot root))
+    (hAsid : root.asid = asid)
+    (hMem : rootId ∈ st.objectIndex)
+    (hUniq : vspaceAsidRootsUnique st) :
+    resolveAsidRoot st asid = some (rootId, root) := by
+  unfold resolveAsidRoot
+  generalize st.objectIndex = idx at hMem ⊢
+  induction idx with
+  | nil => exact absurd hMem List.not_mem_nil
+  | cons a rest ih =>
+      simp only [List.findSome?_cons]
+      by_cases hEq : a = rootId
+      · subst hEq
+        simp [hObj, hAsid]
+      · -- a ≠ rootId: show the function at a returns none (no VSpace root with this ASID)
+        have hMemRest : rootId ∈ rest := by
+          cases hMem with
+          | head => exact absurd rfl hEq
+          | tail _ h => exact h
+        suffices hNone : (match st.objects a with
+            | some (.vspaceRoot r) => if r.asid = asid then some (a, r) else none
+            | _ => none) = none by
+          simp [hNone]
+          exact ih hMemRest
+        cases hObjA : st.objects a with
+        | none => simp
+        | some obj =>
+            cases obj with
+            | vspaceRoot r =>
+                simp
+                intro hAsidR
+                -- r.asid = asid and root.asid = asid, so by uniqueness a = rootId
+                exact absurd (hUniq a rootId r root hObjA hObj (hAsidR.trans hAsid.symm)) hEq
+            | tcb _ | cnode _ | endpoint _ | notification _ => simp
+
+-- ============================================================================
+-- storeObject preservation lemmas for VSpace operations
+-- ============================================================================
+
+/-- After `storeObject` at a rootId that was already in objectIndex, the objectIndex is unchanged. -/
+theorem storeObject_objectIndex_eq_of_mem
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hMem : id ∈ st.objectIndex)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex = st.objectIndex := by
+  unfold storeObject at hStore
+  cases hStore
+  simp [hMem]
+
 end SeLe4n.Kernel.Architecture

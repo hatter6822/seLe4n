@@ -171,6 +171,134 @@ theorem lookup_mapPage_eq
       unfold lookup
       simp
 
+/-- F-08 helper: `mapPage` preserves the VSpace root ASID. -/
+theorem mapPage_asid_eq
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.asid = root.asid := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none => simp [hLookup] at hMap; cases hMap; rfl
+
+/-- F-08 helper: `unmapPage` preserves the VSpace root ASID. -/
+theorem unmapPage_asid_eq
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.asid = root.asid := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ => simp [hLookup] at hUnmap; cases hUnmap; rfl
+
+/-- F-08 helper: if `lookup` returns `none`, then no mapping entry for that vaddr
+    exists in the mappings list. -/
+theorem lookup_eq_none_not_mem
+    (root : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hNone : lookup root vaddr = none) :
+    (vaddr, paddr) ∉ root.mappings := by
+  unfold lookup at hNone
+  rw [Option.map_eq_none_iff] at hNone
+  rw [List.find?_eq_none] at hNone
+  intro hMem
+  have := hNone ⟨vaddr, paddr⟩ hMem
+  simp at this
+
+/-- F-08 helper: a successful `mapPage` preserves the no-virtual-overlap invariant.
+    Since `mapPage` only succeeds when `lookup root vaddr = none` (no existing mapping
+    for the target vaddr), adding the new `(vaddr, paddr)` entry cannot create duplicates. -/
+theorem mapPage_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hOverlap : noVirtualOverlap root)
+    (hMap : root.mapPage vaddr paddr = some root') :
+    noVirtualOverlap root' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp [List.mem_cons] at hIn₁ hIn₂
+      cases hIn₁ with
+      | inl h₁ =>
+        cases hIn₂ with
+        | inl h₂ => rw [h₁.2, h₂.2]
+        | inr h₂ =>
+          exfalso
+          exact lookup_eq_none_not_mem root _ p₂ hLookup (h₁.1 ▸ h₂)
+      | inr h₁ =>
+        cases hIn₂ with
+        | inl h₂ =>
+          exfalso
+          exact lookup_eq_none_not_mem root _ p₁ hLookup (h₂.1 ▸ h₁)
+        | inr h₂ => exact hOverlap v p₁ p₂ h₁ h₂
+
+/-- F-08 helper: a successful `unmapPage` preserves the no-virtual-overlap invariant.
+    Since `unmapPage` only removes entries, it cannot create new overlap. -/
+theorem unmapPage_noVirtualOverlap
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (hOverlap : noVirtualOverlap root)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    noVirtualOverlap root' := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ =>
+      simp [hLookup] at hUnmap
+      cases hUnmap
+      intro v p₁ p₂ hIn₁ hIn₂
+      simp [List.mem_filter] at hIn₁ hIn₂
+      exact hOverlap v p₁ p₂ hIn₁.1 hIn₂.1
+
+/-- TPI-001 helper: mapping vaddr does not affect lookup of a different vaddr'. -/
+theorem lookup_mapPage_ne
+    (root root' : VSpaceRoot)
+    (vaddr vaddr' : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (hNe : vaddr ≠ vaddr')
+    (hMap : root.mapPage vaddr paddr = some root') :
+    root'.lookup vaddr' = root.lookup vaddr' := by
+  unfold mapPage at hMap
+  cases hLookup : lookup root vaddr with
+  | some _ => simp [hLookup] at hMap
+  | none =>
+      simp [hLookup] at hMap
+      cases hMap
+      unfold lookup
+      simp [hNe]
+
+/-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'. -/
+theorem lookup_unmapPage_ne
+    (root root' : VSpaceRoot)
+    (vaddr vaddr' : SeLe4n.VAddr)
+    (hNe : vaddr ≠ vaddr')
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.lookup vaddr' = root.lookup vaddr' := by
+  unfold unmapPage at hUnmap
+  cases hLookup : lookup root vaddr with
+  | none => simp [hLookup] at hUnmap
+  | some _ =>
+      simp [hLookup] at hUnmap
+      cases hUnmap
+      unfold lookup
+      simp only
+      congr 1
+      rw [List.find?_filter]
+      congr 1
+      funext x
+      by_cases hx : x.fst = vaddr'
+      · simp [hx, Ne.symm hNe]
+      · simp [hx]
+
 end VSpaceRoot
 
 namespace CNode
