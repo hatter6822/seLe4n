@@ -5,12 +5,13 @@ All repository audit documents are stored in this directory and listed below fro
 1. [`AUDIT_v0.11.0.md`](./AUDIT_v0.11.0.md) — 2026-02-19 end-to-end repository audit (active findings baseline).
 2. [`AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](./AUDIT_v0.11.0_WORKSTREAM_PLAN.md) — canonical active execution plan (WS-D portfolio) for closing v0.11.0 recommendations.
 3. [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md) — tracked theorem obligations (non-interference, badge safety, VSpace round-trips) and closure criteria.
-4. [`AUDIT_v0.9.32.md`](./AUDIT_v0.9.32.md) — 2026-02-18 independent audit (historical; WS-C portfolio completed).
-5. [`AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./AUDIT_v0.9.32_WORKSTREAM_PLAN.md) — historical WS-C execution portfolio (completed; retained for traceability).
-6. [`AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md) — WS-C tracked theorem obligations (TPI-002 closed; TPI-001 carried to WS-D).
-7. [`AUDIT_v0.9.0.md`](./AUDIT_v0.9.0.md) — 2026-02-17 comprehensive repository audit (historical baseline).
-8. [`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./AUDIT_v0.9.0_WORKSTREAM_PLAN.md) — historical WS-B execution portfolio (retained for traceability).
-9. [`AUDIT_v0.8.0.md`](./AUDIT_v0.8.0.md) — 2026-02-17 repository audit baseline.
+4. [`AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md`](./AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md) — code-first execution strategy for closing the remaining BFS soundness proof obligation in TPI-D07.
+5. [`AUDIT_v0.9.32.md`](./AUDIT_v0.9.32.md) — 2026-02-18 independent audit (historical; WS-C portfolio completed).
+6. [`AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](./AUDIT_v0.9.32_WORKSTREAM_PLAN.md) — historical WS-C execution portfolio (completed; retained for traceability).
+7. [`AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md) — WS-C tracked theorem obligations (TPI-002 closed; TPI-001 carried to WS-D).
+8. [`AUDIT_v0.9.0.md`](./AUDIT_v0.9.0.md) — 2026-02-17 comprehensive repository audit (historical baseline).
+9. [`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](./AUDIT_v0.9.0_WORKSTREAM_PLAN.md) — historical WS-B execution portfolio (retained for traceability).
+10. [`AUDIT_v0.8.0.md`](./AUDIT_v0.8.0.md) — 2026-02-17 repository audit baseline.
 
 ## Planning guidance
 
