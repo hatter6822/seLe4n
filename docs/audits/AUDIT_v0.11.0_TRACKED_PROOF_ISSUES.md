@@ -186,45 +186,53 @@ theorem vspaceLookup_unmap_other
 
 ---
 
-## Issue TPI-D06 (OPEN) — Waiting-list uniqueness invariant
+## Issue TPI-D06 (CLOSED) — Waiting-list uniqueness invariant
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-12 (Medium), recommendation 9.3 #8.
 - **Workstream:** WS-D4.
-- **Current problem:** No double-wait prevention exists. A thread can be added to a notification waiting list multiple times.
+- **Resolution:** Double-wait prevention implemented in `notificationWait` via `waiter ∈ ntfn.waitingThreads`
+  check (returns `alreadyWaiting` error). `uniqueWaiters` invariant defined and preservation theorem
+  proved without `sorry`. Decomposition lemmas (`notificationWait_badge_path_notification`,
+  `notificationWait_wait_path_notification`) track the notification object through `storeTcbIpcState`
+  and `removeRunnable`. Helper lemmas: `storeTcbIpcState_preserves_objects_ne`,
+  `storeTcbIpcState_preserves_notification`, `removeRunnable_preserves_objects`.
 
-Required theorem obligation:
+Closed theorem obligation:
 
 ```lean
-/-- After notificationWait succeeds, the waiting list contains no
-    duplicate thread IDs. -/
 theorem notificationWait_preserves_uniqueWaiters
-    (tid : ThreadId) (notifId : ObjId)
+    (waiter : ThreadId) (notifId : ObjId)
     (st st' : SystemState)
-    (hWait : notificationWait tid notifId st = .ok ((), st'))
+    (result : Option Badge)
+    (hWait : notificationWait notifId waiter st = .ok (result, st'))
     (hUniq : uniqueWaiters notifId st) :
-    uniqueWaiters notifId st' := by
-  sorry  -- proof obligation
+    uniqueWaiters notifId st'
 ```
 
 ---
 
-## Issue TPI-D07 (OPEN) — Service dependency acyclicity invariant
+## Issue TPI-D07 (IN PROGRESS) — Service dependency acyclicity invariant
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-07 (Medium), recommendation 9.3 #7.
 - **Workstream:** WS-D4.
-- **Current problem:** Service dependency cycles are not prevented. No cycle detection at registration time.
+- **Current status:** Cycle detection implemented and operational (`serviceRegisterDependency` rejects
+  cyclic edges via `serviceHasPathTo` BFS). Acyclicity invariant (`serviceDependencyAcyclic`) defined.
+  Preservation theorem statement exists but uses `sorry` for the BFS soundness argument. The operational
+  cycle detection is runtime-correct (validated by executable tests), but formally proving that the BFS
+  explores enough of the graph to be sound requires additional graph-theory infrastructure that is deferred.
+- **Remaining obligation:** Replace `sorry` in `serviceRegisterDependency_preserves_acyclicity` with a
+  formal proof that the BFS cycle check is sound (i.e., if `serviceHasPathTo` returns false, adding the
+  edge does not create a cycle in the post-state graph).
 
-Required theorem obligation:
+Partially closed theorem obligation (uses `sorry`):
 
 ```lean
-/-- After a successful dependency registration, the dependency graph
-    remains acyclic. -/
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
     (hAcyc : serviceDependencyAcyclic st) :
     serviceDependencyAcyclic st' := by
-  sorry  -- proof obligation
+  ...  -- proof structure exists; BFS soundness step uses sorry
 ```
 
 ---

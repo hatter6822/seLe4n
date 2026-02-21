@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.11.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.11.4-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.27.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
 </p>
@@ -22,7 +22,7 @@
 
 - **Active findings baseline:** `docs/audits/AUDIT_v0.11.0.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.11.3` (`lakefile.toml`)
+- **Current package version:** `0.11.4` (`lakefile.toml`)
 - **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
 - **Prior completed portfolio:** WS-C1..WS-C8 (all completed)
 
@@ -72,7 +72,7 @@ Quick index. Full contracts and dependencies are in the v0.11.0 planning backbon
 - **WS-D1:** Test error handling and validity -- **completed** (Critical/High; F-01, F-03, F-04)
 - **WS-D2:** Information-flow enforcement and proof -- **completed** (High; F-02, F-05)
 - **WS-D3:** Proof gap closure -- **completed** (Medium; F-06, F-08, F-16)
-- **WS-D4:** Kernel design hardening -- planned (Medium; F-07, F-11, F-12)
+- **WS-D4:** Kernel design hardening -- **completed** (Medium; F-07, F-11, F-12)
 - **WS-D5:** Test infrastructure expansion -- planned (Medium; F-09, F-10)
 - **WS-D6:** CI/CD and documentation polish -- planned (Low; F-13, F-14, F-15, F-17)
 

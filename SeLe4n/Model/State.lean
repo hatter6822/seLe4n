@@ -18,6 +18,8 @@ inductive KernelError where
   | mappingConflict
   | translationFault
   | flowDenied
+  | alreadyWaiting
+  | cyclicDependency
   | notImplemented
   deriving Repr, DecidableEq
 

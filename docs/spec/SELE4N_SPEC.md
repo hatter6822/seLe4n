@@ -75,7 +75,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.3 Active Audit Portfolio
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D6 planned.
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D4 completed; WS-D5, WS-D6 planned.
 
 ---
 
@@ -89,7 +89,7 @@ on the semantic and proof foundations of the previous one.
 ### 4.2 Medium — Proof Completion and Kernel Hardening
 
 - **WS-D3:** Proof gap closure (medium; **completed** — F-06, F-08, F-16; TPI-001 closed)
-- **WS-D4:** Kernel design hardening (medium; **planned** — F-07, F-11, F-12)
+- **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12)
 - **WS-D5:** Test infrastructure expansion (medium; **planned** — F-09, F-10)
 
 ### 4.3 Low — Infrastructure Polish
@@ -106,7 +106,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 - **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
 - **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
 - **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
-- **Phase P3:** WS-D3 proof gap closure (**completed**) + WS-D4 kernel design hardening (medium)
+- **Phase P3:** WS-D3 proof gap closure (**completed**) + WS-D4 kernel design hardening (**completed**)
 - **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
 
 ---

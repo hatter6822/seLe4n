@@ -190,7 +190,47 @@ every theorem into one of these categories:
 | **Structural / bridge** | High — proves decomposition/composition relationships |
 | **Round-trip / functional-correctness** | High — proves semantic contracts between operations |
 
-## 13. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 13. Kernel design hardening (WS-D4 complete)
+
+### F-07: Service dependency cycle detection
+
+Service dependency registration now includes BFS-based cycle detection:
+
+- `serviceBfsFuel` — fuel computation for bounded BFS (objectIndex.length + 256)
+- `serviceHasPathTo` — bounded BFS reachability check in the dependency graph
+- `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
+- `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
+- `serviceDependencyAcyclic` — acyclicity invariant definition
+- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (uses `sorry` for BFS soundness; tracked as TPI-D07)
+
+### F-11: serviceRestart partial-failure semantics
+
+serviceRestart uses documented partial-failure semantics (stop succeeds, start fails = service remains stopped):
+
+- `serviceRestart_error_of_stop_error` — stop failure propagated directly
+- `serviceRestart_error_of_start_error` — start failure propagated with post-stop state
+- `serviceRestart_ok_implies_staged_steps` — success implies both stages succeeded
+- `serviceRestart_error_discards_state` — error monad discards intermediate state
+- `serviceRestart_error_from_start_phase` — functional decomposition of start-phase errors
+
+### F-12: Double-wait prevention and uniqueness invariant
+
+Notification waiting lists now enforce uniqueness:
+
+- `notificationWait` — checks `waiter ∈ ntfn.waitingThreads` before appending; returns `alreadyWaiting` on duplicate
+- `notificationWait_error_alreadyWaiting` — rejection theorem (no `sorry`)
+- `notificationWait_badge_path_notification` — decomposition: badge-consumed path post-state notification
+- `notificationWait_wait_path_notification` — decomposition: wait path post-state notification
+- `uniqueWaiters` — invariant: notification waiting list has no duplicates (`List.Nodup`)
+- `notificationWait_preserves_uniqueWaiters` — preservation theorem (no `sorry`)
+
+Supporting infrastructure:
+
+- `storeTcbIpcState_preserves_objects_ne` — storeTcbIpcState preserves objects at other IDs
+- `storeTcbIpcState_preserves_notification` — storeTcbIpcState preserves notification objects
+- `removeRunnable_preserves_objects` — removeRunnable preserves all objects
+
+## 14. IF-M1 information-flow baseline layering (WS-B7 complete)
 
 Information-flow proof-track entrypoints now exist with explicit local decomposition:
 

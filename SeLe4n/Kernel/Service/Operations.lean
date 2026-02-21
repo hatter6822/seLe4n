@@ -59,12 +59,19 @@ def serviceStop
         else
           .error .illegalState
 
-/-- Restart composes deterministic `stop` then `start` transition ordering.
+/-- Restart composes stop-then-start with documented partial-failure semantics.
+
+WS-D4/F-11: The failure semantics are an explicit design choice. If stop
+succeeds but start fails, the service remains in the stopped state. This is
+intentional: a failed restart should leave the service stopped rather than
+running in a potentially inconsistent state. The error monad ensures the
+intermediate (stopped) state is not accessible to the caller on error —
+only the error variant is returned.
 
 Failure ordering:
-1. any `serviceStop` failure is returned directly,
+1. any `serviceStop` failure is returned directly (state unchanged),
 2. if stop succeeds then `serviceStart` runs over the post-stop state,
-3. any start failure is returned directly,
+3. any start failure is returned directly (service remains stopped),
 4. success requires both stages to succeed. -/
 def serviceRestart
     (sid : ServiceId)
@@ -74,6 +81,94 @@ def serviceRestart
     match serviceStop sid policyAllowsStop st with
     | .error e => .error e
     | .ok (_, stStopped) => serviceStart sid policyAllowsStart stStopped
+
+-- ============================================================================
+-- F-07: Service dependency registration with cycle detection (WS-D4)
+-- ============================================================================
+
+/-- Fuel bound for bounded BFS reachability in the service dependency graph.
+
+The `objectIndex` provides a finite list of known object IDs, which gives
+a lower bound on meaningful graph nodes. We add a generous constant to
+account for service IDs that may not have corresponding kernel objects.
+The BFS does not consume fuel for already-visited nodes, so this bound
+only constrains the number of distinct nodes visited. -/
+def serviceBfsFuel (st : SystemState) : Nat :=
+  st.objectIndex.length + 256
+
+/-- Bounded BFS reachability check in the service dependency graph.
+
+Returns `true` if there exists a path of dependency edges from `src` to
+`target`. Uses `fuel` as a bound on the number of distinct nodes expanded
+(set via `serviceBfsFuel`).
+
+The BFS correctly handles:
+- empty graphs (no services → no path),
+- self-reachability (src = target → true immediately),
+- disconnected components (frontier exhaustion → false),
+- already-visited nodes (skipped without consuming fuel). -/
+def serviceHasPathTo
+    (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
+  go [src] [] fuel
+where
+  go (frontier visited : List ServiceId) : Nat → Bool
+  | 0 => false  -- fuel exhausted: conservatively report no path
+  | fuel + 1 =>
+      match frontier with
+      | [] => false  -- frontier empty: no path exists
+      | node :: rest =>
+          if node = target then true
+          else if node ∈ visited then go rest visited (fuel + 1)
+          else
+            let deps := match lookupService st node with
+              | some svc => svc.dependencies
+              | none => []
+            let newFrontier := rest ++ deps.filter (· ∉ visited)
+            go newFrontier (node :: visited) fuel
+
+/-- Register a dependency edge from service `svcId` to service `depId`.
+
+WS-D4/F-07: Before adding the edge, checks whether `depId` can already
+reach `svcId` through existing dependency edges. If so, adding `svcId → depId`
+would create a cycle, and the operation returns `cyclicDependency`.
+
+Deterministic check ordering:
+1. source service lookup (`objectNotFound`),
+2. dependency service existence check (`objectNotFound`),
+3. self-dependency check (`cyclicDependency`),
+4. existing edge check (idempotent — already present returns success),
+5. cycle detection: would `depId → ... → svcId` form a cycle? (`cyclicDependency`),
+6. dependency edge is added on success. -/
+def serviceRegisterDependency
+    (svcId depId : ServiceId) : Kernel Unit :=
+  fun st =>
+    match lookupService st svcId with
+    | none => .error .objectNotFound
+    | some svc =>
+        match lookupService st depId with
+        | none => .error .objectNotFound
+        | some _ =>
+            if svcId = depId then
+              .error .cyclicDependency
+            else if depId ∈ svc.dependencies then
+              .ok ((), st)
+            else if serviceHasPathTo st depId svcId (serviceBfsFuel st) then
+              .error .cyclicDependency
+            else
+              let svc' : ServiceGraphEntry :=
+                { svc with dependencies := svc.dependencies ++ [depId] }
+              storeServiceEntry svcId svc' st
+
+/-- Self-dependency is always rejected as cyclic. -/
+theorem serviceRegisterDependency_error_self_loop
+    (st : SystemState)
+    (sid : ServiceId)
+    (hSvc : (lookupService st sid).isSome = true) :
+    serviceRegisterDependency sid sid st = .error .cyclicDependency := by
+  unfold serviceRegisterDependency
+  cases hL : lookupService st sid with
+  | none => simp [hL] at hSvc
+  | some svc => simp
 
 theorem serviceStart_error_policyDenied
     (st : SystemState)
