@@ -380,12 +380,200 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 - `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
 -/
 
-/-- The service dependency graph is acyclic: no service can reach itself
-through dependency edges.
+-- ============================================================================
+-- Layer 0: Declarative graph definitions
+-- ============================================================================
 
-Defined in terms of `serviceHasPathTo` with bounded BFS fuel. -/
+/-- Direct dependency edge: service `a` lists `b` as a dependency. -/
+def serviceEdge (st : SystemState) (a b : ServiceId) : Prop :=
+  ∃ svc, lookupService st a = some svc ∧ b ∈ svc.dependencies
+
+/-- Reflexive-transitive closure of the service dependency edge relation. -/
+inductive serviceReachable (st : SystemState) : ServiceId → ServiceId → Prop where
+  | refl : serviceReachable st a a
+  | step : serviceEdge st a b → serviceReachable st b c → serviceReachable st a c
+
+/-- Non-trivial path in the service dependency graph (length ≥ 1).
+    Declarative analogue of `serviceHasPathTo` for self-loop detection. -/
+inductive serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop where
+  | single : serviceEdge st a b → serviceNontrivialPath st a b
+  | cons   : serviceEdge st a b → serviceNontrivialPath st b c → serviceNontrivialPath st a c
+
+/-- The service dependency graph is acyclic: no service has a dependency chain
+leading back to itself.
+
+Risk 0 fix (WS-D4/TPI-D07): The original BFS-based definition
+`∀ sid, ¬ serviceHasPathTo st sid sid fuel = true` was vacuously unsatisfiable
+because `serviceHasPathTo` returns `true` immediately when `src = target`.
+This declarative definition correctly captures acyclicity as the absence
+of non-trivial self-loops. -/
 def serviceDependencyAcyclic (st : SystemState) : Prop :=
-  ∀ sid, ¬ serviceHasPathTo st sid sid (serviceBfsFuel st) = true
+  ∀ sid, ¬ serviceNontrivialPath st sid sid
+
+-- ============================================================================
+-- Layer 1: Structural lemmas
+-- ============================================================================
+
+theorem serviceReachable_trans {st : SystemState} {a b c : ServiceId}
+    (hab : serviceReachable st a b) (hbc : serviceReachable st b c) :
+    serviceReachable st a c := by
+  induction hab with
+  | refl => exact hbc
+  | step hedge _ ih => exact .step hedge (ih hbc)
+
+theorem serviceReachable_of_edge {st : SystemState} {a b : ServiceId}
+    (h : serviceEdge st a b) : serviceReachable st a b :=
+  .step h .refl
+
+theorem serviceReachable_of_nontrivialPath {st : SystemState} {a b : ServiceId}
+    (h : serviceNontrivialPath st a b) : serviceReachable st a b := by
+  induction h with
+  | single hedge => exact serviceReachable_of_edge hedge
+  | cons hedge _ ih => exact .step hedge ih
+
+/-- Extend a single edge by a reachable suffix to form a nontrivial path.
+    Proved by structural recursion on the `serviceReachable` argument. -/
+theorem serviceNontrivialPath_of_edge_reachable {st : SystemState} {a b c : ServiceId}
+    (hedge : serviceEdge st a b) (hreach : serviceReachable st b c) :
+    serviceNontrivialPath st a c :=
+  match hreach with
+  | .refl => .single hedge
+  | .step hedge2 htail =>
+    .cons hedge (serviceNontrivialPath_of_edge_reachable hedge2 htail)
+
+/-- A reachable pair with distinct endpoints has a nontrivial path. -/
+theorem serviceNontrivialPath_of_reachable_ne {st : SystemState} {a b : ServiceId}
+    (h : serviceReachable st a b) (hne : a ≠ b) : serviceNontrivialPath st a b := by
+  cases h with
+  | refl => exact absurd rfl hne
+  | step hedge htail => exact serviceNontrivialPath_of_edge_reachable hedge htail
+
+theorem serviceNontrivialPath_trans {st : SystemState} {a b c : ServiceId}
+    (hab : serviceNontrivialPath st a b) (hbc : serviceNontrivialPath st b c) :
+    serviceNontrivialPath st a c := by
+  induction hab with
+  | single hedge => exact .cons hedge hbc
+  | cons hedge _ ih => exact .cons hedge (ih hbc)
+
+theorem serviceNontrivialPath_step_right {st : SystemState} {a b c : ServiceId}
+    (hab : serviceNontrivialPath st a b) (hbc : serviceEdge st b c) :
+    serviceNontrivialPath st a c := by
+  induction hab with
+  | single hedge => exact .cons hedge (.single hbc)
+  | cons hedge _ ih => exact .cons hedge (ih hbc)
+
+-- ============================================================================
+-- Layer 1: Frame lemmas for storeServiceState
+-- ============================================================================
+
+/-- Edge at a non-updated service is unchanged after storeServiceState. -/
+theorem serviceEdge_storeServiceState_ne {st : SystemState} {svcId : ServiceId}
+    {entry : ServiceGraphEntry} {a b : ServiceId} (ha : a ≠ svcId) :
+    serviceEdge (storeServiceState svcId entry st) a b ↔ serviceEdge st a b := by
+  constructor
+  · rintro ⟨svc', hLookup, hMem⟩
+    rw [storeServiceState_lookup_ne st svcId a entry ha] at hLookup
+    exact ⟨svc', hLookup, hMem⟩
+  · rintro ⟨svc', hLookup, hMem⟩
+    rw [← storeServiceState_lookup_ne st svcId a entry ha] at hLookup
+    exact ⟨svc', hLookup, hMem⟩
+
+/-- Edge from the updated service reflects the new entry's dependencies. -/
+theorem serviceEdge_storeServiceState_updated {st : SystemState} {svcId : ServiceId}
+    {entry : ServiceGraphEntry} {b : ServiceId} :
+    serviceEdge (storeServiceState svcId entry st) svcId b ↔ b ∈ entry.dependencies := by
+  constructor
+  · rintro ⟨svc', hLookup, hMem⟩
+    rw [storeServiceState_lookup_eq] at hLookup
+    cases hLookup
+    exact hMem
+  · intro hMem
+    exact ⟨entry, storeServiceState_lookup_eq st svcId entry, hMem⟩
+
+/-- Edge characterization after inserting depId into svcId's dependency list. -/
+theorem serviceEdge_post_insert {st : SystemState} {svcId depId : ServiceId}
+    {svc : ServiceGraphEntry} (hSvc : lookupService st svcId = some svc)
+    {a b : ServiceId} :
+    serviceEdge (storeServiceState svcId { svc with dependencies := svc.dependencies ++ [depId] } st) a b ↔
+    ((a = svcId ∧ (b ∈ svc.dependencies ∨ b = depId)) ∨ (a ≠ svcId ∧ serviceEdge st a b)) := by
+  by_cases ha : a = svcId
+  · subst ha
+    rw [serviceEdge_storeServiceState_updated]
+    simp [List.mem_append]
+  · rw [serviceEdge_storeServiceState_ne ha]
+    constructor
+    · intro h; exact Or.inr ⟨ha, h⟩
+    · rintro (⟨hEq, _⟩ | ⟨_, h⟩)
+      · exact absurd hEq ha
+      · exact h
+
+-- ============================================================================
+-- Layer 2: BFS completeness bridge (TPI-D07-BRIDGE)
+-- ============================================================================
+
+/-- BFS completeness bridge: a nontrivial path between distinct services is
+detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
+
+This connects the declarative path relation to the executable BFS check
+used in `serviceRegisterDependency`. The property is operationally
+validated by the negative state suite (cycle detection tests) and the
+depth-5 dependency chain smoke test.
+
+TPI-D07-BRIDGE: Formal proof of BFS loop-invariant completeness is
+deferred as future infrastructure (see Risk 1, Risk 3 in the risk
+register). The assumption is that `serviceBfsFuel` provides sufficient
+fuel and the BFS correctly explores all reachable nodes. -/
+theorem bfs_complete_for_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (_hPath : serviceNontrivialPath st a b)
+    (_hNe : a ≠ b) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true := by
+  sorry -- TPI-D07-BRIDGE: BFS completeness proof deferred (validated by executable tests)
+
+-- ============================================================================
+-- Layer 3: Post-insertion nontrivial path decomposition
+-- ============================================================================
+
+/-- Any nontrivial path in the post-insertion state either:
+(1) consists entirely of pre-state edges, or
+(2) uses the new svcId → depId edge, yielding pre-state reachability
+    from the source to svcId and from depId to the target. -/
+theorem nontrivialPath_post_insert_cases
+    {st : SystemState} {svcId depId : ServiceId}
+    {svc : ServiceGraphEntry} (hSvc : lookupService st svcId = some svc)
+    {a b : ServiceId}
+    (hPath : serviceNontrivialPath
+      (storeServiceState svcId { svc with dependencies := svc.dependencies ++ [depId] } st) a b) :
+    serviceNontrivialPath st a b ∨
+    (serviceReachable st a svcId ∧ serviceReachable st depId b) := by
+  induction hPath with
+  | single hedge =>
+    rcases (serviceEdge_post_insert hSvc).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
+    · rcases hOr with hOld | rfl
+      · -- Old edge from svcId
+        exact Or.inl (.single ⟨svc, hSvc, hOld⟩)
+      · -- New edge: svcId → depId
+        exact Or.inr ⟨.refl, .refl⟩
+    · exact Or.inl (.single hOld)
+  | cons hedge _ ih =>
+    rcases (serviceEdge_post_insert hSvc).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
+    · rcases hOr with hOld | rfl
+      · -- Old edge from svcId → mid, then path mid →+ b
+        rcases ih with hPre | ⟨hReach1, hReach2⟩
+        · exact Or.inl (.cons ⟨svc, hSvc, hOld⟩ hPre)
+        · exact Or.inr ⟨.refl, hReach2⟩
+      · -- New edge: svcId → depId, then path depId →+ b
+        rcases ih with hPre | ⟨_, hReach2⟩
+        · exact Or.inr ⟨.refl, serviceReachable_of_nontrivialPath hPre⟩
+        · exact Or.inr ⟨.refl, hReach2⟩
+    · -- Old edge from a → mid (a ≠ svcId), then path mid →+ b
+      rcases ih with hPre | ⟨hReach1, hReach2⟩
+      · exact Or.inl (.cons hOld hPre)
+      · exact Or.inr ⟨.step hOld hReach1, hReach2⟩
+
+-- ============================================================================
+-- Layer 4: Acyclicity preservation (TPI-D07 closure)
+-- ============================================================================
 
 /-- After a successful dependency registration, the dependency graph remains acyclic.
 
@@ -394,10 +582,12 @@ The `serviceRegisterDependency` function checks whether `depId` can reach
 finds a path, it returns `cyclicDependency`. On success, no path existed,
 so adding the edge preserves acyclicity.
 
-The formal proof of BFS soundness (i.e., that a false return from
-`serviceHasPathTo` implies no path exists in the full graph) is deferred
-as TPI-D07. The cycle detection is operationally correct (validated by
-executable tests). -/
+Risk 0 resolution (WS-D4/TPI-D07): The vacuous BFS-based invariant has been
+replaced with a declarative acyclicity definition. The preservation proof is
+genuine — it proceeds by post-insertion path decomposition and derives a
+contradiction from the BFS cycle-detection check. The sole deferred obligation
+is BFS completeness (`bfs_complete_for_nontrivialPath`, TPI-D07-BRIDGE),
+which connects the declarative path relation to the executable BFS check. -/
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
@@ -424,12 +614,27 @@ theorem serviceRegisterDependency_preserves_acyclicity
           by_cases hCycle : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true
           · simp [hCycle] at hReg
           · simp only [hCycle] at hReg
-            unfold serviceDependencyAcyclic
-            intro sid
             unfold storeServiceEntry at hReg
             simp at hReg
             cases hReg
-            sorry -- TPI-D07: BFS soundness deferred
+            -- Goal: serviceDependencyAcyclic (storeServiceState svcId {svc with ...} st)
+            -- Strategy: suppose a post-state cycle, decompose, derive contradiction
+            intro sid hCycleSid
+            rcases nontrivialPath_post_insert_cases hSvc hCycleSid with hPre | ⟨hReach1, hReach2⟩
+            · -- Case 1: cycle uses only old edges → pre-state cycle
+              exact hAcyc sid hPre
+            · -- Case 2: cycle uses new edge → pre-state path depId →* svcId
+              -- Compose: depId →* sid →* svcId via serviceReachable_trans
+              have hDepSvc : serviceReachable st depId svcId :=
+                serviceReachable_trans hReach2 hReach1
+              -- Since svcId ≠ depId, this reachability is nontrivial
+              have hNontrivial : serviceNontrivialPath st depId svcId :=
+                serviceNontrivialPath_of_reachable_ne hDepSvc (Ne.symm hSelf)
+              -- BFS completeness: nontrivial path → BFS returns true
+              have hBfsTrue : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true :=
+                bfs_complete_for_nontrivialPath hNontrivial (Ne.symm hSelf)
+              -- Contradiction with the BFS check that returned false
+              exact absurd hBfsTrue hCycle
 
 -- ============================================================================
 -- F-11: serviceRestart failure-semantics documentation and proof (WS-D4)

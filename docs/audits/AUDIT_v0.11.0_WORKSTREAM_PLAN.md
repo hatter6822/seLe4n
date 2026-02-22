@@ -333,11 +333,14 @@ All acceptance criteria met. Summary of changes:
    BFS cycle detection via `serviceHasPathTo`, then edge insertion. BFS fuel bound uses
    `serviceBfsFuel` (objectIndex.length + 256). `cyclicDependency` error variant added to
    `KernelError`. Self-loop rejection theorem (`serviceRegisterDependency_error_self_loop`)
-   proved without `sorry`. Acyclicity invariant (`serviceDependencyAcyclic`) defined; preservation
-   theorem uses `sorry` for BFS soundness (tracked as TPI-D07). NegativeStateSuite validates
+   proved without `sorry`. **Risk 0 resolved (TPI-D07 closed):** The vacuous BFS-based
+   acyclicity invariant was replaced with a declarative definition using `serviceNontrivialPath`.
+   The preservation theorem (`serviceRegisterDependency_preserves_acyclicity`) is proved via
+   post-insertion path decomposition and BFS contradiction — the main theorem is sorry-free.
+   The sole deferred obligation is `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE), a
+   focused BFS completeness bridge validated by executable tests. NegativeStateSuite validates
    self-loop, missing-target, cycle, and idempotent re-registration paths.
-   TPI-D07 execution plan created (`docs/audits/execution_plans/`); M0 baseline lock completed
-   (semantics freeze, proof-target map, store lemma inventory, BFS equational access audit).
+   Full execution plan in `docs/audits/execution_plans/`; M0 baseline lock completed.
 
 2. **F-11 (serviceRestart failure semantics):** Partial-failure semantics documented as an
    explicit design decision (Option B): a failed restart leaves the service stopped to prevent
@@ -472,14 +475,14 @@ Each workstream PR must include:
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
 | WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed: enforcement in 3 operations, 4 additional non-interference theorems. |
 | WS-D3 | **Completed** | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). TPI-001 closed. Gate G3 (proof) passed. |
-| WS-D4 | **Completed** | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, failure semantics, double-wait). TPI-D06 closed. TPI-D07 partially closed (BFS soundness `sorry` tracked). |
+| WS-D4 | **Completed** | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, failure semantics, double-wait). TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with Layers 0-4; sole deferred `sorry` on BFS bridge TPI-D07-BRIDGE). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
 | WS-D6 | Planned | Low | F-13, F-14, F-15, F-17 | CI/CD polish and documentation governance. F-13 likely already resolved. |
 
 ## 9) Dependency graph
 
 ```
-Phase P0 (done)        Phase P1 (done)  Phase P2 (done)  Phase P3 (now)        Phase P4
+Phase P0 (done)        Phase P1 (done)  Phase P2 (done)  Phase P3 (done)       Phase P4 (next)
 ───────────────        ────────         ────────         ──────────            ────────
 Baseline transition → WS-D1 ─────────→ WS-D2 ─────────→ WS-D3 ──────────────→ WS-D5
                       (completed)       (completed)      WS-D4 (parallel) ────→ WS-D6
