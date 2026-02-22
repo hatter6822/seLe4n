@@ -38,7 +38,7 @@ This appendix provides bidirectional mappings between the execution plan documen
 | `docs/CLAIM_EVIDENCE_INDEX.md` | [01_PURPOSE](../01_PURPOSE_AND_SCOPE.md), [M5](../milestones/M5_CLOSURE_SYNC.md), [07_DOD](../07_DEFINITION_OF_DONE.md) | Documentation update target |
 | `docs/gitbook/12-proof-and-invariant-map.md` | [01_PURPOSE](../01_PURPOSE_AND_SCOPE.md), [M5](../milestones/M5_CLOSURE_SYNC.md), [07_DOD](../07_DEFINITION_OF_DONE.md) | Documentation update target |
 | `scripts/test_*.sh` | [06_VALIDATION](../06_VALIDATION_PLAN.md) | Validation commands |
-| `docs/audits/AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md` | [00_INDEX](../00_INDEX.md) | Superseded by this execution plan |
+| `docs/audits/AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md` | [00_INDEX](../00_INDEX.md) | Superseded and deleted — content absorbed into this execution plan |
 
 ---
 

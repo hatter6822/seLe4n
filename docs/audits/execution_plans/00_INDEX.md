@@ -73,7 +73,7 @@ All milestones are strictly sequential — each depends on the prior milestone's
 
 ## Relationship to prior execution strategy
 
-This multi-file execution plan expands and supersedes the monolithic [`AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md`](../AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md). The original document remains as a historical reference. All substantive content has been preserved, refined, and extended with:
+This multi-file execution plan expands and supersedes the former monolithic `AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md` (deleted as redundant). All substantive content has been preserved, refined, and extended with:
 
 - More precise Lean 4 proof tactic suggestions for each lemma
 - Expanded BFS loop invariant formalization with explicit well-founded recursion analysis
