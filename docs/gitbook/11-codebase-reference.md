@@ -1,7 +1,6 @@
 # Codebase Reference (Deep Developer Map)
 
 This chapter maps where semantics, proofs, and execution evidence live in the current repository.
-It also highlights where M6 closeout artifacts, active audit-remediation work, and post-remediation Raspberry Pi 5 work should land.
 
 ## 1. Repository-level structure
 
@@ -41,7 +40,47 @@ It also highlights where M6 closeout artifacts, active audit-remediation work, a
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 - `SeLe4n/Kernel/Service/Operations.lean`
 - `SeLe4n/Kernel/Service/Invariant.lean`
+
+### Architecture boundary
+
+- `SeLe4n/Kernel/Architecture/Assumptions.lean`
+  - named architecture-facing assumption interfaces and contract references.
+- `SeLe4n/Kernel/Architecture/Adapter.lean`
+  - deterministic adapter entrypoints (`adapterAdvanceTimer`, `adapterReadMemory`, `adapterWriteMemory`).
+- `SeLe4n/Kernel/Architecture/VSpace.lean`
+  - VSpace address-space operations (`vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`),
+    ASID root resolution, page-table management.
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
+  - VSpace invariant bundle, success/error preservation theorems, round-trip correctness theorems.
+- `SeLe4n/Kernel/Architecture/Invariant.lean`
+  - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants.
+
+### Information-flow layer
+
+- `SeLe4n/Kernel/InformationFlow/Policy.lean`
+  - security labels (`Confidentiality`, `Integrity`, `SecurityLabel`), policy lattice (`securityFlowsTo`).
+- `SeLe4n/Kernel/InformationFlow/Projection.lean`
+  - observer projection helpers, `lowEquivalent` relation scaffold.
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean`
+  - checked kernel operations that wire policy into enforcement boundaries.
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean`
+  - non-interference preservation theorems across kernel subsystems.
+
+### API
+
 - `SeLe4n/Kernel/API.lean`
+  - barrel import surface for downstream clients.
+
+### Testing modules
+
+- `SeLe4n/Testing/StateBuilder.lean`
+  - test-state construction helpers.
+- `SeLe4n/Testing/RuntimeContractFixtures.lean`
+  - runtime-contract fixtures for architecture adapter testing.
+- `SeLe4n/Testing/InvariantChecks.lean`
+  - executable invariant-checking logic for trace harness validation.
+- `SeLe4n/Testing/MainTraceHarness.lean`
+  - scenario execution engine for trace output and fixture comparisons.
 
 ### Evidence and automation
 
@@ -52,51 +91,31 @@ It also highlights where M6 closeout artifacts, active audit-remediation work, a
 - `scripts/test_tier4_nightly_candidates.sh`
 - umbrella runners: `test_fast.sh`, `test_smoke.sh`, `test_full.sh`, `test_nightly.sh`
 
-## 3. How M6 should map onto this codebase
+## 3. M6 closeout (all completed)
 
-### M6 boundary extraction (WS-M6-A) ✅ **completed**
-
-Implemented touch points:
+### M6 boundary extraction (WS-M6-A) ✅
 
 - `SeLe4n/Kernel/Architecture/Assumptions.lean`
-- `SeLe4n/Kernel/API.lean`
-- `SeLe4n.lean`
+- architecture-facing assumptions isolated into explicit, named interface surfaces.
 
-Outcome: architecture-facing assumptions are isolated into explicit, named interface surfaces (including first-class contract references) and exported for downstream adapter/proof work.
-
-### M6 adapter semantics (WS-M6-B) ✅ **completed**
-
-Implemented touch points:
+### M6 adapter semantics (WS-M6-B) ✅
 
 - `SeLe4n/Kernel/Architecture/Adapter.lean`
-- `SeLe4n/Kernel/API.lean`
-- `SeLe4n.lean`
+- deterministic adapter entrypoints with bounded failure mapping.
 
-Outcome: explicit deterministic adapter entrypoints compile with bounded failure mapping for invalid/unsupported architecture-bound contexts, using runtime-contract decidability witnesses for executable branch selection.
+### M6 proof integration (WS-M6-C) ✅
 
-### M6 proof integration (WS-M6-C) ✅ **completed**
+- `SeLe4n/Kernel/Architecture/Invariant.lean`
+- adapter assumptions connected to theorem-layer invariants through `proofLayerInvariantBundle`.
 
-Implemented touch points:
+### M6 evidence expansion (WS-M6-D) ✅
 
-- `SeLe4n/Kernel/Architecture/Invariant.lean`,
-- `SeLe4n/Kernel/API.lean`,
-- `SeLe4n.lean`.
+- `Main.lean`, `tests/fixtures/main_trace_smoke.expected`
+- executable/test evidence for both success and bounded failure behavior.
 
-Outcome: adapter assumptions are connected to theorem-layer invariants through `proofLayerInvariantBundle`, with explicit local/composed preservation hooks for success and denied/unsupported failure paths.
+## 4. Raspberry Pi 5 placement guidance
 
-### M6 evidence expansion (WS-M6-D)
-
-Likely touch points:
-
-- `Main.lean`,
-- `tests/fixtures/main_trace_smoke.expected`,
-- tier scripts where new symbol checks are needed.
-
-Goal: executable/test evidence for both success and bounded failure behavior.
-
-## 4. Post-M6 placement guidance for Raspberry Pi 5 direction
-
-When M6 interfaces stabilize, Raspberry Pi 5-specific work should:
+M6 interfaces are stable. Raspberry Pi 5-specific work should:
 
 1. instantiate interface contracts rather than rewriting core modules,
 2. avoid embedding platform details directly into architecture-neutral invariant bundles,

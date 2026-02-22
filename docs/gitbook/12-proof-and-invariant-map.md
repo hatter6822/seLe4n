@@ -279,9 +279,11 @@ Frozen operational files (M0 semantics freeze):
 
 Full execution plan: [`docs/audits/execution_plans/00_INDEX.md`](../audits/execution_plans/00_INDEX.md)
 
-## 15. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 15. Information-flow layering (WS-B7 baseline + WS-D2 enforcement and non-interference)
 
-Information-flow proof-track entrypoints now exist with explicit local decomposition:
+### IF-M1 baseline (WS-B7 complete)
+
+Policy and projection primitives:
 
 - policy lattice/labels:
   - `Confidentiality`, `Integrity`, `SecurityLabel`,
@@ -291,6 +293,19 @@ Information-flow proof-track entrypoints now exist with explicit local decomposi
   - `projectState`, `projectObjects`, `projectRunnable`, `projectCurrent`,
   - relation scaffold: `lowEquivalent` with `refl/symm/trans` lemmas.
 
-This keeps IF-M1 aligned with the repository's local-first theorem discipline:
-first provide reusable policy + projection primitives, then stage transition-level
-noninterference claims in IF-M2/IF-M3.
+### Enforcement layer (WS-D2 / F-02 complete)
+
+Policy checks wired into kernel operations via `Enforcement.lean`:
+
+- `endpointSendChecked` — enforces `securityFlowsTo` before IPC send,
+- `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting,
+- `serviceRestartChecked` — enforces `securityFlowsTo` before service restart.
+
+### Non-interference theorems (WS-D2 / F-05 complete)
+
+Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
+
+- `chooseThread_preserves_lowEquivalent` — scheduler non-interference (TPI-D01),
+- `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02),
+- `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
+- `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
