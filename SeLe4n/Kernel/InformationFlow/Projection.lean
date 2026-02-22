@@ -6,7 +6,7 @@ WS-C3 proof-surface note:
 Determinism of pure Lean definitions is a meta-property, so tautological equalities
 such as `f x = f x` do not constitute security evidence.
 Tracked replacement obligations for the information-flow projection surface live in
-TPI-002 (`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`).
+TPI-002 (`dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`).
 -/
 
 namespace SeLe4n.Kernel
