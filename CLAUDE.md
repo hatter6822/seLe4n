@@ -4,7 +4,7 @@
 
 seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
 machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.27.0 toolchain, Lake build system, version 0.11.5.
+semantics. Lean 4.27.0 toolchain, Lake build system, version 0.11.6.
 
 ## Build and run
 
@@ -50,6 +50,31 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
 ```
+
+## Reading large files
+
+Several files in this repo exceed 500 lines (invariant suites, audit plans,
+specs). When reading any file, always use `offset` and `limit` parameters to
+read in chunks rather than attempting the entire file at once:
+
+```
+Read(file_path, offset=1,   limit=500)   # lines 1-500
+Read(file_path, offset=501, limit=500)   # lines 501-1000
+```
+
+**Known large files** (read in ≤500-line chunks):
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~895 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~890 lines)
+- `docs/spec/SEL4_SPEC.md` (~750 lines)
+- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~500 lines)
+- `scripts/test_tier3_invariant_surface.sh` (~480 lines)
+- `SeLe4n/Model/State.lean` (~496 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~470 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~447 lines)
+
+When editing large files, read the specific region around the target lines
+first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
+context-window pressure and "file too large" errors.
 
 ## Key conventions
 
