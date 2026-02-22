@@ -1,307 +1,221 @@
 # Milestone M2 — BFS Soundness Bridge
 
-**Goal:** Prove that a `false` return from `serviceHasPathTo` under sufficient fuel implies no declarative path exists. Also prove the converse direction (BFS `true` implies declarative path).
+**Goal:** Eliminate the `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE,
+`Invariant.lean:526-531`) by proving BFS completeness: if a declarative nontrivial path
+exists between distinct services, the bounded BFS returns `true`.
 
-**Dependency:** M1 (declarative path definitions, structural lemmas)
+**Dependency:** M1 (declarative path definitions, structural lemmas — COMPLETE)
 
-**Estimated theorems added:** 7 (B1–B7 from the theorem inventory)
+**Blocking:** M3 preservation theorem uses `bfs_complete_for_nontrivialPath` at line 634.
 
-**Risk level:** HIGH — this is the technically hardest milestone. See [Risk R1](../05_RISK_REGISTER.md#risk-1) (fuel adequacy) and [Risk R3](../05_RISK_REGISTER.md#risk-3) (BFS loop invariant).
+**Risk level:** HIGH — technically hardest milestone. See [Risk R1](../05_RISK_REGISTER.md#risk-1)
+(fuel adequacy) and [Risk R3](../05_RISK_REGISTER.md#risk-3) (BFS loop invariant).
+
+**Status:** DEFERRED → IN PREPARATION (documentation expanded for implementation)
 
 ---
 
-## 1. Overview: the two directions
+## 1. The sorry under attack
 
-| Direction | Statement | Difficulty | Required for |
+```lean
+-- SeLe4n/Kernel/Service/Invariant.lean:526-531
+theorem bfs_complete_for_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (_hPath : serviceNontrivialPath st a b)
+    (_hNe : a ≠ b) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true := by
+  sorry -- TPI-D07-BRIDGE: BFS completeness proof deferred
+```
+
+This is the sole remaining `sorry` in the TPI-D07 proof chain. The preservation
+theorem (`serviceRegisterDependency_preserves_acyclicity`, line 591) is structurally
+complete — it calls `bfs_complete_for_nontrivialPath` at line 634 to derive a
+contradiction between the BFS cycle-detection check and the existence of a
+declarative path.
+
+### 1.1 Why the easy direction isn't enough
+
+The M3 preservation proof needs the **completeness** direction (declarative path →
+BFS true), not the soundness direction (BFS false → no path). The proof structure is:
+
+1. Assume post-state cycle exists
+2. Decompose into pre-state reachability (`nontrivialPath_post_insert_cases`)
+3. Derive `serviceNontrivialPath st depId svcId` with `depId ≠ svcId`
+4. **Apply `bfs_complete_for_nontrivialPath`** to conclude BFS returns `true`
+5. Contradict the BFS check that returned `false` (`hCycle`)
+
+So the hard direction IS the completeness direction: proving the BFS finds paths
+that declaratively exist.
+
+### 1.2 What makes this hard
+
+Three interlocking challenges create the difficulty:
+
+| Challenge | Core issue | Sub-document |
+|---|---|---|
+| **BFS non-standard recursion** | Fuel recycling on visited nodes; `(fuel, frontier.length)` lexicographic measure | [M2A](./M2A_EQUATIONAL_THEORY.md) |
+| **Loop invariant formulation** | Visited-set closure, frontier reachability, boundary transitions | [M2B](./M2B_COMPLETENESS_INVARIANT.md) |
+| **Fuel adequacy** | `services : ServiceId → Option ServiceGraphEntry` has infinite domain; `serviceBfsFuel` must bound reachable nodes | [M2C](./M2C_FUEL_ADEQUACY.md) |
+
+The detailed proof walkthrough combining all three is in [M2D](./M2D_COMPLETENESS_PROOF.md).
+
+---
+
+## 2. Architecture of the proof
+
+### 2.1 The BFS function under analysis
+
+```lean
+-- SeLe4n/Kernel/Service/Operations.lean:110-127
+def serviceHasPathTo
+    (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
+  go [src] [] fuel
+where
+  go (frontier visited : List ServiceId) : Nat → Bool
+  | 0 => false
+  | fuel + 1 =>
+      match frontier with
+      | [] => false
+      | node :: rest =>
+          if node = target then true
+          else if node ∈ visited then go rest visited (fuel + 1)  -- ← fuel RECYCLED
+          else
+            let deps := match lookupService st node with
+              | some svc => svc.dependencies
+              | none => []
+            let newFrontier := rest ++ deps.filter (· ∉ visited)
+            go newFrontier (node :: visited) fuel              -- ← fuel CONSUMED
+```
+
+Key observations about `go`:
+
+1. **Target check is first** — before visited check. If target is in the frontier,
+   it WILL be detected regardless of visited status.
+2. **Fuel recycled on skip** — `go rest visited (fuel + 1)` passes the same fuel
+   as the input. Fuel is only consumed when expanding a genuinely new node.
+3. **Frontier is FIFO** — new dependencies are appended via `rest ++ deps.filter ...`.
+   This is BFS order, not DFS.
+4. **Filter uses old visited** — `deps.filter (· ∉ visited)` checks against visited
+   BEFORE adding the current node. The current node is added to visited in the
+   recursive call.
+
+### 2.2 Termination measure
+
+Lean accepts `go` via well-founded recursion on the lexicographic measure
+`(fuel, frontier.length)`:
+
+| Branch | fuel | frontier.length | Measure change |
 |---|---|---|---|
-| **Easy (completeness)** | BFS returns `true` → declarative path exists | Medium | EQ2 (declarative → BFS), edge-insertion proof |
-| **Hard (soundness)** | BFS returns `false` → no declarative path | Hard | Core: translating `hCycle` hypothesis |
+| `fuel + 1`, visited skip | `fuel + 1` (same) | decreases (rest < node::rest) | Second component ↓ |
+| `fuel + 1`, expansion | `fuel` (decreases) | may increase | First component ↓ |
+| `0` or `[]` | — | — | Base case |
 
-Both directions are needed for the full equivalence between `serviceDependencyAcyclic` and `serviceDependencyAcyclicDecl`.
+This measure is critical — we must use the same measure in our induction proofs.
+
+### 2.3 Lemma dependency graph
+
+```
+Layer 2A: BFS Equational Lemmas (5 lemmas)
+    │
+    ▼
+Layer 2B: Closure & Boundary (4 lemmas)
+    │
+    ▼
+Layer 2C: Fuel Adequacy (2 definitions + 1 lemma)
+    │
+    ▼
+Layer 2D: Inner Completeness (1 core theorem)
+    │
+    ▼
+Layer 2E: Outer Wrappers (2 theorems)
+    │
+    ▼
+bfs_complete_for_nontrivialPath  ← eliminates sorry
+```
+
+### 2.4 Complete theorem inventory
+
+| ID | Name | Layer | Difficulty | Status |
+|---|---|---|---|---|
+| EQ1 | `go_zero_eq_false` | 2A | Trivial | Planned |
+| EQ2 | `go_nil_eq_false` | 2A | Trivial | Planned |
+| EQ3 | `go_cons_target` | 2A | Trivial | Planned |
+| EQ4 | `go_cons_visited_skip` | 2A | Easy | Planned |
+| EQ5 | `go_cons_expand` | 2A | Easy | Planned |
+| CB1 | `reachable_frontier_boundary` | 2B | Medium | Planned |
+| CB2 | `closure_initial` | 2B | Trivial | Planned |
+| CB3 | `closure_preserved_by_skip` | 2B | Easy | Planned |
+| CB4 | `closure_preserved_by_expansion` | 2B | Medium | Planned |
+| FA1 | `serviceFuelAdequate` (def) | 2C | — | Planned |
+| FA2 | `freshCount_decreases_on_expansion` | 2C | Medium | Planned |
+| FA3 | `serviceBfsFuel_sufficient_precondition` | 2C | Medium | Planned |
+| CP1 | `go_complete_of_frontier_reachable` | 2D | **Hard** | Planned |
+| OW1 | `serviceHasPathTo_complete_of_reachable` | 2E | Easy | Planned |
+| OW2 | `bfs_complete_for_nontrivialPath` | 2E | Easy (wraps CP1) | Planned |
+
+**Total: 13 lemmas + 2 definitions → eliminates 1 sorry**
 
 ---
 
-## 2. Easy direction: BFS `true` → declarative path (B1, B2, B3)
+## 3. Proof strategy decision: completeness via contrapositive
 
-### 2.1 Inner function — B1
+The completeness proof has two possible framings:
 
-```lean
-/-- If `go frontier visited fuel = true`, then there exists some `node ∈ frontier` such that
-    `serviceReachable st node target` holds. -/
-theorem serviceHasPathTo_go_true_implies_exists_reachable
-    (st : SystemState) (target : ServiceId)
-    (frontier visited : List ServiceId) (fuel : Nat)
-    (hTrue : serviceHasPathTo.go st target frontier visited fuel = true) :
-    ∃ node ∈ frontier, serviceReachable st node target
-```
+### Option A: Direct completeness (chosen)
 
-**Proof strategy:** Induction on `fuel`, generalizing over `frontier` and `visited`.
+> If `serviceNontrivialPath st a b` and `a ≠ b`, then `serviceHasPathTo st a b fuel = true`.
 
-- **`fuel = 0`:** `go ... 0 = false`, contradicting `hTrue`.
-- **`fuel + 1`, frontier empty:** `go ... [] = false`, contradicting `hTrue`.
-- **`fuel + 1`, `node :: rest`:**
-  - If `node = target`: witness is `node` with `serviceReachable.refl`.
-  - If `node ∈ visited`: recursive call on `rest`. IH gives witness in `rest ⊆ frontier`.
-  - If new node: recursive call on `rest ++ deps.filter ...`. IH gives witness `w`:
-    - If `w ∈ rest`: `w` was already in the frontier.
-    - If `w ∈ deps.filter ...`: `w` is a dependency of `node`. Compose `serviceEdge st node w` with `serviceReachable st w target` via `serviceReachable.step`.
+Prove by showing the BFS, when given enough fuel, discovers every reachable node.
+This requires a loop invariant about the BFS state.
 
-**Key tactic pattern:**
-```lean
-induction fuel generalizing frontier visited with
-| zero => simp [serviceHasPathTo.go] at hTrue
-| succ n ih =>
-    simp only [serviceHasPathTo.go] at hTrue
-    match hFrontier : frontier with
-    | [] => simp [hFrontier] at hTrue
-    | node :: rest => ...
-```
+### Option B: Contrapositive soundness
 
-### 2.2 Outer function — B2
+> If `serviceHasPathTo st a b fuel = false`, then `¬ serviceNontrivialPath st a b`.
 
-```lean
-/-- If `serviceHasPathTo` returns `true`, then a declarative path exists. -/
-theorem serviceHasPathTo_true_implies_reachable
-    (st : SystemState) (src target : ServiceId) (fuel : Nat)
-    (hTrue : serviceHasPathTo st src target fuel = true) :
-    serviceReachable st src target := by
-  -- serviceHasPathTo unfolds to go [src] [] fuel
-  unfold serviceHasPathTo at hTrue
-  rcases serviceHasPathTo_go_true_implies_exists_reachable st target [src] [] fuel hTrue
-    with ⟨node, hMem, hReach⟩
-  simp [List.mem_singleton] at hMem
-  subst hMem
-  exact hReach
-```
+This is logically equivalent but requires reasoning about what "false" means —
+that the BFS exhausted all possibilities. Surprisingly, this is NOT easier than
+direct completeness; both require the same visited-set closure argument.
 
-### 2.3 Non-trivial variant — B3
-
-```lean
-/-- If src ≠ target and BFS returns true, the path is non-trivial. -/
-theorem serviceHasPathTo_true_implies_nontrivial
-    (st : SystemState) (src target : ServiceId) (fuel : Nat)
-    (hNeq : src ≠ target)
-    (hTrue : serviceHasPathTo st src target fuel = true) :
-    serviceHasNontrivialPath st src target := by
-  -- The BFS checks `node = target` before expanding. Since src ≠ target,
-  -- the BFS must expand src and find a dependency edge to continue.
-  -- This means the path has at least one edge.
-  sorry -- Detailed proof depends on B1's internal structure
-```
-
-**Note:** B3 may require strengthening B1 to track that the first expansion step produces an edge. An alternative is to prove B3 from B2 by case analysis: if `serviceReachable st src target` and `src ≠ target`, then by inversion on the inductive type, the path must have a `.step` constructor, yielding a non-trivial path.
-
-```lean
--- Alternative proof of B3 from B2:
-theorem serviceHasPathTo_true_implies_nontrivial'
-    (st : SystemState) (src target : ServiceId) (fuel : Nat)
-    (hNeq : src ≠ target)
-    (hTrue : serviceHasPathTo st src target fuel = true) :
-    serviceHasNontrivialPath st src target := by
-  have hReach := serviceHasPathTo_true_implies_reachable st src target fuel hTrue
-  cases hReach with
-  | refl => exact absurd rfl hNeq
-  | step hedge hreach => exact ⟨_, hedge, hreach⟩
-```
+**Decision: Option A (direct completeness).** The proof works forward from a
+known path and shows the BFS finds it, which aligns with the inductive structure
+of `serviceNontrivialPath`.
 
 ---
 
-## 3. Hard direction: BFS `false` → no declarative path (B4, B5, B6, B7)
+## 4. Sub-document map
 
-### 3.1 Loop invariant formulation — B4
-
-The loop invariant for `go frontier visited fuel` captures the relationship between the BFS state and declarative reachability. For the **soundness** direction, we use the **contrapositive** formulation:
-
-> If a declarative path from some frontier ancestor to `target` exists, then `go` returns `true`.
-
-More precisely:
-
-```lean
-/-- BFS loop invariant (contrapositive soundness): if every reachable-from-frontier path
-    to `target` is accounted for, then `go` finds `target` when it exists.
-
-    Invariant: for any `a` such that `serviceReachable st a target` holds,
-    if `a ∈ visited ∪ frontier`, then `go` returns `true` (assuming adequate fuel). -/
-theorem serviceHasPathTo_go_complete
-    (st : SystemState) (target : ServiceId)
-    (frontier visited : List ServiceId) (fuel : Nat)
-    -- Fuel is adequate: at least as many as unvisited reachable nodes
-    (hFuel : fuel ≥ cardReachableUnvisited st frontier visited)
-    -- Some frontier node reaches target
-    (hExists : ∃ node ∈ frontier, serviceReachable st node target)
-    -- All predecessors of frontier nodes that are reachable are either visited or in frontier
-    (hClosed : ∀ v ∈ visited, ∀ b, serviceEdge st v b → b ∈ visited ∨ b ∈ frontier) :
-    serviceHasPathTo.go st target frontier visited fuel = true
-```
-
-**This is extremely difficult to formalize directly.** A more practical approach:
-
-#### Practical approach: contrapositive with fuel counting
-
-Instead of proving the loop invariant directly, prove the **contrapositive** of B6:
-
-> Assume `serviceReachable st src target`. Then `serviceHasPathTo st src target (serviceBfsFuel st) = true`.
-
-This is the BFS **completeness** statement (under adequate fuel). Combined with B2 (true → reachable), this gives both directions.
-
-**Proof strategy for completeness:**
-
-1. Define a **decreasing measure** on BFS states: `(number of reachable nodes not in visited, fuel)` under lexicographic ordering.
-2. Prove that each BFS step either finds the target (done) or strictly decreases the measure.
-3. When the measure reaches `(0, _)`, all reachable nodes are visited, and if `target` is reachable, it must be in `visited`, which means the BFS would have returned `true` when it was first dequeued from the frontier.
-
-**Alternative simpler approach:** Prove soundness via the **finite enumeration argument**:
-
-1. The BFS explores nodes in BFS order. Each distinct expansion adds one node to `visited`.
-2. After `k` expansions, `|visited| = k`. Since fuel starts at `serviceBfsFuel st` and each expansion decrements fuel by 1, the BFS can expand up to `serviceBfsFuel st` distinct nodes.
-3. If `serviceBfsFuel st` exceeds the number of reachable nodes from `src`, then the BFS explores all reachable nodes.
-4. If `target` is reachable, it will be encountered in the frontier at some point and the BFS returns `true`.
-5. Contrapositive: if BFS returns `false`, `target` is not reachable.
-
-### 3.2 Fuel adequacy — B5
-
-This is the decision point described in [Risk R1](../05_RISK_REGISTER.md#risk-1).
-
-#### Approach A (preferred): Preconditioned theorem
-
-State fuel adequacy as an explicit hypothesis:
-
-```lean
-/-- Fuel adequacy precondition: the number of distinct services with entries in the graph
-    is bounded by the BFS fuel. -/
-def serviceFuelAdequate (st : SystemState) : Prop :=
-  ∀ sid, lookupService st sid ≠ none →
-    -- sid is "accounted for" by the fuel bound
-    True  -- This is a placeholder; the actual condition depends on the counting argument
-
--- Practical formulation: the set of registered services is finite and bounded
-def serviceCountBounded (st : SystemState) : Prop :=
-  ∃ bound : Nat, bound ≤ serviceBfsFuel st ∧
-    ∀ (sids : List ServiceId),
-      (∀ sid ∈ sids, lookupService st sid ≠ none) →
-      sids.Nodup →
-      sids.length ≤ bound
-```
-
-**The cleanest formulation** is to note that in the BFS, fuel is consumed only when expanding a **new** (unvisited) node. The BFS returns `false` only when either:
-- The frontier is empty (all reachable nodes explored), or
-- Fuel is exhausted (too many distinct nodes).
-
-If we can show that the number of distinct nodes the BFS could ever visit is ≤ `serviceBfsFuel st`, then fuel exhaustion never occurs for reachable nodes.
-
-**Concrete fuel adequacy lemma:**
-
-```lean
-/-- The BFS visits at most `serviceBfsFuel st` distinct nodes before fuel exhaustion.
-    If the total number of registered services is at most `serviceBfsFuel st`,
-    then the BFS explores all reachable nodes. -/
-theorem serviceBfsFuel_sufficient
-    (st : SystemState)
-    (hBound : ∀ (sids : List ServiceId),
-      (∀ sid ∈ sids, lookupService st sid ≠ none) →
-      sids.Nodup →
-      sids.length ≤ serviceBfsFuel st) :
-    ∀ src target, serviceReachable st src target →
-      serviceHasPathTo st src target (serviceBfsFuel st) = true
-```
-
-#### Approach B (fallback): Unconditional via model analysis
-
-If we can prove that the `services` function in `SystemState` effectively has a finite support bounded by `objectIndex.length + 256`, this becomes unconditional. This requires showing that service creation always adds the backing object to `objectIndex`, providing the bound.
-
-**Decision:** Make this choice during M2 implementation. If Approach A is chosen, the fuel adequacy hypothesis becomes a precondition on the final preservation theorem.
-
-### 3.3 Soundness theorem — B6
-
-```lean
-/-- BFS soundness: if the BFS returns false with adequate fuel, no declarative path exists. -/
-theorem serviceHasPathTo_false_implies_not_reachable
-    (st : SystemState) (src target : ServiceId)
-    (hFuel : serviceCountBounded st)  -- or whatever fuel adequacy formulation
-    (hBfs : serviceHasPathTo st src target (serviceBfsFuel st) = false) :
-    ¬ serviceReachable st src target := by
-  intro hReach
-  -- By fuel adequacy + BFS completeness, hReach implies BFS returns true
-  have hTrue := serviceBfsFuel_sufficient st hFuel src target hReach
-  -- Contradiction with hBfs
-  rw [hTrue] at hBfs
-  exact absurd rfl hBfs
-```
-
-### 3.4 Non-trivial soundness — B7
-
-```lean
-/-- BFS false implies no non-trivial path. -/
-theorem serviceHasPathTo_false_implies_not_nontrivial
-    (st : SystemState) (src target : ServiceId)
-    (hFuel : serviceCountBounded st)
-    (hBfs : serviceHasPathTo st src target (serviceBfsFuel st) = false) :
-    ¬ serviceHasNontrivialPath st src target := by
-  intro ⟨mid, hedge, hreach⟩
-  exact serviceHasPathTo_false_implies_not_reachable st src target hFuel hBfs
-    (.step hedge hreach)
-```
-
----
-
-## 4. Implementation guidance
-
-### 4.1 Accessing the `go` function in proofs
-
-The `where`-defined `go` function may require special handling in Lean 4:
-
-```lean
--- Try these approaches in order:
--- 1. Direct unfold
-unfold serviceHasPathTo serviceHasPathTo.go
-
--- 2. Simp with equational lemmas
-simp only [serviceHasPathTo, serviceHasPathTo.go]
-
--- 3. If Lean generates .eq_def:
-rw [serviceHasPathTo.go.eq_def]
-
--- 4. Pattern matching with split tactic
-split <;> ...
-```
-
-### 4.2 Induction strategy for the BFS proof
-
-The `go` function has **non-trivial recursion** (fuel recycling on visited nodes). For induction:
-
-1. **Primary measure:** `fuel` (structurally decreasing in the expansion branch).
-2. **Secondary measure for the visited branch:** `frontier.length` (strictly decreasing since `rest` is shorter than `node :: rest`).
-3. **Combined:** Use strong induction on `fuel` with `frontier.length` tracked as an auxiliary argument, or use `termination_by` with a lexicographic measure.
-
-**Practical approach:** Since the `go` function is well-founded (Lean accepted it), we can use the same termination measure Lean chose. In tactic mode, `induction fuel generalizing frontier visited` should work, with the visited-branch case resolved by noting the frontier strictly shrinks.
-
-### 4.3 Key list reasoning lemmas
-
-The BFS uses `List.filter`, `List.append`, and `List.mem`. Useful `simp` lemmas:
-
-- `List.mem_append`
-- `List.mem_filter`
-- `List.mem_cons`
-- `List.mem_singleton`
-- `List.length_cons`
-- `List.length_append`
-
-If these are not available in the project's Lean/Std import set, they may need to be stated as local lemmas.
+| Document | Contents | Why separate |
+|---|---|---|
+| [**M2A: Equational Theory**](./M2A_EQUATIONAL_THEORY.md) | 5 equational lemmas unfolding `go` for each branch; tactic patterns for accessing the `where`-defined function | These are mechanical and reusable; separating them prevents noise in the main proof |
+| [**M2B: Completeness Invariant**](./M2B_COMPLETENESS_INVARIANT.md) | Loop invariant formulation; closure property; boundary lemma; invariant preservation across BFS steps | The conceptual core — understanding THIS is the key to understanding the proof |
+| [**M2C: Fuel Adequacy**](./M2C_FUEL_ADEQUACY.md) | Fuel adequacy precondition design; analysis of `services` domain; discharge strategies; fresh-count measure | The architectural decision point — determines whether the theorem is unconditional or preconditioned |
+| [**M2D: Completeness Proof**](./M2D_COMPLETENESS_PROOF.md) | Complete proof walkthrough combining 2A-2C; strong induction structure; case analysis; final wrappers | The implementation guide — follow this to write the Lean code |
 
 ---
 
 ## 5. Exit criteria
 
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+- [ ] All Layer 2A equational lemmas compile without `sorry`
+- [ ] All Layer 2B closure/boundary lemmas compile without `sorry`
+- [ ] Fuel adequacy approach chosen and formalized (preconditioned or unconditional)
+- [ ] `go_complete_of_frontier_reachable` (CP1) compiles without `sorry`
+- [ ] `bfs_complete_for_nontrivialPath` compiles without `sorry`
+- [ ] `lake build` succeeds with zero `sorry` in `Invariant.lean`
+- [ ] `./scripts/test_smoke.sh` passes
+- [ ] M3 preservation theorem remains valid (no signature changes)
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
-- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
-- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
-- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
-
-## Validation
+## 6. Validation
 
 ```bash
-./scripts/test_tier1_build.sh
+# Tier 0+1: build succeeds, no new sorry
+./scripts/test_fast.sh
+
+# Tier 0-2: traces and negative-state tests pass
+./scripts/test_smoke.sh
+
+# Verify sorry elimination
+rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # should return 0 matches
+
+# Verify preservation theorem still compiles
+lake build SeLe4n.Kernel.Service.Invariant
 ```

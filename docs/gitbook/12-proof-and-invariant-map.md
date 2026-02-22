@@ -266,7 +266,23 @@ Implemented proof layers:
 **Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
 `bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
 `serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
-distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
+distinct services. A detailed proof roadmap has been prepared in
+[M2_BFS_SOUNDNESS.md](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
+with four sub-documents:
+
+- **M2A (Equational theory):** 5 lemmas unfolding the `go` function for each branch
+- **M2B (Completeness invariant):** Visited-set closure property, boundary lemma,
+  and invariant preservation across BFS steps
+- **M2C (Fuel adequacy):** `serviceFuelAdequate` precondition design — bounds
+  reachable service count by `serviceBfsFuel st`
+- **M2D (Completeness proof):** Complete walkthrough for the core theorem
+  `go_complete_of_frontier_reachable` using well-founded induction on
+  `(fuel, frontier.length)`, plus outer wrappers
+
+The proof strategy uses direct completeness (path exists → BFS returns true) via
+a 4-component loop invariant: (I1) target not visited, (I2) visited-set closure,
+(I3) frontier reachability witness, (I4) fuel adequacy. Total planned: 13 lemmas
++ 2 definitions. See Risk 1 and Risk 3 in the risk register for detailed analysis.
 
 Frozen operational files (M0 semantics freeze):
 

@@ -68,44 +68,65 @@ These establish basic properties of the declarative path relation and its intera
 
 ---
 
-## Layer 2 — BFS soundness infrastructure (M2)
+## Layer 2 — BFS completeness infrastructure (M2)
 
-| ID | Name | Statement sketch | Depends on | Tactic hint |
+> **Revised plan.** The original B1–B7 scheme has been replaced with a more targeted
+> completeness-focused approach. See [M2_BFS_SOUNDNESS.md](./milestones/M2_BFS_SOUNDNESS.md)
+> and its sub-documents (M2A–M2D) for the full proof roadmap.
+
+### Layer 2A — Equational lemmas ([M2A](./milestones/M2A_EQUATIONAL_THEORY.md))
+
+| ID | Name | Statement sketch | Depends on | Difficulty |
 |---|---|---|---|---|
-| B1 | `serviceHasPathTo_go_true_implies_reachable` | If `go frontier visited fuel = true` and every frontier node is reachable from `src`, then `src` reaches `target` | D2, L1 | Induction on `fuel` with frontier/visited generalization |
-| B2 | `serviceHasPathTo_true_implies_reachable` | `serviceHasPathTo st src target fuel = true → serviceReachable st src target` | B1, D2 | Apply B1 with initial frontier `[src]`, visited `[]` |
-| B3 | `serviceHasPathTo_true_implies_nontrivial` | `src ≠ target → serviceHasPathTo st src target fuel = true → serviceHasNontrivialPath st src target` | B2, D3 | If src ≠ target, the BFS must take at least one edge step |
-| B4 | `serviceHasPathTo_go_invariant` | Loop invariant: if a declarative path from `src` to `target` exists, then either `target ∈ visited`, or some `mid ∈ frontier` with `serviceReachable st mid target`, or `go` returns `true` | D2, L1 | Strong induction on `fuel`, with generalized frontier/visited |
-| B5 | `serviceBfsFuel_sufficient` | Fuel adequacy: `serviceBfsFuel st` exceeds the number of distinct services in the graph (or: stated as a precondition) | — | See [Risk R1](./05_RISK_REGISTER.md#risk-1) |
-| B6 | `serviceHasPathTo_false_implies_not_reachable` | `serviceHasPathTo st src target (serviceBfsFuel st) = false → ¬ serviceReachable st src target` | B4, B5 | Contrapositive: assume reachable, apply B4 to show BFS must return true |
-| B7 | `serviceHasPathTo_false_implies_not_nontrivial` | `serviceHasPathTo st src target (serviceBfsFuel st) = false → ¬ serviceHasNontrivialPath st src target` | B6, D3 | Since nontrivial path implies reachability, apply B6 |
+| EQ1 | `go_zero_eq_false` | `go frontier visited 0 = false` | — | Trivial |
+| EQ2 | `go_nil_eq_false` | `go [] visited (fuel+1) = false` | — | Trivial |
+| EQ3 | `go_cons_target` | `go (target :: rest) visited (fuel+1) = true` | — | Trivial |
+| EQ4 | `go_cons_visited_skip` | `node ≠ target → node ∈ visited → go (node::rest) visited (f+1) = go rest visited (f+1)` | — | Easy |
+| EQ5 | `go_cons_expand` | `node ≠ target → node ∉ visited → go (node::rest) visited (f+1) = go (rest ++ deps.filter ...) (node::visited) f` | — | Easy |
 
-**Note on B1 vs B4:** B1 proves the "easy direction" (BFS returns `true` → real path exists). B4 proves the "hard direction" setup (real path exists → BFS returns `true`). Both are needed: B1 for Option 1 completeness and for the edge-insertion proof, B4/B6 for soundness.
+### Layer 2B — Closure and boundary ([M2B](./milestones/M2B_COMPLETENESS_INVARIANT.md))
 
-### Detailed loop invariant (B4)
+| ID | Name | Statement sketch | Depends on | Difficulty |
+|---|---|---|---|---|
+| CB1 | `reachable_frontier_boundary` | `v ∈ visited → serviceReachable st v target → target ∉ visited → bfsClosed → ∃ f ∈ frontier, f ∉ visited ∧ serviceReachable st f target` | D2, I2 | Medium |
+| CB2 | `closure_initial` | `bfsClosed st frontier []` | — | Trivial |
+| CB3 | `closure_preserved_by_skip` | `bfsClosed st (node::rest) visited → node ∈ visited → bfsClosed st rest visited` | — | Easy |
+| CB4 | `closure_preserved_by_expansion` | `bfsClosed st (node::rest) visited → node ∉ visited → bfsClosed st (rest ++ deps.filter ...) (node::visited)` | — | Medium |
 
-The invariant for `go frontier visited fuel` is a conjunction:
+### Layer 2C — Fuel adequacy ([M2C](./milestones/M2C_FUEL_ADEQUACY.md))
+
+| ID | Name | Statement sketch | Depends on | Difficulty |
+|---|---|---|---|---|
+| FA1 | `serviceFuelAdequate` (def) | `∀ src sids, sids.Nodup → (∀ s ∈ sids, serviceReachable st src s) → sids.length ≤ serviceBfsFuel st` | — | Definition |
+| FA2 | `freshCount_decreases_on_expansion` | Fresh reachable count decreases by ≥ 1 per expansion | FA1 | Medium |
+
+### Layer 2D — Core completeness ([M2D](./milestones/M2D_COMPLETENESS_PROOF.md))
+
+| ID | Name | Statement sketch | Depends on | Difficulty |
+|---|---|---|---|---|
+| CP1 | `go_complete_of_frontier_reachable` | `∃ f ∈ frontier, serviceReachable st f target → ... → go frontier visited fuel = true` | EQ1–5, CB1–4, FA1–2 | **Hard** |
+| OW1 | `serviceHasPathTo_complete_of_reachable` | `serviceReachable st src target → src ≠ target → ... → serviceHasPathTo st src target fuel = true` | CP1 | Easy |
+| OW2 | `bfs_complete_for_nontrivialPath` | `serviceNontrivialPath st a b → a ≠ b → ... → serviceHasPathTo st a b (serviceBfsFuel st) = true` | OW1 | Easy |
+
+### Revised loop invariant
+
+The invariant for `go frontier visited fuel` is:
 
 ```
-INV(frontier, visited, fuel) :=
-  -- (1) Every node in visited was expanded from the frontier
-  -- (2) Every node reachable from a visited node via edges to non-visited nodes
-  --     is either in the frontier or also visited
-  -- (3) If serviceReachable st src target, then either:
-  --     (a) target ∈ visited, or
-  --     (b) ∃ mid ∈ frontier, serviceReachable st mid target, or
-  --     (c) the function will return true
+BfsInvariant(st, target, frontier, visited) :=
+  (I1) target ∉ visited
+  (I2) ∀ v ∈ visited, ∀ dep, serviceEdge st v dep → dep ∈ visited ∨ dep ∈ frontier
+  (I3) ∃ node ∈ frontier, serviceReachable st node target
+  (I4) fuel ≥ |fresh reachable nodes|  (via serviceFuelAdequate precondition)
 ```
 
-The key insight is that condition (3c) is the conclusion we want. The proof proceeds:
+The proof proceeds by well-founded induction on `(fuel, frontier.length)`:
 
-1. **Base case** (`fuel = 0`): if `go` returns `false` and fuel is exhausted, the invariant tells us that all reachable nodes must have been visited (by fuel adequacy). Since `target ∉ visited` (otherwise the BFS would have found it), this contradicts reachability.
-
-2. **Inductive step** (`fuel + 1`):
-   - **Frontier empty:** conditions (3a) and (3b) are vacuously exhausted, contradicting the assumed reachability.
-   - **Node is target:** returns `true` — condition (3c) satisfied.
-   - **Node ∈ visited:** frontier shrinks, `go rest visited (fuel + 1)` — invariant preserved with same fuel (visited node recycling).
-   - **New node:** frontier evolves, `go (rest ++ deps.filter ...) (node :: visited) fuel` — invariant preserved with one less fuel (node expansion).
+- **fuel = 0:** Contradiction — I3 + I4 imply at least one fresh node exists, but fuel = 0 means no expansion possible (proved via fuel adequacy).
+- **Frontier empty:** Contradiction with I3 (no frontier witness).
+- **Node = target:** EQ3 returns true immediately.
+- **Node ∈ visited (skip):** CB3 preserves I2. CB1 recovers I3 in `rest`. Same fuel, shorter frontier → lexicographic decrease on second component.
+- **Node ∉ visited (expand):** CB4 preserves I2. CB1 recovers I3 in new frontier. FA2 preserves I4. Fuel decreases → lexicographic decrease on first component.
 
 ---
 
@@ -183,9 +204,9 @@ exact hAcyc' sid
 |---|---|---|---|
 | Layer 0 (definitions) | 4 | 3 | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` (replaces D3+D4: `serviceDependencyAcyclic` redefined in-place) |
 | Layer 1 (structural) | 12 | 10 | 7 path lemmas + 3 frame lemmas (naming adjusted; see Invariant.lean:413-508) |
-| Layer 2 (BFS soundness) | 7 | 1 | `bfs_complete_for_nontrivialPath` with focused `sorry` (TPI-D07-BRIDGE); full B1-B7 suite deferred |
+| Layer 2 (BFS completeness) | 15 | 1 | Revised plan: EQ1–5, CB1–4, FA1–2, CP1, OW1–2 targeting `bfs_complete_for_nontrivialPath` sorry (TPI-D07-BRIDGE); see M2A–M2D sub-documents |
 | Layer 3 (edge insertion) | 5 | 1 | `nontrivialPath_post_insert_cases` (combines E1-E3 logic into one inductive proof) |
 | Layer 4 (final closure) | 3 | 1 | `serviceRegisterDependency_preserves_acyclicity` (sorry-free; EQ1/EQ2 unnecessary since `serviceDependencyAcyclic` was redefined declaratively) |
 | **Total** | **31** | **16** | Proof completed with fewer artifacts by redefining the invariant declaratively |
 
-The actual implementation was more efficient than the 31-theorem plan: redefining `serviceDependencyAcyclic` to use `serviceNontrivialPath` directly eliminated the need for equivalence theorems (EQ1, EQ2) and much of the BFS bridge infrastructure (B1-B7). The remaining BFS bridge `sorry` is well-scoped and operationally validated.
+The actual implementation was more efficient than the 31-theorem plan: redefining `serviceDependencyAcyclic` to use `serviceNontrivialPath` directly eliminated the need for equivalence theorems (EQ1, EQ2) and much of the original BFS bridge infrastructure (B1-B7). The remaining BFS bridge `sorry` is well-scoped and operationally validated. Layer 2 has been re-planned with a targeted completeness approach (15 artifacts: 5 equational lemmas + 4 closure/boundary lemmas + 2 fuel adequacy artifacts + 3 completeness theorems + 1 definition) documented in M2A–M2D.
