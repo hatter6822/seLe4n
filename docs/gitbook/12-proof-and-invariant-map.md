@@ -230,7 +230,37 @@ Supporting infrastructure:
 - `storeTcbIpcState_preserves_notification` — storeTcbIpcState preserves notification objects
 - `removeRunnable_preserves_objects` — removeRunnable preserves all objects
 
-## 14. IF-M1 information-flow baseline layering (WS-B7 complete)
+## 14. TPI-D07 proof infrastructure plan (M0 baseline lock complete)
+
+The TPI-D07 `sorry` elimination execution plan has been baselined. M0 (Baseline Lock and
+Proof-Target Map) is complete. The in-source proof infrastructure plan is documented in
+`SeLe4n/Kernel/Service/Invariant.lean` as a `/-! ... -/` comment block above the acyclicity
+section.
+
+Planned proof layers:
+
+- **Layer 0 (Definitions):** `serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath`,
+  `serviceDependencyAcyclicDecl`
+- **Layer 1 (Structural lemmas):** definitional unfolding, path concatenation, frame conditions
+  for `storeServiceState`, edge characterization after insertion
+- **Layer 2 (BFS soundness):** BFS true → declarative path, BFS loop invariant, fuel adequacy,
+  BFS false → no path
+- **Layer 3 (Edge insertion):** post-state edge decomposition, post-state path decomposition,
+  cycle → pre-state reachability, declarative acyclicity preservation
+- **Layer 4 (Final closure):** BFS ↔ declarative equivalence bridge
+
+Frozen operational files (M0 semantics freeze):
+
+| File | SHA-256 |
+|---|---|
+| `Operations.lean` | `a61fa6c1...42ffff44` |
+| `State.lean` | `6f6f87d8...d1cbc1e6` |
+| `Object.lean` | `db228ed6...14594f32` |
+| `Prelude.lean` | `bffc93fe...d47b30fe` |
+
+Full execution plan: [`docs/audits/execution_plans/00_INDEX.md`](../audits/execution_plans/00_INDEX.md)
+
+## 15. IF-M1 information-flow baseline layering (WS-B7 complete)
 
 Information-flow proof-track entrypoints now exist with explicit local decomposition:
 

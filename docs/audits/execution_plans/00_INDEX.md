@@ -47,7 +47,7 @@
 
 | Milestone | Status | Key deliverable | Blocking risk |
 |---|---|---|---|
-| M0 | `PENDING` | Proof-target map, store lemma inventory | None |
+| M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `PENDING` | `serviceEdge`, `serviceReachable`, 5 structural lemmas | None |
 | M2 | `PENDING` | `serviceHasPathTo_false_implies_not_reachable` | R1: Fuel adequacy |
 | M3 | `PENDING` | `sorry` elimination in preservation theorem | R3: BFS loop invariant |
