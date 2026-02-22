@@ -215,24 +215,39 @@ theorem notificationWait_preserves_uniqueWaiters
 
 - **Audit mapping:** `AUDIT_v0.11.0.md` F-07 (Medium), recommendation 9.3 #7.
 - **Workstream:** WS-D4.
+- **Risk 0 resolution:** Strategy B adopted. The vacuous BFS-based `serviceDependencyAcyclic` definition
+  has been corrected to use declarative non-trivial-path acyclicity. Three Layer 0 definitions added:
+  `serviceEdge` (direct dependency edge), `serviceReachable` (reflexive-transitive closure),
+  `serviceHasNontrivialPath` (path of length ≥ 1). The preservation theorem's `sorry` now represents
+  a genuine (non-vacuous) proof obligation requiring BFS soundness (Layer 2) and edge-insertion analysis
+  (Layer 3). See [`05_RISK_REGISTER.md`](./execution_plans/05_RISK_REGISTER.md#risk-0--vacuous-invariant-definition-highest--resolved).
+- **Execution plan:** Multi-milestone plan (M0–M5) documented in
+  [`docs/audits/execution_plans/`](./execution_plans/00_INDEX.md). M0 (baseline lock) is in progress.
 - **Current status:** Cycle detection implemented and operational (`serviceRegisterDependency` rejects
-  cyclic edges via `serviceHasPathTo` BFS). Acyclicity invariant (`serviceDependencyAcyclic`) defined.
-  Preservation theorem statement exists but uses `sorry` for the BFS soundness argument. The operational
-  cycle detection is runtime-correct (validated by executable tests), but formally proving that the BFS
-  explores enough of the graph to be sound requires additional graph-theory infrastructure that is deferred.
+  cyclic edges via `serviceHasPathTo` BFS). Acyclicity invariant corrected to declarative form.
+  Preservation theorem statement exists but uses `sorry` for the BFS soundness + edge-insertion
+  argument. The operational cycle detection is runtime-correct (validated by executable tests).
+  TPI-D07 proof infrastructure plan comment block added to `Invariant.lean`.
 - **Remaining obligation:** Replace `sorry` in `serviceRegisterDependency_preserves_acyclicity` with a
-  formal proof that the BFS cycle check is sound (i.e., if `serviceHasPathTo` returns false, adding the
-  edge does not create a cycle in the post-state graph).
+  formal proof. Requires:
+  1. Layer 1 (M1): Structural lemmas for `serviceEdge`, `serviceReachable`, store-interaction.
+  2. Layer 2 (M2): BFS soundness — `serviceHasPathTo` false implies no `serviceReachable` path.
+  3. Layer 3 (M3): Edge-insertion analysis — acyclicity preserved when adding `svcId → depId` edge
+     given no pre-state path from `depId` to `svcId`.
 
 Partially closed theorem obligation (uses `sorry`):
 
 ```lean
+-- Corrected invariant (Strategy B — declarative acyclicity)
+def serviceDependencyAcyclic (st : SystemState) : Prop :=
+  ∀ sid, ¬ serviceHasNontrivialPath st sid sid
+
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
     (hAcyc : serviceDependencyAcyclic st) :
     serviceDependencyAcyclic st' := by
-  ...  -- proof structure exists; BFS soundness step uses sorry
+  ...  -- proof structure exists; BFS soundness + edge insertion uses sorry
 ```
 
 ---

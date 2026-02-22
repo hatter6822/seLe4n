@@ -43,12 +43,16 @@
 
 ---
 
+## Risk 0 resolution
+
+**Decision D1 resolved: Strategy B adopted** — The vacuous BFS-based `serviceDependencyAcyclic` definition has been corrected to use declarative non-trivial-path acyclicity. Layer 0 definitions (`serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath`) are committed. The preservation theorem's `sorry` now represents a genuine (non-vacuous) proof obligation. See [05_RISK_REGISTER.md](./05_RISK_REGISTER.md#risk-0--vacuous-invariant-definition-highest--resolved) for the full decision record.
+
 ## Status dashboard
 
 | Milestone | Status | Key deliverable | Blocking risk |
 |---|---|---|---|
-| M0 | `PENDING` | Proof-target map, store lemma inventory | None |
-| M1 | `PENDING` | `serviceEdge`, `serviceReachable`, 5 structural lemmas | None |
+| M0 | `IN PROGRESS` | Proof-target map, store lemma inventory | None (Risk 0 resolved) |
+| M1 | `PENDING` | Structural lemmas (Layer 1) | None |
 | M2 | `PENDING` | `serviceHasPathTo_false_implies_not_reachable` | R1: Fuel adequacy |
 | M3 | `PENDING` | `sorry` elimination in preservation theorem | R3: BFS loop invariant |
 | M4 | `PENDING` | 3+ new test cases in `NegativeStateSuite.lean` | None |

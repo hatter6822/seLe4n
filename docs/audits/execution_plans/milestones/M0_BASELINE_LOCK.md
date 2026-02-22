@@ -4,7 +4,9 @@
 
 **Dependency:** None (entry milestone)
 
-**Estimated theorems added:** 0 (audit and documentation only)
+**Prerequisite resolved:** Risk 0 (vacuous invariant) — Strategy B adopted. The `serviceDependencyAcyclic` definition has been corrected from the vacuous BFS-based form to declarative non-trivial-path acyclicity. Layer 0 definitions (`serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath`) are committed. This is a pre-M0 change that establishes the correct invariant foundation before the baseline is locked.
+
+**Estimated theorems added:** 0 (audit and documentation only; Layer 0 definitions added as Risk 0 prerequisite)
 
 ---
 
@@ -43,49 +45,14 @@ sha256sum SeLe4n/Kernel/Service/Operations.lean SeLe4n/Model/State.lean \
           SeLe4n/Model/Object.lean SeLe4n/Prelude.lean
 ```
 
-### M0.3 — Theorem TODO map
+### M0.3 — Theorem TODO map (COMPLETE)
 
-Add a structured comment block in `Service/Invariant.lean` above the acyclicity section (above line 341) listing all planned intermediate lemmas. This serves as a verifiable implementation checklist and provides in-source navigation.
+A structured comment block has been added in `Service/Invariant.lean` above the acyclicity section listing all planned intermediate lemmas. This serves as a verifiable implementation checklist and provides in-source navigation.
 
-```lean
-/-!
-## TPI-D07 proof infrastructure plan
-
-### Definitions (Layer 0)
-- `serviceEdge` — direct dependency edge relation
-- `serviceReachable` — reflexive-transitive closure of serviceEdge
-- `serviceHasNontrivialPath` — path of length ≥ 1
-- `serviceDependencyAcyclicDecl` — declarative acyclicity (no non-trivial self-loops)
-
-### Structural lemmas (Layer 1)
-- `serviceEdge_iff_mem` — definitional unfolding
-- `serviceReachable_trans` — path concatenation
-- `serviceReachable_of_edge` — single-edge path
-- `serviceReachable_step_right` — right-append edge
-- `serviceHasNontrivialPath_of_edge` — edge implies nontrivial path
-- `storeServiceState_objectIndex_eq` — objectIndex frame condition
-- `serviceBfsFuel_storeServiceState_eq` — fuel frame condition
-- `serviceEdge_storeServiceState_eq` — edge at updated service
-- `serviceEdge_storeServiceState_ne` — edge at non-updated service
-- `serviceEdge_post_insert` — edge characterization after insertion
-
-### BFS soundness (Layer 2)
-- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
-- `serviceHasPathTo_go_invariant` — BFS loop invariant
-- `serviceBfsFuel_sufficient` — fuel adequacy
-- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
-
-### Edge insertion (Layer 3)
-- `serviceEdge_post_cases` — post-state edge decomposition
-- `serviceReachable_post_insert_cases` — post-state path decomposition
-- `nontrivial_cycle_post_insert_implies_pre_reach` — cycle → pre-state reachability
-- `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
-
-### Final closure (Layer 4)
-- `serviceDependencyAcyclic_implies_acyclicDecl` — BFS → declarative equivalence
-- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
--/
-```
+**Status:** Complete. The comment block reflects Strategy B (declarative acyclicity directly in `serviceDependencyAcyclic`). Key differences from the original plan:
+- `serviceDependencyAcyclicDecl` (D4) is no longer needed as a separate definition — `serviceDependencyAcyclic` now IS the declarative definition.
+- Layer 4 equivalence theorems (EQ1/EQ2) are subsumed — no translation between BFS and declarative forms is needed in the final proof.
+- The proof infrastructure plan covers Layers 0–3 with 31 planned definitions and lemmas.
 
 ### M0.4 — Store lemma inventory
 
@@ -128,16 +95,16 @@ rg 'serviceHasPathTo\.go' SeLe4n/
 
 ## Exit criteria
 
-- [ ] No changes to executable definitions in `Operations.lean`
+- [x] No changes to executable definitions in `Operations.lean`
 - [ ] File hashes recorded for all frozen files
-- [ ] Theorem TODO map comment block added to `Invariant.lean`
+- [x] Theorem TODO map comment block added to `Invariant.lean`
 - [ ] Store lemmas inventoried and confirmed available
 - [ ] BFS equational access verified
-- [ ] `lake build` passes with comment-only changes
+- [ ] `lake build` passes with changes
 
 ## Artifacts modified
 
-- `SeLe4n/Kernel/Service/Invariant.lean` (comment block only — no definitions, no proofs)
+- `SeLe4n/Kernel/Service/Invariant.lean` (Layer 0 definitions + proof plan comment block; Risk 0 Strategy B prerequisite)
 
 ## Validation
 

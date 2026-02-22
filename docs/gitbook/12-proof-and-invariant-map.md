@@ -200,8 +200,20 @@ Service dependency registration now includes BFS-based cycle detection:
 - `serviceHasPathTo` — bounded BFS reachability check in the dependency graph
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
-- `serviceDependencyAcyclic` — acyclicity invariant definition
-- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (uses `sorry` for BFS soundness; tracked as TPI-D07)
+
+Declarative graph semantics (Layer 0 — Risk 0 Strategy B):
+
+- `serviceEdge` — direct dependency edge relation (`b ∈ a.dependencies`)
+- `serviceReachable` — reflexive-transitive closure of `serviceEdge` (inductive)
+- `serviceHasNontrivialPath` — path of length ≥ 1 (excludes trivial self-reachability)
+- `serviceDependencyAcyclic` — acyclicity invariant: no non-trivial self-loops (corrected from vacuous BFS-based definition)
+- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (uses `sorry` for BFS soundness + edge insertion; tracked as TPI-D07, M1–M3)
+
+**Risk 0 resolution:** The original BFS-based `serviceDependencyAcyclic` was vacuously unsatisfiable
+(`serviceHasPathTo st sid sid fuel` returns `true` immediately when `src = target` and `fuel ≥ 1`).
+Strategy B was adopted: the invariant was redefined to use declarative non-trivial-path acyclicity,
+producing a genuine (non-vacuous) proof obligation. See the
+[TPI-D07 execution plan](../audits/execution_plans/00_INDEX.md) for the full milestone sequence.
 
 ### F-11: serviceRestart partial-failure semantics
 

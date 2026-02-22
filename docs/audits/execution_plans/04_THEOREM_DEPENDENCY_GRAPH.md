@@ -4,16 +4,17 @@ This document is the complete inventory of definitions and theorems required for
 
 ---
 
-## Layer 0 — New definitions
+## Layer 0 — New definitions (COMPLETE — Risk 0 Strategy B)
 
-These introduce the declarative graph semantics. No proofs required — only well-formed definitions.
+These introduce the declarative graph semantics. No proofs required — only well-formed definitions. **All committed as part of Risk 0 resolution (Strategy B).**
 
-| ID | Name | Signature | File | Milestone |
+| ID | Name | Signature | File | Status |
 |---|---|---|---|---|
-| D1 | `serviceEdge` | `SystemState → ServiceId → ServiceId → Prop` | `Service/Invariant.lean` | M1 |
-| D2 | `serviceReachable` | `SystemState → ServiceId → ServiceId → Prop` (inductive) | `Service/Invariant.lean` | M1 |
-| D3 | `serviceHasNontrivialPath` | `SystemState → ServiceId → ServiceId → Prop` (at least one edge) | `Service/Invariant.lean` | M1 |
-| D4 | `serviceDependencyAcyclicDecl` | `SystemState → Prop` (declarative version, optional if Option 2) | `Service/Invariant.lean` | M1 |
+| D1 | `serviceEdge` | `SystemState → ServiceId → ServiceId → Prop` | `Service/Invariant.lean` | **Committed** |
+| D2 | `serviceReachable` | `SystemState → ServiceId → ServiceId → Prop` (inductive) | `Service/Invariant.lean` | **Committed** |
+| D3 | `serviceHasNontrivialPath` | `SystemState → ServiceId → ServiceId → Prop` (at least one edge) | `Service/Invariant.lean` | **Committed** |
+
+**Note:** D4 (`serviceDependencyAcyclicDecl`) from the original plan is no longer needed as a separate definition. With Strategy B, `serviceDependencyAcyclic` itself has been redefined to use the declarative form (`∀ sid, ¬ serviceHasNontrivialPath st sid sid`), making the separate declarative alias redundant.
 
 ### Definition details
 
@@ -31,12 +32,14 @@ inductive serviceReachable (st : SystemState) : ServiceId → ServiceId → Prop
 def serviceHasNontrivialPath (st : SystemState) (a b : ServiceId) : Prop :=
   ∃ mid, serviceEdge st a mid ∧ serviceReachable st mid b
 
--- D4: Declarative acyclicity (no non-trivial self-loops)
-def serviceDependencyAcyclicDecl (st : SystemState) : Prop :=
+-- Corrected acyclicity invariant (Strategy B — replaces vacuous BFS-based definition)
+def serviceDependencyAcyclic (st : SystemState) : Prop :=
   ∀ sid, ¬ serviceHasNontrivialPath st sid sid
 ```
 
 **Design rationale for D3:** `serviceReachable` includes `refl` (every node trivially reaches itself), so `¬ serviceReachable st sid sid` is always false. The acyclicity invariant must exclude trivial paths. `serviceHasNontrivialPath` captures "reachable via at least one edge."
+
+**Strategy B rationale:** Defining `serviceDependencyAcyclic` directly as the declarative form eliminates the need for BFS↔declarative equivalence theorems (EQ1/EQ2 from the original Layer 4). The BFS soundness bridge (Layer 2) connects the operational BFS check to the declarative invariant directly.
 
 ---
 
@@ -137,53 +140,50 @@ The composition is: `serviceReachable st a svcId` (by `a = svcId`, `refl`) and `
 
 ---
 
-## Layer 4 — Final closure (M3)
+## Final closure (M3) — simplified by Strategy B
+
+With Strategy B, `serviceDependencyAcyclic` IS the declarative definition directly. The EQ1/EQ2 equivalence theorems from the original plan are no longer needed. The final proof directly composes BFS soundness (B7) with edge-insertion analysis (E5).
 
 | ID | Name | Statement sketch | Depends on | Tactic hint |
 |---|---|---|---|---|
-| EQ1 | `serviceDependencyAcyclic_implies_acyclicDecl` | `serviceDependencyAcyclic st → serviceDependencyAcyclicDecl st` | B2, D3, D4 | Contrapositive: nontrivial path implies BFS true (via B2), contradicting acyclic |
-| EQ2 | `serviceDependencyAcyclicDecl_implies_acyclic` | `serviceDependencyAcyclicDecl st → serviceDependencyAcyclic st` | B6, D4 | Contrapositive: BFS true implies nontrivial path (via BFS true → reachable, and src = target → nontrivial if BFS found it) |
-| F1 | `serviceRegisterDependency_preserves_acyclicity` | The final theorem — replaces `sorry` | EQ1, EQ2, E5, B6, S2 | See proof sketch below |
+| F1 | `serviceRegisterDependency_preserves_acyclicity` | The final theorem — replaces `sorry` | E5, B7, S2 | See proof sketch below |
 
-### Final proof sketch for F1
+### Final proof sketch for F1 (Strategy B — simplified)
 
 ```lean
 -- At the sorry site, after all case splits:
 -- We have: hAcyc, hCycle, hSvc, hDep, hSelf, hExists, sid
--- Goal: ¬ serviceHasPathTo st' sid sid (serviceBfsFuel st') = true
+-- hAcyc : serviceDependencyAcyclic st
+--       = ∀ sid, ¬ serviceHasNontrivialPath st sid sid
+-- hCycle : ¬ serviceHasPathTo st depId svcId (serviceBfsFuel st) = true
+-- Goal: ¬ serviceHasNontrivialPath st' sid sid
 
--- Step 1: Rewrite fuel in the goal
-rw [S2]  -- serviceBfsFuel st' = serviceBfsFuel st
+-- Step 1: BFS soundness: BFS returning false implies no nontrivial path
+have hNoNontrivial : ¬ serviceHasNontrivialPath st depId svcId := B7 hCycle
 
--- Step 2: Translate pre-state acyclicity to declarative form
-have hAcycDecl : serviceDependencyAcyclicDecl st := EQ1 hAcyc
+-- Step 2: From no nontrivial path, derive no reachability (for edge insertion)
+have hNoPath : ¬ serviceReachable st depId svcId := by
+  intro hReach
+  -- If depId reaches svcId and depId ≠ svcId (from hSelf), this is a nontrivial path
+  -- This uses the relationship between reachable and nontrivialPath
+  exact hNoNontrivial (nontrivial_of_reachable_ne hSelf.symm hReach)
 
--- Step 3: Establish no pre-state path from depId to svcId
-have hNoPath : ¬ serviceReachable st depId svcId := B6 hCycle
-
--- Step 4: Prove declarative acyclicity of post-state
-have hAcycDecl' : serviceDependencyAcyclicDecl st' := E5 hAcycDecl hNoPath
-
--- Step 5: Translate back to BFS-based definition
-have hAcyc' : serviceDependencyAcyclic st' := EQ2 hAcycDecl'
-
--- Step 6: Specialize to the universally quantified sid
-exact hAcyc' sid
+-- Step 3: Prove acyclicity preserved after edge insertion
+exact E5 hAcyc hNoPath sid
 ```
 
-**Note:** Steps 2 and 5 use the equivalence theorems EQ1 and EQ2. If Option 1 is chosen instead (no equivalence, direct BFS reasoning), the proof would be more complex but follow the same logical structure.
+**Note:** Strategy B eliminates the BFS↔declarative translation steps that were needed in the original plan. The proof works directly with the declarative `serviceDependencyAcyclic` definition.
 
 ---
 
-## Summary: theorem count
+## Summary: theorem count (updated for Strategy B)
 
 | Layer | Count | Description |
 |---|---|---|
-| Layer 0 (definitions) | 4 | `serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath`, `serviceDependencyAcyclicDecl` |
+| Layer 0 (definitions) | 3 | `serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath` (committed) |
 | Layer 1 (structural) | 12 | 7 path lemmas + 5 store-interaction lemmas |
 | Layer 2 (BFS soundness) | 7 | Loop invariant, fuel adequacy, soundness/completeness bridges |
-| Layer 3 (edge insertion) | 5 | Edge decomposition, reachability lifting, cycle analysis |
-| Layer 4 (final closure) | 3 | Equivalence theorems + final preservation theorem |
-| **Total** | **31** | Including definitions, lemmas, and the target theorem |
+| Layer 3 (edge insertion) | 6 | Edge decomposition, reachability lifting, cycle analysis + final closure |
+| **Total** | **28** | Including definitions, lemmas, and the target theorem |
 
-This is a more precise count than the original strategy's estimate of 12–13, reflecting the expanded treatment of the BFS loop invariant, the non-trivial path definition, and the store-interaction lemmas.
+Strategy B reduces the count from 31 to 28 by eliminating D4 (`serviceDependencyAcyclicDecl`), EQ1, and EQ2. The substantive proof work (Layers 1–3) remains unchanged.

@@ -342,12 +342,98 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 -- F-07: Service dependency acyclicity invariant (WS-D4, TPI-D07)
 -- ============================================================================
 
-/-- The service dependency graph is acyclic: no service can reach itself
-through dependency edges.
+/-!
+## TPI-D07 proof infrastructure plan
 
-Defined in terms of `serviceHasPathTo` with bounded BFS fuel. -/
+### Risk 0 resolution: Strategy B adopted
+
+The original BFS-based `serviceDependencyAcyclic` was vacuously unsatisfiable:
+`serviceHasPathTo st sid sid fuel` returns `true` immediately when `fuel ≥ 1`
+because the initial frontier `[sid]` contains the target `sid`, and the BFS
+checks `if node = target` before expanding edges. Since `serviceBfsFuel st ≥ 256`
+always, `serviceDependencyAcyclic st = ∀ sid, ¬ true = true = False` for all `st`.
+
+This made `hAcyc : serviceDependencyAcyclic st` contradictory and the preservation
+theorem vacuously true. Strategy B corrects the invariant to use declarative
+non-trivial-path acyclicity, producing genuine security evidence.
+
+See `docs/audits/execution_plans/05_RISK_REGISTER.md` for the full decision record.
+
+### Definitions (Layer 0) — complete
+- `serviceEdge` — direct dependency edge relation
+- `serviceReachable` — reflexive-transitive closure of serviceEdge
+- `serviceHasNontrivialPath` — path of length ≥ 1
+- `serviceDependencyAcyclic` — declarative acyclicity (no non-trivial self-loops)
+
+### Structural lemmas (Layer 1) — M1
+- `serviceEdge_iff_mem` — definitional unfolding
+- `serviceReachable_trans` — path concatenation
+- `serviceReachable_of_edge` — single-edge path
+- `serviceReachable_step_right` — right-append edge
+- `serviceHasNontrivialPath_of_edge` — edge implies nontrivial path
+- `serviceHasNontrivialPath_trans_edge` — nontrivial path + edge composition
+- `serviceHasNontrivialPath_of_edge_reachable` — edge + reachable composition
+- `storeServiceState_objectIndex_eq` — objectIndex frame condition
+- `serviceBfsFuel_storeServiceState_eq` — fuel frame condition
+- `serviceEdge_storeServiceState_eq` — edge at updated service
+- `serviceEdge_storeServiceState_ne` — edge at non-updated service
+- `serviceEdge_post_insert` — edge characterization after insertion
+
+### BFS soundness (Layer 2) — M2
+- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
+- `serviceHasPathTo_true_implies_nontrivial` — BFS true + src ≠ target → nontrivial path
+- `serviceHasPathTo_go_invariant` — BFS loop invariant
+- `serviceBfsFuel_sufficient` — fuel adequacy
+- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
+- `serviceHasPathTo_false_implies_not_nontrivial` — BFS false → no nontrivial path
+
+### Edge insertion (Layer 3) — M3
+- `serviceEdge_post_cases` — post-state edge decomposition
+- `serviceReachable_post_insert_of_pre` — pre-state reachability lifts to post-state
+- `serviceReachable_post_insert_cases` — post-state path decomposition
+- `nontrivial_cycle_post_insert_implies_pre_reach` — cycle → pre-state reachability
+- `serviceDependencyAcyclic_preserved` — acyclicity preserved after edge insertion
+
+### Final closure (Layer 3) — M3
+- `serviceRegisterDependency_preserves_acyclicity` — sorry eliminated
+-/
+
+/-- Direct dependency edge: service `a` depends on service `b` iff `b` appears
+in the dependency list of `a`'s graph entry. -/
+def serviceEdge (st : SystemState) (a b : ServiceId) : Prop :=
+  ∃ svc, lookupService st a = some svc ∧ b ∈ svc.dependencies
+
+/-- Reflexive-transitive closure of `serviceEdge`.
+
+Captures all paths (including trivial zero-length self-path) in the
+dependency graph. This is standard graph reachability. -/
+inductive serviceReachable (st : SystemState) : ServiceId → ServiceId → Prop where
+  | refl : serviceReachable st a a
+  | step : serviceEdge st a b → serviceReachable st b c → serviceReachable st a c
+
+/-- Non-trivial path: at least one edge step from `a` to `b`.
+
+This excludes trivial self-reachability (`refl`), capturing only paths
+that traverse at least one dependency edge. Essential for defining
+acyclicity, since every node trivially reaches itself via `refl`. -/
+def serviceHasNontrivialPath (st : SystemState) (a b : ServiceId) : Prop :=
+  ∃ mid, serviceEdge st a mid ∧ serviceReachable st mid b
+
+/-- The service dependency graph is acyclic: no service can reach itself
+through a non-trivial path (at least one dependency edge).
+
+**Risk 0 resolution (Strategy B):** The original BFS-based definition
+(`∀ sid, ¬ serviceHasPathTo st sid sid (serviceBfsFuel st) = true`) was
+vacuously unsatisfiable because `serviceHasPathTo` returns `true`
+immediately when `src = target` and `fuel ≥ 1`. This declarative
+definition corrects the invariant to capture genuine acyclicity.
+
+The BFS function `serviceHasPathTo` in `Operations.lean` is still used
+operationally for cycle detection. The connection between the BFS and
+this declarative definition is established by the soundness bridge
+theorems in Layer 2 (M2). -/
 def serviceDependencyAcyclic (st : SystemState) : Prop :=
-  ∀ sid, ¬ serviceHasPathTo st sid sid (serviceBfsFuel st) = true
+  ∀ sid, ¬ serviceHasNontrivialPath st sid sid
 
 /-- After a successful dependency registration, the dependency graph remains acyclic.
 
@@ -356,10 +442,17 @@ The `serviceRegisterDependency` function checks whether `depId` can reach
 finds a path, it returns `cyclicDependency`. On success, no path existed,
 so adding the edge preserves acyclicity.
 
-The formal proof of BFS soundness (i.e., that a false return from
-`serviceHasPathTo` implies no path exists in the full graph) is deferred
-as TPI-D07. The cycle detection is operationally correct (validated by
-executable tests). -/
+**TPI-D07 proof status:** The case-split structure through the six branches
+of `serviceRegisterDependency` is complete. The remaining `sorry` in the
+edge-insertion branch requires:
+1. BFS soundness (Layer 2): `serviceHasPathTo` returning `false` implies no
+   declarative `serviceReachable` path exists.
+2. Edge-insertion analysis (Layer 3): if the pre-state is acyclic and no path
+   from `depId` to `svcId` exists, then the post-state (with the new edge
+   `svcId → depId`) is also acyclic.
+
+The cycle detection is operationally correct (validated by executable tests).
+The formal proof infrastructure is planned across milestones M1–M3. -/
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
@@ -391,7 +484,7 @@ theorem serviceRegisterDependency_preserves_acyclicity
             unfold storeServiceEntry at hReg
             simp at hReg
             cases hReg
-            sorry -- TPI-D07: BFS soundness deferred
+            sorry -- TPI-D07: BFS soundness (Layer 2) + edge insertion (Layer 3) deferred to M1–M3
 
 -- ============================================================================
 -- F-11: serviceRestart failure-semantics documentation and proof (WS-D4)

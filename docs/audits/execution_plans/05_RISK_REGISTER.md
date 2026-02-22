@@ -4,47 +4,52 @@ This document catalogs all identified risks, their mitigations, and decision poi
 
 ---
 
-## Risk 0 — Vacuous invariant definition (HIGHEST — newly identified)
+## Risk 0 — Vacuous invariant definition (HIGHEST — RESOLVED)
 
-**Risk:** Analysis during execution plan development revealed that `serviceDependencyAcyclic` as currently defined may be **trivially unsatisfiable**. The BFS function `serviceHasPathTo st sid sid fuel` returns `true` immediately when `fuel ≥ 1` because the initial frontier `[sid]` contains the target `sid`, and the BFS checks `if node = target` before doing anything else.
+**Status:** RESOLVED — Strategy B adopted. Invariant definition corrected.
 
-If `serviceBfsFuel st ≥ 1` (which it always is, since `objectIndex.length + 256 ≥ 256`), then `serviceHasPathTo st sid sid (serviceBfsFuel st) = true` for all `sid` and `st`. This means `serviceDependencyAcyclic st = ∀ sid, ¬ true = true`, which is `False`.
+**Risk:** Analysis during execution plan development revealed that `serviceDependencyAcyclic` as originally defined was **trivially unsatisfiable**. The BFS function `serviceHasPathTo st sid sid fuel` returns `true` immediately when `fuel ≥ 1` because the initial frontier `[sid]` contains the target `sid`, and the BFS checks `if node = target` before doing anything else.
 
-**Impact:** If confirmed, the hypothesis `hAcyc : serviceDependencyAcyclic st` is always contradictory, making the preservation theorem vacuously true. The `sorry` can be closed trivially.
+Since `serviceBfsFuel st ≥ 256` always, `serviceHasPathTo st sid sid (serviceBfsFuel st) = true` for all `sid` and `st`. This made `serviceDependencyAcyclic st = ∀ sid, ¬ true = true`, which is `False`.
 
-**Verification steps:**
+**Impact:** The hypothesis `hAcyc : serviceDependencyAcyclic st` was always contradictory, making the preservation theorem vacuously true.
 
-1. In a Lean 4 environment, evaluate `serviceHasPathTo (default : SystemState) ⟨0⟩ ⟨0⟩ 1` and check if it returns `true`.
-2. Alternatively, prove `∀ st sid, serviceHasPathTo st sid sid 1 = true` by unfolding.
-3. Check whether `#eval serviceHasPathTo ...` can be used in the codebase.
+**Resolution: Strategy B — Fix invariant + full proof**
 
-**Mitigations:**
-
-| Strategy | Approach | Trade-off |
-|---|---|---|
-| **A: Trivial closure** | Replace `sorry` with `exfalso; exact hAcyc _` (or similar). Document the vacuous nature. | Closes TPI-D07 immediately but doesn't create meaningful proof infrastructure. |
-| **B: Fix invariant + full proof** | Correct the invariant definition to exclude trivial self-reachability (see revised definition below), then build the full proof infrastructure (M1–M3). | Produces genuine security evidence but requires more work and changes a definition. |
-| **C: Conditional approach** | Close the `sorry` trivially (Strategy A), then open a follow-up issue for invariant correction (Strategy B). | Pragmatic: unblocks the immediate obligation while tracking the deeper fix. |
-
-**Revised invariant definition (if Strategy B is chosen):**
+The invariant definition has been corrected in `SeLe4n/Kernel/Service/Invariant.lean` to use declarative non-trivial-path acyclicity. Three new Layer 0 definitions were introduced:
 
 ```lean
--- Option 1: Exclude self-loops in the BFS call
-def serviceDependencyAcyclic (st : SystemState) : Prop :=
-  ∀ sid₁ sid₂, sid₁ ≠ sid₂ →
-    ¬ (serviceHasPathTo st sid₁ sid₂ (serviceBfsFuel st) = true ∧
-       serviceHasPathTo st sid₂ sid₁ (serviceBfsFuel st) = true)
+-- D1: Direct dependency edge (one hop)
+def serviceEdge (st : SystemState) (a b : ServiceId) : Prop :=
+  ∃ svc, lookupService st a = some svc ∧ b ∈ svc.dependencies
 
--- Option 2: Use non-trivial self-loop detection
--- The BFS would need to skip the immediate src=target check and look for
--- paths of length ≥ 1.
+-- D2: Reflexive-transitive closure of serviceEdge
+inductive serviceReachable (st : SystemState) : ServiceId → ServiceId → Prop where
+  | refl  : serviceReachable st a a
+  | step  : serviceEdge st a b → serviceReachable st b c → serviceReachable st a c
 
--- Option 3: Define acyclicity declaratively from the start
+-- D3: Non-trivial path (at least one step)
+def serviceHasNontrivialPath (st : SystemState) (a b : ServiceId) : Prop :=
+  ∃ mid, serviceEdge st a mid ∧ serviceReachable st mid b
+
+-- Corrected acyclicity invariant (replaces vacuous BFS-based definition)
 def serviceDependencyAcyclic (st : SystemState) : Prop :=
   ∀ sid, ¬ serviceHasNontrivialPath st sid sid
 ```
 
-**Decision point:** Must be resolved at the start of M0. If Strategy A is chosen, M1 and M2 are unnecessary for TPI-D07 closure (but may still be valuable future infrastructure).
+**Design rationale:** Option 3 (declarative from the start) was chosen over Options 1 and 2 because:
+- It directly captures the intended semantic property (no non-trivial cycles).
+- It avoids coupling the invariant statement to BFS implementation details.
+- It simplifies the final proof by eliminating the need for BFS↔declarative equivalence theorems (EQ1/EQ2 from the original plan are subsumed).
+- The BFS soundness bridge (Layer 2) still connects the operational cycle check to the declarative invariant.
+
+**Superseded strategies:**
+
+| Strategy | Approach | Trade-off | Status |
+|---|---|---|---|
+| **A: Trivial closure** | Replace `sorry` with `exfalso; exact hAcyc _`. | Closes TPI-D07 immediately but produces no security evidence. | Rejected |
+| **B: Fix invariant + full proof** | Correct the invariant, build full proof infrastructure (M1–M3). | Produces genuine security evidence. | **Adopted** |
+| **C: Conditional approach** | Close trivially, then fix later. | Pragmatic but defers real work. | Rejected |
 
 ---
 
@@ -125,23 +130,19 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
-| D1 | Invariant definition strategy (Risk 0) | **PENDING** | — | Must verify BFS self-reachability behavior first |
-| D2 | Fuel adequacy approach (Risk 1) | **PENDING** | — | Depends on D1 |
+| D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + full proof) | BFS self-reachability confirmed vacuous. Declarative definition (Option 3) adopted for direct semantic clarity. Layer 0 definitions committed. |
+| D2 | Fuel adequacy approach (Risk 1) | **PENDING** | — | Depends on D1 (now resolved). Strategy B confirmed: fuel adequacy needed for M2. |
 | D3 | List reasoning strategy (Risk 2) | **PENDING** | — | Start with direct list lemmas; escalate to Finset if needed |
-| D4 | BFS induction measure (Risk 3) | **PENDING** | — | Depends on D1 |
+| D4 | BFS induction measure (Risk 3) | **PENDING** | — | Depends on D1 (now resolved). Strategy B confirmed: BFS induction needed for M2. |
 
 ---
 
 ## Risk interaction matrix
 
 ```
-Risk 0 (vacuous invariant)
+Risk 0 (vacuous invariant) — RESOLVED: Strategy B adopted
   │
-  ├── If Strategy A (trivial closure):
-  │     Risks 1, 2, 3 become irrelevant
-  │     Only Risk 4 (doc drift) applies
-  │
-  └── If Strategy B (fix invariant):
+  └── Strategy B (fix invariant) active:
         Risk 1 (fuel adequacy) → blocks M2
         Risk 2 (list complexity) → blocks M1, M2
         Risk 3 (BFS induction) → blocks M2

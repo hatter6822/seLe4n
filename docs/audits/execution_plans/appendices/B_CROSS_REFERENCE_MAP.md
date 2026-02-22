@@ -10,9 +10,9 @@ This appendix provides bidirectional mappings between the execution plan documen
 |---|---|---|
 | [02_CODEBASE_AUDIT §2](../02_CODEBASE_AUDIT.md#2-cycle-prevention-operational-logic) | `Operations.lean:142–160` | Direct code audit of `serviceRegisterDependency` |
 | [02_CODEBASE_AUDIT §3](../02_CODEBASE_AUDIT.md#3-bounded-bfs-reachability) | `Operations.lean:96–127` | BFS algorithm and fuel analysis |
-| [02_CODEBASE_AUDIT §4](../02_CODEBASE_AUDIT.md#4-invariant-definition-and-proof-state) | `Invariant.lean:349–394` | Invariant definition and proof skeleton |
+| [02_CODEBASE_AUDIT §4](../02_CODEBASE_AUDIT.md#4-invariant-definition-and-proof-state) | `Invariant.lean:341–488` | Invariant definitions (Layer 0 + acyclicity) and proof skeleton |
 | [02_CODEBASE_AUDIT §5](../02_CODEBASE_AUDIT.md#5-executable-evidence-baseline) | `NegativeStateSuite.lean:319–367` | Test coverage audit |
-| [03_ROOT_CAUSE_ANALYSIS §5](../03_ROOT_CAUSE_ANALYSIS.md#5-proof-state-evolution-through-the-insertion-branch) | `Invariant.lean:394` | Exact goal state at `sorry` |
+| [03_ROOT_CAUSE_ANALYSIS §5](../03_ROOT_CAUSE_ANALYSIS.md#5-proof-state-evolution-through-the-insertion-branch) | `Invariant.lean:488` | Exact goal state at `sorry` (line shifted after Layer 0 definitions added) |
 | [M0 §M0.4](../milestones/M0_BASELINE_LOCK.md#m04--store-lemma-inventory) | `State.lean:180–193` | Store lemma dependency |
 | [M1 §3](../milestones/M1_DECLARATIVE_SEMANTICS.md#3-store-interaction-lemmas) | `State.lean:180–193` | Store lemma wrapping |
 | [M4 §2](../milestones/M4_EXECUTABLE_EVIDENCE.md#2-test-cases) | `NegativeStateSuite.lean:319–367` | Test expansion target |
@@ -46,10 +46,10 @@ This appendix provides bidirectional mappings between the execution plan documen
 
 | Theorem / Definition | Planned file | Section |
 |---|---|---|
-| `serviceEdge` (D1) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceReachable` (D2) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceHasNontrivialPath` (D3) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceDependencyAcyclicDecl` (D4) | `Service/Invariant.lean` | Between line 340 and 349 |
+| `serviceEdge` (D1) | `Service/Invariant.lean` | **Committed** — Layer 0 definitions section |
+| `serviceReachable` (D2) | `Service/Invariant.lean` | **Committed** — Layer 0 definitions section |
+| `serviceHasNontrivialPath` (D3) | `Service/Invariant.lean` | **Committed** — Layer 0 definitions section |
+| `serviceDependencyAcyclic` (corrected) | `Service/Invariant.lean` | **Committed** — replaces vacuous BFS-based definition (Strategy B) |
 | `serviceEdge_iff_mem` (L1) | `Service/Invariant.lean` | After D1 |
 | `serviceReachable_trans` (L2) | `Service/Invariant.lean` | After D2 |
 | `serviceReachable_of_edge` (L3) | `Service/Invariant.lean` | After D2 |
@@ -72,9 +72,7 @@ This appendix provides bidirectional mappings between the execution plan documen
 | `serviceReachable_post_insert_cases` (E3) | `Service/Invariant.lean` | After E1 |
 | `nontrivial_cycle_post_insert_implies_pre_reach` (E4) | `Service/Invariant.lean` | After E3 |
 | `serviceDependencyAcyclicDecl_preserved` (E5) | `Service/Invariant.lean` | After E4 |
-| `serviceDependencyAcyclic_implies_acyclicDecl` (EQ1) | `Service/Invariant.lean` | Equivalence section |
-| `serviceDependencyAcyclicDecl_implies_acyclic` (EQ2) | `Service/Invariant.lean` | Equivalence section |
-| `serviceRegisterDependency_preserves_acyclicity` (F1) | `Service/Invariant.lean:363–394` | **Existing** — sorry replaced |
+| `serviceRegisterDependency_preserves_acyclicity` (F1) | `Service/Invariant.lean` | **Existing** — sorry to be replaced (Strategy B eliminates EQ1/EQ2) |
 
 ---
 
@@ -82,7 +80,7 @@ This appendix provides bidirectional mappings between the execution plan documen
 
 | Risk | Primary mitigation | Implementation location |
 |---|---|---|
-| R0 (vacuous invariant) | Verify BFS self-reachability behavior | M0 (baseline audit) |
+| R0 (vacuous invariant) | **RESOLVED** — Strategy B: invariant corrected to declarative form | Pre-M0 (Layer 0 definitions committed) |
 | R1 (fuel adequacy) | Preconditioned or unconditional fuel bound | M2 (BFS soundness) |
 | R2 (list complexity) | Canonical membership lemmas | M1 (structural lemmas) |
 | R3 (BFS induction) | Lexicographic induction measure | M2 (loop invariant) |
