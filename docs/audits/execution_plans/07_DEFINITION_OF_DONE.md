@@ -2,7 +2,7 @@
 
 TPI-D07 is **closed** when **all** of the following conditions hold simultaneously. Each condition has an explicit verification method.
 
-> **Current status:** Strategy B (Risk 0) was chosen. The preservation theorem is sorry-free. The sole remaining `sorry` is the focused BFS bridge `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, line 531), which is operationally validated by executable tests.
+> **Current status: FULLY CLOSED.** Strategy B (Risk 0) was chosen. The preservation theorem is sorry-free. The full B1-B7 BFS soundness bridge is proved with zero `sorry` markers (TPI-D07-BRIDGE closed). Fuel adequacy is handled via the `serviceCountBounded` precondition.
 
 ---
 
@@ -10,18 +10,20 @@ TPI-D07 is **closed** when **all** of the following conditions hold simultaneous
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
-| P1 | `serviceRegisterDependency_preserves_acyclicity` contains **no `sorry`** | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` — only TPI-D07-BRIDGE at line 531 | [x] |
+| P1 | `serviceRegisterDependency_preserves_acyclicity` contains **no `sorry`** | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` — zero matches | [x] |
 | P2 | The theorem compiles successfully | `lake build` exits 0 | [x] |
-| P3 | No new `sorry` introduced anywhere in the kernel proof surface | `rg 'sorry' SeLe4n/Kernel/` — only TPI-D07-BRIDGE | [x] |
-| P4 | All intermediate lemmas compile without `sorry` | `lake build` exits 0 (all lemmas except `bfs_complete_for_nontrivialPath`) | [x] |
+| P3 | No `sorry` anywhere in the kernel proof surface | `rg 'sorry' SeLe4n/Kernel/` — zero matches | [x] |
+| P4 | All lemmas (B1-B7, helpers, Layer 3-4) compile without `sorry` | `lake build` exits 0 | [x] |
 
-### Full proof infrastructure (Risk 0, Strategy B — implemented):
+### Full proof infrastructure (Risk 0, Strategy B — implemented; M2 BFS bridge — complete):
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
 | P5 | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` exist | `rg 'def serviceEdge\|inductive serviceReachable\|inductive serviceNontrivialPath' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
-| P6 | BFS completeness bridge exists (with focused `sorry`) | `rg 'bfs_complete_for_nontrivialPath' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
+| P6 | BFS completeness bridge exists (no `sorry`) | `rg 'bfs_complete_for_nontrivialPath' SeLe4n/Kernel/Service/Invariant.lean` — proved | [x] |
 | P7 | Edge-insertion decomposition exists | `rg 'nontrivialPath_post_insert_cases' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
+| P8 | Full B1-B7 suite exists | `rg 'go_true_implies\|serviceHasPathTo_true_implies\|go_complete\|serviceHasPathTo_complete\|serviceHasPathTo_false' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
+| P9 | `serviceCountBounded` fuel adequacy definition exists | `rg 'def serviceCountBounded' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
 
 ---
 

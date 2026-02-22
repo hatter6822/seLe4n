@@ -292,16 +292,22 @@ If these are not available in the project's Lean/Std import set, they may need t
 
 ## 5. Exit criteria
 
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+> **Status: COMPLETE.** The full B1-B7 BFS soundness suite is implemented in `SeLe4n/Kernel/Service/Invariant.lean` (lines 510–860). All theorems compile without `sorry`. Fuel adequacy is handled via the `serviceCountBounded` precondition (Approach A), which propagates to the downstream `serviceRegisterDependency_preserves_acyclicity` theorem. Risk R1 (fuel adequacy) is resolved by the preconditioned approach; Risk R3 (BFS loop invariant) is resolved by the `go_complete` proof using fuel induction with inner frontier induction.
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
-- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
-- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
-- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
+- [x] `go_true_implies_exists_reachable` (B1) — proved
+- [x] `serviceHasPathTo_true_implies_reachable` (B2) — proved
+- [x] `serviceHasPathTo_true_implies_nontrivial` (B3) — proved
+- [x] `go_complete` (B4) — core BFS loop completeness proved via fuel induction
+- [x] `serviceHasPathTo_complete` (B5) — outer completeness wrapper proved
+- [x] `bfs_complete_for_nontrivialPath` (B6) — TPI-D07-BRIDGE closed (no `sorry`)
+- [x] `serviceHasPathTo_false_implies_not_reachable` (B7) — contrapositive of B5, proved
+- [x] Fuel adequacy approach: Approach A (preconditioned via `serviceCountBounded`)
+- [x] Helper infrastructure: `frontier_witness_of_reachable` (closure invariant witness extraction)
+- [x] `lake build` succeeds with zero `sorry` markers
+- [x] `./scripts/test_smoke.sh` passes
 
 ## Validation
 
 ```bash
-./scripts/test_tier1_build.sh
+./scripts/test_smoke.sh
 ```

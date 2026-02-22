@@ -391,6 +391,6 @@ def serviceDependencyAcyclicIntended (st : SystemState) : Prop :=
 ```bash
 ./scripts/test_tier1_build.sh
 # After sorry elimination:
-rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # returns 1 match: line 531 (TPI-D07-BRIDGE)
-# The preservation theorem (serviceRegisterDependency_preserves_acyclicity) is sorry-free.
+rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # returns 0 matches (all sorry eliminated)
+# Both the preservation theorem and the BFS bridge are sorry-free.
 ```

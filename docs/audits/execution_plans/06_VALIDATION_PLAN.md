@@ -36,14 +36,13 @@ lake clean && lake build
 ### 2.2 Sorry verification
 
 ```bash
-# Primary check: only TPI-D07-BRIDGE sorry remains
+# Primary check: zero sorry markers in Invariant.lean
 rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean
-# Expected output: 1 match at line 531 (bfs_complete_for_nontrivialPath, annotated TPI-D07-BRIDGE)
-# The preservation theorem (serviceRegisterDependency_preserves_acyclicity) is sorry-free.
+# Expected output: no matches (all sorry markers eliminated, including TPI-D07-BRIDGE)
 
-# Secondary check: no new sorry anywhere in kernel
+# Secondary check: no sorry anywhere in kernel
 rg 'sorry' SeLe4n/Kernel/
-# Expected: only TPI-D07-BRIDGE at Service/Invariant.lean:531
+# Expected: no matches — entire kernel proof surface is sorry-free
 ```
 
 ### 2.3 Tiered test gates

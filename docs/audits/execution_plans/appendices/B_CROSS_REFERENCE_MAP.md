@@ -2,7 +2,7 @@
 
 This appendix provides bidirectional mappings between the execution plan documents and the repository artifacts they reference.
 
-> **Note:** Line references in sections 1-3 reflect the **pre-implementation** state. After the TPI-D07 proof infrastructure was implemented, code was added to `Invariant.lean` shifting line numbers. Key current locations: `serviceEdge` at line 381, `serviceDependencyAcyclic` at line 410, `bfs_complete_for_nontrivialPath` at line 526, `nontrivialPath_post_insert_cases` at line 541, `serviceRegisterDependency_preserves_acyclicity` at line 591.
+> **Note:** Line references in sections 1-3 reflect the **pre-implementation** state. After the full TPI-D07 proof infrastructure was implemented (including the complete B1-B7 BFS soundness bridge), code was added to `Invariant.lean` shifting line numbers significantly. Key current locations: `serviceEdge` at line 388, `serviceDependencyAcyclic` at line 410, `serviceCountBounded` at line 611, `go_complete` (B4) at line 670, `bfs_complete_for_nontrivialPath` (B6) at line 841, `nontrivialPath_post_insert_cases` at line 871, `serviceRegisterDependency_preserves_acyclicity` at line 922. Total file length: 1007 lines.
 
 ---
 

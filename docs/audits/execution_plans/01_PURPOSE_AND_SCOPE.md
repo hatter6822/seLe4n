@@ -4,7 +4,7 @@
 
 Close tracked proof issue **TPI-D07** by replacing the `sorry` in `serviceRegisterDependency_preserves_acyclicity` with a complete, machine-checked formal proof.
 
-> **Current status (post-implementation):** The preservation theorem (line 591) is sorry-free. The original `sorry` was eliminated via Strategy B (Risk 0 — declarative invariant + 4-layer proof infrastructure). The sole remaining `sorry` is on `bfs_complete_for_nontrivialPath` (line 531, annotated TPI-D07-BRIDGE), a focused BFS completeness bridge operationally validated by executable tests.
+> **Current status: FULLY CLOSED.** The preservation theorem (line 922) is sorry-free. The original `sorry` was eliminated via Strategy B (Risk 0 — declarative invariant + 4-layer proof infrastructure). The full B1-B7 BFS soundness bridge is proved with zero `sorry` markers, closing TPI-D07-BRIDGE. Fuel adequacy is handled via the `serviceCountBounded` precondition (Approach A). The entire codebase contains zero `sorry` markers.
 
 ## 2. Success criteria (summary)
 
@@ -76,9 +76,9 @@ The following documents must be updated synchronously with the proof closure to 
 
 | Document | Pre-implementation status | Post-implementation status |
 |---|---|---|
-| `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | IN PROGRESS | **CLOSED** (updated) |
-| `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `sorry` tracked | **Updated**: Risk 0 resolved, TPI-D07 closed (lines 336-343, 478) |
-| `docs/CLAIM_EVIDENCE_INDEX.md` | IN PROGRESS | **CLOSED** (updated: BFS bridge `sorry` tracked as TPI-D07-BRIDGE) |
-| `docs/gitbook/12-proof-and-invariant-map.md` | Uses `sorry`; tracked as TPI-D07 | **Updated**: preservation theorem `(no sorry)`; §14 documents 4-layer infrastructure |
+| `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | IN PROGRESS | **CLOSED** (updated: full B1-B7 bridge proved, TPI-D07-BRIDGE resolved) |
+| `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `sorry` tracked | **Updated**: Risk 0 resolved, TPI-D07 closed, zero sorry markers |
+| `docs/CLAIM_EVIDENCE_INDEX.md` | IN PROGRESS | **CLOSED** (updated: full B1-B7 suite with `serviceCountBounded` precondition) |
+| `docs/gitbook/12-proof-and-invariant-map.md` | Uses `sorry`; tracked as TPI-D07 | **Updated**: all layers sorry-free; §14 documents full B1-B7 bridge closure |
 
 All updates are detailed in [M5: Closure Synchronization](./milestones/M5_CLOSURE_SYNC.md).

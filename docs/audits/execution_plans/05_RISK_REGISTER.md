@@ -125,10 +125,10 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
-| D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. Layers 0-1, 3-4 proved; Layer 2 (BFS completeness) deferred as TPI-D07-BRIDGE with focused `sorry`. |
-| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. |
-| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. |
-| D4 | BFS induction measure (Risk 3) | **DEFERRED** | — | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. |
+| D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. All layers 0-4 proved with zero `sorry`. |
+| D2 | Fuel adequacy approach (Risk 1) | **RESOLVED** | Strategy A (preconditioned via `serviceCountBounded`) | Fuel adequacy is an explicit precondition: any `Nodup` list of reachable nodes has length < `serviceBfsFuel st`. Propagated to `serviceRegisterDependency_preserves_acyclicity`. |
+| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append`, `List.mem_filter`, `List.mem_cons` sufficed for BFS loop invariant reasoning. No Finset escalation needed. |
+| D4 | BFS induction measure (Risk 3) | **RESOLVED** | Fuel induction + inner frontier induction | `go_complete` (B4) uses `induction fuel` with inner `induction frontier` for the visited-skip case. Closure invariant maintained via `frontier_witness_of_reachable`. |
 
 ---
 

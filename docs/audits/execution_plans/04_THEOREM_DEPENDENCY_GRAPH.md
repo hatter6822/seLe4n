@@ -2,7 +2,7 @@
 
 This document is the complete inventory of definitions and theorems required for TPI-D07 closure, ordered by dependency. Each theorem depends only on those above it in the same layer or prior layers.
 
-> **Implementation status:** Layers 0, 1, 3, and 4 are fully implemented in `SeLe4n/Kernel/Service/Invariant.lean` (lines 381-637). Layer 2 (BFS soundness) was reduced to a single focused `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, line 531) rather than the full B1-B7 theorem suite originally planned here. Naming evolved during implementation: planned `serviceHasNontrivialPath` (D3) became `serviceNontrivialPath` (inductive type rather than existential def); planned `serviceDependencyAcyclicDecl` (D4) was eliminated — `serviceDependencyAcyclic` itself was redefined declaratively.
+> **Implementation status:** All layers (0-4) are fully implemented in `SeLe4n/Kernel/Service/Invariant.lean` (lines 383-970) with zero `sorry` markers. Layer 2 now contains the complete B1-B7 BFS soundness bridge (lines 510-860), including `go_complete` (B4, core completeness via fuel induction), `serviceHasPathTo_complete` (B5), `bfs_complete_for_nontrivialPath` (B6, TPI-D07-BRIDGE closed), and `serviceHasPathTo_false_implies_not_reachable` (B7). Fuel adequacy is handled via the `serviceCountBounded` precondition. Naming evolved during implementation: planned `serviceHasNontrivialPath` (D3) became `serviceNontrivialPath` (inductive type rather than existential def); planned `serviceDependencyAcyclicDecl` (D4) was eliminated — `serviceDependencyAcyclic` itself was redefined declaratively.
 
 ---
 
@@ -181,11 +181,11 @@ exact hAcyc' sid
 
 | Layer | Planned | Implemented | Description |
 |---|---|---|---|
-| Layer 0 (definitions) | 4 | 3 | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` (replaces D3+D4: `serviceDependencyAcyclic` redefined in-place) |
+| Layer 0 (definitions) | 4 | 4 | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, `serviceDependencyAcyclic` (D3+D4 merged: `serviceDependencyAcyclic` redefined declaratively) |
 | Layer 1 (structural) | 12 | 10 | 7 path lemmas + 3 frame lemmas (naming adjusted; see Invariant.lean:413-508) |
-| Layer 2 (BFS soundness) | 7 | 1 | `bfs_complete_for_nontrivialPath` with focused `sorry` (TPI-D07-BRIDGE); full B1-B7 suite deferred |
+| Layer 2 (BFS soundness) | 7 | 9 | Full B1-B7 suite + `serviceCountBounded` (def) + `frontier_witness_of_reachable` (helper); zero `sorry` |
 | Layer 3 (edge insertion) | 5 | 1 | `nontrivialPath_post_insert_cases` (combines E1-E3 logic into one inductive proof) |
-| Layer 4 (final closure) | 3 | 1 | `serviceRegisterDependency_preserves_acyclicity` (sorry-free; EQ1/EQ2 unnecessary since `serviceDependencyAcyclic` was redefined declaratively) |
-| **Total** | **31** | **16** | Proof completed with fewer artifacts by redefining the invariant declaratively |
+| Layer 4 (final closure) | 3 | 1 | `serviceRegisterDependency_preserves_acyclicity` (sorry-free; EQ1/EQ2 unnecessary since `serviceDependencyAcyclic` was redefined declaratively; requires `serviceCountBounded` precondition) |
+| **Total** | **31** | **25** | Full proof chain complete with zero `sorry` markers |
 
-The actual implementation was more efficient than the 31-theorem plan: redefining `serviceDependencyAcyclic` to use `serviceNontrivialPath` directly eliminated the need for equivalence theorems (EQ1, EQ2) and much of the BFS bridge infrastructure (B1-B7). The remaining BFS bridge `sorry` is well-scoped and operationally validated.
+The actual implementation was more efficient than the 31-theorem plan: redefining `serviceDependencyAcyclic` to use `serviceNontrivialPath` directly eliminated the need for equivalence theorems (EQ1, EQ2). The full B1-B7 BFS soundness bridge is now proved, with fuel adequacy handled via the `serviceCountBounded` precondition (Approach A). The core completeness proof (`go_complete`, B4) uses fuel induction with inner frontier induction, maintaining a closure invariant that deps of visited nodes are in `visited ∪ frontier`.
