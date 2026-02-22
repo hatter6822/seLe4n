@@ -7,7 +7,7 @@ This GitBook is the long-form guide for architecture, workflow, and milestone co
 ## Current project state
 - **Active findings baseline:** AUDIT v0.11.0 (end-to-end repository audit).
 - **Active execution baseline:** WS-D portfolio (v0.11.0 workstream plan).
-- **Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`dev_history/`](../../dev_history/README.md).
+- **Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`docs/dev_history/`](../dev_history/README.md).
 
 Specification documents:
 
@@ -34,4 +34,4 @@ Specification documents:
 
 ## Development history
 
-Milestone closeouts, prior audits (v0.8.0–v0.9.32), and completed workstream plans are archived in [`dev_history/`](../../dev_history/README.md).
+Milestone closeouts, prior audits (v0.8.0–v0.9.32), and completed workstream plans are archived in [`docs/dev_history/`](../dev_history/README.md).

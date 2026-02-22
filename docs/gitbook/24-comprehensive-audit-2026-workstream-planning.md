@@ -23,8 +23,8 @@ The current active execution baseline is the **WS-D portfolio** based on the v0.
 
 The WS-C portfolio has been completed and is retained for traceability.
 
-- Historical planning source: [`dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
-- Historical proof obligations: [`dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](../../dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
+- Historical planning source: [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+- Historical proof obligations: [`docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`](../dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md)
 
 ### WS-C completed summary
 

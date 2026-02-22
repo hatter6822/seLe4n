@@ -10,7 +10,7 @@ LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 SKIP_PREFIXES = ("http://", "https://", "mailto:", "tel:")
 
 
-SKIP_DIRS = ("dev_history/",)
+SKIP_DIRS = ("docs/dev_history/",)
 
 
 def tracked_markdown_files() -> list[Path]:

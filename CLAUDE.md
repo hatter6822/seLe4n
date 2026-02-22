@@ -126,10 +126,10 @@ under `docs/gitbook/` are mirrors that summarize and link to canonical sources.
 
 ## Ignoring dev_history
 
-The `dev_history/` directory contains milestone closeouts, prior audit reports
+The `docs/dev_history/` directory contains milestone closeouts, prior audit reports
 (v0.8.0–v0.9.32), completed workstream plans, and legacy GitBook chapters
 retained only for historical traceability. **Do not read or reference files in
-`dev_history/` unless explicitly instructed.** All active documentation lives
+`docs/dev_history/` unless explicitly instructed.** All active documentation lives
 under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context

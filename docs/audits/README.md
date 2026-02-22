@@ -1,7 +1,7 @@
 # Audit Archive
 
 Active audit documents are stored in this directory. Historical audits have been
-moved to [`dev_history/audits/`](../../dev_history/audits/).
+moved to [`docs/dev_history/audits/`](../dev_history/audits/).
 
 ## Active documents
 
@@ -23,6 +23,6 @@ For current planning, use the trio:
 | Version | Status | Location |
 |---|---|---|
 | v0.11.0 | **Active** | `docs/audits/` (this directory) |
-| v0.9.32 | Completed (WS-C) | `dev_history/audits/` |
-| v0.9.0 | Completed (WS-B) | `dev_history/audits/` |
-| v0.8.0 | Historical | `dev_history/audits/` |
+| v0.9.32 | Completed (WS-C) | `docs/dev_history/audits/` |
+| v0.9.0 | Completed (WS-B) | `docs/dev_history/audits/` |
+| v0.8.0 | Historical | `docs/dev_history/audits/` |

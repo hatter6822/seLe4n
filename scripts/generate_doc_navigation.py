@@ -57,7 +57,7 @@ def format_readme(manifest: dict) -> str:
     lines.append("")
     lines.append("## Development history")
     lines.append("")
-    lines.append("Milestone closeouts, prior audits (v0.8.0–v0.9.32), and completed workstream plans are archived in [`dev_history/`](../../dev_history/README.md).")
+    lines.append("Milestone closeouts, prior audits (v0.8.0–v0.9.32), and completed workstream plans are archived in [`docs/dev_history/`](../dev_history/README.md).")
     lines.append("")
     return "\n".join(lines)
 

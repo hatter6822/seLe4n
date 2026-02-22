@@ -18,7 +18,7 @@ Use this file during planning and PR review to keep documentation status aligned
 | Active workstream execution portfolio | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `32-v0.11.0-audit-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
 | Tracked theorem obligations (active) | `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | `32-v0.11.0-audit-workstream-planning.md` | Keep theorem tickets and closure status in audits dir; GitBook chapter references active obligations only. |
 | Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |
-| Historical execution portfolios | `dev_history/audits/` | Archived to `dev_history/gitbook/` | Historical-only; see `dev_history/README.md`. |
+| Historical execution portfolios | `docs/dev_history/audits/` | Archived to `docs/dev_history/gitbook/` | Historical-only; see `docs/dev_history/README.md`. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
 | Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | `30-ws-c7-model-structure-and-maintainability.md` | ADR is canonical; GitBook chapter stays concise and links back. |
 | Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Command/process changes must update both. |
@@ -55,5 +55,5 @@ For documentation/planning PRs:
 
 - Active planning baseline: `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (WS-D portfolio; WS-D1, WS-D2, WS-D3, WS-D4 completed; WS-D5..WS-D6 planned).
 - Active findings baseline: `AUDIT_v0.11.0.md`.
-- Historical baselines: prior audits and workstream plans archived in `dev_history/audits/`.
+- Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.

@@ -501,6 +501,6 @@ Baseline transition → WS-D1 ─────────→ WS-D2 ────�
 
 - Findings source: [`AUDIT_v0.11.0.md`](./AUDIT_v0.11.0.md)
 - Tracked proof obligations: [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](./AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md)
-- Prior completed portfolio (WS-C): [`dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
+- Prior completed portfolio (WS-C): [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md)
 - Documentation synchronization policy: [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 - Claim/evidence audit index: [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md)

@@ -161,7 +161,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ### 8.2 Historical Baselines (Retained for Traceability)
 
-Prior audits and workstream plans are archived in [`dev_history/audits/`](../../dev_history/audits/) for traceability. See [`dev_history/README.md`](../../dev_history/README.md) for a full index.
+Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/) for traceability. See [`docs/dev_history/README.md`](../dev_history/README.md) for a full index.
 
 ---
 
