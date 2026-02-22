@@ -157,7 +157,7 @@ Verified `serviceRegisterDependency` (`Operations.lean:142–160`) has exactly s
 5. **Line 155–156**: Cycle detected → `.error .cyclicDependency`
 6. **Lines 157–160**: Edge inserted → `.ok ((), storeServiceEntry svcId svc' st)`
 
-Post-simplification goal state at `Invariant.lean:432` (previously 394, adjusted by comment insertion) confirmed matching `03_ROOT_CAUSE_ANALYSIS.md §5`.
+Post-simplification goal state at `Invariant.lean:432` (previously 394, adjusted by comment insertion; now at line 620 after Layers 0-3 proof infrastructure insertion) confirmed matching `03_ROOT_CAUSE_ANALYSIS.md §5` at time of M0 completion.
 
 ### M0.4 — Store lemma inventory
 
