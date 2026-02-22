@@ -254,19 +254,19 @@ Implemented proof layers:
   `serviceNontrivialPath_step_right`. Frame lemmas: `serviceEdge_storeServiceState_ne`,
   `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
 - **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
-  bridge connecting declarative paths to the executable BFS check. Uses focused `sorry`
-  (annotated TPI-D07-BRIDGE); operationally validated by executable tests
+  bridge connecting declarative paths to the executable BFS check. Fully proved
+  under `serviceCountBounded` precondition (no sorry)
 - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
   any post-insertion nontrivial path into either a pre-state path or a composition
   using the new edge with pre-state reachability
 - **Layer 4 (Closure):** `serviceRegisterDependency_preserves_acyclicity` — genuine
   preservation proof via post-insertion path decomposition and contradiction with the
-  BFS cycle-detection check. The main theorem is sorry-free
+  BFS cycle-detection check. Takes `serviceCountBounded` precondition for fuel adequacy
 
-**Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
-`bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
-`serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
-distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
+**Closure (TPI-D07-BRIDGE completed):** The BFS completeness bridge
+`bfs_complete_for_nontrivialPath` is fully proved. Fuel adequacy is explicit:
+the theorem requires `serviceCountBounded st`, which holds in the preservation
+context where service creation adds backing objects to the index.
 
 Frozen operational files (M0 semantics freeze):
 

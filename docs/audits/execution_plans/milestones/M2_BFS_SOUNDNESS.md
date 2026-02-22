@@ -292,13 +292,13 @@ If these are not available in the project's Lean/Std import set, they may need t
 
 ## 5. Exit criteria
 
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+> **Status: COMPLETED.** The full B1-B7 BFS soundness suite has been implemented and all theorems are proved without `sorry`. The BFS bridge `bfs_complete_for_nontrivialPath` is fully proved under the `serviceCountBounded` precondition (Approach A). Fuel adequacy is explicit: the preservation theorem `serviceRegisterDependency_preserves_acyclicity` propagates `serviceCountBounded` as a precondition.
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
-- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
-- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
-- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
+- [x] `serviceHasPathTo_true_implies_reachable` (B2) — fully proved
+- [x] `serviceHasPathTo_false_implies_not_reachable` (B7) — fully proved
+- [x] Fuel adequacy approach chosen: Approach A (preconditioned via `serviceCountBounded`)
+- [x] Full BFS lemma suite (B1-B7) — all theorems proved without `sorry`
+- [x] `lake build` succeeds with zero errors and zero warnings
 
 ## Validation
 
