@@ -29,7 +29,11 @@
 |---|---|---|
 | **M0** | [`milestones/M0_BASELINE_LOCK.md`](./milestones/M0_BASELINE_LOCK.md) | Freeze operational behavior, enumerate proof obligations |
 | **M1** | [`milestones/M1_DECLARATIVE_SEMANTICS.md`](./milestones/M1_DECLARATIVE_SEMANTICS.md) | Introduce inductive path relation over service dependency graph |
-| **M2** | [`milestones/M2_BFS_SOUNDNESS.md`](./milestones/M2_BFS_SOUNDNESS.md) | Prove BFS soundness bridge (false → no declarative path) |
+| **M2** | [`milestones/M2_BFS_SOUNDNESS.md`](./milestones/M2_BFS_SOUNDNESS.md) | BFS completeness bridge — overview, architecture, theorem inventory |
+| M2-A | [`milestones/M2A_EQUATIONAL_THEORY.md`](./milestones/M2A_EQUATIONAL_THEORY.md) | BFS `go` equational lemmas (EQ1–EQ5) |
+| M2-B | [`milestones/M2B_COMPLETENESS_INVARIANT.md`](./milestones/M2B_COMPLETENESS_INVARIANT.md) | Loop invariant, closure property, boundary lemma |
+| M2-C | [`milestones/M2C_FUEL_ADEQUACY.md`](./milestones/M2C_FUEL_ADEQUACY.md) | Fuel adequacy analysis and precondition design |
+| M2-D | [`milestones/M2D_COMPLETENESS_PROOF.md`](./milestones/M2D_COMPLETENESS_PROOF.md) | Complete proof walkthrough for CP1 and wrappers |
 | **M3** | [`milestones/M3_EDGE_INSERTION.md`](./milestones/M3_EDGE_INSERTION.md) | Prove edge-insertion preserves acyclicity, eliminate `sorry` |
 | **M4** | [`milestones/M4_EXECUTABLE_EVIDENCE.md`](./milestones/M4_EXECUTABLE_EVIDENCE.md) | Expand runtime test suite with deeper graph topologies |
 | **M5** | [`milestones/M5_CLOSURE_SYNC.md`](./milestones/M5_CLOSURE_SYNC.md) | Synchronize documentation, run full validation gates |
@@ -49,7 +53,7 @@
 |---|---|---|---|
 | M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `COMPLETE` | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, revised `serviceDependencyAcyclic`, 7 structural + 3 frame lemmas | None |
-| M2 | `DEFERRED` | `bfs_complete_for_nontrivialPath` carries focused `sorry` (TPI-D07-BRIDGE); full BFS soundness proof deferred | R1: Fuel adequacy, R3: BFS loop invariant |
+| M2 | `IN PREPARATION` | Documentation expanded into 4 sub-documents (M2A–M2D) with detailed proof path; 13 lemmas + 2 definitions planned to eliminate `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE) | R1: Fuel adequacy (Approach A chosen), R3: BFS loop invariant (measure identified) |
 | M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` is sorry-free; `nontrivialPath_post_insert_cases` proved | None (uses M2 bridge with `sorry`) |
 | M4 | `PARTIAL` | Depth-5 chain smoke test exists in `MainTraceHarness`; dedicated `NegativeStateSuite` expansion pending | None |
 | M5 | `IN PROGRESS` | Canonical docs updated; execution plan status sync in progress | R4: Documentation drift |
@@ -57,14 +61,16 @@
 ## Milestone dependency graph
 
 ```
-M0 ──→ M1 ──→ M2 ──→ M3 ──→ M4 ──→ M5
-  ✓       ✓    deferred  ✓    partial  in progress
-                              │
-                              └── preservation theorem sorry-free here
-                                  (BFS bridge sorry deferred at M2)
+M0 ──→ M1 ──→ M2 ──────────→ M3 ──→ M4 ──→ M5
+  ✓       ✓    in preparation    ✓    partial  in progress
+               │                 │
+               ├─ M2A (equational)
+               ├─ M2B (invariant)  └── preservation theorem sorry-free
+               ├─ M2C (fuel)           (BFS bridge sorry targeted at M2)
+               └─ M2D (proof)
 ```
 
-M1 and M3 are complete. M2 (full BFS soundness) was deferred — the focused `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE) connects the declarative path relation to the executable BFS and is operationally validated by tests. M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
+M1 and M3 are complete. M2 (BFS completeness) has been expanded from a single deferred document into four detailed sub-documents (M2A–M2D) providing a complete proof roadmap: 13 lemmas + 2 definitions targeting the `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE). The proof strategy uses `lookupDeps` as a deps bridge, a named `bfsClosed` definition for the visited-set closure invariant, and a `serviceCountBounded` precondition for fuel adequacy (Approach A). M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
 
 ## Quick-start reading order
 

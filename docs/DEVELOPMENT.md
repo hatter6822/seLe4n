@@ -102,6 +102,12 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 3. Keep invariant bundles factored and named.
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
+6. For BFS completeness work (TPI-D07-BRIDGE closure): follow the prerequisite
+   lemma hierarchy in [`M2_BFS_SOUNDNESS.md §6`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
+   and its sub-documents ([M2A](audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)).
+   Prove equational lemmas (EQ1-EQ5) and closure lemmas (CB1-CB4) before
+   attempting the core completeness theorem (CP1). Use `(fuel, frontier.length)`
+   lexicographic induction, not raw fuel induction.
 
 ---
 
