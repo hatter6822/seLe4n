@@ -268,6 +268,40 @@ Implemented proof layers:
 `serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
 distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
 
+### 14.1 BFS completeness roadmap (TPI-D07-BRIDGE closure path)
+
+A detailed proof roadmap for eliminating the `bfs_complete_for_nontrivialPath`
+sorry is documented in the M2 milestone
+([`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md))
+and four sub-documents (M2A–M2D).
+
+**Proof decomposition:**
+
+1. **Equational theory ([M2A](../audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)):**
+   A `lookupDeps` helper bridges the executable BFS dependency lookup to the
+   declarative `serviceEdge` relation (`serviceEdge_iff_lookupDeps`). Five BFS
+   unfolding lemmas (EQ1-EQ5) provide rewrite rules for each branch of the `go`
+   function.
+
+2. **Completeness invariant ([M2B](../audits/execution_plans/milestones/M2B_COMPLETENESS_INVARIANT.md)):**
+   A named `bfsClosed` definition captures the visited-set closure property. Four
+   lemmas (CB1-CB4) establish the invariant initially, preserve it across skip and
+   expansion steps, and prove the critical boundary lemma: if a visited node reaches
+   target and target is not visited, some frontier node also reaches target.
+
+3. **Fuel adequacy ([M2C](../audits/execution_plans/milestones/M2C_FUEL_ADEQUACY.md)):**
+   A `serviceCountBounded` precondition bounds the total registered services by
+   `serviceBfsFuel st`. Approach A (explicit precondition) recommended first;
+   Approach B (`serviceIndex` field, no precondition) as future enhancement.
+
+4. **Core completeness ([M2D](../audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)):**
+   `go_complete_of_frontier_reachable` (CP1) carries the four-part invariant
+   (I1: target not visited, I2: closure, I3: frontier witness, I4: fuel adequate)
+   through well-founded induction on `(fuel, frontier.length)`. Two wrappers
+   (OW1, OW2) compose CP1 with Layer 1 lemmas to eliminate the sorry.
+
+**Estimated scope:** 13 lemmas + 2 definitions, ~165-275 lines of proof.
+
 Frozen operational files (M0 semantics freeze):
 
 | File | SHA-256 |

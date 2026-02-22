@@ -290,18 +290,168 @@ If these are not available in the project's Lean/Std import set, they may need t
 
 ---
 
-## 5. Exit criteria
+## 5. Architectural analysis: why completeness is the critical path
 
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+### 5.1 The sorry under the microscope
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
-- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
-- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
-- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
+The sole deferred obligation is at `Invariant.lean:526-531`:
+
+```lean
+theorem bfs_complete_for_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (_hPath : serviceNontrivialPath st a b)
+    (_hNe : a ≠ b) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true := by
+  sorry
+```
+
+This theorem bridges two worlds:
+
+1. **Declarative world** (`Prop`): `serviceNontrivialPath st a b` — an inductive
+   proof-term asserting at least one dependency edge from `a` toward `b`.
+2. **Executable world** (`Bool`): `serviceHasPathTo st a b fuel = true` — a
+   concrete BFS traversal that terminates with `true`.
+
+Proving that a witness-carrying path forces the algorithm to return `true` requires
+showing the algorithm is **complete**: it does not miss any reachable node.
+
+### 5.2 Revised direction analysis
+
+| Direction | Statement | Difficulty | Required for | Status |
+|---|---|---|---|---|
+| **Completeness** | Declarative path exists → BFS returns `true` | Hard | **Core: closing TPI-D07-BRIDGE sorry** | Detailed strategy in §5-§6 and M2A-M2D |
+| **Extraction** | BFS returns `true` → declarative path exists | Medium | Full bidirectional equivalence | Deferred (stretch goal) |
+| **Soundness (derived)** | BFS returns `false` → no declarative path | Easy (from completeness) | Contrapositive of completeness | Follows automatically |
+
+The **completeness direction is the sole blocking obligation** for sorry elimination.
+The extraction direction (B1-B3) and derived soundness (B6-B7) are stretch goals.
+
+### 5.3 Three interlocking challenges
+
+| Challenge | Root cause | Sub-document |
+|---|---|---|
+| **Fuel recycling** | Visited-node branches recur with *same* fuel — simple Nat induction fails | [M2A](./M2A_EQUATIONAL_THEORY.md) §1, [M2D](./M2D_COMPLETENESS_PROOF.md) §2 |
+| **Frontier growth** | Expansion appends deps to frontier — frontier length is non-monotone | [M2B](./M2B_COMPLETENESS_INVARIANT.md) §2 |
+| **Fuel adequacy** | `services : ServiceId → Option ServiceGraphEntry` is an opaque function — counting registered services requires a bounding argument | [M2C](./M2C_FUEL_ADEQUACY.md) |
+
+### 5.4 Proof decomposition
+
+The sorry on `bfs_complete_for_nontrivialPath` factors into three composable parts:
+
+```
+bfs_complete_for_nontrivialPath
+    = go_complete_of_reachable           -- core loop completeness (M2D)
+    ∘ serviceReachable_of_nontrivialPath -- (already proved, Layer 1)
+    ∘ fuel_adequacy                      -- fuel bound justification (M2C)
+```
+
+---
+
+## 6. Sub-document architecture
+
+The M2 proof roadmap is organized into four focused sub-documents:
+
+| Sub-milestone | Document | Purpose | Theorem count |
+|---|---|---|---|
+| **M2A** | [`M2A_EQUATIONAL_THEORY.md`](./M2A_EQUATIONAL_THEORY.md) | BFS `go` equational lemmas | 5 (EQ1-EQ5) |
+| **M2B** | [`M2B_COMPLETENESS_INVARIANT.md`](./M2B_COMPLETENESS_INVARIANT.md) | Loop invariant, closure property, boundary lemma | 4 (CB1-CB4) + 1 definition |
+| **M2C** | [`M2C_FUEL_ADEQUACY.md`](./M2C_FUEL_ADEQUACY.md) | Fuel adequacy analysis and precondition design | 1 definition + 1 lemma |
+| **M2D** | [`M2D_COMPLETENESS_PROOF.md`](./M2D_COMPLETENESS_PROOF.md) | Core completeness proof and sorry elimination | 3 (CP1, OW1, OW2) |
+
+**Dependency order:** M2A is independent. M2B depends on M2A. M2C is independent.
+M2D depends on M2A, M2B, and M2C.
+
+### 6.1 Implementation roadmap (10 steps)
+
+| Step | Deliverable | Depends on | Difficulty |
+|---|---|---|---|
+| **1** | `lookupDeps` helper + `serviceEdge_iff_lookupDeps` bridge | — | Easy |
+| **2** | BFS equational lemmas EQ1-EQ5 | Step 1 | Easy |
+| **3** | `bfsClosed` definition + CB2 (initial closure) | — | Trivial |
+| **4** | CB3 (closure skip) + CB4 (closure expansion) | Steps 2-3 | Medium |
+| **5** | CB1 (`reachable_frontier_boundary`) | Steps 3-4 | Medium |
+| **6** | `serviceCountBounded` definition (fuel adequacy) | — | Trivial |
+| **7** | Fuel adequacy arithmetic lemma | Step 6 | Easy |
+| **8** | CP1 (`go_complete_of_frontier_reachable`) — core loop | Steps 2-5, 7 | **Hard** |
+| **9** | OW1 (`serviceHasPathTo_complete_of_reachable`) — wrapper | Step 8 | Easy |
+| **10** | OW2: Eliminate sorry on `bfs_complete_for_nontrivialPath` | Steps 6, 9 | Easy |
+
+### 6.2 File placement
+
+All new definitions and lemmas go in `SeLe4n/Kernel/Service/Invariant.lean`:
+
+```
+Line ~508:  end of Layer 1 frame lemmas
+            ──────────────────────────────────────
+            NEW: lookupDeps + serviceEdge_iff_lookupDeps
+            NEW: bfsClosed definition + CB2
+            NEW: BFS equational lemmas EQ1-EQ5
+            NEW: CB1, CB3, CB4 (closure lemmas)
+            NEW: serviceCountBounded definition
+            NEW: CP1 (core completeness)
+            NEW: OW1 (outer wrapper)
+            ──────────────────────────────────────
+Line ~510:  Layer 2 BFS completeness bridge
+            (bfs_complete_for_nontrivialPath — sorry replaced)
+Line ~533:  Layer 3 post-insertion path decomposition
+Line ~574:  Layer 4 acyclicity preservation
+```
+
+### 6.3 Known pitfalls
+
+1. **Lean 4 `where`-defined functions:** The `go` function generates
+   `serviceHasPathTo.go`. Equational lemmas may need `unfold` + `split` if
+   `simp` doesn't handle the nested pattern match.
+
+2. **`List.mem` decidability for `ServiceId`:** The BFS uses `node ∈ visited`
+   as a `Bool` test. Proofs need to bridge between `Bool` membership and `Prop`
+   membership. Verify `decide` works for `ServiceId`.
+
+3. **Filter interaction with membership:** `deps.filter (· ∉ visited)` requires
+   `List.mem_filter` to reason about membership in the filtered list.
+
+4. **Visited-set `Nodup`:** The BFS maintains `Nodup` on `visited` by
+   construction (only adds when `node ∉ visited`), but this property is NOT
+   needed for the completeness proof. Avoid depending on it.
+
+---
+
+## 7. Exit criteria (updated)
+
+> **Status: IN PREPARATION.** The documentation now contains a complete
+> proof strategy for eliminating the `bfs_complete_for_nontrivialPath` sorry,
+> organized into four sub-documents (M2A-M2D) with a 10-step implementation
+> roadmap.
+
+### M2 completion criteria
+
+- [ ] `lookupDeps` helper defined
+- [ ] `serviceEdge_iff_lookupDeps` bridge proved
+- [ ] BFS equational lemmas EQ1-EQ5 proved
+- [ ] `bfsClosed` definition + CB2-CB4 proved
+- [ ] CB1 (`reachable_frontier_boundary`) proved
+- [ ] `serviceCountBounded` defined
+- [ ] CP1 (`go_complete_of_frontier_reachable`) core loop proved
+- [ ] OW1 + OW2 wrappers proved
+- [ ] `bfs_complete_for_nontrivialPath` sorry eliminated
+- [ ] `lake build` succeeds with zero `sorry` in Service/Invariant.lean
+- [ ] `./scripts/test_smoke.sh` passes
+
+### Stretch goals (post-M2)
+
+- [ ] Fuel monotonicity lemma (`go_fuel_mono`)
+- [ ] `serviceCountBounded` preservation across state mutations
+- [ ] Unconditional fuel adequacy (no precondition — model-level bound)
+- [ ] B1-B3 extraction direction (BFS `true` → declarative path)
+- [ ] Full bidirectional equivalence
 
 ## Validation
 
 ```bash
 ./scripts/test_tier1_build.sh
+# After sorry elimination:
+rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # should return 0 matches
+./scripts/test_smoke.sh
 ```
+
+> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.

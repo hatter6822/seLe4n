@@ -126,9 +126,9 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
 | D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. Layers 0-1, 3-4 proved; Layer 2 (BFS completeness) deferred as TPI-D07-BRIDGE with focused `sorry`. |
-| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. |
+| D2 | Fuel adequacy approach (Risk 1) | **PLANNED** | Approach A (preconditioned `serviceCountBounded`) | Analysis in [M2C](./milestones/M2C_FUEL_ADEQUACY.md) confirms Approach A (explicit hypothesis) is optimal for initial sorry elimination. The `serviceCountBounded st` hypothesis bounds registered service count by `serviceBfsFuel st`. Approach B (`serviceIndex` field) deferred as future enhancement to remove the precondition. |
 | D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. |
-| D4 | BFS induction measure (Risk 3) | **DEFERRED** | — | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. |
+| D4 | BFS induction measure (Risk 3) | **PLANNED** | Lexicographic `(fuel, frontier.length)` | Analysis in [M2D](./milestones/M2D_COMPLETENESS_PROOF.md) confirms lexicographic `(fuel, frontier.length)` under `Prod.Lex` handles both the expansion case (fuel ↓) and the visited-skip case (frontier.length ↓, fuel unchanged). Alternative `(countUnvisited, frontier.length)` is viable but requires computable counting. |
 
 ---
 
