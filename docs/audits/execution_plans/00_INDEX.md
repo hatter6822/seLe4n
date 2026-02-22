@@ -4,7 +4,7 @@
 
 **Target:** Replace the deferred `sorry` at `SeLe4n/Kernel/Service/Invariant.lean:394` with a complete formal proof of `serviceRegisterDependency_preserves_acyclicity`.
 
-**Tracked issue:** TPI-D07 from [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md#issue-tpi-d07-in-progress--service-dependency-acyclicity-invariant)
+**Tracked issue:** TPI-D07 from [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md#issue-tpi-d07-in-progress--service-dependency-acyclicity-invariant)
 
 **Classification:** Proof-only closure — no operational code changes permitted.
 
@@ -73,7 +73,7 @@ All milestones are strictly sequential — each depends on the prior milestone's
 
 ## Relationship to prior execution strategy
 
-This multi-file execution plan expands and supersedes the monolithic [`docs/audits/AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md`](../docs/audits/AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md). The original document remains as a historical reference. All substantive content has been preserved, refined, and extended with:
+This multi-file execution plan expands and supersedes the monolithic [`AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md`](../AUDIT_v0.11.0_TPI-D07_EXECUTION_STRATEGY.md). The original document remains as a historical reference. All substantive content has been preserved, refined, and extended with:
 
 - More precise Lean 4 proof tactic suggestions for each lemma
 - Expanded BFS loop invariant formalization with explicit well-founded recursion analysis
