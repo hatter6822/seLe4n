@@ -76,6 +76,29 @@ When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
 context-window pressure and "file too large" errors.
 
+## Handling large search and command output
+
+Grep and other search tools can return oversized results in this codebase.
+Always constrain output to avoid truncation and context-window pressure:
+
+- **Grep**: Use `head_limit` to cap results (e.g., `head_limit=30`). If more
+  results exist, paginate with `offset` (e.g., `offset=30, head_limit=30` for
+  the next batch). Prefer `output_mode: "files_with_matches"` first to identify
+  relevant files, then switch to `output_mode: "content"` on specific files.
+- **Glob**: Use `path` to narrow the search directory instead of searching the
+  entire repo. If results are numerous, combine with Grep on specific matches.
+- **Bash commands** (`lake build`, test scripts, etc.): Pipe through `head` or
+  `tail` when output may be large (e.g., `lake build 2>&1 | tail -80`). For
+  very large output, redirect to a temp file and read in chunks:
+  ```bash
+  lake build 2>&1 > /tmp/build.log
+  ```
+  Then use `Read("/tmp/build.log", offset=1, limit=500)` to page through it.
+
+**Rule of thumb**: if a command or search might return more than ~100 lines,
+limit it upfront. Paginate through results rather than requesting everything
+at once.
+
 ## Key conventions
 
 - **Invariant/Operations split**: each kernel subsystem has `Operations.lean`
