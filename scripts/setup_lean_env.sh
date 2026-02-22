@@ -23,9 +23,11 @@ apt_update_once() {
   if [ "${APT_UPDATE_DONE}" -eq 0 ]; then
     if ! run_pkg_install apt-get update; then
       echo "[setup] apt-get update failed; retrying with primary sources only (ignoring sourceparts)" >&2
-      run_pkg_install apt-get update \
+      if ! run_pkg_install apt-get update \
         -o Dir::Etc::sourceparts="-" \
-        -o APT::Get::List-Cleanup="0"
+        -o APT::Get::List-Cleanup="0"; then
+        echo "[setup] warning: apt-get update failed; package installs may not succeed" >&2
+      fi
     fi
     APT_UPDATE_DONE=1
   fi
@@ -52,24 +54,20 @@ ensure_shellcheck() {
 
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck || true
   elif command -v dnf >/dev/null 2>&1; then
-    run_pkg_install dnf install -y ShellCheck
+    run_pkg_install dnf install -y ShellCheck || true
   elif command -v yum >/dev/null 2>&1; then
-    run_pkg_install yum install -y epel-release
-    run_pkg_install yum install -y ShellCheck
+    run_pkg_install yum install -y epel-release && \
+    run_pkg_install yum install -y ShellCheck || true
   elif command -v pacman >/dev/null 2>&1; then
-    run_pkg_install pacman -Sy --noconfirm shellcheck
+    run_pkg_install pacman -Sy --noconfirm shellcheck || true
   elif command -v brew >/dev/null 2>&1; then
-    brew install shellcheck
-  else
-    echo "error: shellcheck is required, but no supported package manager (apt, dnf, yum, pacman, brew) was found" >&2
-    exit 1
+    brew install shellcheck || true
   fi
 
   if ! command -v shellcheck >/dev/null 2>&1; then
-    echo "error: shellcheck installation failed" >&2
-    exit 1
+    echo "[setup] warning: shellcheck is unavailable; shell linting will be skipped" >&2
   fi
 }
 
@@ -82,24 +80,20 @@ ensure_ripgrep() {
 
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep || true
   elif command -v dnf >/dev/null 2>&1; then
-    run_pkg_install dnf install -y ripgrep
+    run_pkg_install dnf install -y ripgrep || true
   elif command -v yum >/dev/null 2>&1; then
-    run_pkg_install yum install -y epel-release
-    run_pkg_install yum install -y ripgrep
+    run_pkg_install yum install -y epel-release && \
+    run_pkg_install yum install -y ripgrep || true
   elif command -v pacman >/dev/null 2>&1; then
-    run_pkg_install pacman -Sy --noconfirm ripgrep
+    run_pkg_install pacman -Sy --noconfirm ripgrep || true
   elif command -v brew >/dev/null 2>&1; then
-    brew install ripgrep
-  else
-    echo "error: ripgrep (rg) is required, but no supported package manager (apt, dnf, yum, pacman, brew) was found" >&2
-    exit 1
+    brew install ripgrep || true
   fi
 
   if ! command -v rg >/dev/null 2>&1; then
-    echo "error: ripgrep (rg) installation failed" >&2
-    exit 1
+    echo "[setup] warning: ripgrep (rg) is unavailable; tests will use grep fallback" >&2
   fi
 }
 
@@ -116,14 +110,180 @@ fi
 ensure_shellcheck
 ensure_ripgrep
 
+ELAN_HOME_DIR="${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
+
+TOOLCHAIN="$(tr -d '\n\r' < "${LEAN_TOOLCHAIN_FILE}")"
+if [ -z "${TOOLCHAIN}" ]; then
+  echo "error: ${LEAN_TOOLCHAIN_FILE} is empty" >&2
+  exit 1
+fi
+
+# Parse toolchain spec "org/repo:tag" into components for download URLs.
+TOOLCHAIN_ORG="$(echo "${TOOLCHAIN}" | cut -d/ -f1)"
+TOOLCHAIN_REPO="$(echo "${TOOLCHAIN}" | cut -d/ -f2 | cut -d: -f1)"
+TOOLCHAIN_TAG="$(echo "${TOOLCHAIN}" | cut -d: -f2)"
+# elan normalises "org/repo:tag" → "org-repo-tag" for directory names.
+TOOLCHAIN_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|-|g; s|:|-|g')"
+# elan toolchain link normalises "org/repo:tag" → "org--repo---tag" for directories.
+TOOLCHAIN_LINK_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|--|g; s|:|---|g')"
+
+# Detect architecture for download URL.
+detect_arch_suffix() {
+  local arch
+  arch="$(uname -m)"
+  case "${arch}" in
+    x86_64|amd64)  echo "" ;;       # default is x86_64 (no suffix)
+    aarch64|arm64) echo "_aarch64" ;;
+    *) echo "error: unsupported architecture '${arch}'" >&2; exit 1 ;;
+  esac
+}
+
+# Write the elan env file if it does not already exist.
+ensure_elan_env_file() {
+  if [ -f "${ELAN_ENV_FILE}" ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "${ELAN_ENV_FILE}")"
+  cat > "${ELAN_ENV_FILE}" << 'ENVEOF'
+#!/bin/sh
+# elan shell setup
+case ":${PATH}:" in
+    *:"${HOME}/.elan/bin":*)
+        ;;
+    *)
+        export PATH="${HOME}/.elan/bin:${PATH}"
+        ;;
+esac
+ENVEOF
+}
+
+# Ensure zstd is available for extracting Lean toolchain archives.
+ensure_zstd() {
+  if command -v zstd >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[setup] zstd not found; attempting to install"
+  if command -v apt-get >/dev/null 2>&1; then
+    apt_update_once
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y zstd || true
+  elif command -v dnf >/dev/null 2>&1; then
+    run_pkg_install dnf install -y zstd || true
+  elif command -v brew >/dev/null 2>&1; then
+    brew install zstd || true
+  fi
+  if ! command -v zstd >/dev/null 2>&1; then
+    return 1
+  fi
+}
+
+# Fallback: manually download and install elan + Lean toolchain using curl.
+# This bypasses elan's internal HTTP client which may fail in proxied
+# environments (e.g. Claude Code web sessions behind an egress gateway).
+manual_curl_install() {
+  echo "[setup] elan's network client failed; falling back to manual curl-based install"
+
+  local elan_bin_dir="${ELAN_HOME_DIR}/bin"
+  local toolchain_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
+
+  # --- Install elan binary ---
+  if [ ! -x "${elan_bin_dir}/elan" ]; then
+    echo "[setup] downloading elan binary via curl"
+    local arch_name
+    case "$(uname -m)" in
+      x86_64|amd64)   arch_name="x86_64-unknown-linux-gnu" ;;
+      aarch64|arm64)   arch_name="aarch64-unknown-linux-gnu" ;;
+      *) echo "error: unsupported architecture for elan download: $(uname -m)" >&2; exit 1 ;;
+    esac
+    local elan_tar
+    elan_tar="$(mktemp)"
+    trap 'rm -f "${elan_tar}"' EXIT
+    curl -fsSL "https://github.com/leanprover/elan/releases/latest/download/elan-${arch_name}.tar.gz" -o "${elan_tar}"
+    mkdir -p "${elan_bin_dir}"
+    tar -xzf "${elan_tar}" -C "${elan_bin_dir}/"
+    chmod +x "${elan_bin_dir}/elan-init"
+    rm -f "${elan_tar}"
+    trap - EXIT
+    echo "[setup] elan binary installed to ${elan_bin_dir}"
+  fi
+
+  # --- Write env and settings files ---
+  ensure_elan_env_file
+
+  cat > "${ELAN_HOME_DIR}/settings.toml" << SETTINGSEOF
+version = "12"
+default_toolchain = "${TOOLCHAIN_DIR_NAME}"
+SETTINGSEOF
+
+  # --- Install Lean toolchain ---
+  if [ ! -d "${toolchain_dir}/bin" ]; then
+    echo "[setup] downloading Lean toolchain ${TOOLCHAIN} via curl"
+    local arch_suffix
+    arch_suffix="$(detect_arch_suffix)"
+    local version_number="${TOOLCHAIN_TAG#v}"
+    local lean_archive_name="lean-${version_number}-linux${arch_suffix}"
+
+    if ensure_zstd; then
+      local lean_tar
+      lean_tar="$(mktemp)"
+      trap 'rm -f "${lean_tar}"' EXIT
+      curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.tar.zst" -o "${lean_tar}"
+      mkdir -p "${ELAN_HOME_DIR}/toolchains"
+      local lean_extracted
+      lean_extracted="$(mktemp)"
+      rm -f "${lean_extracted}"
+      lean_extracted="${lean_extracted}.tar"
+      zstd -d "${lean_tar}" -o "${lean_extracted}"
+      tar -xf "${lean_extracted}" -C "${ELAN_HOME_DIR}/toolchains/"
+      rm -f "${lean_tar}" "${lean_extracted}"
+      trap - EXIT
+    else
+      echo "[setup] zstd unavailable; downloading zip archive instead"
+      local lean_zip
+      lean_zip="$(mktemp)"
+      trap 'rm -f "${lean_zip}"' EXIT
+      curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.zip" -o "${lean_zip}"
+      mkdir -p "${ELAN_HOME_DIR}/toolchains"
+      unzip -qo "${lean_zip}" -d "${ELAN_HOME_DIR}/toolchains/"
+      rm -f "${lean_zip}"
+      trap - EXIT
+    fi
+
+    # Rename extracted directory to match elan's naming convention.
+    local extracted_dir="${ELAN_HOME_DIR}/toolchains/${lean_archive_name}"
+    if [ -d "${extracted_dir}" ] && [ "${extracted_dir}" != "${toolchain_dir}" ]; then
+      mv "${extracted_dir}" "${toolchain_dir}"
+    fi
+
+    echo "[setup] Lean toolchain installed to ${toolchain_dir}"
+  else
+    echo "[setup] Lean toolchain already present at ${toolchain_dir}"
+  fi
+
+  # --- Register toolchain with elan via symlink ---
+  # shellcheck disable=SC1090
+  source "${ELAN_ENV_FILE}"
+  if command -v elan >/dev/null 2>&1; then
+    elan toolchain link "${TOOLCHAIN}" "${toolchain_dir}" 2>/dev/null || true
+    elan default "${TOOLCHAIN}" 2>/dev/null || true
+  fi
+
+  # Create update-hashes to prevent elan from trying to re-download.
+  mkdir -p "${ELAN_HOME_DIR}/update-hashes"
+  echo "manual-install" > "${ELAN_HOME_DIR}/update-hashes/${TOOLCHAIN_DIR_NAME}"
+}
+
+# -------- Main installation flow --------
+
 # If elan was previously installed with --no-modify-path, load it before probing.
 if [ -f "${ELAN_ENV_FILE}" ]; then
   # shellcheck disable=SC1090
   source "${ELAN_ENV_FILE}"
 fi
 
+ELAN_INSTALL_FAILED=0
+
 if ! command -v elan >/dev/null 2>&1; then
-  echo "[setup] elan not found; installing to ${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
+  echo "[setup] elan not found; installing to ${ELAN_HOME_DIR}"
   elan_installer="$(mktemp)"
   trap 'rm -f "${elan_installer}"' EXIT
   curl -fsSL "${ELAN_INSTALLER_URL}" -o "${elan_installer}"
@@ -136,35 +296,52 @@ if ! command -v elan >/dev/null 2>&1; then
     exit 1
   fi
 
-  sh "${elan_installer}" -y --no-modify-path
+  if ! sh "${elan_installer}" -y --no-modify-path; then
+    echo "[setup] elan-init.sh failed (likely network/proxy issue)" >&2
+    ELAN_INSTALL_FAILED=1
+  fi
   rm -f "${elan_installer}"
   trap - EXIT
 fi
 
+# If elan standard install failed, fall back to manual curl-based install.
+if [ "${ELAN_INSTALL_FAILED}" -eq 1 ]; then
+  manual_curl_install
+fi
+
+ensure_elan_env_file
+
 if [ -f "${ELAN_ENV_FILE}" ]; then
   # shellcheck disable=SC1090
   source "${ELAN_ENV_FILE}"
-else
-  echo "error: unable to find elan env file at ${ELAN_ENV_FILE}" >&2
-  exit 1
 fi
 
-TOOLCHAIN="$(tr -d '\n\r' < "${LEAN_TOOLCHAIN_FILE}")"
-if [ -z "${TOOLCHAIN}" ]; then
-  echo "error: ${LEAN_TOOLCHAIN_FILE} is empty" >&2
-  exit 1
+# If elan is available and the toolchain isn't set up yet, try the standard path.
+if command -v elan >/dev/null 2>&1; then
+  echo "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
+  if ! elan toolchain list | tr -d '\r' | grep -Fq "${TOOLCHAIN}"; then
+    if ! elan toolchain install "${TOOLCHAIN}" 2>/dev/null; then
+      echo "[setup] elan toolchain install failed; trying manual install" >&2
+      manual_curl_install
+      # Re-source after manual install
+      # shellcheck disable=SC1090
+      source "${ELAN_ENV_FILE}"
+    fi
+  else
+    echo "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
+  fi
+  elan default "${TOOLCHAIN}" 2>/dev/null || true
 fi
-
-echo "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
-if ! elan toolchain list | tr -d '\r' | grep -Fxq "${TOOLCHAIN}"; then
-  elan toolchain install "${TOOLCHAIN}" >/dev/null
-else
-  echo "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
-fi
-elan default "${TOOLCHAIN}" >/dev/null
 
 if ! command -v lake >/dev/null 2>&1; then
-  echo "error: lake is still not on PATH after elan setup" >&2
+  # Last resort: try manual install if we haven't already.
+  manual_curl_install
+  # shellcheck disable=SC1090
+  source "${ELAN_ENV_FILE}"
+fi
+
+if ! command -v lake >/dev/null 2>&1; then
+  echo "error: lake is still not on PATH after setup" >&2
   exit 1
 fi
 
