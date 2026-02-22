@@ -258,10 +258,11 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
-    (hAcyc : serviceDependencyAcyclic st) :
+    (hAcyc : serviceDependencyAcyclic st)
+    (hBound : serviceCountBounded st) :
     serviceDependencyAcyclic st' := by
   ...  -- genuine proof: post-insertion path decomposition + BFS contradiction
-  -- sole deferred obligation: bfs_complete_for_nontrivialPath (TPI-D07-BRIDGE)
+  -- TPI-D07-BRIDGE closed: bfs_complete_for_nontrivialPath fully proved
 ```
 
 ---

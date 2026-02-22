@@ -201,7 +201,7 @@ Service dependency registration now includes BFS-based cycle detection:
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
 - `serviceDependencyAcyclic` — acyclicity invariant definition
-- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge deferred to `bfs_complete_for_nontrivialPath` as TPI-D07-BRIDGE — see §14)
+- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge `bfs_complete_for_nontrivialPath` fully proved under `serviceCountBounded` — see §14)
 
 ### F-11: serviceRestart partial-failure semantics
 

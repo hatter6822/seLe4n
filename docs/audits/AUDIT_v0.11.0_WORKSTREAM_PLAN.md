@@ -336,9 +336,9 @@ All acceptance criteria met. Summary of changes:
    proved without `sorry`. **Risk 0 resolved (TPI-D07 closed):** The vacuous BFS-based
    acyclicity invariant was replaced with a declarative definition using `serviceNontrivialPath`.
    The preservation theorem (`serviceRegisterDependency_preserves_acyclicity`) is proved via
-   post-insertion path decomposition and BFS contradiction — the main theorem is sorry-free.
-   The sole deferred obligation is `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE), a
-   focused BFS completeness bridge validated by executable tests. NegativeStateSuite validates
+   post-insertion path decomposition and BFS contradiction. BFS completeness
+   (`bfs_complete_for_nontrivialPath`) is fully proved under the `serviceCountBounded`
+   precondition, closing TPI-D07-BRIDGE. NegativeStateSuite validates
    self-loop, missing-target, cycle, and idempotent re-registration paths.
    Full execution plan in `docs/audits/execution_plans/`; M0 baseline lock completed.
 

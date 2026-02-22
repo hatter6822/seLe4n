@@ -780,34 +780,27 @@ private theorem go_complete
                 rcases List.mem_cons.mp hBFron with rfl | hBRest
                 · exact Or.inl List.mem_cons_self  -- b = node ∈ new visited
                 · exact Or.inr (List.mem_append_left _ hBRest)  -- b ∈ rest ⊆ newFrontier
-          -- Find witness in new frontier
-          -- We need ∃ w' ∈ newFrontier, w' ∉ (node :: visited) ∧ serviceReachable st w' target
-          -- Use frontier_witness_of_reachable
-          -- We know w reaches target. Where is w in the new state?
-          rcases List.mem_cons.mp hMemW with rfl | hMemRest
-          · -- w = node: node reaches target, node is now in new visited.
-            -- Use frontier_witness_of_reachable: node ∈ new visited, node reaches target.
+          -- Find witness in new frontier.
+          -- w reaches target — determine if w entered newVisited or stayed in frontier.
+          by_cases hWNode : w = node
+          · -- w = node: now in newVisited. Extract a new frontier witness.
+            subst hWNode
             have hWit := frontier_witness_of_reachable st target
               newFrontier newVisited hNewClosure _ hReachW
               hNewTargetNotVis (Or.inl List.mem_cons_self)
             exact ih_fuel newFrontier newVisited hWit
               hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
-          · -- w ∈ rest: is w in new visited?
-            by_cases hWNode : w = node
-            · -- w = node: same as above
-              subst hWNode
-              have hWit := frontier_witness_of_reachable st target
-                newFrontier newVisited hNewClosure _ hReachW
-                hNewTargetNotVis (Or.inl List.mem_cons_self)
-              exact ih_fuel newFrontier newVisited hWit
-                hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
-            · -- w ≠ node, w ∉ visited → w ∉ node :: visited
-              have hWNotNewVis : w ∉ newVisited := by
-                simp [newVisited, List.mem_cons]; exact ⟨hWNode, hNotVisW⟩
-              have hWInNew : w ∈ newFrontier := List.mem_append_left _ hMemRest
-              exact ih_fuel newFrontier newVisited
-                ⟨w, hWInNew, hWNotNewVis, hReachW⟩
-                hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
+          · -- w ≠ node, w ∉ visited → w ∉ newVisited, w ∈ rest ⊆ newFrontier
+            have hWNotNewVis : w ∉ newVisited := by
+              simp [newVisited, List.mem_cons]; exact ⟨hWNode, hNotVisW⟩
+            have hMemRest : w ∈ rest := by
+              rcases List.mem_cons.mp hMemW with rfl | h
+              · exact absurd rfl hWNode
+              · exact h
+            have hWInNew : w ∈ newFrontier := List.mem_append_left _ hMemRest
+            exact ih_fuel newFrontier newVisited
+              ⟨w, hWInNew, hWNotNewVis, hReachW⟩
+              hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
 
 -- --------------------------------------------------------------------------
 -- B5: serviceHasPathTo complete
@@ -855,7 +848,7 @@ theorem bfs_complete_for_nontrivialPath
   serviceHasPathTo_complete st a b (serviceReachable_of_nontrivialPath hPath) hBound
 
 -- --------------------------------------------------------------------------
--- B7: soundness of false (corollary)
+-- B7: completeness contrapositive (BFS false → not reachable)
 -- --------------------------------------------------------------------------
 
 /-- BFS false implies no declarative path (contrapositive of B5). -/
