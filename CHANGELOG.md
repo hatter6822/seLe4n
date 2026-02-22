@@ -1,3 +1,14 @@
+## [0.11.5] - 2026-02-22
+
+### TPI-D07 Risk 0 resolution — Strategy B (fix invariant + full proof)
+- **Risk 0 resolved:** The vacuous BFS-based `serviceDependencyAcyclic` invariant has been corrected to use declarative non-trivial-path acyclicity. The original definition was `False` for all states because `serviceHasPathTo st sid sid fuel` returns `true` immediately when `src = target` and `fuel ≥ 1`. Strategy B adopted over trivial closure (A) and conditional (C) approaches.
+- **Layer 0 definitions added** to `SeLe4n/Kernel/Service/Invariant.lean`: `serviceEdge` (direct dependency edge), `serviceReachable` (reflexive-transitive closure, inductive), `serviceHasNontrivialPath` (path of length ≥ 1). `serviceDependencyAcyclic` redefined as `∀ sid, ¬ serviceHasNontrivialPath st sid sid`.
+- **TPI-D07 proof infrastructure plan** added as structured comment block (M0.3) listing all 28 planned definitions and lemmas across Layers 0–3.
+- **Preservation theorem** `serviceRegisterDependency_preserves_acyclicity` updated: `sorry` now represents a genuine (non-vacuous) proof obligation requiring BFS soundness (Layer 2, M2) and edge-insertion analysis (Layer 3, M3).
+- **Theorem dependency graph** updated: Layer 0 marked complete, D4/EQ1/EQ2 eliminated (Strategy B simplification), theorem count reduced from 31 to 28.
+- Updated risk register (D1 resolved), execution plan index (M0 in progress), M0 milestone, tracked proof issues, cross-reference map, gitbook proof-and-invariant-map, gitbook workstream page, and claim-evidence index.
+- Bumped patch version to **`0.11.5`**.
+
 ## [0.11.3] - 2026-02-21
 
 ### WS-D3 proof gap closure (F-06, F-08, F-16)
