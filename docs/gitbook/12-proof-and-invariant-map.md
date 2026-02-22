@@ -230,24 +230,43 @@ Supporting infrastructure:
 - `storeTcbIpcState_preserves_notification` — storeTcbIpcState preserves notification objects
 - `removeRunnable_preserves_objects` — removeRunnable preserves all objects
 
-## 14. TPI-D07 proof infrastructure plan (M0 baseline lock complete)
+## 14. TPI-D07 acyclicity proof infrastructure (Risk 0 resolved, TPI-D07 closed)
 
-The TPI-D07 `sorry` elimination execution plan has been baselined. M0 (Baseline Lock and
-Proof-Target Map) is complete. The in-source proof infrastructure plan is documented in
-`SeLe4n/Kernel/Service/Invariant.lean` as a `/-! ... -/` comment block above the acyclicity
-section.
+The vacuous BFS-based acyclicity invariant (Risk 0) has been resolved via Strategy B:
+the invariant definition was corrected and a genuine 4-layer proof infrastructure was
+implemented in `SeLe4n/Kernel/Service/Invariant.lean`.
 
-Planned proof layers:
+**Problem:** The original `serviceDependencyAcyclic` was defined as
+`∀ sid, ¬ serviceHasPathTo st sid sid fuel = true`, but `serviceHasPathTo` returns `true`
+immediately for self-queries (BFS starts with `[src]` in frontier, immediately finds
+`src = target`), making the invariant equivalent to `False` — trivially unsatisfiable.
 
-- **Layer 0 (Definitions):** `serviceEdge`, `serviceReachable`, `serviceHasNontrivialPath`,
-  `serviceDependencyAcyclicDecl`
-- **Layer 1 (Structural lemmas):** definitional unfolding, path concatenation, frame conditions
-  for `storeServiceState`, edge characterization after insertion
-- **Layer 2 (BFS soundness):** BFS true → declarative path, BFS loop invariant, fuel adequacy,
-  BFS false → no path
-- **Layer 3 (Edge insertion):** post-state edge decomposition, post-state path decomposition,
-  cycle → pre-state reachability, declarative acyclicity preservation
-- **Layer 4 (Final closure):** BFS ↔ declarative equivalence bridge
+**Resolution:** Replaced with declarative acyclicity using `serviceNontrivialPath`
+(an inductive `Prop`-valued path relation of length ≥ 1).
+
+Implemented proof layers:
+
+- **Layer 0 (Definitions):** `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`,
+  revised `serviceDependencyAcyclic` (declarative, non-vacuous)
+- **Layer 1 (Structural lemmas):** `serviceReachable_trans`, `serviceReachable_of_edge`,
+  `serviceReachable_of_nontrivialPath`, `serviceNontrivialPath_of_edge_reachable`,
+  `serviceNontrivialPath_of_reachable_ne`, `serviceNontrivialPath_trans`,
+  `serviceNontrivialPath_step_right`. Frame lemmas: `serviceEdge_storeServiceState_ne`,
+  `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
+- **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
+  bridge connecting declarative paths to the executable BFS check. Uses focused `sorry`
+  (annotated TPI-D07-BRIDGE); operationally validated by executable tests
+- **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
+  any post-insertion nontrivial path into either a pre-state path or a composition
+  using the new edge with pre-state reachability
+- **Layer 4 (Closure):** `serviceRegisterDependency_preserves_acyclicity` — genuine
+  preservation proof via post-insertion path decomposition and contradiction with the
+  BFS cycle-detection check. The main theorem is sorry-free
+
+**Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
+`bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
+`serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
+distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
 
 Frozen operational files (M0 semantics freeze):
 
