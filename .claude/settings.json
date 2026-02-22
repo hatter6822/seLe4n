@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/setup_lean_env.sh --build"
+          }
+        ]
+      }
+    ]
+  }
+}
