@@ -34,7 +34,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D04 | Badge-override safety in cspaceMint | WS-D3 | CLOSED |
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
-| TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge `sorry` tracked as TPI-D07-BRIDGE) | WS-D4 | CLOSED |
+| TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge `sorry` tracked as TPI-D07-BRIDGE). **Completeness closure roadmap:** [`M2_BFS_SOUNDNESS.md §6`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md#6-completeness-proof-roadmap--the-harder-path) documents ~18 prerequisite lemmas, induction strategy, and fuel adequacy options for eliminating the sole remaining `sorry`. | WS-D4 | CLOSED |
 
 ## Update policy
 

@@ -189,3 +189,20 @@ exact hAcyc' sid
 | **Total** | **31** | **16** | Proof completed with fewer artifacts by redefining the invariant declaratively |
 
 The actual implementation was more efficient than the 31-theorem plan: redefining `serviceDependencyAcyclic` to use `serviceNontrivialPath` directly eliminated the need for equivalence theorems (EQ1, EQ2) and much of the BFS bridge infrastructure (B1-B7). The remaining BFS bridge `sorry` is well-scoped and operationally validated.
+
+### Layer 2 completeness roadmap (TPI-D07-BRIDGE closure)
+
+A detailed roadmap for eliminating the `bfs_complete_for_nontrivialPath` sorry
+has been developed in [M2 §6](./milestones/M2_BFS_SOUNDNESS.md#6-completeness-proof-roadmap--the-harder-path).
+The roadmap identifies ~18 new lemmas/theorems organized into a 4-tier
+prerequisite hierarchy plus a core completeness theorem. Key design decisions:
+
+- **Induction measure:** `(countUnvisitedRegistered st visited, frontier.length)`
+  lexicographic — avoids fuel-recycling complication (see M2 §6.9)
+- **Fuel adequacy:** Two options analyzed (M2 §6.8) — `serviceIndex` field
+  (Option A, preferred) or preconditioned hypothesis (Option B, no model change)
+- **Helper lemma tiers:** H1–H5 (list/BFS structure), H6–H7 (reachability
+  transfer), H8–H10 (fuel counting), H11–H12 (closure maintenance)
+- **Estimated proof size:** ~140–270 lines across all lemmas
+- **Critical path:** fuel adequacy decision → counting lemmas → closure
+  maintenance → core completeness → sorry elimination

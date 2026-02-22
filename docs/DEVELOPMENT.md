@@ -102,6 +102,11 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 3. Keep invariant bundles factored and named.
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
+6. For BFS completeness work (TPI-D07-BRIDGE closure): follow the prerequisite
+   lemma hierarchy in [`M2_BFS_SOUNDNESS.md §6.7`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md#67-prerequisite-lemma-inventory)
+   — prove Tier 1–2 helpers before attempting the core completeness theorem.
+   Use `(countUnvisitedRegistered, frontier.length)` lexicographic induction
+   (§6.9), not raw fuel induction.
 
 ---
 

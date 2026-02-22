@@ -49,7 +49,7 @@
 |---|---|---|---|
 | M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `COMPLETE` | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, revised `serviceDependencyAcyclic`, 7 structural + 3 frame lemmas | None |
-| M2 | `DEFERRED` | `bfs_complete_for_nontrivialPath` carries focused `sorry` (TPI-D07-BRIDGE); full BFS soundness proof deferred | R1: Fuel adequacy, R3: BFS loop invariant |
+| M2 | `DEFERRED` | `bfs_complete_for_nontrivialPath` carries focused `sorry` (TPI-D07-BRIDGE); full BFS soundness proof deferred. **Completeness roadmap** now in [M2 §6](./milestones/M2_BFS_SOUNDNESS.md#6-completeness-proof-roadmap--the-harder-path): ~18 lemmas, lexicographic induction, fuel adequacy options. | R1: Fuel adequacy (options analyzed), R3: BFS loop invariant (measure identified) |
 | M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` is sorry-free; `nontrivialPath_post_insert_cases` proved | None (uses M2 bridge with `sorry`) |
 | M4 | `PARTIAL` | Depth-5 chain smoke test exists in `MainTraceHarness`; dedicated `NegativeStateSuite` expansion pending | None |
 | M5 | `IN PROGRESS` | Canonical docs updated; execution plan status sync in progress | R4: Documentation drift |

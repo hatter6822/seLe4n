@@ -2,7 +2,7 @@
 
 > **Post-implementation note:** This document describes the **pre-implementation** proof gap analysis. All three infrastructure gaps identified below have been addressed:
 > - **Gap 1 (declarative semantics):** Resolved — `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` defined; `serviceDependencyAcyclic` redefined declaratively (Invariant.lean:381-411).
-> - **Gap 2 (BFS bridge):** Partially resolved — `bfs_complete_for_nontrivialPath` exists with focused `sorry` (TPI-D07-BRIDGE, line 531). Full BFS soundness suite deferred.
+> - **Gap 2 (BFS bridge):** Partially resolved — `bfs_complete_for_nontrivialPath` exists with focused `sorry` (TPI-D07-BRIDGE, line 531). Full BFS soundness suite deferred. **Completeness closure roadmap** now documented in [M2 §6](./milestones/M2_BFS_SOUNDNESS.md#6-completeness-proof-roadmap--the-harder-path): ~18 prerequisite lemmas, lexicographic induction strategy, fuel adequacy analysis, and implementation sequencing plan.
 > - **Gap 3 (edge-insertion decomposition):** Resolved — `nontrivialPath_post_insert_cases` proved (line 541-572).
 >
 > The preservation theorem (line 591-637) is sorry-free. Line references below reflect the pre-implementation state.

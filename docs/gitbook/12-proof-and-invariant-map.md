@@ -268,6 +268,39 @@ Implemented proof layers:
 `serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
 distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
 
+### 14.1 BFS completeness roadmap (TPI-D07-BRIDGE closure path)
+
+A detailed proof roadmap for eliminating the `bfs_complete_for_nontrivialPath`
+sorry is documented in the M2 milestone
+([`M2_BFS_SOUNDNESS.md §6`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md#6-completeness-proof-roadmap--the-harder-path)).
+
+**Proof decomposition:**
+
+1. **BFS completeness under adequate fuel:** If `serviceReachable st a b` and
+   fuel exceeds the number of registered services, then
+   `serviceHasPathTo st a b fuel = true`. This is proved via a loop invariant
+   on the BFS `go` function (§6.5).
+
+2. **Fuel adequacy:** `serviceBfsFuel st` provides enough fuel. Two approaches
+   are analyzed (§6.8): adding a `serviceIndex` field to `SystemState` (preferred)
+   or carrying finiteness as a hypothesis (preconditioned, no model change).
+
+**Key design decisions:**
+
+- **Induction measure:** Lexicographic `(countUnvisitedRegistered, frontier.length)`
+  — the visited-node (fuel-recycling) case decreases frontier length while the
+  expansion case decreases unvisited count (§6.9)
+- **Prerequisite lemma tiers:** 12 helper lemmas organized into 4 dependency
+  tiers covering list membership, reachability transfer through visited sets,
+  fuel counting arithmetic, and BFS closure maintenance (§6.7)
+- **BFS loop invariant:** 4 preconditions — target not visited, some frontier
+  node reaches target, visited-set closure, fuel adequacy — maintained across
+  all three BFS branches (§6.4–6.5)
+
+**Estimated scope:** ~18 lemmas/theorems, ~140–270 lines of proof. Critical
+path runs through the fuel adequacy decision, counting lemmas, closure
+maintenance, and the core completeness theorem.
+
 Frozen operational files (M0 semantics freeze):
 
 | File | SHA-256 |

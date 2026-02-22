@@ -126,9 +126,9 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
 | D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. Layers 0-1, 3-4 proved; Layer 2 (BFS completeness) deferred as TPI-D07-BRIDGE with focused `sorry`. |
-| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. |
+| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. **Completeness roadmap (M2 §6.8):** Two options analyzed — Option A adds `serviceIndex` field to `SystemState` (preferred, makes `countUnvisitedRegistered` computable); Option B carries finiteness as a hypothesis (preconditioned, no model change). Either enables fuel adequacy closure. |
 | D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. |
-| D4 | BFS induction measure (Risk 3) | **DEFERRED** | — | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. |
+| D4 | BFS induction measure (Risk 3) | **DEFERRED** | Lexicographic `(countUnvisited, frontier.length)` | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. **Completeness roadmap (M2 §6.9):** The correct induction measure is `(countUnvisitedRegistered st visited, frontier.length)` under lexicographic ordering. Visited-node case: first component unchanged, second decreases. Expansion case: first component decreases. This avoids the fuel-recycling complication entirely. |
 
 ---
 
