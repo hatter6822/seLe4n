@@ -8,7 +8,7 @@ for arg in "$@"; do
     --quiet|-q) QUIET=1 ;;
   esac
 done
-log() { [ "${QUIET}" -eq 0 ] && echo "$@" || true; }
+log() { if [ "${QUIET}" -eq 0 ]; then echo "$@"; fi; }
 ELAN_HOME_DEFAULT="${HOME}/.elan"
 ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
