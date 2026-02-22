@@ -8,18 +8,18 @@ This appendix provides bidirectional mappings between the execution plan documen
 
 | Plan section | Repository artifact | Relationship |
 |---|---|---|
-| [02_CODEBASE_AUDIT §2](./02_CODEBASE_AUDIT.md#2-cycle-prevention-operational-logic) | `Operations.lean:142–160` | Direct code audit of `serviceRegisterDependency` |
-| [02_CODEBASE_AUDIT §3](./02_CODEBASE_AUDIT.md#3-bounded-bfs-reachability) | `Operations.lean:96–127` | BFS algorithm and fuel analysis |
-| [02_CODEBASE_AUDIT §4](./02_CODEBASE_AUDIT.md#4-invariant-definition-and-proof-state) | `Invariant.lean:349–394` | Invariant definition and proof skeleton |
-| [02_CODEBASE_AUDIT §5](./02_CODEBASE_AUDIT.md#5-executable-evidence-baseline) | `NegativeStateSuite.lean:319–367` | Test coverage audit |
-| [03_ROOT_CAUSE_ANALYSIS §5](./03_ROOT_CAUSE_ANALYSIS.md#5-proof-state-evolution) | `Invariant.lean:394` | Exact goal state at `sorry` |
-| [M0 §M0.4](./milestones/M0_BASELINE_LOCK.md#m04--store-lemma-inventory) | `State.lean:180–193` | Store lemma dependency |
-| [M1 §3](./milestones/M1_DECLARATIVE_SEMANTICS.md#3-store-interaction-lemmas) | `State.lean:180–193` | Store lemma wrapping |
-| [M4 §2](./milestones/M4_EXECUTABLE_EVIDENCE.md#2-test-cases) | `NegativeStateSuite.lean:319–367` | Test expansion target |
-| [M5 §1.1](./milestones/M5_CLOSURE_SYNC.md#11-update-tracked-proof-issue-status) | `TRACKED_PROOF_ISSUES.md:214–236` | Status update target |
-| [M5 §1.2](./milestones/M5_CLOSURE_SYNC.md#12-update-workstream-plan) | `WORKSTREAM_PLAN.md:331–338` | Completion evidence target |
-| [M5 §1.3](./milestones/M5_CLOSURE_SYNC.md#13-update-claim-evidence-index) | `CLAIM_EVIDENCE_INDEX.md:37` | Status update target |
-| [M5 §1.4](./milestones/M5_CLOSURE_SYNC.md#14-update-proof-and-invariant-map) | `12-proof-and-invariant-map.md:195–204` | Theorem catalog target |
+| [02_CODEBASE_AUDIT §2](../02_CODEBASE_AUDIT.md#2-cycle-prevention-operational-logic) | `Operations.lean:142–160` | Direct code audit of `serviceRegisterDependency` |
+| [02_CODEBASE_AUDIT §3](../02_CODEBASE_AUDIT.md#3-bounded-bfs-reachability) | `Operations.lean:96–127` | BFS algorithm and fuel analysis |
+| [02_CODEBASE_AUDIT §4](../02_CODEBASE_AUDIT.md#4-invariant-definition-and-proof-state) | `Invariant.lean:349–394` | Invariant definition and proof skeleton |
+| [02_CODEBASE_AUDIT §5](../02_CODEBASE_AUDIT.md#5-executable-evidence-baseline) | `NegativeStateSuite.lean:319–367` | Test coverage audit |
+| [03_ROOT_CAUSE_ANALYSIS §5](../03_ROOT_CAUSE_ANALYSIS.md#5-proof-state-evolution-through-the-insertion-branch) | `Invariant.lean:394` | Exact goal state at `sorry` |
+| [M0 §M0.4](../milestones/M0_BASELINE_LOCK.md#m04--store-lemma-inventory) | `State.lean:180–193` | Store lemma dependency |
+| [M1 §3](../milestones/M1_DECLARATIVE_SEMANTICS.md#3-store-interaction-lemmas) | `State.lean:180–193` | Store lemma wrapping |
+| [M4 §2](../milestones/M4_EXECUTABLE_EVIDENCE.md#2-test-cases) | `NegativeStateSuite.lean:319–367` | Test expansion target |
+| [M5 §1.1](../milestones/M5_CLOSURE_SYNC.md#11-update-tracked-proof-issue-status) | `TRACKED_PROOF_ISSUES.md:214–236` | Status update target |
+| [M5 §1.2](../milestones/M5_CLOSURE_SYNC.md#12-update-workstream-plan) | `WORKSTREAM_PLAN.md:331–338` | Completion evidence target |
+| [M5 §1.3](../milestones/M5_CLOSURE_SYNC.md#13-update-claim-evidence-index) | `CLAIM_EVIDENCE_INDEX.md:37` | Status update target |
+| [M5 §1.4](../milestones/M5_CLOSURE_SYNC.md#14-update-proof-and-invariant-map) | `12-proof-and-invariant-map.md:195–204` | Theorem catalog target |
 
 ---
 
