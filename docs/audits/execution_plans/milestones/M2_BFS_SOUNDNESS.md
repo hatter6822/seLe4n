@@ -292,11 +292,13 @@ If these are not available in the project's Lean/Std import set, they may need t
 
 ## 5. Exit criteria
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) proved without `sorry`
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) proved without `sorry` (possibly with fuel adequacy precondition)
-- [ ] Fuel adequacy approach chosen and documented (Approach A or B)
-- [ ] All intermediate BFS lemmas (B1, B3–B5, B7) proved without `sorry`
-- [ ] `lake build` succeeds
+> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+
+- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
+- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
+- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
+- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
+- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
 
 ## Validation
 

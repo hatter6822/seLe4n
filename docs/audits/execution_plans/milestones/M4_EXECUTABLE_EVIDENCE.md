@@ -159,10 +159,14 @@ New test cases should be added to `tests/NegativeStateSuite.lean` in the existin
 
 ## 5. Exit criteria
 
-- [ ] At least 3 new test cases added (T1 chain-3 rejection, T2 diamond DAG, T3 positive deep insertion)
-- [ ] All existing test expectations unchanged
-- [ ] `./scripts/test_tier2_negative.sh` passes with expanded coverage
-- [ ] `lake build` succeeds
+> **Partial status:** A depth-5 dependency chain smoke test exists in `MainTraceHarness.lean` (lines 254-309) exercising multi-hop BFS traversal. Dedicated `NegativeStateSuite` expansion for chain-3, diamond DAG, and positive deep insertion tests remains pending.
+
+- [ ] T1 chain-3 rejection test in NegativeStateSuite (pending)
+- [ ] T2 diamond DAG test in NegativeStateSuite (pending)
+- [ ] T3 positive deep insertion test in NegativeStateSuite (pending)
+- [x] All existing test expectations unchanged
+- [x] `lake build` succeeds
+- [x] Depth-5 chain smoke test in MainTraceHarness validates multi-hop BFS traversal
 
 ## Artifacts modified
 

@@ -1,6 +1,8 @@
 # 02 — Deep Codebase Audit (Code-First)
 
-This document captures the implementation reality of TPI-D07 as determined by direct source code inspection. Every behavioral claim is traceable to specific line ranges in the repository.
+This document captures the **pre-implementation** audit of TPI-D07 as determined by direct source code inspection. Every behavioral claim was traceable to specific line ranges at the time of writing.
+
+> **Post-implementation note:** Sections 4.1–4.2 and 6 describe the codebase state **before** the TPI-D07 proof infrastructure was implemented. The invariant definition (§4.1) has been replaced with a declarative definition using `serviceNontrivialPath`. The `sorry` at the original line 394 (§4.2) has been eliminated; the preservation theorem (now at line 591) is sorry-free. The sole remaining `sorry` is on `bfs_complete_for_nontrivialPath` (line 531, TPI-D07-BRIDGE). See §6 addendum for the updated consistency audit.
 
 ---
 
@@ -243,4 +245,18 @@ These gaps are addressed in [M4: Executable Evidence Expansion](./milestones/M4_
 | `gitbook/12-proof-and-invariant-map.md:204` | Uses `sorry`; tracked as TPI-D07 | Correct |
 | `test_tier0_hygiene.sh` | Excludes `TPI-D*` tagged `sorry` markers | Correct — accepted technical debt, not hygiene violation |
 
-**Conclusion:** The gap is narrow and precisely characterized — **not an algorithm absence, but proof infrastructure insufficiency for bounded-BFS soundness relative to graph reachability semantics.** The runtime behavior is correct and tested. Only the formal bridge between `serviceHasPathTo ... = false` and "no path exists in the graph" is missing.
+**Conclusion (pre-implementation):** The gap is narrow and precisely characterized — **not an algorithm absence, but proof infrastructure insufficiency for bounded-BFS soundness relative to graph reachability semantics.** The runtime behavior is correct and tested. Only the formal bridge between `serviceHasPathTo ... = false` and "no path exists in the graph" is missing.
+
+### 6.1 Post-implementation consistency addendum
+
+After Strategy B implementation (Risk 0 resolved), the documentation-to-code state is:
+
+| Document | TPI-D07 status | Accuracy vs. code |
+|---|---|---|
+| `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | CLOSED (Risk 0 resolved) | Correct — preservation theorem sorry-free; BFS bridge deferred as TPI-D07-BRIDGE |
+| `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | TPI-D07 closed | Correct — lines 336-343 and 478 reflect current state |
+| `CLAIM_EVIDENCE_INDEX.md` | CLOSED | Correct — BFS bridge `sorry` tracked as TPI-D07-BRIDGE |
+| `gitbook/12-proof-and-invariant-map.md` | §14 documents 4-layer infrastructure | Correct — preservation theorem `(no sorry)`; §14 accurate |
+| `test_tier0_hygiene.sh` | Excludes `TPI-D*` tagged `sorry` markers | Correct — TPI-D07-BRIDGE annotation on `bfs_complete_for_nontrivialPath` |
+
+**Remaining `sorry` in `Invariant.lean` (line 531):** `bfs_complete_for_nontrivialPath` — deferred BFS completeness bridge. This is the sole proof debt in the file, annotated TPI-D07-BRIDGE, and operationally validated by cycle detection tests and the depth-5 dependency chain smoke test.

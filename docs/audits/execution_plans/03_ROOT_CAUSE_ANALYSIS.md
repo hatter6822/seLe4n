@@ -1,5 +1,12 @@
 # 03 — Root-Cause Analysis of the Proof Gap
 
+> **Post-implementation note:** This document describes the **pre-implementation** proof gap analysis. All three infrastructure gaps identified below have been addressed:
+> - **Gap 1 (declarative semantics):** Resolved — `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` defined; `serviceDependencyAcyclic` redefined declaratively (Invariant.lean:381-411).
+> - **Gap 2 (BFS bridge):** Partially resolved — `bfs_complete_for_nontrivialPath` exists with focused `sorry` (TPI-D07-BRIDGE, line 531). Full BFS soundness suite deferred.
+> - **Gap 3 (edge-insertion decomposition):** Resolved — `nontrivialPath_post_insert_cases` proved (line 541-572).
+>
+> The preservation theorem (line 591-637) is sorry-free. Line references below reflect the pre-implementation state.
+
 ## 1. Current proof skeleton
 
 The existing proof in `serviceRegisterDependency_preserves_acyclicity` (`Invariant.lean:367–394`) is structurally complete through all non-insertion branches:

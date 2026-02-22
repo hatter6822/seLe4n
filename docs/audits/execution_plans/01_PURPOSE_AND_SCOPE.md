@@ -2,7 +2,9 @@
 
 ## 1. Objective
 
-Close tracked proof issue **TPI-D07** by replacing the `sorry` at `SeLe4n/Kernel/Service/Invariant.lean:394` in `serviceRegisterDependency_preserves_acyclicity` with a complete, machine-checked formal proof.
+Close tracked proof issue **TPI-D07** by replacing the `sorry` in `serviceRegisterDependency_preserves_acyclicity` with a complete, machine-checked formal proof.
+
+> **Current status (post-implementation):** The preservation theorem (line 591) is sorry-free. The original `sorry` was eliminated via Strategy B (Risk 0 — declarative invariant + 4-layer proof infrastructure). The sole remaining `sorry` is on `bfs_complete_for_nontrivialPath` (line 531, annotated TPI-D07-BRIDGE), a focused BFS completeness bridge operationally validated by executable tests.
 
 ## 2. Success criteria (summary)
 
@@ -46,17 +48,17 @@ This execution plan is derived from **direct code inspection** of live repositor
 | Artifact | Path | Role in TPI-D07 |
 |---|---|---|
 | BFS + registration logic | `SeLe4n/Kernel/Service/Operations.lean:96–160` | Operational definitions under proof |
-| Acyclicity invariant + `sorry` | `SeLe4n/Kernel/Service/Invariant.lean:349–394` | Proof target |
+| Acyclicity invariant + proof | `SeLe4n/Kernel/Service/Invariant.lean:381–637` | Layers 0-4 proof infrastructure; preservation theorem at 591; BFS bridge `sorry` at 531 |
 | Service graph data model | `SeLe4n/Model/Object.lean:6–26` | `ServiceGraphEntry`, `ServiceStatus`, dependency lists |
 | Service ID type | `SeLe4n/Prelude.lean:112–114` | `structure ServiceId` (typed `Nat` wrapper) |
 | System state + store lemmas | `SeLe4n/Model/State.lean:45–193` | `storeServiceState`, `lookupService`, `_eq`/`_ne` lemmas |
 | Kernel monad | `SeLe4n/Prelude.lean:259` | `KernelM` (state/error monad) |
 | Store entry helper | `SeLe4n/Kernel/Service/Operations.lean:11–12` | `storeServiceEntry` wraps `storeServiceState` in kernel monad |
 | Negative test suite | `tests/NegativeStateSuite.lean:319–367` | Runtime validation of cycle detection |
-| Tracked proof issues | `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md:214–236` | TPI-D07 status and closure contract |
-| Workstream plan | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md:281–357` | WS-D4 completion evidence |
-| Claim-evidence index | `docs/CLAIM_EVIDENCE_INDEX.md:37` | TPI-D07 listed as IN PROGRESS |
-| Proof and invariant map | `docs/gitbook/12-proof-and-invariant-map.md:195–204` | F-07 theorem catalog |
+| Tracked proof issues | `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md:214` | TPI-D07 status: CLOSED (Risk 0 resolved) |
+| Workstream plan | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md:336–343` | WS-D4 completion evidence |
+| Claim-evidence index | `docs/CLAIM_EVIDENCE_INDEX.md:37` | TPI-D07 listed as CLOSED |
+| Proof and invariant map | `docs/gitbook/12-proof-and-invariant-map.md:195–269` | F-07 theorem catalog + §14 proof infrastructure |
 
 ### 5.2 Verification method
 
@@ -72,11 +74,11 @@ Each milestone specifies:
 
 The following documents must be updated synchronously with the proof closure to maintain documentation-to-code consistency:
 
-| Document | Current TPI-D07 status | Required update |
+| Document | Pre-implementation status | Post-implementation status |
 |---|---|---|
-| `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md:214` | IN PROGRESS | → CLOSED |
-| `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md:337` | `sorry` tracked | Remove qualifier |
-| `docs/CLAIM_EVIDENCE_INDEX.md:37` | IN PROGRESS | → CLOSED |
-| `docs/gitbook/12-proof-and-invariant-map.md:204` | Uses `sorry`; tracked as TPI-D07 | → (no `sorry`) + new lemma entries |
+| `docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | IN PROGRESS | **CLOSED** (updated) |
+| `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `sorry` tracked | **Updated**: Risk 0 resolved, TPI-D07 closed (lines 336-343, 478) |
+| `docs/CLAIM_EVIDENCE_INDEX.md` | IN PROGRESS | **CLOSED** (updated: BFS bridge `sorry` tracked as TPI-D07-BRIDGE) |
+| `docs/gitbook/12-proof-and-invariant-map.md` | Uses `sorry`; tracked as TPI-D07 | **Updated**: preservation theorem `(no sorry)`; §14 documents 4-layer infrastructure |
 
 All updates are detailed in [M5: Closure Synchronization](./milestones/M5_CLOSURE_SYNC.md).

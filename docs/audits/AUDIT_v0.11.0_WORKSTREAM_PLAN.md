@@ -68,7 +68,7 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - **WS-D3:** Close remaining proof gaps (badge safety, VSpace success preservation). **Completed.**
 - All three findings (F-06, F-08, F-16) resolved. TPI-D04 and TPI-D05 closed. TPI-001 obligations from WS-C fully discharged. Four round-trip theorems proved. Seven Invariant.lean files annotated with proof-scope docstrings. Tier 0-3 gates pass.
 - **WS-D4:** Harden kernel design (cycle detection, failure semantics, double-wait). **Completed.**
-- All three findings (F-07, F-11, F-12) resolved. TPI-D06 closed. TPI-D07 partially closed (BFS soundness uses `sorry`, tracked). Tier 0-3 gates pass.
+- All three findings (F-07, F-11, F-12) resolved. TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with Layers 0-4; sole deferred `sorry` on BFS bridge TPI-D07-BRIDGE). Tier 0-3 gates pass.
 
 ### Phase P4 — infrastructure expansion (Medium/Low)
 

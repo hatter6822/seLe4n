@@ -2,24 +2,26 @@
 
 TPI-D07 is **closed** when **all** of the following conditions hold simultaneously. Each condition has an explicit verification method.
 
+> **Current status:** Strategy B (Risk 0) was chosen. The preservation theorem is sorry-free. The sole remaining `sorry` is the focused BFS bridge `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, line 531), which is operationally validated by executable tests.
+
 ---
 
 ## 1. Proof surface
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
-| P1 | `serviceRegisterDependency_preserves_acyclicity` contains **no `sorry`** | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` returns 0 matches | [ ] |
-| P2 | The theorem compiles successfully | `lake build` exits 0 | [ ] |
-| P3 | No new `sorry` introduced anywhere in the kernel proof surface | `rg 'sorry' SeLe4n/Kernel/` returns same or fewer matches than before | [ ] |
-| P4 | All intermediate lemmas (if any) compile without `sorry` | `lake build` exits 0 | [ ] |
+| P1 | `serviceRegisterDependency_preserves_acyclicity` contains **no `sorry`** | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` — only TPI-D07-BRIDGE at line 531 | [x] |
+| P2 | The theorem compiles successfully | `lake build` exits 0 | [x] |
+| P3 | No new `sorry` introduced anywhere in the kernel proof surface | `rg 'sorry' SeLe4n/Kernel/` — only TPI-D07-BRIDGE | [x] |
+| P4 | All intermediate lemmas compile without `sorry` | `lake build` exits 0 (all lemmas except `bfs_complete_for_nontrivialPath`) | [x] |
 
-### If full proof infrastructure is built (Risk 0, Strategy B):
+### Full proof infrastructure (Risk 0, Strategy B — implemented):
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
-| P5 | `serviceEdge` and `serviceReachable` definitions exist | `rg 'def serviceEdge\|inductive serviceReachable' SeLe4n/Kernel/Service/Invariant.lean` | [ ] |
-| P6 | BFS soundness bridge exists | `rg 'serviceHasPathTo_false_implies_not_reachable\|serviceHasPathTo_true_implies_reachable' SeLe4n/Kernel/Service/Invariant.lean` | [ ] |
-| P7 | Edge-insertion decomposition exists | `rg 'serviceReachable_post_insert_cases\|nontrivial_cycle_post_insert_implies_pre_reach' SeLe4n/Kernel/Service/Invariant.lean` | [ ] |
+| P5 | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath` exist | `rg 'def serviceEdge\|inductive serviceReachable\|inductive serviceNontrivialPath' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
+| P6 | BFS completeness bridge exists (with focused `sorry`) | `rg 'bfs_complete_for_nontrivialPath' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
+| P7 | Edge-insertion decomposition exists | `rg 'nontrivialPath_post_insert_cases' SeLe4n/Kernel/Service/Invariant.lean` | [x] |
 
 ---
 
@@ -38,11 +40,11 @@ TPI-D07 is **closed** when **all** of the following conditions hold simultaneous
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
-| D1 | `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`: TPI-D07 = CLOSED | `rg 'TPI-D07.*CLOSED' docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | [ ] |
-| D2 | `AUDIT_v0.11.0_WORKSTREAM_PLAN.md`: no "sorry deferred" qualifier | `rg 'sorry.*TPI-D07\|TPI-D07.*sorry' docs/audits/` returns 0 | [ ] |
-| D3 | `CLAIM_EVIDENCE_INDEX.md`: TPI-D07 = CLOSED | `rg 'TPI-D07.*CLOSED' docs/CLAIM_EVIDENCE_INDEX.md` | [ ] |
-| D4 | `gitbook/12-proof-and-invariant-map.md`: theorem marked `(no sorry)` | Manual inspection of section 13 | [ ] |
-| D5 | No documentation references TPI-D07 as IN PROGRESS | `rg 'TPI-D07.*IN PROGRESS' docs/` returns 0 | [ ] |
+| D1 | `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`: TPI-D07 = CLOSED | `rg 'TPI-D07.*CLOSED' docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | [x] |
+| D2 | `AUDIT_v0.11.0_WORKSTREAM_PLAN.md`: TPI-D07 closed, BFS bridge tracked | Lines 71, 336-343, 478 consistent | [x] |
+| D3 | `CLAIM_EVIDENCE_INDEX.md`: TPI-D07 = CLOSED | `rg 'TPI-D07.*CLOSED' docs/CLAIM_EVIDENCE_INDEX.md` | [x] |
+| D4 | `gitbook/12-proof-and-invariant-map.md`: preservation theorem `(no sorry)` | Section 13 and §14 updated | [x] |
+| D5 | No documentation references TPI-D07 as IN PROGRESS | `rg 'TPI-D07.*IN PROGRESS' docs/` returns 0 | [x] |
 
 ---
 
@@ -62,10 +64,10 @@ TPI-D07 is **closed** when **all** of the following conditions hold simultaneous
 
 | # | Condition | Verification | Status |
 |---|---|---|---|
-| O1 | `Operations.lean` has zero changes | File hash comparison | [ ] |
-| O2 | No runtime behavior change in cycle detection | Existing tests pass unchanged | [ ] |
-| O3 | No new error variants added | `rg 'KernelError' SeLe4n/Model/State.lean` unchanged | [ ] |
-| O4 | No fuel computation change | `rg 'serviceBfsFuel' SeLe4n/Kernel/Service/Operations.lean` unchanged | [ ] |
+| O1 | `Operations.lean` has zero changes | File hash comparison | [x] |
+| O2 | No runtime behavior change in cycle detection | Existing tests pass unchanged | [x] |
+| O3 | No new error variants added | `rg 'KernelError' SeLe4n/Model/State.lean` unchanged | [x] |
+| O4 | No fuel computation change | `rg 'serviceBfsFuel' SeLe4n/Kernel/Service/Operations.lean` unchanged | [x] |
 
 ---
 

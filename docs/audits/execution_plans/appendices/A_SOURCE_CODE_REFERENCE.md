@@ -2,6 +2,8 @@
 
 This appendix contains the key source code excerpts relevant to TPI-D07, annotated with proof-relevant observations.
 
+> **Note:** These excerpts reflect the **pre-implementation** state. The operational code (Operations.lean) is unchanged (frozen per M0). The invariant code (Invariant.lean) has been substantially extended with Layers 0-4 proof infrastructure — see the actual file for current source.
+
 ---
 
 ## A.1 `serviceRegisterDependency` (Operations.lean:142–160)
