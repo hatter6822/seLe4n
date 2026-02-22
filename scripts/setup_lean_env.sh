@@ -58,8 +58,8 @@ ensure_shellcheck() {
   elif command -v dnf >/dev/null 2>&1; then
     run_pkg_install dnf install -y ShellCheck || true
   elif command -v yum >/dev/null 2>&1; then
-    run_pkg_install yum install -y epel-release && \
-    run_pkg_install yum install -y ShellCheck || true
+    { run_pkg_install yum install -y epel-release && \
+    run_pkg_install yum install -y ShellCheck; } || true
   elif command -v pacman >/dev/null 2>&1; then
     run_pkg_install pacman -Sy --noconfirm shellcheck || true
   elif command -v brew >/dev/null 2>&1; then
@@ -84,8 +84,8 @@ ensure_ripgrep() {
   elif command -v dnf >/dev/null 2>&1; then
     run_pkg_install dnf install -y ripgrep || true
   elif command -v yum >/dev/null 2>&1; then
-    run_pkg_install yum install -y epel-release && \
-    run_pkg_install yum install -y ripgrep || true
+    { run_pkg_install yum install -y epel-release && \
+    run_pkg_install yum install -y ripgrep; } || true
   elif command -v pacman >/dev/null 2>&1; then
     run_pkg_install pacman -Sy --noconfirm ripgrep || true
   elif command -v brew >/dev/null 2>&1; then
@@ -124,8 +124,6 @@ TOOLCHAIN_REPO="$(echo "${TOOLCHAIN}" | cut -d/ -f2 | cut -d: -f1)"
 TOOLCHAIN_TAG="$(echo "${TOOLCHAIN}" | cut -d: -f2)"
 # elan normalises "org/repo:tag" → "org-repo-tag" for directory names.
 TOOLCHAIN_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|-|g; s|:|-|g')"
-# elan toolchain link normalises "org/repo:tag" → "org--repo---tag" for directories.
-TOOLCHAIN_LINK_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|--|g; s|:|---|g')"
 
 # Detect architecture for download URL.
 detect_arch_suffix() {
