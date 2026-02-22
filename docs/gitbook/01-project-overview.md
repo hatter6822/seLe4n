@@ -37,7 +37,7 @@ Completed audit portfolios:
 
 Current active portfolio:
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D6 planned.
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D4 completed; WS-D5..WS-D6 planned.
 
 ## 4. Architecture mental model
 
@@ -50,11 +50,11 @@ The codebase is organized as layered contracts:
 - **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
 - **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
 
-## 5. Current-slice outcomes (WS-C portfolio)
+## 5. Current-slice outcomes (WS-D portfolio)
 
 The active slice is successful when contributors deliver all of the following:
 
-1. closure of comprehensive-audit recommendations via WS-C workstreams,
+1. closure of v0.11.0 audit findings via WS-D workstreams (WS-D1..WS-D4 completed; WS-D5..WS-D6 planned),
 2. deterministic CI + trace reproducibility preserved through every workstream increment,
 3. theorem/invariant surfaces remain discoverable and preservation-focused,
 4. synchronized updates across README/spec/development guide/GitBook + audit planning artifacts.
@@ -62,7 +62,7 @@ The active slice is successful when contributors deliver all of the following:
 For full project scope and milestone details, see [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 For the seL4 microkernel reference, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
-See dedicated execution chapters: [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
+See dedicated execution chapters: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
 
 ## 6. Hardware trajectory update
 

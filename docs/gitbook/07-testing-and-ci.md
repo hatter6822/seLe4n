@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **Comprehensive Audit v0.9.32 WS-C execution with WS-C1 + WS-C2 + WS-C3 + WS-C4 + WS-C5 + WS-C6 + WS-C7 + WS-C8 completed; testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-D portfolio (v0.11.0 audit remediation) with WS-D1..WS-D4 completed and WS-D5..WS-D6 planned; testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
@@ -67,11 +67,14 @@ Type-checking alone can miss semantic regressions. Tier 2 trace + negative-state
 stories remain visible and intentional, especially for milestone claims tied to executable behavior
 (e.g., mint/revoke/delete and IPC handshake flows).
 
-## M4-B and M5 closeout testing trajectory
+## Milestone testing trajectory
 
 - **M4-A:** lifecycle semantic trace fragments are landed and fixture-backed in Tier 2 smoke coverage.
-- **M4-B:** WS-A/WS-B/WS-C/WS-D/WS-E are complete, including Tier 3 M4-B symbol anchors and staged Tier 4 nightly candidates.
-- **M5 (complete; WS-M5-F complete):** Tier 2/Tier 3 cover service restart/policy-denial/dependency-failure/isolation evidence, with Tier 4 candidates checking determinism plus M5 evidence-line anchors as preserved baselines for M6.
+- **M4-B:** all M4-B workstreams complete, including Tier 3 M4-B symbol anchors and staged Tier 4 nightly candidates.
+- **M5 (complete):** Tier 2/Tier 3 cover service restart/policy-denial/dependency-failure/isolation evidence, with Tier 4 candidates checking determinism plus M5 evidence-line anchors.
+- **M6 (complete):** architecture-boundary assumption/adapter/invariant hook coverage in Tier 2 traces and Tier 3 anchors.
+- **M7 (complete):** audit-remediation coverage (WS-A1..WS-A8) fully integrated into tiered gates.
+- **WS-D (active):** WS-D1 test validity, WS-D2 information-flow enforcement, WS-D3 proof gaps, WS-D4 kernel hardening all landed with updated Tier 2/3 coverage. WS-D5 (test infrastructure expansion) and WS-D6 (CI/docs polish) are next.
 
 ## Practical failure triage
 

@@ -17,10 +17,20 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
    - executable transition definitions,
    - local invariants and transition-preservation theorem entrypoints.
 
-4. **Cross-subsystem composition (`Kernel/Capability/Invariant` + IPC links)**
+4. **Architecture boundary (`Kernel/Architecture`)**
+   - architecture assumptions, VSpace address-space semantics, adapter entrypoints,
+   - VSpace invariant bundles and round-trip correctness proofs.
+
+5. **Information-flow layer (`Kernel/InformationFlow`)**
+   - security labels and policy lattice,
+   - observer projection and low-equivalence relation,
+   - enforcement hooks wired into kernel operations,
+   - non-interference preservation theorems.
+
+6. **Cross-subsystem composition (`Kernel/Capability/Invariant` + IPC links)**
    - milestone bundles and composed preservation theorem surfaces.
 
-5. **Executable integration (`Main.lean`)**
+7. **Executable integration (`Main.lean`)**
    - scenario trace demonstrating composed behavior under current milestone stage.
 
 ## 2. Module responsibilities by file
@@ -89,6 +99,49 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - bridge lemmas connecting service policy assumptions to lifecycle/capability bundles,
   - explicit policy-denial check-vs-mutation theorem entrypoints.
 
+### Architecture subsystem
+
+- `SeLe4n/Kernel/Architecture/Assumptions.lean`
+  - named architecture-facing assumption interfaces and contract references.
+- `SeLe4n/Kernel/Architecture/Adapter.lean`
+  - deterministic adapter entrypoints (`adapterAdvanceTimer`, `adapterReadMemory`, `adapterWriteMemory`)
+    with bounded failure mapping for invalid/unsupported contexts.
+- `SeLe4n/Kernel/Architecture/VSpace.lean`
+  - VSpace address-space operations (`vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`),
+    ASID root resolution, and page-table management.
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
+  - VSpace invariant bundle, success-path and error-path preservation theorems,
+    round-trip correctness theorems (`vspaceLookup_after_map`, etc.).
+- `SeLe4n/Kernel/Architecture/Invariant.lean`
+  - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
+    composed preservation hooks for success and failure paths.
+
+### Information-flow subsystem
+
+- `SeLe4n/Kernel/InformationFlow/Policy.lean`
+  - security label type (`Confidentiality`, `Integrity`, `SecurityLabel`),
+    policy lattice (`securityFlowsTo`) with algebraic lemmas (refl, trans).
+- `SeLe4n/Kernel/InformationFlow/Projection.lean`
+  - observer projection helpers (`projectState`, `projectObjects`, `projectRunnable`, `projectCurrent`),
+    `lowEquivalent` relation scaffold with refl/symm/trans.
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean`
+  - checked kernel operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`)
+    that wire `securityFlowsTo` policy into enforcement boundaries.
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean`
+  - non-interference preservation theorems across scheduler, capability, lifecycle, and IPC operations
+    (`chooseThread_preserves_lowEquivalent`, `cspaceMint_preserves_lowEquivalent`, etc.).
+
+### Testing modules
+
+- `SeLe4n/Testing/StateBuilder.lean`
+  - test-state construction helpers for building valid `SystemState` values.
+- `SeLe4n/Testing/RuntimeContractFixtures.lean`
+  - runtime-contract fixtures with accept/deny policies for architecture adapter testing.
+- `SeLe4n/Testing/InvariantChecks.lean`
+  - executable invariant-checking logic for trace harness validation.
+- `SeLe4n/Testing/MainTraceHarness.lean`
+  - scenario execution engine used by `Main.lean` for trace output and fixture comparisons.
+
 ### API + executable
 
 - `SeLe4n/Kernel/API.lean`
@@ -100,7 +153,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 Conceptual dependency direction:
 
-`Prelude/Machine` → `Model` → `Scheduler/Capability/IPC transitions` → `Invariant composition` → `Main trace`
+`Prelude/Machine` → `Model` → `Scheduler/Capability/IPC/Lifecycle/Service transitions` → `Architecture/InformationFlow` → `Invariant composition` → `API` → `Main trace`
 
 ### 3.1 Audit-focused dependency diagram (current state)
 
@@ -116,7 +169,8 @@ SeLe4n.lean
     ├── Kernel/IPC/{Operations,Invariant}.lean
     ├── Kernel/Lifecycle/{Operations,Invariant}.lean
     ├── Kernel/Service/{Operations,Invariant}.lean
-    └── Kernel/Architecture/{Assumptions,Adapter,Invariant}.lean
+    ├── Kernel/Architecture/{Assumptions,Adapter,VSpace,VSpaceInvariant,Invariant}.lean
+    └── Kernel/InformationFlow/{Policy,Projection,Enforcement,Invariant}.lean
 ```
 
 ### 3.2 Mermaid graph (documentation source of truth)
@@ -132,8 +186,12 @@ graph TD
   I --> B
   B --> L[Lifecycle]
   L --> V[Service]
-  V --> A[Architecture Assumptions/Adapter/Invariant]
-  A --> X[API + Main executable traces]
+  V --> A[Architecture Assumptions/Adapter/VSpace]
+  M --> IF[InformationFlow Policy/Projection/Enforcement]
+  IF --> IFI[InformationFlow Invariant]
+  A --> AI[Architecture Invariant]
+  AI --> X[API + Main executable traces]
+  IFI --> X
 ```
 
 This direction should be preserved to prevent proof cycles and maintain module readability.

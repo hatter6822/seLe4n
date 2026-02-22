@@ -2,7 +2,7 @@
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-D target (prioritize Phase P1 blockers first).
+1. Pick one coherent WS-D target (prioritize next planned workstream in current phase).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
@@ -38,11 +38,11 @@ For milestone-moving PRs:
 
 ## Workstream sequence (WS-D)
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (current)
-- **Phase P1:** WS-D1 test validity restoration (critical/high)
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high)
-- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium)
-- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical — **completed**
+- **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
+- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — **completed**
+- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low) — current
 
 ## Failure triage
 
