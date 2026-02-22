@@ -1,3 +1,13 @@
+## [0.11.6] - 2026-02-22
+
+### Documentation optimization and context-pressure reduction
+- Added `CLAUDE.md` with focused project guidance: build commands, source layout, key conventions, documentation rules, active workstream context, and PR checklist. Provides a concise onboarding surface that avoids requiring full documentation traversal.
+- Added `--quiet`/`-q` flag to `scripts/setup_lean_env.sh` to suppress informational output during automated runs while preserving error messages. SessionStart hook updated to use `--quiet`.
+- Fixed stale workstream status in `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`: WS-D4 now correctly listed as completed.
+- Fixed stale canonical source reference in `docs/DOCS_DEDUPLICATION_MAP.md`: "Current execution workstreams" row now points to the active `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` instead of the historical `AUDIT_v0.9.32` plan.
+- Tightened `CONTRIBUTING.md` to remove redundant prose and consolidate validation guidance.
+- Bumped patch version to **`0.11.6`**.
+
 ## [0.11.5] - 2026-02-22
 
 ### Build environment hardening

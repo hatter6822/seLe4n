@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./scripts/setup_lean_env.sh --build"
+            "command": "./scripts/setup_lean_env.sh --quiet --build"
           }
         ]
       }

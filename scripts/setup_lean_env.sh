@@ -2,6 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+QUIET=0
+for arg in "$@"; do
+  case "${arg}" in
+    --quiet|-q) QUIET=1 ;;
+  esac
+done
+log() { [ "${QUIET}" -eq 0 ] && echo "$@" || true; }
 ELAN_HOME_DEFAULT="${HOME}/.elan"
 ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
@@ -50,7 +57,7 @@ ensure_shellcheck() {
     return 0
   fi
 
-  echo "[setup] shellcheck not found; attempting to install"
+  log "[setup] shellcheck not found; attempting to install"
 
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
@@ -67,7 +74,7 @@ ensure_shellcheck() {
   fi
 
   if ! command -v shellcheck >/dev/null 2>&1; then
-    echo "[setup] warning: shellcheck is unavailable; shell linting will be skipped" >&2
+    log "[setup] warning: shellcheck is unavailable; shell linting will be skipped"
   fi
 }
 
@@ -76,7 +83,7 @@ ensure_ripgrep() {
     return 0
   fi
 
-  echo "[setup] ripgrep (rg) not found; attempting to install"
+  log "[setup] ripgrep (rg) not found; attempting to install"
 
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
@@ -93,7 +100,7 @@ ensure_ripgrep() {
   fi
 
   if ! command -v rg >/dev/null 2>&1; then
-    echo "[setup] warning: ripgrep (rg) is unavailable; tests will use grep fallback" >&2
+    log "[setup] warning: ripgrep (rg) is unavailable; tests will use grep fallback"
   fi
 }
 
@@ -160,7 +167,7 @@ ensure_zstd() {
   if command -v zstd >/dev/null 2>&1; then
     return 0
   fi
-  echo "[setup] zstd not found; attempting to install"
+  log "[setup] zstd not found; attempting to install"
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
     run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y zstd || true
@@ -178,14 +185,14 @@ ensure_zstd() {
 # This bypasses elan's internal HTTP client which may fail in proxied
 # environments (e.g. Claude Code web sessions behind an egress gateway).
 manual_curl_install() {
-  echo "[setup] elan's network client failed; falling back to manual curl-based install"
+  log "[setup] elan's network client failed; falling back to manual curl-based install"
 
   local elan_bin_dir="${ELAN_HOME_DIR}/bin"
   local toolchain_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
 
   # --- Install elan binary ---
   if [ ! -x "${elan_bin_dir}/elan" ]; then
-    echo "[setup] downloading elan binary via curl"
+    log "[setup] downloading elan binary via curl"
     local arch_name
     case "$(uname -m)" in
       x86_64|amd64)   arch_name="x86_64-unknown-linux-gnu" ;;
@@ -201,7 +208,7 @@ manual_curl_install() {
     chmod +x "${elan_bin_dir}/elan-init"
     rm -f "${elan_tar}"
     trap - EXIT
-    echo "[setup] elan binary installed to ${elan_bin_dir}"
+    log "[setup] elan binary installed to ${elan_bin_dir}"
   fi
 
   # --- Write env and settings files ---
@@ -214,7 +221,7 @@ SETTINGSEOF
 
   # --- Install Lean toolchain ---
   if [ ! -d "${toolchain_dir}/bin" ]; then
-    echo "[setup] downloading Lean toolchain ${TOOLCHAIN} via curl"
+    log "[setup] downloading Lean toolchain ${TOOLCHAIN} via curl"
     local arch_suffix
     arch_suffix="$(detect_arch_suffix)"
     local version_number="${TOOLCHAIN_TAG#v}"
@@ -235,7 +242,7 @@ SETTINGSEOF
       rm -f "${lean_tar}" "${lean_extracted}"
       trap - EXIT
     else
-      echo "[setup] zstd unavailable; downloading zip archive instead"
+      log "[setup] zstd unavailable; downloading zip archive instead"
       local lean_zip
       lean_zip="$(mktemp)"
       trap 'rm -f "${lean_zip}"' EXIT
@@ -252,9 +259,9 @@ SETTINGSEOF
       mv "${extracted_dir}" "${toolchain_dir}"
     fi
 
-    echo "[setup] Lean toolchain installed to ${toolchain_dir}"
+    log "[setup] Lean toolchain installed to ${toolchain_dir}"
   else
-    echo "[setup] Lean toolchain already present at ${toolchain_dir}"
+    log "[setup] Lean toolchain already present at ${toolchain_dir}"
   fi
 
   # --- Register toolchain with elan via symlink ---
@@ -281,7 +288,7 @@ fi
 ELAN_INSTALL_FAILED=0
 
 if ! command -v elan >/dev/null 2>&1; then
-  echo "[setup] elan not found; installing to ${ELAN_HOME_DIR}"
+  log "[setup] elan not found; installing to ${ELAN_HOME_DIR}"
   elan_installer="$(mktemp)"
   trap 'rm -f "${elan_installer}"' EXIT
   curl -fsSL "${ELAN_INSTALLER_URL}" -o "${elan_installer}"
@@ -316,7 +323,7 @@ fi
 
 # If elan is available and the toolchain isn't set up yet, try the standard path.
 if command -v elan >/dev/null 2>&1; then
-  echo "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
+  log "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
   if ! elan toolchain list | tr -d '\r' | grep -Fq "${TOOLCHAIN}"; then
     if ! elan toolchain install "${TOOLCHAIN}" 2>/dev/null; then
       echo "[setup] elan toolchain install failed; trying manual install" >&2
@@ -326,7 +333,7 @@ if command -v elan >/dev/null 2>&1; then
       source "${ELAN_ENV_FILE}"
     fi
   else
-    echo "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
+    log "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
   fi
   elan default "${TOOLCHAIN}" 2>/dev/null || true
 fi
@@ -343,14 +350,23 @@ if ! command -v lake >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[setup] Lean environment is ready"
-echo "[setup] lake version: $(lake --version)"
+log "[setup] Lean environment is ready"
+log "[setup] lake version: $(lake --version)"
 
-echo "[setup] next steps:"
-echo "  source \"${ELAN_ENV_FILE}\""
-echo "  lake build"
+if [ "${QUIET}" -eq 0 ]; then
+  echo "[setup] next steps:"
+  echo "  source \"${ELAN_ENV_FILE}\""
+  echo "  lake build"
+fi
 
-if [ "${1:-}" = "--build" ]; then
-  echo "[setup] running lake build"
+BUILD_REQUESTED=0
+for arg in "$@"; do
+  case "${arg}" in
+    --build) BUILD_REQUESTED=1 ;;
+  esac
+done
+
+if [ "${BUILD_REQUESTED}" -eq 1 ]; then
+  log "[setup] running lake build"
   (cd "${ROOT_DIR}" && lake build)
 fi
