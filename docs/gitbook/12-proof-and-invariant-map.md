@@ -268,6 +268,47 @@ Implemented proof layers:
 `serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
 distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
 
+### M2 BFS completeness proof strategy (preparation complete)
+
+The M2 milestone plan ([`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md))
+now contains a detailed proof decomposition for eliminating the TPI-D07-BRIDGE sorry.
+Key architectural decisions:
+
+**Proof decomposition** — the sorry factors into three composable parts:
+
+1. **Prerequisite lemmas (Phase 0):** A `lookupDeps` helper bridging the executable
+   BFS dependency lookup to the declarative `serviceEdge` relation
+   (`serviceEdge_iff_lookupDeps`), plus five BFS unfolding lemmas (U1-U5) that
+   provide rewrite rules for each branch of the `go` function.
+
+2. **Core loop completeness (Phase 1):** A generalized `go_complete_inner` theorem
+   that carries a four-part invariant through the BFS recursion:
+   - INV1 (frontier reachable): some frontier node reaches target
+   - INV2 (visited closure): children of visited nodes are in visited or frontier
+   - INV3 (target fresh): target has not been visited
+   - INV4 (fuel adequate): fuel bounds remaining expansion steps
+
+   The proof uses strong induction on `fuel` with lexicographic ordering against
+   `frontier.length` for the visited-skip case. A critical helper lemma
+   (`visited_reaches_frontier`) proves that from any visited node reaching target,
+   a frontier node also reaching target exists.
+
+3. **Fuel adequacy (Phase 2):** A `serviceCountBounded` precondition bounding the
+   total number of registered services by `serviceBfsFuel st`. Strategy A
+   (explicit precondition) is recommended first; Strategy B (unconditional from
+   model analysis) as a follow-up.
+
+**Three key challenges addressed:**
+
+| Challenge | Resolution |
+|---|---|
+| Fuel recycling (visited-skip doesn't consume fuel) | Lexicographic induction on `(fuel, frontier.length)` |
+| Frontier growth (expansion appends deps) | Only matters in fuel-decreasing branch; frontier length irrelevant there |
+| Service counting (opaque `services` function) | Parameterize by witness list; bound via `serviceCountBounded` |
+
+Full execution plan with 10 ordered steps, dependency graph, and file placement
+guidance in the canonical milestone document.
+
 Frozen operational files (M0 semantics freeze):
 
 | File | SHA-256 |

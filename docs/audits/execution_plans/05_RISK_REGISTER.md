@@ -126,24 +126,24 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
 | D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. Layers 0-1, 3-4 proved; Layer 2 (BFS completeness) deferred as TPI-D07-BRIDGE with focused `sorry`. |
-| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. |
-| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. |
-| D4 | BFS induction measure (Risk 3) | **DEFERRED** | — | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. |
+| D2 | Fuel adequacy approach (Risk 1) | **STRATEGY CHOSEN** | Strategy A first (explicit `serviceCountBounded` precondition), then Strategy B (model-level unconditional bound) as follow-up | M2 preparation analysis (§8 of `M2_BFS_SOUNDNESS.md`) recommends explicit bound hypothesis to decouple completeness proof from model analysis. The opaque `services : ServiceId → Option ServiceGraphEntry` function cannot be enumerated; Strategy A sidesteps this with a witness list. Strategy B requires proving a global invariant linking service registration to `objectIndex` membership. |
+| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. Additional list lemmas identified for M2: `List.mem_filter` (critical for BFS expansion case), `List.mem_cons` (frontier reasoning). |
+| D4 | BFS induction measure (Risk 3) | **STRATEGY CHOSEN** | Lexicographic `(fuel, frontier.length)` with strong induction | M2 preparation analysis (§5.3 of `M2_BFS_SOUNDNESS.md`) confirms that simple `Nat` induction on `fuel` fails due to fuel recycling in visited-skip branch. Lexicographic measure `(fuel, frontier.length)` matches the termination measure Lean used to accept the `go` definition: fuel same + frontier shorter in visited case; fuel decreasing in expansion case. |
 
 ---
 
 ## Risk interaction matrix
 
 ```
-Risk 0 (vacuous invariant)
+Risk 0 (vacuous invariant) — RESOLVED via Strategy B
   │
-  ├── If Strategy A (trivial closure):
-  │     Risks 1, 2, 3 become irrelevant
-  │     Only Risk 4 (doc drift) applies
-  │
-  └── If Strategy B (fix invariant):
-        Risk 1 (fuel adequacy) → blocks M2
-        Risk 2 (list complexity) → blocks M1, M2
-        Risk 3 (BFS induction) → blocks M2
-        Risk 4 (doc drift) → blocks M5
+  └── Strategy B was chosen (fix invariant + declarative proof):
+        Risk 1 (fuel adequacy) → Strategy A chosen (preconditioned)
+        │   Phase 0-1 of M2 are independent of fuel adequacy
+        │   Phase 2 integrates the bound
+        Risk 2 (list complexity) → RESOLVED (direct lemmas suffice)
+        │   Additional List.mem_filter needed for M2 expansion case
+        Risk 3 (BFS induction) → Strategy chosen (lexicographic)
+        │   (fuel, frontier.length) measure confirmed
+        Risk 4 (doc drift) → mitigated by same-PR doc sync rule
 ```
