@@ -76,6 +76,53 @@ When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
 context-window pressure and "file too large" errors.
 
+## Writing and editing large files
+
+The Write tool replaces an entire file in one call. For files over ~200 lines
+this is error-prone: content gets silently truncated, sections are accidentally
+dropped, and the context window fills up. **Prefer the Edit tool for all
+changes to existing files**, regardless of size.
+
+**Rules for large-file changes:**
+
+1. **Never rewrite a large file with Write.** Use Edit with a precise
+   `old_string`/`new_string` pair targeting only the lines that change. This is
+   safer and uses far less context.
+2. **One logical change per Edit call.** If you need to change three separate
+   functions, make three Edit calls rather than one giant replacement that spans
+   the whole file.
+3. **Read before you edit.** Always Read the specific region first
+   (e.g., `offset=350, limit=50`) so the `old_string` matches exactly,
+   including indentation and whitespace.
+4. **Adding large new sections.** If you must insert more than ~80 new lines
+   into an existing file, break the insertion into multiple sequential Edit
+   calls (each ≤80 lines), anchoring each one to context already present in the
+   file.
+5. **Creating new large files.** When a new file must exceed ~200 lines, build
+   it incrementally:
+   - Write an initial skeleton (imports, structure, first section) with Write.
+   - Use successive Edit calls to append remaining sections, using the end of
+     the previously written content as the `old_string` anchor.
+   - Verify the final line count with `wc -l` via Bash.
+6. **Post-write verification.** After any large write or series of edits, spot-
+   check the result by reading the modified region (and the file's last few
+   lines) to confirm nothing was truncated or duplicated.
+
+**Example — appending a new theorem block to an invariant file:**
+
+```
+# Step 1: Read the anchor region at the end of the file
+Read("SeLe4n/Kernel/Capability/Invariant.lean", offset=880, limit=20)
+
+# Step 2: Edit using the last lines as old_string, appending new content
+Edit(file_path="SeLe4n/Kernel/Capability/Invariant.lean",
+     old_string="<last 2-3 lines of file>",
+     new_string="<those same lines>\n<new theorem block>")
+
+# Step 3: Verify
+Bash("wc -l SeLe4n/Kernel/Capability/Invariant.lean")
+```
+
 ## Handling large search and command output
 
 Grep and other search tools can return oversized results in this codebase.
