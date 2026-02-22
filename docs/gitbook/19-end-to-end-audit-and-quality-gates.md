@@ -2,10 +2,8 @@
 
 This chapter summarizes the current audit posture across implementation, testing framework behavior, and documentation fidelity.
 
-For the full audit narratives, see [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) (active),
-[`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md),
-[`docs/audits/AUDIT_v0.9.0.md`](../audits/AUDIT_v0.9.0.md), and
-[`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md) (historical).
+For the full audit narrative, see [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) (active).
+Prior audits (v0.8.0–v0.9.32) are archived in [`dev_history/audits/`](../../dev_history/audits/).
 
 For implementation sequencing tied to v0.11.0 findings, see
 [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md).

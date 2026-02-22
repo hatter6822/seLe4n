@@ -82,7 +82,7 @@ Primary references:
 
 ## Completed workstreams (WS-C, historical)
 
-- **WS-C1..WS-C8:** all completed. See [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+- **WS-C1..WS-C8:** all completed. See [`dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ## Codebase map
 
@@ -104,4 +104,4 @@ Primary references:
 
 ## Historical note
 
-WS-C (`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`), WS-B (`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`), and earlier M7/M6/M5/M4 slices remain available for historical traceability, but are not the active planning baseline. See the GitBook Historical Archive section for full context.
+Prior workstream plans (WS-C, WS-B), older audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters are archived in [`dev_history/`](dev_history/README.md) for traceability.

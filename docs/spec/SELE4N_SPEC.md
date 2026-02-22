@@ -161,13 +161,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ### 8.2 Historical Baselines (Retained for Traceability)
 
-| Artifact | Path |
-|---|---|
-| Historical findings (v0.9.32) | [`docs/audits/AUDIT_v0.9.32.md`](../audits/AUDIT_v0.9.32.md) |
-| Historical execution (WS-C) | [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) |
-| Historical findings (v0.9.0) | [`docs/audits/AUDIT_v0.9.0.md`](../audits/AUDIT_v0.9.0.md) |
-| Historical execution (WS-B) | [`docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md) |
-| Historical findings (v0.8.0) | [`docs/audits/AUDIT_v0.8.0.md`](../audits/AUDIT_v0.8.0.md) |
+Prior audits and workstream plans are archived in [`dev_history/audits/`](../../dev_history/audits/) for traceability. See [`dev_history/README.md`](../../dev_history/README.md) for a full index.
 
 ---
 

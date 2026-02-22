@@ -37,7 +37,7 @@ run_check "INVARIANT" rg -n '^inductive ResolveError' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveSlot' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def cspaceResolvePath' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceLookupPath' SeLe4n/Kernel/Capability/Operations.lean
-run_check "DOC" rg -n '^### WS-B5 — CSpace semantics completion \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^### WS-B5 — CSpace semantics completion \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 # WS-B6 closure anchors: notification IPC object model and transition surface.
 run_check "INVARIANT" rg -n '^inductive NotificationState' SeLe4n/Model/Object.lean
@@ -45,7 +45,7 @@ run_check "INVARIANT" rg -n '^structure Notification' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 # WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
 run_check "INVARIANT" rg -n '^inductive Confidentiality' SeLe4n/Kernel/InformationFlow/Policy.lean
@@ -57,9 +57,9 @@ run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/P
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^private def runInformationFlowChecks' tests/InformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
-run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/IF_M1_BASELINE_PACKAGE.md
+run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' dev_history/IF_M1_BASELINE_PACKAGE.md
 # shellcheck disable=SC2016
 run_check "DOC" rg -n '(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.11\.0\.md`$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.9\.32\.md`$)' README.md
 run_check "DOC" rg -n '(^- \*\*Current active portfolio:\*\* WS-D1\.\.WS-D6)|(^- \*\*Current active portfolio:\*\* WS-C1\.\.WS-C8)' docs/spec/SELE4N_SPEC.md
@@ -67,8 +67,8 @@ run_check "DOC" rg -n '(^- \*\*Comprehensive Audit 2026-02 execution \(WS-B port
 run_check "DOC" rg -n '(^1\. Pick one coherent WS-D target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P1:\*\* WS-D1 test validity restoration)|(^1\. Pick one coherent WS-C target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P2:\*\* WS-C5 assurance expansion \(completed\)$)' docs/gitbook/06-development-workflow.md
 run_check "DOC" rg -n '(^- \*\*WS-D1:\*\* Test error handling and validity)|(^- \*\*WS-C1:\*\* IPC handshake correctness -- completed$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "DOC" rg -n '(^1\. Sync branch and choose one coherent WS-D slice \(prefer next priority in the active plan, starting with P1 blockers\)\.$)|(^## 3\) Current execution slice \(WS-D portfolio\)$)|(^1\. Sync branch and choose one coherent WS-C slice \(prefer next priority in the active plan, starting with P1 blockers\)\.$)|(^## 3\) Current execution slice \(WS-C portfolio\)$)' docs/DEVELOPMENT.md
-run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
-run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 run_check "DOC" rg -n '^# Threat Model and Security Hardening Baseline \(WS-B9\)' docs/THREAT_MODEL.md
 run_check "DOC" rg -n '^# Threat Model and Security Hardening \(WS-B9\)' docs/gitbook/28-threat-model-and-security-hardening.md
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
@@ -432,8 +432,8 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 run_check "DOC" rg -n 'M3\.5' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md
 run_check "DOC" rg -n 'M4-A|M4-B|M5|M6|M7' docs/spec/SELE4N_SPEC.md
 run_check "DOC" rg -n 'WS-B1\.\.WS-B11|WS-B portfolio|Comprehensive Audit 2026-02' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n 'Most recently completed slice:.*M7|M7 remediation is complete|M7 is complete and archived' README.md docs/gitbook/README.md docs/gitbook/23-m7-remediation-closeout-packet.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md
-run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E|Historical baseline retained for traceability|M6 architecture-boundary assumptions/adapters' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
+run_check "DOC" rg -n 'Most recently completed slice:.*M7|M7 remediation is complete|M7 is complete and archived' README.md docs/gitbook/README.md dev_history/gitbook/23-m7-remediation-closeout-packet.md dev_history/gitbook/21-m7-current-slice-outcomes-and-workstreams.md
+run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E|dev_history/|M6 architecture-boundary assumptions/adapters' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
 run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
 # shellcheck disable=SC2016
 run_check "DOC" rg -n 'Tier 3 fails \(`\./scripts/test_tier3_invariant_surface\.sh`\)' docs/gitbook/07-testing-and-ci.md
@@ -443,9 +443,9 @@ run_check "DOC" rg -n 'Tier 4 fails \(`\./scripts/test_nightly\.sh` / `\./script
 # Full-suite contract should continue to include Tier 3.
 run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
 
-run_check "DOC" rg -n '^# M7 Remediation Closeout Packet' docs/M7_CLOSEOUT_PACKET.md docs/gitbook/23-m7-remediation-closeout-packet.md
-run_check "DOC" rg -n 'Next-slice kickoff dependencies and owners|Exit-gate checklist' docs/M7_CLOSEOUT_PACKET.md
-run_check "DOC" rg -n 'M7 Remediation Closeout Packet' docs/gitbook/SUMMARY.md docs/gitbook/23-m7-remediation-closeout-packet.md
+run_check "DOC" rg -n '^# M7 Remediation Closeout Packet' dev_history/M7_CLOSEOUT_PACKET.md dev_history/gitbook/23-m7-remediation-closeout-packet.md
+run_check "DOC" rg -n 'Next-slice kickoff dependencies and owners|Exit-gate checklist' dev_history/M7_CLOSEOUT_PACKET.md
+run_check "DOC" rg -n 'M7 Remediation Closeout Packet' dev_history/gitbook/23-m7-remediation-closeout-packet.md
 run_check "DOC" rg -n 'Contribution guide|Change history' README.md
 run_check "DOC" test -f CONTRIBUTING.md
 run_check "DOC" test -f CHANGELOG.md
@@ -458,7 +458,7 @@ run_check "DOC" rg -n 'WS-B10 CodeQL policy decision|informational/non-blocking'
 run_check "DOC" rg -n 'lean_toolchain_update_proposal\.yml|dependabot\.yml' docs/CI_POLICY.md docs/CI_TELEMETRY_BASELINE.md
 run_check "DOC" rg -n 'ci_capture_timing\.sh|ci_flake_probe\.sh' docs/CI_TELEMETRY_BASELINE.md .github/workflows/lean_action_ci.yml .github/workflows/nightly_determinism.yml
 run_check "DOC" rg -n '^# CI Maturity and Telemetry Baseline \(WS-B10\)' docs/gitbook/29-ci-maturity-and-telemetry-baseline.md
-run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' docs/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
+run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 run_check "DOC" rg -n '^# Scenario framework \(WS-B11\)' tests/scenarios/README.md
 run_check "DOC" rg -n '(^## Active planning \(v0\.11\.0 — WS-D\)$)|(^## 16\) WS-B11 closure evidence$)|(^## 2\) Active workstreams \(WS-C portfolio\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
@@ -478,6 +478,6 @@ run_check "DOC" rg -n "^\s*continue-on-error:\s*true" .github/workflows/platform
 run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/M7_CLOSEOUT_PACKET.md docs/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/gitbook/20-repository-audit-remediation-workstreams.md
+run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md dev_history/M7_CLOSEOUT_PACKET.md dev_history/gitbook/21-m7-current-slice-outcomes-and-workstreams.md dev_history/gitbook/20-repository-audit-remediation-workstreams.md
 
 finalize_report

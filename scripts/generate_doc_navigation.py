@@ -44,8 +44,8 @@ def format_readme(manifest: dict) -> str:
     lines.append("")
     lines.append("- Canonical execution matrix:")
     workstream_doc = manifest.get("current_workstream_doc", {
-        "label": "docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md",
-        "path": "../audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md",
+        "label": "docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md",
+        "path": "../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md",
     })
     lines.append(f"  [`{workstream_doc['label']}`]({workstream_doc['path']})")
     lines.append("- GitBook planning chapter:")
@@ -55,9 +55,9 @@ def format_readme(manifest: dict) -> str:
     })
     lines.append(f"  [{planning_chapter['title']}]({planning_chapter['path']})")
     lines.append("")
-    lines.append("## Historical slice archive")
+    lines.append("## Development history")
     lines.append("")
-    lines.append("M7, M6, M5, and M4 chapters are retained as historical references and should not be interpreted as active execution status.")
+    lines.append("Milestone closeouts, prior audits (v0.8.0–v0.9.32), and completed workstream plans are archived in [`dev_history/`](../../dev_history/README.md).")
     lines.append("")
     return "\n".join(lines)
 
