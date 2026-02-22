@@ -125,10 +125,10 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 
 | # | Decision | Status | Chosen option | Rationale |
 |---|---|---|---|---|
-| D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. Layers 0-1, 3-4 proved; Layer 2 (BFS completeness) deferred as TPI-D07-BRIDGE with focused `sorry`. |
-| D2 | Fuel adequacy approach (Risk 1) | **DEFERRED** | Strategy B (preconditioned) | BFS completeness bridge (`bfs_complete_for_nontrivialPath`) carries the fuel adequacy assumption implicitly. Formal proof deferred to future infrastructure work. |
-| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append` and `List.mem_singleton` sufficed for edge characterization. No Finset escalation needed. |
-| D4 | BFS induction measure (Risk 3) | **DEFERRED** | — | BFS loop invariant proof not needed for current closure (declarative proof bypasses BFS reasoning for preservation). Deferred with TPI-D07-BRIDGE. |
+| D1 | Invariant definition strategy (Risk 0) | **RESOLVED** | Strategy B (fix invariant + declarative proof) | BFS self-reachability confirmed vacuous. Invariant redefined declaratively using `serviceNontrivialPath`. All Layers 0-4 fully proved including BFS soundness bridge. |
+| D2 | Fuel adequacy approach (Risk 1) | **RESOLVED** | Strategy A (preconditioned via `serviceCountBounded`) | `serviceCountBounded st` defined as explicit precondition: for any source, all `Nodup` lists of reachable nodes have length < `serviceBfsFuel st`. Propagated to `serviceRegisterDependency_preserves_acyclicity`. Operationally guaranteed by service creation protocol (backing objects bound service count). |
+| D3 | List reasoning strategy (Risk 2) | **RESOLVED** | Direct list lemmas | `List.mem_append`, `List.mem_filter`, `List.mem_cons`, `List.nodup_cons` sufficed for BFS completeness proof. No Finset escalation needed. |
+| D4 | BFS induction measure (Risk 3) | **RESOLVED** | Nat induction on `fuel` + inner frontier induction | `go_complete` uses simple Nat induction on `fuel` with inner structural induction on `frontier` for the visited-skip case. Fuel recycling (visited skip preserves fuel) is handled by frontier shrinking; expansion consumes fuel and grows visited list. Budget invariant: `fuel + visited.length = serviceBfsFuel st`. |
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Service Dependency Acyclicity Invariant: `sorry` Elimination
 
-**Target:** Replace the deferred `sorry` on `serviceRegisterDependency_preserves_acyclicity` with a complete formal proof. The main preservation theorem is now sorry-free (line 591). The sole remaining `sorry` is on `bfs_complete_for_nontrivialPath` (line 531, annotated TPI-D07-BRIDGE).
+**Target:** Replace the deferred `sorry` on `serviceRegisterDependency_preserves_acyclicity` with a complete formal proof. **Status: COMPLETE.** The entire proof surface is sorry-free. The BFS completeness bridge `bfs_complete_for_nontrivialPath` is fully proved under the `serviceCountBounded` precondition (TPI-D07-BRIDGE closed).
 
 **Tracked issue:** TPI-D07 from [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md#issue-tpi-d07-closed--risk-0-resolved--service-dependency-acyclicity-invariant)
 
@@ -49,8 +49,8 @@
 |---|---|---|---|
 | M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `COMPLETE` | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, revised `serviceDependencyAcyclic`, 7 structural + 3 frame lemmas | None |
-| M2 | `DEFERRED` | `bfs_complete_for_nontrivialPath` carries focused `sorry` (TPI-D07-BRIDGE); full BFS soundness proof deferred | R1: Fuel adequacy, R3: BFS loop invariant |
-| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` is sorry-free; `nontrivialPath_post_insert_cases` proved | None (uses M2 bridge with `sorry`) |
+| M2 | `COMPLETE` | Full B1-B7 BFS soundness suite proved without `sorry`; `bfs_complete_for_nontrivialPath` proved under `serviceCountBounded` precondition (TPI-D07-BRIDGE closed) | None (R1 resolved: Approach A; R3 resolved: fuel + frontier induction) |
+| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` is sorry-free; `nontrivialPath_post_insert_cases` proved; now takes `serviceCountBounded` precondition | None |
 | M4 | `PARTIAL` | Depth-5 chain smoke test exists in `MainTraceHarness`; dedicated `NegativeStateSuite` expansion pending | None |
 | M5 | `IN PROGRESS` | Canonical docs updated; execution plan status sync in progress | R4: Documentation drift |
 
@@ -58,13 +58,13 @@
 
 ```
 M0 ──→ M1 ──→ M2 ──→ M3 ──→ M4 ──→ M5
-  ✓       ✓    deferred  ✓    partial  in progress
+  ✓       ✓       ✓      ✓    partial  in progress
                               │
-                              └── preservation theorem sorry-free here
-                                  (BFS bridge sorry deferred at M2)
+                              └── full proof chain: zero sorry
+                                  (BFS bridge proved at M2 under serviceCountBounded)
 ```
 
-M1 and M3 are complete. M2 (full BFS soundness) was deferred — the focused `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE) connects the declarative path relation to the executable BFS and is operationally validated by tests. M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
+M0-M3 are complete. The full B1-B7 BFS soundness suite is proved at M2 under the `serviceCountBounded` precondition (Approach A — explicit fuel adequacy hypothesis). The preservation theorem at M3 propagates this precondition. M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
 
 ## Quick-start reading order
 

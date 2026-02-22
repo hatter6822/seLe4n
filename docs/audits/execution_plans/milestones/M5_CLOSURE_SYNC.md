@@ -24,7 +24,7 @@
 ## Issue TPI-D07 (CLOSED — Risk 0 resolved) — Service dependency acyclicity invariant
 ```
 
-This update has been completed. The tracked proof issues document now reflects the 4-layer proof infrastructure, the sorry-free preservation theorem, and the deferred TPI-D07-BRIDGE obligation.
+This update has been completed. The tracked proof issues document now reflects the 4-layer proof infrastructure, the sorry-free preservation theorem, and the fully proved TPI-D07-BRIDGE (BFS completeness bridge under `serviceCountBounded`).
    ```
 
 ### 1.2 Update workstream plan completion evidence
@@ -37,7 +37,7 @@ theorem uses `sorry` for BFS soundness (tracked as TPI-D07)
 ```
 
 **Status: DONE.** The workstream plan has been updated:
-- Line 71: `TPI-D07 closed (Risk 0 resolved: declarative acyclicity with Layers 0-4; sole deferred sorry on BFS bridge TPI-D07-BRIDGE)`
+- Line 71: `TPI-D07 closed (Risk 0 resolved: declarative acyclicity with full Layers 0-4 proofs; BFS soundness bridge TPI-D07-BRIDGE now proved under serviceCountBounded)`
 - Lines 336-343: Full completion evidence with Risk 0 resolution details
 - Line 478: Status dashboard updated
 
@@ -45,16 +45,16 @@ theorem uses `sorry` for BFS soundness (tracked as TPI-D07)
 
 **File:** `docs/CLAIM_EVIDENCE_INDEX.md`
 
-**Status: DONE.** TPI-D07 is CLOSED with note about TPI-D07-BRIDGE:
+**Status: DONE.** TPI-D07 is CLOSED with TPI-D07-BRIDGE fully resolved:
 ```
-| TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge `sorry` tracked as TPI-D07-BRIDGE) | WS-D4 | CLOSED |
+| TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge fully proved under serviceCountBounded — TPI-D07-BRIDGE closed) | WS-D4 | CLOSED |
 ```
 
 ### 1.4 Update proof and invariant map
 
 **File:** `docs/gitbook/12-proof-and-invariant-map.md`
 
-**Status: DONE.** Section 13 (F-07) now shows preservation theorem `(no sorry)` with reference to §14. Section 14 documents the full 4-layer proof infrastructure including the TPI-D07-BRIDGE obligation.
+**Status: DONE.** Section 13 (F-07) now shows preservation theorem `(no sorry)` with reference to §14. Section 14 documents the full 4-layer proof infrastructure. TPI-D07-BRIDGE is fully closed — BFS completeness bridge proved under `serviceCountBounded`.
 
 2. If the full proof infrastructure was built (Path B from M3), add entries for new intermediate lemmas:
    - `serviceEdge` — direct dependency edge relation
@@ -78,8 +78,8 @@ After all changes, verify no `sorry` remains in the service proof surface:
 
 ```bash
 rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean
-# Expected: 1 match at line 531 (bfs_complete_for_nontrivialPath, annotated TPI-D07-BRIDGE)
-# The preservation theorem (serviceRegisterDependency_preserves_acyclicity) is sorry-free.
+# Expected: zero matches — entire file sorry-free (TPI-D07-BRIDGE closed)
+# All theorems including bfs_complete_for_nontrivialPath are fully proved.
 ```
 
 ### 2.2 TPI-D07 status audit

@@ -292,13 +292,96 @@ If these are not available in the project's Lean/Std import set, they may need t
 
 ## 5. Exit criteria
 
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
+> **Status: COMPLETED.** The full B1-B7 BFS soundness suite has been implemented
+> and all theorems are proved without `sorry`. The BFS bridge
+> `bfs_complete_for_nontrivialPath` is fully proved under the
+> `serviceCountBounded` precondition (Approach A — explicit fuel adequacy
+> hypothesis). Fuel adequacy is propagated as a precondition to
+> `serviceRegisterDependency_preserves_acyclicity`.
 
-- [ ] `serviceHasPathTo_true_implies_reachable` (B2) — not implemented (deferred)
-- [ ] `serviceHasPathTo_false_implies_not_reachable` (B6) — not implemented (deferred)
-- [x] Fuel adequacy approach chosen: Approach B (preconditioned, implicit in TPI-D07-BRIDGE)
-- [ ] Full BFS lemma suite (B1-B7) — deferred; `bfs_complete_for_nontrivialPath` with focused `sorry` used instead
-- [x] `lake build` succeeds (with TPI-D07-BRIDGE warning)
+- [x] `serviceHasPathTo_true_implies_reachable` (B2) — fully proved
+- [x] `serviceHasPathTo_false_implies_not_reachable` (B7) — fully proved (contrapositive of B5)
+- [x] Fuel adequacy approach: Approach A (preconditioned via `serviceCountBounded`)
+- [x] Full BFS lemma suite (B1-B7) — all theorems proved without `sorry`
+- [x] `lake build` succeeds with zero errors and zero `sorry` warnings
+
+---
+
+## 6. Implementation summary
+
+The M2 milestone was completed using a direct BFS loop-invariant proof
+strategy. Rather than decomposing into sub-milestones, all B1-B7 theorems
+were proved in a single coherent implementation.
+
+### 6.1 Proof architecture
+
+The proof factors into two independent directions:
+
+**Easy direction (B1-B3): BFS `true` → declarative path**
+- B1 (`go_true_implies_exists_reachable`): Nested induction on `fuel` and
+  `frontier`. If `go` returns `true`, some frontier node reaches target via
+  `serviceReachable`. The key case is the expansion branch, where a
+  dependency edge composes with the recursive result.
+- B2 (`serviceHasPathTo_true_implies_reachable`): Wrapper that instantiates
+  B1 with initial frontier `[src]` and empty visited list.
+- B3 (`serviceHasPathTo_true_implies_nontrivial`): Derives from B2 by
+  case-splitting `serviceReachable`: if `src ≠ target`, the `.refl` case
+  is impossible, so the path has at least one `.step` constructor.
+
+**Hard direction (B4-B7): declarative path → BFS `true`**
+- `serviceCountBounded` (definition): Fuel adequacy precondition — for any
+  source, all `Nodup` lists of reachable nodes have length < `serviceBfsFuel st`.
+- `frontier_witness_of_reachable` (helper): Given the closure invariant
+  (visited nodes' successors are in visited ∪ frontier), if a visited-or-frontier
+  node reaches `target` and `target ∉ visited`, then some unvisited frontier
+  node reaches `target`. Proved by induction on `serviceReachable`.
+- B4 (`go_complete`): Core BFS loop completeness with 7 invariant conditions:
+  (1) frontier witness reaches target, (2) frontier nodes reachable from src,
+  (3) visited nodes reachable from src, (4) visited.Nodup, (5) target ∉ visited,
+  (6) fuel + visited.length = serviceBfsFuel st, (7) closure invariant. Proved
+  by induction on `fuel` with inner induction on `frontier`.
+- B5 (`serviceHasPathTo_complete`): Outer wrapper instantiating B4 with
+  initial state (frontier `[src]`, visited `[]`, vacuous closure).
+- B6 (`bfs_complete_for_nontrivialPath`): Extracts reachability from
+  nontrivial path and delegates to B5. Closes TPI-D07-BRIDGE.
+- B7 (`serviceHasPathTo_false_implies_not_reachable`): Contrapositive of B5.
+
+### 6.2 Key design decisions
+
+1. **Fuel adequacy as precondition (Approach A):** `serviceCountBounded st`
+   is an explicit hypothesis on `bfs_complete_for_nontrivialPath` and
+   propagated to `serviceRegisterDependency_preserves_acyclicity`. This
+   avoids model-level changes to `SystemState` while keeping the proof
+   unconditional within its preconditions. The precondition is operationally
+   guaranteed by the service creation protocol (service registration adds
+   backing objects to `objectIndex`, bounding the service count).
+
+2. **Induction strategy:** `go_complete` uses simple Nat induction on `fuel`,
+   not well-founded or lexicographic induction. The fuel-recycling case
+   (visited node skip) is handled by an inner induction on `frontier` within
+   the `succ n` case: skipping a visited node does not consume fuel but
+   strictly shrinks the frontier, so the inner IH applies. The expansion
+   case consumes one fuel unit and strictly grows the visited list.
+
+3. **Closure invariant formulation:** The invariant tracks that all successors
+   of visited nodes are in visited ∪ frontier. This is maintained across both
+   the skip and expansion cases. When the frontier witness enters the visited
+   set (expansion case), `frontier_witness_of_reachable` extracts a new
+   frontier witness, maintaining the invariant.
+
+### 6.3 Theorem inventory (implemented)
+
+| ID | Name | Status | Lines |
+|---|---|---|---|
+| B1 | `go_true_implies_exists_reachable` | Proved (private) | ~33 |
+| B2 | `serviceHasPathTo_true_implies_reachable` | Proved | ~8 |
+| B3 | `serviceHasPathTo_true_implies_nontrivial` | Proved | ~8 |
+| — | `serviceCountBounded` (def) | Defined | ~5 |
+| — | `frontier_witness_of_reachable` (helper) | Proved (private) | ~29 |
+| B4 | `go_complete` | Proved (private) | ~100 |
+| B5 | `serviceHasPathTo_complete` | Proved | ~15 |
+| B6 | `bfs_complete_for_nontrivialPath` | Proved | ~5 |
+| B7 | `serviceHasPathTo_false_implies_not_reachable` | Proved | ~6 |
 
 ## Validation
 

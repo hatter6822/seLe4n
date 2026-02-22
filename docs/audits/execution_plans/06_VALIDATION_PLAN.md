@@ -11,10 +11,10 @@ This document specifies the validation procedures for each milestone and the fin
 | M0 | `./scripts/test_tier1_build.sh` | Build passes with comment-only changes | ✓ Complete |
 | M0 | `sha256sum` of frozen files | No operational definitions changed | ✓ Complete |
 | M1 | `./scripts/test_tier1_build.sh` | New definitions and lemmas compile | ✓ Complete |
-| M1 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | Only BFS bridge sorry (line 531, TPI-D07-BRIDGE) | ✓ Verified |
-| M2 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | `bfs_complete_for_nontrivialPath` sorry at line 531 (deferred) | ✓ Accepted (TPI-D07-BRIDGE) |
+| M1 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | Zero matches — no sorry in file | ✓ Verified |
+| M2 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | Zero matches — full B1-B7 suite proved (TPI-D07-BRIDGE closed) | ✓ Complete |
 | M3 | `./scripts/test_tier1_build.sh` | Preservation theorem compiles sorry-free | ✓ Complete |
-| M3 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | **One match** at line 531 (TPI-D07-BRIDGE) — preservation theorem sorry-free | ✓ Verified |
+| M3 | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | Zero matches — entire file sorry-free | ✓ Verified |
 | M4 | `./scripts/test_tier2_negative.sh` | Test cases pass | Pending (expanded tests) |
 | M4 | Manual: existing tests unchanged | No regression in test expectations | ✓ Verified |
 | M5 | `rg 'TPI-D07.*IN PROGRESS' docs/` | No docs show TPI-D07 as open | ✓ Verified |
@@ -36,14 +36,13 @@ lake clean && lake build
 ### 2.2 Sorry verification
 
 ```bash
-# Primary check: only TPI-D07-BRIDGE sorry remains
+# Primary check: zero sorry in Invariant.lean
 rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean
-# Expected output: 1 match at line 531 (bfs_complete_for_nontrivialPath, annotated TPI-D07-BRIDGE)
-# The preservation theorem (serviceRegisterDependency_preserves_acyclicity) is sorry-free.
+# Expected output: no matches — full B1-B7 suite proved, TPI-D07-BRIDGE closed
 
-# Secondary check: no new sorry anywhere in kernel
+# Secondary check: no sorry anywhere in kernel
 rg 'sorry' SeLe4n/Kernel/
-# Expected: only TPI-D07-BRIDGE at Service/Invariant.lean:531
+# Expected: no matches — entire kernel proof surface is sorry-free
 ```
 
 ### 2.3 Tiered test gates
@@ -118,7 +117,7 @@ These checks ensure TPI-D07 changes do not regress existing functionality:
 
 | # | Check | Method | Expected | Verified? |
 |---|---|---|---|---|
-| 1 | Preservation theorem sorry-free | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | 1 match (line 531, TPI-D07-BRIDGE only) | [x] |
+| 1 | Entire file sorry-free | `rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean` | Zero matches (TPI-D07-BRIDGE closed) | [x] |
 | 2 | TPI-D07 status = CLOSED in TRACKED_PROOF_ISSUES | Manual inspection line 214 | `(CLOSED — Risk 0 resolved)` | [x] |
 | 3 | TPI-D07 status = CLOSED in CLAIM_EVIDENCE_INDEX | Manual inspection line 37 | `CLOSED` | [x] |
 | 4 | No stale `partially closed` in WORKSTREAM_PLAN | Manual inspection lines 71, 336-343, 478 | TPI-D07 closed throughout | [x] |
@@ -127,7 +126,7 @@ These checks ensure TPI-D07 changes do not regress existing functionality:
 | 7 | Tier 0–3 gates pass | `./scripts/test_full.sh` | Exit 0 | [ ] |
 | 8 | Depth-5 chain test present | `rg 'depth-5\|chainL3' SeLe4n/Testing/MainTraceHarness.lean` | ≥ 2 matches | [x] |
 | 9 | Operations.lean unchanged | `sha256sum` comparison | Same hash | [x] |
-| 10 | No new `sorry` in kernel | `rg 'sorry' SeLe4n/Kernel/` | Only TPI-D07-BRIDGE | [x] |
+| 10 | No `sorry` in kernel | `rg 'sorry' SeLe4n/Kernel/` | Zero matches — entire proof surface sorry-free | [x] |
 
 ---
 

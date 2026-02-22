@@ -69,7 +69,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~500 lines)
 - `scripts/test_tier3_invariant_surface.sh` (~480 lines)
 - `SeLe4n/Model/State.lean` (~496 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~470 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~1009 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~447 lines)
 
 When editing large files, read the specific region around the target lines

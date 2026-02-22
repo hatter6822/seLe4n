@@ -253,10 +253,10 @@ After Strategy B implementation (Risk 0 resolved), the documentation-to-code sta
 
 | Document | TPI-D07 status | Accuracy vs. code |
 |---|---|---|
-| `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | CLOSED (Risk 0 resolved) | Correct — preservation theorem sorry-free; BFS bridge deferred as TPI-D07-BRIDGE |
-| `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | TPI-D07 closed | Correct — lines 336-343 and 478 reflect current state |
-| `CLAIM_EVIDENCE_INDEX.md` | CLOSED | Correct — BFS bridge `sorry` tracked as TPI-D07-BRIDGE |
-| `gitbook/12-proof-and-invariant-map.md` | §14 documents 4-layer infrastructure | Correct — preservation theorem `(no sorry)`; §14 accurate |
-| `test_tier0_hygiene.sh` | Excludes `TPI-D*` tagged `sorry` markers | Correct — TPI-D07-BRIDGE annotation on `bfs_complete_for_nontrivialPath` |
+| `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | CLOSED (Risk 0 resolved) | Correct — full B1-B7 suite proved; TPI-D07-BRIDGE closed |
+| `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | TPI-D07 closed | Correct — BFS bridge proved under `serviceCountBounded` |
+| `CLAIM_EVIDENCE_INDEX.md` | CLOSED | Correct — TPI-D07-BRIDGE closed |
+| `gitbook/12-proof-and-invariant-map.md` | §14 documents 4-layer infrastructure | Correct — all layers proved without `sorry` |
+| `test_tier0_hygiene.sh` | No `sorry` exclusions needed | Correct — zero `sorry` in proof surface |
 
-**Remaining `sorry` in `Invariant.lean` (line 531):** `bfs_complete_for_nontrivialPath` — deferred BFS completeness bridge. This is the sole proof debt in the file, annotated TPI-D07-BRIDGE, and operationally validated by cycle detection tests and the depth-5 dependency chain smoke test.
+**No remaining `sorry` in `Invariant.lean`.** The BFS completeness bridge `bfs_complete_for_nontrivialPath` is fully proved under the `serviceCountBounded` precondition. TPI-D07-BRIDGE is closed. The entire proof surface is `sorry`-free.

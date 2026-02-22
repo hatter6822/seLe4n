@@ -201,7 +201,7 @@ Service dependency registration now includes BFS-based cycle detection:
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
 - `serviceDependencyAcyclic` — acyclicity invariant definition
-- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge deferred to `bfs_complete_for_nontrivialPath` as TPI-D07-BRIDGE — see §14)
+- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge `bfs_complete_for_nontrivialPath` fully proved under `serviceCountBounded` — see §14)
 
 ### F-11: serviceRestart partial-failure semantics
 
@@ -253,20 +253,28 @@ Implemented proof layers:
   `serviceNontrivialPath_of_reachable_ne`, `serviceNontrivialPath_trans`,
   `serviceNontrivialPath_step_right`. Frame lemmas: `serviceEdge_storeServiceState_ne`,
   `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
-- **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
-  bridge connecting declarative paths to the executable BFS check. Uses focused `sorry`
-  (annotated TPI-D07-BRIDGE); operationally validated by executable tests
+- **Layer 2 (BFS bridge):** Full B1-B7 suite proving BFS-declarative path
+  equivalence. `bfs_complete_for_nontrivialPath` — BFS completeness bridge fully
+  proved under `serviceCountBounded` precondition (no `sorry`). Additional theorems:
+  `go_true_implies_exists_reachable` (B1), `serviceHasPathTo_true_implies_reachable` (B2),
+  `serviceHasPathTo_true_implies_nontrivial` (B3), `frontier_witness_of_reachable`
+  (closure helper), `go_complete` (B4), `serviceHasPathTo_complete` (B5),
+  `serviceHasPathTo_false_implies_not_reachable` (B7)
 - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
   any post-insertion nontrivial path into either a pre-state path or a composition
   using the new edge with pre-state reachability
 - **Layer 4 (Closure):** `serviceRegisterDependency_preserves_acyclicity` — genuine
   preservation proof via post-insertion path decomposition and contradiction with the
-  BFS cycle-detection check. The main theorem is sorry-free
+  BFS cycle-detection check. Takes `serviceCountBounded` precondition for fuel adequacy
 
-**Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
-`bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
-`serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
-distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
+**Closure (TPI-D07-BRIDGE completed):** The BFS completeness bridge
+`bfs_complete_for_nontrivialPath` is fully proved. The proof uses a direct BFS
+loop-invariant approach: `go_complete` tracks a 7-part invariant (frontier witness,
+visited closure, Nodup, fuel budget) and proceeds by Nat induction on fuel with
+inner frontier induction. Fuel adequacy is explicit: `serviceCountBounded st`
+bounds the reachable service count below `serviceBfsFuel st`, ensuring the BFS
+always has sufficient fuel. This precondition is operationally guaranteed by the
+service creation protocol and propagated to the preservation theorem.
 
 Frozen operational files (M0 semantics freeze):
 

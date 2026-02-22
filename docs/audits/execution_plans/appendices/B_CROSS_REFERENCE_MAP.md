@@ -48,35 +48,29 @@ This appendix provides bidirectional mappings between the execution plan documen
 
 | Theorem / Definition | Planned file | Section |
 |---|---|---|
-| `serviceEdge` (D1) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceReachable` (D2) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceHasNontrivialPath` (D3) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceDependencyAcyclicDecl` (D4) | `Service/Invariant.lean` | Between line 340 and 349 |
-| `serviceEdge_iff_mem` (L1) | `Service/Invariant.lean` | After D1 |
-| `serviceReachable_trans` (L2) | `Service/Invariant.lean` | After D2 |
-| `serviceReachable_of_edge` (L3) | `Service/Invariant.lean` | After D2 |
-| `serviceReachable_step_right` (L4) | `Service/Invariant.lean` | After L2, L3 |
-| `serviceHasNontrivialPath_of_edge` (L5) | `Service/Invariant.lean` | After D3 |
-| `storeServiceState_objectIndex_eq` (S1) | `Service/Invariant.lean` or `State.lean` | Frame conditions section |
-| `serviceBfsFuel_storeServiceState_eq` (S2) | `Service/Invariant.lean` | After S1 |
-| `serviceEdge_storeServiceState_eq` (S3) | `Service/Invariant.lean` | After D1 |
-| `serviceEdge_storeServiceState_ne` (S4) | `Service/Invariant.lean` | After D1 |
-| `serviceEdge_post_insert` (S5) | `Service/Invariant.lean` | After S3 |
-| `serviceHasPathTo_go_true_implies_exists_reachable` (B1) | `Service/Invariant.lean` | BFS soundness section |
+| `serviceEdge` (D1) | `Service/Invariant.lean` | Layer 0 definitions |
+| `serviceReachable` (D2) | `Service/Invariant.lean` | Layer 0 definitions |
+| `serviceNontrivialPath` (D3) | `Service/Invariant.lean` | Layer 0 definitions |
+| `serviceDependencyAcyclic` (D4) | `Service/Invariant.lean` | Layer 0 definitions |
+| `serviceReachable_trans` (L1) | `Service/Invariant.lean` | After D2 |
+| `serviceReachable_of_edge` (L2) | `Service/Invariant.lean` | After D2 |
+| `serviceReachable_of_nontrivialPath` (L3) | `Service/Invariant.lean` | After D3 |
+| `serviceNontrivialPath_of_edge_reachable` (L4) | `Service/Invariant.lean` | After D3 |
+| `serviceNontrivialPath_of_reachable_ne` (L5) | `Service/Invariant.lean` | After L4 |
+| `serviceNontrivialPath_trans` (L6) | `Service/Invariant.lean` | After L4 |
+| `serviceNontrivialPath_step_right` (L7) | `Service/Invariant.lean` | After L6 |
+| `serviceEdge_storeServiceState_ne` (S1) | `Service/Invariant.lean` | Frame lemma — non-updated service |
+| `serviceEdge_storeServiceState_updated` (S2) | `Service/Invariant.lean` | Frame lemma — updated service |
+| `serviceEdge_post_insert` (S3) | `Service/Invariant.lean` | After S1, S2 |
+| `go_true_implies_exists_reachable` (B1) | `Service/Invariant.lean` | BFS soundness section (private) |
 | `serviceHasPathTo_true_implies_reachable` (B2) | `Service/Invariant.lean` | After B1 |
 | `serviceHasPathTo_true_implies_nontrivial` (B3) | `Service/Invariant.lean` | After B2 |
-| `serviceHasPathTo_go_invariant` / `go_complete` (B4) | `Service/Invariant.lean` | BFS soundness section |
-| `serviceBfsFuel_sufficient` (B5) | `Service/Invariant.lean` | After B4 |
-| `serviceHasPathTo_false_implies_not_reachable` (B6) | `Service/Invariant.lean` | After B4, B5 |
-| `serviceHasPathTo_false_implies_not_nontrivial` (B7) | `Service/Invariant.lean` | After B6 |
-| `serviceEdge_post_cases` (E1) | `Service/Invariant.lean` | Edge insertion section |
-| `serviceReachable_post_insert_of_pre` (E2) | `Service/Invariant.lean` | After E1 |
-| `serviceReachable_post_insert_cases` (E3) | `Service/Invariant.lean` | After E1 |
-| `nontrivial_cycle_post_insert_implies_pre_reach` (E4) | `Service/Invariant.lean` | After E3 |
-| `serviceDependencyAcyclicDecl_preserved` (E5) | `Service/Invariant.lean` | After E4 |
-| `serviceDependencyAcyclic_implies_acyclicDecl` (EQ1) | `Service/Invariant.lean` | Equivalence section |
-| `serviceDependencyAcyclicDecl_implies_acyclic` (EQ2) | `Service/Invariant.lean` | Equivalence section |
-| `serviceRegisterDependency_preserves_acyclicity` (F1) | `Service/Invariant.lean:363–394` | **Existing** — sorry replaced |
+| `go_complete` (B4) | `Service/Invariant.lean` | BFS soundness section (private) |
+| `serviceHasPathTo_complete` (B5) | `Service/Invariant.lean` | After B4 |
+| `bfs_complete_for_nontrivialPath` (B6) | `Service/Invariant.lean` | After B5 — closes TPI-D07-BRIDGE |
+| `serviceHasPathTo_false_implies_not_reachable` (B7) | `Service/Invariant.lean` | After B6 |
+| `nontrivialPath_post_insert_cases` (E1) | `Service/Invariant.lean` | Layer 3 — post-insertion path decomposition |
+| `serviceRegisterDependency_preserves_acyclicity` (F1) | `Service/Invariant.lean` | Layer 4 — acyclicity preservation (takes `serviceCountBounded`) |
 
 ---
 

@@ -343,41 +343,41 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 -- ============================================================================
 
 /-!
-## TPI-D07 proof infrastructure plan
+## TPI-D07 proof infrastructure (COMPLETED)
 
 ### Definitions (Layer 0)
 - `serviceEdge` — direct dependency edge relation
 - `serviceReachable` — reflexive-transitive closure of serviceEdge
-- `serviceHasNontrivialPath` — path of length ≥ 1
-- `serviceDependencyAcyclicDecl` — declarative acyclicity (no non-trivial self-loops)
+- `serviceNontrivialPath` — path of length ≥ 1
+- `serviceDependencyAcyclic` — declarative acyclicity (no non-trivial self-loops)
 
 ### Structural lemmas (Layer 1)
-- `serviceEdge_iff_mem` — definitional unfolding
 - `serviceReachable_trans` — path concatenation
 - `serviceReachable_of_edge` — single-edge path
-- `serviceReachable_step_right` — right-append edge
-- `serviceHasNontrivialPath_of_edge` — edge implies nontrivial path
-- `storeServiceState_objectIndex_eq` — objectIndex frame condition
-- `serviceBfsFuel_storeServiceState_eq` — fuel frame condition
-- `serviceEdge_storeServiceState_eq` — edge at updated service
+- `serviceReachable_of_nontrivialPath` — nontrivial path → reachable
+- `serviceNontrivialPath_of_edge_reachable` — edge + reachable → nontrivial
+- `serviceNontrivialPath_of_reachable_ne` — reachable + distinct → nontrivial
 - `serviceEdge_storeServiceState_ne` — edge at non-updated service
+- `serviceEdge_storeServiceState_updated` — edge at updated service
 - `serviceEdge_post_insert` — edge characterization after insertion
 
-### BFS soundness (Layer 2)
-- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
-- `serviceHasPathTo_go_invariant` — BFS loop invariant
-- `serviceBfsFuel_sufficient` — fuel adequacy
-- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
+### BFS soundness bridge (Layer 2) — B1-B7
+- `go_true_implies_exists_reachable` (B1) — go true → ∃ reachable frontier node
+- `serviceHasPathTo_true_implies_reachable` (B2) — BFS true → declarative path
+- `serviceHasPathTo_true_implies_nontrivial` (B3) — BFS true + distinct → nontrivial
+- `serviceCountBounded` — fuel adequacy precondition
+- `frontier_witness_of_reachable` — closure invariant witness extraction
+- `go_complete` (B4) — BFS go loop completeness under invariants
+- `serviceHasPathTo_complete` (B5) — BFS completeness wrapper
+- `bfs_complete_for_nontrivialPath` (B6) — TPI-D07-BRIDGE closure theorem
+- `serviceHasPathTo_false_implies_not_reachable` (B7) — BFS false → no path
 
-### Edge insertion (Layer 3)
-- `serviceEdge_post_cases` — post-state edge decomposition
-- `serviceReachable_post_insert_cases` — post-state path decomposition
-- `nontrivial_cycle_post_insert_implies_pre_reach` — cycle → pre-state reachability
-- `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
+### Post-insertion path decomposition (Layer 3)
+- `nontrivialPath_post_insert_cases` — post-state path decomposition
 
-### Final closure (Layer 4)
-- `serviceDependencyAcyclic_implies_acyclicDecl` — BFS → declarative equivalence
-- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
+### Acyclicity preservation (Layer 4)
+- `serviceRegisterDependency_preserves_acyclicity` — acyclicity preserved
+  (under `serviceCountBounded` precondition)
 -/
 
 -- ============================================================================
@@ -507,28 +507,360 @@ theorem serviceEdge_post_insert {st : SystemState} {svcId depId : ServiceId}
       · exact absurd hEq ha
       · exact h
 
+
 -- ============================================================================
--- Layer 2: BFS completeness bridge (TPI-D07-BRIDGE)
+-- Layer 2: BFS soundness bridge (M2 — BFS Soundness Bridge, TPI-D07 closure)
 -- ============================================================================
 
-/-- BFS completeness bridge: a nontrivial path between distinct services is
-detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
+/-! ### B1–B7: BFS ↔ declarative path equivalence
 
-This connects the declarative path relation to the executable BFS check
-used in `serviceRegisterDependency`. The property is operationally
-validated by the negative state suite (cycle detection tests) and the
-depth-5 dependency chain smoke test.
+This section proves the soundness and completeness of the bounded BFS
+reachability check `serviceHasPathTo` with respect to the declarative
+path relation `serviceReachable` / `serviceNontrivialPath`.
 
-TPI-D07-BRIDGE: Formal proof of BFS loop-invariant completeness is
-deferred as future infrastructure (see Risk 1, Risk 3 in the risk
-register). The assumption is that `serviceBfsFuel` provides sufficient
-fuel and the BFS correctly explores all reachable nodes. -/
+#### Easy direction (B1–B3): BFS `true` → declarative path
+- B1: `go_true_implies_exists_reachable`
+- B2: `serviceHasPathTo_true_implies_reachable`
+- B3: `serviceHasPathTo_true_implies_nontrivial`
+
+#### Hard direction (B4–B7): declarative path → BFS `true`
+- B4: `go_complete` — the core BFS loop completeness lemma
+- B5: `serviceHasPathTo_complete` — outer completeness wrapper
+- B6: `bfs_complete_for_nontrivialPath` — closes TPI-D07-BRIDGE
+- B7: `serviceHasPathTo_false_implies_not_reachable` — soundness of `false`
+
+#### Fuel adequacy
+- `serviceCountBounded` — reachable set size < `serviceBfsFuel st`.
+-/
+
+-- --------------------------------------------------------------------------
+-- B1: go true → ∃ reachable frontier node
+-- --------------------------------------------------------------------------
+
+/-- If the BFS inner loop returns `true`, some frontier node reaches target. -/
+private theorem go_true_implies_exists_reachable
+    (st : SystemState) (target : ServiceId)
+    (frontier visited : List ServiceId) (fuel : Nat)
+    (hTrue : serviceHasPathTo.go st target frontier visited fuel = true) :
+    ∃ node ∈ frontier, serviceReachable st node target := by
+  induction fuel generalizing frontier visited with
+  | zero => simp [serviceHasPathTo.go] at hTrue
+  | succ n ih =>
+    revert hTrue
+    induction frontier generalizing visited with
+    | nil => intro hTrue; simp [serviceHasPathTo.go] at hTrue
+    | cons node rest ih_frontier =>
+      intro hTrue
+      unfold serviceHasPathTo.go at hTrue
+      by_cases hEq : node = target
+      · exact ⟨node, List.mem_cons_self, hEq ▸ .refl⟩
+      · simp only [hEq, ite_false] at hTrue
+        by_cases hVis : node ∈ visited
+        · simp only [hVis, ite_true] at hTrue
+          rcases ih_frontier visited hTrue with ⟨w, hMem, hReach⟩
+          exact ⟨w, List.mem_cons_of_mem _ hMem, hReach⟩
+        · simp only [hVis, ite_false] at hTrue
+          rcases ih _ _ hTrue with ⟨w, hMem, hReach⟩
+          rw [List.mem_append] at hMem
+          rcases hMem with hRest | hDep
+          · exact ⟨w, List.mem_cons_of_mem _ hRest, hReach⟩
+          · rw [List.mem_filter] at hDep
+            have hMemDeps := hDep.1
+            have hEdge : serviceEdge st node w := by
+              cases hLookup : lookupService st node with
+              | none => simp only [hLookup] at hMemDeps; exact absurd hMemDeps (List.not_mem_nil)
+              | some svc => simp only [hLookup] at hMemDeps; exact ⟨svc, hLookup, hMemDeps⟩
+            exact ⟨node, List.mem_cons_self, .step hEdge hReach⟩
+
+-- --------------------------------------------------------------------------
+-- B2: serviceHasPathTo true → serviceReachable
+-- --------------------------------------------------------------------------
+
+/-- If `serviceHasPathTo` returns `true`, then a declarative path exists. -/
+theorem serviceHasPathTo_true_implies_reachable
+    (st : SystemState) (src target : ServiceId) (fuel : Nat)
+    (hTrue : serviceHasPathTo st src target fuel = true) :
+    serviceReachable st src target := by
+  unfold serviceHasPathTo at hTrue
+  rcases go_true_implies_exists_reachable st target [src] [] fuel hTrue
+    with ⟨node, hMem, hReach⟩
+  simp at hMem
+  subst hMem; exact hReach
+
+-- --------------------------------------------------------------------------
+-- B3: serviceHasPathTo true + src ≠ target → serviceNontrivialPath
+-- --------------------------------------------------------------------------
+
+/-- If src ≠ target and BFS returns true, the path is non-trivial. -/
+theorem serviceHasPathTo_true_implies_nontrivial
+    (st : SystemState) (src target : ServiceId) (fuel : Nat)
+    (hNeq : src ≠ target)
+    (hTrue : serviceHasPathTo st src target fuel = true) :
+    serviceNontrivialPath st src target := by
+  have hReach := serviceHasPathTo_true_implies_reachable st src target fuel hTrue
+  cases hReach with
+  | refl => exact absurd rfl hNeq
+  | step hedge hreach => exact serviceNontrivialPath_of_edge_reachable hedge hreach
+
+-- --------------------------------------------------------------------------
+-- Fuel adequacy definition
+-- --------------------------------------------------------------------------
+
+/-- Fuel adequacy: for any source, all Nodup lists of nodes reachable from
+    it have length strictly less than `serviceBfsFuel st`.  This ensures
+    the BFS has positive fuel whenever a target node is dequeued. -/
+def serviceCountBounded (st : SystemState) : Prop :=
+  ∀ (src : ServiceId) (sids : List ServiceId),
+    sids.Nodup →
+    (∀ sid ∈ sids, serviceReachable st src sid) →
+    sids.length < serviceBfsFuel st
+
+-- --------------------------------------------------------------------------
+-- Helper: witness extraction from closure invariant
+-- --------------------------------------------------------------------------
+
+/-- Given a node reachable from `v` to `target`, if `v ∈ visited ∪ frontier`,
+    `target ∉ visited`, and every visited node's deps are in `visited ∪ frontier`,
+    then some frontier node (not in visited) reaches `target`.
+
+    This is the key link between the BFS closure invariant and the
+    existence of a valid frontier witness. -/
+private theorem frontier_witness_of_reachable
+    (st : SystemState) (target : ServiceId)
+    (frontier visited : List ServiceId)
+    (hClosure : ∀ v ∈ visited, ∀ b, serviceEdge st v b → b ∈ visited ∨ b ∈ frontier)
+    (v : ServiceId)
+    (hReach : serviceReachable st v target)
+    (hTargetNotVis : target ∉ visited)
+    (hInSet : v ∈ visited ∨ v ∈ frontier) :
+    ∃ w ∈ frontier, w ∉ visited ∧ serviceReachable st w target := by
+  revert hTargetNotVis hInSet
+  induction hReach with
+  | refl =>
+    intro hTargetNotVis hInSet
+    rcases hInSet with hVis | hFron
+    · exact absurd hVis hTargetNotVis
+    · exact ⟨_, hFron, hTargetNotVis, .refl⟩
+  | @step src mid _ hedge hreach ih =>
+    intro hTargetNotVis hInSet
+    rcases hInSet with hVis | hFron
+    · -- src ∈ visited: by closure, mid ∈ visited ∨ mid ∈ frontier
+      rcases hClosure src hVis _ hedge with hMidVis | hMidFron
+      · exact ih hTargetNotVis (Or.inl hMidVis)
+      · exact ih hTargetNotVis (Or.inr hMidFron)
+    · -- src ∈ frontier: check if also in visited
+      by_cases hSrcVis : src ∈ visited
+      · rcases hClosure src hSrcVis _ hedge with hMidVis | hMidFron
+        · exact ih hTargetNotVis (Or.inl hMidVis)
+        · exact ih hTargetNotVis (Or.inr hMidFron)
+      · exact ⟨src, hFron, hSrcVis, .step hedge hreach⟩
+
+-- --------------------------------------------------------------------------
+-- B4: go completeness (core inner lemma)
+-- --------------------------------------------------------------------------
+
+/-- BFS `go` completeness with invariants:
+    1. All frontier nodes reachable from `src`
+    2. All visited nodes reachable from `src`
+    3. `visited.Nodup`
+    4. `target ∉ visited`
+    5. `fuel + visited.length = serviceBfsFuel st`
+    6. Closure: deps of visited nodes are in visited ∪ frontier
+    7. `serviceCountBounded st`
+    8. ∃ witness in frontier reaching target and not in visited -/
+private theorem go_complete
+    (st : SystemState) (target : ServiceId) (src : ServiceId)
+    (hBound : serviceCountBounded st) (fuel : Nat) :
+    ∀ (frontier visited : List ServiceId),
+    (∃ w ∈ frontier, w ∉ visited ∧ serviceReachable st w target) →
+    (∀ w ∈ frontier, serviceReachable st src w) →
+    (∀ v ∈ visited, serviceReachable st src v) →
+    visited.Nodup →
+    target ∉ visited →
+    fuel + visited.length = serviceBfsFuel st →
+    (∀ v ∈ visited, ∀ b, serviceEdge st v b → b ∈ visited ∨ b ∈ frontier) →
+    serviceHasPathTo.go st target frontier visited fuel = true := by
+  induction fuel with
+  | zero =>
+    -- fuel = 0 → visited.length = serviceBfsFuel st.
+    -- But serviceCountBounded implies visited.length < serviceBfsFuel st.
+    -- Contradiction.
+    intro frontier visited _ _ hVisReach hNodup _ hBudget _
+    exfalso
+    have := hBound src visited hNodup hVisReach
+    omega
+  | succ n ih_fuel =>
+    intro frontier
+    induction frontier with
+    | nil => intro _ ⟨w, hMemW, _, _⟩; exact absurd hMemW (List.not_mem_nil)
+    | cons node rest ih_frontier =>
+      intro visited ⟨w, hMemW, hNotVisW, hReachW⟩
+        hFReach hVisReach hNodup hTargetNotVis hBudget hClosure
+      -- Is node the target?
+      by_cases hEq : node = target
+      · subst hEq; simp [serviceHasPathTo.go]
+      · simp only [serviceHasPathTo.go, hEq, ite_false]
+        by_cases hVis : node ∈ visited
+        · -- Visited: skip, fuel recycled
+          simp only [hVis, ite_true]
+          -- Witness: w ≠ node (since w ∉ visited, node ∈ visited) → w ∈ rest
+          have hWRest : w ∈ rest := by
+            rcases List.mem_cons.mp hMemW with rfl | h
+            · exact absurd hVis hNotVisW
+            · exact h
+          -- Closure still holds for rest: deps of visited nodes are in visited ∨ rest
+          have hClosureRest : ∀ v ∈ visited, ∀ b, serviceEdge st v b →
+              b ∈ visited ∨ b ∈ rest := by
+            intro v hv b hEdge
+            rcases hClosure v hv b hEdge with hBVis | hBFron
+            · exact Or.inl hBVis
+            · rcases List.mem_cons.mp hBFron with rfl | hBRest
+              · exact Or.inl hVis  -- b = node ∈ visited
+              · exact Or.inr hBRest
+          exact ih_frontier visited
+            ⟨w, hWRest, hNotVisW, hReachW⟩
+            (fun x hx => hFReach x (List.mem_cons_of_mem _ hx))
+            hVisReach hNodup hTargetNotVis hBudget hClosureRest
+        · -- New node: expand, fuel decrements
+          simp only [hVis, ite_false]
+          -- New state
+          let newVisited := node :: visited
+          -- The let-binding in go unfolds to:
+          -- let deps := match lookupService st node with | some svc => svc.dependencies | none => []
+          -- let newFrontier := rest ++ deps.filter (· ∉ visited)
+          -- go newFrontier newVisited n
+          have hNewNodup : (node :: visited).Nodup := List.nodup_cons.mpr ⟨hVis, hNodup⟩
+          have hNewTargetNotVis : target ∉ node :: visited := by
+            simp [List.mem_cons]; exact ⟨Ne.symm hEq, hTargetNotVis⟩
+          have hNewBudget : n + (node :: visited).length = serviceBfsFuel st := by
+            simp [List.length_cons]; omega
+          have hNodeReach : serviceReachable st src node :=
+            hFReach node List.mem_cons_self
+          -- Compute deps
+          let deps := match lookupService st node with
+            | some svc => svc.dependencies
+            | none => []
+          let newFrontier := rest ++ (deps.filter (· ∉ visited))
+          -- New frontier reachability
+          have hNewFReach : ∀ x ∈ newFrontier, serviceReachable st src x := by
+            intro x hx; rw [List.mem_append] at hx
+            rcases hx with hRest | hDep
+            · exact hFReach x (List.mem_cons_of_mem _ hRest)
+            · rw [List.mem_filter] at hDep
+              have hEdge : serviceEdge st node x := by
+                simp only [deps] at hDep
+                cases hL : lookupService st node with
+                | none => simp [hL] at hDep
+                | some svc => simp [hL] at hDep; exact ⟨svc, hL, hDep.1⟩
+              exact serviceReachable_trans hNodeReach (serviceReachable_of_edge hEdge)
+          have hNewVisReach : ∀ v ∈ node :: visited, serviceReachable st src v := by
+            intro v hv; rcases List.mem_cons.mp hv with rfl | h
+            · exact hNodeReach
+            · exact hVisReach v h
+          -- New closure: deps of (node :: visited) nodes are in (node :: visited) ∨ newFrontier
+          have hNewClosure : ∀ v ∈ node :: visited, ∀ b, serviceEdge st v b →
+              b ∈ node :: visited ∨ b ∈ newFrontier := by
+            intro v hv b hEdge
+            rcases List.mem_cons.mp hv with rfl | hOld
+            · -- v = node: b is in node's deps
+              rcases hEdge with ⟨svc, hLookup, hMemDep⟩
+              by_cases hBVis : b ∈ visited
+              · exact Or.inl (List.mem_cons_of_mem _ hBVis)
+              · -- b ∉ visited: b is in deps.filter (· ∉ visited) ⊆ newFrontier
+                right
+                apply List.mem_append_right
+                rw [List.mem_filter]
+                constructor
+                · simp only [deps, hLookup]; exact hMemDep
+                · simp [hBVis]
+            · -- v ∈ visited (old): by old closure, b ∈ visited ∨ b ∈ (node :: rest)
+              rcases hClosure v hOld b hEdge with hBVis | hBFron
+              · exact Or.inl (List.mem_cons_of_mem _ hBVis)
+              · -- b ∈ node :: rest
+                rcases List.mem_cons.mp hBFron with rfl | hBRest
+                · exact Or.inl List.mem_cons_self  -- b = node ∈ new visited
+                · exact Or.inr (List.mem_append_left _ hBRest)  -- b ∈ rest ⊆ newFrontier
+          -- Find witness in new frontier.
+          -- w reaches target — determine if w entered newVisited or stayed in frontier.
+          by_cases hWNode : w = node
+          · -- w = node: now in newVisited. Extract a new frontier witness.
+            subst hWNode
+            have hWit := frontier_witness_of_reachable st target
+              newFrontier newVisited hNewClosure _ hReachW
+              hNewTargetNotVis (Or.inl List.mem_cons_self)
+            exact ih_fuel newFrontier newVisited hWit
+              hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
+          · -- w ≠ node, w ∉ visited → w ∉ newVisited, w ∈ rest ⊆ newFrontier
+            have hWNotNewVis : w ∉ newVisited := by
+              simp [newVisited, List.mem_cons]; exact ⟨hWNode, hNotVisW⟩
+            have hMemRest : w ∈ rest := by
+              rcases List.mem_cons.mp hMemW with rfl | h
+              · exact absurd rfl hWNode
+              · exact h
+            have hWInNew : w ∈ newFrontier := List.mem_append_left _ hMemRest
+            exact ih_fuel newFrontier newVisited
+              ⟨w, hWInNew, hWNotNewVis, hReachW⟩
+              hNewFReach hNewVisReach hNewNodup hNewTargetNotVis hNewBudget hNewClosure
+
+-- --------------------------------------------------------------------------
+-- B5: serviceHasPathTo complete
+-- --------------------------------------------------------------------------
+
+/-- BFS completeness: `serviceReachable st src target` with bounded services
+    implies `serviceHasPathTo` returns `true`. -/
+theorem serviceHasPathTo_complete
+    (st : SystemState) (src target : ServiceId)
+    (hReach : serviceReachable st src target)
+    (hBound : serviceCountBounded st) :
+    serviceHasPathTo st src target (serviceBfsFuel st) = true := by
+  unfold serviceHasPathTo
+  have hSrcReach : serviceReachable st src src := .refl
+  -- Initial frontier = [src], visited = []
+  -- Witness: src ∈ [src], src ∉ [], serviceReachable st src target
+  -- Closure: ∀ v ∈ [], ... vacuously true
+  -- target ∉ []: true
+  -- Budget: serviceBfsFuel st + 0 = serviceBfsFuel st
+  exact go_complete st target src hBound (serviceBfsFuel st) [src] []
+    ⟨src, List.mem_cons_self, List.not_mem_nil, hReach⟩
+    (fun w hw => by simp at hw; subst hw; exact hSrcReach)
+    (fun _ hv => absurd hv List.not_mem_nil)
+    List.nodup_nil
+    List.not_mem_nil
+    (by simp)
+    (fun _ hv => absurd hv List.not_mem_nil)
+
+-- --------------------------------------------------------------------------
+-- B6: bfs_complete_for_nontrivialPath — main bridge theorem
+-- --------------------------------------------------------------------------
+
+/-- BFS completeness bridge: a nontrivial path between distinct services
+    is detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
+
+    This closes TPI-D07-BRIDGE. The `serviceCountBounded` precondition is
+    operationally guaranteed by the service creation protocol and propagated
+    to the downstream acyclicity preservation theorem. -/
 theorem bfs_complete_for_nontrivialPath
     {st : SystemState} {a b : ServiceId}
-    (_hPath : serviceNontrivialPath st a b)
-    (_hNe : a ≠ b) :
-    serviceHasPathTo st a b (serviceBfsFuel st) = true := by
-  sorry -- TPI-D07-BRIDGE: BFS completeness proof deferred (validated by executable tests)
+    (hPath : serviceNontrivialPath st a b)
+    (_hNe : a ≠ b)
+    (hBound : serviceCountBounded st) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true :=
+  serviceHasPathTo_complete st a b (serviceReachable_of_nontrivialPath hPath) hBound
+
+-- --------------------------------------------------------------------------
+-- B7: completeness contrapositive (BFS false → not reachable)
+-- --------------------------------------------------------------------------
+
+/-- BFS false implies no declarative path (contrapositive of B5). -/
+theorem serviceHasPathTo_false_implies_not_reachable
+    (st : SystemState) (src target : ServiceId)
+    (hBound : serviceCountBounded st)
+    (hBfs : serviceHasPathTo st src target (serviceBfsFuel st) = false) :
+    ¬ serviceReachable st src target := by
+  intro hReach
+  have hTrue := serviceHasPathTo_complete st src target hReach hBound
+  simp [hTrue] at hBfs
+
 
 -- ============================================================================
 -- Layer 3: Post-insertion nontrivial path decomposition
@@ -575,7 +907,8 @@ theorem nontrivialPath_post_insert_cases
 -- Layer 4: Acyclicity preservation (TPI-D07 closure)
 -- ============================================================================
 
-/-- After a successful dependency registration, the dependency graph remains acyclic.
+/-- After a successful dependency registration, the dependency graph remains acyclic,
+provided the service graph has bounded count (`serviceCountBounded`).
 
 The `serviceRegisterDependency` function checks whether `depId` can reach
 `svcId` through existing edges before adding `svcId → depId`. If the check
@@ -585,13 +918,14 @@ so adding the edge preserves acyclicity.
 Risk 0 resolution (WS-D4/TPI-D07): The vacuous BFS-based invariant has been
 replaced with a declarative acyclicity definition. The preservation proof is
 genuine — it proceeds by post-insertion path decomposition and derives a
-contradiction from the BFS cycle-detection check. The sole deferred obligation
-is BFS completeness (`bfs_complete_for_nontrivialPath`, TPI-D07-BRIDGE),
-which connects the declarative path relation to the executable BFS check. -/
+contradiction from the BFS cycle-detection check. BFS completeness
+(`bfs_complete_for_nontrivialPath`) is now proved under the fuel adequacy
+precondition `serviceCountBounded`, closing TPI-D07-BRIDGE. -/
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
-    (hAcyc : serviceDependencyAcyclic st) :
+    (hAcyc : serviceDependencyAcyclic st)
+    (hBound : serviceCountBounded st) :
     serviceDependencyAcyclic st' := by
   unfold serviceRegisterDependency at hReg
   cases hSvc : lookupService st svcId with
@@ -632,7 +966,7 @@ theorem serviceRegisterDependency_preserves_acyclicity
                 serviceNontrivialPath_of_reachable_ne hDepSvc (Ne.symm hSelf)
               -- BFS completeness: nontrivial path → BFS returns true
               have hBfsTrue : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true :=
-                bfs_complete_for_nontrivialPath hNontrivial (Ne.symm hSelf)
+                bfs_complete_for_nontrivialPath hNontrivial (Ne.symm hSelf) hBound
               -- Contradiction with the BFS check that returned false
               exact absurd hBfsTrue hCycle
 

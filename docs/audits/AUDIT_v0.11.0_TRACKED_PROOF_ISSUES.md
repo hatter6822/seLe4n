@@ -231,23 +231,28 @@ theorem notificationWait_preserves_uniqueWaiters
     `serviceNontrivialPath_of_reachable_ne`, `serviceNontrivialPath_trans`,
     `serviceNontrivialPath_step_right`. Frame lemmas: `serviceEdge_storeServiceState_ne`,
     `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`.
-  - **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
-    bridge connecting declarative paths to the executable BFS check. Uses `sorry`
-    (annotated TPI-D07-BRIDGE); operationally validated by executable tests.
+  - **Layer 2 (BFS bridge):** Full B1-B7 suite proving BFS-declarative path
+    equivalence. `bfs_complete_for_nontrivialPath` — BFS completeness bridge
+    connecting declarative paths to the executable BFS check. Fully proved
+    via `serviceHasPathTo_complete` under `serviceCountBounded` precondition.
+    Additional theorems: `go_true_implies_exists_reachable` (B1),
+    `serviceHasPathTo_true_implies_reachable` (B2),
+    `serviceHasPathTo_true_implies_nontrivial` (B3),
+    `frontier_witness_of_reachable` (closure helper), `go_complete` (B4),
+    `serviceHasPathTo_false_implies_not_reachable` (B7).
   - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
     any post-insertion nontrivial path into either a pre-state path or a composition
     using the new edge with pre-state reachability.
   - **Layer 4 (Closure):** `serviceRegisterDependency_preserves_acyclicity` — genuine
     preservation proof via post-insertion path decomposition and contradiction with the
-    BFS cycle-detection check. The main theorem is sorry-free; only the focused BFS
-    bridge lemma carries a deferred `sorry`.
+    BFS cycle-detection check. Takes `serviceCountBounded` precondition for fuel adequacy.
 
-  **Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
-  `bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
-  `serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
-  distinct services. This is a well-scoped, non-vacuous assumption validated by
-  executable tests (negative state suite cycle detection + depth-5 dependency chain
-  smoke test). See Risk 1 and Risk 3 in the risk register for future closure path.
+  **Closure (TPI-D07-BRIDGE resolved):** The BFS completeness bridge
+  `bfs_complete_for_nontrivialPath` is now fully proved. The proof establishes that
+  any nontrivial path between distinct services is detected by the bounded BFS when
+  `serviceCountBounded st` holds (reachable service count < BFS fuel). The full B1-B7
+  suite proves BFS-declarative path equivalence. Fuel adequacy is propagated as
+  a precondition to `serviceRegisterDependency_preserves_acyclicity`.
 
 Closed theorem obligation:
 
@@ -259,10 +264,11 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
-    (hAcyc : serviceDependencyAcyclic st) :
+    (hAcyc : serviceDependencyAcyclic st)
+    (hBound : serviceCountBounded st) :
     serviceDependencyAcyclic st' := by
   ...  -- genuine proof: post-insertion path decomposition + BFS contradiction
-  -- sole deferred obligation: bfs_complete_for_nontrivialPath (TPI-D07-BRIDGE)
+  -- TPI-D07-BRIDGE closed: bfs_complete_for_nontrivialPath fully proved
 ```
 
 ---

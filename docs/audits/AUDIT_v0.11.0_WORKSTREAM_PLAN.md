@@ -68,7 +68,7 @@ Close all 17 findings (F-01 through F-17) identified in the v0.11.0 end-to-end r
 - **WS-D3:** Close remaining proof gaps (badge safety, VSpace success preservation). **Completed.**
 - All three findings (F-06, F-08, F-16) resolved. TPI-D04 and TPI-D05 closed. TPI-001 obligations from WS-C fully discharged. Four round-trip theorems proved. Seven Invariant.lean files annotated with proof-scope docstrings. Tier 0-3 gates pass.
 - **WS-D4:** Harden kernel design (cycle detection, failure semantics, double-wait). **Completed.**
-- All three findings (F-07, F-11, F-12) resolved. TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with Layers 0-4; sole deferred `sorry` on BFS bridge TPI-D07-BRIDGE). Tier 0-3 gates pass.
+- All three findings (F-07, F-11, F-12) resolved. TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with full Layers 0-4 proofs; BFS soundness bridge TPI-D07-BRIDGE now proved under `serviceCountBounded`). Tier 0-3 gates pass.
 
 ### Phase P4 — infrastructure expansion (Medium/Low)
 
@@ -336,9 +336,9 @@ All acceptance criteria met. Summary of changes:
    proved without `sorry`. **Risk 0 resolved (TPI-D07 closed):** The vacuous BFS-based
    acyclicity invariant was replaced with a declarative definition using `serviceNontrivialPath`.
    The preservation theorem (`serviceRegisterDependency_preserves_acyclicity`) is proved via
-   post-insertion path decomposition and BFS contradiction — the main theorem is sorry-free.
-   The sole deferred obligation is `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE), a
-   focused BFS completeness bridge validated by executable tests. NegativeStateSuite validates
+   post-insertion path decomposition and BFS contradiction. BFS completeness
+   (`bfs_complete_for_nontrivialPath`) is fully proved under the `serviceCountBounded`
+   precondition, closing TPI-D07-BRIDGE. NegativeStateSuite validates
    self-loop, missing-target, cycle, and idempotent re-registration paths.
    Full execution plan in `docs/audits/execution_plans/`; M0 baseline lock completed.
 
@@ -475,7 +475,7 @@ Each workstream PR must include:
 | WS-D1 | **Completed** | Critical/High | F-01, F-03, F-04 | Test error handling and validity restoration. Gate G1 passed: Tier 0-3 clean. |
 | WS-D2 | **Completed** | High | F-02, F-05 | Information-flow enforcement and non-interference proof expansion. Gate G2 passed: enforcement in 3 operations, 4 additional non-interference theorems. |
 | WS-D3 | **Completed** | Medium | F-06, F-08, F-16 | Proof gap closure (badge safety, VSpace preservation, proof documentation). TPI-001 closed. Gate G3 (proof) passed. |
-| WS-D4 | **Completed** | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, failure semantics, double-wait). TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with Layers 0-4; sole deferred `sorry` on BFS bridge TPI-D07-BRIDGE). |
+| WS-D4 | **Completed** | Medium | F-07, F-11, F-12 | Kernel design hardening (cycles, failure semantics, double-wait). TPI-D06 closed. TPI-D07 closed (Risk 0 resolved: declarative acyclicity with full Layers 0-4 proofs; BFS completeness bridge now proved under `serviceCountBounded`). |
 | WS-D5 | Planned | Medium | F-09, F-10 | Test infrastructure expansion (fixtures, ID bounds). |
 | WS-D6 | Planned | Low | F-13, F-14, F-15, F-17 | CI/CD polish and documentation governance. F-13 likely already resolved. |
 

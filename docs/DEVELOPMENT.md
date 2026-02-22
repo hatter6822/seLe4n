@@ -102,6 +102,9 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 3. Keep invariant bundles factored and named.
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
+6. For BFS-style loop proofs: use fuel + frontier dual induction with explicit
+   closure invariants (visited nodes' successors in visited ∪ frontier). Prefer
+   `serviceCountBounded`-style preconditions over model-level finiteness proofs.
 
 ---
 
