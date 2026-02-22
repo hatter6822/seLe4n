@@ -6,7 +6,7 @@ WS-C3 proof-surface note:
 Determinism of pure Lean definitions is a meta-property of evaluation, so object-level
 tautologies of the form `f x = f x` are not accepted as semantic evidence in this model.
 VSpace semantic obligations are tracked via TPI-001 in
-`docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
+`docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
 -/
 
 namespace SeLe4n.Kernel.Architecture

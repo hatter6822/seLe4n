@@ -53,7 +53,7 @@ Use the planning phases from the workstream backbone:
 
 ### 3.3 Prior completed portfolio (WS-C, historical)
 
-WS-C1..WS-C8 completed. See [`docs/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+WS-C1..WS-C8 completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ### 3.4 PR-to-workstream discipline
 

@@ -3,8 +3,7 @@
   "current_state_bullets": [
     "**Active findings baseline:** AUDIT v0.11.0 (end-to-end repository audit).",
     "**Active execution baseline:** WS-D portfolio (v0.11.0 workstream plan).",
-    "**Prior completed portfolio:** WS-C (v0.9.32 workstream plan, all completed).",
-    "**Historical baseline retained for traceability:** WS-B portfolio (v0.9.0 plan)."
+    "**Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`docs/dev_history/`](../dev_history/README.md)."
   ],
   "recommended_reading": [
     {
@@ -88,7 +87,7 @@
       ]
     },
     {
-      "section": "Active workstreams and planning",
+      "section": "Active workstreams",
       "pages": [
         {
           "title": "v0.11.0 Audit Workstream Planning (WS-D)",
@@ -103,16 +102,29 @@
           "path": "19-end-to-end-audit-and-quality-gates.md"
         },
         {
-          "title": "Threat Model and Security Hardening (WS-B9)",
+          "title": "Claim vs Evidence Index",
+          "path": "31-claim-vs-evidence-index.md"
+        }
+      ]
+    },
+    {
+      "section": "Architecture and policy",
+      "pages": [
+        {
+          "title": "VSpace + Bounded Memory Model (ADR, WS-B1)",
+          "path": "26-ws-b1-vspace-memory-adr.md"
+        },
+        {
+          "title": "Model Structure and Maintainability (ADR, WS-C7)",
+          "path": "30-ws-c7-model-structure-and-maintainability.md"
+        },
+        {
+          "title": "Threat Model and Security Hardening",
           "path": "28-threat-model-and-security-hardening.md"
         },
         {
-          "title": "CI Maturity and Telemetry Baseline (WS-B10)",
+          "title": "CI Maturity and Telemetry Baseline",
           "path": "29-ci-maturity-and-telemetry-baseline.md"
-        },
-        {
-          "title": "WS-B1 ADR: VSpace + Bounded Memory Model Foundation",
-          "path": "26-ws-b1-vspace-memory-adr.md"
         },
         {
           "title": "Documentation Sync and Coverage Matrix",
@@ -121,14 +133,6 @@
         {
           "title": "Documentation Deduplication Map",
           "path": "27-documentation-deduplication-map.md"
-        },
-        {
-          "title": "WS-C7 Model Structure and Maintainability (Completed)",
-          "path": "30-ws-c7-model-structure-and-maintainability.md"
-        },
-        {
-          "title": "Claim vs Evidence Index",
-          "path": "31-claim-vs-evidence-index.md"
         }
       ]
     },
@@ -146,51 +150,6 @@
         {
           "title": "Project Usage and Value",
           "path": "17-project-usage-value.md"
-        }
-      ]
-    },
-    {
-      "section": "Historical archive",
-      "pages": [
-        {
-          "title": "M7 Current Slice Outcomes and Workstreams (Historical)",
-          "path": "21-m7-current-slice-outcomes-and-workstreams.md"
-        },
-        {
-          "title": "M7 Remediation Closeout Packet",
-          "path": "23-m7-remediation-closeout-packet.md"
-        },
-        {
-          "title": "Repository Audit Remediation Workstreams",
-          "path": "20-repository-audit-remediation-workstreams.md"
-        },
-        {
-          "title": "M6 Execution Plan and Workstreams (Closeout)",
-          "path": "18-m6-execution-plan-and-workstreams.md"
-        },
-        {
-          "title": "M5 Closeout Snapshot",
-          "path": "09-m5-closeout-snapshot.md"
-        },
-        {
-          "title": "Completed Slice: M4-A",
-          "path": "08-completed-slice-m4a.md"
-        },
-        {
-          "title": "Completed Slice: M4-B",
-          "path": "16-completed-slice-m4b.md"
-        },
-        {
-          "title": "M4-B Execution Playbook",
-          "path": "14-m4b-execution-playbook.md"
-        },
-        {
-          "title": "Future Slices and Delivery Plan",
-          "path": "13-future-slices-and-delivery-plan.md"
-        },
-        {
-          "title": "M5 Development Blueprint",
-          "path": "15-m5-development-blueprint.md"
         }
       ]
     }

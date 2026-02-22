@@ -19,34 +19,24 @@
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
-## Active workstreams and planning
+## Active workstreams
 
 - [v0.11.0 Audit Workstream Planning (WS-D)](32-v0.11.0-audit-workstream-planning.md)
 - [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
-- [Threat Model and Security Hardening (WS-B9)](28-threat-model-and-security-hardening.md)
-- [CI Maturity and Telemetry Baseline (WS-B10)](29-ci-maturity-and-telemetry-baseline.md)
-- [WS-B1 ADR: VSpace + Bounded Memory Model Foundation](26-ws-b1-vspace-memory-adr.md)
+- [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
+
+## Architecture and policy
+
+- [VSpace + Bounded Memory Model (ADR, WS-B1)](26-ws-b1-vspace-memory-adr.md)
+- [Model Structure and Maintainability (ADR, WS-C7)](30-ws-c7-model-structure-and-maintainability.md)
+- [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
+- [CI Maturity and Telemetry Baseline](29-ci-maturity-and-telemetry-baseline.md)
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)
-- [WS-C7 Model Structure and Maintainability (Completed)](30-ws-c7-model-structure-and-maintainability.md)
-- [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
 
 ## Transition and long-horizon path
 
 - [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md)
 - [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md)
 - [Project Usage and Value](17-project-usage-value.md)
-
-## Historical archive
-
-- [M7 Current Slice Outcomes and Workstreams (Historical)](21-m7-current-slice-outcomes-and-workstreams.md)
-- [M7 Remediation Closeout Packet](23-m7-remediation-closeout-packet.md)
-- [Repository Audit Remediation Workstreams](20-repository-audit-remediation-workstreams.md)
-- [M6 Execution Plan and Workstreams (Closeout)](18-m6-execution-plan-and-workstreams.md)
-- [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
-- [Completed Slice: M4-A](08-completed-slice-m4a.md)
-- [Completed Slice: M4-B](16-completed-slice-m4b.md)
-- [M4-B Execution Playbook](14-m4b-execution-playbook.md)
-- [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
-- [M5 Development Blueprint](15-m5-development-blueprint.md)

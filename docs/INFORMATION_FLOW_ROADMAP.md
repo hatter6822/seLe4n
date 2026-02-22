@@ -52,7 +52,7 @@ Delivered anchors (WS-B7 closeout):
 
 - `SeLe4n/Kernel/InformationFlow/Policy.lean`
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
-- `docs/IF_M1_BASELINE_PACKAGE.md`
+- `docs/dev_history/IF_M1_BASELINE_PACKAGE.md`
 
 ## IF-M2 — Two-run relational state framework
 

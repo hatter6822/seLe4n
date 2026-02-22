@@ -82,7 +82,7 @@ A complete scan of all Lean files found **zero** uses of `sorry`. All proofs are
 
 ### 3.2 Tracked Proof Issues
 
-Two issues are explicitly tracked in `docs/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`:
+Two issues are explicitly tracked in `docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`:
 
 | ID | Description | Status |
 |----|-------------|--------|

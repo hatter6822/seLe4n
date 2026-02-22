@@ -10,6 +10,9 @@ LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 SKIP_PREFIXES = ("http://", "https://", "mailto:", "tel:")
 
 
+SKIP_DIRS = ("docs/dev_history/",)
+
+
 def tracked_markdown_files() -> list[Path]:
     result = subprocess.run(
         ["git", "ls-files", "*.md"],
@@ -18,7 +21,11 @@ def tracked_markdown_files() -> list[Path]:
         text=True,
         capture_output=True,
     )
-    return [REPO_ROOT / line for line in result.stdout.splitlines() if line.strip()]
+    return [
+        REPO_ROOT / line
+        for line in result.stdout.splitlines()
+        if line.strip() and not line.startswith(SKIP_DIRS)
+    ]
 
 
 def normalize_target(raw: str) -> str:

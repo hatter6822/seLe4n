@@ -50,6 +50,6 @@ platform-specific interfaces are introduced.
 
 ## 4. Related chapters
 
-- active execution plan: [M5 Development Blueprint](15-m5-development-blueprint.md)
-- latest milestone closeout status: [M5 Closeout Snapshot](09-m5-closeout-snapshot.md)
-- roadmap context: [Future Slices and Delivery Plan](13-future-slices-and-delivery-plan.md)
+- active execution plan: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md)
+- specification and roadmap: [Specification & Roadmap](05-specification-and-roadmap.md)
+- next slice path: [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md)
