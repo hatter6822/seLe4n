@@ -342,6 +342,44 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 -- F-07: Service dependency acyclicity invariant (WS-D4, TPI-D07)
 -- ============================================================================
 
+/-!
+## TPI-D07 proof infrastructure plan
+
+### Definitions (Layer 0)
+- `serviceEdge` — direct dependency edge relation
+- `serviceReachable` — reflexive-transitive closure of serviceEdge
+- `serviceHasNontrivialPath` — path of length ≥ 1
+- `serviceDependencyAcyclicDecl` — declarative acyclicity (no non-trivial self-loops)
+
+### Structural lemmas (Layer 1)
+- `serviceEdge_iff_mem` — definitional unfolding
+- `serviceReachable_trans` — path concatenation
+- `serviceReachable_of_edge` — single-edge path
+- `serviceReachable_step_right` — right-append edge
+- `serviceHasNontrivialPath_of_edge` — edge implies nontrivial path
+- `storeServiceState_objectIndex_eq` — objectIndex frame condition
+- `serviceBfsFuel_storeServiceState_eq` — fuel frame condition
+- `serviceEdge_storeServiceState_eq` — edge at updated service
+- `serviceEdge_storeServiceState_ne` — edge at non-updated service
+- `serviceEdge_post_insert` — edge characterization after insertion
+
+### BFS soundness (Layer 2)
+- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
+- `serviceHasPathTo_go_invariant` — BFS loop invariant
+- `serviceBfsFuel_sufficient` — fuel adequacy
+- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
+
+### Edge insertion (Layer 3)
+- `serviceEdge_post_cases` — post-state edge decomposition
+- `serviceReachable_post_insert_cases` — post-state path decomposition
+- `nontrivial_cycle_post_insert_implies_pre_reach` — cycle → pre-state reachability
+- `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
+
+### Final closure (Layer 4)
+- `serviceDependencyAcyclic_implies_acyclicDecl` — BFS → declarative equivalence
+- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
+-/
+
 /-- The service dependency graph is acyclic: no service can reach itself
 through dependency edges.
 

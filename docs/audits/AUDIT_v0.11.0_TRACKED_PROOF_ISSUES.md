@@ -220,9 +220,14 @@ theorem notificationWait_preserves_uniqueWaiters
   Preservation theorem statement exists but uses `sorry` for the BFS soundness argument. The operational
   cycle detection is runtime-correct (validated by executable tests), but formally proving that the BFS
   explores enough of the graph to be sound requires additional graph-theory infrastructure that is deferred.
+- **Execution plan:** Full multi-milestone execution plan created in `docs/audits/execution_plans/`
+  (M0–M5). M0 (Baseline Lock and Proof-Target Map) completed: semantics freeze with file hashes,
+  branch shape audit, theorem TODO map added to `Invariant.lean`, store lemma inventory confirmed,
+  BFS equational access audited.
 - **Remaining obligation:** Replace `sorry` in `serviceRegisterDependency_preserves_acyclicity` with a
   formal proof that the BFS cycle check is sound (i.e., if `serviceHasPathTo` returns false, adding the
-  edge does not create a cycle in the post-state graph).
+  edge does not create a cycle in the post-state graph). Milestones M1–M3 implement the proof
+  infrastructure; M4 expands tests; M5 synchronizes documentation.
 
 Partially closed theorem obligation (uses `sorry`):
 

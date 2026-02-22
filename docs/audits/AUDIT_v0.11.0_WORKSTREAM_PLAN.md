@@ -336,6 +336,8 @@ All acceptance criteria met. Summary of changes:
    proved without `sorry`. Acyclicity invariant (`serviceDependencyAcyclic`) defined; preservation
    theorem uses `sorry` for BFS soundness (tracked as TPI-D07). NegativeStateSuite validates
    self-loop, missing-target, cycle, and idempotent re-registration paths.
+   TPI-D07 execution plan created (`docs/audits/execution_plans/`); M0 baseline lock completed
+   (semantics freeze, proof-target map, store lemma inventory, BFS equational access audit).
 
 2. **F-11 (serviceRestart failure semantics):** Partial-failure semantics documented as an
    explicit design decision (Option B): a failed restart leaves the service stopped to prevent
