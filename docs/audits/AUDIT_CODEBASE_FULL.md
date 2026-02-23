@@ -416,13 +416,21 @@ fuel from the actual service count (`services` field) rather than
 
 ## 4. Low-Severity Findings
 
-### C-13: No CI configuration
+### C-13: CI telemetry artifacts are best-effort ~~(CORRECTED — originally "No CI configuration")~~
 
-No `.github/workflows/` files exist. The build/test pipeline relies on shell
-scripts (`test_fast.sh`, `test_smoke.sh`, `test_full.sh`) with no automated
-CI integration. PRs can merge without running any validation.
+The project has a comprehensive CI pipeline across 4 GitHub Actions workflows:
+- `lean_action_ci.yml` — PR/push gating with tiered tests (fast → smoke → full)
+- `nightly_determinism.yml` — nightly Tier 0-4 with flake detection
+- `lean_toolchain_update_proposal.yml` — weekly Lean version proposals via issues
+- `platform_security_baseline.yml` — ARM64 cross-platform + Gitleaks/Trivy/CodeQL
 
-**Recommendation**: Add a CI workflow that runs at least `test_smoke.sh`.
+The only minor gap: telemetry and trace artifact uploads use
+`if-no-files-found: ignore`, so CI passes silently if telemetry collection
+fails. This means CI health dashboards could silently lose data without
+any job failure signal.
+
+**Recommendation**: Consider adding a post-step that verifies telemetry
+files were actually produced, or use `if-no-files-found: warn`.
 
 ### C-14: Error-case preservation theorems inflate proof count
 
@@ -575,7 +583,7 @@ The following design decisions are well-executed:
 | P1 | C-02 | Define explicit API surface in API.lean |
 | P2 | C-09 | Construct concrete `AdapterProofHooks` instance |
 | P2 | C-05 | Add service-graph/capability consistency invariant |
-| P2 | C-13 | Add CI workflow |
+| P3 | C-13 | Consider `warn` on missing CI telemetry artifacts |
 | P3 | C-07 | Add domain-based scheduling |
 | P3 | C-06 | Document flat VSpace scope limitation |
 | P3 | C-12 | Prove BFS fuel sufficiency or fix fuel computation |
