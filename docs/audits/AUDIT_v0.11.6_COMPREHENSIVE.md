@@ -19,7 +19,7 @@ Operations/Invariant separation across all subsystems, and comprehensive
 executable test suites. The project demonstrates disciplined formal methods
 engineering.
 
-However, this audit identifies **16 material findings** and **12 advisory
+However, this audit identifies **18 material findings** and **12 advisory
 observations** across type safety, proof coverage gaps, invariant quality,
 architecture proof boundaries, information-flow model limitations, and test
 infrastructure weaknesses that should be addressed to strengthen assurance
@@ -614,6 +614,82 @@ The main trace harness output is compared against a golden fixture
 guard but it means the trace harness is effectively a fixed script, not
 a generative test. Changing any output text requires updating the fixture.
 
+### 7.5 FINDING [F-MED-12]: Trace Fixture Validation Uses Substring Matching
+
+**File:** `scripts/test_tier2_trace.sh:75`
+**Severity:** Medium
+
+The trace fixture comparison uses `grep -Fq` (fixed-string substring match):
+
+```bash
+if grep -Fq "${expected_fragment}" "${TRACE_OUTPUT}"; then
+```
+
+This means a fixture line like `"adapter timer success path value: 2"` would
+match against output containing `"adapter timer success path value: 256"` or
+`"adapter timer success path value: 2 (extra text)"`. The check verifies that
+the expected substring appears *somewhere* in the output but does not verify:
+- That the line matches exactly (no extra content)
+- That each fixture line maps to a distinct output line (no double-counting)
+- That the output doesn't contain unexpected *additional* lines
+
+For a formal verification project where the trace output serves as a semantic
+regression oracle, substring matching provides weaker guarantees than exact
+line-for-line comparison.
+
+**Recommendation:** Replace `grep -Fq` with an exact comparison strategy:
+either full `diff` against the expected fixture, or line-by-line exact
+matching with `==` (accounting for ordering). At minimum, add a post-match
+assertion that `wc -l` of the output matches `wc -l` of the fixture.
+
+### 7.6 FINDING [F-MED-13]: Tier 3 Invariant Surface Checks Are Definition-Presence Tests
+
+**File:** `scripts/test_tier3_invariant_surface.sh`
+**Severity:** Medium
+
+Tier 3 runs 378 `run_check` invocations, but every single one is a `rg -n`
+call checking that a definition, theorem, structure, or comment anchor
+*exists* in a specific file. For example:
+
+```bash
+run_check "INVARIANT" rg -n '^theorem schedule_preserves_schedulerInvariantBundle' \
+  SeLe4n/Kernel/Scheduler/Operations.lean
+```
+
+This verifies that the definition line exists — it does NOT verify:
+- That the theorem actually type-checks (Tier 1 `lake build` covers this)
+- That the theorem has the expected statement (signature could change)
+- That the theorem is used or composed anywhere
+- That the invariant it preserves is non-trivial
+
+Since Tier 1 already builds the project (ensuring all theorems type-check),
+the incremental value of Tier 3 is limited to detecting *accidental deletion*
+of definitions. The 378 checks create a surface impression of deep validation
+while functioning as an anchor-presence linter.
+
+This is not a defect — anchor-presence checking has value for preventing
+regressions during refactoring. But the tier's name ("invariant surface")
+and position in the test hierarchy (above trace testing and negative suites)
+overstates its assurance contribution.
+
+**Recommendation:** Rename the tier to "Anchor Presence" or "Regression
+Anchors" to set appropriate expectations. Alternatively, augment a subset
+of checks with signature matching (e.g., verify that key theorems preserve
+the expected invariant bundle, not just that a definition starting with the
+name exists).
+
+### 7.7 `test_lib.sh` Implicit Cascading Exit
+
+**File:** `scripts/test_lib.sh:122-124`
+
+The `run_check` function calls `finalize_report` when `CONTINUE_MODE=0` and
+a check fails. `finalize_report` calls `exit 1` at line 134. This means
+`run_check` has a hidden `exit` in its failure path — callers that expect
+to run cleanup after `run_check` will be bypassed. This is acceptable given
+the `set -euo pipefail` context, but it means the `trap` cleanup handlers
+are the only reliable cleanup mechanism, which they are correctly used for
+in `test_tier2_trace.sh`.
+
 ---
 
 ## 8. Build System and Scripts
@@ -727,6 +803,8 @@ Known simplifications that are acceptable for the current abstraction level:
 | F-MED-09 | Medium | Composition | No cross-subsystem interference analysis or composition proof |
 | F-MED-10 | Medium | VSpace | `vspaceAsidRootsUnique` required for correctness but never established |
 | F-MED-11 | Medium | Service | Service policy surface depends on unproven `hBackingObjects` hypothesis |
+| F-MED-12 | Medium | Testing | Trace fixture comparison uses substring matching, not exact comparison |
+| F-MED-13 | Medium | Testing | Tier 3 invariant surface checks are definition-presence tests only |
 | F-LOW-01 | Low | Service | BFS fuel bound is ad hoc with no sufficiency proof |
 
 ---
@@ -770,18 +848,25 @@ Known simplifications that are acceptable for the current abstraction level:
 9. **Document `storeTcbIpcState` silent-success** — either change to
    error or add explicit rationale.
 
+10. **Upgrade trace fixture comparison** — replace `grep -Fq` substring
+    matching in `test_tier2_trace.sh` with exact line-level comparison
+    or full `diff` to prevent silent regressions.
+
 ### Medium-term
 
-10. **Analyze covert channels** in notification badge accumulation and
+11. **Analyze covert channels** in notification badge accumulation and
     lifecycle retype, documenting the analysis results.
 
-11. **Add `MonadError`/`MonadState`** instances to reduce boilerplate in
+12. **Add `MonadError`/`MonadState`** instances to reduce boilerplate in
     transition functions.
 
-12. **Rename `schedulerWellFormed`** to eliminate naming confusion.
+13. **Rename `schedulerWellFormed`** to eliminate naming confusion.
 
-13. **Prove BFS fuel sufficiency** or use a structurally-decreasing
+14. **Prove BFS fuel sufficiency** or use a structurally-decreasing
     termination argument.
+
+15. **Rename Tier 3** from "invariant surface" to "anchor presence" or
+    augment selected checks with signature matching.
 
 ---
 
@@ -804,6 +889,10 @@ The most significant areas for improvement are:
    from different subsystems preserve the composed M4-A invariant bundle.
 4. **Test coverage**: The fuzzer should be expanded beyond IPC to exercise
    the full operation surface.
+5. **Test fidelity**: The trace fixture comparison uses substring matching
+   rather than exact comparison, and the Tier 3 invariant surface tier
+   verifies definition presence rather than semantic correctness, overstating
+   the assurance provided by the 378 anchor checks.
 
 The project's foundations are solid and the identified issues are addressable
 without architectural changes.
