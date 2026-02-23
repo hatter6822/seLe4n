@@ -418,29 +418,27 @@ Line ~574:  Layer 4 acyclicity preservation
 
 ## 7. Exit criteria (updated)
 
-> **Status: IN PREPARATION.** The documentation now contains a complete
-> proof strategy for eliminating the `bfs_complete_for_nontrivialPath` sorry,
-> organized into four sub-documents (M2A-M2D) with a 10-step implementation
-> roadmap.
+> **Status: COMPLETE.** All mandatory exit criteria met. The sorry on
+> `bfs_complete_for_nontrivialPath` has been eliminated. `serviceCountBounded`
+> preservation across `serviceRegisterDependency` is proved.
 
 ### M2 completion criteria
 
-- [ ] `lookupDeps` helper defined
-- [ ] `serviceEdge_iff_lookupDeps` bridge proved
-- [ ] BFS equational lemmas EQ1-EQ5 proved
-- [ ] `bfsClosed` definition + CB2-CB4 proved
-- [ ] CB1 (`reachable_frontier_boundary`) proved
-- [ ] `serviceCountBounded` defined
-- [ ] CP1 (`go_complete_of_frontier_reachable`) core loop proved
-- [ ] OW1 + OW2 wrappers proved
-- [ ] `bfs_complete_for_nontrivialPath` sorry eliminated
-- [ ] `lake build` succeeds with zero `sorry` in Service/Invariant.lean
-- [ ] `./scripts/test_smoke.sh` passes
+- [x] `lookupDeps` helper defined
+- [x] `serviceEdge_iff_lookupDeps` bridge proved
+- [x] BFS equational lemmas EQ3-EQ5 proved (EQ1/EQ2 handled inline)
+- [x] `bfsClosed` definition + CB2-CB4 proved
+- [x] CB1 (`bfs_boundary_lemma`) proved
+- [x] `serviceCountBounded` defined
+- [x] CP1 (`go_complete`) core loop proved
+- [x] `bfs_complete_for_nontrivialPath` sorry eliminated
+- [x] `lake build` succeeds with zero `sorry` in Service/Invariant.lean
+- [x] `./scripts/test_smoke.sh` passes
 
 ### Stretch goals (post-M2)
 
 - [ ] Fuel monotonicity lemma (`go_fuel_mono`)
-- [ ] `serviceCountBounded` preservation across state mutations
+- [x] `serviceCountBounded` preservation across state mutations (`serviceCountBounded_preserved_by_registerDependency`)
 - [ ] Unconditional fuel adequacy (no precondition — model-level bound)
 - [ ] B1-B3 extraction direction (BFS `true` → declarative path)
 - [ ] Full bidirectional equivalence
@@ -449,9 +447,6 @@ Line ~574:  Layer 4 acyclicity preservation
 
 ```bash
 ./scripts/test_tier1_build.sh
-# After sorry elimination:
-rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # should return 0 matches
-./scripts/test_smoke.sh
+rg 'sorry' SeLe4n/Kernel/Service/Invariant.lean  # returns 0 matches
+./scripts/test_smoke.sh                            # all gates pass
 ```
-
-> **Status: DEFERRED.** The full B1-B7 BFS soundness suite was not implemented. Instead, a single focused `sorry` was placed on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE, Invariant.lean:526-531), which asserts BFS completeness for nontrivial paths between distinct services. This was sufficient for the M3 preservation proof. Fuel adequacy (Risk R1) and BFS loop invariant (Risk R3) remain deferred.
