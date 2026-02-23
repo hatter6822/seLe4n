@@ -19,10 +19,11 @@ Operations/Invariant separation across all subsystems, and comprehensive
 executable test suites. The project demonstrates disciplined formal methods
 engineering.
 
-However, this audit identifies **13 material findings** and **12 advisory
+However, this audit identifies **16 material findings** and **12 advisory
 observations** across type safety, proof coverage gaps, invariant quality,
-information-flow model limitations, and test infrastructure weaknesses that
-should be addressed to strengthen assurance claims.
+architecture proof boundaries, information-flow model limitations, and test
+infrastructure weaknesses that should be addressed to strengthen assurance
+claims.
 
 ---
 
@@ -342,9 +343,86 @@ graph.
 - VSpace operations have proper invariant proofs (ASID preservation,
   no-overlap, lookup correctness)
 
-**Observation:** The architecture layer is a well-designed abstraction boundary.
-The `AdapterProofHooks` structure in the Invariant file creates a formal
-contract between architecture-specific implementations and the proof layer.
+### FINDING [F-HIGH-05]: Architecture Layer Exports Proof Obligations Rather Than Closing Them
+
+**File:** `SeLe4n/Kernel/Architecture/Invariant.lean:44-60`,
+`SeLe4n/Kernel/Architecture/Assumptions.lean`
+**Severity:** High
+
+The architecture layer's five extracted assumptions (`deterministicTimerProgress`,
+`deterministicRegisterContext`, `memoryAccessSafety`, `bootObjectTyping`,
+`irqRoutingTotality`) are all **external preconditions**, not properties proven
+by the kernel. The `RuntimeBoundaryContract` structure contains only
+`Decidable` witnesses — no proof that the contract predicates are correct.
+
+More critically, `AdapterProofHooks` (Invariant.lean:44-60) requires the
+**caller** to provide preservation proofs for each adapter operation:
+
+```lean
+structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
+  preserveAdvanceTimer :
+    ∀ ticks st,
+      proofLayerInvariantBundle st →
+      contract.timerMonotonic st (advanceTimerState ticks st) →
+      ticks ≠ 0 →
+      proofLayerInvariantBundle (advanceTimerState ticks st)
+```
+
+The kernel's claim is not "adapters preserve invariants" but rather
+"**if you can prove adapters preserve invariants**, then the kernel is
+sound." This is a conditional guarantee, not a self-contained one.
+
+**Impact:** The theorem "if you assume X, the kernel is safe" is well
+articulated. The dual "the kernel ensures X holds" is almost nowhere
+proved. This fundamentally limits the assurance level.
+
+**Recommendation:** Document this as an explicit architectural decision
+(the kernel is a **verified component** that composes with platform
+proofs, not a standalone safety proof). Alternatively, provide concrete
+`AdapterProofHooks` instances for at least one reference platform.
+
+### FINDING [F-MED-10]: `vspaceAsidRootsUnique` Required But Never Established
+
+**File:** `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
+**Severity:** Medium
+
+The four VSpace round-trip theorems (TPI-001) — `vspaceLookup_after_map`,
+`vspaceLookup_map_other`, `vspaceLookup_after_unmap`,
+`vspaceLookup_unmap_other` — all assume `vspaceInvariantBundle st`, which
+includes `vspaceAsidRootsUnique st` (no two VSpace roots share an ASID).
+
+This property is **never proved** to hold after initialization or after
+any VSpace operation. It is an assumed precondition. If two roots somehow
+share an ASID (e.g., through misconfigured boot state), `resolveAsidRoot`
+could return the wrong root and all VSpace correctness breaks down.
+
+**Recommendation:** Prove that `vspaceMapPage` and `vspaceUnmapPage`
+preserve `vspaceAsidRootsUnique`, or add initialization lemmas showing
+it holds at boot.
+
+### FINDING [F-MED-11]: Service Policy Surface Depends on Unproven Hypothesis
+
+**File:** `SeLe4n/Kernel/Service/Invariant.lean:138-150`
+**Severity:** Medium
+
+`servicePolicySurfaceInvariant_of_lifecycleInvariant` bridges service
+policy to lifecycle invariants but requires a free hypothesis
+`hBackingObjects`:
+
+```
+∀ sid svc, lookupService st sid = some svc →
+    ∃ obj, st.objects svc.identity.backingObject = some obj
+```
+
+This hypothesis — "every registered service has a backing object in the
+object store" — is **never proved** in the codebase. No theorem states
+that booting preserves it, nor that service operations maintain it.
+
+If a service's backing object is deleted or never initialized, the
+policy surface becomes vacuously satisfied but unsound.
+
+**Recommendation:** Add `hBackingObjects` as a component of the service
+invariant bundle, or prove it as a consequence of initialization.
 
 ---
 
@@ -637,6 +715,7 @@ Known simplifications that are acceptable for the current abstraction level:
 | F-HIGH-02 | High | InformationFlow | Non-interference proofs only cover both-succeed case |
 | F-HIGH-03 | High | Capability | `cspaceSlotUnique` and `cspaceLookupSound` are tautologically true |
 | F-HIGH-04 | High | IPC | `uniqueWaiters` (F-12) not composed into global IPC invariant bundle |
+| F-HIGH-05 | High | Architecture | Proof obligations exported to platform via `AdapterProofHooks`, not closed by kernel |
 | F-MED-01 | Medium | Prelude.lean | No `MonadError`/`MonadState` instances for `KernelM` |
 | F-MED-02 | Medium | Scheduler | `schedulerWellFormed` is a misleading alias for a subset of invariants |
 | F-MED-03 | Medium | IPC | `storeTcbIpcState` silently succeeds on missing/non-TCB objects |
@@ -646,6 +725,8 @@ Known simplifications that are acceptable for the current abstraction level:
 | F-MED-07 | Medium | IPC | `endpointObjectValid` is fully redundant with `endpointQueueWellFormed` |
 | F-MED-08 | Medium | Lifecycle | Lifecycle invariant bundle contains redundant derivable components |
 | F-MED-09 | Medium | Composition | No cross-subsystem interference analysis or composition proof |
+| F-MED-10 | Medium | VSpace | `vspaceAsidRootsUnique` required for correctness but never established |
+| F-MED-11 | Medium | Service | Service policy surface depends on unproven `hBackingObjects` hypothesis |
 | F-LOW-01 | Low | Service | BFS fuel bound is ad hoc with no sufficiency proof |
 
 ---
