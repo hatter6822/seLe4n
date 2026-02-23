@@ -28,7 +28,7 @@ the documentation implies**.
 |----------|-------|-------------|
 | CRITICAL | 4 | Fundamental semantic gaps vs seL4; proof assurance undermined |
 | HIGH     | 9 | Significant model incompleteness or misleading proof structure |
-| MEDIUM   | 10 | Model simplifications, testing gaps with correctness implications |
+| MEDIUM   | 11 | Model simplifications, testing gaps with correctness implications |
 | LOW      | 8 | Minor gaps, stylistic issues, or known deferrals |
 
 ---
@@ -456,7 +456,34 @@ the policy graph specified externally.
 - Per-endpoint flow policies
 - Runtime label changes
 
-### 7.2 Enforcement Is Pre-Gate Only (MEDIUM — M-07)
+### 7.2 Integrity Flow Semantics Contradict Documentation (MEDIUM — M-13)
+
+The comment on `securityFlowsTo` (`Policy.lean:48`) states: "confidentiality must
+not flow down and **integrity must not flow up**." However, the implementation
+allows integrity to flow up:
+
+```lean
+def securityFlowsTo (src dst : SecurityLabel) : Bool :=
+  confidentialityFlowsTo src.confidentiality dst.confidentiality &&
+    integrityFlowsTo dst.integrity src.integrity  -- reversed argument order
+```
+
+With `integrityFlowsTo` defining trusted ≥ untrusted, the composed check allows
+a `(low, untrusted)` source to flow to a `(high, trusted)` destination — meaning
+untrusted data CAN reach trusted sinks. Under standard BIBA integrity semantics,
+this should be denied (untrusted sources must not corrupt trusted destinations).
+
+The tests confirm this is the **intended** runtime behavior (`securityFlowsTo
+publicLabel secretLabel = true`), so the lattice is internally consistent and all
+proofs are sound. However, either:
+- The comment is wrong (should say "integrity must not flow *down*"), or
+- The code has the argument order swapped (line 51 should be
+  `integrityFlowsTo src.integrity dst.integrity`)
+
+Either way, the model implements a non-standard "both dimensions flow upward"
+lattice rather than BLP+BIBA. This should be explicitly documented.
+
+### 7.3 Enforcement Is Pre-Gate Only (MEDIUM — M-07)
 
 Information flow enforcement (`InformationFlow/Enforcement.lean`) wraps three
 operations with `securityFlowsTo` checks:
@@ -472,9 +499,10 @@ The enforcement proofs are correct but weak — they only prove:
 **Missing**: No theorem proves that the *unchecked* operations cannot leak
 information. The enforcement layer is a **gate**, not a **guarantee**. An
 operation that bypasses the `*Checked` wrapper (calling `endpointSend` directly)
+
 receives no flow enforcement.
 
-### 7.3 No Non-Interference Theorem (HIGH — H-05)
+### 7.4 No Non-Interference Theorem (HIGH — H-05)
 
 The projection machinery (`InformationFlow/Projection.lean`) defines:
 - `projectState` — filter state to observer-visible subset
