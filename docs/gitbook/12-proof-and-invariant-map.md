@@ -201,7 +201,7 @@ Service dependency registration now includes BFS-based cycle detection:
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
 - `serviceDependencyAcyclic` — acyclicity invariant definition
-- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge deferred to `bfs_complete_for_nontrivialPath` as TPI-D07-BRIDGE — see §14)
+- `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge `bfs_complete_for_nontrivialPath` formally proven — TPI-D07-BRIDGE resolved, see §14)
 
 ### F-11: serviceRestart partial-failure semantics
 
@@ -230,7 +230,7 @@ Supporting infrastructure:
 - `storeTcbIpcState_preserves_notification` — storeTcbIpcState preserves notification objects
 - `removeRunnable_preserves_objects` — removeRunnable preserves all objects
 
-## 14. TPI-D07 acyclicity proof infrastructure (Risk 0 resolved, TPI-D07 closed)
+## 14. TPI-D07 acyclicity proof infrastructure (Risk 0 resolved, TPI-D07 closed, TPI-D07-BRIDGE resolved)
 
 The vacuous BFS-based acyclicity invariant (Risk 0) has been resolved via Strategy B:
 the invariant definition was corrected and a genuine 4-layer proof infrastructure was
@@ -254,8 +254,8 @@ Implemented proof layers:
   `serviceNontrivialPath_step_right`. Frame lemmas: `serviceEdge_storeServiceState_ne`,
   `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
 - **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
-  bridge connecting declarative paths to the executable BFS check. Uses focused `sorry`
-  (annotated TPI-D07-BRIDGE); operationally validated by executable tests
+  bridge connecting declarative paths to the executable BFS check. Formally proven
+  (TPI-D07-BRIDGE resolved); no `sorry` remains
 - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
   any post-insertion nontrivial path into either a pre-state path or a composition
   using the new edge with pre-state reachability
@@ -263,15 +263,15 @@ Implemented proof layers:
   preservation proof via post-insertion path decomposition and contradiction with the
   BFS cycle-detection check. The main theorem is sorry-free
 
-**Remaining sub-obligation (TPI-D07-BRIDGE):** The focused `sorry` on
-`bfs_complete_for_nontrivialPath` defers a formal proof that the BFS with
-`serviceBfsFuel` fuel is complete enough to detect all nontrivial paths between
-distinct services. See Risk 1 and Risk 3 in the risk register for future closure path.
+**Sub-obligation resolved (TPI-D07-BRIDGE):** The `bfs_complete_for_nontrivialPath`
+lemma has been formally proven, establishing that the BFS with `serviceBfsFuel` fuel
+is complete enough to detect all nontrivial paths between distinct services. No
+`sorry` obligations remain in the TPI-D07 proof infrastructure.
 
-### 14.1 BFS completeness roadmap (TPI-D07-BRIDGE closure path)
+### 14.1 BFS completeness proof (TPI-D07-BRIDGE completed)
 
-A detailed proof roadmap for eliminating the `bfs_complete_for_nontrivialPath`
-sorry is documented in the M2 milestone
+The formal proof eliminating the `bfs_complete_for_nontrivialPath` sorry has been
+completed following the M2 milestone roadmap
 ([`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md))
 and four sub-documents (M2A–M2D).
 
