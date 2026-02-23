@@ -134,41 +134,38 @@ avoids the need for an explicit well-founded relation.
 
 ## 5. Technical concerns
 
-### 5.1 SIGNIFICANT — Breaking API change on preservation theorem
+### 5.1 RESOLVED — Breaking API change on preservation theorem
 
 `serviceRegisterDependency_preserves_acyclicity` now requires
-`hBound : serviceCountBounded st` as an additional parameter. Any downstream
-consumer of this theorem must supply this precondition. This is the expected
-Approach A trade-off from M2C, but it:
+`hBound : serviceCountBounded st` as an additional parameter. This is the expected
+Approach A trade-off from M2C.
 
-- Changes the proof obligation for callers
-- Is not discharged within this PR (no `serviceCountBounded` preservation lemma)
-- Must be maintained as a separate invariant by the system
+**Resolution:** `serviceCountBounded_preserved_by_registerDependency` now proves
+that the precondition is maintained across successful registrations, so callers
+can chain multiple registrations without additional proof obligations.
 
-**Recommendation:** Document this requirement explicitly in the API surface
-documentation and consider adding `serviceCountBounded` preservation as a
-follow-up (M2C §5 post-M2 work).
+### 5.2 RESOLVED — `serviceCountBounded` preservation proved
 
-### 5.2 SIGNIFICANT — `serviceCountBounded` preservation not proved
+`serviceCountBounded_preserved_by_registerDependency` formally proves that
+after a successful `serviceRegisterDependency`, the post-state satisfies
+`serviceCountBounded`. The proof reuses the same BFS universe `ns` from the
+pre-state, because:
 
-After a successful `serviceRegisterDependency` that modifies the state to `st'`,
-`serviceCountBounded st'` is not established. This means:
+- `storeServiceState` does not change `objectIndex`, so `serviceBfsFuel` is preserved
+- The only dependency-list change is appending `depId` (which is registered) to `svcId`
+- The `bfsUniverse` closure property is maintained since `depId ∈ ns`
 
-- Single registration: a caller can use `hBound : serviceCountBounded st`
-- Multiple registrations: after the first succeeds (producing `st'`), the
-  caller needs `serviceCountBounded st'` for the next, which is unproved
+### 5.3 RESOLVED — `hNe : a ≠ b` parameter removed
 
-The preservation should hold because `serviceRegisterDependency` only adds one
-dependency to an existing service (doesn't create new service entries), so the
-same universe `ns` should work. But this is not formally established.
-
-### 5.3 MINOR — `hNe : a ≠ b` parameter is vestigial
-
-The `hNe` parameter on `bfs_complete_for_nontrivialPath` is never used in the
-proof body. The BFS returns `true` for self-loops regardless (it checks
-`node = target` immediately). The parameter is kept for backward compatibility
-with the original signature, which is acceptable, but a cleaner API would
-drop it.
+The vestigial `hNe` parameter has been removed from `bfs_complete_for_nontrivialPath`.
+The theorem now has a cleaner signature:
+```lean
+theorem bfs_complete_for_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (hPath : serviceNontrivialPath st a b)
+    (hBound : serviceCountBounded st) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true
+```
 
 ### 5.4 MINOR — `maxHeartbeats 800000`
 
@@ -260,12 +257,13 @@ The outer theorem correctly instantiates `go_complete` with initial state:
 | Goal | Status |
 |------|--------|
 | Fuel monotonicity (`go_fuel_mono`) | Not implemented |
-| `serviceCountBounded` preservation across mutations | Not implemented |
+| `serviceCountBounded` preservation across mutations | **Implemented** (`serviceCountBounded_preserved_by_registerDependency`) |
 | Unconditional fuel adequacy (Approach B) | Not implemented |
 | B1–B3 extraction direction (BFS `true` → declarative path) | Not implemented |
 | Full bidirectional equivalence | Not implemented |
 
-All stretch goals remain deferred, as expected by the M2 plan.
+Most stretch goals remain deferred, as expected by the M2 plan. The preservation
+theorem was implemented as part of audit remediation (§5.2).
 
 ---
 
@@ -279,7 +277,7 @@ The `serviceCountBounded` precondition (Approach A) is a legitimate trade-off
 documented in the M2 spec. The API surface change to `serviceRegisterDependency_preserves_acyclicity`
 is the expected consequence.
 
-**Recommended follow-ups:**
-1. Prove `serviceCountBounded` preservation across `serviceRegisterDependency`
-2. Consider dropping the vestigial `hNe` parameter
-3. Extract `CLAUDE.md` changes into a separate PR
+**Recommended follow-ups (all resolved):**
+1. ~~Prove `serviceCountBounded` preservation across `serviceRegisterDependency`~~ — **DONE** (§5.2)
+2. ~~Drop the vestigial `hNe` parameter~~ — **DONE** (§5.3)
+3. ~~Extract `CLAUDE.md` changes into a separate PR~~ — **DONE** (excluded from audit branch)

@@ -103,11 +103,11 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
 6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core
-   completeness theorem (CP1), its equational lemmas (EQ1-EQ5), and closure
-   lemmas (CB1-CB4) are all proved. The prerequisite lemma hierarchy in
-   [`M2_BFS_SOUNDNESS.md §6`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
-   and its sub-documents ([M2A](audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
-   is fully discharged. No further work is required for this tracking item.
+   completeness theorem (`go_complete`), equational lemmas (EQ3-EQ5), and closure
+   lemmas (CB1-CB4) are all proved. The `serviceCountBounded` precondition is
+   proved to be preserved across `serviceRegisterDependency` by the theorem
+   `serviceCountBounded_preserved_by_registerDependency`. No `sorry` remains
+   and no further work is required for this tracking item.
 
 ---
 

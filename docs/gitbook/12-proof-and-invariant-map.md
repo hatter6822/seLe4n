@@ -255,7 +255,8 @@ Implemented proof layers:
   `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
 - **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
   bridge connecting declarative paths to the executable BFS check. Formally proven
-  (TPI-D07-BRIDGE resolved); no `sorry` remains
+  (TPI-D07-BRIDGE resolved); no `sorry` remains. `serviceCountBounded` precondition
+  preserved across registration by `serviceCountBounded_preserved_by_registerDependency`
 - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
   any post-insertion nontrivial path into either a pre-state path or a composition
   using the new edge with pre-state reachability
@@ -265,8 +266,9 @@ Implemented proof layers:
 
 **Sub-obligation resolved (TPI-D07-BRIDGE):** The `bfs_complete_for_nontrivialPath`
 lemma has been formally proven, establishing that the BFS with `serviceBfsFuel` fuel
-is complete enough to detect all nontrivial paths between distinct services. No
-`sorry` obligations remain in the TPI-D07 proof infrastructure.
+is complete enough to detect all nontrivial paths. The `serviceCountBounded`
+precondition is proved preserved across `serviceRegisterDependency`. No `sorry`
+obligations remain in the TPI-D07 proof infrastructure.
 
 ### 14.1 BFS completeness proof (TPI-D07-BRIDGE completed)
 
@@ -290,17 +292,16 @@ and four sub-documents (M2A–M2D).
    target and target is not visited, some frontier node also reaches target.
 
 3. **Fuel adequacy ([M2C](../audits/execution_plans/milestones/M2C_FUEL_ADEQUACY.md)):**
-   A `serviceCountBounded` precondition bounds the total registered services by
-   `serviceBfsFuel st`. Approach A (explicit precondition) recommended first;
-   Approach B (`serviceIndex` field, no precondition) as future enhancement.
+   A `serviceCountBounded` precondition bounds the BFS universe by `serviceBfsFuel st`
+   (Approach A). `serviceCountBounded_preserved_by_registerDependency` proves the
+   precondition is maintained across dependency registration.
 
 4. **Core completeness ([M2D](../audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)):**
-   `go_complete_of_frontier_reachable` (CP1) carries the four-part invariant
-   (I1: target not visited, I2: closure, I3: frontier witness, I4: fuel adequate)
-   through well-founded induction on `(fuel, frontier.length)`. Two wrappers
-   (OW1, OW2) compose CP1 with Layer 1 lemmas to eliminate the sorry.
+   `go_complete` (CP1) carries the four-part invariant (I1: target not visited,
+   I2: closure, I3: frontier witness, I4: fuel adequate) through strong induction
+   on fuel with structural induction on the frontier list. The sorry is eliminated.
 
-**Estimated scope:** 13 lemmas + 2 definitions, ~165-275 lines of proof.
+**Implemented scope:** 17 private lemmas + 4 definitions + 3 public theorems.
 
 Frozen operational files (M0 semantics freeze):
 

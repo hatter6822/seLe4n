@@ -2,7 +2,7 @@
 
 **Goal:** Satisfy the tracked-issue closure contract across all documentation surfaces and CI gates. Ensure no residual mentions of deferred `sorry` for TPI-D07 exist.
 
-**Status: IN PROGRESS.** The `sorry` on `bfs_complete_for_nontrivialPath` has been eliminated with a formal BFS completeness proof (M2 complete). Documentation synchronization is underway.
+**Status: IN PROGRESS.** The `sorry` on `bfs_complete_for_nontrivialPath` has been eliminated with a formal BFS completeness proof (M2 complete). `serviceCountBounded` preservation across `serviceRegisterDependency` is proved. Documentation synchronization is underway.
 
 **Dependency:** M3 (proof closure) and M4 (test expansion)
 

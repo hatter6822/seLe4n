@@ -248,9 +248,10 @@ theorem notificationWait_preserves_uniqueWaiters
   proof. The proof uses a BFS closure invariant (visited nodes are closed under
   successor edges), a BFS universe concept (bounding the set of reachable nodes),
   and strong induction on fuel to show that `serviceBfsFuel` is sufficient to
-  explore all nontrivial paths between distinct services. A new `serviceCountBounded`
-  hypothesis was added as a precondition to bound the BFS search space. No `sorry`
-  debt remains in the acyclicity proof stack.
+  explore all nontrivial paths. The `serviceCountBounded` precondition bounds the
+  BFS search space; it is proved to be preserved across `serviceRegisterDependency`
+  by `serviceCountBounded_preserved_by_registerDependency`. No `sorry` debt remains
+  in the acyclicity proof stack.
 
 Closed theorem obligations:
 
@@ -261,19 +262,24 @@ def serviceDependencyAcyclic (st : SystemState) : Prop :=
 
 /-- BFS completeness bridge — formally proved via closure invariant + strong induction. -/
 theorem bfs_complete_for_nontrivialPath
-    (st : SystemState) (src dst : ServiceId)
-    (hBound : serviceCountBounded st)
-    (hPath : serviceNontrivialPath st src dst) :
-    serviceHasPathTo st src dst serviceBfsFuel = true
+    {st : SystemState} {a b : ServiceId}
+    (hPath : serviceNontrivialPath st a b)
+    (hBound : serviceCountBounded st) :
+    serviceHasPathTo st a b (serviceBfsFuel st) = true
 
 theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
     (hAcyc : serviceDependencyAcyclic st)
     (hBound : serviceCountBounded st) :
-    serviceDependencyAcyclic st' := by
-  ...  -- genuine proof: post-insertion path decomposition + BFS contradiction
-  -- no sorry — BFS bridge fully proved via closure invariant + strong induction
+    serviceDependencyAcyclic st'
+
+/-- serviceCountBounded is preserved across registration. -/
+theorem serviceCountBounded_preserved_by_registerDependency
+    (svcId depId : ServiceId) (st st' : SystemState)
+    (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
+    (hBound : serviceCountBounded st) :
+    serviceCountBounded st'
 ```
 
 ---

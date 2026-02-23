@@ -53,8 +53,8 @@
 |---|---|---|---|
 | M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `COMPLETE` | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, revised `serviceDependencyAcyclic`, 7 structural + 3 frame lemmas | None |
-| M2 | `COMPLETE` | BFS completeness bridge formally proved: `lookupDeps`, `serviceEdge_iff_lookupDeps`, `bfsClosed` + 4 closure lemmas, `bfsUniverse` + `reach_in_universe`, filter length lemmas, EQ1–EQ3, `go_complete` (CP1), `serviceCountBounded`, `bfs_complete_for_nontrivialPath` — all sorry-free | None |
-| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` sorry-free (now takes `serviceCountBounded st` precondition); `nontrivialPath_post_insert_cases` proved | None |
+| M2 | `COMPLETE` | BFS completeness bridge formally proved: `lookupDeps`, `serviceEdge_iff_lookupDeps`, `bfsClosed` + 4 closure lemmas, `bfsUniverse` + `reach_in_universe`, filter length lemmas, EQ3–EQ5, `go_complete` (CP1), `serviceCountBounded` + preservation theorem, `bfs_complete_for_nontrivialPath` — all sorry-free | None |
+| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` sorry-free (takes `serviceCountBounded st` precondition, proved preserved by `serviceCountBounded_preserved_by_registerDependency`); `nontrivialPath_post_insert_cases` proved | None |
 | M4 | `PARTIAL` | Depth-5 chain smoke test exists in `MainTraceHarness`; dedicated `NegativeStateSuite` expansion pending | None |
 | M5 | `IN PROGRESS` | Canonical docs updated; execution plan status sync in progress | R4: Documentation drift |
 
