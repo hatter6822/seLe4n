@@ -6,12 +6,12 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **v0.11.0 Audit Remediation WS-D portfolio (WS-D1, WS-D2, WS-D3, WS-D4 completed; WS-D5..WS-D6 planned)**,
-- completed predecessor: **WS-C portfolio (WS-C1..WS-C8)**,
-- completed predecessor before that: **M7 remediation (WS-A1..WS-A8)**.
+- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1 in progress; WS-E2..WS-E6 planned)**,
+- completed predecessor: **WS-D portfolio (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E)**,
+- completed predecessor before that: **WS-C portfolio (WS-C1..WS-C8)**.
 
 Canonical planning source:
-[`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 
 ---
 
@@ -28,32 +28,34 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Current execution slice (WS-D portfolio)
+## 3) Current execution slice (WS-E portfolio)
 
 ### 3.1 Workstreams and intent
 
-- **WS-D1** — Test error handling and validity (**completed** — F-01, F-03, F-04)
-- **WS-D2** — Information-flow enforcement and proof (**completed** — F-02, F-05)
-- **WS-D3** — Proof gap closure (**completed** — F-06, F-08, F-16; TPI-001 closed)
-- **WS-D4** — Kernel design hardening (**completed** — F-07, F-11, F-12)
-- **WS-D5** — Test infrastructure expansion (**planned** — F-09, F-10)
-- **WS-D6** — CI/CD and documentation polish (**planned** — F-13, F-14, F-15, F-17)
+- **WS-E1** — Test infrastructure and CI hardening (**in progress** — M-10, M-11, F-14, L-07, L-08)
+- **WS-E2** — Proof quality and invariant strengthening (**planned** — C-01, H-01, H-03)
+- **WS-E3** — Kernel semantic hardening (**planned** — H-06, H-07, H-08, H-09, M-09, L-06)
+- **WS-E4** — Capability and IPC model completion (**planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E5** — Information-flow maturity (**planned** — H-04, H-05, M-07)
+- **WS-E6** — Model completeness and documentation (**planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
-Canonical detail: [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+Canonical detail: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 
 ### 3.2 Sequencing model
 
 Use the planning phases from the workstream backbone:
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
-- **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
-- **Phase P3:** WS-D3 proof gap closure (**completed**) + WS-D4 kernel design hardening (medium) — **completed**
-- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low) — current
+- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone (**current**)
+- **Phase P1:** WS-E1 (test/CI) + WS-E2 (proof quality) — parallel
+- **Phase P2:** WS-E3 (kernel hardening)
+- **Phase P3:** WS-E4 (capability/IPC completion)
+- **Phase P4:** WS-E5 (information-flow maturity)
+- **Phase P5:** WS-E6 (model completeness/docs)
 
-### 3.3 Prior completed portfolio (WS-C, historical)
+### 3.3 Prior completed portfolios (historical)
 
-WS-C1..WS-C8 completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+- **WS-D1..WS-D4:** completed. WS-D5/D6 absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+- **WS-C1..WS-C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ### 3.4 PR-to-workstream discipline
 
@@ -69,7 +71,7 @@ Every milestone-moving PR should include:
 
 ## 4) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-D slice (prefer next priority in the active plan, starting with P1 blockers).
+1. Sync branch and choose one coherent WS-E slice (prefer next priority in the active plan, starting with current phase targets).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

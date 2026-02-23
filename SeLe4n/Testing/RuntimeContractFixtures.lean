@@ -48,4 +48,50 @@ def runtimeContractDenyAll : SeLe4n.Kernel.Architecture.RuntimeBoundaryContract 
       infer_instance
   }
 
+/--
+Testing-only timer-centric runtime contract fixture (WS-D5/F-09).
+
+Allows timer operations (timer monotonicity passes) but denies register
+context stability and memory access.  Exercises the timer-success /
+register-denied / memory-denied branch combination.
+-/
+def runtimeContractTimerOnly : SeLe4n.Kernel.Architecture.RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
+    registerContextStable := fun _ _ => False
+    memoryAccessAllowed := fun _ _ => False
+    timerMonotonicDecidable := by
+      intro st st'
+      infer_instance
+    registerContextStableDecidable := by
+      intro st st'
+      infer_instance
+    memoryAccessAllowedDecidable := by
+      intro st addr
+      infer_instance
+  }
+
+/--
+Testing-only read-only memory runtime contract fixture (WS-D5/F-09).
+
+Allows memory access but denies timer monotonicity and register context
+stability.  Exercises the memory-success / timer-denied / register-denied
+branch combination.
+-/
+def runtimeContractReadOnlyMemory : SeLe4n.Kernel.Architecture.RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun _ _ => False
+    registerContextStable := fun _ _ => False
+    memoryAccessAllowed := fun _ _ => True
+    timerMonotonicDecidable := by
+      intro st st'
+      infer_instance
+    registerContextStableDecidable := by
+      intro st st'
+      infer_instance
+    memoryAccessAllowedDecidable := by
+      intro st addr
+      infer_instance
+  }
+
 end SeLe4n.Testing

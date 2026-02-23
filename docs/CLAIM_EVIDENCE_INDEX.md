@@ -6,14 +6,15 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
-| Active findings baseline is `AUDIT_v0.11.0.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-D portfolio status (WS-D1, WS-D2, WS-D3, WS-D4 completed; WS-D5..WS-D6 planned). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
+| WS-E portfolio status (WS-E1 in progress; WS-E2..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
 | IPC/scheduler/capability/info-flow invariants remain in active proof surface. | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh` | Direct symbol + theorem + doc anchor checks. |
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
 
-## Proof claim qualification (WS-D3/F-16)
+## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01)
 
 The following categories of theorems exist in the proof surface. Claims about proof coverage should distinguish between them:
 
@@ -21,10 +22,11 @@ The following categories of theorems exist in the proof surface. Claims about pr
 |---|---|---|
 | **Substantive preservation** | Proves that a *successful* operation preserves an invariant over *changed* state. | High |
 | **Error-case preservation** | Proves that a *failed* operation preserves an invariant by returning unchanged state. Trivially true. | Low (technically correct but not security evidence) |
-| **Reflexivity/tautological** | Proves `f(x) = f(x)` or compares a state to itself. | None (removed in WS-C3; should not recur) |
+| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. Structurally valid but masks lack of engagement with the operation's state transformation. (Identified by v0.11.6 audit H-01; targeted by WS-E2.) | Medium (weaker than compositional proofs) |
+| **Tautological** | Proves a property that holds for *all* states by construction (e.g., `cspaceSlotUnique_holds` exploiting pure-function determinism). (Identified by v0.11.6 audit C-01; targeted by WS-E2.) | None (should be reformulated or documented as meta-properties) |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
 
-## Open proof obligations (WS-D tracked issues)
+## Closed proof obligations (WS-D tracked issues)
 
 | ID | Description | Workstream | Status |
 |---|---|---|---|
