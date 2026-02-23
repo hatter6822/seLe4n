@@ -78,16 +78,29 @@ context-window pressure and "file too large" errors.
 
 ## Writing and editing large files
 
-The Write tool replaces an entire file in one call. For files over ~200 lines
-this is error-prone: content gets silently truncated, sections are accidentally
-dropped, and the context window fills up. **Prefer the Edit tool for all
-changes to existing files**, regardless of size.
+The Write tool replaces an entire file in one call. For files over ~100 lines
+this is error-prone: the tool call **times out**, content gets silently
+truncated, sections are accidentally dropped, and the context window fills up.
+**Prefer the Edit tool for all changes to existing files**, regardless of size.
+
+**Hard limit — Write tool timeout prevention:**
+
+The Write tool will time out if the inline content is too large. To avoid this:
+
+- **Never pass more than 100 lines of content in a single Write call.** Files
+  at or above this threshold must be built incrementally (skeleton + Edit
+  appends) or written via Bash `cat <<'HEREDOC'` to a file.
+- **For existing files, never use Write at all.** Always use Edit with targeted
+  `old_string`/`new_string` pairs. Edit calls do not carry the full file
+  content and therefore do not time out.
+- **If a Write call times out or fails**, do not retry with the same large
+  content. Switch to the incremental approach below.
 
 **Rules for large-file changes:**
 
 1. **Never rewrite a large file with Write.** Use Edit with a precise
    `old_string`/`new_string` pair targeting only the lines that change. This is
-   safer and uses far less context.
+   safer, faster, and avoids timeouts.
 2. **One logical change per Edit call.** If you need to change three separate
    functions, make three Edit calls rather than one giant replacement that spans
    the whole file.
@@ -98,12 +111,17 @@ changes to existing files**, regardless of size.
    into an existing file, break the insertion into multiple sequential Edit
    calls (each ≤80 lines), anchoring each one to context already present in the
    file.
-5. **Creating new large files.** When a new file must exceed ~200 lines, build
+5. **Creating new large files.** When a new file must exceed ~100 lines, build
    it incrementally:
-   - Write an initial skeleton (imports, structure, first section) with Write.
+   - Write an initial skeleton (imports, structure, first section) with Write,
+     keeping the content **under 100 lines**.
    - Use successive Edit calls to append remaining sections, using the end of
      the previously written content as the `old_string` anchor.
+   - Each Edit append should add no more than ~80 lines at a time.
    - Verify the final line count with `wc -l` via Bash.
+   - **Alternative**: use Bash with a heredoc to write the full file in one
+     shot (`cat <<'EOF' > path/to/file.lean`). Bash does not have the same
+     content-size timeout as the Write tool.
 6. **Post-write verification.** After any large write or series of edits, spot-
    check the result by reading the modified region (and the file's last few
    lines) to confirm nothing was truncated or duplicated.
@@ -121,6 +139,23 @@ Edit(file_path="SeLe4n/Kernel/Capability/Invariant.lean",
 
 # Step 3: Verify
 Bash("wc -l SeLe4n/Kernel/Capability/Invariant.lean")
+```
+
+**Example — creating a new 300-line file without timing out:**
+
+```
+# Step 1: Write skeleton (under 100 lines)
+Write("SeLe4n/Kernel/NewModule/Operations.lean", "<imports + first ~80 lines>")
+
+# Step 2: Append next section via Edit
+Edit(file_path="SeLe4n/Kernel/NewModule/Operations.lean",
+     old_string="<last 2-3 lines from step 1>",
+     new_string="<those same lines>\n<next ~80 lines>")
+
+# Step 3: Repeat Edit appends until complete
+
+# Step 4: Verify
+Bash("wc -l SeLe4n/Kernel/NewModule/Operations.lean")
 ```
 
 ## Handling large search and command output
