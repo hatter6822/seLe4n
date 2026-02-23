@@ -1,8 +1,8 @@
 # TPI-D07 Execution Plan — Master Index
 
-## Service Dependency Acyclicity Invariant: `sorry` Elimination
+## Service Dependency Acyclicity Invariant: `sorry` Elimination — COMPLETE
 
-**Target:** Replace the deferred `sorry` on `serviceRegisterDependency_preserves_acyclicity` with a complete formal proof. The main preservation theorem is now sorry-free (line 591). The sole remaining `sorry` is on `bfs_complete_for_nontrivialPath` (line 531, annotated TPI-D07-BRIDGE).
+**Target:** Replace the deferred `sorry` on `bfs_complete_for_nontrivialPath` with a complete formal proof. **Status: COMPLETE.** All `sorry` obligations have been eliminated. The BFS completeness bridge is formally proved using a loop-invariant argument with `serviceCountBounded` as a precondition.
 
 **Tracked issue:** TPI-D07 from [`AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md#issue-tpi-d07-closed--risk-0-resolved--service-dependency-acyclicity-invariant)
 
@@ -53,8 +53,8 @@
 |---|---|---|---|
 | M0 | `COMPLETE` | Proof-target map, store lemma inventory, semantics freeze | None |
 | M1 | `COMPLETE` | `serviceEdge`, `serviceReachable`, `serviceNontrivialPath`, revised `serviceDependencyAcyclic`, 7 structural + 3 frame lemmas | None |
-| M2 | `IN PREPARATION` | Documentation expanded into 4 sub-documents (M2A–M2D) with detailed proof path; 13 lemmas + 2 definitions planned to eliminate `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE) | R1: Fuel adequacy (Approach A chosen), R3: BFS loop invariant (measure identified) |
-| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` is sorry-free; `nontrivialPath_post_insert_cases` proved | None (uses M2 bridge with `sorry`) |
+| M2 | `COMPLETE` | BFS completeness bridge formally proved: `lookupDeps`, `serviceEdge_iff_lookupDeps`, `bfsClosed` + 4 closure lemmas, `bfsUniverse` + `reach_in_universe`, filter length lemmas, EQ1–EQ3, `go_complete` (CP1), `serviceCountBounded`, `bfs_complete_for_nontrivialPath` — all sorry-free | None |
+| M3 | `COMPLETE` | `serviceRegisterDependency_preserves_acyclicity` sorry-free (now takes `serviceCountBounded st` precondition); `nontrivialPath_post_insert_cases` proved | None |
 | M4 | `PARTIAL` | Depth-5 chain smoke test exists in `MainTraceHarness`; dedicated `NegativeStateSuite` expansion pending | None |
 | M5 | `IN PROGRESS` | Canonical docs updated; execution plan status sync in progress | R4: Documentation drift |
 
@@ -62,15 +62,15 @@
 
 ```
 M0 ──→ M1 ──→ M2 ──────────→ M3 ──→ M4 ──→ M5
-  ✓       ✓    in preparation    ✓    partial  in progress
+  ✓       ✓       ✓              ✓    partial  in progress
                │                 │
-               ├─ M2A (equational)
-               ├─ M2B (invariant)  └── preservation theorem sorry-free
-               ├─ M2C (fuel)           (BFS bridge sorry targeted at M2)
-               └─ M2D (proof)
+               ├─ M2A (equational) ✓
+               ├─ M2B (invariant)  ✓  └── preservation theorem sorry-free
+               ├─ M2C (fuel)       ✓      (BFS bridge formally proved)
+               └─ M2D (proof)      ✓
 ```
 
-M1 and M3 are complete. M2 (BFS completeness) has been expanded from a single deferred document into four detailed sub-documents (M2A–M2D) providing a complete proof roadmap: 13 lemmas + 2 definitions targeting the `sorry` on `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE). The proof strategy uses `lookupDeps` as a deps bridge, a named `bfsClosed` definition for the visited-set closure invariant, and a `serviceCountBounded` precondition for fuel adequacy (Approach A). M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
+M0, M1, M2, and M3 are complete. The BFS completeness proof (M2) has been formally verified: `lookupDeps` as a deps bridge, `bfsClosed` for the visited-set closure invariant, `bfsUniverse` for the universe bound, and `serviceCountBounded` as a fuel adequacy precondition (Approach A). The core `go_complete` theorem uses strong induction on fuel with structural induction on the frontier list. All `sorry` obligations have been eliminated from the codebase. M4 and M5 are logically independent of each other but both depend on M3 for the proof closure.
 
 ## Quick-start reading order
 
