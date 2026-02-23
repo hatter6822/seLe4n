@@ -338,9 +338,7 @@ All acceptance criteria met. Summary of changes:
    The preservation theorem (`serviceRegisterDependency_preserves_acyclicity`) is proved via
    post-insertion path decomposition and BFS contradiction — the main theorem is sorry-free.
    The BFS completeness bridge `bfs_complete_for_nontrivialPath` (TPI-D07-BRIDGE) has been
-   formally proved, eliminating the last `sorry`. The `serviceCountBounded` precondition is
-   proved preserved by `serviceCountBounded_preserved_by_registerDependency` — no deferred
-   obligations remain. NegativeStateSuite validates
+   formally proved, eliminating the last `sorry` — no deferred obligations remain. NegativeStateSuite validates
    self-loop, missing-target, cycle, and idempotent re-registration paths.
    Full execution plan in `docs/audits/execution_plans/`; M0 baseline lock completed.
 

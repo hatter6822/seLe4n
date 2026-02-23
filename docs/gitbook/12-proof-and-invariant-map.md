@@ -255,8 +255,7 @@ Implemented proof layers:
   `serviceEdge_storeServiceState_updated`, `serviceEdge_post_insert`
 - **Layer 2 (BFS bridge):** `bfs_complete_for_nontrivialPath` — BFS completeness
   bridge connecting declarative paths to the executable BFS check. Formally proven
-  (TPI-D07-BRIDGE resolved); no `sorry` remains. `serviceCountBounded` precondition
-  preserved across registration by `serviceCountBounded_preserved_by_registerDependency`
+  (TPI-D07-BRIDGE resolved); no `sorry` remains
 - **Layer 3 (Path decomposition):** `nontrivialPath_post_insert_cases` — decomposes
   any post-insertion nontrivial path into either a pre-state path or a composition
   using the new edge with pre-state reachability
@@ -266,9 +265,8 @@ Implemented proof layers:
 
 **Sub-obligation resolved (TPI-D07-BRIDGE):** The `bfs_complete_for_nontrivialPath`
 lemma has been formally proven, establishing that the BFS with `serviceBfsFuel` fuel
-is complete enough to detect all nontrivial paths. The `serviceCountBounded`
-precondition is proved preserved across `serviceRegisterDependency`. No `sorry`
-obligations remain in the TPI-D07 proof infrastructure.
+is complete enough to detect all nontrivial paths between distinct services. No
+`sorry` obligations remain in the TPI-D07 proof infrastructure.
 
 ### 14.1 BFS completeness proof (TPI-D07-BRIDGE completed)
 

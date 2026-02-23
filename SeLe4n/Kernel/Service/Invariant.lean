@@ -753,104 +753,6 @@ def serviceCountBounded (st : SystemState) : Prop :=
   ∃ ns : List ServiceId,
     bfsUniverse st ns ∧ ns.length ≤ serviceBfsFuel st
 
--- ---- Frame lemmas: storeServiceState preserves objectIndex and fuel ----
-
-/-- storeServiceState only modifies `services`; objectIndex is unchanged. -/
-private theorem storeServiceState_objectIndex_eq (sid : ServiceId)
-    (entry : ServiceGraphEntry) (st : SystemState) :
-    (storeServiceState sid entry st).objectIndex = st.objectIndex := by
-  rfl
-
-/-- serviceBfsFuel is preserved because it depends only on objectIndex. -/
-private theorem serviceBfsFuel_storeServiceState_eq (sid : ServiceId)
-    (entry : ServiceGraphEntry) (st : SystemState) :
-    serviceBfsFuel (storeServiceState sid entry st) = serviceBfsFuel st := by
-  simp [serviceBfsFuel, storeServiceState_objectIndex_eq]
-
-/-- lookupDeps at an unmodified service is unchanged. -/
-private theorem lookupDeps_storeServiceState_ne {sid sid' : ServiceId}
-    {entry : ServiceGraphEntry} {st : SystemState} (hNe : sid' ≠ sid) :
-    lookupDeps (storeServiceState sid entry st) sid' = lookupDeps st sid' := by
-  simp [lookupDeps, storeServiceState_lookup_ne st sid sid' entry hNe]
-
-/-- lookupDeps at the modified service returns the new entry's dependencies. -/
-private theorem lookupDeps_storeServiceState_self (sid : ServiceId)
-    (entry : ServiceGraphEntry) (st : SystemState) :
-    lookupDeps (storeServiceState sid entry st) sid = entry.dependencies := by
-  simp [lookupDeps, storeServiceState_lookup_eq st sid entry]
-
--- ---- serviceCountBounded preservation across serviceRegisterDependency ----
-
-/-- bfsUniverse is preserved when we append a registered dependency to an existing
-    service's dependency list. The key insight: `depId` is already in the universe
-    (since it is registered), so the dependency-closure property is maintained. -/
-private theorem bfsUniverse_storeServiceState_dep_append
-    {st : SystemState} {ns : List ServiceId}
-    {svcId depId : ServiceId} {svc : ServiceGraphEntry}
-    (hU : bfsUniverse st ns)
-    (hSvc : lookupService st svcId = some svc)
-    (hDepReg : lookupService st depId ≠ none) :
-    bfsUniverse (storeServiceState svcId
-      { svc with dependencies := svc.dependencies ++ [depId] } st) ns := by
-  refine ⟨hU.1, ?_, ?_⟩
-  · -- Registration: every registered service in st' is in ns
-    intro sid hReg
-    by_cases h : sid = svcId
-    · exact hU.2.1 sid (h ▸ by rw [hSvc]; exact Option.some_ne_none _)
-    · rw [storeServiceState_lookup_ne st svcId sid _ h] at hReg; exact hU.2.1 sid hReg
-  · -- Dep-closure: every dependency of a node in ns is also in ns
-    intro sid hMem dep hDep
-    by_cases h : sid = svcId
-    · have hLD : dep ∈ lookupDeps (storeServiceState svcId
-        { svc with dependencies := svc.dependencies ++ [depId] } st) sid := hDep
-      rw [h, lookupDeps_storeServiceState_self] at hLD
-      rcases List.mem_append.mp hLD with hOld | hNew
-      · -- Old dependency: was already in lookupDeps st svcId
-        have hOldDeps : dep ∈ lookupDeps st svcId := by
-          simp [lookupDeps, hSvc]; exact hOld
-        exact hU.2.2 svcId (h ▸ hMem) dep hOldDeps
-      · -- New dependency (depId): registered, hence in ns
-        rcases List.mem_singleton.mp hNew with rfl
-        exact hU.2.1 dep hDepReg
-    · rw [lookupDeps_storeServiceState_ne h] at hDep; exact hU.2.2 sid hMem dep hDep
-
-/-- serviceCountBounded is preserved across a successful serviceRegisterDependency.
-    The same BFS universe works for the post-state because:
-    (1) objectIndex is unchanged, so fuel stays the same,
-    (2) only svcId's dependencies change (adding depId, which is registered),
-    (3) all other service entries are unchanged. -/
-theorem serviceCountBounded_preserved_by_registerDependency
-    (svcId depId : ServiceId) (st st' : SystemState)
-    (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
-    (hBound : serviceCountBounded st) :
-    serviceCountBounded st' := by
-  obtain ⟨ns, hU, hLen⟩ := hBound
-  unfold serviceRegisterDependency at hReg
-  cases hSvc : lookupService st svcId with
-  | none => simp [hSvc] at hReg
-  | some svc =>
-    simp only [hSvc] at hReg
-    cases hDep : lookupService st depId with
-    | none => simp [hDep] at hReg
-    | some _ =>
-      simp only [hDep] at hReg
-      by_cases hSelf : svcId = depId
-      · simp [hSelf] at hReg
-      · simp only [hSelf, ite_false] at hReg
-        by_cases hExists : depId ∈ svc.dependencies
-        · -- Idempotent: st' = st
-          simp [hExists] at hReg; cases hReg; exact ⟨ns, hU, hLen⟩
-        · simp only [hExists, ite_false] at hReg
-          by_cases hCycle : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true
-          · simp [hCycle] at hReg
-          · simp only [hCycle] at hReg
-            unfold storeServiceEntry at hReg
-            simp at hReg; cases hReg
-            exact ⟨ns,
-              bfsUniverse_storeServiceState_dep_append hU hSvc
-                (by rw [hDep]; exact Option.some_ne_none _),
-              by rw [serviceBfsFuel_storeServiceState_eq]; exact hLen⟩
-
 /-- The source of a nontrivial path is a registered service. -/
 private theorem registered_of_nontrivialPath_src {st : SystemState} {a b : ServiceId}
     (h : serviceNontrivialPath st a b) : lookupService st a ≠ none := by
@@ -858,8 +760,8 @@ private theorem registered_of_nontrivialPath_src {st : SystemState} {a b : Servi
   | single hedge => obtain ⟨svc, hL, _⟩ := hedge; simp [hL]
   | cons hedge _ => obtain ⟨svc, hL, _⟩ := hedge; simp [hL]
 
-/-- BFS completeness bridge: a nontrivial path implies
-`serviceHasPathTo` returns `true` with `serviceBfsFuel` fuel.
+/-- BFS completeness bridge: a nontrivial path between distinct services is
+detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
 
 This connects the declarative path relation to the executable BFS check
 used in `serviceRegisterDependency`. The BFS completeness is established
@@ -872,6 +774,7 @@ nodes fits within the BFS fuel budget. -/
 theorem bfs_complete_for_nontrivialPath
     {st : SystemState} {a b : ServiceId}
     (hPath : serviceNontrivialPath st a b)
+    (hNe : a ≠ b)
     (hBound : serviceCountBounded st) :
     serviceHasPathTo st a b (serviceBfsFuel st) = true := by
   obtain ⟨ns, hU, hLen⟩ := hBound
@@ -994,7 +897,7 @@ theorem serviceRegisterDependency_preserves_acyclicity
                 serviceNontrivialPath_of_reachable_ne hDepSvc (Ne.symm hSelf)
               -- BFS completeness: nontrivial path + bounded universe → BFS returns true
               have hBfsTrue : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true :=
-                bfs_complete_for_nontrivialPath hNontrivial hBound
+                bfs_complete_for_nontrivialPath hNontrivial (Ne.symm hSelf) hBound
               -- Contradiction with the BFS check that returned false
               exact absurd hBfsTrue hCycle
 

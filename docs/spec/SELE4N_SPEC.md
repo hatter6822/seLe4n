@@ -89,7 +89,7 @@ on the semantic and proof foundations of the previous one.
 ### 4.2 Medium — Proof Completion and Kernel Hardening
 
 - **WS-D3:** Proof gap closure (medium; **completed** — F-06, F-08, F-16; TPI-001 closed)
-- **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12). BFS completeness bridge (`bfs_complete_for_nontrivialPath`, TPI-D07-BRIDGE) **formally resolved** — the `sorry` has been eliminated. The proof proceeds by BFS closure invariant, BFS universe bounding, and strong induction on fuel, under a `serviceCountBounded` precondition (proved preserved by `serviceCountBounded_preserved_by_registerDependency`). See [`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md) §5-§7.
+- **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12). BFS completeness bridge (`bfs_complete_for_nontrivialPath`, TPI-D07-BRIDGE) **formally resolved** — the `sorry` has been eliminated. The proof proceeds by BFS closure invariant, BFS universe bounding, and strong induction on fuel, under a `serviceCountBounded` precondition. See [`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md) §5-§7 and sub-documents M2A–M2D for the completeness proof roadmap.
 - **WS-D5:** Test infrastructure expansion (medium; **planned** — F-09, F-10)
 
 ### 4.3 Low — Infrastructure Polish
