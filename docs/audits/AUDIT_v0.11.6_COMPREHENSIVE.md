@@ -19,10 +19,10 @@ Operations/Invariant separation across all subsystems, and comprehensive
 executable test suites. The project demonstrates disciplined formal methods
 engineering.
 
-However, this audit identifies **7 material findings** and **12 advisory
-observations** across type safety, proof coverage gaps, information-flow model
-limitations, and test infrastructure weaknesses that should be addressed to
-strengthen assurance claims.
+However, this audit identifies **13 material findings** and **12 advisory
+observations** across type safety, proof coverage gaps, invariant quality,
+information-flow model limitations, and test infrastructure weaknesses that
+should be addressed to strengthen assurance claims.
 
 ---
 
@@ -148,6 +148,34 @@ name is misleading) is a maintenance trap.
 distinguishes "CNode exists but slot is empty" (→ `invalidCapability`) from
 "no CNode at all" (→ `objectNotFound`). This is good API design.
 
+### FINDING [F-HIGH-03]: Capability Invariants Are Tautologically True
+
+**File:** `SeLe4n/Kernel/Capability/Invariant.lean:456-477`
+**Severity:** High
+
+Two of the four `capabilityInvariantBundle` components are trivially true
+by construction and provide no meaningful assurance:
+
+**`cspaceSlotUnique`**: Claims "lookup is deterministic for each slot address."
+The proof works because `cspaceLookupSlot` is read-only (doesn't modify
+state), so two lookups of the same address trivially return the same result.
+This is a property of pure functions in general, not a meaningful uniqueness
+guarantee.
+
+**`cspaceLookupSound`**: Claims "successful lookup corresponds to concrete
+content." The proof simply unpacks `cspaceLookupSlot`'s return value. Since
+lookup doesn't modify state (st' = st is immediate), and it returns what's
+in the slot, this is tautological.
+
+Both invariants are "preserved" by every operation trivially — they hold for
+any `SystemState` whatsoever. They inflate the capability invariant bundle
+without providing security evidence.
+
+**Recommendation:** Either remove these tautological components from the
+bundle, or redefine them to capture meaningful properties (e.g., slot
+uniqueness across different CNode paths that resolve to the same backing
+slot).
+
 ### 3.3 IPC Operations (`Kernel/IPC/`)
 
 **Strengths:**
@@ -156,6 +184,40 @@ distinguishes "CNode exists but slot is empty" (→ `invalidCapability`) from
 - `notificationWait` correctly handles duplicate-wait prevention (F-12)
 - Badge accumulation uses bitwise OR — matches real seL4 semantics
 - Invariant file (~890 lines) has substantial preservation proofs
+
+### FINDING [F-HIGH-04]: `uniqueWaiters` Not Composed Into Global IPC Invariant
+
+**File:** `SeLe4n/Kernel/IPC/Invariant.lean:839-888`
+**Severity:** High
+
+The F-12 double-wait prevention (`uniqueWaiters`) is proven preserved by
+`notificationWait`, but it is **NOT included** in the global `ipcInvariant`
+bundle (lines 252-259). The bundle only contains `endpointInvariant` and
+`notificationInvariant` (which is `notificationQueueWellFormed` alone).
+
+This means:
+- The composed bundles (M3, M3.5, M4-A) do not transitively verify
+  double-wait prevention
+- A state that violates waiter uniqueness would satisfy the global
+  invariant bundle
+- The F-12 proof exists but has no compositional force
+
+**Recommendation:** Add `uniqueWaiters` to `notificationInvariant` or
+`ipcInvariant` so preservation proofs compose through the bundle hierarchy.
+
+### FINDING [F-MED-07]: `endpointObjectValid` Is Redundant
+
+**File:** `SeLe4n/Kernel/IPC/Invariant.lean:232-239`
+**Severity:** Medium
+
+`endpointObjectValid` is provably implied by `endpointQueueWellFormed`
+(theorem `endpointObjectValid_of_queueWellFormed`), yet both are included
+in `endpointInvariant`. This redundancy inflates the invariant surface
+without adding assurance.
+
+**Recommendation:** Simplify `endpointInvariant` to just
+`endpointQueueWellFormed`, or redefine `endpointObjectValid` to capture
+an independent property.
 
 **FINDING [F-MED-03]: `storeTcbIpcState` Silently Succeeds on Missing TCB**
 
@@ -194,7 +256,43 @@ or at minimum document this as an intentional design choice with rationale.
 - Extensive decomposition theorems
   (`lifecycleRevokeDeleteRetype_ok_implies_staged_steps`)
 
-**No material findings.** This is one of the cleanest subsystems.
+### FINDING [F-MED-08]: Lifecycle Invariant Bundle Contains Redundant Components
+
+**File:** `SeLe4n/Kernel/Lifecycle/Invariant.lean:40-101`
+**Severity:** Medium
+
+`lifecycleIdentityNoTypeAliasConflict` is proven derivable from
+`lifecycleIdentityTypeExact` (theorem at line 103). Similarly,
+`lifecycleCapabilityRefObjectTargetTypeAligned` is proven derivable from
+identity exactness. Yet both are included in the bundle alongside the
+properties that imply them.
+
+This creates a misleading count of "independent" invariant components.
+Preservation proofs for the bundle are weaker than they appear because
+the redundant components add no additional verification obligation.
+
+### FINDING [F-MED-09]: No Cross-Subsystem Composition Proof
+
+**File:** `SeLe4n/Kernel/Capability/Invariant.lean:573-608`
+**Severity:** Medium
+
+The M3/M3.5/M4-A composed bundles are defined as conjunctions of subsystem
+bundles, and individual operations are proven to preserve them. However:
+
+1. No theorem proves that **arbitrary sequences** of operations from
+   different subsystems preserve the composed bundle
+2. No interference analysis proves that IPC operations cannot corrupt
+   lifecycle state or vice versa
+3. The storeObject_preserves_lifecycleMetadataConsistent lemma (used by
+   lifecycle preservation) is taken as given without inline verification
+
+The proof of `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`
+abstracts entirely through metadata consistency without verifying that
+the retype preconditions (authority, type match) actually protect
+invariants.
+
+**Recommendation:** Add an explicit composition theorem or interference
+analysis document.
 
 ---
 
@@ -462,12 +560,16 @@ The tier system is well-organized:
 - Tier 3: Invariant surface + doc anchors
 - Tier 4: Nightly experimental
 
-### 8.3 Observation: No CI Workflow in Repository
+### 8.3 CI Workflows Present
 
-The README references CI badges for `lean_action_ci.yml` and
-`platform_security_baseline.yml`, but `.github/workflows/` is not
-present in the repository file listing. This could mean the workflows
-are in the remote but not in the local checkout, or they may not exist.
+Four GitHub Actions workflows exist in `.github/workflows/`:
+- `lean_action_ci.yml` — PR/push CI (docs, fast, smoke, full jobs)
+- `nightly_determinism.yml` — Daily nightly Tier 4 + flake probing
+- `platform_security_baseline.yml` — Security baseline checks
+- `lean_toolchain_update_proposal.yml` — Automated toolchain proposals
+
+The CI pipeline properly caches `.elan`, `.lake/packages`, and
+`.lake/build` for performance.
 
 ---
 
@@ -533,12 +635,17 @@ Known simplifications that are acceptable for the current abstraction level:
 |----|----------|------|---------|
 | F-HIGH-01 | High | Machine.lean | `RegName`/`RegValue` are transparent type aliases, not typed wrappers |
 | F-HIGH-02 | High | InformationFlow | Non-interference proofs only cover both-succeed case |
+| F-HIGH-03 | High | Capability | `cspaceSlotUnique` and `cspaceLookupSound` are tautologically true |
+| F-HIGH-04 | High | IPC | `uniqueWaiters` (F-12) not composed into global IPC invariant bundle |
 | F-MED-01 | Medium | Prelude.lean | No `MonadError`/`MonadState` instances for `KernelM` |
 | F-MED-02 | Medium | Scheduler | `schedulerWellFormed` is a misleading alias for a subset of invariants |
 | F-MED-03 | Medium | IPC | `storeTcbIpcState` silently succeeds on missing/non-TCB objects |
 | F-MED-04 | Medium | InfoFlow | Enforcement boundary doesn't analyze covert channels |
 | F-MED-05 | Medium | Testing | Runtime invariant checks miss capability/lifecycle invariants |
 | F-MED-06 | Medium | Testing | `TraceSequenceProbe` only fuzzes 3 of ~20 operations |
+| F-MED-07 | Medium | IPC | `endpointObjectValid` is fully redundant with `endpointQueueWellFormed` |
+| F-MED-08 | Medium | Lifecycle | Lifecycle invariant bundle contains redundant derivable components |
+| F-MED-09 | Medium | Composition | No cross-subsystem interference analysis or composition proof |
 | F-LOW-01 | Low | Service | BFS fuel bound is ad hoc with no sufficiency proof |
 
 ---
@@ -547,36 +654,53 @@ Known simplifications that are acceptable for the current abstraction level:
 
 ### Immediate (before next release)
 
-1. **Wrap `RegName`/`RegValue` as structures** — straightforward change that
-   completes the typed-identifier discipline.
+1. **Compose `uniqueWaiters` into global IPC invariant** — the F-12
+   double-wait prevention proof exists but has no compositional force.
+   Add it to `ipcInvariant` or `notificationInvariant`.
 
 2. **Add step-consistency lemmas for non-interference** — prove that
    low-equivalent states produce the same success/failure outcome for each
    operation, closing the gap in the information-flow proofs.
 
-3. **Document `storeTcbIpcState` silent-success behavior** — either change
-   to error or add explicit rationale.
+3. **Replace tautological capability invariants** — either remove
+   `cspaceSlotUnique`/`cspaceLookupSound` from the bundle or redefine
+   them to capture meaningful properties (e.g., cross-path slot
+   resolution uniqueness).
+
+4. **Wrap `RegName`/`RegValue` as structures** — straightforward change
+   that completes the typed-identifier discipline.
 
 ### Short-term (next workstream)
 
-4. **Expand `TraceSequenceProbe`** to cover scheduler, notification, and
+5. **Remove redundant invariant components** — `endpointObjectValid` is
+   implied by `endpointQueueWellFormed`; lifecycle non-aliasing is
+   derivable from exactness. Simplify bundles to independent components.
+
+6. **Add cross-subsystem composition proof** — prove that arbitrary
+   interleaving of operations from different subsystems preserves the
+   M4-A composed bundle, or document the interference analysis.
+
+7. **Expand `TraceSequenceProbe`** to cover scheduler, notification, and
    capability operations.
 
-5. **Add runtime invariant checks** for capability slot uniqueness, lookup
-   soundness, and lifecycle metadata consistency.
+8. **Add runtime invariant checks** for capability and lifecycle
+   invariants.
 
-6. **Rename `schedulerWellFormed`** to eliminate the naming confusion.
+9. **Document `storeTcbIpcState` silent-success** — either change to
+   error or add explicit rationale.
 
 ### Medium-term
 
-7. **Analyze covert channels** in notification badge accumulation and
-   lifecycle retype, documenting the analysis results.
+10. **Analyze covert channels** in notification badge accumulation and
+    lifecycle retype, documenting the analysis results.
 
-8. **Add `MonadError`/`MonadState`** instances to reduce boilerplate in
-   transition functions.
+11. **Add `MonadError`/`MonadState`** instances to reduce boilerplate in
+    transition functions.
 
-9. **Prove BFS fuel sufficiency** or use a structurally-decreasing
-   termination argument.
+12. **Rename `schedulerWellFormed`** to eliminate naming confusion.
+
+13. **Prove BFS fuel sufficiency** or use a structurally-decreasing
+    termination argument.
 
 ---
 
@@ -588,12 +712,17 @@ typed-identifier system, Operations/Invariant split, and multi-tier test
 infrastructure are well-executed.
 
 The most significant areas for improvement are:
-1. The information-flow non-interference proofs need step-consistency lemmas
-   to close the mixed success/failure gap
-2. The enforcement boundary analysis should be extended to cover covert
-   channels, not just authorization
-3. The test fuzzer should be expanded beyond IPC to exercise the full
-   operation surface
+1. **Invariant quality**: Several invariant components are tautologically
+   true (capability) or redundant (IPC, lifecycle), inflating the apparent
+   proof surface without adding assurance. The F-12 double-wait prevention
+   proof is not composed into the global bundle.
+2. **Information-flow completeness**: Non-interference proofs need
+   step-consistency lemmas and the enforcement boundary needs covert
+   channel analysis.
+3. **Compositional safety**: No theorem proves that interleaved operations
+   from different subsystems preserve the composed M4-A invariant bundle.
+4. **Test coverage**: The fuzzer should be expanded beyond IPC to exercise
+   the full operation surface.
 
 The project's foundations are solid and the identified issues are addressable
 without architectural changes.
