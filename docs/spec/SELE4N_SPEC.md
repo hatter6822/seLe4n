@@ -40,7 +40,7 @@ claims, and planning artifacts.
 
 ## 2. Current State Snapshot
 
-- **Current package version:** `0.11.6` (`lakefile.toml`)
+- **Current package version:** `0.11.7` (`lakefile.toml`)
 - **Active findings baseline:** [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md)
 - **Active execution baseline:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
 - **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
