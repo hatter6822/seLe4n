@@ -27,8 +27,8 @@ the documentation implies**.
 | Severity | Count | Description |
 |----------|-------|-------------|
 | CRITICAL | 4 | Fundamental semantic gaps vs seL4; proof assurance undermined |
-| HIGH     | 5 | Significant model incompleteness or misleading proof structure |
-| MEDIUM   | 10 | Model simplifications, testing gaps with correctness implications |
+| HIGH     | 8 | Significant model incompleteness or misleading proof structure |
+| MEDIUM   | 9 | Model simplifications, testing gaps with correctness implications |
 | LOW      | 8 | Minor gaps, stylistic issues, or known deferrals |
 
 ---
@@ -335,18 +335,20 @@ revoking the authority capability would invalidate the retype step.
 
 ## Section 6: Service Subsystem
 
-### 6.1 BFS Cycle Detection Fuel Bound (MEDIUM — M-06)
+### 6.1 BFS Cycle Detection Is Unsound on Fuel Exhaustion (HIGH — H-08)
 
 `serviceHasPathTo` (`Service/Operations.lean:110-127`) uses bounded BFS with
-fuel `st.objectIndex.length + 256`. The bound is heuristic:
+fuel `st.objectIndex.length + 256`. When fuel is exhausted, the BFS returns
+`false` (line 115: `| 0 => false`), conservatively reporting "no path found."
+This is **unsound for cycle detection**: a dependency chain longer than the fuel
+bound will not be detected as cyclic, allowing `serviceRegisterDependency` to
+insert the edge and create a hidden cycle.
 
-- The `+ 256` constant accounts for "service IDs that may not have corresponding
-  kernel objects" but is not formally justified
-- If more than `objectIndex.length + 256` distinct services exist, the BFS
-  returns `false` (conservatively reports no path), which could allow cycle
-  insertion
-
-No theorem proves that the fuel bound is adequate for all reachable states.
+The `+ 256` constant is unjustified. The declarative acyclicity invariant
+`serviceDependencyAcyclic` (`Service/Invariant.lean:410-411`) is defined but
+the BFS soundness bridge (proof layers 2-4 of the TPI-D07 plan) is not
+implemented — only layers 0 and 1 (declarative definitions and structural
+lemmas) exist.
 
 ### 6.2 Restart Partial-Failure Semantics (POSITIVE)
 
@@ -431,7 +433,18 @@ theorems.
 
 ## Section 8: Architecture Layer
 
-### 8.1 Assumptions Are Structural Only (MEDIUM — M-08)
+### 8.1 VSpace Missing from Composed Invariant Bundle (HIGH — H-07)
+
+`Architecture/Invariant.lean:35-41` defines `proofLayerInvariantBundle` composing
+six subsystem invariants (scheduler, capability, IPC seed, IPC-scheduler
+coherence, lifecycle, service-lifecycle-capability). However, it **omits
+`vspaceInvariantBundle`** — meaning the composed bundle makes no claims about
+memory-isolation preservation across adapter transitions. VSpace is also absent
+from information-flow enforcement (no `vspaceMapPageChecked` exists), creating
+a gap where page-table modifications could establish covert channels without
+flow checks.
+
+### 8.2 Assumptions Are Structural Only (MEDIUM — M-08)
 
 `Architecture/Assumptions.lean` defines 5 architecture-facing assumptions and
 maps them to transition surfaces, invariant bundles, and contract obligations.
@@ -446,7 +459,7 @@ However, **no assumption is actually used by any proof**. The boundary contracts
 are structures with fields but are never instantiated or consumed. The assumption
 machinery is documentation infrastructure, not proof infrastructure.
 
-### 8.2 API.lean Is Just Imports (LOW — L-01)
+### 8.3 API.lean Is Just Imports (LOW — L-01)
 
 `Kernel/API.lean` contains only import statements (22 lines). There is no public
 API definition, no entry point composition, and no API-level invariant bundle.
