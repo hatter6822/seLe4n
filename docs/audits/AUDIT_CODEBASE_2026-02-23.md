@@ -27,8 +27,8 @@ the documentation implies**.
 | Severity | Count | Description |
 |----------|-------|-------------|
 | CRITICAL | 4 | Fundamental semantic gaps vs seL4; proof assurance undermined |
-| HIGH     | 8 | Significant model incompleteness or misleading proof structure |
-| MEDIUM   | 9 | Model simplifications, testing gaps with correctness implications |
+| HIGH     | 9 | Significant model incompleteness or misleading proof structure |
+| MEDIUM   | 10 | Model simplifications, testing gaps with correctness implications |
 | LOW      | 8 | Minor gaps, stylistic issues, or known deferrals |
 
 ---
@@ -219,6 +219,7 @@ uses a single `queue` plus an `Option ThreadId` for the receiver. This means:
 - At most one receiver can wait on an endpoint at a time
 - The receive path (`endpointReceive`) only consumes from the send queue
 - Multiple concurrent receivers cannot be modeled
+- Endpoint operations never transition thread IPC state (see H-09)
 
 ### 3.2 No Message Payload in IPC (MEDIUM — M-02)
 
@@ -258,6 +259,73 @@ if waiter ∈ ntfn.waitingThreads then .error .alreadyWaiting
 ```
 
 With a corresponding proof (`notificationWait_error_alreadyWaiting`, line 218).
+
+### 3.5 Endpoint Operations Never Transition Thread IPC State (HIGH — H-09)
+
+`ThreadIpcState` (`Model/Object.lean:58-62`) defines three blocking states:
+
+```lean
+inductive ThreadIpcState where
+  | ready
+  | blockedOnSend (endpoint : ObjId)
+  | blockedOnReceive (endpoint : ObjId)
+  | blockedOnNotification (notification : ObjId)
+```
+
+However, **no endpoint operation sets `.blockedOnSend` or `.blockedOnReceive`**.
+`endpointSend` only manipulates the endpoint's queue and state — it never calls
+`storeTcbIpcState` to mark the sender as blocked. `endpointAwaitReceive`
+transitions the endpoint to receive state but never marks the receiver's TCB.
+`endpointReceive` dequeues a sender but never unblocks it via `storeTcbIpcState`.
+
+Only notification operations use `storeTcbIpcState`: `notificationSignal` sets
+`.ready` on wake, and `notificationWait` sets `.blockedOnNotification`.
+
+**Consequence — vacuously true scheduler contract predicates:**
+
+The IPC-scheduler coherence predicates (`IPC/Invariant.lean:269-289`) are:
+
+```lean
+def blockedOnSendNotRunnable (st : SystemState) : Prop :=
+  ∀ (tid : ThreadId) tcb endpointId,
+    st.objects tid.toObjId = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnSend endpointId →
+    tid ∉ st.scheduler.runnable
+
+def blockedOnReceiveNotRunnable (st : SystemState) : Prop :=
+  -- (symmetric for .blockedOnReceive)
+```
+
+Since no operation ever produces `tcb.ipcState = .blockedOnSend _`, the
+hypothesis of the universal is never satisfiable. Both predicates are
+**vacuously true for all reachable states**. The 9 preservation theorems
+(3 per endpoint operation) are technically correct but provide zero assurance —
+they preserve an invariant that can never be violated because the antecedent
+is unreachable.
+
+**Impact**: The `ipcSchedulerContractPredicates` bundle is documented as "high
+assurance" (`IPC/Invariant.lean:13-14`) and counted in the proof surface, but
+2 of its 3 components are vacuous. Only `runnableThreadIpcReady` (component 1)
+carries real meaning.
+
+**Recommendation**: Implement proper thread blocking in endpoint operations:
+- `endpointSend` should call `storeTcbIpcState sender (.blockedOnSend endpointId)`
+  and `removeRunnable st sender` when the sender blocks waiting for a receiver
+- `endpointAwaitReceive` should call `storeTcbIpcState receiver (.blockedOnReceive endpointId)`
+  and `removeRunnable st receiver`
+- `endpointReceive` should call `storeTcbIpcState sender .ready` and
+  `ensureRunnable st sender` when dequeuing a blocked sender
+- Until then, document that these predicates are vacuously true
+
+### 3.6 No Reply Operation for Bidirectional IPC (MEDIUM — M-12)
+
+seL4 supports bidirectional IPC through reply capabilities and the
+`seL4_ReplyRecv` syscall. The seLe4n model has no reply operation — IPC is
+unidirectional only (send → receive). This means:
+
+- Client-server RPC patterns (call → reply) cannot be modeled
+- Reply capabilities (single-use, non-transferable) are absent
+- The IPC model cannot express the most common seL4 communication pattern
 
 ---
 
@@ -574,7 +642,7 @@ All 295 theorems compile without `sorry` or axioms.
    encode non-trivial properties, or explicitly document that certain components
    are meta-properties guaranteed by construction.
 
-### Tier 2: High-Priority Improvements (Addresses H-01 through H-06)
+### Tier 2: High-Priority Improvements (Addresses H-01 through H-09)
 
 5. **Make preservation proofs compositional**: Each preservation proof should
    derive post-state invariant components from pre-state components via the
@@ -593,23 +661,31 @@ All 295 theorems compile without `sorry` or axioms.
 9. **Reserve or validate ID 0**: Either explicitly reserve ID 0 as a sentinel,
    or remove `Inhabited` instances from identifier types.
 
-### Tier 3: Medium-Priority Enhancements (Addresses M-01 through M-09)
+10. **Implement thread blocking in endpoint operations**: `endpointSend` should
+    set `blockedOnSend` and remove the sender from the runnable queue when no
+    receiver is waiting. `endpointReceive` should unblock the dequeued sender.
+    This is required to make the IPC-scheduler contract non-vacuous (H-09).
 
-10. **Add message payload to IPC**: Extend endpoint operations with message
+### Tier 3: Medium-Priority Enhancements (Addresses M-01 through M-12)
+
+11. **Add message payload to IPC**: Extend endpoint operations with message
     registers and capability transfer.
 
-11. **Add domain scheduling**: Use `DomainId` in TCB to implement two-level
+12. **Add domain scheduling**: Use `DomainId` in TCB to implement two-level
     scheduling with temporal partitioning.
 
-12. **Prove BFS fuel adequacy**: Add theorem that `serviceBfsFuel` is sufficient
+13. **Prove BFS fuel adequacy**: Add theorem that `serviceBfsFuel` is sufficient
     for all reachable service graphs, or switch to a structurally-decreasing
     traversal.
 
-13. **Extend security label lattice**: Parameterize labels by a domain type
+14. **Extend security label lattice**: Parameterize labels by a domain type
     rather than hardcoding `{low, high} × {untrusted, trusted}`.
 
-14. **Add preemption and time-slice decrement**: Model tick-based preemption
+15. **Add preemption and time-slice decrement**: Model tick-based preemption
     using `TCB.timeSlice` and `MachineState.timer`.
+
+16. **Add reply operation for bidirectional IPC**: Implement reply capabilities
+    and `seL4_ReplyRecv`-style operations to model client-server RPC (M-12).
 
 ---
 
