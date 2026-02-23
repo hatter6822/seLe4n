@@ -28,8 +28,8 @@ the documentation implies**.
 |----------|-------|-------------|
 | CRITICAL | 4 | Fundamental semantic gaps vs seL4; proof assurance undermined |
 | HIGH     | 5 | Significant model incompleteness or misleading proof structure |
-| MEDIUM   | 8 | Model simplifications with correctness implications |
-| LOW      | 6 | Minor gaps, stylistic issues, or known deferrals |
+| MEDIUM   | 10 | Model simplifications, testing gaps with correctness implications |
+| LOW      | 8 | Minor gaps, stylistic issues, or known deferrals |
 
 ---
 
@@ -597,6 +597,70 @@ All 295 theorems compile without `sorry` or axioms.
 
 14. **Add preemption and time-slice decrement**: Model tick-based preemption
     using `TCB.timeSlice` and `MachineState.timer`.
+
+---
+
+## Section 12: Testing Infrastructure
+
+### 12.1 Tiered Architecture Is Well-Designed (POSITIVE)
+
+The project uses a 5-tier validation pipeline:
+
+| Tier | Script | Purpose |
+|------|--------|---------|
+| 0 | `test_fast.sh` | Hygiene: scans for `sorry`/`axiom`/`TODO`, validates type wrappers, shell lint |
+| 1 | `test_fast.sh` | Build: `lake build` compilation |
+| 2 | `test_smoke.sh` | Trace + negative state: fixture comparison, explicit error-path testing |
+| 3 | `test_full.sh` | Invariant surface: 483 anchor points for theorem existence and doc sync |
+| 4 | `test_nightly.sh` | Deterministic replay with seeded random traces |
+
+### 12.2 Negative Testing Done Right (POSITIVE)
+
+`NegativeStateSuite.lean` (372 lines) explicitly tests error paths with an
+`expectError` helper that validates both success and failure scenarios. The suite
+covers: invalid capability lookups, endpoint state mismatches, service policy
+denials, VSpace mapping conflicts, and scheduler invariant violations.
+
+### 12.3 Shallow Input Space Exploration (MEDIUM — M-10)
+
+All tests use hardcoded fixture values:
+
+- Object IDs: always 1, 10, 11, 12, 20, 30, 31
+- Priorities: only 10 vs 42 tested
+- CNode: single guard/radix pair (guard=1, radix=2)
+- VSpace: single mapping (asid=2, vaddr=4096, paddr=12288)
+- Scheduler: always 2-thread queues
+- Endpoints: always 1 endpoint, 2 threads, 3 operations
+
+No property-based testing, fuzzing, or parametric variation exists. A bug
+triggered only by specific guard/radix combinations, large queue sizes, or
+unusual priority values would not be detected.
+
+### 12.4 Missing Runtime Invariant Checks (MEDIUM — M-11)
+
+`InvariantChecks.lean` validates scheduler and IPC queue invariants but does
+**not** check:
+
+- CSpace coherency (capabilities must reference valid objects)
+- Capability rights attenuation (derived rights must subset source rights)
+- Lifecycle metadata consistency (`objectTypes[oid]` must match actual object)
+- Service graph acyclicity at runtime
+- VSpace ASID uniqueness
+
+### 12.5 Fixture Matching Is Fragile (LOW — L-07)
+
+The main trace fixture (`tests/fixtures/main_trace_smoke.expected`) uses
+`grep -Fq` substring matching against `reprStr` output. If Lean's `repr` format
+changes across toolchain versions, tests silently fail without detecting actual
+regressions. No version-locking of repr output format exists.
+
+### 12.6 Anchor Presence ≠ Correctness (LOW — L-08)
+
+Tier 3 (`test_tier3_invariant_surface.sh`) validates that 483 theorem names and
+documentation anchors exist in the codebase. However, anchor presence does not
+verify proof *correctness* — a theorem could be trivially true or prove a weaker
+property than the anchor implies. This is a known limitation of anchor-based
+testing.
 
 ---
 
