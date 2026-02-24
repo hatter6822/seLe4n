@@ -168,6 +168,28 @@ run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBu
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
+# WS-E2 closure anchors: proof quality and invariant strengthening.
+# C-01 remediation: non-tautological slot-uniqueness infrastructure at CNode level.
+run_check "INVARIANT" rg -n '^def slotsUnique' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem insert_slotsUnique' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem remove_slotsUnique' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_slotsUnique' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique' SeLe4n/Model/Object.lean
+# C-01/H-01 remediation: reformulated invariant definitions (non-tautological).
+run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_of_cspaceSlotUnique' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotUnique' SeLe4n/Kernel/Capability/Invariant.lean
+# H-01 remediation: compositional storeObject transfer lemmas.
+run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_nonCNode' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_cnode' SeLe4n/Kernel/Capability/Invariant.lean
+# H-03 remediation: badge/notification routing consistency chain.
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant.lean
+
 # M3 seed IPC preservation theorem anchors.
 run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean

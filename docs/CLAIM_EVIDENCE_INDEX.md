@@ -7,14 +7,14 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1 completed; WS-E2..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
 | IPC/scheduler/capability/info-flow invariants remain in active proof surface. | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh` | Direct symbol + theorem + doc anchor checks. |
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
 
-## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01)
+## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
 
 The following categories of theorems exist in the proof surface. Claims about proof coverage should distinguish between them:
 
@@ -22,9 +22,18 @@ The following categories of theorems exist in the proof surface. Claims about pr
 |---|---|---|
 | **Substantive preservation** | Proves that a *successful* operation preserves an invariant over *changed* state. | High |
 | **Error-case preservation** | Proves that a *failed* operation preserves an invariant by returning unchanged state. Trivially true. | Low (technically correct but not security evidence) |
-| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. Structurally valid but masks lack of engagement with the operation's state transformation. (Identified by v0.11.6 audit H-01; targeted by WS-E2.) | Medium (weaker than compositional proofs) |
-| **Tautological** | Proves a property that holds for *all* states by construction (e.g., `cspaceSlotUnique_holds` exploiting pure-function determinism). (Identified by v0.11.6 audit C-01; targeted by WS-E2.) | None (should be reformulated or documented as meta-properties) |
+| **Compositional preservation** | Derives post-state invariant from pre-state through operation-specific transfer lemmas (`cspaceSlotUnique_of_storeObject_*`, `CNode.insert_slotsUnique`, etc.). (WS-E2 H-01 resolved: all preservation proofs refactored to this pattern.) | High |
+| **Structural invariant** | Proves a genuine structural property requiring a witness (e.g., `capabilityInvariantBundle_of_slotUnique` requires `CNode.slotsUnique` evidence). (WS-E2 C-01 resolved: former tautological proofs reformulated.) | High |
+| **End-to-end chain** | Proves a multi-step semantic property across subsystem boundaries (e.g., `badge_notification_routing_consistent` — badge propagation from mint through notification signal/wait). (WS-E2 H-03 resolved.) | High |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
+
+### Resolved proof qualification findings (WS-E2)
+
+| Finding | Prior category | Resolution |
+|---|---|---|
+| C-01 (Tautological proofs) | Tautological (assurance: None) | Reformulated to **Structural invariant**: `cspaceSlotUnique` now encodes CNode slot-index uniqueness via `CNode.slotsUnique`; `cspaceLookupSound` proves lookup completeness; bridge theorem `cspaceLookupSound_of_cspaceSlotUnique` connects them; `capabilityInvariantBundle_of_slotUnique` replaces tautological `capabilityInvariantBundle_holds`. |
+| H-01 (Non-compositional proofs) | Non-compositional preservation (assurance: Medium) | Refactored to **Compositional preservation**: all preservation proofs derive post-state from pre-state via transfer lemmas. CNode operations use `CNode.insert_slotsUnique`, `CNode.remove_slotsUnique`, `CNode.revokeTargetLocal_slotsUnique`. |
+| H-03 (Badge safety gap) | Gap (no theorem) | Closed with **End-to-end chain**: `mintDerivedCap_badge_propagated` -> `cspaceMint_child_badge_preserved` -> `notificationSignal_badge_stored_fresh` -> `notificationWait_recovers_pending_badge` -> `badge_notification_routing_consistent`; plus `badge_merge_idempotent`. |
 
 ## Closed proof obligations (WS-D tracked issues)
 

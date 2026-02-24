@@ -42,13 +42,13 @@ related findings into coherent implementation slices.
 
 | ID | Severity | Description | Workstream | Status |
 |----|----------|-------------|------------|--------|
-| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | Pending |
+| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | **RESOLVED** |
 | C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
 | C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
 | C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
-| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 |
+| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 |
-| H-03 | HIGH | Badge override safety gap | WS-E2 |
+| H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
@@ -134,21 +134,32 @@ topologies exercise at least 3 distinct configurations per subsystem. ✓
 
 **Scope:**
 
-1. **C-01** Reformulate `cspaceSlotUnique` and `cspaceLookupSound` to prove
-   non-trivial properties. Either strengthen the invariant definitions to
-   encode lookup correctness relative to a specification, or explicitly
-   document them as meta-properties (and remove from the "high assurance"
-   categorization in documentation).
-2. **H-01** Refactor capability preservation proofs to be compositional —
-   each proof should derive post-state invariant components from pre-state
-   components through the operation's specific state transformation, not
-   re-prove from scratch.
-3. **H-03** Add theorem proving that badge values propagated through
-   `cspaceMint` are consistent with notification routing semantics.
+1. ~~C-01~~ Reformulate `cspaceSlotUnique` and `cspaceLookupSound` from
+   tautological meta-properties to genuine structural invariants — **DONE**
+   (`cspaceSlotUnique` now proves CNode slot-index uniqueness via
+   `CNode.slotsUnique`; `cspaceLookupSound` proves lookup completeness;
+   bridge theorem `cspaceLookupSound_of_cspaceSlotUnique` connects them;
+   `capabilityInvariantBundle_holds` replaced by
+   `capabilityInvariantBundle_of_slotUnique` requiring genuine uniqueness
+   witness).
+2. ~~H-01~~ All preservation proofs now derive post-state invariants from
+   pre-state through operation-specific transformations — **DONE** (transfer
+   lemmas: `cspaceSlotUnique_of_storeObject_cnode`,
+   `cspaceSlotUnique_of_storeObject_nonCNode`,
+   `cspaceSlotUnique_of_endpoint_store`, `cspaceSlotUnique_of_objects_eq`;
+   CNode operations use `CNode.insert_slotsUnique`,
+   `CNode.remove_slotsUnique`, `CNode.revokeTargetLocal_slotsUnique`).
+3. ~~H-03~~ End-to-end badge routing chain proved — **DONE**
+   (`mintDerivedCap_badge_propagated` -> `cspaceMint_child_badge_preserved` ->
+   `notificationSignal_badge_stored_fresh` ->
+   `notificationWait_recovers_pending_badge` ->
+   `badge_notification_routing_consistent`; also `badge_merge_idempotent`).
 
 **Validation gate:** `test_full.sh` passes; preservation proofs use `hInv`
 destructured components in post-state derivation (not just `_`-prefixed
-discards).
+discards). ✓
+
+**Status:** **COMPLETED**
 
 **Dependencies:** None.
 
@@ -275,9 +286,9 @@ WS-E4 (CDT integration for capability flow proofs).
 ## 5. Execution phases
 
 - **Phase P0:** Baseline — close quick fixes, publish WS-E planning backbone,
-  update documentation to reflect v0.11.6 audit (**current phase**).
-- **Phase P1:** WS-E1 (test/CI hardening) + WS-E2 (proof quality) — parallel.
-- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns.
+  update documentation to reflect v0.11.6 audit (**completed**).
+- **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
+- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**current phase**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3.
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
@@ -289,7 +300,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | Workstream | Status | Priority | Key findings | Phase |
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
-| WS-E2 | Planned | High | C-01, H-01, H-03 | P1 |
+| WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
@@ -306,3 +317,6 @@ WS-E4 (CDT integration for capability flow proofs).
 | F-10 | Replaced hardcoded 512-ID bound with `st.objectIndex` discovery | P0 baseline |
 | F-13 | Version badge verified correct (v0.11.7) | Already resolved |
 | F-15 | Added explicit `permissions: contents: read` to `lean_action_ci.yml` and `nightly_determinism.yml` | P0 baseline |
+| C-01 | Reformulated `cspaceSlotUnique`/`cspaceLookupSound` from tautological to genuine structural invariants; bridge theorem + `capabilityInvariantBundle_of_slotUnique` | WS-E2 |
+| H-01 | All preservation proofs refactored to compositional style with transfer lemmas (`cspaceSlotUnique_of_storeObject_*`, CNode `insert/remove/revokeTargetLocal_slotsUnique`) | WS-E2 |
+| H-03 | End-to-end badge routing chain: `mintDerivedCap_badge_propagated` through `badge_notification_routing_consistent` | WS-E2 |

@@ -120,14 +120,12 @@ theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup
     (svc : ServiceGraphEntry)
     (slot : SeLe4n.Slot)
     (cap : Capability)
-    (hCap : capabilityInvariantBundle st)
+    (_hCap : capabilityInvariantBundle st)
     (hLookup : cspaceLookupSlot { cnode := svc.identity.owner, slot := slot } st = .ok (cap, st))
     (hTarget : cap.target = .object svc.identity.backingObject) :
     policyOwnerAuthoritySlotPresent st svc := by
-  have hSound : cspaceLookupSound st := hCap.2.1
-  have hSoundFacts := hSound { cnode := svc.identity.owner, slot := slot } cap st hLookup
-  rcases hSoundFacts with ⟨hStEq, _hOwns, hSlotCap⟩
-  cases hStEq
+  have hSlotCap : SystemState.lookupSlotCap st { cnode := svc.identity.owner, slot := slot } = some cap :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st { cnode := svc.identity.owner, slot := slot } cap).1 hLookup
   exact ⟨slot, cap, hSlotCap, hTarget⟩
 
 /-- Composed bridge theorem from lifecycle contracts to the service policy surface.
@@ -215,13 +213,25 @@ theorem storeServiceState_preserves_lifecycleInvariantBundle
     SystemState.lookupObjectTypeMeta, SystemState.lookupCapabilityRefMeta,
     SystemState.lookupSlotCap, SystemState.lookupCNode] using hLifecycle
 
+/-- `storeServiceState` preserves the capability invariant bundle compositionally.
+
+`storeServiceState` only modifies the `services` field, leaving the object store
+unchanged. Therefore CNode slot-index uniqueness transfers directly from the pre-state. -/
 theorem storeServiceState_preserves_capabilityInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
     (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus) :
+    (newStatus : ServiceStatus)
+    (hInv : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
-  exact capabilityInvariantBundle_holds (storeServiceState sid { svc with status := newStatus } st)
+  rcases hInv with ⟨hUnique, hSound, hAttRule, _⟩
+  refine ⟨?_, ?_, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  · intro cnodeId cn hCn
+    exact hUnique cnodeId cn hCn
+  · intro cnodeId cn slot cap hCn hMem
+    have hSlot := hSound cnodeId cn slot cap hCn hMem
+    simp only [SystemState.lookupSlotCap, storeServiceState] at hSlot ⊢
+    exact hSlot
 
 theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
     (st st' : SystemState)
@@ -245,7 +255,7 @@ theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
             exact ⟨
               storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
               storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running
+              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
             ⟩
           · simp [hLookup, hStopped, hAllow, hDeps] at hStep
         · simp [hLookup, hStopped, hAllow] at hStep
@@ -272,7 +282,7 @@ theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
           exact ⟨
             storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
             storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
-            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped
+            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped hCap
           ⟩
         · simp [hLookup, hRunning, hAllow] at hStep
       · simp [hLookup, hRunning] at hStep

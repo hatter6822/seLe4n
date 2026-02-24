@@ -34,18 +34,29 @@ Preservation shape:
 
 Component level:
 
-- uniqueness of slots,
-- lookup soundness,
-- attenuation rule,
-- lifecycle authority monotonicity.
+- `cspaceSlotUnique` — structural CNode slot-index uniqueness (reformulated in WS-E2; non-tautological, requires `CNode.slotsUnique`),
+- `cspaceLookupSound` — lookup completeness grounded in slot membership (reformulated in WS-E2; non-tautological),
+- `cspaceAttenuationRule` — minted capabilities attenuate rights,
+- `lifecycleAuthorityMonotonicity` — authority only decreases through lifecycle operations.
+
+Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness from slot uniqueness.
 
 Bundle level:
 
-- `capabilityInvariantBundle`
+- `capabilityInvariantBundle` (conjunction of the four components above)
+- `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique`)
 
 Preservation shape:
 
-- operation-level `*_preserves_capabilityInvariantBundle` for lookup/insert/mint/delete/revoke.
+- operation-level `*_preserves_capabilityInvariantBundle` for insert/delete/revoke (compositional: pre-state → post-state),
+- IPC-level preservation for endpoint send/receive/await-receive (compositional),
+- lifecycle preservation with `hNewObjCNodeUniq` hypothesis.
+
+Badge routing chain (H-03):
+
+- `mintDerivedCap_badge_propagated` → `cspaceMint_child_badge_preserved` → `notificationSignal_badge_stored_fresh` → `notificationWait_recovers_pending_badge`
+- End-to-end: `badge_notification_routing_consistent`
+- Merge property: `badge_merge_idempotent`
 
 ## 4. IPC invariants (M3)
 
