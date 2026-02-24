@@ -7,7 +7,7 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
@@ -34,6 +34,17 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | C-01 (Tautological proofs) | Tautological (assurance: None) | Reformulated to **Structural invariant**: `cspaceSlotUnique` now encodes CNode slot-index uniqueness via `CNode.slotsUnique`; `cspaceLookupSound` proves lookup completeness; bridge theorem `cspaceLookupSound_of_cspaceSlotUnique` connects them; `capabilityInvariantBundle_of_slotUnique` replaces tautological `capabilityInvariantBundle_holds`. |
 | H-01 (Non-compositional proofs) | Non-compositional preservation (assurance: Medium) | Refactored to **Compositional preservation**: all preservation proofs derive post-state from pre-state via transfer lemmas. CNode operations use `CNode.insert_slotsUnique`, `CNode.remove_slotsUnique`, `CNode.revokeTargetLocal_slotsUnique`. |
 | H-03 (Badge safety gap) | Gap (no theorem) | Closed with **End-to-end chain**: `mintDerivedCap_badge_propagated` -> `cspaceMint_child_badge_preserved` -> `notificationSignal_badge_stored_fresh` -> `notificationWait_recovers_pending_badge` -> `badge_notification_routing_consistent`; plus `badge_merge_idempotent`. |
+
+### Resolved kernel hardening findings (WS-E3)
+
+| Finding | Prior category | Resolution |
+|---|---|---|
+| H-06 (Magic ID 0) | Gap (Inhabited default creates implicit sentinel) | **Resolved**: ID 0 reserved as explicit sentinel for all identifier types (`ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId`). Documented in `Prelude.lean`. |
+| H-07 (VSpace not in composed bundle) | Gap (VSpace proofs orphaned from composed invariant) | **Resolved**: `vspaceInvariantBundle` added to `proofLayerInvariantBundle` composition. Preservation theorems for all adapter operations. |
+| H-08 (BFS unsound on fuel exhaustion) | Safety gap (fuel exhaustion returns `false`, allowing cycles) | **Resolved**: `serviceHasPathTo` returns conservative `true` on fuel exhaustion. `bfs_fuel_exhaustion_adequacy` theorem added. |
+| H-09 (No thread blocking in IPC) | Critical gap (contract predicates vacuous) | **Resolved**: Full multi-step blocking semantics (`storeObject` -> `storeTcbIpcState` -> `removeRunnable`/`ensureRunnable`). Preservation theorems for `schedulerInvariantBundle`, `capabilityInvariantBundle`, `ipcSchedulerContractPredicates`. Non-interference chain updated for `endpointSend_preserves_lowEquivalent`. |
+| M-09 (Metadata sync hazard) | Gap (no proof of metadata consistency through type-changing stores) | **Resolved**: `storeObject_metadata_sync_type_change` theorem added. |
+| L-06 (No initialization proof) | Gap (default state not proved valid) | **Resolved**: `default_systemState_lifecycleConsistent` theorem added. |
 
 ## Closed proof obligations (WS-D tracked issues)
 

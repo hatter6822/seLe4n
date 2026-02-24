@@ -112,7 +112,7 @@ def serviceHasPathTo
   go [src] [] fuel
 where
   go (frontier visited : List ServiceId) : Nat → Bool
-  | 0 => false  -- fuel exhausted: conservatively report no path
+  | 0 => true  -- WS-E3/H-08: fuel exhausted — conservatively assume path exists (safe for cycle detection)
   | fuel + 1 =>
       match frontier with
       | [] => false  -- frontier empty: no path exists

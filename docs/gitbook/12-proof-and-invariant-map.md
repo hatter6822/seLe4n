@@ -74,21 +74,26 @@ Preservation shape:
 
 Component level:
 
-- runnable threads should be IPC-ready,
-- blocked-on-send threads should not remain runnable,
-- blocked-on-receive threads should not remain runnable.
+- `runnableThreadIpcReady` — runnable threads must be IPC-ready,
+- `blockedOnSendNotRunnable` — blocked-on-send threads must not be runnable,
+- `blockedOnReceiveNotRunnable` — blocked-on-receive threads must not be runnable.
+
+**WS-E3/H-09**: These predicates are now **non-vacuous** — endpoint operations
+implement full thread blocking semantics (`storeObject` -> `storeTcbIpcState` ->
+`removeRunnable`/`ensureRunnable`), making the contract predicates exercised at
+runtime.
 
 Bundle level:
 
-- `ipcSchedulerContractPredicates`
-- `ipcSchedulerCoherenceComponent`
-- `m35IpcSchedulerInvariantBundle`
+- `ipcSchedulerContractPredicates` — conjunction of the three component predicates
+- `ipcSchedulerCoherenceComponent` — capability-layer mirror
+- `m35IpcSchedulerInvariantBundle` — composed with `m3IpcSeedInvariantBundle`
 
 Preservation shape:
 
-- local component preservation theorem per transition,
-- composed contract preservation theorem per transition,
-- bundle preservation theorem per transition.
+- local component preservation theorem per transition (9 theorems: 3 ops x 3 predicates),
+- composed contract preservation theorem per transition (3 bundled theorems),
+- bundle preservation theorem per transition (3 M3.5 bundle theorems).
 
 ## 6. Naming conventions and why they matter
 
@@ -154,7 +159,7 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete)
+## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-E3 / H-07 composed)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:
 
@@ -174,6 +179,11 @@ Supporting infrastructure in `VSpace.lean`:
 - `resolveAsidRoot_some_implies` — extracts object-store facts from successful ASID resolution
 - `resolveAsidRoot_of_unique_root` — characterization lemma enabling round-trip proofs
 - `storeObject_objectIndex_eq_of_mem` — objectIndex stability for in-place updates
+
+**WS-E3/H-07**: `vspaceInvariantBundle` is now composed into
+`proofLayerInvariantBundle`, ensuring VSpace invariants participate in the
+global composed invariant preservation chain. Adapter operations preserve the
+bundle through existing VSpace preservation theorems.
 
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 
@@ -201,14 +211,17 @@ every theorem into one of these categories:
 | **Structural / bridge** | High — proves decomposition/composition relationships |
 | **Round-trip / functional-correctness** | High — proves semantic contracts between operations |
 
-## 13. Kernel design hardening (WS-D4 complete)
+## 13. Kernel design hardening (WS-D4 complete; WS-E3 H-08 hardened)
 
 ### F-07: Service dependency cycle detection
 
 Service dependency registration now includes BFS-based cycle detection:
 
 - `serviceBfsFuel` — fuel computation for bounded BFS (objectIndex.length + 256)
-- `serviceHasPathTo` — bounded BFS reachability check in the dependency graph
+- `serviceHasPathTo` — bounded BFS reachability check in the dependency graph;
+  **WS-E3/H-08**: returns conservative `true` on fuel exhaustion (safer for
+  cycle detection — prevents false negatives when BFS fuel is insufficient).
+  `bfs_fuel_exhaustion_adequacy` theorem proves this is sound.
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
 - `serviceDependencyAcyclic` — acyclicity invariant definition

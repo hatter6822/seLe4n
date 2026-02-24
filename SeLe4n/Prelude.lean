@@ -1,5 +1,22 @@
 namespace SeLe4n
 
+/-! ## WS-E3/H-06: Identifier sentinel convention
+
+All identifier types (`ObjId`, `ThreadId`, `CPtr`, `Slot`, etc.) derive `Inhabited`,
+which creates a default value at `val := 0`. This is required by Lean infrastructure
+(e.g., `Array.get!`, monadic `default`).
+
+**Convention**: ID 0 is reserved as a **sentinel / null value** and must never be
+allocated to a real kernel object, thread, capability pointer, or any other live entity.
+All bootstrap builders and test fixtures must use IDs ≥ 1.
+
+This mirrors seL4's convention where capability pointer 0 (seL4_CapNull) is the
+null capability, and ID 0 is never assigned to a real object. -/
+
+/-- Predicate: an identifier value is non-sentinel (not the default 0). -/
+def validId (n : Nat) : Prop := n ≠ 0
+instance (n : Nat) : Decidable (validId n) := inferInstanceAs (Decidable (n ≠ 0))
+
 /-- Identifier for objects in the global kernel object store. -/
 structure ObjId where
   val : Nat
@@ -18,6 +35,9 @@ instance instOfNat (n : Nat) : OfNat ObjId n where
 
 instance : ToString ObjId where
   toString id := toString id.toNat
+
+/-- WS-E3/H-06: The default (Inhabited) ObjId is the sentinel value 0. -/
+theorem default_val : (default : ObjId).val = 0 := rfl
 
 end ObjId
 

@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Service.Invariant
 
 /-!
@@ -31,14 +32,34 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 open SeLe4n.Kernel
 
-/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles. -/
+/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles.
+WS-E3/H-07: Now includes `vspaceInvariantBundle` for complete architecture coverage. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧
     capabilityInvariantBundle st ∧
     m3IpcSeedInvariantBundle st ∧
     m35IpcSchedulerInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
-    serviceLifecycleCapabilityInvariantBundle st
+    serviceLifecycleCapabilityInvariantBundle st ∧
+    vspaceInvariantBundle st
+
+/-- WS-E3/H-07: Timer advancement preserves VSpace invariant bundle.
+Timer-only state changes do not affect the object store. -/
+private theorem advanceTimerState_preserves_vspaceInvariantBundle
+    (ticks : Nat) (st : SystemState)
+    (hInv : vspaceInvariantBundle st) :
+    vspaceInvariantBundle (advanceTimerState ticks st) := by
+  rcases hInv with ⟨hUniq, hNonOverlap⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap⟩
+
+/-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
+Register-only state changes do not affect the object store. -/
+private theorem writeRegisterState_preserves_vspaceInvariantBundle
+    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (hInv : vspaceInvariantBundle st) :
+    vspaceInvariantBundle (writeRegisterState reg value st) := by
+  rcases hInv with ⟨hUniq, hNonOverlap⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap⟩
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where

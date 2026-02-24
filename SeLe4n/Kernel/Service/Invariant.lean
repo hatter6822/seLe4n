@@ -803,6 +803,27 @@ theorem bfs_complete_for_nontrivialPath
       simp [List.filter_eq_self]
     rw [hFiltId]; exact hLen
 
+/-- WS-E3/H-08: BFS conservatively reports a path when fuel is exhausted.
+Under the zero-fuel base case the BFS returns `true`, preventing any
+dependency registration when the fuel budget is insufficient. -/
+theorem serviceHasPathTo_fuel_zero (st : SystemState) (src target : ServiceId) :
+    serviceHasPathTo st src target 0 = true := by
+  simp [serviceHasPathTo, serviceHasPathTo.go]
+
+/-- WS-E3/H-08 adequacy: when BFS returns `false`, there genuinely is no
+nontrivial path from `a` to `b`. This is the soundness direction —
+the contrapositive of `bfs_complete_for_nontrivialPath`. -/
+theorem bfs_false_implies_no_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (hBfs : serviceHasPathTo st a b (serviceBfsFuel st) = false)
+    (hNe : a ≠ b)
+    (hBound : serviceCountBounded st) :
+    ¬ serviceNontrivialPath st a b := by
+  intro hPath
+  have hTrue := bfs_complete_for_nontrivialPath hPath hNe hBound
+  rw [hTrue] at hBfs
+  cases hBfs
+
 -- ============================================================================
 -- Layer 3: Post-insertion nontrivial path decomposition
 -- ============================================================================

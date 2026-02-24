@@ -96,7 +96,7 @@ WS-D portfolio (WS-D5/D6).
 ### 4.2 High — Proof Quality and Kernel Hardening
 
 - **WS-E2:** Proof quality and invariant strengthening (high; **completed** — C-01, H-01, H-03)
-- **WS-E3:** Kernel semantic hardening (high; **planned** — H-06, H-07, H-08, H-09, M-09, L-06)
+- **WS-E3:** Kernel semantic hardening (high; **completed** — H-06, H-07, H-08, H-09, M-09, L-06)
 
 ### 4.3 Critical — Model Completion
 
@@ -128,7 +128,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 - **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**completed**)
 - **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
-- **Phase P2:** WS-E3 (kernel hardening) — **current**
+- **Phase P2:** WS-E3 (kernel hardening) — **completed**
 - **Phase P3:** WS-E4 (capability/IPC completion)
 - **Phase P4:** WS-E5 (information-flow maturity)
 - **Phase P5:** WS-E6 (model completeness/docs)

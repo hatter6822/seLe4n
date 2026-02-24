@@ -493,4 +493,49 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
+/-- WS-E3/M-09: `storeObject` correctly synchronizes lifecycle metadata even when
+the stored object changes the type at `oid`. After storing, the metadata at `oid`
+reflects the new object's type, regardless of what was stored previously. -/
+theorem storeObject_metadata_sync_type_change
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes oid = some obj.objectType := by
+  unfold storeObject at hStep
+  cases hStep
+  simp
+
+/-- WS-E3/M-09: `storeObject` correctly synchronizes capability-reference metadata
+when the stored object changes from a CNode to a non-CNode (or vice versa).
+After storing a non-CNode, all capability references pointing into `oid` are
+cleared; after storing a CNode, they reflect the new CNode's slot contents. -/
+theorem storeObject_metadata_sync_capref_at_stored
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (slot : SeLe4n.Slot)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    SystemState.lookupCapabilityRefMeta st' { cnode := oid, slot := slot } =
+      match obj with
+      | .cnode cn => (cn.lookup slot).map Capability.target
+      | _ => none := by
+  unfold storeObject at hStep
+  cases hStep
+  cases obj <;> simp [SystemState.lookupCapabilityRefMeta]
+
+/-- WS-E3/L-06: The default `SystemState` satisfies `lifecycleMetadataConsistent`.
+Since the default state has no objects (`objects _ = none`) and no metadata
+(`lifecycle.objectTypes _ = none`, `lifecycle.capabilityRefs _ = none`), the
+consistency invariant holds vacuously. -/
+theorem default_systemState_lifecycleMetadataConsistent :
+    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
+  refine ⟨?_, ?_⟩
+  · intro oid
+    unfold SystemState.lookupObjectTypeMeta
+    rfl
+  · intro ref
+    unfold SystemState.lookupCapabilityRefMeta SystemState.lookupSlotCap SystemState.lookupCNode
+    rfl
+
 end SeLe4n.Model
