@@ -181,6 +181,62 @@ Always constrain output to avoid truncation and context-window pressure:
 limit it upfront. Paginate through results rather than requesting everything
 at once.
 
+## Background agent file-change protection
+
+Background agents (launched via the Task tool with `run_in_background: true`)
+run concurrently and may finish after the foreground agent has already modified
+the same files. When this happens the background agent's stale writes silently
+overwrite the foreground agent's progress. **You must prevent this.**
+
+**Rules:**
+
+1. **Never delegate file writes to a background agent for files you may also
+   edit.** Before launching a background agent, identify every file it might
+   create or modify. If there is any chance the foreground agent (you) will
+   touch the same file while the background agent runs, do **not** run that
+   agent in the background — run it in the foreground instead, or restructure
+   the work so there is no file overlap.
+2. **Partition files strictly.** When parallel work is genuinely needed, assign
+   each agent a disjoint set of files. Document the partition in your task
+   prompt to the background agent (e.g., "You own `Foo.lean` and `Bar.lean`
+   only — do not modify any other file"). The foreground agent must not touch
+   those files until the background agent completes.
+3. **Use background agents only for read-only or independent-file tasks.** Safe
+   uses include: running builds/tests, searching the codebase, reading files
+   for research, or writing to files that the foreground agent will never edit
+   during this session. Unsafe uses include: editing shared source files,
+   modifying configuration files, or any task where the output files overlap
+   with foreground work.
+4. **Check background results before acting on shared state.** When a background
+   agent finishes, read its output and verify whether it touched any files. If
+   it wrote to a file you have since modified, discard the background agent's
+   version and redo that work on top of your current file state.
+5. **When in doubt, run in foreground.** The performance benefit of background
+   execution is never worth the risk of silently lost work. Prefer sequential
+   correctness over parallel speed.
+
+**Example — safe background usage:**
+
+```
+# Background agent runs tests (read-only, no file writes)
+Task(subagent_type="Bash", run_in_background=true,
+     prompt="Run ./scripts/test_smoke.sh and report results")
+
+# Meanwhile, foreground edits Operations.lean — no conflict
+Edit("SeLe4n/Kernel/Scheduler/Operations.lean", ...)
+```
+
+**Example — unsafe pattern to avoid:**
+
+```
+# WRONG: background agent will edit Invariant.lean
+Task(subagent_type="general-purpose", run_in_background=true,
+     prompt="Add theorem X to Invariant.lean")
+
+# Foreground also edits Invariant.lean — background will overwrite!
+Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
+```
+
 ## Key conventions
 
 - **Invariant/Operations split**: each kernel subsystem has `Operations.lean`
