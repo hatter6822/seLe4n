@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1 completed; WS-E2..WS-E6 planned)**,
+- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned)**,
 - completed predecessor: **WS-D portfolio (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E)**,
 - completed predecessor before that: **WS-C portfolio (WS-C1..WS-C8)**.
 
@@ -33,7 +33,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ### 3.1 Workstreams and intent
 
 - **WS-E1** — Test infrastructure and CI hardening (**completed** — M-10, M-11, F-14, L-07, L-08)
-- **WS-E2** — Proof quality and invariant strengthening (**planned** — C-01, H-01, H-03)
+- **WS-E2** — Proof quality and invariant strengthening (**completed** — C-01, H-01, H-03)
 - **WS-E3** — Kernel semantic hardening (**planned** — H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4** — Capability and IPC model completion (**planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5** — Information-flow maturity (**planned** — H-04, H-05, M-07)
@@ -46,8 +46,8 @@ Canonical detail: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](audits/AUDIT_
 Use the planning phases from the workstream backbone:
 
 - **Phase P0:** Baseline — close quick fixes, publish WS-E backbone (**completed**)
-- **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality) — **current**
-- **Phase P2:** WS-E3 (kernel hardening)
+- **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
+- **Phase P2:** WS-E3 (kernel hardening) — **current**
 - **Phase P3:** WS-E4 (capability/IPC completion)
 - **Phase P4:** WS-E5 (information-flow maturity)
 - **Phase P5:** WS-E6 (model completeness/docs)

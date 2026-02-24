@@ -384,6 +384,100 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
     by_cases hEq : entry.fst = sourceSlot <;> simp [hEq]
   simp [hPred]
 
+-- ============================================================================
+-- WS-E2 / C-01: Non-trivial CNode slot-index uniqueness infrastructure
+-- ============================================================================
+
+/-- CNode slot-index uniqueness: each slot index maps to at most one capability
+in the slot list. This is a non-trivial structural invariant maintained by CNode
+operations (insert removes duplicates before prepending, remove/revoke only filter).
+
+WS-E2 / C-01 remediation: replaces the prior tautological definition that merely
+proved a pure function returns the same output for the same input. -/
+def slotsUnique (cn : CNode) : Prop :=
+  ∀ slot cap₁ cap₂,
+    (slot, cap₁) ∈ cn.slots →
+    (slot, cap₂) ∈ cn.slots →
+    cap₁ = cap₂
+
+theorem empty_slotsUnique : CNode.empty.slotsUnique := by
+  intro slot cap₁ cap₂ h₁
+  simp [CNode.empty] at h₁
+
+/-- `insert` preserves slot-key uniqueness: the old entry for `slot` is filtered out
+before prepending the new one, so no duplicate keys are introduced. -/
+theorem insert_slotsUnique
+    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hUniq : cn.slotsUnique) :
+    (cn.insert slot cap).slotsUnique := by
+  intro s c₁ c₂ h₁ h₂
+  simp only [insert, List.mem_cons, List.mem_filter] at h₁ h₂
+  rcases h₁ with h₁eq | ⟨h₁m, h₁p⟩
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h₁eq
+    rcases h₂ with h₂eq | ⟨h₂m, h₂p⟩
+    · exact (Prod.mk.inj h₂eq).2.symm
+    · exfalso; simp at h₂p
+  · rcases h₂ with h₂eq | ⟨h₂m, h₂p⟩
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h₂eq
+      exfalso; simp at h₁p
+    · exact hUniq s c₁ c₂ h₁m h₂m
+
+/-- `remove` preserves slot-key uniqueness: filtering can only reduce the slot list. -/
+theorem remove_slotsUnique
+    (cn : CNode) (slot : SeLe4n.Slot)
+    (hUniq : cn.slotsUnique) :
+    (cn.remove slot).slotsUnique := by
+  intro s c₁ c₂ h₁ h₂
+  simp only [remove, List.mem_filter] at h₁ h₂
+  exact hUniq s c₁ c₂ h₁.1 h₂.1
+
+/-- `revokeTargetLocal` preserves slot-key uniqueness: it is a filter operation
+that can only reduce the slot list. -/
+theorem revokeTargetLocal_slotsUnique
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hUniq : cn.slotsUnique) :
+    (cn.revokeTargetLocal sourceSlot target).slotsUnique := by
+  intro s c₁ c₂ h₁ h₂
+  simp only [revokeTargetLocal, List.mem_filter] at h₁ h₂
+  exact hUniq s c₁ c₂ h₁.1 h₂.1
+
+/-- Soundness of `lookup`: a successful lookup witnesses membership in the slot list. -/
+theorem lookup_mem_of_some
+    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hLookup : cn.lookup slot = some cap) :
+    (slot, cap) ∈ cn.slots := by
+  unfold lookup at hLookup
+  cases hFind : cn.slots.find? (fun entry => decide (entry.fst = slot)) with
+  | none => simp [hFind] at hLookup
+  | some entry =>
+    simp [hFind] at hLookup
+    have hSlot : entry.fst = slot := by simpa using List.find?_some hFind
+    have hMem := List.mem_of_find?_eq_some hFind
+    rw [← hLookup, ← hSlot]
+    exact (Prod.eta entry) ▸ hMem
+
+/-- Completeness of `lookup` under slot-index uniqueness: every slot list member is
+retrievable. This is non-trivial — it fails when duplicate slot indices exist,
+because `find?` returns only the first match. (WS-E2 / C-01) -/
+theorem mem_lookup_of_slotsUnique
+    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hUniq : cn.slotsUnique)
+    (hMem : (slot, cap) ∈ cn.slots) :
+    cn.lookup slot = some cap := by
+  unfold lookup
+  cases hFind : cn.slots.find? (fun entry => decide (entry.fst = slot)) with
+  | none =>
+    exfalso
+    have := (List.find?_eq_none.mp hFind) ⟨slot, cap⟩ hMem
+    simp at this
+  | some entry =>
+    simp
+    have hSlot : entry.fst = slot := by simpa using List.find?_some hFind
+    have hEntryMem := List.mem_of_find?_eq_some hFind
+    have hRewrite : (slot, entry.snd) ∈ cn.slots := by
+      rw [← hSlot]; exact (Prod.eta entry) ▸ hEntryMem
+    exact hUniq slot entry.snd cap hRewrite hMem
+
 end CNode
 
 inductive KernelObject where
