@@ -443,9 +443,11 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
 -- ============================================================================
 
 /-- Build a topology with `threadCount` threads at varying priorities, a CNode with
-the given `radix`, and `asidCount` VSpace roots with distinct ASIDs. -/
+the given `radix`, `asidCount` VSpace roots with distinct ASIDs, an endpoint,
+a notification, and `svcCount` services with a linear dependency chain. -/
 private def buildParameterizedTopology
-    (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : SystemState :=
+    (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat)
+    (svcCount : Nat := 0) : SystemState :=
   let threads : List (SeLe4n.ObjId × KernelObject) :=
     (List.range threadCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨1000 + i⟩
@@ -466,39 +468,55 @@ private def buildParameterizedTopology
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
       (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := [] })
-  let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots
+  -- Add an idle endpoint and an idle notification for IPC invariant coverage.
+  let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
+    [ (⟨4000⟩, .endpoint { state := .idle, queue := [], waitingReceiver := none })
+    , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    ]
+  let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects
   let runnableThreads : List SeLe4n.ThreadId :=
     (List.range threadCount).map fun i => ⟨1000 + i⟩
   let lifecycleTypes : List (SeLe4n.ObjId × KernelObjectType) :=
     (threads.map fun (oid, _) => (oid, .tcb))
       ++ [(⟨2000⟩, .cnode)]
       ++ (vspaceRoots.map fun (oid, _) => (oid, .vspaceRoot))
+      ++ [(⟨4000⟩, .endpoint), (⟨4001⟩, .notification)]
+  -- Build a linear service dependency chain: svc0 → svc1 → ... → svc(n-1) (acyclic).
+  let serviceEntries : List (ServiceId × ServiceGraphEntry) :=
+    (List.range svcCount).map fun i =>
+      let sid : ServiceId := ⟨5000 + i⟩
+      let deps := if i + 1 < svcCount then [⟨5000 + i + 1⟩] else []
+      (sid, { identity := { sid := sid, backingObject := ⟨5000 + i⟩, owner := ⟨1000⟩ },
+              status := .running, dependencies := deps, isolatedFrom := [] })
   let builder := BootstrapBuilder.empty
     |>.withRunnable runnableThreads
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
   let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
+  let builder := serviceEntries.foldl (fun b (sid, entry) => b.withService sid entry) builder
   builder.build
 
 /-- Exercise invariant checks over a parameterized topology configuration. -/
 private def runParameterizedTopologyCheck
-    (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : IO Unit := do
-  let st := buildParameterizedTopology threadCount basePriority radix asidCount
+    (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat)
+    (svcCount : Nat := 0) : IO Unit := do
+  let st := buildParameterizedTopology threadCount basePriority radix asidCount svcCount
   let allIds := st.objectIndex
-  let checks := stateInvariantChecksFor allIds st
+  let svcIds : List ServiceId := (List.range svcCount).map fun i => ⟨5000 + i⟩
+  let checks := stateInvariantChecksFor allIds st svcIds
   let failures := checks.filterMap fun (name, ok) => if ok then none else some name
   if failures.isEmpty then
-    IO.println s!"parameterized topology ok: {label} (threads={threadCount} prio={basePriority} radix={radix} asids={asidCount})"
+    IO.println s!"parameterized topology ok: {label} (threads={threadCount} prio={basePriority} radix={radix} asids={asidCount} svcs={svcCount})"
   else
     throw <| IO.userError s!"{label}: parameterized topology invariant check failed: {reprStr failures}"
 
 /-- M-10: run at least 3 distinct configurations per subsystem to supplement hardcoded fixtures. -/
 private def runParameterizedTopologies : IO Unit := do
-  -- Configuration 1: single thread, minimal radix, single ASID
-  runParameterizedTopologyCheck "minimal" 1 50 4 1
-  -- Configuration 2: four threads, varied priorities, medium radix, two ASIDs
-  runParameterizedTopologyCheck "medium" 4 10 8 2
-  -- Configuration 3: eight threads, high priority base, large radix, four ASIDs
-  runParameterizedTopologyCheck "large" 8 100 16 4
+  -- Configuration 1: single thread, minimal radix, single ASID, 1 service
+  runParameterizedTopologyCheck "minimal" 1 50 4 1 1
+  -- Configuration 2: four threads, varied priorities, medium radix, two ASIDs, 2-service chain
+  runParameterizedTopologyCheck "medium" 4 10 8 2 2
+  -- Configuration 3: eight threads, high priority base, large radix, four ASIDs, 4-service chain
+  runParameterizedTopologyCheck "large" 8 100 16 4 4
 
 def runMainTrace : IO Unit := do
   assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds

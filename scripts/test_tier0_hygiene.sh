@@ -57,10 +57,16 @@ for target in "${THEOREM_CHECK_TARGETS[@]}"; do
       log_section "HYGIENE" "L-08 FAIL: sorry found in ${target}"
       L08_FAIL=1
     fi
+    # Check for trivial rfl-only proofs on preservation theorems.
+    # Matches patterns like `:= by rfl` or `:= rfl` at the end of theorem bodies.
+    if rg -n 'theorem.*preserves.*:=\s*(by\s+)?rfl\s*$' "${target}" | head -5 | grep -q '.'; then
+      log_section "HYGIENE" "L-08 FAIL: trivial rfl-only preservation theorem in ${target}"
+      L08_FAIL=1
+    fi
   fi
 done
 if [[ "${L08_FAIL}" -eq 1 ]]; then
-  record_failure "HYGIENE" "L-08: sorry found in invariant proof surface (see details above)"
+  record_failure "HYGIENE" "L-08: sorry or trivial rfl-only proof found in invariant proof surface (see details above)"
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
     finalize_report
   fi
