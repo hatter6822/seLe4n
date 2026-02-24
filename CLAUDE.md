@@ -216,11 +216,13 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-D (v0.11.0 audit remediation)
-- **Completed**: WS-D1 (test validity), WS-D2 (info-flow), WS-D3 (proof gaps),
-  WS-D4 (kernel hardening)
-- **Planned**: WS-D5 (test infrastructure), WS-D6 (CI/docs polish)
-- **Planning backbone**: `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`
+- **Active portfolio**: WS-E (v0.11.6 codebase audit remediation)
+- **In progress**: WS-E1 (test infrastructure/CI hardening)
+- **Planned**: WS-E2 (proof quality), WS-E3 (kernel hardening),
+  WS-E4 (capability/IPC completion), WS-E5 (info-flow maturity),
+  WS-E6 (model completeness/docs)
+- **Completed predecessor**: WS-D1–D4; WS-D5/D6 absorbed into WS-E
+- **Planning backbone**: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
 
 ## PR checklist
 

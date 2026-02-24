@@ -35,9 +35,13 @@ Completed audit portfolios:
 - **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1 through WS-B11 completed.
 - **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C8 completed.
 
+Completed audit portfolios (continued):
+
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E.
+
 Current active portfolio:
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D4 completed; WS-D5..WS-D6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1..WS-E6 planned.
 
 ## 4. Architecture mental model
 
@@ -50,11 +54,11 @@ The codebase is organized as layered contracts:
 - **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
 - **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
 
-## 5. Current-slice outcomes (WS-D portfolio)
+## 5. Current-slice outcomes (WS-E portfolio)
 
 The active slice is successful when contributors deliver all of the following:
 
-1. closure of v0.11.0 audit findings via WS-D workstreams (WS-D1..WS-D4 completed; WS-D5..WS-D6 planned),
+1. closure of v0.11.6 audit findings via WS-E workstreams (WS-E1..WS-E6),
 2. deterministic CI + trace reproducibility preserved through every workstream increment,
 3. theorem/invariant surfaces remain discoverable and preservation-focused,
 4. synchronized updates across README/spec/development guide/GitBook + audit planning artifacts.
@@ -62,7 +66,7 @@ The active slice is successful when contributors deliver all of the following:
 For full project scope and milestone details, see [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 For the seL4 microkernel reference, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
 
-See dedicated execution chapters: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
+See dedicated execution chapters: [v0.11.6 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
 
 ## 6. Hardware trajectory update
 

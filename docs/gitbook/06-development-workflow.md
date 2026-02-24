@@ -2,7 +2,7 @@
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-D target (prioritize next planned workstream in current phase).
+1. Pick one coherent WS-E target (prioritize next planned workstream in current phase).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
@@ -30,19 +30,25 @@ Setup reliability note:
 
 For milestone-moving PRs:
 
-- include WS-D ID(s),
+- include WS-E ID(s),
 - show evidence commands,
 - map changes to workstream outcomes,
 - record deferrals and owner workstreams,
 - keep README/spec/development/GitBook status text synchronized.
 
-## Workstream sequence (WS-D)
+## Workstream sequence (WS-E)
+
+- **Phase P0:** Baseline transition — publish v0.11.6 planning backbone, demote WS-D to historical — current
+
+See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) for full WS-E phase sequencing.
+
+### Historical WS-D sequencing (completed)
 
 - **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical — **completed**
 - **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
 - **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
 - **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — **completed**
-- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low) — current
+- **Phase P4:** WS-D5/WS-D6 — absorbed into WS-E portfolio
 
 ## Failure triage
 

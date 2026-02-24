@@ -41,10 +41,10 @@ claims, and planning artifacts.
 ## 2. Current State Snapshot
 
 - **Current package version:** `0.11.7` (`lakefile.toml`)
-- **Active findings baseline:** [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md)
-- **Active execution baseline:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
-- **Current active portfolio:** WS-D1..WS-D6 (v0.11.0 audit remediation)
-- **Prior completed portfolio:** WS-C1..WS-C8 (all completed)
+- **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
+- **Active execution baseline:** [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
+- **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
 
 ---
 
@@ -73,41 +73,65 @@ on the semantic and proof foundations of the previous one.
 - **WS-B portfolio** (v0.9.0 workstream plan): WS-B1 through WS-B11 completed.
 - **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C8 completed.
 
-### 3.3 Active Audit Portfolio
+### 3.3 Completed Audit Portfolio (WS-D)
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D4 completed; WS-D5, WS-D6 planned.
+- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D4 completed. WS-D5/D6 items absorbed into WS-E.
+
+### 3.4 Active Audit Portfolio (WS-E)
+
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 in progress; WS-E2 through WS-E6 planned.
 
 ---
 
-## 4. Active Workstream Portfolio (WS-D)
+## 4. Active Workstream Portfolio (WS-E)
 
-### 4.1 Critical/High — Test Validity and Security Assurance
+The WS-E portfolio addresses 32 findings from the v0.11.6 codebase audit
+(4 CRITICAL, 9 HIGH, 11 MEDIUM, 8 LOW), plus carry-forward items from the
+WS-D portfolio (WS-D5/D6).
 
-- **WS-D1:** Test error handling and validity (critical/high; **completed** — F-01, F-03, F-04)
-- **WS-D2:** Information-flow enforcement and proof (high; **completed** — F-02, F-05)
+### 4.1 Medium — Test Infrastructure and CI
 
-### 4.2 Medium — Proof Completion and Kernel Hardening
+- **WS-E1:** Test infrastructure and CI hardening (medium; **in progress** — M-10, M-11, F-14, L-07, L-08; F-09/F-10/F-15 resolved)
 
-- **WS-D3:** Proof gap closure (medium; **completed** — F-06, F-08, F-16; TPI-001 closed)
-- **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12). BFS completeness bridge (`bfs_complete_for_nontrivialPath`, TPI-D07-BRIDGE) **formally resolved** — the `sorry` has been eliminated. The proof proceeds by BFS closure invariant, BFS universe bounding, and strong induction on fuel, under a `serviceCountBounded` precondition. See [`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md) §5-§7 and sub-documents M2A–M2D for the completeness proof roadmap.
-- **WS-D5:** Test infrastructure expansion (medium; **planned** — F-09, F-10)
+### 4.2 High — Proof Quality and Kernel Hardening
 
-### 4.3 Low — Infrastructure Polish
+- **WS-E2:** Proof quality and invariant strengthening (high; **planned** — C-01, H-01, H-03)
+- **WS-E3:** Kernel semantic hardening (high; **planned** — H-06, H-07, H-08, H-09, M-09, L-06)
 
-- **WS-D6:** CI/CD and documentation polish (low; **planned** — F-13, F-14, F-15, F-17)
+### 4.3 Critical — Model Completion
+
+- **WS-E4:** Capability and IPC model completion (critical; **planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+
+### 4.4 High — Security Assurance
+
+- **WS-E5:** Information-flow maturity (high; **planned** — H-04, H-05, M-07)
+
+### 4.5 Low — Model Completeness and Documentation
+
+- **WS-E6:** Model completeness and documentation (low; **planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 
 ---
 
 ## 5. Execution Phases
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (completed)
-- **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
-- **Phase P3:** WS-D3 proof gap closure (**completed**) + WS-D4 kernel design hardening (**completed**)
-- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low)
+### 5.1 WS-D Phases (completed)
+
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone (completed)
+- **Phase P1:** WS-D1 test validity restoration — **completed**
+- **Phase P2:** WS-D2 information-flow enforcement and proof — **completed**
+- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening — **completed**
+
+### 5.2 WS-E Phases (active)
+
+- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**current**)
+- **Phase P1:** WS-E1 (test/CI) + WS-E2 (proof quality) — parallel
+- **Phase P2:** WS-E3 (kernel hardening)
+- **Phase P3:** WS-E4 (capability/IPC completion)
+- **Phase P4:** WS-E5 (information-flow maturity)
+- **Phase P5:** WS-E6 (model completeness/docs)
 
 ---
 
@@ -155,11 +179,18 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 | Artifact | Path |
 |---|---|
-| Findings baseline | [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) |
+| Codebase audit (v0.11.6) | [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md) |
+| Execution baseline (WS-E) | [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
+
+### 8.2 Prior Active Baselines (WS-D, completed)
+
+| Artifact | Path |
+|---|---|
+| Findings baseline (v0.11.0) | [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) |
 | Execution baseline (WS-D) | [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
 | Tracked theorem obligations | [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md) |
 
-### 8.2 Historical Baselines (Retained for Traceability)
+### 8.3 Historical Baselines (Retained for Traceability)
 
 Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/) for traceability. See [`docs/dev_history/README.md`](../dev_history/README.md) for a full index.
 

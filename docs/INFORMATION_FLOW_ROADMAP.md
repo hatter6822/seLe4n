@@ -54,6 +54,12 @@ Delivered anchors (WS-B7 closeout):
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
 - `docs/dev_history/IF_M1_BASELINE_PACKAGE.md`
 
+**v0.11.6 audit note (M-13):** The `securityFlowsTo` comment has been
+clarified to document the non-standard "both dimensions flow upward" lattice.
+The implementation is internally consistent and all proofs are sound, but the
+lattice does not implement standard BLP+BIBA. See `Policy.lean:48-59` for
+the updated documentation.
+
 ## IF-M2 — Two-run relational state framework
 
 Deliverables:
@@ -93,19 +99,27 @@ Delivered theorems (WS-D2 closeout):
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle retype non-interference (TPI-D03).
 - Shared infrastructure: `storeObject_at_unobservable_preserves_lowEquivalent`.
 
-## IF-M4 — Bundle-level composition
+## IF-M4 — Bundle-level composition (WS-E5)
+
+**v0.11.6 audit context:** Findings H-04 (lattice too coarse), H-05 (no
+composed non-interference), and M-07 (enforcement is pre-gate only) are
+assigned to WS-E5 and directly advance IF-M4.
 
 Deliverables:
 
 - compose transition seeds into bundle-level noninterference statements,
 - connect architecture-boundary assumptions where observability depends on adapter contracts,
-- publish proof dependency map from existing invariants to information-flow theorems.
+- publish proof dependency map from existing invariants to information-flow theorems,
+- **WS-E5/H-04:** parameterize security labels by a domain type supporting ≥3 domains,
+- **WS-E5/H-05:** prove at least one composed bundle non-interference theorem,
+- **WS-E5/M-07:** prove or document which unchecked operations require `*Checked` wrappers.
 
 Exit evidence:
 
 - at least one composed bundle theorem over scheduler+IPC+capability surface,
 - explicit assumptions list for architecture-boundary observability,
-- Tier 3 invariant-surface anchors include information-flow entrypoints.
+- Tier 3 invariant-surface anchors include information-flow entrypoints,
+- label lattice supports ≥3 security domains.
 
 ## IF-M5 — Platform-facing integration readiness
 

@@ -5,6 +5,9 @@ on:
     - cron: '22 3 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   nightly-tier4:
     name: Tiered Tests / Nightly (Tier 0-4)
