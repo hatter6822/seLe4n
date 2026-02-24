@@ -4,7 +4,7 @@
 
 seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
 machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.27.0 toolchain, Lake build system, version 0.11.6.
+semantics. Lean 4.27.0 toolchain, Lake build system, version 0.11.7.
 
 ## Build and run
 

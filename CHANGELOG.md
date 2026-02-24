@@ -1,3 +1,8 @@
+## [0.11.7] - 2026-02-24
+
+### Patch version bump
+- Bumped patch version to **`0.11.7`** and synchronized version markers.
+
 ## [0.11.6] - 2026-02-22
 
 ### Documentation optimization and context-pressure reduction

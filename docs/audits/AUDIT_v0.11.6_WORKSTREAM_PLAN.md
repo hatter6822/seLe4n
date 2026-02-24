@@ -297,5 +297,5 @@ WS-E4 (CDT integration for capability flow proofs).
 | M-13 | Clarified `securityFlowsTo` comment to document non-standard lattice semantics | P0 baseline |
 | F-09 | Added `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` fixtures | P0 baseline |
 | F-10 | Replaced hardcoded 512-ID bound with `st.objectIndex` discovery | P0 baseline |
-| F-13 | Version badge verified correct (v0.11.6) | Already resolved |
+| F-13 | Version badge verified correct (v0.11.7) | Already resolved |
 | F-15 | Added explicit `permissions: contents: read` to `lean_action_ci.yml` and `nightly_determinism.yml` | P0 baseline |
