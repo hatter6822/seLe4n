@@ -11,6 +11,7 @@ cd "${REPO_ROOT}"
 # M6 WS-M6-A assumption inventory anchors.
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
 run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def slotsNoDup' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^\s*st.objectIndex.findSome\?' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpace.lean
@@ -167,6 +168,12 @@ run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvar
 run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+
+# WS-E2 proof quality anchors: state-dependent slot uniqueness + badge consistency.
+run_check "INVARIANT" rg -n '^def cspaceCNodeSlotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_value_eq' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_value_consistent' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3 seed IPC preservation theorem anchors.
 run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean

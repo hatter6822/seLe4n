@@ -219,9 +219,18 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
     (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus) :
+    (newStatus : ServiceStatus)
+    (hInv : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
-  exact capabilityInvariantBundle_holds (storeServiceState sid { svc with status := newStatus } st)
+  rcases hInv with ⟨_, _, hAttRule, _, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds _, cspaceLookupSound_holds _, hAttRule,
+    lifecycleAuthorityMonotonicity_holds _, ?_⟩
+  -- storeServiceState only modifies services, not objects
+  intro oid cn hObj
+  have : (storeServiceState sid { svc with status := newStatus } st).objects oid = st.objects oid := by
+    simp [storeServiceState]
+  rw [this] at hObj
+  exact hNoDup oid cn hObj
 
 theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
     (st st' : SystemState)
@@ -245,7 +254,7 @@ theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
             exact ⟨
               storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
               storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running
+              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
             ⟩
           · simp [hLookup, hStopped, hAllow, hDeps] at hStep
         · simp [hLookup, hStopped, hAllow] at hStep
@@ -272,7 +281,7 @@ theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
           exact ⟨
             storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
             storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
-            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped
+            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped hCap
           ⟩
         · simp [hLookup, hRunning, hAllow] at hStep
       · simp [hLookup, hRunning] at hStep

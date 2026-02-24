@@ -20,6 +20,14 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **L-08:** Added theorem-body spot-check validation and F-14 regression guard to Tier 0 hygiene.
 - F-09, F-10, F-15: previously resolved.
 
+### WS-E2 completed summary
+
+**WS-E2 — Proof quality and invariant strengthening** has been completed. All 3 findings resolved:
+
+- **C-01 (CRITICAL):** Reclassified `cspaceSlotUnique` and `cspaceLookupSound` as meta-properties (hold for all states by construction). Added `cspaceCNodeSlotsNoDup` as a genuine state-dependent invariant to `capabilityInvariantBundle`, with CNode-level helper lemmas (`insert_slotsNoDup`, `remove_slotsNoDup`, `revokeTargetLocal_slotsNoDup`).
+- **H-01 (HIGH):** All capability preservation proofs now compositionally destructure pre-state invariant components and derive post-state NoDup from the operation's specific object-store transformation. No `_`-prefixed discards remain.
+- **H-03 (HIGH):** Added `mintDerivedCap_badge_value_eq` (child badge = caller-supplied badge) and `cspaceMint_badge_value_consistent` (operation-level badge propagation consistency). Combined with existing `cspaceMint_badge_override_safe`, this provides complete field characterization of minted capabilities.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.

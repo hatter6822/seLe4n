@@ -369,6 +369,50 @@ theorem resolveSlot_depthMismatch
   unfold resolveSlot
   simp [hDepth]
 
+/-- No two distinct entries in the CNode slot list share the same slot index.
+
+This is a genuine state-dependent property (C-01 resolution): it depends on the actual
+CNode slot list structure and must be preserved across CSpace mutations. Unlike
+`cspaceSlotUnique` (which holds by construction of the pure lookup function), this property
+provides the underlying data-structure guarantee that makes lookup determinism meaningful. -/
+def slotsNoDup (node : CNode) : Prop :=
+  ∀ (s : SeLe4n.Slot) (c₁ c₂ : Capability),
+    (s, c₁) ∈ node.slots → (s, c₂) ∈ node.slots → c₁ = c₂
+
+theorem empty_slotsNoDup : CNode.empty.slotsNoDup := by
+  intro s c₁ c₂ h₁
+  simp [empty] at h₁
+
+theorem insert_slotsNoDup (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : node.slotsNoDup) :
+    (node.insert slot cap).slotsNoDup := by
+  unfold slotsNoDup at h ⊢
+  intro s c₁ c₂ h₁ h₂
+  simp [insert, List.mem_filter] at h₁ h₂
+  rcases h₁ with ⟨hEq₁s, hEq₁c⟩ | ⟨hMem₁, hNe₁⟩
+  · rcases h₂ with ⟨_, hEq₂c⟩ | ⟨_, hNe₂⟩
+    · exact hEq₁c ▸ hEq₂c.symm
+    · exact absurd hEq₁s hNe₂
+  · rcases h₂ with ⟨hEq₂s, _⟩ | ⟨hMem₂, _⟩
+    · exact absurd hEq₂s hNe₁
+    · exact h s c₁ c₂ hMem₁ hMem₂
+
+theorem remove_slotsNoDup (node : CNode) (slot : SeLe4n.Slot)
+    (h : node.slotsNoDup) :
+    (node.remove slot).slotsNoDup := by
+  unfold slotsNoDup at h ⊢
+  intro s c₁ c₂ h₁ h₂
+  simp [remove, List.mem_filter] at h₁ h₂
+  exact h s c₁ c₂ h₁.1 h₂.1
+
+theorem revokeTargetLocal_slotsNoDup (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (h : node.slotsNoDup) :
+    (node.revokeTargetLocal sourceSlot target).slotsNoDup := by
+  unfold slotsNoDup at h ⊢
+  intro s c₁ c₂ h₁ h₂
+  simp [revokeTargetLocal, List.mem_filter] at h₁ h₂
+  exact h s c₁ c₂ h₁.1 h₂.1
+
 theorem lookup_revokeTargetLocal_source_eq_lookup
     (node : CNode)
     (sourceSlot : SeLe4n.Slot)

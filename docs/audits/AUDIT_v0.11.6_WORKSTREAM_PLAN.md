@@ -42,13 +42,13 @@ related findings into coherent implementation slices.
 
 | ID | Severity | Description | Workstream | Status |
 |----|----------|-------------|------------|--------|
-| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | Pending |
+| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | **RESOLVED** |
 | C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
 | C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
 | C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
-| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 |
+| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 |
-| H-03 | HIGH | Badge override safety gap | WS-E2 |
+| H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
@@ -134,21 +134,31 @@ topologies exercise at least 3 distinct configurations per subsystem. ✓
 
 **Scope:**
 
-1. **C-01** Reformulate `cspaceSlotUnique` and `cspaceLookupSound` to prove
-   non-trivial properties. Either strengthen the invariant definitions to
-   encode lookup correctness relative to a specification, or explicitly
-   document them as meta-properties (and remove from the "high assurance"
-   categorization in documentation).
-2. **H-01** Refactor capability preservation proofs to be compositional —
-   each proof should derive post-state invariant components from pre-state
-   components through the operation's specific state transformation, not
-   re-prove from scratch.
-3. **H-03** Add theorem proving that badge values propagated through
-   `cspaceMint` are consistent with notification routing semantics.
+1. ~~C-01~~ Reclassified `cspaceSlotUnique` and `cspaceLookupSound` as
+   meta-properties (hold for all states by construction of the pure lookup
+   function). Added `cspaceCNodeSlotsNoDup` as a genuine state-dependent
+   invariant (every CNode has unique slot indices) to `capabilityInvariantBundle`.
+   Added `capabilityInvariantBundle_of_slotsNoDup` constructor requiring NoDup
+   evidence. CNode-level helper lemmas: `empty_slotsNoDup`, `insert_slotsNoDup`,
+   `remove_slotsNoDup`, `revokeTargetLocal_slotsNoDup` — **DONE**.
+2. ~~H-01~~ All capability preservation proofs now compositionally destructure
+   `hInv` into named components (`hUnique`, `hSound`, `hAttRule`, `hLifecycle`,
+   `hNoDup`) and derive post-state `cspaceCNodeSlotsNoDup` from the pre-state
+   component through the operation's specific object-store transformation.
+   No `_`-prefixed discards remain. Updated: `cspaceInsertSlot`, `cspaceDeleteSlot`,
+   `cspaceRevoke`, `lifecycleRetypeObject`, all endpoint preservation theorems,
+   `lifecycleRevokeDeleteRetype`, and service state preservation — **DONE**.
+3. ~~H-03~~ Added `mintDerivedCap_badge_value_eq` (child.badge = badge argument)
+   and `cspaceMint_badge_value_consistent` (operation-level witness that badge
+   propagation matches caller intent). Combined with existing
+   `cspaceMint_badge_override_safe`, this provides complete field characterization
+   (target, rights, badge) of minted capabilities — **DONE**.
 
 **Validation gate:** `test_full.sh` passes; preservation proofs use `hInv`
 destructured components in post-state derivation (not just `_`-prefixed
-discards).
+discards). ✓
+
+**Status:** **COMPLETED**
 
 **Dependencies:** None.
 
@@ -289,7 +299,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | Workstream | Status | Priority | Key findings | Phase |
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
-| WS-E2 | Planned | High | C-01, H-01, H-03 | P1 |
+| WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |

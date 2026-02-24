@@ -34,18 +34,32 @@ Preservation shape:
 
 Component level:
 
-- uniqueness of slots,
-- lookup soundness,
+- uniqueness of slots (meta-property: `cspaceSlotUnique`),
+- lookup soundness (meta-property: `cspaceLookupSound`),
 - attenuation rule,
-- lifecycle authority monotonicity.
+- lifecycle authority monotonicity,
+- CNode slot-index uniqueness (state-dependent: `cspaceCNodeSlotsNoDup`, WS-E2).
+
+**WS-E2 note:** `cspaceSlotUnique` and `cspaceLookupSound` are meta-properties that hold for
+all states by construction of the pure `cspaceLookupSlot` function. They are retained in the
+bundle for backward compatibility. `cspaceCNodeSlotsNoDup` is the genuine state-dependent
+component that forces compositional preservation proofs (C-01/H-01 resolution).
 
 Bundle level:
 
 - `capabilityInvariantBundle`
+- `capabilityInvariantBundle_of_slotsNoDup` (constructor requiring NoDup evidence)
 
 Preservation shape:
 
 - operation-level `*_preserves_capabilityInvariantBundle` for lookup/insert/mint/delete/revoke.
+- All preservation proofs are compositional: pre-state invariant components are destructured
+  and the NoDup component is derived from the operation's specific state transformation (H-01).
+
+Badge value consistency (H-03):
+
+- `mintDerivedCap_badge_value_eq` — child badge equals caller-supplied badge
+- `cspaceMint_badge_value_consistent` — operation-level badge propagation consistency
 
 ## 4. IPC invariants (M3)
 
