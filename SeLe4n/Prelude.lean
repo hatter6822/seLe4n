@@ -1,6 +1,27 @@
+/-!
+# Typed Identifiers
+
+## Sentinel ID convention (H-06, WS-E3)
+
+All identifier types (`ObjId`, `ThreadId`, `DomainId`, `Priority`, `Irq`,
+`ServiceId`, `CPtr`, `Slot`, `Badge`, `ASID`) derive `Inhabited`, which
+produces a default value of `⟨0⟩`. This is an intentional design decision:
+
+- **ID 0 is reserved as the sentinel (default) value** for all identifier types.
+- Kernel operations MUST NOT assign ID 0 to live objects. The bootstrap state
+  builder enforces this by starting object allocation at ID 1.
+- The `Inhabited` instances are retained for Lean framework compatibility
+  (e.g., `Array.get!`, `HashMap.find!`, default structure fields). Removing
+  them would require pervasive API changes with no safety benefit, since the
+  sentinel convention achieves the same goal.
+- Future work (WS-E6/L-04) may add runtime validation to `ThreadId.toObjId`
+  and similar conversions to reject sentinel values at API boundaries.
+-/
+
 namespace SeLe4n
 
-/-- Identifier for objects in the global kernel object store. -/
+/-- Identifier for objects in the global kernel object store.
+ID 0 is reserved as sentinel (see H-06 convention above). -/
 structure ObjId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited

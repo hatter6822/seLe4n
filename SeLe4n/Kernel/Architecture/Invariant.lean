@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Service.Invariant
 
 /-!
@@ -31,14 +32,19 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 open SeLe4n.Kernel
 
-/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles. -/
+/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles.
+
+H-07 (WS-E3): `vspaceInvariantBundle` is now included in the composed bundle,
+closing the gap where VSpace invariants were proven in isolation but not
+composed into the global proof layer. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧
     capabilityInvariantBundle st ∧
     m3IpcSeedInvariantBundle st ∧
     m35IpcSchedulerInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
-    serviceLifecycleCapabilityInvariantBundle st
+    serviceLifecycleCapabilityInvariantBundle st ∧
+    vspaceInvariantBundle st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
