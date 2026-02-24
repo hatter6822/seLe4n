@@ -288,7 +288,7 @@ WS-E4 (CDT integration for capability flow proofs).
 
 | Workstream | Status | Priority | Key findings | Phase |
 |------------|--------|----------|--------------|-------|
-| WS-E1 | **In progress** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
+| WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
 | WS-E2 | Planned | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
