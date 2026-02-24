@@ -1154,9 +1154,56 @@ theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv
 
+-- ============================================================================
+-- H-09/WS-E3: Capability bundle preservation helpers for compound IPC ops
+-- ============================================================================
+
+/-- Capability bundle transfers when objects are unchanged (removeRunnable/ensureRunnable). -/
+private theorem capabilityInvariantBundle_of_objects_eq
+    (st st' : SystemState)
+    (hInv : capabilityInvariantBundle st)
+    (hObjEq : st'.objects = st.objects) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨hUnique, _, hAttRule, _⟩
+  have hUnique' := cspaceSlotUnique_of_objects_eq st st' hUnique hObjEq
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+/-- storeTcbIpcState only modifies a TCB object — all CNodes unchanged. -/
+private theorem storeTcbIpcState_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨hUnique, _, hAttRule, _⟩
+  have hUnique' : cspaceSlotUnique st' := by
+    intro cnodeId cn hCn
+    rcases storeTcbIpcState_objects_at st st' tid ipc hStep with
+      ⟨_, _, hPost⟩ | ⟨_, hStEq⟩
+    · by_cases hEq : cnodeId = tid.toObjId
+      · rw [hEq] at hCn; rw [hPost] at hCn; cases hCn
+      · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hStep] at hCn
+        exact hUnique cnodeId cn hCn
+    · subst hStEq; exact hUnique cnodeId cn hCn
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+private theorem removeRunnable_preserves_capabilityInvariantBundle
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (removeRunnable st tid) :=
+  capabilityInvariantBundle_of_objects_eq st _ hInv (removeRunnable_preserves_objects st tid)
+
+private theorem ensureRunnable_preserves_capabilityInvariantBundle
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (ensureRunnable st tid) :=
+  capabilityInvariantBundle_of_objects_eq st _ hInv (ensureRunnable_preserves_objects st tid)
+
 /-- WS-E2 / H-01: Compositional preservation of `endpointSend`.
-Endpoint operations only modify endpoint objects — all CNodes are unchanged,
-so `cspaceSlotUnique` and `cspaceLookupSound` transfer directly from pre-state. -/
+
+    H-09/WS-E3: Updated for compound transitions (storeObject → storeTcbIpcState →
+    removeRunnable) on idle/send paths. The receive path remains single-step. -/
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1165,12 +1212,52 @@ theorem endpointSend_preserves_capabilityInvariantBundle
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hState : ep.state <;> simp only [hState] at hStep
+      all_goals split at hStep
+      -- idle: storeObject → storeTcbIpcState → removeRunnable
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          have hInv1 : capabilityInvariantBundle st1 := by
+            have h := cspaceSlotUnique_of_endpoint_store st st1 endpointId _ hUnique hStore
+            exact ⟨h, cspaceLookupSound_of_cspaceSlotUnique st1 h, hAttRule,
+              lifecycleAuthorityMonotonicity_holds st1⟩
+          exact removeRunnable_preserves_capabilityInvariantBundle _ sender
+            (storeTcbIpcState_preserves_capabilityInvariantBundle _ _ sender _ hInv1 hTcb)
+      -- send: storeObject → storeTcbIpcState → removeRunnable
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          have hInv1 : capabilityInvariantBundle st1 := by
+            have h := cspaceSlotUnique_of_endpoint_store st st1 endpointId _ hUnique hStore
+            exact ⟨h, cspaceLookupSound_of_cspaceSlotUnique st1 h, hAttRule,
+              lifecycleAuthorityMonotonicity_holds st1⟩
+          exact removeRunnable_preserves_capabilityInvariantBundle _ sender
+            (storeTcbIpcState_preserves_capabilityInvariantBundle _ _ sender _ hInv1 hTcb)
+      -- receive: storeObject on ([], some _) or error on (_, _)
+      · have h := cspaceSlotUnique_of_endpoint_store st st' endpointId _ hUnique hStep
+        exact ⟨h, cspaceLookupSound_of_cspaceSlotUnique st' h, hAttRule,
+          lifecycleAuthorityMonotonicity_holds st'⟩
+      · exact absurd hStep (by simp)
 
-/-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
+/-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`.
+
+    H-09/WS-E3: Updated for compound transition (storeObject → storeTcbIpcState →
+    removeRunnable). -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1179,12 +1266,35 @@ theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hState : ep.state <;> cases hQ : ep.queue <;>
+        cases hW : ep.waitingReceiver <;> simp [hState, hQ, hW] at hStep
+      -- Sole survivor: idle, nil, none → storeObject → storeTcbIpcState → removeRunnable
+      split at hStep
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          have hInv1 : capabilityInvariantBundle st1 := by
+            have h := cspaceSlotUnique_of_endpoint_store st st1 endpointId _ hUnique hStore
+            exact ⟨h, cspaceLookupSound_of_cspaceSlotUnique st1 h, hAttRule,
+              lifecycleAuthorityMonotonicity_holds st1⟩
+          exact removeRunnable_preserves_capabilityInvariantBundle _ receiver
+            (storeTcbIpcState_preserves_capabilityInvariantBundle _ _ receiver _ hInv1 hTcb)
 
-/-- WS-E2 / H-01: Compositional preservation of `endpointReceive`. -/
+/-- WS-E2 / H-01: Compositional preservation of `endpointReceive`.
+
+    H-09/WS-E3: Updated for compound transition (storeObject → storeTcbIpcState →
+    ensureRunnable). -/
 theorem endpointReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1193,10 +1303,32 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hState : ep.state <;> cases hQ : ep.queue <;>
+        cases hW : ep.waitingReceiver <;> simp [hState, hQ, hW] at hStep
+      -- Sole survivor: send, cons h t, none → storeObject → storeTcbIpcState → ensureRunnable
+      rename_i h t
+      split at hStep
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hEq⟩ := hStep; subst hEq
+          have hInv1 : capabilityInvariantBundle st1 := by
+            have h := cspaceSlotUnique_of_endpoint_store st st1 endpointId _ hUnique hStore
+            exact ⟨h, cspaceLookupSound_of_cspaceSlotUnique st1 h, hAttRule,
+              lifecycleAuthorityMonotonicity_holds st1⟩
+          exact ensureRunnable_preserves_capabilityInvariantBundle _ h
+            (storeTcbIpcState_preserves_capabilityInvariantBundle _ _ h _ hInv1 hTcb)
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)

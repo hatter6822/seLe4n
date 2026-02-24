@@ -51,10 +51,10 @@ related findings into coherent implementation slices.
 | H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
-| H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
-| H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 |
-| H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 |
-| H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 |
+| H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 | **RESOLVED** |
+| H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 | **RESOLVED** |
+| H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 | **RESOLVED** |
+| H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 | **RESOLVED** |
 | M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 |
 | M-02 | MEDIUM | No message payload in IPC | WS-E4 |
 | M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
@@ -62,7 +62,7 @@ related findings into coherent implementation slices.
 | M-05 | MEDIUM | No domain scheduling | WS-E6 |
 | M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 |
 | M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
-| M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 |
+| M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
 | M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
 | M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 |
@@ -72,7 +72,7 @@ related findings into coherent implementation slices.
 | L-03 | LOW | Missing monad helpers | WS-E6 |
 | L-04 | LOW | ID conversion without validation | WS-E6 |
 | L-05 | LOW | objectIndex never pruned | WS-E6 |
-| L-06 | LOW | No initialization proof | WS-E3 |
+| L-06 | LOW | No initialization proof | WS-E3 | **RESOLVED** |
 | L-07 | LOW | Fixture matching is fragile | WS-E1 | **RESOLVED** |
 | L-08 | LOW | Anchor presence ≠ correctness | WS-E1 | **RESOLVED** |
 
@@ -171,29 +171,31 @@ discards). ✓
 
 **Scope:**
 
-1. **H-09** Implement thread blocking in endpoint operations:
-   - `endpointSend` must call `storeTcbIpcState sender (.blockedOnSend eid)`
-     and `removeRunnable` when sender blocks.
-   - `endpointAwaitReceive` must set `.blockedOnReceive`.
-   - `endpointReceive` must unblock dequeued sender (set `.ready`,
-     `ensureRunnable`).
-   This makes the IPC-scheduler contract predicates (`blockedOnSendNotRunnable`,
-   `blockedOnReceiveNotRunnable`) non-vacuous.
-2. **H-07** Add `vspaceInvariantBundle` to `proofLayerInvariantBundle`
-   composition. Add preservation theorems for all adapter operations.
-3. **H-08** Change `serviceHasPathTo` to return conservative `true` on fuel
-   exhaustion (safer for cycle detection). Add adequacy theorem.
-4. **H-06** Either reserve ID 0 as sentinel or remove `Inhabited` instances
-   from identifier types. Document the decision.
-5. **M-09** Add explicit theorem proving `storeObject` metadata sync is
-   correct for type-changing stores.
-6. **L-06** Add theorem proving default `SystemState` satisfies
-   `lifecycleMetadataConsistent`.
+1. ~~**H-09**~~ Implement thread blocking in endpoint operations — **DONE**
+   (`endpointSend` calls `storeTcbIpcState sender (.blockedOnSend eid)` +
+   `removeRunnable`; `endpointAwaitReceive` sets `.blockedOnReceive` +
+   `removeRunnable`; `endpointReceive` unblocks dequeued sender via `.ready` +
+   `ensureRunnable`). IPC-scheduler contract predicates are now non-vacuous.
+   All invariant preservation proofs updated across IPC, Capability, and
+   InformationFlow subsystems.
+2. ~~**H-07**~~ Add `vspaceInvariantBundle` to `proofLayerInvariantBundle` —
+   **DONE** (preservation theorems for all adapter operations added).
+3. ~~**H-08**~~ Fix `serviceHasPathTo` fuel exhaustion — **DONE** (returns
+   conservative `true` on fuel exhaustion; adequacy and soundness theorems
+   added).
+4. ~~**H-06**~~ Resolve Inhabited ID 0 sentinel — **DONE** (reserved ID 0 as
+   sentinel with documented decision; explicit `ServicePolicy` type annotation).
+5. ~~**M-09**~~ Prove `storeObject` metadata sync correctness — **DONE**
+   (explicit `storeObject_preserves_services` and lifecycle metadata theorems).
+6. ~~**L-06**~~ Add initialization proof — **DONE** (theorem proving default
+   `SystemState` satisfies `lifecycleMetadataConsistent`).
 
 **Validation gate:** `test_full.sh` passes; IPC-scheduler contract predicates
-are non-vacuous; VSpace in composed bundle.
+are non-vacuous; VSpace in composed bundle. ✓
 
 **Dependencies:** WS-E2 (proof pattern improvements inform proof structure here).
+
+**Status:** **COMPLETED**
 
 ---
 
@@ -288,7 +290,7 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P0:** Baseline — close quick fixes, publish WS-E planning backbone,
   update documentation to reflect v0.11.6 audit (**completed**).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
-- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**current phase**).
+- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3.
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
@@ -301,7 +303,7 @@ WS-E4 (CDT integration for capability flow proofs).
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
-| WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
+| WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
@@ -320,3 +322,9 @@ WS-E4 (CDT integration for capability flow proofs).
 | C-01 | Reformulated `cspaceSlotUnique`/`cspaceLookupSound` from tautological to genuine structural invariants; bridge theorem + `capabilityInvariantBundle_of_slotUnique` | WS-E2 |
 | H-01 | All preservation proofs refactored to compositional style with transfer lemmas (`cspaceSlotUnique_of_storeObject_*`, CNode `insert/remove/revokeTargetLocal_slotsUnique`) | WS-E2 |
 | H-03 | End-to-end badge routing chain: `mintDerivedCap_badge_propagated` through `badge_notification_routing_consistent` | WS-E2 |
+| H-06 | Reserved ID 0 as sentinel; added explicit `ServicePolicy` type annotation | WS-E3 |
+| H-07 | Added `vspaceInvariantBundle` to `proofLayerInvariantBundle`; preservation theorems for adapter operations | WS-E3 |
+| H-08 | `serviceHasPathTo` returns conservative `true` on fuel exhaustion; adequacy + soundness theorems | WS-E3 |
+| H-09 | Compound IPC operations: `storeTcbIpcState` + `removeRunnable`/`ensureRunnable`; all invariant suites updated | WS-E3 |
+| M-09 | `storeObject_preserves_services` and lifecycle metadata sync theorems | WS-E3 |
+| L-06 | Default `SystemState` satisfies `lifecycleMetadataConsistent` (initialization proof) | WS-E3 |

@@ -224,4 +224,42 @@ theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
     lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
   exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
 
+-- ============================================================================
+-- L-06/WS-E3: Default SystemState initialization proofs
+-- ============================================================================
+
+/-- L-06/WS-E3: The default `SystemState` satisfies `objectTypeMetadataConsistent`.
+
+    Proof: the default state has `objects = fun _ => none` and
+    `lifecycle.objectTypes = fun _ => none`, so for every `oid`,
+    both sides of the consistency equation evaluate to `none`. -/
+theorem default_systemState_objectTypeMetadataConsistent :
+    SystemState.objectTypeMetadataConsistent default := by
+  intro oid
+  rfl
+
+/-- L-06/WS-E3: The default `SystemState` satisfies `capabilityRefMetadataConsistent`.
+
+    Proof: the default state has empty objects and empty capability-ref metadata,
+    so both sides evaluate to `none` for every slot reference. -/
+theorem default_systemState_capabilityRefMetadataConsistent :
+    SystemState.capabilityRefMetadataConsistent default := by
+  intro ref
+  rfl
+
+/-- L-06/WS-E3: The default `SystemState` satisfies `lifecycleMetadataConsistent`. -/
+theorem default_systemState_lifecycleMetadataConsistent :
+    SystemState.lifecycleMetadataConsistent default :=
+  ⟨default_systemState_objectTypeMetadataConsistent,
+   default_systemState_capabilityRefMetadataConsistent⟩
+
+/-- L-06/WS-E3: The default `SystemState` satisfies `lifecycleInvariantBundle`.
+
+    This establishes the base case for inductive invariant preservation:
+    the initial kernel state satisfies all lifecycle invariants. -/
+theorem default_systemState_lifecycleInvariantBundle :
+    lifecycleInvariantBundle default :=
+  lifecycleInvariantBundle_of_metadata_consistent default
+    default_systemState_lifecycleMetadataConsistent
+
 end SeLe4n.Kernel

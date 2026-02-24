@@ -38,6 +38,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- ThreadId.toObjId is injective: equal ObjIds imply equal ThreadIds. -/
+private theorem threadId_toObjId_inj {a b : SeLe4n.ThreadId}
+    (h : a.toObjId = b.toObjId) : a = b := by
+  cases a; cases b
+  simp [SeLe4n.ThreadId.toObjId, SeLe4n.ObjId.ofNat, SeLe4n.ThreadId.toNat] at h
+  subst h; rfl
+
 /- Local store/lookup transport lemmas (M3.5 step-5).
 These lemmas keep endpoint-transition preservation proofs concrete and non-duplicative. -/
 
@@ -122,95 +129,147 @@ theorem not_runnable_membership_of_endpoint_store
   simpa [hSchedEq] using hNotRun
 
 
-/-- Local transition helper: successful send is exactly one endpoint-object update. -/
-theorem endpointSend_ok_as_storeObject
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st') := by
+/-- H-09/WS-E3: Successful send contains an intermediate storeObject for the endpoint,
+    followed by storeTcbIpcState and removeRunnable on blocking paths, or just a
+    storeObject on the handshake path. The final state's endpoint object is determined
+    by this storeObject step. -/
+theorem endpointSend_preserves_endpoint_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st'))
+    (epOther : SeLe4n.ObjId) (ep : Endpoint)
+    (hNe : epOther ≠ endpointId)
+    (hPre : st.objects epOther = some (.endpoint ep)) :
+    st'.objects epOther = some (.endpoint ep) := by
   unfold endpointSend at hStep
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | cnode cn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | endpoint ep =>
-          cases hState : ep.state with
-          | idle =>
-              simp [hObj, hState, storeObject] at hStep
-              refine ⟨{ state := .send, queue := [sender], waitingReceiver := none }, ?_⟩
-              simp [storeObject, hStep]
-          | send =>
-              simp [hObj, hState, storeObject] at hStep
-              refine ⟨{ state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }, ?_⟩
-              simp [storeObject, hStep]
-          | receive =>
-              cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
-                simp [hObj, hState, hQueue, hWait, storeObject] at hStep
-              case nil.some receiver =>
-                refine ⟨{ state := .idle, queue := [], waitingReceiver := none }, ?_⟩
-                simp [storeObject, hStep]
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state with
+      | idle =>
+        simp only [hObj, hState] at hStep
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 sender _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have h1 := storeObject_objects_ne st pair.2 endpointId epOther _ hNe hStore
+            have h2 := storeTcbIpcState_preserves_endpoint pair.2 st2 sender _ epOther ep
+              (h1 ▸ hPre) hTcb
+            rw [removeRunnable_preserves_objects st2 sender]; exact h2
+      | send =>
+        simp only [hObj, hState] at hStep
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 sender _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have h1 := storeObject_objects_ne st pair.2 endpointId epOther _ hNe hStore
+            have h2 := storeTcbIpcState_preserves_endpoint pair.2 st2 sender _ epOther ep
+              (h1 ▸ hPre) hTcb
+            rw [removeRunnable_preserves_objects st2 sender]; exact h2
+      | receive =>
+        cases hQueue : epOld.queue <;> cases hWait : epOld.waitingReceiver <;>
+          simp [hObj, hState, hQueue, hWait] at hStep
+        case nil.some receiver =>
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            exact storeObject_objects_ne st st' endpointId epOther _ hNe hStore ▸ hPre
 
-/-- Local transition helper: successful await-receive is exactly one endpoint-object update. -/
-theorem endpointAwaitReceive_ok_as_storeObject
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st') := by
+/-- H-09/WS-E3: Successful await-receive preserves endpoint objects at other IDs. -/
+theorem endpointAwaitReceive_preserves_endpoint_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st'))
+    (epOther : SeLe4n.ObjId) (ep : Endpoint)
+    (hNe : epOther ≠ endpointId)
+    (hPre : st.objects epOther = some (.endpoint ep)) :
+    st'.objects epOther = some (.endpoint ep) := by
   unfold endpointAwaitReceive at hStep
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | cnode cn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | endpoint ep =>
-          cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
-            simp [hObj, hState, hQueue, hWait, storeObject] at hStep
-          case idle.nil.none =>
-            refine ⟨{ state := .receive, queue := [], waitingReceiver := some receiver }, ?_⟩
-            simp [storeObject, hStep]
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> cases hQueue : epOld.queue <;>
+        cases hWait : epOld.waitingReceiver <;>
+        simp [hObj, hState, hQueue, hWait] at hStep
+      case idle.nil.none =>
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have h1 := storeObject_objects_ne st pair.2 endpointId epOther _ hNe hStore
+            have h2 := storeTcbIpcState_preserves_endpoint pair.2 st2 receiver _ epOther ep
+              (h1 ▸ hPre) hTcb
+            rw [removeRunnable_preserves_objects st2 receiver]; exact h2
 
-/-- Local transition helper: successful receive is exactly one endpoint-object update. -/
-theorem endpointReceive_ok_as_storeObject
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
+/-- H-09/WS-E3: Successful receive preserves endpoint objects at other IDs. -/
+theorem endpointReceive_preserves_endpoint_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    ∃ ep', storeObject endpointId (.endpoint ep') st = .ok ((), st') := by
+    (hStep : endpointReceive endpointId st = .ok (sender, st'))
+    (epOther : SeLe4n.ObjId) (ep : Endpoint)
+    (hNe : epOther ≠ endpointId)
+    (hPre : st.objects epOther = some (.endpoint ep)) :
+    st'.objects epOther = some (.endpoint ep) := by
   unfold endpointReceive at hStep
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | cnode cn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | endpoint ep =>
-          cases hState : ep.state <;> simp [hObj, hState] at hStep
-          case send =>
-            cases hQueue : ep.queue with
-            | nil =>
-                cases hWait : ep.waitingReceiver <;>
-                  simp [hQueue, hWait] at hStep
-            | cons head tail =>
-                cases hWait : ep.waitingReceiver with
-                | none =>
-                    simp [hQueue, hWait, storeObject] at hStep
-                    rcases hStep with ⟨_, hStore⟩
-                    let nextState : EndpointState := if tail.isEmpty then .idle else .send
-                    refine ⟨{ state := nextState, queue := tail, waitingReceiver := none }, ?_⟩
-                    simp [storeObject, nextState, hStore]
-                | some receiver =>
-                    simp [hQueue, hWait] at hStep
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> simp [hObj, hState] at hStep
+      case send =>
+        cases hQueue : epOld.queue with
+        | nil =>
+          cases hWait : epOld.waitingReceiver <;> simp [hQueue, hWait] at hStep
+        | cons head tail =>
+          cases hWait : epOld.waitingReceiver with
+          | none =>
+            simp only [hQueue, hWait] at hStep
+            revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 head .ready with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                have h1 := storeObject_objects_ne st pair.2 endpointId epOther _ hNe hStore
+                have h2 := storeTcbIpcState_preserves_endpoint pair.2 st2 head .ready epOther ep
+                  (h1 ▸ hPre) hTcb
+                rw [ensureRunnable_preserves_objects st2 head]; exact h2
+          | some _ => simp [hQueue, hWait] at hStep
 
 /-- Endpoint-local queue/state well-formedness for the M3.5 handshake scaffold.
 
@@ -288,49 +347,12 @@ def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
   blockedOnSendNotRunnable st ∧
   blockedOnReceiveNotRunnable st
 
-theorem endpointSend_preserves_runnableThreadIpcReady
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : runnableThreadIpcReady st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    runnableThreadIpcReady st' := by
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hRunOrig : tid ∈ st.scheduler.runnable :=
-    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
-  exact hInv tid tcb hObjOrig hRunOrig
+/-- H-09/WS-E3: Endpoint send preserves runnableThreadIpcReady.
 
-theorem endpointSend_preserves_blockedOnSendNotRunnable
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : blockedOnSendNotRunnable st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    blockedOnSendNotRunnable st' := by
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
-
-theorem endpointSend_preserves_blockedOnReceiveNotRunnable
-    (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : blockedOnReceiveNotRunnable st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    blockedOnReceiveNotRunnable st' := by
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
-
+    In the blocking case (idle/send), the sender is removed from runnable and has
+    ipcState set to blockedOnSend. All other threads' objects and runnable status
+    are unchanged, so the pre-state invariant transfers. In the handshake case
+    (receive→idle), it is a pure endpoint store with no IPC state changes. -/
 theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -338,54 +360,154 @@ theorem endpointSend_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
-  refine ⟨?_, ?_, ?_⟩
-  · exact endpointSend_preserves_runnableThreadIpcReady st st' endpointId sender hReady hStep
-  · exact endpointSend_preserves_blockedOnSendNotRunnable st st' endpointId sender hBlockedSend hStep
-  · exact endpointSend_preserves_blockedOnReceiveNotRunnable st st' endpointId sender hBlockedReceive hStep
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedRecv⟩
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      cases hState : ep.state with
+      | idle | send =>
+        all_goals (
+          simp only [hObj, hState] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []
+            intro hStep; revert hStep
+            cases hTcb : storeTcbIpcState pair.2 sender _ with
+            | error e => simp
+            | ok st2 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              intro ⟨_, hEq⟩; subst hEq
+              have hSchedEp := storeObject_scheduler_eq st pair.2 endpointId _ hStore
+              have hSchedTcb := storeTcbIpcState_scheduler_eq pair.2 st2 sender _ hTcb
+              refine ⟨?_, ?_, ?_⟩
+              -- runnableThreadIpcReady
+              · intro tid tcb hObjTid hRunTid
+                simp [removeRunnable] at hRunTid
+                have hRunSt : tid ∈ st.scheduler.runnable := by
+                  rw [hSchedTcb, hSchedEp] at hRunTid; exact hRunTid.1
+                have hNeSender : tid ≠ sender := by
+                  rw [hSchedTcb, hSchedEp] at hRunTid; exact hRunTid.2
+                have hObjTidSt2 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                  rwa [removeRunnable_preserves_objects st2 sender] at hObjTid
+                have hTidObjNe : tid.toObjId ≠ sender.toObjId := by
+                  intro h; exact hNeSender (threadId_toObjId_inj h)
+                have hObjTidPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                  rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 sender _ tid.toObjId hTidObjNe hTcb] at hObjTidSt2
+                by_cases hTidEnd : tid.toObjId = endpointId
+                · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjTidPair
+                  cases hObjTidPair
+                · rw [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjTidPair
+                  exact hReady tid tcb hObjTidPair hRunSt
+              -- blockedOnSendNotRunnable
+              · intro tid tcb eid hObjTid hBlocked
+                intro hAbs; rw [removeRunnable_mem_iff] at hAbs
+                by_cases hTidEq : tid = sender
+                · exact hAbs.2 hTidEq
+                · have hTidObjNe : tid.toObjId ≠ sender.toObjId := by
+                    intro h; apply hTidEq
+                    exact threadId_toObjId_inj h
+                  have hObjTidSt2 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [removeRunnable_preserves_objects st2 sender] at hObjTid
+                  have hObjTidPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 sender _ tid.toObjId hTidObjNe hTcb] at hObjTidSt2
+                  have hObjTidSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                    by_cases hTidEnd : tid.toObjId = endpointId
+                    · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjTidPair; cases hObjTidPair
+                    · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjTidPair
+                  rw [hSchedTcb, hSchedEp] at hAbs
+                  exact hBlockedSend tid tcb eid hObjTidSt hBlocked hAbs.1
+              -- blockedOnReceiveNotRunnable
+              · intro tid tcb eid hObjTid hBlocked
+                intro hAbs; rw [removeRunnable_mem_iff] at hAbs
+                by_cases hTidEq : tid = sender
+                · exact hAbs.2 hTidEq
+                · have hTidObjNe : tid.toObjId ≠ sender.toObjId := by
+                    intro h; apply hTidEq
+                    exact threadId_toObjId_inj h
+                  have hObjTidSt2 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [removeRunnable_preserves_objects st2 sender] at hObjTid
+                  have hObjTidPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 sender _ tid.toObjId hTidObjNe hTcb] at hObjTidSt2
+                  have hObjTidSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                    by_cases hTidEnd : tid.toObjId = endpointId
+                    · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjTidPair; cases hObjTidPair
+                    · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjTidPair
+                  rw [hSchedTcb, hSchedEp] at hAbs
+                  exact hBlockedRecv tid tcb eid hObjTidSt hBlocked hAbs.1)
+      | receive =>
+        cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
+          simp [hObj, hState, hQueue, hWait] at hStep
+        case nil.some receiver =>
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            have hSchedEq := storeObject_scheduler_eq st st' endpointId _ hStore
+            refine ⟨?_, ?_, ?_⟩
+            · intro tid tcb hObjTid hRun
+              rw [hSchedEq] at hRun
+              by_cases hTidEnd : tid.toObjId = endpointId
+              · rw [hTidEnd, storeObject_objects_eq st st' endpointId _ hStore] at hObjTid
+                cases hObjTid
+              · rw [storeObject_objects_ne st st' endpointId tid.toObjId _ hTidEnd hStore] at hObjTid
+                exact hReady tid tcb hObjTid hRun
+            · intro tid tcb eid hObjTid hBlocked
+              rw [hSchedEq]
+              by_cases hTidEnd : tid.toObjId = endpointId
+              · rw [hTidEnd, storeObject_objects_eq st st' endpointId _ hStore] at hObjTid
+                cases hObjTid
+              · rw [storeObject_objects_ne st st' endpointId tid.toObjId _ hTidEnd hStore] at hObjTid
+                exact hBlockedSend tid tcb eid hObjTid hBlocked
+            · intro tid tcb eid hObjTid hBlocked
+              rw [hSchedEq]
+              by_cases hTidEnd : tid.toObjId = endpointId
+              · rw [hTidEnd, storeObject_objects_eq st st' endpointId _ hStore] at hObjTid
+                cases hObjTid
+              · rw [storeObject_objects_ne st st' endpointId tid.toObjId _ hTidEnd hStore] at hObjTid
+                exact hBlockedRecv tid tcb eid hObjTid hBlocked
 
-theorem endpointAwaitReceive_preserves_runnableThreadIpcReady
+/-- Corollary: endpoint send preserves the runnableThreadIpcReady component. -/
+theorem endpointSend_preserves_runnableThreadIpcReady
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
+    (sender : SeLe4n.ThreadId)
     (hInv : runnableThreadIpcReady st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    runnableThreadIpcReady st' := by
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hRunOrig : tid ∈ st.scheduler.runnable :=
-    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
-  exact hInv tid tcb hObjOrig hRunOrig
+    (hBlockedSend : blockedOnSendNotRunnable st)
+    (hBlockedRecv : blockedOnReceiveNotRunnable st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    runnableThreadIpcReady st' :=
+  (endpointSend_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender ⟨hInv, hBlockedSend, hBlockedRecv⟩ hStep).1
 
-theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable
+/-- Corollary: endpoint send preserves the blockedOnSendNotRunnable component. -/
+theorem endpointSend_preserves_blockedOnSendNotRunnable
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
-    (hInv : blockedOnSendNotRunnable st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    blockedOnSendNotRunnable st' := by
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    blockedOnSendNotRunnable st' :=
+  (endpointSend_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender hInv hStep).2.1
 
-theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable
+/-- Corollary: endpoint send preserves the blockedOnReceiveNotRunnable component. -/
+theorem endpointSend_preserves_blockedOnReceiveNotRunnable
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
-    (hInv : blockedOnReceiveNotRunnable st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    blockedOnReceiveNotRunnable st' := by
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    blockedOnReceiveNotRunnable st' :=
+  (endpointSend_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender hInv hStep).2.2
 
 theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -394,54 +516,118 @@ theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
-  refine ⟨?_, ?_, ?_⟩
-  · exact endpointAwaitReceive_preserves_runnableThreadIpcReady st st' endpointId receiver hReady hStep
-  · exact endpointAwaitReceive_preserves_blockedOnSendNotRunnable st st' endpointId receiver hBlockedSend hStep
-  · exact endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable st st' endpointId receiver hBlockedReceive hStep
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedRecv⟩
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      cases hState : ep.state <;> cases hQueue : ep.queue <;>
+        cases hWait : ep.waitingReceiver <;>
+        simp [hObj, hState, hQueue, hWait] at hStep
+      case idle.nil.none =>
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have hSchedEp := storeObject_scheduler_eq st pair.2 endpointId _ hStore
+            have hSchedTcb := storeTcbIpcState_scheduler_eq pair.2 st2 receiver _ hTcb
+            refine ⟨?_, ?_, ?_⟩
+            -- runnableThreadIpcReady
+            · intro tid tcb hObjTid hRunTid
+              rw [removeRunnable_mem_iff] at hRunTid
+              have hRunSt : tid ∈ st.scheduler.runnable := by
+                rw [hSchedTcb, hSchedEp] at hRunTid; exact hRunTid.1
+              have hNeReceiver : tid ≠ receiver := hRunTid.2
+              have hTidObjNe : tid.toObjId ≠ receiver.toObjId := by
+                intro h; apply hNeReceiver
+                exact threadId_toObjId_inj h
+              have hObjTidSt2 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                rwa [removeRunnable_preserves_objects st2 receiver] at hObjTid
+              have hObjTidPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 receiver _ tid.toObjId hTidObjNe hTcb] at hObjTidSt2
+              by_cases hTidEnd : tid.toObjId = endpointId
+              · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjTidPair; cases hObjTidPair
+              · rw [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjTidPair
+                exact hReady tid tcb hObjTidPair hRunSt
+            -- blockedOnSendNotRunnable
+            · intro tid tcb eid hObjTid hBlocked
+              intro hAbs; rw [removeRunnable_mem_iff] at hAbs
+              by_cases hTidEq : tid = receiver
+              · exact hAbs.2 hTidEq
+              · have hTidObjNe : tid.toObjId ≠ receiver.toObjId := by
+                  intro h; apply hTidEq
+                  exact threadId_toObjId_inj h
+                have hObjSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                  have h1 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [removeRunnable_preserves_objects st2 receiver] at hObjTid
+                  have h2 := storeTcbIpcState_preserves_objects_ne pair.2 st2 receiver _ tid.toObjId hTidObjNe hTcb
+                  rw [h2] at h1
+                  by_cases hTidEnd : tid.toObjId = endpointId
+                  · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at h1; cases h1
+                  · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at h1
+                rw [hSchedTcb, hSchedEp] at hAbs
+                exact hBlockedSend tid tcb eid hObjSt hBlocked hAbs.1
+            -- blockedOnReceiveNotRunnable
+            · intro tid tcb eid hObjTid hBlocked
+              intro hAbs; rw [removeRunnable_mem_iff] at hAbs
+              by_cases hTidEq : tid = receiver
+              · exact hAbs.2 hTidEq
+              · have hTidObjNe : tid.toObjId ≠ receiver.toObjId := by
+                  intro h; apply hTidEq
+                  exact threadId_toObjId_inj h
+                have hObjSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                  have h1 : st2.objects tid.toObjId = some (.tcb tcb) := by
+                    rwa [removeRunnable_preserves_objects st2 receiver] at hObjTid
+                  have h2 := storeTcbIpcState_preserves_objects_ne pair.2 st2 receiver _ tid.toObjId hTidObjNe hTcb
+                  rw [h2] at h1
+                  by_cases hTidEnd : tid.toObjId = endpointId
+                  · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at h1; cases h1
+                  · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at h1
+                rw [hSchedTcb, hSchedEp] at hAbs
+                exact hBlockedRecv tid tcb eid hObjSt hBlocked hAbs.1
 
-theorem endpointReceive_preserves_runnableThreadIpcReady
+/-- Corollary: endpoint await-receive preserves runnableThreadIpcReady. -/
+theorem endpointAwaitReceive_preserves_runnableThreadIpcReady
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : runnableThreadIpcReady st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    runnableThreadIpcReady st' := by
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb hObj hRun
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hRunOrig : tid ∈ st.scheduler.runnable :=
-    runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hRun
-  exact hInv tid tcb hObjOrig hRunOrig
+    (receiver : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    runnableThreadIpcReady st' :=
+  (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId receiver hInv hStep).1
 
-theorem endpointReceive_preserves_blockedOnSendNotRunnable
+/-- Corollary: endpoint await-receive preserves blockedOnSendNotRunnable. -/
+theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : blockedOnSendNotRunnable st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    blockedOnSendNotRunnable st' := by
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+    (receiver : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    blockedOnSendNotRunnable st' :=
+  (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId receiver hInv hStep).2.1
 
-theorem endpointReceive_preserves_blockedOnReceiveNotRunnable
+/-- Corollary: endpoint await-receive preserves blockedOnReceiveNotRunnable. -/
+theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hInv : blockedOnReceiveNotRunnable st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    blockedOnReceiveNotRunnable st' := by
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  intro tid tcb endpoint hObj hBlocked
-  have hObjOrig : st.objects tid.toObjId = some (.tcb tcb) :=
-    tcb_lookup_of_endpoint_store st st' endpointId tid.toObjId tcb ep' hStore hObj
-  have hNotRun : tid ∉ st.scheduler.runnable := hInv tid tcb endpoint hObjOrig hBlocked
-  exact not_runnable_membership_of_endpoint_store st st' endpointId tid ep' hStore hNotRun
+    (receiver : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    blockedOnReceiveNotRunnable st' :=
+  (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId receiver hInv hStep).2.2
 
 theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
@@ -450,11 +636,151 @@ theorem endpointReceive_preserves_ipcSchedulerContractPredicates
     (hInv : ipcSchedulerContractPredicates st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hInv with ⟨hReady, hBlockedSend, hBlockedReceive⟩
-  refine ⟨?_, ?_, ?_⟩
-  · exact endpointReceive_preserves_runnableThreadIpcReady st st' endpointId sender hReady hStep
-  · exact endpointReceive_preserves_blockedOnSendNotRunnable st st' endpointId sender hBlockedSend hStep
-  · exact endpointReceive_preserves_blockedOnReceiveNotRunnable st st' endpointId sender hBlockedReceive hStep
+  rcases hInv with ⟨hReady, hBlockedSend, hBlockedRecv⟩
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      cases hState : ep.state <;> simp [hObj, hState] at hStep
+      case send =>
+        cases hQueue : ep.queue with
+        | nil => cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
+        | cons head tail =>
+          cases hWait : ep.waitingReceiver with
+          | none =>
+            simp only [hQueue, hWait] at hStep; revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 head .ready with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨hSenderEq, hEq⟩; subst hEq; subst hSenderEq
+                have hSchedEp := storeObject_scheduler_eq st pair.2 endpointId _ hStore
+                have hSchedTcb := storeTcbIpcState_scheduler_eq pair.2 st2 head _ hTcb
+                refine ⟨?_, ?_, ?_⟩
+                -- runnableThreadIpcReady
+                · intro tid tcb hObjTid hRunTid
+                  rw [ensureRunnable_mem_iff] at hRunTid
+                  rw [ensureRunnable_preserves_objects] at hObjTid
+                  rcases hRunTid with hRunSt2 | hTidEqSender
+                  · -- tid was already runnable in st2
+                    rw [hSchedTcb, hSchedEp] at hRunSt2
+                    by_cases hTidEq : tid = head
+                    · -- tid = head: head's TCB was set to .ready by storeTcbIpcState
+                      subst hTidEq
+                      rcases storeTcbIpcState_objects_at pair.2 st2 tid .ready hTcb with
+                        ⟨tcbOld, _, hPost⟩ | ⟨_, hStEq⟩
+                      · rw [hPost] at hObjTid; cases hObjTid; rfl
+                      · subst hStEq
+                        by_cases hSendEnd : tid.toObjId = endpointId
+                        · rw [hSendEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjTid; cases hObjTid
+                        · rw [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hSendEnd hStore] at hObjTid
+                          exact hReady tid tcb hObjTid hRunSt2
+                    · -- tid ≠ head: backward to pre-state
+                      have hTidObjNe : tid.toObjId ≠ head.toObjId := by
+                        intro h; apply hTidEq
+                        exact threadId_toObjId_inj h
+                      have hObjPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                        rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 head .ready tid.toObjId hTidObjNe hTcb] at hObjTid
+                      by_cases hTidEnd : tid.toObjId = endpointId
+                      · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjPair; cases hObjPair
+                      · rw [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjPair
+                        exact hReady tid tcb hObjPair hRunSt2
+                  · -- tid = head (added by ensureRunnable): head's TCB has .ready
+                    subst hTidEqSender
+                    rcases storeTcbIpcState_objects_at pair.2 st2 tid .ready hTcb with
+                      ⟨tcbOld, _, hPost⟩ | ⟨hLookupNone, hStEq⟩
+                    · rw [hPost] at hObjTid; cases hObjTid; rfl
+                    · subst hStEq; exfalso; simp [lookupTcb, hObjTid] at hLookupNone
+                -- blockedOnSendNotRunnable
+                · intro tid tcb eid hObjTid hBlocked
+                  rw [ensureRunnable_preserves_objects] at hObjTid
+                  by_cases hTidEq : tid = head
+                  · -- tid = head: head's TCB has ipcState = .ready, not blockedOnSend
+                    subst hTidEq
+                    rcases storeTcbIpcState_objects_at pair.2 st2 tid .ready hTcb with
+                      ⟨_, _, hPost⟩ | ⟨hLookupNone, hStEq⟩
+                    · rw [hPost] at hObjTid; cases hObjTid; cases hBlocked
+                    · subst hStEq; exfalso; simp [lookupTcb, hObjTid] at hLookupNone
+                  · -- tid ≠ head: backward to pre-state, use pre invariant
+                    have hTidObjNe : tid.toObjId ≠ head.toObjId := by
+                      intro h; apply hTidEq
+                      exact threadId_toObjId_inj h
+                    have hObjPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                      rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 head .ready tid.toObjId hTidObjNe hTcb] at hObjTid
+                    have hObjSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                      by_cases hTidEnd : tid.toObjId = endpointId
+                      · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjPair; cases hObjPair
+                      · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjPair
+                    have hNotRunSt : tid ∉ st.scheduler.runnable := hBlockedSend tid tcb eid hObjSt hBlocked
+                    intro hAbs; rw [ensureRunnable_mem_iff] at hAbs
+                    rcases hAbs with hRunSt2 | hTidSender
+                    · rw [hSchedTcb, hSchedEp] at hRunSt2; exact hNotRunSt hRunSt2
+                    · exact hTidEq hTidSender
+                -- blockedOnReceiveNotRunnable
+                · intro tid tcb eid hObjTid hBlocked
+                  rw [ensureRunnable_preserves_objects] at hObjTid
+                  by_cases hTidEq : tid = head
+                  · subst hTidEq
+                    rcases storeTcbIpcState_objects_at pair.2 st2 tid .ready hTcb with
+                      ⟨_, _, hPost⟩ | ⟨hLookupNone, hStEq⟩
+                    · rw [hPost] at hObjTid; cases hObjTid; cases hBlocked
+                    · subst hStEq; exfalso; simp [lookupTcb, hObjTid] at hLookupNone
+                  · have hTidObjNe : tid.toObjId ≠ head.toObjId := by
+                      intro h; apply hTidEq
+                      exact threadId_toObjId_inj h
+                    have hObjPair : pair.2.objects tid.toObjId = some (.tcb tcb) := by
+                      rwa [storeTcbIpcState_preserves_objects_ne pair.2 st2 head .ready tid.toObjId hTidObjNe hTcb] at hObjTid
+                    have hObjSt : st.objects tid.toObjId = some (.tcb tcb) := by
+                      by_cases hTidEnd : tid.toObjId = endpointId
+                      · rw [hTidEnd, storeObject_objects_eq st pair.2 endpointId _ hStore] at hObjPair; cases hObjPair
+                      · rwa [storeObject_objects_ne st pair.2 endpointId tid.toObjId _ hTidEnd hStore] at hObjPair
+                    have hNotRunSt : tid ∉ st.scheduler.runnable := hBlockedRecv tid tcb eid hObjSt hBlocked
+                    intro hAbs; rw [ensureRunnable_mem_iff] at hAbs
+                    rcases hAbs with hRunSt2 | hTidSender
+                    · rw [hSchedTcb, hSchedEp] at hRunSt2; exact hNotRunSt hRunSt2
+                    · exact hTidEq hTidSender
+          | some _ => simp [hQueue, hWait] at hStep
+
+/-- Corollary: endpoint receive preserves runnableThreadIpcReady. -/
+theorem endpointReceive_preserves_runnableThreadIpcReady
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    runnableThreadIpcReady st' :=
+  (endpointReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender hInv hStep).1
+
+/-- Corollary: endpoint receive preserves blockedOnSendNotRunnable. -/
+theorem endpointReceive_preserves_blockedOnSendNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    blockedOnSendNotRunnable st' :=
+  (endpointReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender hInv hStep).2.1
+
+/-- Corollary: endpoint receive preserves blockedOnReceiveNotRunnable. -/
+theorem endpointReceive_preserves_blockedOnReceiveNotRunnable
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hInv : ipcSchedulerContractPredicates st)
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    blockedOnReceiveNotRunnable st' :=
+  (endpointReceive_preserves_ipcSchedulerContractPredicates
+    st st' endpointId sender hInv hStep).2.2
 
 theorem endpointObjectValid_of_queueWellFormed
     (ep : Endpoint)
@@ -481,25 +807,56 @@ theorem endpointSend_result_wellFormed
       | endpoint ep =>
           cases hState : ep.state with
           | idle =>
-              simp [hObj, hState, storeObject] at hStep
-              cases hStep
-              refine ⟨{ state := .send, queue := [sender], waitingReceiver := none }, ?_, ?_⟩
-              · simp
-              · simp [endpointQueueWellFormed]
+              simp only [hObj, hState] at hStep
+              revert hStep
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                intro hStep; revert hStep
+                cases hTcb : storeTcbIpcState pair.2 sender _ with
+                | error e => simp
+                | ok st2 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  let ep' : Endpoint := { state := .send, queue := [sender], waitingReceiver := none }
+                  have hStored := storeObject_objects_eq st pair.2 endpointId (.endpoint ep') hStore
+                  have hPreserved := storeTcbIpcState_preserves_endpoint pair.2 st2 sender _ endpointId ep' hStored hTcb
+                  refine ⟨ep', ?_, ?_⟩
+                  · rw [removeRunnable_preserves_objects st2 sender]; exact hPreserved
+                  · simp [endpointQueueWellFormed, ep']
           | send =>
-              simp [hObj, hState, storeObject] at hStep
-              cases hStep
-              refine ⟨{ state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }, ?_, ?_⟩
-              · simp
-              · simp [endpointQueueWellFormed]
+              simp only [hObj, hState] at hStep
+              revert hStep
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                intro hStep; revert hStep
+                cases hTcb : storeTcbIpcState pair.2 sender _ with
+                | error e => simp
+                | ok st2 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }
+                  have hStored := storeObject_objects_eq st pair.2 endpointId (.endpoint ep') hStore
+                  have hPreserved := storeTcbIpcState_preserves_endpoint pair.2 st2 sender _ endpointId ep' hStored hTcb
+                  refine ⟨ep', ?_, ?_⟩
+                  · rw [removeRunnable_preserves_objects st2 sender]; exact hPreserved
+                  · simp [endpointQueueWellFormed, ep']
           | receive =>
               cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
-                simp [hObj, hState, hQueue, hWait, storeObject] at hStep
+                simp [hObj, hState, hQueue, hWait] at hStep
               case nil.some receiver =>
-                refine ⟨{ state := .idle, queue := [], waitingReceiver := none }, ?_, ?_⟩
-                · cases hStep
-                  simp
-                · simp [endpointQueueWellFormed]
+                revert hStep
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  refine ⟨{ state := .idle, queue := [], waitingReceiver := none }, ?_, ?_⟩
+                  · exact storeObject_objects_eq st st' endpointId _ hStore
+                  · simp [endpointQueueWellFormed]
 
 theorem endpointAwaitReceive_result_wellFormed
     (st st' : SystemState)
@@ -518,12 +875,25 @@ theorem endpointAwaitReceive_result_wellFormed
       | notification ntfn => simp [hObj] at hStep
       | endpoint ep =>
           cases hState : ep.state <;> cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
-            simp [hObj, hState, hQueue, hWait, storeObject] at hStep
+            simp [hObj, hState, hQueue, hWait] at hStep
           case idle.nil.none =>
-            refine ⟨{ state := .receive, queue := [], waitingReceiver := some receiver }, ?_, ?_⟩
-            · cases hStep
-              simp
-            · simp [endpointQueueWellFormed]
+            revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 receiver _ with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                let ep' : Endpoint := { state := .receive, queue := [], waitingReceiver := some receiver }
+                have hStored := storeObject_objects_eq st pair.2 endpointId (.endpoint ep') hStore
+                have hPreserved := storeTcbIpcState_preserves_endpoint pair.2 st2 receiver _ endpointId ep' hStored hTcb
+                refine ⟨ep', ?_, ?_⟩
+                · rw [removeRunnable_preserves_objects st2 receiver]; exact hPreserved
+                · simp [endpointQueueWellFormed, ep']
 
 theorem endpointReceive_result_wellFormed
     (st st' : SystemState)
@@ -550,47 +920,387 @@ theorem endpointReceive_result_wellFormed
             | cons head tail =>
                 cases hWait : ep.waitingReceiver with
                 | none =>
-                    simp [hQueue, hWait, storeObject] at hStep
-                    rcases hStep with ⟨hSender, hStoreEq⟩
-                    let nextState : EndpointState := if tail.isEmpty then .idle else .send
-                    refine ⟨{ state := nextState, queue := tail, waitingReceiver := none }, ?_, ?_⟩
-                    · cases hStoreEq
-                      simp [nextState]
-                    · cases hTail : tail with
-                      | nil => simp [endpointQueueWellFormed, nextState, hTail]
-                      | cons t ts => simp [endpointQueueWellFormed, nextState, hTail]
+                    simp only [hQueue, hWait] at hStep
+                    revert hStep
+                    cases hStore : storeObject endpointId _ st with
+                    | error e => simp
+                    | ok pair =>
+                      rcases pair with ⟨⟨⟩, st_store⟩
+                      simp only []
+                      intro hStep; revert hStep
+                      cases hTcb : storeTcbIpcState st_store head .ready with
+                      | error e => simp
+                      | ok st2 =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨_, hEq⟩; subst hEq
+                        have hStored := storeObject_objects_eq st st_store endpointId _ hStore
+                        have hPreserved := storeTcbIpcState_preserves_endpoint st_store st2 head .ready endpointId _ hStored hTcb
+                        have hFinal := (congrFun (ensureRunnable_preserves_objects st2 head) endpointId).trans hPreserved
+                        exact ⟨_, hFinal, by cases tail <;> simp [endpointQueueWellFormed]⟩
                 | some receiver =>
                     simp [hQueue, hWait] at hStep
 
-theorem endpointSend_preserves_other_objects
-    (st st' : SystemState)
-    (endpointId oid : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (hNe : oid ≠ endpointId)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  exact storeObject_objects_ne st st' endpointId oid (.endpoint ep') hNe hStore
+/-- H-09/WS-E3: Endpoint send preserves notification objects at other IDs. -/
+theorem endpointSend_preserves_notification_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st'))
+    (nid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNe : nid ≠ endpointId)
+    (hPre : st.objects nid = some (.notification ntfn)) :
+    st'.objects nid = some (.notification ntfn) := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state with
+      | idle =>
+        simp only [hObj, hState] at hStep
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []; intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 sender _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            rw [removeRunnable_preserves_objects st2 sender]
+            exact storeTcbIpcState_preserves_notification pair.2 st2 sender _ nid ntfn
+              (storeObject_objects_ne st pair.2 endpointId nid _ hNe hStore ▸ hPre) hTcb
+      | send =>
+        simp only [hObj, hState] at hStep
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []; intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 sender _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            rw [removeRunnable_preserves_objects st2 sender]
+            exact storeTcbIpcState_preserves_notification pair.2 st2 sender _ nid ntfn
+              (storeObject_objects_ne st pair.2 endpointId nid _ hNe hStore ▸ hPre) hTcb
+      | receive =>
+        cases hQueue : epOld.queue <;> cases hWait : epOld.waitingReceiver <;>
+          simp [hObj, hState, hQueue, hWait] at hStep
+        case nil.some receiver =>
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            exact storeObject_objects_ne st st' endpointId nid _ hNe hStore ▸ hPre
 
-theorem endpointAwaitReceive_preserves_other_objects
-    (st st' : SystemState)
-    (endpointId oid : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
-    (hNe : oid ≠ endpointId)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  exact storeObject_objects_ne st st' endpointId oid (.endpoint ep') hNe hStore
+/-- H-09/WS-E3: Endpoint await-receive preserves notification objects at other IDs. -/
+theorem endpointAwaitReceive_preserves_notification_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st'))
+    (nid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNe : nid ≠ endpointId)
+    (hPre : st.objects nid = some (.notification ntfn)) :
+    st'.objects nid = some (.notification ntfn) := by
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> cases hQueue : epOld.queue <;>
+        cases hWait : epOld.waitingReceiver <;>
+        simp [hObj, hState, hQueue, hWait] at hStep
+      case idle.nil.none =>
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []; intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            rw [removeRunnable_preserves_objects st2 receiver]
+            exact storeTcbIpcState_preserves_notification pair.2 st2 receiver _ nid ntfn
+              (storeObject_objects_ne st pair.2 endpointId nid _ hNe hStore ▸ hPre) hTcb
 
-theorem endpointReceive_preserves_other_objects
-    (st st' : SystemState)
-    (endpointId oid : SeLe4n.ObjId)
+/-- H-09/WS-E3: Endpoint receive preserves notification objects at other IDs. -/
+theorem endpointReceive_preserves_notification_at
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hNe : oid ≠ endpointId)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    st'.objects oid = st.objects oid := by
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  exact storeObject_objects_ne st st' endpointId oid (.endpoint ep') hNe hStore
+    (hStep : endpointReceive endpointId st = .ok (sender, st'))
+    (nid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNe : nid ≠ endpointId)
+    (hPre : st.objects nid = some (.notification ntfn)) :
+    st'.objects nid = some (.notification ntfn) := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> simp [hObj, hState] at hStep
+      case send =>
+        cases hQueue : epOld.queue with
+        | nil => cases hWait : epOld.waitingReceiver <;> simp [hQueue, hWait] at hStep
+        | cons head tail =>
+          cases hWait : epOld.waitingReceiver with
+          | none =>
+            simp only [hQueue, hWait] at hStep
+            revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []; intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 head .ready with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                rw [ensureRunnable_preserves_objects st2 head]
+                exact storeTcbIpcState_preserves_notification pair.2 st2 head .ready nid ntfn
+                  (storeObject_objects_ne st pair.2 endpointId nid _ hNe hStore ▸ hPre) hTcb
+          | some _ => simp [hQueue, hWait] at hStep
+
+-- ============================================================================
+-- H-09/WS-E3: Backward preservation lemmas for ipcInvariant proofs
+-- ============================================================================
+
+/-- Backward: if post-state of endpointSend has endpoint at oid ≠ endpointId,
+    then pre-state had the same endpoint. -/
+theorem endpointSend_endpoint_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st'))
+    (oid : SeLe4n.ObjId) (ep : Endpoint) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state with
+      | idle | send =>
+        all_goals (
+          simp only [hObj, hState] at hStep; revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []; intro hStep; revert hStep
+            cases hTcb : storeTcbIpcState pair.2 sender _ with
+            | error e => simp
+            | ok st2 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              intro ⟨_, hEq⟩; subst hEq
+              rw [removeRunnable_preserves_objects st2 sender] at hPost
+              exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+                storeTcbIpcState_endpoint_backward pair.2 st2 sender _ oid ep hPost hTcb)
+      | receive =>
+        cases hQueue : epOld.queue <;> cases hWait : epOld.waitingReceiver <;>
+          simp [hObj, hState, hQueue, hWait] at hStep
+        case nil.some receiver =>
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            exact (storeObject_objects_ne st st' endpointId oid _ hNe hStore).symm ▸ hPost
+
+/-- Backward: if post-state of endpointSend has notification at oid ≠ endpointId,
+    then pre-state had the same notification. -/
+theorem endpointSend_notification_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (hStep : endpointSend endpointId sender st = .ok ((), st'))
+    (oid : SeLe4n.ObjId) (ntfn : Notification) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state with
+      | idle | send =>
+        all_goals (
+          simp only [hObj, hState] at hStep; revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []; intro hStep; revert hStep
+            cases hTcb : storeTcbIpcState pair.2 sender _ with
+            | error e => simp
+            | ok st2 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              intro ⟨_, hEq⟩; subst hEq
+              rw [removeRunnable_preserves_objects st2 sender] at hPost
+              exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+                storeTcbIpcState_notification_backward pair.2 st2 sender _ oid ntfn hPost hTcb)
+      | receive =>
+        cases hQueue : epOld.queue <;> cases hWait : epOld.waitingReceiver <;>
+          simp [hObj, hState, hQueue, hWait] at hStep
+        case nil.some receiver =>
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            exact (storeObject_objects_ne st st' endpointId oid _ hNe hStore).symm ▸ hPost
+
+/-- Backward: if post-state of endpointAwaitReceive has endpoint at oid ≠ endpointId,
+    then pre-state had the same endpoint. -/
+theorem endpointAwaitReceive_endpoint_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st'))
+    (oid : SeLe4n.ObjId) (ep : Endpoint) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> cases hQueue : epOld.queue <;>
+        cases hWait : epOld.waitingReceiver <;>
+        simp [hObj, hState, hQueue, hWait] at hStep
+      case idle.nil.none =>
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []; intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            rw [removeRunnable_preserves_objects st2 receiver] at hPost
+            exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+              storeTcbIpcState_endpoint_backward pair.2 st2 receiver _ oid ep hPost hTcb
+
+/-- Backward: if post-state of endpointAwaitReceive has notification at oid ≠ endpointId,
+    then pre-state had the same notification. -/
+theorem endpointAwaitReceive_notification_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st'))
+    (oid : SeLe4n.ObjId) (ntfn : Notification) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> cases hQueue : epOld.queue <;>
+        cases hWait : epOld.waitingReceiver <;>
+        simp [hObj, hState, hQueue, hWait] at hStep
+      case idle.nil.none =>
+        revert hStep
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []; intro hStep; revert hStep
+          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            rw [removeRunnable_preserves_objects st2 receiver] at hPost
+            exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+              storeTcbIpcState_notification_backward pair.2 st2 receiver _ oid ntfn hPost hTcb
+
+/-- Backward: if post-state of endpointReceive has endpoint at oid ≠ endpointId,
+    then pre-state had the same endpoint. -/
+theorem endpointReceive_endpoint_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st'))
+    (oid : SeLe4n.ObjId) (ep : Endpoint) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> simp [hObj, hState] at hStep
+      case send =>
+        cases hQueue : epOld.queue with
+        | nil => cases hWait : epOld.waitingReceiver <;> simp [hQueue, hWait] at hStep
+        | cons head tail =>
+          cases hWait : epOld.waitingReceiver with
+          | none =>
+            simp only [hQueue, hWait] at hStep; revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []; intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 head .ready with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                rw [ensureRunnable_preserves_objects st2 head] at hPost
+                exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+                  storeTcbIpcState_endpoint_backward pair.2 st2 head .ready oid ep hPost hTcb
+          | some _ => simp [hQueue, hWait] at hStep
+
+/-- Backward: if post-state of endpointReceive has notification at oid ≠ endpointId,
+    then pre-state had the same notification. -/
+theorem endpointReceive_notification_backward
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceive endpointId st = .ok (sender, st'))
+    (oid : SeLe4n.ObjId) (ntfn : Notification) (hNe : oid ≠ endpointId)
+    (hPost : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint epOld =>
+      cases hState : epOld.state <;> simp [hObj, hState] at hStep
+      case send =>
+        cases hQueue : epOld.queue with
+        | nil => cases hWait : epOld.waitingReceiver <;> simp [hQueue, hWait] at hStep
+        | cons head tail =>
+          cases hWait : epOld.waitingReceiver with
+          | none =>
+            simp only [hQueue, hWait] at hStep; revert hStep
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []; intro hStep; revert hStep
+              cases hTcb : storeTcbIpcState pair.2 head .ready with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                rw [ensureRunnable_preserves_objects st2 head] at hPost
+                exact storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore ▸
+                  storeTcbIpcState_notification_backward pair.2 st2 head .ready oid ntfn hPost hTcb
+          | some _ => simp [hQueue, hWait] at hStep
 
 theorem endpointSend_preserves_ipcInvariant
     (st st' : SystemState)
@@ -605,27 +1315,17 @@ theorem endpointSend_preserves_ipcInvariant
     rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
     by_cases hEq : oid = endpointId
     · subst hEq
-      have hCast : ep = epNew := by
-        rw [hStored] at hObj
-        cases hObj
-        rfl
-      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      have hCast : ep = epNew := by rw [hStored] at hObj; cases hObj; rfl
+      have hObjValidNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
       simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
-      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-      exact hEndpointInv oid ep hOrig
+    · exact hEndpointInv oid ep
+        (endpointSend_endpoint_backward st st' endpointId sender hStep oid ep hEq hObj)
   · intro oid ntfn hObj
     by_cases hEq : oid = endpointId
-    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
-        simpa [hEq] using hObj
-      rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
-      rw [hStored] at hObjAtEndpoint
-      cases hObjAtEndpoint
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointSend_preserves_other_objects st st' endpointId oid sender hEq hStep
-      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
-      exact hNotificationInv oid ntfn hOrig
+    · rcases endpointSend_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
+      subst hEq; rw [hStored] at hObj; cases hObj
+    · exact hNotificationInv oid ntfn
+        (endpointSend_notification_backward st st' endpointId sender hStep oid ntfn hEq hObj)
 
 theorem endpointAwaitReceive_preserves_ipcInvariant
     (st st' : SystemState)
@@ -640,27 +1340,17 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
     rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, hWfNew⟩
     by_cases hEq : oid = endpointId
     · subst hEq
-      have hCast : ep = epNew := by
-        rw [hStored] at hObj
-        cases hObj
-        rfl
-      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      have hCast : ep = epNew := by rw [hStored] at hObj; cases hObj; rfl
+      have hObjValidNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
       simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hEq hStep
-      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-      exact hEndpointInv oid ep hOrig
+    · exact hEndpointInv oid ep
+        (endpointAwaitReceive_endpoint_backward st st' endpointId receiver hStep oid ep hEq hObj)
   · intro oid ntfn hObj
     by_cases hEq : oid = endpointId
-    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
-        simpa [hEq] using hObj
-      rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, _⟩
-      rw [hStored] at hObjAtEndpoint
-      cases hObjAtEndpoint
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hEq hStep
-      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
-      exact hNotificationInv oid ntfn hOrig
+    · rcases endpointAwaitReceive_result_wellFormed st st' endpointId receiver hStep with ⟨epNew, hStored, _⟩
+      subst hEq; rw [hStored] at hObj; cases hObj
+    · exact hNotificationInv oid ntfn
+        (endpointAwaitReceive_notification_backward st st' endpointId receiver hStep oid ntfn hEq hObj)
 
 theorem endpointReceive_preserves_ipcInvariant
     (st st' : SystemState)
@@ -675,27 +1365,17 @@ theorem endpointReceive_preserves_ipcInvariant
     rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, hWfNew⟩
     by_cases hEq : oid = endpointId
     · subst hEq
-      have hCast : ep = epNew := by
-        rw [hStored] at hObj
-        cases hObj
-        rfl
-      have hObjValidNew : endpointObjectValid epNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
+      have hCast : ep = epNew := by rw [hStored] at hObj; cases hObj; rfl
+      have hObjValidNew := endpointObjectValid_of_queueWellFormed epNew hWfNew
       simpa [endpointInvariant, hCast] using And.intro hWfNew hObjValidNew
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
-      have hOrig : st.objects oid = some (.endpoint ep) := by simpa [hUnchanged] using hObj
-      exact hEndpointInv oid ep hOrig
+    · exact hEndpointInv oid ep
+        (endpointReceive_endpoint_backward st st' endpointId sender hStep oid ep hEq hObj)
   · intro oid ntfn hObj
     by_cases hEq : oid = endpointId
-    · have hObjAtEndpoint : st'.objects endpointId = some (.notification ntfn) := by
-        simpa [hEq] using hObj
-      rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
-      rw [hStored] at hObjAtEndpoint
-      cases hObjAtEndpoint
-    · have hUnchanged : st'.objects oid = st.objects oid :=
-        endpointReceive_preserves_other_objects st st' endpointId oid sender hEq hStep
-      have hOrig : st.objects oid = some (.notification ntfn) := by simpa [hUnchanged] using hObj
-      exact hNotificationInv oid ntfn hOrig
+    · rcases endpointReceive_result_wellFormed st st' endpointId sender hStep with ⟨epNew, hStored, _⟩
+      subst hEq; rw [hStored] at hObj; cases hObj
+    · exact hNotificationInv oid ntfn
+        (endpointReceive_notification_backward st st' endpointId sender hStep oid ntfn hEq hObj)
 
 theorem endpointSend_ok_implies_endpoint_object
     (st st' : SystemState)
@@ -788,7 +1468,90 @@ theorem endpoint_store_preserves_schedulerInvariantBundle
           exact hTcbObj
         simp [currentThreadValid, hCurEq, hCurrent, hTcbObj']
 
-/-- Endpoint send preserves the scheduler invariant bundle. -/
+/-- `storeTcbIpcState` preserves the scheduler invariant bundle (scheduler unchanged,
+    target TCB object remains a TCB). -/
+private theorem storeTcbIpcState_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  have hSched := storeTcbIpcState_scheduler_eq st st' tid ipc hStep
+  refine ⟨by rwa [hSched], by rwa [hSched], ?_⟩
+  unfold currentThreadValid at hCur ⊢; rw [hSched]
+  cases hc : st.scheduler.current with
+  | none => simp [hc]
+  | some curTid =>
+    simp only [hc] at hCur ⊢
+    rcases hCur with ⟨tcb, hTcbObj⟩
+    by_cases hEq : curTid.toObjId = tid.toObjId
+    · rcases storeTcbIpcState_objects_at st st' tid ipc hStep with
+        ⟨tcb', _, hPost⟩ | ⟨_, hStEq⟩
+      · rw [← hEq] at hPost; exact ⟨_, hPost⟩
+      · subst hStEq; exact ⟨tcb, hTcbObj⟩
+    · exact ⟨tcb, by rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc _ hEq hStep]; exact hTcbObj⟩
+
+/-- `removeRunnable` preserves the scheduler invariant bundle. -/
+private theorem removeRunnable_preserves_schedulerInvariantBundle
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st) :
+    schedulerInvariantBundle (removeRunnable st tid) := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  refine ⟨?_, ?_, ?_⟩
+  · -- queueCurrentConsistent
+    unfold queueCurrentConsistent at hQueue ⊢
+    rw [removeRunnable_current]
+    by_cases hEq : st.scheduler.current = some tid
+    · simp [hEq]
+    · simp [hEq]
+      cases hc : st.scheduler.current with
+      | none => trivial
+      | some curTid =>
+        simp only [hc] at hQueue ⊢
+        rw [removeRunnable_mem_iff]
+        exact ⟨hQueue, fun h => hEq (h ▸ hc)⟩
+  · -- runQueueUnique
+    unfold runQueueUnique at hRunq ⊢
+    simp only [removeRunnable]
+    exact hRunq.filter _
+  · -- currentThreadValid
+    unfold currentThreadValid at hCur ⊢
+    simp only [removeRunnable]
+    by_cases hEq : st.scheduler.current = some tid
+    · simp [hEq]
+    · simp [hEq]; exact hCur
+
+/-- `ensureRunnable` preserves the scheduler invariant bundle. -/
+private theorem ensureRunnable_preserves_schedulerInvariantBundle
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st) :
+    schedulerInvariantBundle (ensureRunnable st tid) := by
+  rcases hInv with ⟨hQueue, hRunq, hCur⟩
+  unfold ensureRunnable
+  by_cases hMem : tid ∈ st.scheduler.runnable
+  · simp [hMem]; exact ⟨hQueue, hRunq, hCur⟩
+  · simp [hMem]
+    refine ⟨?_, ?_, ?_⟩
+    · -- queueCurrentConsistent
+      unfold queueCurrentConsistent at hQueue ⊢; simp only []
+      cases hc : st.scheduler.current with
+      | none => trivial
+      | some curTid =>
+        simp only [hc] at hQueue ⊢
+        exact List.mem_append.mpr (Or.inl hQueue)
+    · -- runQueueUnique
+      unfold runQueueUnique at hRunq ⊢; simp only []
+      rw [List.nodup_append]
+      refine ⟨hRunq, .cons (fun _ h => absurd h List.not_mem_nil) .nil, ?_⟩
+      intro a hal b hb
+      rw [List.mem_singleton] at hb; subst hb; intro heq; subst heq; exact hMem hal
+    · -- currentThreadValid
+      unfold currentThreadValid at hCur ⊢; simp only []; exact hCur
+
+/-- Endpoint send preserves the scheduler invariant bundle.
+
+    H-09/WS-E3: Updated for compound transitions (storeObject → storeTcbIpcState →
+    removeRunnable) on idle/send paths. The receive path remains single-step. -/
 theorem endpointSend_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -796,10 +1559,46 @@ theorem endpointSend_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
-    (endpointSend_ok_as_storeObject st st' endpointId sender hStep)
-    (endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep)
-    (fun oid hNe => endpointSend_preserves_other_objects st st' endpointId oid sender hNe hStep)
+  unfold endpointSend at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hState : ep.state <;> simp only [hState] at hStep
+      all_goals split at hStep
+      -- idle: storeObject → storeTcbIpcState → removeRunnable
+      · -- storeObject error
+        exact absurd hStep (by simp)
+      · -- storeObject ok
+        rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          exact removeRunnable_preserves_schedulerInvariantBundle _ sender
+            (storeTcbIpcState_preserves_schedulerInvariantBundle _ _ sender _
+              (endpoint_store_preserves_schedulerInvariantBundle st st1 endpointId hInv
+                ⟨_, hStore⟩ ⟨ep, hObj⟩ (fun oid hNe => storeObject_objects_ne st st1 endpointId oid _ hNe hStore))
+              hTcb)
+      -- send: storeObject → storeTcbIpcState → removeRunnable
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          exact removeRunnable_preserves_schedulerInvariantBundle _ sender
+            (storeTcbIpcState_preserves_schedulerInvariantBundle _ _ sender _
+              (endpoint_store_preserves_schedulerInvariantBundle st st1 endpointId hInv
+                ⟨_, hStore⟩ ⟨ep, hObj⟩ (fun oid hNe => storeObject_objects_ne st st1 endpointId oid _ hNe hStore))
+              hTcb)
+      -- receive: storeObject on ([], some _) or error on (_, _)
+      · exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
+          ⟨_, hStep⟩ ⟨ep, hObj⟩ (fun oid hNe => storeObject_objects_ne st st' endpointId oid _ hNe hStep)
+      · exact absurd hStep (by simp)
 
 /-- Endpoint await-receive preserves the scheduler invariant bundle. -/
 theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
@@ -809,10 +1608,31 @@ theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
-    (endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep)
-    (endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep)
-    (fun oid hNe => endpointAwaitReceive_preserves_other_objects st st' endpointId oid receiver hNe hStep)
+  unfold endpointAwaitReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      -- Three-way match on (ep.state, ep.queue, ep.waitingReceiver):
+      -- only (.idle, [], none) succeeds. Exhaust all combinations.
+      cases hState : ep.state <;> cases hQ : ep.queue <;>
+        cases hW : ep.waitingReceiver <;> simp [hState, hQ, hW] at hStep
+      -- Sole survivor: idle, nil, none → storeObject → storeTcbIpcState → removeRunnable
+      split at hStep
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep; subst hStep
+          exact removeRunnable_preserves_schedulerInvariantBundle _ receiver
+            (storeTcbIpcState_preserves_schedulerInvariantBundle _ _ receiver _
+              (endpoint_store_preserves_schedulerInvariantBundle st st1 endpointId hInv
+                ⟨_, hStore⟩ ⟨ep, hObj⟩ (fun oid hNe => storeObject_objects_ne st st1 endpointId oid _ hNe hStore))
+              hTcb)
 
 /-- Endpoint receive preserves the scheduler invariant bundle. -/
 theorem endpointReceive_preserves_schedulerInvariantBundle
@@ -822,10 +1642,33 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     schedulerInvariantBundle st' := by
-  exact endpoint_store_preserves_schedulerInvariantBundle st st' endpointId hInv
-    (endpointReceive_ok_as_storeObject st st' endpointId sender hStep)
-    (endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep)
-    (fun oid hNe => endpointReceive_preserves_other_objects st st' endpointId oid sender hNe hStep)
+  unfold endpointReceive at hStep
+  cases hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      -- Three-way match on (ep.state, ep.queue, ep.waitingReceiver):
+      -- only (.send, h::t, none) succeeds. Exhaust all combinations.
+      cases hState : ep.state <;> cases hQ : ep.queue <;>
+        cases hW : ep.waitingReceiver <;> simp [hState, hQ, hW] at hStep
+      -- Sole survivor: send, cons h t, none → storeObject → storeTcbIpcState → ensureRunnable
+      rename_i h t
+      split at hStep
+      · exact absurd hStep (by simp)
+      · rename_i st1 hStore
+        split at hStep
+        · exact absurd hStep (by simp)
+        · rename_i st2 hTcb
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hEq⟩ := hStep; subst hEq
+          exact ensureRunnable_preserves_schedulerInvariantBundle _ h
+            (storeTcbIpcState_preserves_schedulerInvariantBundle _ _ h _
+              (endpoint_store_preserves_schedulerInvariantBundle st st1 endpointId hInv
+                ⟨_, hStore⟩ ⟨ep, hObj⟩ (fun oid hNe => storeObject_objects_ne st st1 endpointId oid _ hNe hStore))
+              hTcb)
 
 
 -- ============================================================================
