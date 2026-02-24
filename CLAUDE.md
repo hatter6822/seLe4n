@@ -232,3 +232,45 @@ under `docs/` and `docs/gitbook/`.
 - [ ] Invariant/theorem updates paired with implementation
 - [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem changes
 - [ ] Documentation synchronized
+
+## Vulnerability reporting
+
+While executing any task in this codebase, if you discover a possible software
+vulnerability that could reasonably warrant a CVE (Common Vulnerabilities and
+Exposures) designation, you **must** immediately report it to the user before
+continuing. This applies to vulnerabilities found in:
+
+- **This project's code** — logic errors in transition semantics, capability
+  checks, information-flow enforcement, or any other component that could lead
+  to privilege escalation, information leakage, denial of service, or violation
+  of security invariants.
+- **Dependencies and toolchain** — known or suspected vulnerabilities in Lean,
+  Lake, elan, or any vendored/imported library encountered during builds,
+  updates, or code review.
+- **Build and CI infrastructure** — insecure script patterns (e.g., command
+  injection in shell scripts, unsafe file permissions, unvalidated inputs in
+  test harnesses) that could be exploited in a development or CI environment.
+- **Model/specification gaps** — cases where the formal model fails to capture
+  a security-relevant behavior of the real seL4 kernel, creating a false
+  assurance gap that could mask a real-world vulnerability.
+
+**What to report:**
+
+1. **Summary** — a concise description of the vulnerability.
+2. **Location** — file path(s) and line number(s) where the issue exists.
+3. **Severity estimate** — your assessment of impact (Critical / High / Medium
+   / Low) and exploitability.
+4. **Reproduction or evidence** — how the issue manifests or could be triggered.
+5. **Suggested remediation** — if apparent, a recommended fix or mitigation.
+
+**How to report:**
+
+- Stop current work and surface the finding in your response immediately.
+- Do **not** silently fix a CVE-worthy vulnerability — always flag it explicitly
+  so it can be tracked, triaged, and disclosed appropriately.
+- If the vulnerability is in a third-party dependency, note whether an upstream
+  advisory already exists.
+
+This requirement applies regardless of whether the vulnerability is directly
+related to the current task. Vigilance during routine work is one of the most
+effective ways to catch security issues early.
