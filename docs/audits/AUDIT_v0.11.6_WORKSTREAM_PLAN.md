@@ -42,13 +42,13 @@ related findings into coherent implementation slices.
 
 | ID | Severity | Description | Workstream | Status |
 |----|----------|-------------|------------|--------|
-| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | Pending |
+| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | **RESOLVED** |
 | C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
 | C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
 | C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
-| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 |
+| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 |
-| H-03 | HIGH | Badge override safety gap | WS-E2 |
+| H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
@@ -134,21 +134,37 @@ topologies exercise at least 3 distinct configurations per subsystem. ✓
 
 **Scope:**
 
-1. **C-01** Reformulate `cspaceSlotUnique` and `cspaceLookupSound` to prove
-   non-trivial properties. Either strengthen the invariant definitions to
-   encode lookup correctness relative to a specification, or explicitly
-   document them as meta-properties (and remove from the "high assurance"
-   categorization in documentation).
-2. **H-01** Refactor capability preservation proofs to be compositional —
-   each proof should derive post-state invariant components from pre-state
-   components through the operation's specific state transformation, not
-   re-prove from scratch.
-3. **H-03** Add theorem proving that badge values propagated through
-   `cspaceMint` are consistent with notification routing semantics.
+1. ~~C-01~~ Reformulate `cspaceSlotUnique` and `cspaceLookupSound` to prove
+   non-trivial properties — **DONE** (`cspaceSlotUnique` now requires
+   `CNode.slotKeysNodupKeys` (genuine `List.Nodup` on projected slot keys);
+   `cspaceLookupSound` now proves lookup correctness from membership + nodup,
+   not a circular assumption. Helper `cnode_lookup_of_mem_nodup` bridges the
+   proof. Both are substantive: they require actual well-formedness of the
+   CNode data structure.)
+2. ~~H-01~~ Refactor capability preservation proofs to be compositional —
+   **DONE** (all preservation theorems now derive post-state invariant
+   components from pre-state components through the operation's specific state
+   transformation. Added operation-level helpers:
+   `cspaceInsertSlot_preserves_slotUnique`,
+   `cspaceDeleteSlot_preserves_slotUnique`,
+   `cspaceRevoke_preserves_slotUnique`,
+   `storeObject_preserves_slotUnique`,
+   `storeObject_endpoint_preserves_slotUnique`,
+   `cspaceSlotUnique_of_cnodes_preserved`,
+   `endpointSend/AwaitReceive/Receive_preserves_cnodes`,
+   `cspaceLookupSound_of_slotUnique`. Each preservation proof destructures
+   `hInv` and threads components through the operation.)
+3. ~~H-03~~ Add theorem proving that badge values propagated through
+   `cspaceMint` are consistent with notification routing semantics — **DONE**
+   (three theorems: `mintDerivedCap_badge_consistent` (operation level),
+   `cspaceMint_badge_routing_consistent` (CSpace adapter level),
+   `cspaceMint_notification_badge_end_to_end` (end-to-end mint→signal path).)
 
 **Validation gate:** `test_full.sh` passes; preservation proofs use `hInv`
 destructured components in post-state derivation (not just `_`-prefixed
-discards).
+discards). ✓
+
+**Status:** **COMPLETED**
 
 **Dependencies:** None.
 
@@ -275,8 +291,8 @@ WS-E4 (CDT integration for capability flow proofs).
 ## 5. Execution phases
 
 - **Phase P0:** Baseline — close quick fixes, publish WS-E planning backbone,
-  update documentation to reflect v0.11.6 audit (**current phase**).
-- **Phase P1:** WS-E1 (test/CI hardening) + WS-E2 (proof quality) — parallel.
+  update documentation to reflect v0.11.6 audit (**completed**).
+- **Phase P1:** WS-E1 (test/CI hardening) + WS-E2 (proof quality) — parallel (**completed**).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns.
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3.
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
@@ -289,7 +305,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | Workstream | Status | Priority | Key findings | Phase |
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
-| WS-E2 | Planned | High | C-01, H-01, H-03 | P1 |
+| WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |

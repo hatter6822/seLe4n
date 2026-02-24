@@ -355,6 +355,66 @@ def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTar
       slots := node.slots.filter (fun entry => entry.fst = sourceSlot ∨ entry.snd.target ≠ target)
   }
 
+/-- CNode slot-key uniqueness: `List.Nodup` on the projected slot keys.
+
+This is a genuine data-structure invariant that must be actively maintained by CNode
+operations (insert, delete, revoke). It is not automatically true for arbitrary slot
+lists. -/
+def slotKeysNodupKeys (node : CNode) : Prop :=
+  (node.slots.map Prod.fst).Nodup
+
+private theorem nodup_map_fst_filter
+    (slots : List (SeLe4n.Slot × Capability))
+    (p : SeLe4n.Slot × Capability → Bool)
+    (hNodup : (slots.map Prod.fst).Nodup) :
+    ((slots.filter p).map Prod.fst).Nodup := by
+  induction slots with
+  | nil => simp
+  | cons hd tl ih =>
+    rw [List.map_cons, List.nodup_cons] at hNodup
+    obtain ⟨hNotMem, hTlNodup⟩ := hNodup
+    simp only [List.filter_cons]
+    split
+    · rw [List.map_cons, List.nodup_cons]
+      constructor
+      · intro hMem
+        apply hNotMem
+        have : hd.fst ∈ (tl.filter p).map Prod.fst := hMem
+        rw [List.mem_map] at this
+        obtain ⟨x, hxIn, hxEq⟩ := this
+        rw [← hxEq]
+        have hxOrig : x ∈ tl := (List.mem_filter.mp hxIn).1
+        exact List.mem_map_of_mem (f := Prod.fst) hxOrig
+      · exact ih hTlNodup
+    · exact ih hTlNodup
+
+theorem slotKeysNodupKeys_remove (node : CNode) (slot : SeLe4n.Slot)
+    (hNodup : slotKeysNodupKeys node) :
+    slotKeysNodupKeys (node.remove slot) := by
+  unfold slotKeysNodupKeys remove
+  exact nodup_map_fst_filter node.slots _ hNodup
+
+theorem slotKeysNodupKeys_insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hNodup : slotKeysNodupKeys node) :
+    slotKeysNodupKeys (node.insert slot cap) := by
+  unfold slotKeysNodupKeys insert
+  simp only [List.map_cons, List.nodup_cons]
+  constructor
+  · intro hMem
+    rw [List.mem_map] at hMem
+    obtain ⟨x, hxIn, hxEq⟩ := hMem
+    have hxPred : (decide (x.fst ≠ slot)) = true := (List.mem_filter.mp hxIn).2
+    simp at hxPred
+    exact absurd hxEq.symm (Ne.symm hxPred)
+  · exact nodup_map_fst_filter node.slots _ hNodup
+
+theorem slotKeysNodupKeys_revokeTargetLocal
+    (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hNodup : slotKeysNodupKeys node) :
+    slotKeysNodupKeys (node.revokeTargetLocal sourceSlot target) := by
+  unfold slotKeysNodupKeys revokeTargetLocal
+  exact nodup_map_fst_filter node.slots _ hNodup
+
 theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot) :
     (node.remove slot).lookup slot = none := by
   unfold remove lookup
