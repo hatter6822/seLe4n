@@ -1,9 +1,22 @@
+/-!
+# seLe4n Typed Identifiers and Monad Foundations
+
+H-06 (WS-E3): `Inhabited` instances have been removed from all kernel
+identifier types. The prior `deriving Inhabited` generated `default = ⟨0⟩`
+for every ID type, creating an implicit "magic zero" — ID 0 was not reserved
+or special in the model, but could be silently introduced via `default`.
+
+Design decision: **remove Inhabited** rather than reserve ID 0. This forces
+all ID construction to be explicit (`ObjId.ofNat n`, `ThreadId.ofNat n`, etc.)
+and eliminates an entire class of implicit-value bugs. No code in the model
+relied on `default` for these types.
+-/
 namespace SeLe4n
 
 /-- Identifier for objects in the global kernel object store. -/
 structure ObjId where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace ObjId
 
@@ -24,7 +37,7 @@ end ObjId
 /-- Identifier for threads (TCBs). -/
 structure ThreadId where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace ThreadId
 
@@ -48,7 +61,7 @@ end ThreadId
 /-- Scheduling domain identifier. -/
 structure DomainId where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace DomainId
 
@@ -69,7 +82,7 @@ end DomainId
 /-- Scheduling priority level. -/
 structure Priority where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace Priority
 
@@ -90,7 +103,7 @@ end Priority
 /-- Interrupt request line identifier. -/
 structure Irq where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace Irq
 
@@ -111,7 +124,7 @@ end Irq
 /-- Identifier for graph-level services in the orchestration layer. -/
 structure ServiceId where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace ServiceId
 
@@ -132,7 +145,7 @@ end ServiceId
 /-- Capability-space pointer value. -/
 structure CPtr where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace CPtr
 
@@ -153,7 +166,7 @@ end CPtr
 /-- Slot index within a CNode. -/
 structure Slot where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace Slot
 
@@ -174,7 +187,7 @@ end Slot
 /-- Endpoint or notification badge value. -/
 structure Badge where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace Badge
 
@@ -195,7 +208,7 @@ end Badge
 /-- Address-space identifier. -/
 structure ASID where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace ASID
 
@@ -216,7 +229,7 @@ end ASID
 /-- Virtual-memory address in the abstract model. -/
 structure VAddr where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace VAddr
 
@@ -237,7 +250,7 @@ end VAddr
 /-- Physical-memory address in the abstract model. -/
 structure PAddr where
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace PAddr
 

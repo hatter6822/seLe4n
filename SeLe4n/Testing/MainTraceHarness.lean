@@ -24,7 +24,7 @@ def svcRestart : ServiceId := 104
 def svcRestartBroken : ServiceId := 105
 
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
-  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, 200]
+  [1, 2, 10, 11, 12, 20, demoEndpoint, demoNotification, 200]
 
 def bootstrapServiceIds : List ServiceId :=
   [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken]
@@ -62,6 +62,15 @@ def bootstrapState : SystemState :=
       cspaceRoot := 10
       vspaceRoot := 20
       ipcBuffer := 8192
+      ipcState := .ready
+    })
+    |>.withObject 2 (.tcb {
+      tid := 2
+      priority := 80
+      domain := 0
+      cspaceRoot := 10
+      vspaceRoot := 20
+      ipcBuffer := 12288
       ipcState := .ready
     })
     |>.withObject 11 (.cnode CNode.empty)
@@ -104,8 +113,9 @@ def bootstrapState : SystemState :=
       dependencies := [999]
       isolatedFrom := []
     }
-    |>.withRunnable [1, 12]
+    |>.withRunnable [1, 2, 12]
     |>.withLifecycleObjectType 1 .tcb
+    |>.withLifecycleObjectType 2 .tcb
     |>.withLifecycleObjectType 10 .cnode
     |>.withLifecycleObjectType 12 .tcb
     |>.withLifecycleObjectType 11 .cnode
@@ -236,6 +246,8 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
       objects := fun oid =>
         if oid = demoEndpoint then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
         else if oid = 31 then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+        else if oid = 4 then some (.tcb { tid := 4, priority := 50, domain := 0, cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 0, ipcState := .ready })
+        else if oid = 5 then some (.tcb { tid := 5, priority := 50, domain := 0, cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 0, ipcState := .ready })
         else st1.objects oid
     }
   match SeLe4n.Kernel.endpointSend demoEndpoint 4 stMultiEndpoint with

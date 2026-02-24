@@ -1155,8 +1155,12 @@ theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
   exact hInv
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointSend`.
-Endpoint operations only modify endpoint objects — all CNodes are unchanged,
-so `cspaceSlotUnique` and `cspaceLookupSound` transfer directly from pre-state. -/
+IPC operations only store endpoint and TCB objects — all CNodes are unchanged,
+so `cspaceSlotUnique` and `cspaceLookupSound` transfer directly from pre-state.
+
+H-09 (WS-E3): Uses `endpointSend_cnode_backward` (CNode backward preservation)
+instead of the prior `endpointSend_ok_as_storeObject` decomposition, reflecting
+the core+effects multi-step operation structure. -/
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1165,8 +1169,8 @@ theorem endpointSend_preserves_capabilityInvariantBundle
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
+  have hUnique' : cspaceSlotUnique st' := fun cnodeId cn hObj =>
+    hUnique cnodeId cn (endpointSend_cnode_backward st st' endpointId sender hStep cnodeId cn hObj)
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
@@ -1179,8 +1183,8 @@ theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
+  have hUnique' : cspaceSlotUnique st' := fun cnodeId cn hObj =>
+    hUnique cnodeId cn (endpointAwaitReceive_cnode_backward st st' endpointId receiver hStep cnodeId cn hObj)
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
@@ -1193,8 +1197,8 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
+  have hUnique' : cspaceSlotUnique st' := fun cnodeId cn hObj =>
+    hUnique cnodeId cn (endpointReceive_cnode_backward st st' endpointId sender hStep cnodeId cn hObj)
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 

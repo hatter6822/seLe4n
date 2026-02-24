@@ -102,17 +102,24 @@ Returns `true` if there exists a path of dependency edges from `src` to
 `target`. Uses `fuel` as a bound on the number of distinct nodes expanded
 (set via `serviceBfsFuel`).
 
+H-08 (WS-E3): On fuel exhaustion, returns `true` (conservative — assumes
+reachability rather than falsely reporting no path). This makes cycle
+detection sound: if BFS cannot prove unreachability within the fuel bound,
+it conservatively reports a potential path, preventing false negatives in
+`serviceRegisterDependency`.
+
 The BFS correctly handles:
 - empty graphs (no services → no path),
 - self-reachability (src = target → true immediately),
 - disconnected components (frontier exhaustion → false),
-- already-visited nodes (skipped without consuming fuel). -/
+- already-visited nodes (skipped without consuming fuel),
+- fuel exhaustion → true (conservative soundness). -/
 def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
   go [src] [] fuel
 where
   go (frontier visited : List ServiceId) : Nat → Bool
-  | 0 => false  -- fuel exhausted: conservatively report no path
+  | 0 => true  -- H-08: fuel exhausted: conservatively assume reachability
   | fuel + 1 =>
       match frontier with
       | [] => false  -- frontier empty: no path exists

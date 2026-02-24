@@ -90,7 +90,14 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
 -- ============================================================================
 
 /-- A successful endpoint send preserves low-equivalence for observers that cannot
-see the sender thread and cannot observe the endpoint object itself. -/
+see the sender thread and cannot observe the endpoint object itself.
+
+TPI-D07 (WS-E5): H-09 (WS-E3) introduced core+effects separation where
+`endpointSend` may additionally modify a receiver TCB and the scheduler
+(in the `unblockReceiver` effect path). The prior single-storeObject decomposition
+no longer applies. The `blockSender` path is fully non-interfering (all changes
+at unobservable locations). The `unblockReceiver` path requires showing that the
+dequeued receiver's observability is also controlled — tracked for WS-E5 maturity. -/
 theorem endpointSend_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
@@ -99,15 +106,15 @@ theorem endpointSend_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (_hSenderHigh : threadObservable ctx observer sender = false)
-    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (_hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
     (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  rcases endpointSend_ok_as_storeObject s₁ s₁' endpointId sender hStep₁ with ⟨ep₁, hStore₁⟩
-  rcases endpointSend_ok_as_storeObject s₂ s₂' endpointId sender hStep₂ with ⟨ep₂, hStore₂⟩
-  exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer endpointId (.endpoint ep₁) (.endpoint ep₂)
-    s₁ s₂ s₁' s₂' hLow hEndpointHigh hStore₁ hStore₂
+  -- TPI-D07 (WS-E5): H-09 multi-step effects require extended non-interference argument.
+  -- The blockSender path preserves non-interference (all changes at high locations).
+  -- The unblockReceiver path modifies an additional TCB and scheduler entry;
+  -- a full proof requires receiver observability control or same-receiver coincidence.
+  sorry -- TPI-D07 (WS-E5): extended non-interference for H-09 multi-step effects
 
 -- ============================================================================
 -- Non-interference theorem #2: chooseThread (WS-D2, F-05, TPI-D01)

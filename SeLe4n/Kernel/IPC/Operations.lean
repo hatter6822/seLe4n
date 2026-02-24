@@ -16,6 +16,16 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   else
     { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
 
+/-- H-09 (WS-E3): Combined block operation that removes a thread from the runnable
+queue and clears the current-thread field if the blocked thread was current.
+This is semantically correct: a blocked thread cannot be the currently-executing
+thread. The combined operation maintains `queueCurrentConsistent`. -/
+def blockThread (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let st' := removeRunnable st tid
+  match st'.scheduler.current with
+  | some cur => if cur = tid then { st' with scheduler := { st'.scheduler with current := none } } else st'
+  | none => st'
+
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   match st.objects tid.toObjId with
   | some (.tcb tcb) => some tcb
@@ -29,8 +39,15 @@ def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : Thre
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
-/-- Add a sender to an endpoint wait queue with explicit state transition. -/
-def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
+-- ============================================================================
+-- Core endpoint operations: endpoint-object-only transitions.
+-- These are the internal building blocks. The public operations compose these
+-- with IPC state effects (storeTcbIpcState + blockThread/ensureRunnable).
+-- All invariant proofs target these core operations.
+-- ============================================================================
+
+/-- Core endpoint send: updates only the endpoint object. -/
+def endpointSendCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
@@ -50,8 +67,8 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Register one waiting receiver on an idle endpoint. -/
-def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
+/-- Core endpoint await-receive: updates only the endpoint object. -/
+def endpointAwaitReceiveCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
@@ -65,8 +82,8 @@ def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Consume one queued sender from an endpoint wait queue. -/
-def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
+/-- Core endpoint receive: updates only the endpoint object. -/
+def endpointReceiveCore (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
@@ -83,6 +100,228 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
         | .receive, _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
+
+-- ============================================================================
+-- Public endpoint operations: core + IPC state effects.
+-- H-09 (WS-E3): These compose the core endpoint transition with thread
+-- IPC state management and scheduler changes.
+-- ============================================================================
+
+/-- Determine which thread to block/unblock after endpointSend.
+Returns `(.block sender)` for idle/send paths and `(.unblock receiver)` for rendezvous. -/
+inductive SendEffect where
+  | blockSender (sender : SeLe4n.ThreadId) (endpointId : SeLe4n.ObjId)
+  | unblockReceiver (receiver : SeLe4n.ThreadId)
+
+/-- Extract the effect for endpointSend from the pre-state. -/
+def endpointSendEffect (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (st : SystemState) : Option SendEffect :=
+  match st.objects endpointId with
+  | some (.endpoint ep) =>
+      match ep.state with
+      | .idle => some (.blockSender sender endpointId)
+      | .send => some (.blockSender sender endpointId)
+      | .receive =>
+          match ep.queue, ep.waitingReceiver with
+          | [], some receiver => some (.unblockReceiver receiver)
+          | _, _ => none
+  | _ => none
+
+/-- Apply IPC effects after a core endpoint step. -/
+def applyBlockEffect (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) : Except KernelError SystemState :=
+  match storeTcbIpcState st tid ipcState with
+  | .error e => .error e
+  | .ok st' => .ok (blockThread st' tid)
+
+def applyUnblockEffect (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Except KernelError SystemState :=
+  match storeTcbIpcState st tid .ready with
+  | .error e => .error e
+  | .ok st' => .ok (ensureRunnable st' tid)
+
+/-- Add a sender to an endpoint wait queue with explicit state transition.
+
+H-09 (WS-E3): When the sender blocks (idle/send paths), its IPC state is set
+to `.blockedOnSend endpointId` and it is removed from the runnable queue.
+When a waiting receiver is present (receive path), the receiver is unblocked
+(IPC state set to `.ready`, added to runnable queue). -/
+def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match endpointSendEffect endpointId sender st with
+    | none =>
+        -- Fallthrough to core for error reporting
+        endpointSendCore endpointId sender st
+    | some effect =>
+        match endpointSendCore endpointId sender st with
+        | .error e => .error e
+        | .ok ((), stCore) =>
+            match effect with
+            | .blockSender s eid =>
+                match applyBlockEffect stCore s (.blockedOnSend eid) with
+                | .error e => .error e
+                | .ok st' => .ok ((), st')
+            | .unblockReceiver r =>
+                match applyUnblockEffect stCore r with
+                | .error e => .error e
+                | .ok st' => .ok ((), st')
+
+/-- Register one waiting receiver on an idle endpoint.
+
+H-09 (WS-E3): The receiver's IPC state is set to `.blockedOnReceive endpointId`
+and the receiver is removed from the runnable queue, making the
+`blockedOnReceiveNotRunnable` contract predicate non-vacuous. -/
+def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match endpointAwaitReceiveCore endpointId receiver st with
+    | .error e => .error e
+    | .ok ((), stCore) =>
+        match applyBlockEffect stCore receiver (.blockedOnReceive endpointId) with
+        | .error e => .error e
+        | .ok st' => .ok ((), st')
+
+/-- Consume one queued sender from an endpoint wait queue.
+
+H-09 (WS-E3): The dequeued sender is unblocked: its IPC state is set to
+`.ready` and it is added to the runnable queue via `ensureRunnable`, making
+the `blockedOnSendNotRunnable` contract predicate non-vacuous. -/
+def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
+  fun st =>
+    match endpointReceiveCore endpointId st with
+    | .error e => .error e
+    | .ok (sender, stCore) =>
+        match applyUnblockEffect stCore sender with
+        | .error e => .error e
+        | .ok st' => .ok (sender, st')
+
+-- ============================================================================
+-- Key properties of effects: they preserve objects
+-- ============================================================================
+
+theorem blockThread_preserves_objects
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (blockThread st tid).objects = st.objects := by
+  unfold blockThread
+  have : (removeRunnable st tid).objects = st.objects := rfl
+  cases h : (removeRunnable st tid).scheduler.current with
+  | none => simp [h, this]
+  | some cur =>
+      by_cases hEq : cur = tid
+      · simp [h, hEq]; exact this
+      · simp [h, hEq]; exact this
+
+theorem ensureRunnable_preserves_objects
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objects = st.objects := by
+  unfold ensureRunnable
+  by_cases hMem : tid ∈ st.scheduler.runnable <;> simp [hMem]
+
+theorem storeTcbIpcState_preserves_objects_ne
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId)
+    (hNe : oid ≠ tid.toObjId)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold storeTcbIpcState at hStep
+  cases hTcb : lookupTcb st tid with
+  | none =>
+    simp [hTcb] at hStep
+    subst hStep; rfl
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep
+      subst hEq
+      exact storeObject_objects_ne st pair.2 tid.toObjId oid
+        (.tcb { tcb with ipcState := ipc }) hNe hStore
+
+theorem storeTcbIpcState_scheduler_eq
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbIpcState at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep; subst hStep; rfl
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep
+      subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId (.tcb { tcb with ipcState := ipc }) hStore
+
+/-- `storeTcbIpcState` preserves notification objects (it only writes TCBs). -/
+theorem storeTcbIpcState_preserves_notification
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (notifId : SeLe4n.ObjId)
+    (ntfn : Notification)
+    (hNtfn : st.objects notifId = some (.notification ntfn))
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.objects notifId = some (.notification ntfn) := by
+  by_cases hEq : notifId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    have hLookup : lookupTcb st tid = none := by
+      unfold lookupTcb; simp [hNtfn]
+    simp [hLookup] at hStep
+    subst hStep
+    exact hNtfn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hStep]
+    exact hNtfn
+
+/-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
+theorem removeRunnable_preserves_objects
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).objects = st.objects := by
+  rfl
+
+/-- Core property: applyBlockEffect preserves objects at all IDs except possibly the thread's ObjId. -/
+theorem applyBlockEffect_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hStep : applyBlockEffect st tid ipc = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold applyBlockEffect at hStep
+  cases hTcb : storeTcbIpcState st tid ipc with
+  | error e => simp [hTcb] at hStep
+  | ok stMid =>
+    simp only [hTcb] at hStep
+    have hEq : blockThread stMid tid = st' := Except.ok.inj hStep
+    subst hEq
+    rw [blockThread_preserves_objects]
+    exact storeTcbIpcState_preserves_objects_ne st stMid tid ipc oid hNe hTcb
+
+/-- Core property: applyUnblockEffect preserves objects at all IDs except possibly the thread's ObjId. -/
+theorem applyUnblockEffect_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hStep : applyUnblockEffect st tid = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold applyUnblockEffect at hStep
+  cases hTcb : storeTcbIpcState st tid .ready with
+  | error e => simp [hTcb] at hStep
+  | ok stMid =>
+    simp only [hTcb] at hStep
+    have hEq : ensureRunnable stMid tid = st' := Except.ok.inj hStep
+    subst hEq
+    rw [ensureRunnable_preserves_objects]
+    exact storeTcbIpcState_preserves_objects_ne st stMid tid .ready oid hNe hTcb
+
+-- ============================================================================
+-- Signal and wait notification operations (unchanged)
+-- ============================================================================
 
 /-- Signal a notification: wake one waiter or mark one pending badge. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
@@ -159,59 +398,6 @@ def notificationWait
 -- ============================================================================
 -- F-12: Supporting lemmas for notification waiting-list proofs (WS-D4)
 -- ============================================================================
-
-/-- `storeTcbIpcState` preserves objects at IDs other than `tid.toObjId`. -/
-theorem storeTcbIpcState_preserves_objects_ne
-    (st st' : SystemState)
-    (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState)
-    (oid : SeLe4n.ObjId)
-    (hNe : oid ≠ tid.toObjId)
-    (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects oid = st.objects oid := by
-  unfold storeTcbIpcState at hStep
-  cases hTcb : lookupTcb st tid with
-  | none =>
-    simp [hTcb] at hStep
-    subst hStep; rfl
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq : pair.snd = st' := Except.ok.inj hStep
-      subst hEq
-      exact storeObject_objects_ne st pair.2 tid.toObjId oid
-        (.tcb { tcb with ipcState := ipc }) hNe hStore
-
-/-- `storeTcbIpcState` preserves notification objects (it only writes TCBs). -/
-theorem storeTcbIpcState_preserves_notification
-    (st st' : SystemState)
-    (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState)
-    (notifId : SeLe4n.ObjId)
-    (ntfn : Notification)
-    (hNtfn : st.objects notifId = some (.notification ntfn))
-    (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects notifId = some (.notification ntfn) := by
-  by_cases hEq : notifId = tid.toObjId
-  · subst hEq
-    unfold storeTcbIpcState at hStep
-    have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hNtfn]
-    simp [hLookup] at hStep
-    subst hStep
-    exact hNtfn
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hStep]
-    exact hNtfn
-
-/-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
-theorem removeRunnable_preserves_objects
-    (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).objects = st.objects := by
-  rfl
 
 /-- Double-wait is rejected: if the thread is already waiting,
 `notificationWait` returns `alreadyWaiting`. -/

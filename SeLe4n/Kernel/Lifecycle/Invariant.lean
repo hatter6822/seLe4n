@@ -224,4 +224,83 @@ theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
     lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
   exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
 
+-- ============================================================================
+-- M-09 (WS-E3): storeObject metadata sync correctness for type-changing stores
+-- ============================================================================
+
+/-- M-09 (WS-E3): `storeObject` correctly synchronizes lifecycle metadata with
+the object store, even for type-changing stores. After storing object `obj` at
+`id`, the lifecycle metadata at `id` exactly reflects `obj`'s type and
+capability references. -/
+theorem storeObject_metadata_sync_correct
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes id = some obj.objectType ∧
+    (∀ ref : SlotRef,
+      ref.cnode = id →
+      st'.lifecycle.capabilityRefs ref =
+        match obj with
+        | .cnode cn => (cn.lookup ref.slot).map Capability.target
+        | _ => none) ∧
+    (∀ ref : SlotRef,
+      ref.cnode ≠ id →
+      st'.lifecycle.capabilityRefs ref = st.lifecycle.capabilityRefs ref) := by
+  unfold storeObject at hStep
+  cases hStep
+  refine ⟨?_, ?_, ?_⟩
+  · simp
+  · intro ref hEq
+    simp [hEq]
+    cases obj <;> rfl
+  · intro ref hNe
+    simp [hNe]
+
+/-- M-09 corollary: for non-CNode objects, all capability references at that
+location are cleared after `storeObject`. This ensures no stale CNode references
+remain when an object changes type from CNode to a different type. -/
+theorem storeObject_nonCNode_clears_refs
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStep : storeObject id obj st = .ok ((), st'))
+    (hNotCNode : ∀ cn, obj ≠ .cnode cn)
+    (ref : SlotRef)
+    (hRef : ref.cnode = id) :
+    st'.lifecycle.capabilityRefs ref = none := by
+  rcases storeObject_metadata_sync_correct st st' id obj hStep with ⟨_, hCap, _⟩
+  rw [hCap ref hRef]
+  cases obj with
+  | tcb _ => rfl
+  | endpoint _ => rfl
+  | notification _ => rfl
+  | cnode cn => exact absurd rfl (hNotCNode cn)
+  | vspaceRoot _ => rfl
+
+-- ============================================================================
+-- L-06 (WS-E3): Default SystemState satisfies lifecycle metadata consistency
+-- ============================================================================
+
+/-- L-06 (WS-E3): The default `SystemState` satisfies `lifecycleMetadataConsistent`.
+
+This closes the base case of inductive invariant proofs: the initial system state
+trivially satisfies metadata consistency because both the object store and
+lifecycle metadata return `none` for every ID and slot reference. -/
+theorem default_satisfies_lifecycleMetadataConsistent :
+    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
+  refine ⟨fun oid => ?_, fun ref => ?_⟩
+  · -- objectTypeMetadataConsistent: both sides reduce to none for default state
+    simp [SystemState.lookupObjectTypeMeta]
+    rfl
+  · -- capabilityRefMetadataConsistent: both sides reduce to none for default state
+    simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap, SystemState.lookupCNode]
+    rfl
+
+/-- L-06 corollary: The default `SystemState` satisfies the full
+`lifecycleInvariantBundle`. -/
+theorem default_satisfies_lifecycleInvariantBundle :
+    lifecycleInvariantBundle (default : SystemState) :=
+  lifecycleInvariantBundle_of_metadata_consistent default default_satisfies_lifecycleMetadataConsistent
+
 end SeLe4n.Kernel
