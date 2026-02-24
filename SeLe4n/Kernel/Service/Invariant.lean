@@ -215,13 +215,22 @@ theorem storeServiceState_preserves_lifecycleInvariantBundle
     SystemState.lookupObjectTypeMeta, SystemState.lookupCapabilityRefMeta,
     SystemState.lookupSlotCap, SystemState.lookupCNode] using hLifecycle
 
+/-- WS-E2/H-01: Compositional — storeServiceState only modifies `services`, so the NoDup
+component propagates directly from the pre-state hypothesis. -/
 theorem storeServiceState_preserves_capabilityInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
     (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus) :
+    (newStatus : ServiceStatus)
+    (hCap : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
-  exact capabilityInvariantBundle_holds (storeServiceState sid { svc with status := newStatus } st)
+  rcases hCap with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds _, cspaceLookupSound_holds _, hAttRule,
+    lifecycleAuthorityMonotonicity_holds _, ?_⟩
+  intro oid cn hOidCn
+  -- storeServiceState does not modify objects
+  simp [storeServiceState] at hOidCn
+  exact hNoDup oid cn hOidCn
 
 theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
     (st st' : SystemState)
@@ -245,7 +254,7 @@ theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
             exact ⟨
               storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
               storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running
+              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
             ⟩
           · simp [hLookup, hStopped, hAllow, hDeps] at hStep
         · simp [hLookup, hStopped, hAllow] at hStep
@@ -272,7 +281,7 @@ theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
           exact ⟨
             storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
             storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
-            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped
+            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped hCap
           ⟩
         · simp [hLookup, hRunning, hAllow] at hStep
       · simp [hLookup, hRunning] at hStep

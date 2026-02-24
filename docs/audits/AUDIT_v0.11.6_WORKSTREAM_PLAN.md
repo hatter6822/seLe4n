@@ -42,13 +42,13 @@ related findings into coherent implementation slices.
 
 | ID | Severity | Description | Workstream | Status |
 |----|----------|-------------|------------|--------|
-| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | Pending |
+| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | **RESOLVED** |
 | C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
 | C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
 | C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
-| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 |
+| H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 |
-| H-03 | HIGH | Badge override safety gap | WS-E2 |
+| H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
@@ -289,7 +289,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | Workstream | Status | Priority | Key findings | Phase |
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
-| WS-E2 | Planned | High | C-01, H-01, H-03 | P1 |
+| WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |

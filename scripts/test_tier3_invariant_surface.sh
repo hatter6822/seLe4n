@@ -508,4 +508,27 @@ run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hyg
 # WS-E1 documentation anchors.
 run_check "DOC" rg -n 'WS-E1' docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md
 
+# WS-E2 C-01 CNode slot-key uniqueness infrastructure anchors.
+run_check "INVARIANT" rg -n '^def slotsNoDup' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem slotsNoDup_empty' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem insert_preserves_slotsNoDup' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem remove_preserves_slotsNoDup' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_preserves_slotsNoDup' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def cspaceCNodeSlotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+
+# WS-E2 H-01 compositional storeObject preservation anchors.
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_cspaceCNodeSlotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_cspaceCNodeSlotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_cspaceCNodeSlotsNoDup' SeLe4n/Kernel/Capability/Invariant.lean
+
+# WS-E2 H-03 badge propagation correctness anchors.
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_fresh_badge_identity' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_notification_consistent' SeLe4n/Kernel/Capability/Invariant.lean
+
+# WS-E2 documentation anchors.
+run_check "DOC" rg -n 'WS-E2' docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md
+
 finalize_report

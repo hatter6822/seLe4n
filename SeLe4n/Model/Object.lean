@@ -384,6 +384,106 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
     by_cases hEq : entry.fst = sourceSlot <;> simp [hEq]
   simp [hPred]
 
+-- ============================================================================
+-- WS-E2 / C-01: CNode slot-key uniqueness infrastructure
+-- ============================================================================
+
+/-- Structural slot-key uniqueness: no two entries in a CNode's slot list share
+the same slot index. This is the genuine, non-tautological replacement for the
+system-level `cspaceSlotUnique` meta-property. -/
+def slotsNoDup (node : CNode) : Prop :=
+  ∀ s cap₁ cap₂, (s, cap₁) ∈ node.slots → (s, cap₂) ∈ node.slots → cap₁ = cap₂
+
+theorem slotsNoDup_empty : slotsNoDup CNode.empty := by
+  intro s cap₁ cap₂ hIn₁
+  simp [CNode.empty] at hIn₁
+
+theorem insert_preserves_slotsNoDup
+    (node : CNode)
+    (slot : SeLe4n.Slot)
+    (cap : Capability)
+    (hNoDup : slotsNoDup node) :
+    slotsNoDup (node.insert slot cap) := by
+  intro s cap₁ cap₂ hIn₁ hIn₂
+  simp [insert] at hIn₁ hIn₂
+  rcases hIn₁ with ⟨h1s, h1c⟩ | ⟨hMem₁, hNe₁⟩
+  · rcases hIn₂ with ⟨h2s, h2c⟩ | ⟨_hMem₂, hNe₂⟩
+    · rw [h1c, h2c]
+    · exact absurd h1s hNe₂
+  · rcases hIn₂ with ⟨h2s, _h2c⟩ | ⟨hMem₂, _⟩
+    · exact absurd h2s hNe₁
+    · exact hNoDup s cap₁ cap₂ hMem₁ hMem₂
+
+theorem remove_preserves_slotsNoDup
+    (node : CNode)
+    (slot : SeLe4n.Slot)
+    (hNoDup : slotsNoDup node) :
+    slotsNoDup (node.remove slot) := by
+  intro s cap₁ cap₂ hIn₁ hIn₂
+  simp [remove, List.mem_filter] at hIn₁ hIn₂
+  exact hNoDup s cap₁ cap₂ hIn₁.1 hIn₂.1
+
+theorem revokeTargetLocal_preserves_slotsNoDup
+    (node : CNode)
+    (sourceSlot : SeLe4n.Slot)
+    (target : CapTarget)
+    (hNoDup : slotsNoDup node) :
+    slotsNoDup (node.revokeTargetLocal sourceSlot target) := by
+  intro s cap₁ cap₂ hIn₁ hIn₂
+  simp [revokeTargetLocal, List.mem_filter] at hIn₁ hIn₂
+  exact hNoDup s cap₁ cap₂ hIn₁.1 hIn₂.1
+
+private theorem find?_mem {α : Type} {p : α → Bool} {l : List α} {a : α}
+    (h : l.find? p = some a) : a ∈ l := by
+  induction l with
+  | nil => simp [List.find?] at h
+  | cons hd tl ih =>
+    simp only [List.find?] at h
+    split at h
+    · cases h; exact List.Mem.head tl
+    · exact List.Mem.tail hd (ih h)
+
+/-- If `lookup` returns `some cap`, then `(slot, cap)` is a member of `node.slots`. -/
+theorem lookup_mem_of_some
+    (node : CNode)
+    (slot : SeLe4n.Slot)
+    (cap : Capability)
+    (hLookup : node.lookup slot = some cap) :
+    (slot, cap) ∈ node.slots := by
+  unfold lookup at hLookup
+  rw [Option.map_eq_some_iff] at hLookup
+  rcases hLookup with ⟨⟨s, c⟩, hFind, hEq⟩
+  simp at hEq
+  have hSlot := List.find?_some hFind
+  simp at hSlot
+  have hEntryMem := find?_mem hFind
+  subst hSlot; subst hEq
+  exact hEntryMem
+
+/-- Under slot-key uniqueness, membership implies lookup succeeds. -/
+theorem lookup_of_mem_unique
+    (node : CNode)
+    (slot : SeLe4n.Slot)
+    (cap : Capability)
+    (hNoDup : slotsNoDup node)
+    (hMem : (slot, cap) ∈ node.slots) :
+    node.lookup slot = some cap := by
+  unfold lookup
+  rw [Option.map_eq_some_iff]
+  have hFind : (node.slots.find? (fun entry => entry.fst = slot)).isSome = true := by
+    rw [List.find?_isSome]
+    exact ⟨(slot, cap), hMem, by simp⟩
+  rcases Option.isSome_iff_exists.mp hFind with ⟨entry, hEntry⟩
+  refine ⟨entry, hEntry, ?_⟩
+  have hPred := List.find?_some hEntry
+  simp at hPred
+  have hSlotEq : entry.fst = slot := hPred
+  have hCapEq : entry.snd = cap := by
+    have hEntryMem : entry ∈ node.slots := find?_mem hEntry
+    have : (slot, entry.snd) ∈ node.slots := hSlotEq ▸ Prod.eta entry ▸ hEntryMem
+    exact hNoDup slot entry.snd cap this hMem
+  simp [hCapEq]
+
 end CNode
 
 inductive KernelObject where

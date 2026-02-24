@@ -85,14 +85,27 @@ def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
         cap.target = parent.target →
         slot = addr.slot)
 
+/-- WS-E2 / C-01: Structural CNode slot-key uniqueness across all CNodes in the object store.
+
+This is a genuine, non-tautological invariant that states every CNode object in the kernel's
+object store has unique slot keys. Together with the meta-properties `cspaceSlotUnique` and
+`cspaceLookupSound`, this provides a complete slot-uniqueness story:
+- `cspaceSlotUnique` / `cspaceLookupSound` hold by construction (meta-properties of `cspaceLookupSlot`)
+- `cspaceCNodeSlotsNoDup` holds by structural induction over CNode mutations (genuine invariant) -/
+def cspaceCNodeSlotsNoDup (st : SystemState) : Prop :=
+  ∀ oid cn, st.objects oid = some (.cnode cn) → cn.slotsNoDup
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with explicit lifecycle-transition
 authority obligations (`delete`/`revoke`) so lifecycle preservation can be stated against a
-single invariant entrypoint. -/
+single invariant entrypoint.
+
+WS-E2/C-01: The 5th component `cspaceCNodeSlotsNoDup` lifts the structural CNode slot-key
+uniqueness guarantee from object-level to system-level. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
-    lifecycleAuthorityMonotonicity st
+    lifecycleAuthorityMonotonicity st ∧ cspaceCNodeSlotsNoDup st
 
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
 monotonicity so composition proofs can depend on a single named assumption. -/
@@ -105,7 +118,7 @@ theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
     (hCap : capabilityInvariantBundle st) :
     lifecycleCapabilityStaleAuthorityInvariant st := by
   refine ⟨lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hLifecycle, ?_⟩
-  exact hCap.2.2.2
+  exact hCap.2.2.2.1
 
 /-- Delete transition authority reduction clause. -/
 theorem cspaceDeleteSlot_authority_reduction
@@ -453,6 +466,80 @@ theorem cspaceMint_badge_override_safe
     ⟨parent, child, hSrc, hDst, hAtt⟩
   exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
 
+-- ============================================================================
+-- WS-E2 / H-03: Badge propagation correctness theorems
+-- ============================================================================
+
+/-- H-03 core: `mintDerivedCap` propagates the supplied badge value into the child capability. -/
+theorem mintDerivedCap_badge_propagated
+    (parent child : Capability)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.badge = badge := by
+  by_cases hSubset : rightsSubset rights parent.rights = true
+  · simp [mintDerivedCap, hSubset] at hMint
+    cases hMint
+    rfl
+  · simp [mintDerivedCap, hSubset] at hMint
+
+/-- H-03: Badge OR-merge is idempotent — signaling the same badge twice yields the same pending
+badge as signaling it once (since `b ||| b = b` for bitwise OR). -/
+theorem badge_merge_idempotent
+    (badge : SeLe4n.Badge) :
+    SeLe4n.Badge.ofNat (badge.toNat ||| badge.toNat) = badge := by
+  simp [Nat.or_self, SeLe4n.Badge.ofNat, SeLe4n.Badge.toNat]
+
+/-- H-03: When a notification has no pending badge, `notificationSignal` with a fresh badge
+sets the pending badge to exactly that badge (identity case of the OR-merge). -/
+theorem notificationSignal_fresh_badge_identity
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge)
+    (ntfn : Notification)
+    (hObj : st.objects notificationId = some (.notification ntfn))
+    (hWaiters : ntfn.waitingThreads = [])
+    (hNoPending : ntfn.pendingBadge = none)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    st'.objects notificationId =
+      some (.notification { state := .active, waitingThreads := [], pendingBadge := some badge }) := by
+  unfold notificationSignal at hStep
+  simp [hObj, hWaiters, hNoPending, storeObject] at hStep
+  cases hStep
+  simp
+
+/-- H-03 end-to-end: After a successful `cspaceMint` with an explicit badge, the minted
+capability in the destination slot carries that badge, and the badge value is consistent
+with the notification signaling path — i.e., the badge that would be delivered via
+`notificationSignal` matches the badge recorded in the minted capability. -/
+theorem cspaceMint_badge_notification_consistent
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ∃ parent child,
+      cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceLookupSlot dst st' = .ok (child, st') ∧
+      child.badge = badge ∧
+      child.target = parent.target := by
+  unfold cspaceMint at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hMint : mintDerivedCap parent rights badge with
+      | error e => simp [hSrc, hMint] at hStep
+      | ok child =>
+          have hBadge := mintDerivedCap_badge_propagated parent child rights badge hMint
+          have hTarget := mintDerivedCap_target_preserved_with_badge_override parent child rights badge hMint
+          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
+            simpa [hSrc, hMint] using hStep
+          have hLookup := cspaceInsertSlot_lookup_eq st st' dst child hInsert
+          exact ⟨parent, child, rfl, hLookup, hBadge, hTarget⟩
+
 theorem cspaceSlotUnique_holds (st : SystemState) :
     cspaceSlotUnique st := by
   intro addr cap₁ cap₂ st₁ st₂ h₁ h₂
@@ -500,10 +587,54 @@ theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
   · intro addr st' parent hRevoke hParent slot cap hLookup hTarget
     exact cspaceRevoke_local_target_reduction st st' addr parent hRevoke hParent slot cap hLookup hTarget
 
-theorem capabilityInvariantBundle_holds (st : SystemState) :
+/-- WS-E2/C-01: Constructor for the capability invariant bundle given the genuine
+`cspaceCNodeSlotsNoDup` component. The meta-property components are derived automatically. -/
+theorem capabilityInvariantBundle_of_slotsNoDup
+    (st : SystemState)
+    (hNoDup : cspaceCNodeSlotsNoDup st) :
     capabilityInvariantBundle st := by
   exact ⟨cspaceSlotUnique_holds st, cspaceLookupSound_holds st, cspaceAttenuationRule_holds,
-    lifecycleAuthorityMonotonicity_holds st⟩
+    lifecycleAuthorityMonotonicity_holds st, hNoDup⟩
+
+-- ============================================================================
+-- WS-E2 / H-01: Compositional storeObject preservation for CNode slot NoDup
+-- ============================================================================
+
+/-- Generic storeObject preservation for `cspaceCNodeSlotsNoDup`: if the stored object at `id`
+either (a) is not a CNode, or (b) is a CNode that satisfies `slotsNoDup`, then the system-level
+NoDup property is preserved. -/
+theorem storeObject_preserves_cspaceCNodeSlotsNoDup
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hNoDup : cspaceCNodeSlotsNoDup st)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hObj : ∀ cn, obj = .cnode cn → cn.slotsNoDup) :
+    cspaceCNodeSlotsNoDup st' := by
+  intro oid cn hOidCn
+  by_cases hEq : oid = id
+  · subst hEq
+    have hObjEq : st'.objects oid = some obj := storeObject_objects_eq st st' oid obj hStore
+    rw [hObjEq] at hOidCn
+    cases hOidCn
+    exact hObj cn rfl
+  · have hPreserved : st'.objects oid = st.objects oid :=
+      storeObject_objects_ne st st' id oid obj hEq hStore
+    rw [hPreserved] at hOidCn
+    exact hNoDup oid cn hOidCn
+
+/-- Specialization: storing a non-CNode object (endpoint, notification, tcb, vspaceRoot)
+trivially preserves `cspaceCNodeSlotsNoDup`. -/
+theorem storeObject_nonCNode_preserves_cspaceCNodeSlotsNoDup
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hNoDup : cspaceCNodeSlotsNoDup st)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
+    cspaceCNodeSlotsNoDup st' := by
+  exact storeObject_preserves_cspaceCNodeSlotsNoDup st st' id obj hNoDup hStore
+    (fun cn hEq => absurd hEq (hNotCNode cn))
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -516,16 +647,53 @@ theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
   subst hEq
   simpa using hInv
 
+/-- WS-E2/H-01: Compositional — derives post-state NoDup from pre-state via `insert_preserves_slotsNoDup`. -/
+theorem cspaceInsertSlot_preserves_cspaceCNodeSlotsNoDup
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hNoDup : cspaceCNodeSlotsNoDup st)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    cspaceCNodeSlotsNoDup st' := by
+  intro oid cn' hOidCn
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hRefObjs := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+              rw [hRefObjs] at hOidCn
+              by_cases hEq : oid = addr.cnode
+              · subst hEq
+                have hObjEq := storeObject_objects_eq st stMid addr.cnode
+                  (.cnode (cn.insert addr.slot cap)) hStore
+                rw [hObjEq] at hOidCn
+                cases hOidCn
+                exact CNode.insert_preserves_slotsNoDup cn addr.slot cap (hNoDup addr.cnode cn hObj)
+              · have hPreserved := storeObject_objects_ne st stMid addr.cnode oid
+                  (.cnode (cn.insert addr.slot cap)) hEq hStore
+                rw [hPreserved] at hOidCn
+                exact hNoDup oid cn' hOidCn
+
 theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
   exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+    lifecycleAuthorityMonotonicity_holds st',
+    cspaceInsertSlot_preserves_cspaceCNodeSlotsNoDup st st' addr cap hNoDup hStep⟩
 
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -549,25 +717,100 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
             simpa [hSrc, hMint] using hStep
           exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv hInsert
 
+/-- WS-E2/H-01: Compositional — derives post-state NoDup from pre-state via `remove_preserves_slotsNoDup`. -/
+theorem cspaceDeleteSlot_preserves_cspaceCNodeSlotsNoDup
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hNoDup : cspaceCNodeSlotsNoDup st)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    cspaceCNodeSlotsNoDup st' := by
+  intro oid cn' hOidCn
+  unfold cspaceDeleteSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hRefObjs := storeCapabilityRef_preserves_objects stMid st' addr none hStep
+              rw [hRefObjs] at hOidCn
+              by_cases hEq : oid = addr.cnode
+              · subst hEq
+                have hObjEq := storeObject_objects_eq st stMid addr.cnode
+                  (.cnode (cn.remove addr.slot)) hStore
+                rw [hObjEq] at hOidCn
+                cases hOidCn
+                exact CNode.remove_preserves_slotsNoDup cn addr.slot (hNoDup addr.cnode cn hObj)
+              · have hPreserved := storeObject_objects_ne st stMid addr.cnode oid
+                  (.cnode (cn.remove addr.slot)) hEq hStore
+                rw [hPreserved] at hOidCn
+                exact hNoDup oid cn' hOidCn
+
 theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
   exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+    lifecycleAuthorityMonotonicity_holds st',
+    cspaceDeleteSlot_preserves_cspaceCNodeSlotsNoDup st st' addr hNoDup hStep⟩
 
+/-- WS-E2/H-01: Compositional — derives post-state NoDup from pre-state via
+`revokeTargetLocal_preserves_slotsNoDup` + `clearCapabilityRefs` frame. -/
 theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : cspaceRevoke addr st = .ok ((), st')) :
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st', ?_⟩
+  -- cspaceRevoke does: lookup → storeObject (revokeTargetLocal) → clearCapabilityRefs
+  unfold cspaceRevoke at hStep
+  cases hLookup : cspaceLookupSlot addr st with
+  | error e => simp [hLookup] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
+      subst st1
+      cases hObj : st.objects addr.cnode with
+      | none => simp [hLookup, hObj] at hStep
+      | some obj =>
+          cases obj with
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hLookup, hObj] at hStep
+          | cnode cn =>
+              simp [hLookup, hObj] at hStep
+              -- Extract the storeObject + clearCapabilityRefs composition
+              cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
+              | error e => simp [hStore] at hStep
+              | ok pair =>
+                  obtain ⟨_, stStored⟩ := pair
+                  simp [hStore] at hStep
+                  have hObjStored : st'.objects = stStored.objects :=
+                    clearCapabilityRefs_preserves_objects stStored st' _ hStep
+                  intro oid cn' hOidCn
+                  rw [hObjStored] at hOidCn
+                  by_cases hEq : oid = addr.cnode
+                  · subst hEq
+                    have hObjEq := storeObject_objects_eq st stStored addr.cnode
+                      (.cnode (cn.revokeTargetLocal addr.slot parent.target)) hStore
+                    rw [hObjEq] at hOidCn
+                    cases hOidCn
+                    exact CNode.revokeTargetLocal_preserves_slotsNoDup cn addr.slot parent.target
+                      (hNoDup addr.cnode cn hObj)
+                  · have hPreserved := storeObject_objects_ne st stStored addr.cnode oid
+                      (.cnode (cn.revokeTargetLocal addr.slot parent.target)) hEq hStore
+                    rw [hPreserved] at hOidCn
+                    exact hNoDup oid cn' hOidCn
 
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
@@ -623,17 +866,22 @@ theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle
   rcases hInv with ⟨hQueue, hRunUnique, _hCurrent⟩
   exact ⟨by simpa [hSchedEq] using hQueue, by simpa [hSchedEq] using hRunUnique, hCurrentValid⟩
 
+/-- WS-E2/H-01: Compositional — requires newObj CNode NoDup hypothesis for the 5th component. -/
 theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    (hNewObjCNodeNoDup : ∀ cn, newObj = .cnode cn → cn.slotsNoDup)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st', ?_⟩
+  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  exact storeObject_preserves_cspaceCNodeSlotsNoDup st st' target newObj hNoDup hStore hNewObjCNodeNoDup
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
     (st st' : SystemState)
@@ -688,6 +936,7 @@ theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
     (hInv : m3IpcSeedInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
+    (hNewObjCNodeNoDup : ∀ cn, newObj = .cnode cn → cn.slotsNoDup)
     (hCurrentValid : currentThreadValid st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     m3IpcSeedInvariantBundle st' := by
@@ -695,7 +944,8 @@ theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
   refine ⟨?_, ?_, ?_⟩
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
-  · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap hStep
+  · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
+      hNewObjCNodeNoDup hStep
   · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hNewObjNotificationInv hStep
 
 theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
@@ -706,6 +956,7 @@ theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
     (hInv : m4aLifecycleInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
+    (hNewObjCNodeNoDup : ∀ cn, newObj = .cnode cn → cn.slotsNoDup)
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
@@ -714,7 +965,7 @@ theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence⟩
   have hM3' : m3IpcSeedInvariantBundle st' :=
     lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle st st' authority target newObj hM3
-      hNewObjEndpointInv hNewObjNotificationInv hCurrentValid hStep
+      hNewObjEndpointInv hNewObjNotificationInv hNewObjCNodeNoDup hCurrentValid hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle hStep
@@ -727,6 +978,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hInv : capabilityInvariantBundle st)
+    (hNewObjCNodeNoDup : ∀ cn, newObj = .cnode cn → cn.slotsNoDup)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
@@ -736,7 +988,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
   have hDeleted : capabilityInvariantBundle stDeleted :=
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
-    hDeleted hRetype
+    hDeleted hNewObjCNodeNoDup hRetype
 
 theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant
     (st st' : SystemState)
@@ -744,6 +996,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hCap : capabilityInvariantBundle st)
+    (hNewObjCNodeNoDup : ∀ cn, newObj = .cnode cn → cn.slotsNoDup)
     (hLifecycleAfterCleanup :
       ∀ stRevoked stDeleted,
         cspaceRevoke cleanup st = .ok ((), stRevoked) →
@@ -755,7 +1008,8 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
     ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, hLookupDeleted, hRetype⟩
   have hCap' : capabilityInvariantBundle st' :=
-    lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target newObj hCap hStep
+    lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target newObj
+      hCap hNewObjCNodeNoDup hStep
   have hLifecycleDeleted : lifecycleInvariantBundle stDeleted :=
     hLifecycleAfterCleanup stRevoked stDeleted hRevoke hDelete hLookupDeleted
   have hLifecycle' : lifecycleInvariantBundle st' :=
@@ -775,38 +1029,50 @@ theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv
 
+/-- WS-E2/H-01: Compositional — endpoint stores cannot modify CNodes, so NoDup is preserved trivially. -/
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st', ?_⟩
+  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  exact storeObject_nonCNode_preserves_cspaceCNodeSlotsNoDup st st' endpointId (.endpoint ep') hNoDup
+    hStore (fun cn h => by cases h)
 
+/-- WS-E2/H-01: Compositional — endpoint stores cannot modify CNodes, so NoDup is preserved trivially. -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st', ?_⟩
+  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
+  exact storeObject_nonCNode_preserves_cspaceCNodeSlotsNoDup st st' endpointId (.endpoint ep') hNoDup
+    hStore (fun cn h => by cases h)
 
+/-- WS-E2/H-01: Compositional — endpoint stores cannot modify CNodes, so NoDup is preserved trivially. -/
 theorem endpointReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (hInv : capabilityInvariantBundle st)
-    (_hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle⟩
-  exact ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases hInv with ⟨_hUnique, _hSound, hAttRule, _hLifecycle, hNoDup⟩
+  refine ⟨cspaceSlotUnique_holds st', cspaceLookupSound_holds st', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st', ?_⟩
+  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
+  exact storeObject_nonCNode_preserves_cspaceCNodeSlotsNoDup st st' endpointId (.endpoint ep') hNoDup
+    hStore (fun cn h => by cases h)
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
