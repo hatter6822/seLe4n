@@ -7,7 +7,7 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1 completed; WS-E2..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
@@ -22,8 +22,8 @@ The following categories of theorems exist in the proof surface. Claims about pr
 |---|---|---|
 | **Substantive preservation** | Proves that a *successful* operation preserves an invariant over *changed* state. | High |
 | **Error-case preservation** | Proves that a *failed* operation preserves an invariant by returning unchanged state. Trivially true. | Low (technically correct but not security evidence) |
-| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. Structurally valid but masks lack of engagement with the operation's state transformation. (Identified by v0.11.6 audit H-01; targeted by WS-E2.) | Medium (weaker than compositional proofs) |
-| **Tautological** | Proves a property that holds for *all* states by construction (e.g., `cspaceSlotUnique_holds` exploiting pure-function determinism). (Identified by v0.11.6 audit C-01; targeted by WS-E2.) | None (should be reformulated or documented as meta-properties) |
+| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. Structurally valid but masks lack of engagement with the operation's state transformation. (Identified by v0.11.6 audit H-01; **resolved by WS-E2** — capability preservation proofs now use compositional derivation from pre-state `hInv` components.) | Medium (weaker than compositional proofs) |
+| **Tautological** | Proves a property that holds for *all* states by construction. (Identified by v0.11.6 audit C-01; **resolved by WS-E2** — `cspaceSlotUnique` now encodes CNode slot-index uniqueness via `cn.slotsUnique`, and `cspaceLookupSound` proves lookup consistency relative to slot membership. Both are non-trivial structural invariants.) | None (should be reformulated or documented as meta-properties) |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
 
 ## Closed proof obligations (WS-D tracked issues)

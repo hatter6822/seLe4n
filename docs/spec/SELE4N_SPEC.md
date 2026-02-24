@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 completed; WS-E2 through WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2 completed; WS-E3 through WS-E6 planned.
 
 ---
 
@@ -95,7 +95,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.2 High — Proof Quality and Kernel Hardening
 
-- **WS-E2:** Proof quality and invariant strengthening (high; **planned** — C-01, H-01, H-03)
+- **WS-E2:** Proof quality and invariant strengthening (high; **completed** — C-01, H-01, H-03)
 - **WS-E3:** Kernel semantic hardening (high; **planned** — H-06, H-07, H-08, H-09, M-09, L-06)
 
 ### 4.3 Critical — Model Completion

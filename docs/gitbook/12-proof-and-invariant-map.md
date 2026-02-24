@@ -34,8 +34,8 @@ Preservation shape:
 
 Component level:
 
-- uniqueness of slots,
-- lookup soundness,
+- slot-index uniqueness (`cspaceSlotUnique` — each CNode's slot list has at most one capability per slot index),
+- lookup soundness (`cspaceLookupSound` — slot membership implies successful lookup via `lookupSlotCap`),
 - attenuation rule,
 - lifecycle authority monotonicity.
 
