@@ -26,6 +26,9 @@ def svcRestartBroken : ServiceId := 105
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
   [1, 10, 11, 12, 20, demoEndpoint, demoNotification, 200]
 
+def bootstrapServiceIds : List ServiceId :=
+  [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken]
+
 def bootstrapState : SystemState :=
   (SeLe4n.Testing.BootstrapBuilder.empty
     |>.withObject 1 (.tcb {
@@ -419,7 +422,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"minted cap rights: {reprStr cap.rights}"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
-  assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1
+  assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
   | .error err => IO.println s!"source lookup error: {reprStr err}"
   | .ok (srcCap, _) =>
@@ -435,13 +438,76 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
 
+-- ============================================================================
+-- M-10 Parameterized test topology builder (WS-E1)
+-- ============================================================================
+
+/-- Build a topology with `threadCount` threads at varying priorities, a CNode with
+the given `radix`, and `asidCount` VSpace roots with distinct ASIDs. -/
+private def buildParameterizedTopology
+    (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : SystemState :=
+  let threads : List (SeLe4n.ObjId × KernelObject) :=
+    (List.range threadCount).map fun i =>
+      let oid : SeLe4n.ObjId := ⟨1000 + i⟩
+      (oid, .tcb {
+        tid := ⟨1000 + i⟩
+        priority := ⟨basePriority + i * 10⟩
+        domain := ⟨0⟩
+        cspaceRoot := ⟨2000⟩
+        vspaceRoot := ⟨3000⟩
+        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcState := .ready
+      })
+  let cnodeSlots : List (SeLe4n.Slot × Capability) :=
+    (List.range threadCount).map fun i =>
+      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := [.read, .write], badge := none })
+  let cnodeObj : KernelObject := .cnode { guard := 0, radix := radix, slots := cnodeSlots }
+  let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
+    (List.range asidCount).map fun i =>
+      let oid : SeLe4n.ObjId := ⟨3000 + i⟩
+      (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := [] })
+  let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots
+  let runnableThreads : List SeLe4n.ThreadId :=
+    (List.range threadCount).map fun i => ⟨1000 + i⟩
+  let lifecycleTypes : List (SeLe4n.ObjId × KernelObjectType) :=
+    (threads.map fun (oid, _) => (oid, .tcb))
+      ++ [(⟨2000⟩, .cnode)]
+      ++ (vspaceRoots.map fun (oid, _) => (oid, .vspaceRoot))
+  let builder := BootstrapBuilder.empty
+    |>.withRunnable runnableThreads
+  let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
+  let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
+  builder.build
+
+/-- Exercise invariant checks over a parameterized topology configuration. -/
+private def runParameterizedTopologyCheck
+    (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : IO Unit := do
+  let st := buildParameterizedTopology threadCount basePriority radix asidCount
+  let allIds := st.objectIndex
+  let checks := stateInvariantChecksFor allIds st
+  let failures := checks.filterMap fun (name, ok) => if ok then none else some name
+  if failures.isEmpty then
+    IO.println s!"parameterized topology ok: {label} (threads={threadCount} prio={basePriority} radix={radix} asids={asidCount})"
+  else
+    throw <| IO.userError s!"{label}: parameterized topology invariant check failed: {reprStr failures}"
+
+/-- M-10: run at least 3 distinct configurations per subsystem to supplement hardcoded fixtures. -/
+private def runParameterizedTopologies : IO Unit := do
+  -- Configuration 1: single thread, minimal radix, single ASID
+  runParameterizedTopologyCheck "minimal" 1 50 4 1
+  -- Configuration 2: four threads, varied priorities, medium radix, two ASIDs
+  runParameterizedTopologyCheck "medium" 4 10 8 2
+  -- Configuration 3: eight threads, high priority base, large radix, four ASIDs
+  runParameterizedTopologyCheck "large" 8 100 16 4
+
 def runMainTrace : IO Unit := do
-  assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState
+  assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds
   match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"scheduler error: {reprStr err}"
   | .ok (_, st1) =>
-      assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1
+      assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1 bootstrapServiceIds
       IO.println s!"scheduled thread: {reprStr (st1.scheduler.current.map SeLe4n.ThreadId.toNat)}"
       runMainTraceFrom st1
+  runParameterizedTopologies
 
 end SeLe4n.Testing

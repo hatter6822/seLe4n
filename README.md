@@ -69,7 +69,7 @@ Additional resources:
 
 Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.
 
-- **WS-E1:** Test infrastructure and CI hardening -- **in progress** (Medium; M-10, M-11, F-14, L-07, L-08)
+- **WS-E1:** Test infrastructure and CI hardening -- **completed** (Medium; M-10, M-11, F-14, L-07, L-08)
 - **WS-E2:** Proof quality and invariant strengthening -- planned (High; C-01, H-01, H-03)
 - **WS-E3:** Kernel semantic hardening -- planned (High; H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4:** Capability and IPC model completion -- planned (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)

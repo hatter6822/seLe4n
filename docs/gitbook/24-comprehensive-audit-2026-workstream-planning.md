@@ -9,6 +9,17 @@ The current active execution baseline is the **WS-E portfolio** based on the v0.
 
 See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 
+### WS-E1 completed summary
+
+**WS-E1 — Test infrastructure and CI hardening** has been completed. All 8 findings resolved:
+
+- **F-14:** SHA-pinned all GitHub Actions across 4 workflow files to full 40-character commit hashes.
+- **M-10:** Added parameterized test topologies (3 configurations varying thread count, priority, CNode radix, ASID count).
+- **M-11:** Added 5 runtime invariant check families: CSpace coherency, capability rights structure, lifecycle metadata consistency, service graph acyclicity, VSpace ASID uniqueness.
+- **L-07:** Converted fixture to structured `scenario_id | risk_class | expected_fragment` format (backward-compatible).
+- **L-08:** Added theorem-body spot-check validation and F-14 regression guard to Tier 0 hygiene.
+- F-09, F-10, F-15: previously resolved.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.

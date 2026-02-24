@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 in progress; WS-E2 through WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 completed; WS-E2 through WS-E6 planned.
 
 ---
 
@@ -91,7 +91,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.1 Medium — Test Infrastructure and CI
 
-- **WS-E1:** Test infrastructure and CI hardening (medium; **in progress** — M-10, M-11, F-14, L-07, L-08; F-09/F-10/F-15 resolved)
+- **WS-E1:** Test infrastructure and CI hardening (medium; **completed** — M-10, M-11, F-14, L-07, L-08; F-09/F-10/F-15 resolved)
 
 ### 4.2 High — Proof Quality and Kernel Hardening
 
@@ -126,8 +126,8 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 ### 5.2 WS-E Phases (active)
 
-- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**current**)
-- **Phase P1:** WS-E1 (test/CI) + WS-E2 (proof quality) — parallel
+- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**completed**)
+- **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality) — **current**
 - **Phase P2:** WS-E3 (kernel hardening)
 - **Phase P3:** WS-E4 (capability/IPC completion)
 - **Phase P4:** WS-E5 (information-flow maturity)

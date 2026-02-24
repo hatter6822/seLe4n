@@ -40,9 +40,9 @@ related findings into coherent implementation slices.
 
 ### 3.1 Findings from AUDIT_CODEBASE_v0.11.6.md
 
-| ID | Severity | Description | Workstream |
-|----|----------|-------------|------------|
-| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 |
+| ID | Severity | Description | Workstream | Status |
+|----|----------|-------------|------------|--------|
+| C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | Pending |
 | C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
 | C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
 | C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
@@ -63,8 +63,8 @@ related findings into coherent implementation slices.
 | M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 |
 | M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 |
-| M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 |
-| M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 |
+| M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
+| M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
 | M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 |
 | M-13 | MEDIUM | Integrity flow semantics contradict documentation | **RESOLVED** |
 | L-01 | LOW | API.lean is just imports | WS-E6 |
@@ -73,8 +73,8 @@ related findings into coherent implementation slices.
 | L-04 | LOW | ID conversion without validation | WS-E6 |
 | L-05 | LOW | objectIndex never pruned | WS-E6 |
 | L-06 | LOW | No initialization proof | WS-E3 |
-| L-07 | LOW | Fixture matching is fragile | WS-E1 |
-| L-08 | LOW | Anchor presence ≠ correctness | WS-E1 |
+| L-07 | LOW | Fixture matching is fragile | WS-E1 | **RESOLVED** |
+| L-08 | LOW | Anchor presence ≠ correctness | WS-E1 | **RESOLVED** |
 
 ### 3.2 Carry-forward items from WS-D5/D6
 
@@ -83,7 +83,7 @@ related findings into coherent implementation slices.
 | F-09 | MEDIUM | Add intermediate RuntimeContractFixtures | WS-E1 | **RESOLVED** |
 | F-10 | MEDIUM | Remove 512-ID bound from InvariantChecks | WS-E1 | **RESOLVED** |
 | F-13 | LOW | Version badge discrepancy | — | **RESOLVED** (v0.11.6 correct) |
-| F-14 | LOW | SHA-pin GitHub Actions | WS-E1 | Pending |
+| F-14 | LOW | SHA-pin GitHub Actions | WS-E1 | **RESOLVED** |
 | F-15 | LOW | Add permissions block to CI workflows | WS-E1 | **RESOLVED** |
 | F-17 | LOW | Document O(n) design decision | WS-E6 | Pending |
 
@@ -103,21 +103,28 @@ F-15 (resolved)
 2. ~~F-10~~ Remove 512-ID bound from InvariantChecks — **DONE** (uses
    `st.objectIndex` now).
 3. ~~F-15~~ Add explicit permissions blocks to CI workflows — **DONE**.
-4. **F-14** SHA-pin all GitHub Actions across 4 workflow files.
-5. **M-10** Add parameterized test topologies (vary thread count, priority
-   levels, CNode radix, ASID count) to supplement hardcoded fixtures.
-6. **M-11** Add runtime invariant checks for CSpace coherency, capability
+4. ~~F-14~~ SHA-pin all GitHub Actions across 4 workflow files — **DONE**
+   (all `uses:` refs pinned to full 40-character commit SHA with version comment).
+5. ~~M-10~~ Add parameterized test topologies (vary thread count, priority
+   levels, CNode radix, ASID count) to supplement hardcoded fixtures — **DONE**
+   (3 configurations: minimal/medium/large exercised in `runParameterizedTopologies`).
+6. ~~M-11~~ Add runtime invariant checks for CSpace coherency, capability
    rights attenuation, lifecycle metadata consistency, service graph
-   acyclicity, and VSpace ASID uniqueness.
-7. **L-07** Add structured trace format alongside current substring matching
-   (backward-compatible) to reduce fixture brittleness.
-8. **L-08** Add spot-check theorem-body validation (verify key theorems do
-   not contain `sorry` or trivial `rfl`-only proofs).
+   acyclicity, and VSpace ASID uniqueness — **DONE** (5 new check families
+   in `InvariantChecks.lean`).
+7. ~~L-07~~ Add structured trace format alongside current substring matching
+   (backward-compatible) to reduce fixture brittleness — **DONE**
+   (`scenario_id | risk_class | expected_fragment` format in fixture).
+8. ~~L-08~~ Add spot-check theorem-body validation (verify key theorems do
+   not contain `sorry` or trivial `rfl`-only proofs) — **DONE**
+   (L-08 hygiene check in `test_tier0_hygiene.sh` + F-14 regression guard).
 
 **Validation gate:** `test_smoke.sh` + `test_full.sh` pass; new test
-topologies exercise at least 3 distinct configurations per subsystem.
+topologies exercise at least 3 distinct configurations per subsystem. ✓
 
-**Dependencies:** None (can start immediately).
+**Status:** **COMPLETED**
+
+**Dependencies:** None.
 
 ---
 
