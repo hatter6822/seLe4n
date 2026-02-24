@@ -1,14 +1,22 @@
 # Comprehensive Audit 2026 Workstream Planning
 
-## Active planning (v0.11.0 — WS-D)
+## Active planning (v0.11.6 — WS-E)
 
-The current active execution baseline is the **WS-D portfolio** based on the v0.11.0 audit.
+The current active execution baseline is the **WS-E portfolio** based on the v0.11.6 audit.
 
-- Canonical planning source: [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
-- Tracked proof obligations: [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md)
-- Detailed GitBook chapter: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md)
+- Findings baseline: [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
+- Canonical planning source: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
-### WS-D quick index
+See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
+
+## Historical: WS-D portfolio (v0.11.0 — completed)
+
+The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.
+
+- Historical planning source: [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+- Historical proof obligations: [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md)
+
+### WS-D completed summary
 
 | Workstream | Priority | Findings | Status |
 |---|---|---|---|
@@ -16,8 +24,8 @@ The current active execution baseline is the **WS-D portfolio** based on the v0.
 | WS-D2 Information-flow enforcement and proof | High | F-02, F-05 | **Completed** |
 | WS-D3 Proof gap closure | Medium | F-06, F-08, F-16 | **Completed** |
 | WS-D4 Kernel design hardening | Medium | F-07, F-11, F-12 | **Completed** |
-| WS-D5 Test infrastructure expansion | Medium | F-09, F-10 | Planned |
-| WS-D6 CI/CD and documentation polish | Low | F-13, F-14, F-15, F-17 | Planned |
+| WS-D5 Test infrastructure expansion | Medium | F-09, F-10 | Absorbed into WS-E |
+| WS-D6 CI/CD and documentation polish | Low | F-13, F-14, F-15, F-17 | Absorbed into WS-E |
 
 ## Historical: WS-C portfolio (v0.9.32 — completed)
 
@@ -39,7 +47,7 @@ The WS-C portfolio has been completed and is retained for traceability.
 
 ## Updating status
 
-When any WS-D status changes, update all surfaces listed in the [v0.11.0 workstream chapter](32-v0.11.0-audit-workstream-planning.md#4-updating-status).
+When any WS-E status changes, update all surfaces listed in the v0.11.6 workstream plan.
 
 ## Historical references
 

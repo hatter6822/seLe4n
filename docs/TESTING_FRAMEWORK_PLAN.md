@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **Comprehensive Audit 2026-02 WS-B execution is complete (WS-B1 through WS-B11 complete); testing now guards delivered workstream behavior without regressing M1–M7 contracts.**
+Current stage context: **v0.11.6 codebase audit (WS-E portfolio) is active. Testing guards delivered WS-D workstream behavior without regressing M1–M7 contracts while WS-E1 addresses shallow input-space exploration (M-10), missing runtime invariant checks (M-11), and fixture brittleness (L-07).**
 
 ## 2. Current enforced tiers
 
@@ -154,3 +154,21 @@ For future milestones, expand this model by adding new proof/trace obligations a
 1. Tier 2 fixture entries are scenario-labeled with `scenario_id | risk_class | expected_trace_fragment` so risk mapping is auditable at a glance.
 2. Tier 2 parser emits concise scenario/risk-tagged failures and ignores comment/blank fixture lines for readability.
 3. Tier 4 nightly candidates execute seeded `trace_sequence_probe` runs to provide stochastic/property-style sequence diversity checks over IPC endpoint-state consistency.
+
+## 13. v0.11.6 audit findings and WS-E1 testing growth plan
+
+The v0.11.6 codebase audit identified the following testing-specific gaps:
+
+| Finding | Severity | Description | WS-E1 action |
+|---------|----------|-------------|-------------|
+| M-10 | MEDIUM | All tests use hardcoded fixtures; ~0.05% input space coverage | Add parameterized topologies varying thread count, priorities, CNode radix, ASID |
+| M-11 | MEDIUM | Runtime invariant checks miss CSpace coherency, capability attenuation, lifecycle metadata, service acyclicity, VSpace ASID uniqueness | Extend `InvariantChecks.lean` with new predicate functions |
+| L-07 | LOW | `grep -Fq` substring matching is fragile against repr format changes | Add structured trace format alongside current validation |
+| L-08 | LOW | Tier 3 anchor presence does not verify proof correctness | Add spot-check theorem-body validation (no `sorry`, no trivial `rfl`-only) |
+| F-14 | LOW | GitHub Actions use floating version tags | SHA-pin all actions with tag comments |
+
+Quick fixes already applied in P0 baseline:
+
+- **F-09:** Added `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` intermediate fixtures.
+- **F-10:** Replaced hardcoded 512-ID bound with `st.objectIndex` discovery.
+- **F-15:** Added explicit `permissions: contents: read` to CI workflows.

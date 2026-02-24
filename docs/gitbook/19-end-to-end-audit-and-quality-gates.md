@@ -2,15 +2,15 @@
 
 This chapter summarizes the current audit posture across implementation, testing framework behavior, and documentation fidelity.
 
-For the full audit narrative, see [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) (active).
-Prior audits (v0.8.0–v0.9.32) are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
+For the full audit narrative, see [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md) (active).
+Prior audits (v0.8.0–v0.11.0) are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
 
-For implementation sequencing tied to v0.11.0 findings, see
-[v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md).
+For implementation sequencing tied to v0.11.6 findings, see
+[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 
 ## 1. Current quality state
 
-seLe4n is in the **WS-D portfolio execution phase** (v0.11.0 audit remediation), with WS-D1 through WS-D4 completed and WS-D5..WS-D6 planned:
+seLe4n is in the **WS-E portfolio execution phase** (v0.11.6 audit remediation), with WS-E1..WS-E6 active:
 
 - build graph compiles,
 - executable scenario traces pass fixture checks,
@@ -59,10 +59,10 @@ The framework self-audit confirms both sides of correctness:
 
 ## 5. Development path and quality evolution
 
-Current execution priorities (WS-D portfolio):
+Current execution priorities (WS-E portfolio):
 
-1. WS-D1..WS-D4 completed — test validity, information-flow enforcement, proof gaps, kernel hardening all closed,
-2. WS-D5 (test infrastructure expansion) and WS-D6 (CI/docs polish) are the remaining planned workstreams,
+1. WS-D portfolio completed — WS-D1..WS-D4 closed; WS-D5/WS-D6 absorbed into WS-E,
+2. WS-E1..WS-E6 are the active workstreams driving v0.11.6 audit remediation,
 3. architecture-boundary interfaces and proof-layer obligations remain synchronized from M6 closeout,
 4. documentation synchronization enforced in the same PR as any stage change,
 5. deterministic replay and anchor discoverability remain hard non-regression gates.

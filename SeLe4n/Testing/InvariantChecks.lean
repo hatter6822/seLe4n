@@ -64,12 +64,12 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState) :
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.
-The bounded discovery window is intentionally finite and should be replaced by
-`stateInvariantChecksFor` at call sites that can provide exact fixture IDs.
+Discovers materialized objects from `st.objectIndex` (the finite object store's
+monotonic ID list) rather than scanning a hardcoded range.  See audit finding
+F-10 and WS-D5.
 -/
 def stateInvariantChecks (st : SystemState) : List (String × Bool) :=
-  let defaultIds := (List.range 512).map SeLe4n.ObjId.ofNat
-  stateInvariantChecksFor defaultIds st
+  stateInvariantChecksFor st.objectIndex st
 
 private def failedChecks (checks : List (String × Bool)) : List String :=
   checks.filterMap fun (label, ok) => if ok then none else some label
@@ -82,6 +82,6 @@ def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (s
     throw <| IO.userError s!"{label}: invariant checks failed: {reprStr failures}"
 
 def assertStateInvariants (label : String) (st : SystemState) : IO Unit :=
-  assertStateInvariantsFor label ((List.range 512).map SeLe4n.ObjId.ofNat) st
+  assertStateInvariantsFor label st.objectIndex st
 
 end SeLe4n.Testing

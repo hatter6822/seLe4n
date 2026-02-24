@@ -45,7 +45,14 @@ def integrityFlowsTo : Integrity → Integrity → Bool
   | .untrusted, .untrusted => true
   | .untrusted, .trusted => false
 
-/-- Combined policy relation: confidentiality must not flow down and integrity must not flow up. -/
+/-- Combined policy relation: confidentiality must not flow down; integrity
+    must not flow up (source must be at least as trusted as destination).
+    Note: this implements a "both dimensions flow upward" lattice — low
+    confidentiality flows to high, and untrusted integrity flows to trusted
+    destinations.  This is **not** standard BLP+BIBA (where BIBA would deny
+    untrusted→trusted).  The reversed argument order on `integrityFlowsTo`
+    checks `dst.integrity ≤ src.integrity`, i.e., the destination must not
+    be more trusted than the source.  See audit finding M-13. -/
 def securityFlowsTo (src dst : SecurityLabel) : Bool :=
   confidentialityFlowsTo src.confidentiality dst.confidentiality &&
     integrityFlowsTo dst.integrity src.integrity

@@ -15,7 +15,8 @@ Current milestone state:
 - M7 complete
 - WS-B portfolio (v0.9.0): all completed
 - WS-C portfolio (v0.9.32): all completed
-- **Active:** WS-D portfolio (v0.11.0 audit remediation) — WS-D1..WS-D4 completed; WS-D5..WS-D6 planned
+- WS-D portfolio (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E
+- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1..WS-E6 planned
 
 ## 2) Stable contracts contributors must preserve
 
@@ -25,28 +26,37 @@ Current milestone state:
 4. fixture-backed executable evidence,
 5. tiered testing gates used in CI and local workflows.
 
-## 3) Active workstream portfolio (WS-D)
+## 3) Active workstream portfolio (WS-E)
+
+The WS-E portfolio is based on the v0.11.6 audit baseline. Prior WS-D5/WS-D6 scope has been absorbed.
+
+Canonical execution plan:
+[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+
+Security baseline reference:
+[Threat Model and Security Hardening](28-threat-model-and-security-hardening.md).
+
+### Completed WS-D portfolio (v0.11.0 — historical)
 
 - **WS-D1:** Test error handling and validity (critical/high; **completed** — F-01, F-03, F-04)
 - **WS-D2:** Information-flow enforcement and proof (high; **completed** — F-02, F-05)
 - **WS-D3:** Proof gap closure (medium; **completed** — F-06, F-08, F-16)
 - **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12)
-- **WS-D5:** Test infrastructure expansion (medium; **planned** — F-09, F-10)
-- **WS-D6:** CI/CD and documentation polish (low; **planned** — F-13, F-14, F-15, F-17)
+- **WS-D5/WS-D6:** Absorbed into WS-E portfolio
 
-Canonical execution plan:
-[v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md).
+## 4) Sequencing model (WS-E)
 
-Security baseline reference:
-[Threat Model and Security Hardening](28-threat-model-and-security-hardening.md).
+- **Phase P0:** Baseline transition — publish v0.11.6 planning backbone, demote WS-D to historical — current
 
-## 4) Sequencing model (WS-D)
+See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) for full WS-E phase sequencing.
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical (**completed**)
+### Historical WS-D sequencing (completed)
+
+- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical — **completed**
 - **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
 - **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
 - **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — **completed**
-- **Phase P4:** WS-D5 test infrastructure expansion + WS-D6 CI/documentation polish (medium/low) — current
+- **Phase P4:** WS-D5/WS-D6 — absorbed into WS-E portfolio
 
 ## 5) Historical context
 
@@ -56,6 +66,7 @@ scope ownership.
 
 ## 6) Completed audit portfolios (historical)
 
+- **WS-D portfolio** (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E.
 - **WS-C portfolio** (v0.9.32): WS-C1..WS-C8 completed.
 - **WS-B portfolio** (v0.9.0): WS-B1..WS-B11 completed.
 - **M6 closeout:** WS-M6-D and WS-M6-E complete.
