@@ -1,7 +1,9 @@
-## [0.11.7] - 2026-02-24
+## [0.11.7] - 2026-02-23
 
-### Patch version bump
-- Bumped patch version to **`0.11.7`** and synchronized version markers.
+### Lean toolchain upgrade (WS-B10, closes #182)
+- Bumped Lean toolchain from `leanprover/lean4:v4.27.0` to `leanprover/lean4:v4.28.0` in `lean-toolchain`.
+- Updated Lean version badge in `README.md`, toolchain reference in `CLAUDE.md`, and package version in `docs/spec/SELE4N_SPEC.md`.
+- Bumped patch version to **`0.11.7`**.
 
 ## [0.11.6] - 2026-02-22
 
