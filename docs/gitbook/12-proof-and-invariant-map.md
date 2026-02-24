@@ -32,20 +32,29 @@ Preservation shape:
 
 ## 3. Capability invariants (M2)
 
-Component level:
+Component level (WS-E2 / C-01 — non-trivial structural invariants):
 
-- uniqueness of slots,
-- lookup soundness,
-- attenuation rule,
-- lifecycle authority monotonicity.
+- `cspaceSlotUnique`: CNode slot-index uniqueness — each slot maps to at most one
+  capability in every CNode. Maintained by `insert`/`remove`/`revokeTargetLocal`.
+- `cspaceLookupSound`: Lookup completeness — every slot-list entry is retrievable
+  via `lookupSlotCap`. Derived from `cspaceSlotUnique` via bridge theorem.
+- `cspaceAttenuationRule`: mint attenuation,
+- `lifecycleAuthorityMonotonicity`: delete/revoke authority reduction.
 
 Bundle level:
 
 - `capabilityInvariantBundle`
 
-Preservation shape:
+Preservation shape (WS-E2 / H-01 — compositional, not re-proved from scratch):
 
 - operation-level `*_preserves_capabilityInvariantBundle` for lookup/insert/mint/delete/revoke.
+- Each proof derives post-state `cspaceSlotUnique` from pre-state through the specific
+  CNode operation (`CNode.insert_slotsUnique`, `CNode.remove_slotsUnique`, etc.).
+
+Badge/notification routing (WS-E2 / H-03):
+
+- `badge_notification_routing_consistent`: end-to-end badge preservation through
+  mint → signal → wait chain.
 
 ## 4. IPC invariants (M3)
 

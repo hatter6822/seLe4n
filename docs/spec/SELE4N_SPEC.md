@@ -59,7 +59,7 @@ on the semantic and proof foundations of the previous one.
 |---|---|---|
 | **Bootstrap** | Typed identifiers, monad foundations, machine state | Complete |
 | **M1** | Scheduler semantics and preservation theorems | Complete |
-| **M2** | Capability/CSpace operations + authority invariants | Complete |
+| **M2** | Capability/CSpace operations + authority invariants (WS-E2: non-trivial slot uniqueness, compositional preservation, badge routing) | Complete |
 | **M3** | IPC seed semantics | Complete |
 | **M3.5** | Waiting handshake + scheduler coherence | Complete |
 | **M4-A** | Lifecycle/retype foundations | Complete |

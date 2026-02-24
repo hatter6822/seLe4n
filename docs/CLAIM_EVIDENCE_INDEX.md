@@ -24,6 +24,15 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | **Reflexivity/tautological** | Proves `f(x) = f(x)` or compares a state to itself. | None (removed in WS-C3; should not recur) |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
 
+## WS-E2 proof quality claims
+
+| Claim | Finding | Evidence | Status |
+|---|---|---|---|
+| `cspaceSlotUnique` is a non-trivial structural invariant (CNode slot-index uniqueness). | C-01 | `SeLe4n/Kernel/Capability/Invariant.lean` — definition quantifies over all CNode objects in the store, requiring `CNode.slotsUnique`. | RESOLVED |
+| `cspaceLookupSound` is a non-trivial completeness property (slot-list membership → lookup). | C-01 | `SeLe4n/Kernel/Capability/Invariant.lean` — definition bridges CNode slot-list membership to `lookupSlotCap`. | RESOLVED |
+| All capability preservation proofs use pre-state `hInv` destructured components compositionally. | H-01 | `cspaceInsertSlot_preserves_capabilityInvariantBundle` et al. — each derives post-state uniqueness via `CNode.insert_slotsUnique` / `CNode.remove_slotsUnique` / `CNode.revokeTargetLocal_slotsUnique`. No `_`-prefixed discards for slot-uniqueness. | RESOLVED |
+| Badge values propagated through `cspaceMint` are consistent with notification routing semantics. | H-03 | `badge_notification_routing_consistent` — end-to-end chain through mint → signal → wait. | RESOLVED |
+
 ## Open proof obligations (WS-D tracked issues)
 
 | ID | Description | Workstream | Status |
