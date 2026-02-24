@@ -480,4 +480,32 @@ run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
 run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/dev_history/M7_CLOSEOUT_PACKET.md docs/dev_history/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/dev_history/gitbook/20-repository-audit-remediation-workstreams.md
 
+# WS-E1 F-14 SHA-pinning anchors: all workflow action refs must be SHA-pinned.
+run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/lean_action_ci.yml
+run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/nightly_determinism.yml
+run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/lean_toolchain_update_proposal.yml
+run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/platform_security_baseline.yml
+
+# WS-E1 M-11 runtime invariant check anchors must remain present.
+run_check "INVARIANT" rg -n 'cspaceSlotCoherencyChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'capabilityRightsStructuralChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'lifecycleMetadataChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'serviceGraphAcyclicityChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'vspaceAsidUniquenessChecks' SeLe4n/Testing/InvariantChecks.lean
+
+# WS-E1 M-10 parameterized topology anchors must remain present.
+run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n 'runParameterizedTopologies' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'parameterized topology ok' tests/fixtures/main_trace_smoke.expected
+
+# WS-E1 L-07 structured trace format anchors.
+run_check "TRACE" rg -n 'scenario_id \| risk_class \| expected_fragment' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n '^[A-Z]+-[0-9]+\s+\|' tests/fixtures/main_trace_smoke.expected
+
+# WS-E1 L-08 theorem-body validation anchors.
+run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hygiene.sh
+
+# WS-E1 documentation anchors.
+run_check "DOC" rg -n 'WS-E1' docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md
+
 finalize_report

@@ -98,14 +98,29 @@ Re-evaluation trigger:
 
 - Once Code Scanning availability is guaranteed for this repository across required environments, `continue-on-error` should be removed and CodeQL promoted to a required blocking gate.
 
-## 9. WS-B10 toolchain update automation
+## 9. WS-E1 GitHub Actions SHA-pinning policy (F-14)
+
+All third-party GitHub Actions in workflow files must be pinned to full 40-character
+commit SHA hashes, not mutable version tags. Each `uses:` reference carries a
+trailing `# vX.Y.Z` comment documenting the version at pin time.
+
+Covered workflows:
+- `.github/workflows/lean_action_ci.yml`
+- `.github/workflows/nightly_determinism.yml`
+- `.github/workflows/lean_toolchain_update_proposal.yml`
+- `.github/workflows/platform_security_baseline.yml`
+
+Tier 0 hygiene (`test_tier0_hygiene.sh`) includes a regression guard that fails if
+any workflow action reference is not SHA-pinned.
+
+## 10. WS-B10 toolchain update automation
 
 Toolchain-update cadence is automated through:
 
 - `.github/dependabot.yml` for GitHub Actions dependency updates,
 - `.github/workflows/lean_toolchain_update_proposal.yml` for weekly Lean release drift proposals (issue creation when `lean-toolchain` lags upstream).
 
-## 10. WS-B10 timing + flake telemetry baseline
+## 11. WS-B10 timing + flake telemetry baseline
 
 Canonical telemetry baseline documentation is published in `docs/CI_TELEMETRY_BASELINE.md`
 with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.
