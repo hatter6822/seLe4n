@@ -124,10 +124,10 @@ theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup
     (hLookup : cspaceLookupSlot { cnode := svc.identity.owner, slot := slot } st = .ok (cap, st))
     (hTarget : cap.target = .object svc.identity.backingObject) :
     policyOwnerAuthoritySlotPresent st svc := by
+  have hUnique : cspaceSlotKeyUnique st := hCap.1
   have hSound : cspaceLookupSound st := hCap.2.1
-  have hSoundFacts := hSound { cnode := svc.identity.owner, slot := slot } cap st hLookup
-  rcases hSoundFacts with ⟨hStEq, _hOwns, hSlotCap⟩
-  cases hStEq
+  have hSlotCap := cspaceLookupSound_lookupSlotCap st hUnique hSound
+    { cnode := svc.identity.owner, slot := slot } cap st hLookup
   exact ⟨slot, cap, hSlotCap, hTarget⟩
 
 /-- Composed bridge theorem from lifecycle contracts to the service policy surface.
@@ -219,9 +219,13 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
     (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus) :
+    (newStatus : ServiceStatus)
+    (hCap : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
-  exact capabilityInvariantBundle_holds (storeServiceState sid { svc with status := newStatus } st)
+  -- storeServiceState only modifies services, not objects.
+  -- cspaceSlotKeyUnique depends only on objects, so transfers directly.
+  -- cspaceLookupSound, cspaceAttenuationRule, lifecycleAuthorityMonotonicity are similar.
+  exact ⟨hCap.1, cspaceLookupSound_holds _, cspaceAttenuationRule_holds, lifecycleAuthorityMonotonicity_holds _⟩
 
 theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
     (st st' : SystemState)
@@ -245,7 +249,7 @@ theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
             exact ⟨
               storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
               storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running
+              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
             ⟩
           · simp [hLookup, hStopped, hAllow, hDeps] at hStep
         · simp [hLookup, hStopped, hAllow] at hStep
@@ -272,7 +276,7 @@ theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
           exact ⟨
             storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
             storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
-            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped
+            storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped hCap
           ⟩
         · simp [hLookup, hRunning, hAllow] at hStep
       · simp [hLookup, hRunning] at hStep

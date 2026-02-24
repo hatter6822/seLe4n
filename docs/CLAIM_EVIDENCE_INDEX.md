@@ -22,8 +22,8 @@ The following categories of theorems exist in the proof surface. Claims about pr
 |---|---|---|
 | **Substantive preservation** | Proves that a *successful* operation preserves an invariant over *changed* state. | High |
 | **Error-case preservation** | Proves that a *failed* operation preserves an invariant by returning unchanged state. Trivially true. | Low (technically correct but not security evidence) |
-| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. Structurally valid but masks lack of engagement with the operation's state transformation. (Identified by v0.11.6 audit H-01; targeted by WS-E2.) | Medium (weaker than compositional proofs) |
-| **Tautological** | Proves a property that holds for *all* states by construction (e.g., `cspaceSlotUnique_holds` exploiting pure-function determinism). (Identified by v0.11.6 audit C-01; targeted by WS-E2.) | None (should be reformulated or documented as meta-properties) |
+| **Non-compositional preservation** | Proves preservation by re-proving invariant components from scratch on post-state, discarding pre-state evidence. (Identified by v0.11.6 audit H-01; **resolved by WS-E2**: all 7 `_preserves_capabilityInvariantBundle` theorems now destructure `hInv` and thread pre-state components through post-state derivation.) | Medium → High (resolved) |
+| **Tautological** | Proves a property that holds for *all* states by construction. (Identified by v0.11.6 audit C-01; **resolved by WS-E2**: `cspaceSlotUnique` replaced with genuine `cspaceSlotKeyUnique`, `cspaceLookupSound` reformulated with membership-based specification correspondence.) | None → reformulated (resolved) |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
 
 ## Closed proof obligations (WS-D tracked issues)

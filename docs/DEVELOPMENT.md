@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1 completed; WS-E2..WS-E6 planned)**,
+- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned)**,
 - completed predecessor: **WS-D portfolio (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E)**,
 - completed predecessor before that: **WS-C portfolio (WS-C1..WS-C8)**.
 

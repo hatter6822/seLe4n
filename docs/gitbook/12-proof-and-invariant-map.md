@@ -32,20 +32,24 @@ Preservation shape:
 
 ## 3. Capability invariants (M2)
 
-Component level:
+Component level (WS-E2 strengthened):
 
-- uniqueness of slots,
-- lookup soundness,
-- attenuation rule,
-- lifecycle authority monotonicity.
+- `cspaceSlotKeyUnique` — genuine CNode slot-key structural uniqueness
+  (replaced tautological `cspaceSlotUnique`; 7 CNode-level lemmas in Object.lean),
+- `cspaceLookupSound` — membership-based specification correspondence
+  (`find?` → `∈ cn.slots`; bridge theorems connect to downstream consumers),
+- `cspaceAttenuationRule` — rights attenuation,
+- `lifecycleAuthorityMonotonicity` — lifecycle authority monotonicity.
 
 Bundle level:
 
 - `capabilityInvariantBundle`
 
-Preservation shape:
+Preservation shape (WS-E2 / H-01 compositional):
 
-- operation-level `*_preserves_capabilityInvariantBundle` for lookup/insert/mint/delete/revoke.
+- operation-level `*_preserves_capabilityInvariantBundle` for
+  lookup/insert/mint/delete/revoke — all proofs destructure `hInv` and
+  thread pre-state `hUnique` through component-level preservation theorems.
 
 ## 4. IPC invariants (M3)
 
@@ -164,7 +168,7 @@ Supporting infrastructure in `VSpace.lean`:
 - `resolveAsidRoot_of_unique_root` — characterization lemma enabling round-trip proofs
 - `storeObject_objectIndex_eq_of_mem` — objectIndex stability for in-place updates
 
-## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
+## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete; WS-E2 / H-03 extended)
 
 Badge-override safety in `cspaceMint` is now fully proven:
 
@@ -175,6 +179,17 @@ Badge-override safety in `cspaceMint` is now fully proven:
 The core insight: `mintDerivedCap` checks `rightsSubset` and sets `target := parent.target`
 unconditionally — the `badge` parameter only affects the `.badge` field of the child capability,
 which is notification-signaling metadata, not authority scope.
+
+### 11.1 Badge consistency for notification routing (WS-E2 / H-03)
+
+Five additional theorems connect badge propagation through `cspaceMint` to
+notification routing semantics:
+
+- `mintDerivedCap_badge_propagated` — caller-specified badge propagated to derived capability
+- `mintDerivedCap_target_preserved` — parent target preserved in derived capability
+- `badge_merge_idempotent` — badge OR-merge is idempotent (justifies seL4 accumulation semantics)
+- `notificationSignal_fresh_badge_identity` — fresh badge stored identically (no prior pending)
+- `cspaceMint_badge_notification_consistent` — end-to-end: minted badge delivered to waiter unchanged
 
 ## 12. Proof classification docstrings (WS-D3 / F-16 complete)
 

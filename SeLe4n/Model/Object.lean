@@ -384,6 +384,103 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
     by_cases hEq : entry.fst = sourceSlot <;> simp [hEq]
   simp [hPred]
 
+/-- Slot-key uniqueness for a CNode: no two distinct entries in the slot list share
+the same key. This ensures `CNode.lookup` (via `find?`) returns the unique
+capability for each slot rather than an arbitrary first match.
+
+This is a meaningful structural invariant — not a type-system tautology — because
+`slots` is a `List (Slot × Capability)` and operations must actively maintain
+key-disjointness. (WS-E2 / C-01 remediation) -/
+def slotKeysUnique (node : CNode) : Prop :=
+  ∀ s cap₁ cap₂, (s, cap₁) ∈ node.slots → (s, cap₂) ∈ node.slots → cap₁ = cap₂
+
+theorem slotKeysUnique_empty : slotKeysUnique empty := by
+  intro s _ _ hMem
+  simp [empty] at hMem
+
+/-- `insert` preserves slot-key uniqueness: the old entry for `slot` is filtered out
+before prepending the new one, so no duplicate keys are introduced. -/
+theorem insert_preserves_slotKeysUnique
+    (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hUnique : slotKeysUnique node) :
+    slotKeysUnique (node.insert slot cap) := by
+  intro s c₁ c₂ hMem₁ hMem₂
+  simp [insert] at hMem₁ hMem₂
+  rcases hMem₁ with ⟨hSlot₁, hCap₁⟩ | ⟨hIn₁, hNeSlot₁⟩
+  · rcases hMem₂ with ⟨_, hCap₂⟩ | ⟨_, hNeSlot₂⟩
+    · rw [hCap₁, hCap₂]
+    · exact absurd hSlot₁ hNeSlot₂
+  · rcases hMem₂ with ⟨hSlot₂, _⟩ | ⟨hIn₂, _⟩
+    · exact absurd hSlot₂ hNeSlot₁
+    · exact hUnique s c₁ c₂ hIn₁ hIn₂
+
+/-- `remove` preserves slot-key uniqueness: filtering can only reduce the slot list. -/
+theorem remove_preserves_slotKeysUnique
+    (node : CNode) (slot : SeLe4n.Slot)
+    (hUnique : slotKeysUnique node) :
+    slotKeysUnique (node.remove slot) := by
+  intro s c₁ c₂ hMem₁ hMem₂
+  simp [remove] at hMem₁ hMem₂
+  exact hUnique s c₁ c₂ hMem₁.1 hMem₂.1
+
+/-- `revokeTargetLocal` preserves slot-key uniqueness: it is a filter operation
+that can only reduce the slot list. -/
+theorem revokeTargetLocal_preserves_slotKeysUnique
+    (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hUnique : slotKeysUnique node) :
+    slotKeysUnique (node.revokeTargetLocal sourceSlot target) := by
+  intro s c₁ c₂ hMem₁ hMem₂
+  unfold revokeTargetLocal at hMem₁ hMem₂
+  simp at hMem₁ hMem₂
+  exact hUnique s c₁ c₂ hMem₁.1 hMem₂.1
+
+/-- Successful `lookup` witnesses concrete slot-list membership: if `lookup` returns
+`some cap`, then `(slot, cap)` is an element of the CNode's slot list. -/
+theorem lookup_mem_of_some
+    (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hLookup : node.lookup slot = some cap) :
+    (slot, cap) ∈ node.slots := by
+  unfold lookup at hLookup
+  cases hFind : node.slots.find? (fun entry => decide (entry.fst = slot))
+  · simp [hFind] at hLookup
+  · rename_i entry
+    simp [hFind] at hLookup
+    have hSlotEq : entry.fst = slot := by
+      have := List.find?_some hFind
+      simpa using this
+    have hMem := List.mem_of_find?_eq_some hFind
+    rw [← hLookup, ← hSlotEq]
+    exact hMem
+
+/-- Converse of `lookup_mem_of_some` under slot-key uniqueness: if `(slot, cap)`
+is a member of the slot list and keys are unique, then `lookup` returns exactly
+`cap`. This is the specification-correspondence lemma connecting list membership
+to the `find?`-based lookup computation. (WS-E2 / C-01) -/
+theorem lookup_of_mem_unique
+    (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hMem : (slot, cap) ∈ node.slots)
+    (hUnique : slotKeysUnique node) :
+    node.lookup slot = some cap := by
+  unfold lookup
+  cases hFind : node.slots.find? (fun entry => decide (entry.fst = slot))
+  · -- find? returned none: no element has key=slot. But (slot, cap) is in the list. Contradiction.
+    exfalso
+    have hNone := List.find?_eq_none.mp hFind
+    have hPred := hNone (slot, cap) hMem
+    simp at hPred
+  · -- find? returned some entry. Its key is slot, and by uniqueness its value is cap.
+    rename_i entry
+    simp
+    have hKey : entry.fst = slot := by
+      have := List.find?_some hFind; simpa using this
+    have hEntryMem := List.mem_of_find?_eq_some hFind
+    have hValEq : entry.snd = cap := by
+      have hEntryMem' : (slot, entry.snd) ∈ node.slots := by
+        have : entry = (slot, entry.snd) := by ext <;> simp [hKey]
+        rwa [← this]
+      exact hUnique slot entry.snd cap hEntryMem' hMem
+    rw [hValEq]
+
 end CNode
 
 inductive KernelObject where
