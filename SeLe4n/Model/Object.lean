@@ -32,10 +32,14 @@ inductive AccessRight where
   | grantReply
   deriving Repr, DecidableEq
 
-/-- The addressable target of a capability in the abstract object universe. -/
+/-- The addressable target of a capability in the abstract object universe.
+
+WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities that
+reference a specific sender's TCB, enabling bidirectional IPC. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+  | replyCap (senderTcb : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
 structure Capability where
@@ -51,15 +55,31 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
-/-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
+/-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
-This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
-waiting-thread handshake story. -/
+Models seL4 message registers plus optional capability transfer and sender badge. -/
+structure IpcMessage where
+  registers : List Nat
+  caps : List Capability := []
+  badge : Option SeLe4n.Badge := none
+  deriving Repr, DecidableEq
+
+namespace IpcMessage
+
+def empty : IpcMessage := { registers := [], caps := [], badge := none }
+
+end IpcMessage
+
+/-- Per-thread IPC scheduler-visible status.
+
+WS-E3/H-09: Endpoint-local blocking states for deterministic handshake.
+WS-E4/M-12: Added `blockedOnReply` for bidirectional IPC (sender waiting for reply). -/
 inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -78,10 +98,19 @@ inductive EndpointState where
   | receive
   deriving Repr, DecidableEq
 
+/-- Endpoint object model.
+
+WS-E4/M-01: Extended with `sendQueue` and `receiveQueue` fields for dual-queue
+endpoint semantics supporting multiple concurrent receivers. Legacy fields
+(`state`, `queue`, `waitingReceiver`) retained for backward compatibility with
+existing WS-E3 IPC operations and proofs; new dual-queue operations use the
+separate queue fields. -/
 structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
   waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List SeLe4n.ThreadId := []
+  receiveQueue : List SeLe4n.ThreadId := []
   deriving Repr, DecidableEq
 
 inductive NotificationState where
@@ -479,6 +508,114 @@ theorem mem_lookup_of_slotsUnique
     exact hUniq slot entry.snd cap hRewrite hMem
 
 end CNode
+
+-- ============================================================================
+-- WS-E4/C-03: Capability Derivation Tree (CDT) model
+-- ============================================================================
+
+/-- A slot address in the global capability namespace: (CNode ObjId, Slot). -/
+abbrev SlotAddr := SeLe4n.ObjId × SeLe4n.Slot
+
+/-- The operation that created a derivation edge. -/
+inductive DerivationOp where
+  | mint
+  | copy
+  deriving Repr, DecidableEq
+
+/-- A single edge in the Capability Derivation Tree.
+
+WS-E4/C-03: Each edge records the parent and child slot addresses and
+the operation that created the derivation. The CDT is a forest:
+each slot has at most one parent but may have many children. -/
+structure CapDerivationEdge where
+  parent : SlotAddr
+  child : SlotAddr
+  op : DerivationOp
+  deriving Repr, DecidableEq
+
+namespace CapDerivationEdge
+
+def isChildOf (edge : CapDerivationEdge) (addr : SlotAddr) : Bool :=
+  edge.child = addr
+
+def isParentOf (edge : CapDerivationEdge) (addr : SlotAddr) : Bool :=
+  edge.parent = addr
+
+end CapDerivationEdge
+
+/-- The Capability Derivation Tree stored at the system level.
+
+WS-E4/C-03: A list of derivation edges forming a forest. Operations maintain
+the acyclicity invariant: no slot can be both ancestor and descendant of itself. -/
+structure CapDerivationTree where
+  edges : List CapDerivationEdge := []
+  deriving Repr, DecidableEq
+
+namespace CapDerivationTree
+
+def empty : CapDerivationTree := { edges := [] }
+
+/-- Add a derivation edge from parent to child. -/
+def addEdge (cdt : CapDerivationTree) (parent child : SlotAddr)
+    (op : DerivationOp) : CapDerivationTree :=
+  { edges := { parent, child, op } :: cdt.edges }
+
+/-- Find all direct children of a given slot address. -/
+def childrenOf (cdt : CapDerivationTree) (addr : SlotAddr)
+    : List SlotAddr :=
+  (cdt.edges.filter (fun e => e.isParentOf addr)).map CapDerivationEdge.child
+
+/-- Find the parent of a given slot address, if any. -/
+def parentOf (cdt : CapDerivationTree) (addr : SlotAddr)
+    : Option SlotAddr :=
+  (cdt.edges.find? (fun e => e.isChildOf addr)).map CapDerivationEdge.parent
+
+/-- Remove all edges referencing a given slot as child (detach from parent). -/
+def removeAsChild (cdt : CapDerivationTree) (addr : SlotAddr)
+    : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => ¬e.isChildOf addr) }
+
+/-- Remove all edges referencing a given slot as parent (detach all children). -/
+def removeAsParent (cdt : CapDerivationTree) (addr : SlotAddr)
+    : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => ¬e.isParentOf addr) }
+
+/-- Remove all edges where the given slot appears as parent or child. -/
+def removeSlot (cdt : CapDerivationTree) (addr : SlotAddr)
+    : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => ¬e.isParentOf addr ∧ ¬e.isChildOf addr) }
+
+/-- Collect all descendants of a slot via bounded BFS traversal.
+Uses fuel = edges.length to ensure termination and completeness
+for acyclic trees. -/
+def descendantsOf (cdt : CapDerivationTree) (root : SlotAddr)
+    : List SlotAddr :=
+  go cdt.edges.length [root] []
+where
+  go : Nat → List SlotAddr → List SlotAddr → List SlotAddr
+    | 0, _, acc => acc
+    | _ + 1, [], acc => acc
+    | fuel + 1, node :: rest, acc =>
+        let children := (cdt.edges.filter (fun e => e.isParentOf node)).map CapDerivationEdge.child
+        let newChildren := children.filter (fun c => c ∉ acc)
+        go fuel (rest ++ newChildren) (acc ++ newChildren)
+
+/-- CDT acyclicity: no slot reaches itself through derivation edges. -/
+def acyclic (cdt : CapDerivationTree) : Prop :=
+  ∀ e ∈ cdt.edges, (e.parent.1, e.parent.2) ∉ cdt.descendantsOf e.child
+
+theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
+  intro e hMem
+  simp [CapDerivationTree.empty] at hMem
+
+/-- Removing a slot preserves a subset of edges. -/
+theorem removeSlot_edges_sub (cdt : CapDerivationTree) (addr : SlotAddr) :
+    ∀ e ∈ (cdt.removeSlot addr).edges, e ∈ cdt.edges := by
+  intro e hMem
+  simp [removeSlot] at hMem
+  exact hMem.1
+
+end CapDerivationTree
 
 inductive KernelObject where
   | tcb (t : TCB)

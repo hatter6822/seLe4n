@@ -421,6 +421,61 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       | .ok (cap, _) =>
           IO.println s!"minted cap rights: {reprStr cap.rights}"
 
+-- ============================================================================
+-- WS-E4: Capability/IPC completion trace scenarios
+-- ============================================================================
+
+/-- WS-E4 test: H-02 guard, cspaceCopy, dual-queue, reply operations -/
+private def runWsE4Trace (st1 : SystemState) : IO Unit := do
+  -- H-02: Try inserting into occupied slot (slot 0 already has a cap)
+  let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
+  let testCap : Capability := { target := .object 1, rights := [.read], badge := none }
+  match SeLe4n.Kernel.cspaceInsertSlot occSlot testCap st1 with
+  | .error err => IO.println s!"H-02 occupied slot guard: {reprStr err}"
+  | .ok _ => IO.println "unexpected: H-02 guard did not reject occupied slot"
+  -- C-02: cspaceCopy from rootSlot to a fresh destination
+  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 7 }
+  match SeLe4n.Kernel.cspaceCopy rootSlot copyDst st1 with
+  | .error err => IO.println s!"cspaceCopy error: {reprStr err}"
+  | .ok (_, stCopy) =>
+      match SeLe4n.Kernel.cspaceLookupSlot copyDst stCopy with
+      | .error err => IO.println s!"cspaceCopy lookup error: {reprStr err}"
+      | .ok (copiedCap, _) =>
+          IO.println s!"cspaceCopy target matches: {copiedCap.target == testCap.target}"
+  -- M-01: Dual-queue endpoint send/receive
+  let dualEpId : SeLe4n.ObjId := demoEndpoint
+  -- Set up fresh state with idle endpoint for dual-queue test
+  let dualEp : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQueue := [], receiveQueue := [] }
+  let dualObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = dualEpId then some dualEp else st1.objects oid
+  let stDual : SystemState := { st1 with objects := dualObjects }
+  match SeLe4n.Kernel.endpointSendDual dualEpId 1 stDual with
+  | .error err => IO.println s!"endpointSendDual error: {reprStr err}"
+  | .ok (_, stSent) =>
+      match (stSent.objects dualEpId) with
+      | some (.endpoint ep) =>
+          IO.println s!"dual-queue sender blocked on sendQueue: {!ep.sendQueue.isEmpty}"
+      | _ => IO.println "dual-queue endpoint missing after send"
+  -- M-12: Reply operation
+  -- Create a state with a thread blocked on reply
+  let replyTarget : SeLe4n.ThreadId := 1
+  let replyTcb : KernelObject := .tcb {
+    tid := replyTarget, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .blockedOnReply demoEndpoint }
+  let replyObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = replyTarget.toObjId then some replyTcb else st1.objects oid
+  let replySched := { st1.scheduler with
+    runnable := st1.scheduler.runnable.filter (· != replyTarget) }
+  let stReply : SystemState := { st1 with objects := replyObjects, scheduler := replySched }
+  match SeLe4n.Kernel.endpointReply replyTarget stReply with
+  | .error err => IO.println s!"endpointReply error: {reprStr err}"
+  | .ok (_, stReplied) =>
+      let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
+      IO.println s!"endpointReply unblocked target: {unblocked}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -437,6 +492,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityAndArchitectureTrace st1
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
+  runWsE4Trace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

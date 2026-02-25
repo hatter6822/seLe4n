@@ -21,6 +21,8 @@ inductive KernelError where
   | alreadyWaiting
   | cyclicDependency
   | notImplemented
+  | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
+  | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
 structure SchedulerState where
@@ -50,6 +52,7 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  cdt : CapDerivationTree := .empty   -- WS-E4/C-03: Capability Derivation Tree
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +72,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    cdt := .empty
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -375,6 +379,17 @@ theorem storeObject_machine_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.machine = st.machine := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+-- WS-E4/C-03: storeObject preserves the CDT (it only touches objects/lifecycle/index)
+theorem storeObject_cdt_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
   unfold storeObject at hStore
   cases hStore
   rfl

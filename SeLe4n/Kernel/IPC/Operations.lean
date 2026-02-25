@@ -683,4 +683,149 @@ theorem storeTcbIpcState_tcb_exists_at_target
     have := Except.ok.inj hStep; subst this
     exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
 
+-- ============================================================================
+-- WS-E4/M-01: Dual-queue endpoint operations (send/receive queue separation)
+-- ============================================================================
+
+/-- WS-E4/M-01: Send to endpoint using the dual-queue model.
+
+Sender checks receiveQueue first. If a receiver is waiting, rendezvous
+(unblock receiver). Otherwise, enqueue sender on sendQueue and block. -/
+def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.receiveQueue with
+        | receiver :: restRecv =>
+            -- Rendezvous: match sender with first waiting receiver
+            let ep' : Endpoint := { ep with receiveQueue := restRecv }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((), ensureRunnable st'' receiver)
+        | [] =>
+            -- No receiver waiting: enqueue sender and block
+            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [sender] }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' sender)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-E4/M-01: Receive from endpoint using the dual-queue model.
+
+Checks sendQueue first. If a sender is waiting, dequeue and unblock it.
+Otherwise, enqueue receiver on receiveQueue and block. -/
+def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    : Kernel SeLe4n.ThreadId :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.sendQueue with
+        | sender :: restSend =>
+            -- Rendezvous: dequeue first waiting sender
+            let ep' : Endpoint := { ep with sendQueue := restSend }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender .ready with
+                | .error e => .error e
+                | .ok st'' => .ok (sender, ensureRunnable st'' sender)
+        | [] =>
+            -- No sender waiting: enqueue receiver and block
+            let ep' : Endpoint := { ep with receiveQueue := ep.receiveQueue ++ [receiver] }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+-- ============================================================================
+-- WS-E4/M-12: Reply operations for bidirectional IPC
+-- ============================================================================
+
+/-- WS-E4/M-12: Call operation — send then block for reply.
+
+If a receiver is queued: handshake with receiver, then block caller for reply.
+If no receiver queued: enqueue caller as sender (will transition to blockedOnReply
+when received). -/
+def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.receiveQueue with
+        | receiver :: restRecv =>
+            -- Rendezvous with receiver, then block caller for reply
+            let ep' : Endpoint := { ep with receiveQueue := restRecv }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver .ready with
+                | .error e => .error e
+                | .ok st'' =>
+                    let st''' := ensureRunnable st'' receiver
+                    match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
+                    | .error e => .error e
+                    | .ok st4 => .ok ((), removeRunnable st4 caller)
+        | [] =>
+            -- No receiver: enqueue as sender, block
+            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [caller] }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' caller (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' caller)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-E4/M-12: Reply to a thread blocked on reply.
+
+Unblocks the target thread by setting its IPC state to ready and adding it
+to the runnable queue. Fails if the target is not in blockedOnReply state. -/
+def endpointReply (target : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st target with
+    | none => .error .objectNotFound
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            match storeTcbIpcState st target .ready with
+            | .error e => .error e
+            | .ok st' => .ok ((), ensureRunnable st' target)
+        | _ => .error .replyCapInvalid
+
+/-- WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
+
+Combines reply + receive in a single atomic operation, matching seL4_ReplyRecv.
+The reply unblocks the target, then the receiver waits on the endpoint. -/
+def endpointReplyRecv
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (replyTarget : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st replyTarget with
+    | none => .error .objectNotFound
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            match storeTcbIpcState st replyTarget .ready with
+            | .error e => .error e
+            | .ok st' =>
+                let st'' := ensureRunnable st' replyTarget
+                match endpointAwaitReceive endpointId receiver st'' with
+                | .error e => .error e
+                | .ok result => .ok result
+        | _ => .error .replyCapInvalid
+
 end SeLe4n.Kernel
