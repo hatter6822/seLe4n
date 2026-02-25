@@ -1,3 +1,15 @@
+## [0.11.9] - 2026-02-25
+
+### WS-E3 Kernel semantic hardening (completed)
+- **H-06:** Added `threadCount_bounded_after_setDomain` invariant proving `setDomain` preserves the runnable queue length bound.
+- **H-07:** Added `capMint_preserves_object_store` invariant proving capability minting does not modify the object store.
+- **H-08:** Added `capRevoke_siblings_unreachable` invariant proving sibling capabilities become unreachable after revocation.
+- **H-09:** Replaced `sorry` in `endpointSend_preserves_lowEquivalent` with a complete, machine-checked proof. The proof uses projection-preservation: each execution independently preserves the observer's view via a `chain_preserves_projection` lemma covering the storeObject → storeTcbIpcState → scheduler-op chain. Requires label coherence (`hLabelCoherent`) and endpoint confinement (`hRecvConf`) hypotheses.
+- **M-09:** Added `endpointSend_preserves_scheduler_invariant` proving endpoint send preserves the scheduler queue/current-thread consistency invariant.
+- **L-06:** Added `retypeObjects_preserves_scheduler` invariant proving `retypeObjects` does not modify scheduler state.
+- All 6 WS-E3 findings resolved. Zero `sorry` remains in the codebase.
+- Bumped patch version to **`0.11.9`**.
+
 ## [0.11.7] - 2026-02-24
 
 ### WS-E1 Test infrastructure and CI hardening (completed)

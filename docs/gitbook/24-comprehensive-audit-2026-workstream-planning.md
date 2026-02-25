@@ -20,6 +20,27 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **L-08:** Added theorem-body spot-check validation and F-14 regression guard to Tier 0 hygiene.
 - F-09, F-10, F-15: previously resolved.
 
+### WS-E2 completed summary
+
+**WS-E2 — Proof quality and invariant strengthening** has been completed. All 3 findings resolved:
+
+- **C-01:** Reformulated tautological invariant proofs to require genuine structural witnesses.
+- **H-01:** Refactored all preservation proofs to compositional pattern using operation-specific transfer lemmas.
+- **H-03:** Closed badge override safety gap with `badge_notification_routing_consistent` end-to-end chain proof.
+
+### WS-E3 completed summary
+
+**WS-E3 — Kernel semantic hardening** has been completed. All 6 findings resolved:
+
+- **H-06:** Added `threadCount_bounded_after_setDomain` invariant; sentinel ID 0 convention enforced in Prelude.
+- **H-07:** Added `capMint_preserves_object_store` invariant proving capability minting does not modify the object store.
+- **H-08:** Added `capRevoke_siblings_unreachable` invariant; BFS fuel-exhaustion now returns conservative `true`.
+- **H-09:** Replaced `sorry` in `endpointSend_preserves_lowEquivalent` with complete machine-checked proof using projection-preservation strategy. Endpoint send/receive transitions now enforce thread IPC state changes.
+- **M-09:** Added `endpointSend_preserves_scheduler_invariant` proving endpoint send preserves scheduler queue/current-thread consistency.
+- **L-06:** Added `retypeObjects_preserves_scheduler` proving retype does not modify scheduler state.
+
+Zero `sorry` remains in the entire codebase.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.

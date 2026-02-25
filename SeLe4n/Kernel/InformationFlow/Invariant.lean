@@ -86,17 +86,158 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc']
 
 -- ============================================================================
--- Non-interference theorem #1: endpointSend (existing, retained)
+-- Projection preservation helpers for chain-based operations (H-09/WS-E3)
+-- ============================================================================
+
+/-- Under label coherence, thread-high implies its TCB object is also high. -/
+private theorem threadHigh_implies_objHigh
+    (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
+    (hCoherent : ∀ t, ctx.objectLabelOf t.toObjId = ctx.threadLabelOf t)
+    (hHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer tid.toObjId = false := by
+  simp only [objectObservable, threadObservable, hCoherent] at hHigh ⊢; exact hHigh
+
+/-- storeObject at a non-observable OID preserves projectObjects. -/
+private theorem storeObject_high_preserves_projectObjects
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hHigh : objectObservable ctx observer oid = false)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext x
+  by_cases hObs : objectObservable ctx observer x
+  · have hNe : x ≠ oid := by intro h; subst h; simp [hHigh] at hObs
+    simp [projectObjects, hObs, storeObject_objects_ne st st' oid x obj hNe hStore]
+  · simp [projectObjects, hObs]
+
+/-- storeTcbIpcState at a non-observable thread preserves projectObjects. -/
+private theorem storeTcbIpcState_high_preserves_projectObjects
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hHigh : objectObservable ctx observer tid.toObjId = false)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext x
+  by_cases hObs : objectObservable ctx observer x
+  · have hNe : x ≠ tid.toObjId := by intro h; subst h; simp [hHigh] at hObs
+    simp [projectObjects, hObs, storeTcbIpcState_preserves_objects_ne st st' tid ipc x hNe hStep]
+  · simp [projectObjects, hObs]
+
+/-- removeRunnable of a non-observable thread preserves projectRunnable. -/
+private theorem removeRunnable_high_preserves_projectRunnable
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hHigh : threadObservable ctx observer tid = false) :
+    projectRunnable ctx observer (removeRunnable st tid) =
+    projectRunnable ctx observer st := by
+  simp only [projectRunnable, removeRunnable]
+  rw [List.filter_filter]
+  congr 1; funext x
+  by_cases hEq : x = tid
+  · subst hEq; simp [hHigh]
+  · simp [hEq]
+
+/-- ensureRunnable of a non-observable thread preserves projectRunnable. -/
+private theorem ensureRunnable_high_preserves_projectRunnable
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hHigh : threadObservable ctx observer tid = false) :
+    projectRunnable ctx observer (ensureRunnable st tid) =
+    projectRunnable ctx observer st := by
+  simp only [projectRunnable, ensureRunnable]
+  split
+  · rfl
+  · rw [List.filter_append]; simp [hHigh]
+
+/-- removeRunnable of a non-observable thread preserves projectCurrent. -/
+private theorem removeRunnable_high_preserves_projectCurrent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hHigh : threadObservable ctx observer tid = false) :
+    projectCurrent ctx observer (removeRunnable st tid) =
+    projectCurrent ctx observer st := by
+  unfold projectCurrent removeRunnable
+  cases hCur : st.scheduler.current with
+  | none => simp
+  | some cur =>
+    by_cases hEq : cur = tid
+    · subst hEq; simp [hHigh]
+    · simp [hEq]
+
+/-- The 3-step chain (storeObject → storeTcbIpcState → scheduler-op) at
+non-observable IDs preserves the observer's state projection. -/
+private theorem chain_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s st1 st2 s' : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hTidHigh : threadObservable ctx observer tid = false)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hTcb : storeTcbIpcState st1 tid ipc = .ok st2)
+    (hSt1Sched : st1.scheduler = s.scheduler)
+    (hSt1Svc : st1.services = s.services)
+    (hSt1ObjNe : ∀ oid, oid ≠ endpointId → st1.objects oid = s.objects oid)
+    (hFinal : s' = removeRunnable st2 tid ∨ s' = ensureRunnable st2 tid) :
+    projectState ctx observer s' = projectState ctx observer s := by
+  have hSchedTcb := storeTcbIpcState_preserves_scheduler st1 st2 tid ipc hTcb
+  have hSvcTcb := storeTcbIpcState_preserves_services st1 st2 tid ipc hTcb
+  -- projectObjects: each step preserves observable objects
+  have hObjEq : projectObjects ctx observer s' = projectObjects ctx observer s := by
+    have hS'Obs : ∀ oid, objectObservable ctx observer oid = true →
+        s'.objects oid = s.objects oid := by
+      intro oid hObs
+      have hNeEnd : oid ≠ endpointId := by intro h; subst h; simp [hEndpointHigh] at hObs
+      have hNeTid : oid ≠ tid.toObjId := by intro h; subst h; simp [hTidObjHigh] at hObs
+      have h3 : s'.objects oid = st2.objects oid := by
+        rcases hFinal with rfl | rfl
+        · exact congrFun (removeRunnable_preserves_objects st2 tid) oid
+        · exact congrFun (ensureRunnable_preserves_objects st2 tid) oid
+      rw [h3, storeTcbIpcState_preserves_objects_ne st1 st2 tid ipc oid hNeTid hTcb,
+          hSt1ObjNe oid hNeEnd]
+    funext oid
+    by_cases hObs : objectObservable ctx observer oid
+    · simp [projectObjects, hObs, hS'Obs oid hObs]
+    · simp [projectObjects, hObs]
+  -- projectRunnable
+  have hRunEq : projectRunnable ctx observer s' = projectRunnable ctx observer s := by
+    rcases hFinal with rfl | rfl
+    · rw [removeRunnable_high_preserves_projectRunnable ctx observer st2 tid hTidHigh]
+      simp only [projectRunnable, hSchedTcb, hSt1Sched]
+    · rw [ensureRunnable_high_preserves_projectRunnable ctx observer st2 tid hTidHigh]
+      simp only [projectRunnable, hSchedTcb, hSt1Sched]
+  -- projectCurrent
+  have hCurEq : projectCurrent ctx observer s' = projectCurrent ctx observer s := by
+    rcases hFinal with rfl | rfl
+    · rw [removeRunnable_high_preserves_projectCurrent ctx observer st2 tid hTidHigh]
+      simp only [projectCurrent, hSchedTcb, hSt1Sched]
+    · simp only [projectCurrent, ensureRunnable_preserves_current, hSchedTcb, hSt1Sched]
+  -- projectServiceStatus
+  have hSvcEq : projectServiceStatus ctx observer s' =
+      projectServiceStatus ctx observer s := by
+    funext sid; simp only [projectServiceStatus, lookupService]
+    rcases hFinal with rfl | rfl
+    · simp only [removeRunnable_preserves_services, hSvcTcb, hSt1Svc]
+    · rw [ensureRunnable_preserves_services st2 tid, hSvcTcb, hSt1Svc]
+  -- Assemble
+  simp [projectState, hObjEq, hRunEq, hCurEq, hSvcEq]
+
+-- ============================================================================
+-- Non-interference theorem #1: endpointSend (H-09/WS-E3 chain-aware proof)
 -- ============================================================================
 
 /-- A successful endpoint send preserves low-equivalence for observers that cannot
 see the sender thread and cannot observe the endpoint object itself.
 
-H-09 chain extension note: The chain decomposition exposes that `endpointSend`
-modifies the endpoint (high), the sender/receiver TCB, and the scheduler.
-The full non-interference proof through the TCB and scheduler steps requires
-additional chain-aware lemmas (TPI-D08). The storeObject step at the high
-endpoint is proven; the remaining chain steps are deferred to WS-E5. -/
+H-09 chain-aware proof: The 3-step chain (storeObject → storeTcbIpcState →
+removeRunnable/ensureRunnable) modifies the endpoint, a TCB, and the scheduler.
+All three operations preserve the observer's projection when their targets are
+non-observable:
+- The endpoint is high by `hEndpointHigh`.
+- The sender's TCB is high via `hLabelCoherent` + `hSenderHigh`.
+- For the handshake path, the receiver's TCB is high via `hLabelCoherent` +
+  `hRecvConf₁`/`hRecvConf₂` (endpoint confinement: any thread waiting on a
+  high endpoint is itself high). -/
 theorem endpointSend_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
@@ -104,16 +245,78 @@ theorem endpointSend_preserves_lowEquivalent
     (sender : SeLe4n.ThreadId)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (_hSenderHigh : threadObservable ctx observer sender = false)
-    (_hEndpointHigh : objectObservable ctx observer endpointId = false)
-    (_hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
-    (_hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
+    (hSenderHigh : threadObservable ctx observer sender = false)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hLabelCoherent : ∀ tid, ctx.objectLabelOf tid.toObjId = ctx.threadLabelOf tid)
+    (hRecvConf₁ : ∀ ep receiver, s₁.objects endpointId = some (.endpoint ep) →
+        ep.waitingReceiver = some receiver → threadObservable ctx observer receiver = false)
+    (hRecvConf₂ : ∀ ep receiver, s₂.objects endpointId = some (.endpoint ep) →
+        ep.waitingReceiver = some receiver → threadObservable ctx observer receiver = false)
+    (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  -- TPI-D08 sorry: H-09 chain non-interference requires chain-aware lowEquivalent
-  -- lemmas for storeTcbIpcState and removeRunnable/ensureRunnable steps.
-  -- The storeObject step at the high endpoint preserves lowEquivalent (proven).
-  -- The TCB + scheduler steps need per-step non-interference lemmas (WS-E5 scope).
-  sorry -- TPI-D08
+  -- Strategy: show each execution independently preserves the observer's
+  -- projection, then combine with hLow by transitivity.
+  have hSenderObjHigh := threadHigh_implies_objHigh ctx observer sender hLabelCoherent hSenderHigh
+  suffices proj : ∀ (s s' : SystemState)
+    (hConf : ∀ ep receiver, s.objects endpointId = some (.endpoint ep) →
+        ep.waitingReceiver = some receiver → threadObservable ctx observer receiver = false)
+    (hStep : endpointSend endpointId sender s = .ok ((), s')),
+    projectState ctx observer s' = projectState ctx observer s by
+    unfold lowEquivalent at hLow ⊢
+    exact (proj s₁ s₁' hRecvConf₁ hStep₁).trans (hLow.trans (proj s₂ s₂' hRecvConf₂ hStep₂).symm)
+  -- Prove single-execution projection preservation by unfolding endpointSend
+  intro s s' hConf hStep
+  unfold endpointSend at hStep
+  cases hObj : s.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hState : ep.state with
+      | idle =>
+        simp only [hState, storeObject] at hStep
+        revert hStep
+        cases hTcb : storeTcbIpcState _ sender (.blockedOnSend endpointId) with
+        | error e => simp
+        | ok st2 =>
+          simp only [Except.ok.injEq, Prod.mk.injEq]
+          intro ⟨_, hEq⟩; rw [hEq.symm]
+          exact chain_preserves_projection ctx observer s _ st2 _
+            endpointId sender (.blockedOnSend endpointId)
+            hEndpointHigh hSenderHigh hSenderObjHigh
+            hTcb rfl rfl (fun oid hNe => if_neg hNe) (.inl rfl)
+      | send =>
+        simp only [hState, storeObject] at hStep
+        revert hStep
+        cases hTcb : storeTcbIpcState _ sender (.blockedOnSend endpointId) with
+        | error e => simp
+        | ok st2 =>
+          simp only [Except.ok.injEq, Prod.mk.injEq]
+          intro ⟨_, hEq⟩; rw [hEq.symm]
+          exact chain_preserves_projection ctx observer s _ st2 _
+            endpointId sender (.blockedOnSend endpointId)
+            hEndpointHigh hSenderHigh hSenderObjHigh
+            hTcb rfl rfl (fun oid hNe => if_neg hNe) (.inl rfl)
+      | receive =>
+        simp only [hState] at hStep
+        cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;>
+          simp only [hQueue, hWait, storeObject] at hStep <;> try exact absurd hStep (by simp)
+        case nil.some receiver =>
+          revert hStep
+          cases hTcb : storeTcbIpcState _ receiver .ready with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; rw [hEq.symm]
+            have hRecvHigh := hConf ep receiver hObj hWait
+            exact chain_preserves_projection ctx observer s _ st2 _
+              endpointId receiver .ready
+              hEndpointHigh hRecvHigh
+              (threadHigh_implies_objHigh ctx observer receiver hLabelCoherent hRecvHigh)
+              hTcb rfl rfl (fun oid hNe => if_neg hNe) (.inr rfl)
 
 -- ============================================================================
 -- Non-interference theorem #2: chooseThread (WS-D2, F-05, TPI-D01)
