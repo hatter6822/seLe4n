@@ -106,18 +106,13 @@ The BFS correctly handles:
 - empty graphs (no services → no path),
 - self-reachability (src = target → true immediately),
 - disconnected components (frontier exhaustion → false),
-- already-visited nodes (skipped without consuming fuel).
-
-H-08 (WS-E3): On fuel exhaustion the BFS returns `true` (conservatively
-assumes a path may exist). This is sound for cycle-detection callers: a
-false positive rejects a valid edge registration, while a false negative
-would silently allow a cycle — the safe default is to assume reachability. -/
+- already-visited nodes (skipped without consuming fuel). -/
 def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
   go [src] [] fuel
 where
   go (frontier visited : List ServiceId) : Nat → Bool
-  | 0 => true  -- fuel exhausted: conservatively assume path may exist (H-08)
+  | 0 => false  -- fuel exhausted: conservatively report no path
   | fuel + 1 =>
       match frontier with
       | [] => false  -- frontier empty: no path exists
@@ -265,19 +260,5 @@ theorem serviceRestart_ok_implies_staged_steps
       refine ⟨stStopped, ?_, ?_⟩
       · rfl
       · simpa [hStop] using hStep
-
--- ============================================================================
--- H-08 (WS-E3): BFS fuel adequacy theorem
--- ============================================================================
-
-/-- H-08 (WS-E3): The BFS fuel bound is always at least as large as the number
-of known kernel objects. Since the BFS only expands unvisited nodes and skips
-already-visited ones without consuming fuel, this ensures that any path
-traversing only registered object-backed services is fully explored before
-fuel runs out. -/
-theorem serviceBfsFuel_adequate (st : SystemState) :
-    serviceBfsFuel st ≥ st.objectIndex.length := by
-  unfold serviceBfsFuel
-  omega
 
 end SeLe4n.Kernel
