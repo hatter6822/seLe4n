@@ -1,3 +1,10 @@
+## [0.11.11] - 2026-02-25
+
+### Documentation and release metadata synchronization
+- Bumped patch version to **`0.11.11`** in `lakefile.toml`.
+- Updated version badges and current-version references in canonical docs (`README.md`, `docs/spec/SELE4N_SPEC.md`).
+- Updated contributor guidance mirrors (`AGENTS.md`, `CLAUDE.md`) so project metadata matches the codebase.
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E4 preparation — proof infrastructure and documentation accuracy
