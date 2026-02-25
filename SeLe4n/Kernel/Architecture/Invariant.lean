@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Service.Invariant
 
 /-!
@@ -31,13 +32,18 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 open SeLe4n.Kernel
 
-/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles. -/
+/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles.
+
+H-07 (WS-E3): `vspaceInvariantBundle` added to the composed bundle so that
+VSpace ASID-root uniqueness and non-overlap are included in global invariant
+preservation. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧
     capabilityInvariantBundle st ∧
     m3IpcSeedInvariantBundle st ∧
     m35IpcSchedulerInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
+    vspaceInvariantBundle st ∧
     serviceLifecycleCapabilityInvariantBundle st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
@@ -157,5 +163,98 @@ theorem adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariant
     (_hErr : adapterReadMemory contract addr st = .error (mapAdapterError .unsupportedBinding)) :
     proofLayerInvariantBundle st :=
   hInv
+
+-- ============================================================================
+-- L-06 (WS-E3): Default SystemState initialization proof
+-- ============================================================================
+
+/-- L-06 (WS-E3): The default empty system state satisfies lifecycle metadata consistency.
+
+This proves that the kernel model's lifecycle invariants are satisfiable:
+the empty state (no objects, no services, no scheduler state) is a valid
+starting point for kernel execution. -/
+theorem default_system_state_lifecycleMetadataConsistent :
+    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
+  refine ⟨?_, ?_⟩
+  · intro oid; rfl
+  · intro ref
+    simp only [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+      SystemState.lookupCNode]
+    rfl
+
+/-- L-06: The default empty system state satisfies the scheduler invariant bundle. -/
+theorem default_system_state_schedulerInvariantBundle :
+    schedulerInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simp [queueCurrentConsistent]
+  · exact List.nodup_nil
+  · simp [currentThreadValid]
+
+/-- L-06: The default empty system state satisfies the capability invariant bundle. -/
+theorem default_system_state_capabilityInvariantBundle :
+    capabilityInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro cnodeId cn hCn; simp at hCn
+  · intro cnodeId cn slot cap hCn; simp at hCn
+  · exact cspaceAttenuationRule_holds
+  · exact lifecycleAuthorityMonotonicity_holds _
+
+/-- L-06: The default empty system state satisfies the IPC invariant. -/
+theorem default_system_state_ipcInvariant :
+    ipcInvariant (default : SystemState) := by
+  refine ⟨?_, ?_⟩
+  · intro oid ep hObj; simp at hObj
+  · intro oid ntfn hObj; simp at hObj
+
+/-- L-06: The default empty system state satisfies the IPC-scheduler contract. -/
+theorem default_system_state_ipcSchedulerContractPredicates :
+    ipcSchedulerContractPredicates (default : SystemState) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro tid tcb hObj; simp at hObj
+  · intro tid tcb eid hObj; simp at hObj
+  · intro tid tcb eid hObj; simp at hObj
+
+/-- L-06: The default empty system state satisfies the lifecycle invariant bundle. -/
+theorem default_system_state_lifecycleInvariantBundle :
+    lifecycleInvariantBundle (default : SystemState) :=
+  lifecycleInvariantBundle_of_metadata_consistent _
+    default_system_state_lifecycleMetadataConsistent
+
+/-- L-06: The default empty system state satisfies the VSpace invariant bundle. -/
+theorem default_system_state_vspaceInvariantBundle :
+    vspaceInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_⟩
+  · intro oid₁ oid₂ r₁ r₂ hObj₁; simp at hObj₁
+  · intro oid root hObj; simp at hObj
+
+/-- L-06: The default empty system state satisfies the service-lifecycle-capability bundle. -/
+theorem default_system_state_serviceLifecycleCapabilityInvariantBundle :
+    serviceLifecycleCapabilityInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro sid svc hSvc; simp [lookupService] at hSvc
+  · exact default_system_state_lifecycleInvariantBundle
+  · exact default_system_state_capabilityInvariantBundle
+
+/-- L-06 (WS-E3): The default empty system state satisfies the full composed
+`proofLayerInvariantBundle`.
+
+This is the definitive initialization proof: it demonstrates that the
+invariant bundle is satisfiable and that the kernel model has a valid initial
+state from which preservation theorems can build. -/
+theorem default_system_state_proofLayerInvariantBundle :
+    proofLayerInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact default_system_state_schedulerInvariantBundle
+  · exact default_system_state_capabilityInvariantBundle
+  · exact ⟨default_system_state_schedulerInvariantBundle,
+           default_system_state_capabilityInvariantBundle,
+           default_system_state_ipcInvariant⟩
+  · exact ⟨⟨default_system_state_schedulerInvariantBundle,
+            default_system_state_capabilityInvariantBundle,
+            default_system_state_ipcInvariant⟩,
+           default_system_state_ipcSchedulerContractPredicates⟩
+  · exact default_system_state_lifecycleInvariantBundle
+  · exact default_system_state_vspaceInvariantBundle
+  · exact default_system_state_serviceLifecycleCapabilityInvariantBundle
 
 end SeLe4n.Kernel.Architecture
