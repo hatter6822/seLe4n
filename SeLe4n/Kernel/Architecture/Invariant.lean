@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Service.Invariant
 
 /-!
@@ -31,14 +32,19 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 open SeLe4n.Kernel
 
-/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles. -/
+/-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles.
+
+H-07 (WS-E3): `vspaceInvariantBundle` added to the composition, closing the gap
+where VSpace ASID-uniqueness and non-overlap invariants were proven in isolation
+but not included in the top-level composed bundle. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧
     capabilityInvariantBundle st ∧
     m3IpcSeedInvariantBundle st ∧
     m35IpcSchedulerInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
-    serviceLifecycleCapabilityInvariantBundle st
+    serviceLifecycleCapabilityInvariantBundle st ∧
+    vspaceInvariantBundle st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -157,5 +163,101 @@ theorem adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariant
     (_hErr : adapterReadMemory contract addr st = .error (mapAdapterError .unsupportedBinding)) :
     proofLayerInvariantBundle st :=
   hInv
+
+/-- WS-E3/H-07: Timer advancement preserves VSpace invariant bundle.
+Timer-only state changes do not affect the object store. -/
+private theorem advanceTimerState_preserves_vspaceInvariantBundle
+    (ticks : Nat) (st : SystemState)
+    (hInv : vspaceInvariantBundle st) :
+    vspaceInvariantBundle (advanceTimerState ticks st) := by
+  rcases hInv with ⟨hUniq, hNonOverlap⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap⟩
+
+/-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
+Register-only state changes do not affect the object store. -/
+private theorem writeRegisterState_preserves_vspaceInvariantBundle
+    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (hInv : vspaceInvariantBundle st) :
+    vspaceInvariantBundle (writeRegisterState reg value st) := by
+  rcases hInv with ⟨hUniq, hNonOverlap⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap⟩
+
+-- ============================================================================
+-- L-06/WS-E3: Default SystemState initialization proofs
+-- ============================================================================
+
+/-- L-06/WS-E3: The default (empty) `SystemState` satisfies the full composed
+`proofLayerInvariantBundle`. This provides the base case for invariant induction:
+the system starts in a valid state. All invariant components hold vacuously
+because the empty state has no objects, no threads, no services, and an empty
+scheduler. -/
+private theorem default_schedulerInvariantBundle :
+    schedulerInvariantBundle (default : SystemState) := by
+  -- kernelInvariant = queueCurrentConsistent ∧ runQueueUnique ∧ currentThreadValid
+  -- For default state: current = none, runnable = [], objects = none
+  refine ⟨?_, ?_, ?_⟩
+  · -- queueCurrentConsistent: current = none → True
+    simp [queueCurrentConsistent]
+  · -- runQueueUnique: [].Nodup
+    exact List.nodup_nil
+  · -- currentThreadValid: current = none → True
+    simp [currentThreadValid]
+
+private theorem default_ipcInvariant :
+    ipcInvariant (default : SystemState) := by
+  constructor
+  · intro oid ep hObj; simp at hObj
+  · intro oid ntfn hObj; simp at hObj
+
+private theorem default_lifecycleInvariantBundle :
+    lifecycleInvariantBundle (default : SystemState) :=
+  lifecycleInvariantBundle_of_metadata_consistent _ default_systemState_lifecycleConsistent
+
+private theorem default_ipcSchedulerContractPredicates :
+    ipcSchedulerContractPredicates (default : SystemState) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro tid tcb hObj; simp at hObj
+  · intro tid tcb eid hObj; simp at hObj
+  · intro tid tcb eid hObj; simp at hObj
+
+theorem default_system_state_proofLayerInvariantBundle :
+    proofLayerInvariantBundle (default : SystemState) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  -- 1. schedulerInvariantBundle
+  · exact default_schedulerInvariantBundle
+  -- 2. capabilityInvariantBundle
+  · exact ⟨by intro oid cn hObj; simp at hObj,
+           by intro oid cn s c hObj; simp at hObj,
+           by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
+           by exact lifecycleAuthorityMonotonicity_holds _⟩
+  -- 3. m3IpcSeedInvariantBundle
+  · exact ⟨default_schedulerInvariantBundle,
+           ⟨by intro oid cn hObj; simp at hObj,
+            by intro oid cn s c hObj; simp at hObj,
+            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
+            by exact lifecycleAuthorityMonotonicity_holds _⟩,
+           default_ipcInvariant⟩
+  -- 4. m35IpcSchedulerInvariantBundle
+  · exact ⟨⟨default_schedulerInvariantBundle,
+            ⟨by intro oid cn hObj; simp at hObj,
+             by intro oid cn s c hObj; simp at hObj,
+             by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
+             by exact lifecycleAuthorityMonotonicity_holds _⟩,
+            default_ipcInvariant⟩,
+           default_ipcSchedulerContractPredicates.1,
+           default_ipcSchedulerContractPredicates.2⟩
+  -- 5. lifecycleInvariantBundle
+  · exact default_lifecycleInvariantBundle
+  -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability
+  · exact ⟨by intro sid svc hSvc; simp [lookupService] at hSvc,
+           default_lifecycleInvariantBundle,
+           by intro oid cn hObj; simp at hObj,
+           by intro oid cn s c hObj; simp at hObj,
+           by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
+           by exact lifecycleAuthorityMonotonicity_holds _⟩
+  -- 7. vspaceInvariantBundle
+  · constructor
+    · intro oid₁ oid₂ r₁ r₂ hObj₁; simp at hObj₁
+    · intro oid root hObj; simp at hObj
 
 end SeLe4n.Kernel.Architecture

@@ -20,6 +20,25 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **L-08:** Added theorem-body spot-check validation and F-14 regression guard to Tier 0 hygiene.
 - F-09, F-10, F-15: previously resolved.
 
+### WS-E2 completed summary
+
+**WS-E2 — Proof quality and invariant strengthening** has been completed. All 3 findings resolved:
+
+- **C-01:** Tautological proofs reformulated to structural invariants with real witnesses (`cspaceSlotUnique` encodes CNode slot-index uniqueness via `CNode.slotsUnique`).
+- **H-01:** Non-compositional proofs refactored to derive post-state from pre-state via transfer lemmas.
+- **H-03:** Badge safety gap closed with end-to-end chain from `mintDerivedCap_badge_propagated` through `badge_notification_routing_consistent`.
+
+### WS-E3 completed summary
+
+**WS-E3 — Kernel semantic hardening** has been completed (v0.11.10). All 6 findings resolved:
+
+- **H-06:** Sentinel ID convention established — ID 0 reserved for all identifier types. Added `isReserved`, `sentinel`, `ObjId.valid` predicates and identity theorems. `ThreadId.toObjId_injective` proven.
+- **H-07:** `vspaceInvariantBundle` composed into `proofLayerInvariantBundle`, closing the gap where VSpace invariants were isolated from the global proof layer. Adapter preservation theorems added.
+- **H-08:** BFS `serviceHasPathTo` returns `true` on fuel exhaustion (conservative for cycle detection). Soundness theorems: `serviceHasPathTo_fuel_zero_is_true`, `serviceHasPathTo_false_implies_not_fuel_exhaustion`, `serviceBfsFuel_adequate`.
+- **H-09:** Endpoint operations (`endpointSend`, `endpointAwaitReceive`, `endpointReceive`) now perform compound 3-step transitions: `storeObject` → `storeTcbIpcState` → `removeRunnable`/`ensureRunnable`. IPC-scheduler contract predicates are now non-vacuous. All invariant preservation proofs rewritten for compound transitions.
+- **M-09:** Metadata sync correctness proven for type-changing `storeObject`: `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored`.
+- **L-06:** Default `SystemState` initialization proof: `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle`.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.

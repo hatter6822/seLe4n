@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.11.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.11.10-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
 </p>
@@ -22,7 +22,7 @@
 
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.11.7` (`lakefile.toml`)
+- **Current package version:** `0.11.10` (`lakefile.toml`)
 - **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 - **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
 
@@ -71,7 +71,7 @@ Quick index. Full contracts and dependencies are in the v0.11.6 planning backbon
 
 - **WS-E1:** Test infrastructure and CI hardening -- **completed** (Medium; M-10, M-11, F-14, L-07, L-08)
 - **WS-E2:** Proof quality and invariant strengthening -- **completed** (High; C-01, H-01, H-03)
-- **WS-E3:** Kernel semantic hardening -- planned (High; H-06, H-07, H-08, H-09, M-09, L-06)
+- **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4:** Capability and IPC model completion -- planned (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5:** Information-flow maturity -- planned (High; H-04, H-05, M-07)
 - **WS-E6:** Model completeness and documentation -- planned (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)

@@ -1,3 +1,18 @@
+## [0.11.10] - 2026-02-25
+
+### WS-E3 Kernel semantic hardening (completed)
+
+All 6 WS-E3 findings resolved with zero sorry/axiom. Synthesized from analysis of PRs #201–#203, selecting the best approach for each finding.
+
+- **H-06 (Sentinel IDs):** Established ID 0 as reserved sentinel for all identifier types. Added `isReserved`, `sentinel`, and `ObjId.valid` predicates on `ObjId`, `ThreadId`, `ServiceId`. Proved `ObjId.default_eq_sentinel`, `ThreadId.default_eq_sentinel`, `ObjId.sentinel_isReserved`, `ThreadId.sentinel_isReserved`, `ObjId.valid_iff_not_reserved`. Added `ThreadId.toObjId_injective` in Prelude for canonical placement.
+- **H-07 (VSpace in composed bundle):** Added `vspaceInvariantBundle` as 7th conjunct to `proofLayerInvariantBundle` in `Architecture/Invariant.lean`. Added adapter preservation theorems (`advanceTimerState_preserves_vspaceInvariantBundle`, `writeRegisterState_preserves_vspaceInvariantBundle`).
+- **H-08 (BFS fuel exhaustion):** Changed `serviceHasPathTo.go` fuel-exhaustion base case from `false` to `true` (conservative for cycle detection). Added soundness theorems: `serviceHasPathTo_fuel_zero_is_true`, `serviceHasPathTo_false_implies_not_fuel_exhaustion`, `serviceBfsFuel_adequate`, `serviceRegisterDependency_rejects_if_path_or_fuel_exhausted`.
+- **H-09 (Thread blocking in IPC):** Endpoint operations now perform compound 3-step transitions: `storeObject` (endpoint update) → `storeTcbIpcState` (thread IPC state) → `removeRunnable`/`ensureRunnable` (scheduler). `removeRunnable` also clears `scheduler.current` when removing current thread. All IPC invariant preservation proofs, capability bundle proofs, scheduler bundle proofs, and information-flow non-interference proofs rewritten for compound transitions. Added comprehensive frame lemmas for `storeTcbIpcState`, `removeRunnable`, `ensureRunnable`.
+- **M-09 (Metadata sync):** Proved `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored` in `Model/State.lean`.
+- **L-06 (Initialization proof):** Proved `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle` showing the empty state satisfies all composed invariants.
+- Updated all canonical documentation: workstream plan, README, SELE4N_SPEC, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX, GitBook chapters (01, 05, 24, 32).
+- Bumped package version to **`0.11.10`**.
+
 ## [0.11.7] - 2026-02-24
 
 ### WS-E1 Test infrastructure and CI hardening (completed)

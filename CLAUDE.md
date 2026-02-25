@@ -4,7 +4,7 @@
 
 seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
 machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.28.0 toolchain, Lake build system, version 0.11.7.
+semantics. Lean 4.28.0 toolchain, Lake build system, version 0.11.10.
 
 ## Build and run
 
@@ -273,10 +273,10 @@ under `docs/` and `docs/gitbook/`.
 ## Active workstream context
 
 - **Active portfolio**: WS-E (v0.11.6 codebase audit remediation)
-- **In progress**: WS-E1 (test infrastructure/CI hardening)
-- **Planned**: WS-E2 (proof quality), WS-E3 (kernel hardening),
-  WS-E4 (capability/IPC completion), WS-E5 (info-flow maturity),
-  WS-E6 (model completeness/docs)
+- **Completed**: WS-E1 (test infrastructure/CI hardening),
+  WS-E2 (proof quality), WS-E3 (kernel hardening)
+- **Current phase**: P3 — WS-E4 (capability/IPC completion)
+- **Planned**: WS-E5 (info-flow maturity), WS-E6 (model completeness/docs)
 - **Completed predecessor**: WS-D1–D4; WS-D5/D6 absorbed into WS-E
 - **Planning backbone**: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
 
