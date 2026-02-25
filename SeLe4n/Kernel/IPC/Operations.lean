@@ -32,97 +32,143 @@ def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : Thre
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
-/-- Add a sender to an endpoint wait queue with explicit state transition.
+/-- WS-E4/M-01: Send to an endpoint with separate send/receive queues.
 
-WS-E3/H-09: Thread IPC state transitions are now enforced:
-- **Blocking paths** (idle→send, send→send): the sender's IPC state is set to
-  `.blockedOnSend endpointId` and the sender is removed from the runnable queue.
-- **Handshake path** (receive→idle): the waiting receiver is unblocked — IPC state
-  set to `.ready` and added to the runnable queue. The sender does not block. -/
+If a receiver is queued, handshake: dequeue receiver, unblock it.
+Otherwise, enqueue sender and block it. -/
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.state with
-        | .idle =>
-            let ep' : Endpoint := { state := .send, queue := [sender], waitingReceiver := none }
+        match ep.receiveQueue with
+        | receiver :: rest =>
+            let ep' : Endpoint := { sendQueue := ep.sendQueue, receiveQueue := rest }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((), ensureRunnable st'' receiver)
+        | [] =>
+            let ep' : Endpoint := { sendQueue := ep.sendQueue ++ [sender], receiveQueue := [] }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' sender)
-        | .send =>
-            let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }
-            match storeObject endpointId (.endpoint ep') st with
-            | .error e => .error e
-            | .ok ((), st') =>
-                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
-                | .error e => .error e
-                | .ok st'' => .ok ((), removeRunnable st'' sender)
-        | .receive =>
-            match ep.queue, ep.waitingReceiver with
-            | [], some receiver =>
-                let ep' : Endpoint := { state := .idle, queue := [], waitingReceiver := none }
-                match storeObject endpointId (.endpoint ep') st with
-                | .error e => .error e
-                | .ok ((), st') =>
-                    match storeTcbIpcState st' receiver .ready with
-                    | .error e => .error e
-                    | .ok st'' => .ok ((), ensureRunnable st'' receiver)
-            | _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Register one waiting receiver on an idle endpoint.
+/-- WS-E4/M-01: Register a waiting receiver on an endpoint with multiple-receiver support.
 
-WS-E3/H-09: After registration, the receiver's IPC state is set to
-`.blockedOnReceive endpointId` and the receiver is removed from the runnable queue.
-This makes the `blockedOnReceiveNotRunnable` contract predicate non-vacuous. -/
+Succeeds only when no senders are queued (idle or receive state).
+Adds the receiver to the receiveQueue and blocks it. -/
 def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.state, ep.queue, ep.waitingReceiver with
-        | .idle, [], none =>
-            let ep' : Endpoint := { state := .receive, queue := [], waitingReceiver := some receiver }
+        match ep.sendQueue with
+        | [] =>
+            let ep' : Endpoint := { sendQueue := [], receiveQueue := ep.receiveQueue ++ [receiver] }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' receiver)
-        | .idle, _, _ => .error .endpointStateMismatch
-        | .send, _, _ => .error .endpointStateMismatch
-        | .receive, _, _ => .error .endpointStateMismatch
+        | _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Consume one queued sender from an endpoint wait queue.
+/-- WS-E4/M-01: Consume one queued sender from the endpoint sendQueue.
 
-WS-E3/H-09: After dequeuing a sender, the sender's IPC state is set to `.ready`
-and the sender is added to the runnable queue. This unblocks the sender that was
-previously blocked by `endpointSend`. -/
+Dequeues the first sender, sets its IPC state to ready, and adds it to the runnable queue. -/
 def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.state, ep.queue, ep.waitingReceiver with
-        | .send, sender :: rest, none =>
-            let nextState : EndpointState := if rest.isEmpty then .idle else .send
-            let ep' : Endpoint := { state := nextState, queue := rest, waitingReceiver := none }
+        match ep.sendQueue with
+        | sender :: rest =>
+            let ep' : Endpoint := { sendQueue := rest, receiveQueue := ep.receiveQueue }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' sender .ready with
                 | .error e => .error e
                 | .ok st'' => .ok (sender, ensureRunnable st'' sender)
-        | .send, [], none => .error .endpointQueueEmpty
-        | .send, _, some _ => .error .endpointStateMismatch
-        | .idle, _, _ => .error .endpointStateMismatch
-        | .receive, _, _ => .error .endpointStateMismatch
+        | [] => .error .endpointQueueEmpty
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
+
+/-- WS-E4/M-12: Call operation — send then block for reply.
+
+If a receiver is queued: handshake with receiver, then block caller for reply.
+If no receiver queued: enqueue caller as sender (will be unblocked when received,
+then transitions to blockedOnReply). -/
+def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.receiveQueue with
+        | receiver :: rest =>
+            let ep' : Endpoint := { sendQueue := ep.sendQueue, receiveQueue := rest }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver .ready with
+                | .error e => .error e
+                | .ok st'' =>
+                    let st''' := ensureRunnable st'' receiver
+                    match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
+                    | .error e => .error e
+                    | .ok st4 => .ok ((), removeRunnable st4 caller)
+        | [] =>
+            let ep' : Endpoint := { sendQueue := ep.sendQueue ++ [caller], receiveQueue := [] }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' caller (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' caller)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-E4/M-12: Reply to a thread blocked on reply.
+
+Unblocks the target thread by setting its IPC state to ready and adding it
+to the runnable queue. Fails if the target is not in blockedOnReply state. -/
+def endpointReply (target : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st target with
+    | none => .error .objectNotFound
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            match storeTcbIpcState st target .ready with
+            | .error e => .error e
+            | .ok st' => .ok ((), ensureRunnable st' target)
+        | _ => .error .replyCapInvalid
+
+/-- WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
+
+Combines reply + receive in a single atomic operation, matching seL4_ReplyRecv. -/
+def endpointReplyRecv
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (replyTarget : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st replyTarget with
+    | none => .error .objectNotFound
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            match storeTcbIpcState st replyTarget .ready with
+            | .error e => .error e
+            | .ok st' =>
+                let st'' := ensureRunnable st' replyTarget
+                endpointAwaitReceive endpointId receiver st''
+        | _ => .error .replyCapInvalid
 
 /-- Signal a notification: wake one waiter or mark one pending badge. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=

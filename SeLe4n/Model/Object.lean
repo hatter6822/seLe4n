@@ -60,7 +60,23 @@ inductive ThreadIpcState where
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
+
+/-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
+
+Models seL4 message registers plus optional capability transfer and sender badge. -/
+structure IpcMessage where
+  registers : List Nat
+  caps : List Capability := []
+  badge : Option SeLe4n.Badge := none
+  deriving Repr, DecidableEq
+
+namespace IpcMessage
+
+def empty : IpcMessage := { registers := [], caps := [], badge := none }
+
+end IpcMessage
 
 structure TCB where
   tid : SeLe4n.ThreadId
@@ -78,11 +94,32 @@ inductive EndpointState where
   | receive
   deriving Repr, DecidableEq
 
+/-- WS-E4/M-01: Endpoint with separate send/receive queues supporting multiple
+concurrent receivers, matching seL4 semantics.
+
+The `EndpointState` is derived from queue occupancy:
+- idle: both queues empty
+- send: sendQueue non-empty (receiveQueue must be empty)
+- receive: receiveQueue non-empty (sendQueue must be empty)
+
+The invariant ensures at most one queue is non-empty at any time. -/
 structure Endpoint where
-  state : EndpointState
-  queue : List SeLe4n.ThreadId
-  waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List SeLe4n.ThreadId
+  receiveQueue : List SeLe4n.ThreadId
   deriving Repr, DecidableEq
+
+namespace Endpoint
+
+/-- Derive the endpoint state from queue contents. -/
+def state (ep : Endpoint) : EndpointState :=
+  if !ep.receiveQueue.isEmpty then .receive
+  else if !ep.sendQueue.isEmpty then .send
+  else .idle
+
+/-- Construct an idle endpoint. -/
+def idle : Endpoint := { sendQueue := [], receiveQueue := [] }
+
+end Endpoint
 
 inductive NotificationState where
   | idle

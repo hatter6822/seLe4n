@@ -232,13 +232,31 @@ private theorem endpointSend_projection_preserved
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hRecvDomain : ∀ ep tid, st.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
+  cases hRecvQ : ep.receiveQueue with
+  | cons receiver rest =>
+    -- Handshake path: dequeue receiver, unblock it, ensureRunnable
+    have hRecvMem : receiver ∈ ep.receiveQueue := by simp [hRecvQ]
+    have hRecvHigh := hRecvDomain ep receiver hObj hRecvMem
+    have hRecvObjHigh := hCoherent receiver hRecvHigh
+    simp [endpointSend, hObj, hRecvQ] at hStep; revert hStep
+    cases hStore : storeObject endpointId _ st with
+    | error e => simp
+    | ok pair =>
+      simp only []
+      cases hTcb : storeTcbIpcState pair.2 receiver _ with
+      | error e => simp
+      | ok st2 =>
+        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+        rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
+            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 receiver _ hRecvObjHigh hTcb,
+            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
+  | nil =>
+    -- Blocking path: enqueue sender, block it, removeRunnable
+    simp [endpointSend, hObj, hRecvQ] at hStep; revert hStep
     cases hStore : storeObject endpointId _ st with
     | error e => simp
     | ok pair =>
@@ -250,37 +268,6 @@ private theorem endpointSend_projection_preserved
         rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
             storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
             storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | send =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
-            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
-            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | receive =>
-    simp [endpointSend, hObj, hState] at hStep
-    cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
-    case nil.some receiver =>
-      have hRecvHigh := hRecvDomain ep receiver hObj hWait
-      have hRecvObjHigh := hCoherent receiver hRecvHigh
-      revert hStep
-      cases hStore : storeObject endpointId _ st with
-      | error e => simp
-      | ok pair =>
-        simp only []
-        cases hTcb : storeTcbIpcState pair.2 receiver _ with
-        | error e => simp
-        | ok st2 =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
-              storeTcbIpcState_preserves_projection ctx observer pair.2 st2 receiver _ hRecvObjHigh hTcb,
-              storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
 
 -- ============================================================================
 -- Non-interference theorem #1: endpointSend (existing, retained)
@@ -309,9 +296,9 @@ theorem endpointSend_preserves_lowEquivalent
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hRecvDomain₁ : ∀ ep tid, s₁.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
     (hRecvDomain₂ : ∀ ep tid, s₂.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
     (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
     (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by

@@ -48,7 +48,7 @@ IPC-02    | critical | handshake send matched waiting receiver
 IPC-03    | high     | queued two senders on endpoint
 IPC-04    | high     | endpoint receive #1 sender: 1
 IPC-05    | high     | endpoint receive #2 sender: 2
-IPC-06    | high     | endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
+IPC-06    | high     | endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointQueueEmpty
 IPC-07    | high     | notification wait #1 result: none
 IPC-08    | high     | notification wait #2 result: some { val := 123 }
 CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]

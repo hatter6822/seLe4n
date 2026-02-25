@@ -21,6 +21,8 @@ inductive KernelError where
   | alreadyWaiting
   | cyclicDependency
   | notImplemented
+  | slotOccupied
+  | replyCapInvalid
   deriving Repr, DecidableEq
 
 structure SchedulerState where
@@ -34,10 +36,40 @@ structure SlotRef where
   slot : SeLe4n.Slot
   deriving Repr, DecidableEq
 
-/-- Lifecycle metadata required by the first M4-A transition story.
+/-- WS-E4/C-03: Capability Derivation Tree (CDT) edge.
 
-`objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
-named by each populated capability slot reference. -/
+Models the parent→child derivation relationship used by seL4 for revocation
+traversal. Each populated slot may have at most one parent (the slot from which
+it was derived via mint/copy). -/
+structure CdtEdge where
+  parent : SlotRef
+  deriving Repr, DecidableEq
+
+/-- WS-E4/C-03: The Capability Derivation Tree maps each slot to its optional
+parent derivation. This enables cross-CNode revocation by traversal. -/
+structure CapDerivationTree where
+  parentOf : SlotRef → Option SlotRef
+  deriving Inhabited
+
+namespace CapDerivationTree
+
+def empty : CapDerivationTree := { parentOf := fun _ => none }
+
+/-- Record a derivation edge: child was derived from parent. -/
+def addEdge (cdt : CapDerivationTree) (child parent : SlotRef) : CapDerivationTree :=
+  { parentOf := fun ref => if ref = child then some parent else cdt.parentOf ref }
+
+/-- Remove a derivation edge (e.g., on slot delete). -/
+def removeEdge (cdt : CapDerivationTree) (child : SlotRef) : CapDerivationTree :=
+  { parentOf := fun ref => if ref = child then none else cdt.parentOf ref }
+
+/-- Collect all children of a given parent slot (bounded search over known slots). -/
+def childrenOf (cdt : CapDerivationTree) (parent : SlotRef) (knownSlots : List SlotRef) : List SlotRef :=
+  knownSlots.filter (fun ref => cdt.parentOf ref = some parent)
+
+end CapDerivationTree
+
+/-- Lifecycle metadata for object-type and capability-reference tracking. -/
 structure LifecycleMetadata where
   objectTypes : SeLe4n.ObjId → Option KernelObjectType
   capabilityRefs : SlotRef → Option CapTarget
@@ -50,6 +82,7 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  cdt : CapDerivationTree := .empty
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +102,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    cdt := .empty
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError

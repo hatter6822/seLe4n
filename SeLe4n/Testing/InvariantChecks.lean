@@ -5,15 +5,14 @@ open SeLe4n.Model
 namespace SeLe4n.Testing
 
 private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
-  match ep.state with
-  | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
+  -- WS-E4/M-01: With separate send/receive queues, at most one queue may be
+  -- non-empty at any time (mutual exclusion invariant).
+  ep.sendQueue.isEmpty || ep.receiveQueue.isEmpty
 
-private def endpointObjectValidB (ep : Endpoint) : Bool :=
-  match ep.waitingReceiver with
-  | none => ep.state != .receive
-  | some _ => ep.state == .receive
+private def endpointObjectValidB (_ep : Endpoint) : Bool :=
+  -- WS-E4/M-01: With the dual-queue model, the old waitingReceiver/state
+  -- coherence check is subsumed by endpointQueueWellFormedB above.
+  true
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with

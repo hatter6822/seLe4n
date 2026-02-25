@@ -24,7 +24,7 @@ private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := gua
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject endpointId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject endpointId (.endpoint { sendQueue := [], receiveQueue := [] })
     |>.withObject cnodeId (.cnode {
       guard := 0
       radix := 0
@@ -36,7 +36,7 @@ private def baseState : SystemState :=
         })
       ]
     })
-    |>.withObject wrongTypeId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject wrongTypeId (.endpoint { sendQueue := [], receiveQueue := [] })
     |>.withObject guardedCnodeId (.cnode {
       guard := 1
       radix := 2
@@ -87,7 +87,7 @@ private def sendEmptyEndpointState : SystemState :=
   { baseState with
     objects := fun oid =>
       if oid = sendEmptyEndpointId then
-        some (.endpoint { state := .send, queue := [], waitingReceiver := none })
+        some (.endpoint { sendQueue := [⟨99⟩], receiveQueue := [] })
       else
         baseState.objects oid
   }
@@ -144,13 +144,13 @@ private def runNegativeChecks : IO Unit := do
     .invalidCapability
 
 
-  expectError "endpoint receive idle-state mismatch"
+  expectError "endpoint receive empty sendQueue"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)
-    .endpointStateMismatch
-
-  expectError "endpoint receive send-state empty queue"
-    (SeLe4n.Kernel.endpointReceive sendEmptyEndpointId sendEmptyEndpointState)
     .endpointQueueEmpty
+
+  expectError "endpoint receive wrong object type"
+    (SeLe4n.Kernel.endpointReceive cnodeId baseState)
+    .invalidCapability
 
   expectError "vspace lookup missing asid"
     (SeLe4n.Kernel.Architecture.vspaceLookup 99 vaddrPrimary baseState)
@@ -174,7 +174,7 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary stMapped)
     .mappingConflict
 
-  let (_, stAwait) ← expectOkState "await receive handshake seed"
+  let (_, _stAwait) ← expectOkState "await receive handshake seed"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
   -- F-03 fix: Notification wait — consistently check TCB ipcState across ALL variants
@@ -250,8 +250,8 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
 
-  expectError "await receive second waiter mismatch"
-    (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
+  expectError "await receive with senders queued"
+    (SeLe4n.Kernel.endpointAwaitReceive sendEmptyEndpointId (SeLe4n.ThreadId.ofNat 8) sendEmptyEndpointState)
     .endpointStateMismatch
 
   let schedPriorityState : SystemState :=

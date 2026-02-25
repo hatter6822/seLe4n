@@ -289,8 +289,8 @@ WS-E4 (CDT integration for capability flow proofs).
   update documentation to reflect v0.11.6 audit (**completed**).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
-- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**current phase**).
-- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
+- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
+- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4 (**current phase**).
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
 
 ---
@@ -302,7 +302,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
-| WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
+| WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 

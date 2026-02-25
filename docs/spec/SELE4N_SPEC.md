@@ -100,7 +100,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.3 Critical — Model Completion
 
-- **WS-E4:** Capability and IPC model completion (critical; **planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4:** Capability and IPC model completion (critical; **completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 
 ### 4.4 High — Security Assurance
 
@@ -129,8 +129,8 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 - **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**completed**)
 - **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **current**
-- **Phase P4:** WS-E5 (information-flow maturity)
+- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
+- **Phase P4:** WS-E5 (information-flow maturity) — **current**
 - **Phase P5:** WS-E6 (model completeness/docs)
 
 ---
