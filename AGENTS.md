@@ -1,0 +1,335 @@
+# AGENTS.md — seLe4n project guidance
+
+## What this project is
+
+seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
+machine-checked proofs of invariant preservation over executable transition
+semantics. Lean 4.28.0 toolchain, Lake build system, version 0.11.10.
+
+## Build and run
+
+```bash
+# Environment setup (runs automatically via SessionStart hook)
+./scripts/setup_lean_env.sh --build
+
+# Manual build
+source ~/.elan/env && lake build
+
+# Run executable trace harness
+lake exe sele4n
+```
+
+## Validation commands (tiered)
+
+```bash
+./scripts/test_fast.sh      # Tier 0+1: hygiene + build
+./scripts/test_smoke.sh     # Tier 0-2: + trace + negative-state
+./scripts/test_full.sh      # Tier 0-3: + invariant/doc anchors
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
+```
+
+Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
+theorems, invariants, or documentation anchors.
+
+## Source layout
+
+```
+SeLe4n/Prelude.lean              Typed identifiers, monad foundations
+SeLe4n/Machine.lean              Machine state primitives
+SeLe4n/Model/Object.lean         Kernel objects and data structures
+SeLe4n/Model/State.lean          Kernel/system state representation
+SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
+SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
+SeLe4n/Kernel/IPC/*              Endpoint/notification IPC + invariants
+SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
+SeLe4n/Kernel/Service/*          Service orchestration + policy
+SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace
+SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
+SeLe4n/Kernel/API.lean           Public kernel interface
+SeLe4n/Testing/*                 Test harness, state builder, fixtures
+Main.lean                        Executable entry point
+tests/                           Executable test suites + fixtures
+```
+
+## Reading large files
+
+Several files in this repo exceed 500 lines (invariant suites, audit plans,
+specs). When reading any file, always use `offset` and `limit` parameters to
+read in chunks rather than attempting the entire file at once:
+
+```
+Read(file_path, offset=1,   limit=500)   # lines 1-500
+Read(file_path, offset=501, limit=500)   # lines 501-1000
+```
+
+**Known large files** (read in ≤500-line chunks):
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~1467 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~1403 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~974 lines)
+- `docs/spec/SEL4_SPEC.md` (~751 lines)
+- `SeLe4n/Kernel/IPC/Operations.lean` (~686 lines)
+- `SeLe4n/Model/State.lean` (~577 lines)
+- `scripts/test_tier3_invariant_surface.sh` (~533 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~532 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~531 lines)
+- `SeLe4n/Model/Object.lean` (~514 lines)
+- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)
+
+When editing large files, read the specific region around the target lines
+first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
+context-window pressure and "file too large" errors.
+
+## Writing and editing large files
+
+The Write tool replaces an entire file in one call. For files over ~100 lines
+this is error-prone: the tool call **times out**, content gets silently
+truncated, sections are accidentally dropped, and the context window fills up.
+**Prefer the Edit tool for all changes to existing files**, regardless of size.
+
+**Hard limit — Write tool timeout prevention:**
+
+The Write tool will time out if the inline content is too large. To avoid this:
+
+- **Never pass more than 100 lines of content in a single Write call.** Files
+  at or above this threshold must be built incrementally (skeleton + Edit
+  appends) or written via Bash `cat <<'HEREDOC'` to a file.
+- **For existing files, never use Write at all.** Always use Edit with targeted
+  `old_string`/`new_string` pairs. Edit calls do not carry the full file
+  content and therefore do not time out.
+- **If a Write call times out or fails**, do not retry with the same large
+  content. Switch to the incremental approach below.
+
+**Rules for large-file changes:**
+
+1. **Never rewrite a large file with Write.** Use Edit with a precise
+   `old_string`/`new_string` pair targeting only the lines that change. This is
+   safer, faster, and avoids timeouts.
+2. **One logical change per Edit call.** If you need to change three separate
+   functions, make three Edit calls rather than one giant replacement that spans
+   the whole file.
+3. **Read before you edit.** Always Read the specific region first
+   (e.g., `offset=350, limit=50`) so the `old_string` matches exactly,
+   including indentation and whitespace.
+4. **Adding large new sections.** If you must insert more than ~80 new lines
+   into an existing file, break the insertion into multiple sequential Edit
+   calls (each ≤80 lines), anchoring each one to context already present in the
+   file.
+5. **Creating new large files.** When a new file must exceed ~100 lines, build
+   it incrementally:
+   - Write an initial skeleton (imports, structure, first section) with Write,
+     keeping the content **under 100 lines**.
+   - Use successive Edit calls to append remaining sections, using the end of
+     the previously written content as the `old_string` anchor.
+   - Each Edit append should add no more than ~80 lines at a time.
+   - Verify the final line count with `wc -l` via Bash.
+   - **Alternative**: use Bash with a heredoc to write the full file in one
+     shot (`cat <<'EOF' > path/to/file.lean`). Bash does not have the same
+     content-size timeout as the Write tool.
+6. **Post-write verification.** After any large write or series of edits, spot-
+   check the result by reading the modified region (and the file's last few
+   lines) to confirm nothing was truncated or duplicated.
+
+**Example — appending a new theorem block to an invariant file:**
+
+```
+# Step 1: Read the anchor region at the end of the file
+Read("SeLe4n/Kernel/Capability/Invariant.lean", offset=880, limit=20)
+
+# Step 2: Edit using the last lines as old_string, appending new content
+Edit(file_path="SeLe4n/Kernel/Capability/Invariant.lean",
+     old_string="<last 2-3 lines of file>",
+     new_string="<those same lines>\n<new theorem block>")
+
+# Step 3: Verify
+Bash("wc -l SeLe4n/Kernel/Capability/Invariant.lean")
+```
+
+**Example — creating a new 300-line file without timing out:**
+
+```
+# Step 1: Write skeleton (under 100 lines)
+Write("SeLe4n/Kernel/NewModule/Operations.lean", "<imports + first ~80 lines>")
+
+# Step 2: Append next section via Edit
+Edit(file_path="SeLe4n/Kernel/NewModule/Operations.lean",
+     old_string="<last 2-3 lines from step 1>",
+     new_string="<those same lines>\n<next ~80 lines>")
+
+# Step 3: Repeat Edit appends until complete
+
+# Step 4: Verify
+Bash("wc -l SeLe4n/Kernel/NewModule/Operations.lean")
+```
+
+## Handling large search and command output
+
+Grep and other search tools can return oversized results in this codebase.
+Always constrain output to avoid truncation and context-window pressure:
+
+- **Grep**: Use `head_limit` to cap results (e.g., `head_limit=30`). If more
+  results exist, paginate with `offset` (e.g., `offset=30, head_limit=30` for
+  the next batch). Prefer `output_mode: "files_with_matches"` first to identify
+  relevant files, then switch to `output_mode: "content"` on specific files.
+- **Glob**: Use `path` to narrow the search directory instead of searching the
+  entire repo. If results are numerous, combine with Grep on specific matches.
+- **Bash commands** (`lake build`, test scripts, etc.): Pipe through `head` or
+  `tail` when output may be large (e.g., `lake build 2>&1 | tail -80`). For
+  very large output, redirect to a temp file and read in chunks:
+  ```bash
+  lake build 2>&1 > /tmp/build.log
+  ```
+  Then use `Read("/tmp/build.log", offset=1, limit=500)` to page through it.
+
+**Rule of thumb**: if a command or search might return more than ~100 lines,
+limit it upfront. Paginate through results rather than requesting everything
+at once.
+
+## Background agent file-change protection
+
+Background agents (launched via the Task tool with `run_in_background: true`)
+run concurrently and may finish after the foreground agent has already modified
+the same files. When this happens the background agent's stale writes silently
+overwrite the foreground agent's progress. **You must prevent this.**
+
+**Rules:**
+
+1. **Never delegate file writes to a background agent for files you may also
+   edit.** Before launching a background agent, identify every file it might
+   create or modify. If there is any chance the foreground agent (you) will
+   touch the same file while the background agent runs, do **not** run that
+   agent in the background — run it in the foreground instead, or restructure
+   the work so there is no file overlap.
+2. **Partition files strictly.** When parallel work is genuinely needed, assign
+   each agent a disjoint set of files. Document the partition in your task
+   prompt to the background agent (e.g., "You own `Foo.lean` and `Bar.lean`
+   only — do not modify any other file"). The foreground agent must not touch
+   those files until the background agent completes.
+3. **Use background agents only for read-only or independent-file tasks.** Safe
+   uses include: running builds/tests, searching the codebase, reading files
+   for research, or writing to files that the foreground agent will never edit
+   during this session. Unsafe uses include: editing shared source files,
+   modifying configuration files, or any task where the output files overlap
+   with foreground work.
+4. **Check background results before acting on shared state.** When a background
+   agent finishes, read its output and verify whether it touched any files. If
+   it wrote to a file you have since modified, discard the background agent's
+   version and redo that work on top of your current file state.
+5. **When in doubt, run in foreground.** The performance benefit of background
+   execution is never worth the risk of silently lost work. Prefer sequential
+   correctness over parallel speed.
+
+**Example — safe background usage:**
+
+```
+# Background agent runs tests (read-only, no file writes)
+Task(subagent_type="Bash", run_in_background=true,
+     prompt="Run ./scripts/test_smoke.sh and report results")
+
+# Meanwhile, foreground edits Operations.lean — no conflict
+Edit("SeLe4n/Kernel/Scheduler/Operations.lean", ...)
+```
+
+**Example — unsafe pattern to avoid:**
+
+```
+# WRONG: background agent will edit Invariant.lean
+Task(subagent_type="general-purpose", run_in_background=true,
+     prompt="Add theorem X to Invariant.lean")
+
+# Foreground also edits Invariant.lean — background will overwrite!
+Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
+```
+
+## Key conventions
+
+- **Invariant/Operations split**: each kernel subsystem has `Operations.lean`
+  (transitions) and `Invariant.lean` (proofs). Keep this separation.
+- **No axiom/sorry**: forbidden in production proof surface. Tracked exceptions
+  must carry a `TPI-D*` annotation.
+- **Deterministic semantics**: all transitions return explicit success/failure.
+  Never introduce non-deterministic branches.
+- **Fixture-backed evidence**: `Main.lean` output must match
+  `tests/fixtures/main_trace_smoke.expected`. Update fixture only with rationale.
+- **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId`, etc.
+  are wrapper structures, not `Nat` aliases. Use explicit `.toNat`/`.ofNat`.
+
+## Documentation rules
+
+When changing behavior, theorems, or workstream status, update in the same PR:
+1. `README.md`
+2. `docs/spec/SELE4N_SPEC.md`
+3. `docs/DEVELOPMENT.md`
+4. Affected GitBook chapter(s) — canonical root docs take priority over GitBook
+5. `docs/CLAIM_EVIDENCE_INDEX.md` if claims change
+
+Canonical ownership: root `docs/` files own policy/spec text. GitBook chapters
+under `docs/gitbook/` are mirrors that summarize and link to canonical sources.
+
+## Ignoring dev_history
+
+The `docs/dev_history/` directory contains milestone closeouts, prior audit reports
+(v0.8.0–v0.9.32), completed workstream plans, and legacy GitBook chapters
+retained only for historical traceability. **Do not read or reference files in
+`docs/dev_history/` unless explicitly instructed.** All active documentation lives
+under `docs/` and `docs/gitbook/`.
+
+## Active workstream context
+
+- **Active portfolio**: WS-E (v0.11.6 codebase audit remediation)
+- **Completed**: WS-E1 (test infrastructure/CI hardening),
+  WS-E2 (proof quality), WS-E3 (kernel hardening)
+- **Current phase**: P3 — WS-E4 (capability/IPC completion)
+- **Planned**: WS-E5 (info-flow maturity), WS-E6 (model completeness/docs)
+- **Completed predecessor**: WS-D1–D4; WS-D5/D6 absorbed into WS-E
+- **Planning backbone**: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
+
+## PR checklist
+
+- [ ] Workstream ID identified
+- [ ] Scope is one coherent slice
+- [ ] Transitions are explicit and deterministic
+- [ ] Invariant/theorem updates paired with implementation
+- [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem changes
+- [ ] Documentation synchronized
+
+## Vulnerability reporting
+
+While executing any task in this codebase, if you discover a possible software
+vulnerability that could reasonably warrant a CVE (Common Vulnerabilities and
+Exposures) designation, you **must** immediately report it to the user before
+continuing. This applies to vulnerabilities found in:
+
+- **This project's code** — logic errors in transition semantics, capability
+  checks, information-flow enforcement, or any other component that could lead
+  to privilege escalation, information leakage, denial of service, or violation
+  of security invariants.
+- **Dependencies and toolchain** — known or suspected vulnerabilities in Lean,
+  Lake, elan, or any vendored/imported library encountered during builds,
+  updates, or code review.
+- **Build and CI infrastructure** — insecure script patterns (e.g., command
+  injection in shell scripts, unsafe file permissions, unvalidated inputs in
+  test harnesses) that could be exploited in a development or CI environment.
+- **Model/specification gaps** — cases where the formal model fails to capture
+  a security-relevant behavior of the real seL4 kernel, creating a false
+  assurance gap that could mask a real-world vulnerability.
+
+**What to report:**
+
+1. **Summary** — a concise description of the vulnerability.
+2. **Location** — file path(s) and line number(s) where the issue exists.
+3. **Severity estimate** — your assessment of impact (Critical / High / Medium
+   / Low) and exploitability.
+4. **Reproduction or evidence** — how the issue manifests or could be triggered.
+5. **Suggested remediation** — if apparent, a recommended fix or mitigation.
+
+**How to report:**
+
+- Stop current work and surface the finding in your response immediately.
+- Do **not** silently fix a CVE-worthy vulnerability — always flag it explicitly
+  so it can be tracked, triaged, and disclosed appropriately.
+- If the vulnerability is in a third-party dependency, note whether an upstream
+  advisory already exists.
+
+This requirement applies regardless of whether the vulnerability is directly
+related to the current task. Vigilance during routine work is one of the most
+effective ways to catch security issues early.
