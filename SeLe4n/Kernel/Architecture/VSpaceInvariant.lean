@@ -40,7 +40,10 @@ def vspaceRootNonOverlap (st : SystemState) : Prop :=
     st.objects oid = some (.vspaceRoot root) →
     VSpaceRoot.noVirtualOverlap root
 
-/-- Bounded translation surface: all translated physical addresses are in the finite machine window. -/
+/-- Bounded translation surface: all translated physical addresses are in the finite machine window.
+
+**Status:** Forward declaration for WS-E6 (model completeness). Not yet integrated into
+`vspaceInvariantBundle` or consumed by any preservation theorem. -/
 def boundedAddressTranslation (st : SystemState) (bound : Nat) : Prop :=
   ∀ oid root v p,
     st.objects oid = some (.vspaceRoot root) →

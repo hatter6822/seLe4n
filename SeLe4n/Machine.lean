@@ -47,4 +47,53 @@ def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
 def tick (ms : MachineState) : MachineState :=
   { ms with timer := ms.timer + 1 }
 
+-- ============================================================================
+-- Register read-after-write and frame lemmas (WS-E4 preparation)
+-- ============================================================================
+
+theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : RegValue) :
+    readReg (writeReg rf r v) r = v := by
+  simp [readReg, writeReg]
+
+theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : RegValue)
+    (hNe : r' ≠ r) :
+    readReg (writeReg rf r v) r' = readReg rf r' := by
+  simp [readReg, writeReg, hNe]
+
+theorem readMem_writeMem_eq (ms : MachineState) (addr : PAddr) (value : UInt8) :
+    readMem (writeMem ms addr value) addr = value := by
+  simp [readMem, writeMem]
+
+theorem readMem_writeMem_ne (ms : MachineState) (addr addr' : PAddr) (value : UInt8)
+    (hNe : addr' ≠ addr) :
+    readMem (writeMem ms addr value) addr' = readMem ms addr' := by
+  simp [readMem, writeMem, hNe]
+
+theorem writeReg_preserves_pc (rf : RegisterFile) (r : RegName) (v : RegValue) :
+    (writeReg rf r v).pc = rf.pc := rfl
+
+theorem writeReg_preserves_sp (rf : RegisterFile) (r : RegName) (v : RegValue) :
+    (writeReg rf r v).sp = rf.sp := rfl
+
+theorem writeMem_preserves_regs (ms : MachineState) (addr : PAddr) (value : UInt8) :
+    (writeMem ms addr value).regs = ms.regs := rfl
+
+theorem writeMem_preserves_timer (ms : MachineState) (addr : PAddr) (value : UInt8) :
+    (writeMem ms addr value).timer = ms.timer := rfl
+
+theorem setPC_preserves_memory (ms : MachineState) (pc : RegValue) :
+    (setPC ms pc).memory = ms.memory := rfl
+
+theorem setPC_preserves_timer (ms : MachineState) (pc : RegValue) :
+    (setPC ms pc).timer = ms.timer := rfl
+
+theorem tick_preserves_regs (ms : MachineState) :
+    (tick ms).regs = ms.regs := rfl
+
+theorem tick_preserves_memory (ms : MachineState) :
+    (tick ms).memory = ms.memory := rfl
+
+theorem tick_timer_succ (ms : MachineState) :
+    (tick ms).timer = ms.timer + 1 := rfl
+
 end SeLe4n

@@ -169,6 +169,9 @@ instance : ToString ServiceId where
 /-- H-06/WS-E3: ID 0 is the reserved sentinel value. -/
 @[inline] def isReserved (id : ServiceId) : Bool := id.val = 0
 
+/-- H-06/WS-E3: The sentinel ServiceId (value 0). -/
+@[inline] def sentinel : ServiceId := ⟨0⟩
+
 end ServiceId
 
 /-- Capability-space pointer value. -/
@@ -189,6 +192,17 @@ instance instOfNat (n : Nat) : OfNat CPtr n where
 
 instance : ToString CPtr where
   toString ptr := toString ptr.toNat
+
+/-- WS-E4 preparation: CPtr 0 corresponds to seL4_CapNull (null capability pointer).
+    Sentinel infrastructure parallels ObjId/ThreadId/ServiceId. -/
+@[inline] def isReserved (ptr : CPtr) : Bool := ptr.val = 0
+
+/-- The null capability pointer (CPtr 0), analogous to seL4_CapNull. -/
+@[inline] def sentinel : CPtr := ⟨0⟩
+
+theorem default_eq_sentinel : (default : CPtr) = CPtr.sentinel := rfl
+
+theorem sentinel_isReserved : CPtr.sentinel.isReserved = true := rfl
 
 end CPtr
 
@@ -337,5 +351,11 @@ theorem ThreadId.sentinel_isReserved : ThreadId.sentinel.isReserved = true := rf
 theorem ObjId.valid_iff_not_reserved (id : ObjId) :
     id.valid ↔ id.isReserved = false := by
   simp [ObjId.valid, ObjId.isReserved]
+
+/-- The default `ServiceId` is the reserved sentinel (value 0). -/
+theorem ServiceId.default_eq_sentinel : (default : ServiceId) = ServiceId.sentinel := rfl
+
+/-- The sentinel ServiceId is reserved. -/
+theorem ServiceId.sentinel_isReserved : ServiceId.sentinel.isReserved = true := rfl
 
 end SeLe4n
