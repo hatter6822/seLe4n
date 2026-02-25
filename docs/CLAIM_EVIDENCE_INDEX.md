@@ -7,11 +7,11 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2, WS-E3, WS-E4 completed; WS-E5, WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
-| IPC/scheduler/capability/info-flow invariants remain in active proof surface. | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh` | Direct symbol + theorem + doc anchor checks. |
+| IPC/scheduler/capability/info-flow invariants remain in active proof surface. Endpoint model uses dual-queue semantics (`sendQueue`/`receiveQueue`) with message payloads, reply capabilities, CDT tracking, slot overwrite guards, and IPC-scheduler contract predicates (`ipcSchedulerContractPredicates` — 4-predicate bundle with preservation theorems for all endpoint operations). | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh` | Direct symbol + theorem + doc anchor checks. |
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
 
 ## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
@@ -46,6 +46,18 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
+
+## Resolved findings (WS-E4: Capability and IPC model completion)
+
+| Finding | Prior state | Resolution |
+|---|---|---|
+| C-02 (Dual-queue endpoint model) | 3-state endpoint model (`state`/`queue`/`waitingReceiver`) | Replaced with dual-queue model (`sendQueue : List (ThreadId × MessagePayload)`, `receiveQueue : List ThreadId`). At most one queue non-empty. |
+| C-03 (Message payloads) | No payload in IPC operations | `endpointSend` carries `MessagePayload`; `endpointAwaitReceive` returns `Option (ThreadId × MessagePayload)`; `endpointReceive` returns `ThreadId × MessagePayload`. |
+| C-04 (Reply capabilities) | No reply cap modeling | Added `CapTarget.replyCap` variant, `ThreadIpcState.blockedOnReply`, `endpointReply`/`endpointCall` operations, `blockedOnReplyNotRunnable` predicate. |
+| H-02 (Slot overwrite guard) | `cspaceInsertSlot` overwrites silently | `cspaceInsertSlot` checks slot occupancy, returns `.slotOccupied` error if occupied. |
+| M-01 (CDT cleanup) | No CDT tracking in delete/revoke | `cspaceDeleteSlot`/`cspaceRevoke` include CDT cleanup; `cspaceMintWithCdt` tracks derivation edges. |
+| M-02 (IPC-scheduler contract) | No combined IPC-scheduler predicate | Added `ipcSchedulerContractPredicates` (4-predicate bundle) with preservation theorems for all endpoint operations. |
+| M-12 (Invariant bundle preservation) | Bundles not verified through new ops | All invariant bundles preserved through dual-queue model. Zero sorry/axiom. |
 
 ## Update policy
 

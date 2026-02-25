@@ -24,7 +24,7 @@ private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := gua
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject endpointId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject endpointId (.endpoint { sendQueue := [], receiveQueue := [] })
     |>.withObject cnodeId (.cnode {
       guard := 0
       radix := 0
@@ -36,7 +36,7 @@ private def baseState : SystemState :=
         })
       ]
     })
-    |>.withObject wrongTypeId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject wrongTypeId (.endpoint { sendQueue := [], receiveQueue := [] })
     |>.withObject guardedCnodeId (.cnode {
       guard := 1
       radix := 2
@@ -87,7 +87,7 @@ private def sendEmptyEndpointState : SystemState :=
   { baseState with
     objects := fun oid =>
       if oid = sendEmptyEndpointId then
-        some (.endpoint { state := .send, queue := [], waitingReceiver := none })
+        some (.endpoint { sendQueue := [], receiveQueue := [] })
       else
         baseState.objects oid
   }
@@ -144,11 +144,11 @@ private def runNegativeChecks : IO Unit := do
     .invalidCapability
 
 
-  expectError "endpoint receive idle-state mismatch"
+  expectError "endpoint receive empty queue"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)
-    .endpointStateMismatch
+    .endpointQueueEmpty
 
-  expectError "endpoint receive send-state empty queue"
+  expectError "endpoint receive empty queue (alternate)"
     (SeLe4n.Kernel.endpointReceive sendEmptyEndpointId sendEmptyEndpointState)
     .endpointQueueEmpty
 
@@ -250,9 +250,11 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
 
-  expectError "await receive second waiter mismatch"
-    (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
-    .endpointStateMismatch
+  -- In the dual-queue model, multiple receivers can queue (no state mismatch).
+  -- Instead test sending to a non-endpoint object.
+  expectError "send to non-endpoint object"
+    (SeLe4n.Kernel.endpointSend cnodeId (SeLe4n.ThreadId.ofNat 8) .empty baseState)
+    .invalidCapability
 
   let schedPriorityState : SystemState :=
     (BootstrapBuilder.empty

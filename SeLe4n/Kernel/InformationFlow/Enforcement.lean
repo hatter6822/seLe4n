@@ -42,12 +42,13 @@ Returns `flowDenied` when `securityFlowsTo senderLabel endpointLabel = false`. -
 def endpointSendChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) : Kernel Unit :=
+    (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload := .empty) : Kernel Unit :=
   fun st =>
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     if securityFlowsTo senderLabel endpointLabel then
-      endpointSend endpointId sender st
+      endpointSend endpointId sender msg st
     else
       .error .flowDenied
 
@@ -98,11 +99,12 @@ theorem endpointSendChecked_eq_endpointSend_when_allowed
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
-    endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
+    endpointSendChecked ctx endpointId sender msg st =
+      endpointSend endpointId sender msg st := by
   unfold endpointSendChecked
   simp [hFlow]
 
@@ -112,10 +114,11 @@ theorem endpointSendChecked_flowDenied
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
-    endpointSendChecked ctx endpointId sender st =
+    endpointSendChecked ctx endpointId sender msg st =
       .error .flowDenied := by
   unfold endpointSendChecked
   simp [hDeny]
@@ -185,10 +188,11 @@ theorem endpointSendChecked_self_domain_allowed
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (st : SystemState)
     (hSameLabel : ctx.threadLabelOf sender = ctx.endpointLabelOf endpointId) :
-    endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
+    endpointSendChecked ctx endpointId sender msg st =
+      endpointSend endpointId sender msg st := by
   apply endpointSendChecked_eq_endpointSend_when_allowed
   rw [hSameLabel]
   exact securityFlowsTo_refl _

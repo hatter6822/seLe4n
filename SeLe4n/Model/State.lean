@@ -21,6 +21,8 @@ inductive KernelError where
   | alreadyWaiting
   | cyclicDependency
   | notImplemented
+  | slotOccupied          -- WS-E4/H-02: target slot already has a capability
+  | threadNotBlocked      -- WS-E4/M-12: reply target is not blocked on reply
   deriving Repr, DecidableEq
 
 structure SchedulerState where
@@ -50,6 +52,7 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  cdt : CapDerivationTree := .empty   -- WS-E4/C-03: Capability derivation tree
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +72,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    cdt := .empty
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -219,6 +223,16 @@ theorem storeObject_preserves_services
   cases hStore
   rfl
 
+theorem storeObject_preserves_cdt
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
 theorem storeCapabilityRef_preserves_scheduler
     (st st' : SystemState)
     (ref : SlotRef)
@@ -247,6 +261,17 @@ theorem storeCapabilityRef_preserves_objects
     (target : Option CapTarget)
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.objects = st.objects := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
+
+theorem storeCapabilityRef_preserves_cdt
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
   unfold storeCapabilityRef at hStep
   simp at hStep
   cases hStep

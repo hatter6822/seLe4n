@@ -5,15 +5,12 @@ open SeLe4n.Model
 namespace SeLe4n.Testing
 
 private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
-  match ep.state with
-  | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
+  -- Dual-queue invariant: at most one of sendQueue/receiveQueue is non-empty
+  ep.sendQueue.isEmpty || ep.receiveQueue.isEmpty
 
-private def endpointObjectValidB (ep : Endpoint) : Bool :=
-  match ep.waitingReceiver with
-  | none => ep.state != .receive
-  | some _ => ep.state == .receive
+private def endpointObjectValidB (_ep : Endpoint) : Bool :=
+  -- With the dual-queue model, validity is fully captured by the queue well-formedness check
+  true
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
@@ -47,6 +44,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
           let ok := match cap.target with
             | .object targetId => (st.objects targetId).isSome
             | .cnodeSlot cnId _ => (st.objects cnId).isSome
+            | .replyCap tid => (st.objects tid.toObjId).isSome
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner) acc
     | _ => acc) []
 

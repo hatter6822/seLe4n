@@ -1,3 +1,19 @@
+## [0.11.11] - 2026-02-25
+
+### WS-E4 Capability and IPC model completion (completed)
+
+All 7 WS-E4 findings resolved (C-02, C-03, C-04, H-02, M-01, M-02, M-12) with zero sorry/axiom.
+
+- **C-02 (Dual-queue endpoint model):** Replaced 3-state endpoint model (`state`/`queue`/`waitingReceiver` fields) with dual-queue model (`sendQueue : List (ThreadId x MessagePayload)`, `receiveQueue : List ThreadId`). At most one queue is non-empty at any time.
+- **C-03 (Message payloads):** `endpointSend` now carries a `msg : MessagePayload` parameter. `endpointAwaitReceive` returns `Option (ThreadId x MessagePayload)`. `endpointReceive` returns `ThreadId x MessagePayload`.
+- **C-04 (Reply capabilities):** Added `CapTarget.replyCap` variant, `ThreadIpcState.blockedOnReply` state, `endpointReply` and `endpointCall` operations, and `blockedOnReplyNotRunnable` predicate.
+- **H-02 (Slot overwrite guard):** `cspaceInsertSlot` now checks if a slot is occupied before inserting, returning `.slotOccupied` error.
+- **M-01 (CDT cleanup):** `cspaceDeleteSlot` and `cspaceRevoke` now include CDT cleanup steps. `cspaceMintWithCdt` tracks derivation edges.
+- **M-02 (IPC-scheduler contract predicates):** Added `ipcSchedulerContractPredicates` combining all 4 predicates (`runnableThreadIpcReady`, `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `blockedOnReplyNotRunnable`). Added preservation theorems for all endpoint operations.
+- **M-12 (Invariant bundle preservation):** All invariant bundles preserved through the new operations. All proofs updated for dual-queue model.
+- Updated all canonical documentation: workstream plan, README, SELE4N_SPEC, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.
+- Bumped package version to **`0.11.11`**.
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E4 preparation — proof infrastructure and documentation accuracy

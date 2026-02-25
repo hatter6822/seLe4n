@@ -191,73 +191,13 @@ theorem cspaceRevoke_local_target_reduction
       | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
       | cnode cn =>
-
-          let revokedRefs : List SlotRef :=
-            (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
-              (fun entry => { cnode := addr.cnode, slot := entry.fst })
-          let storedState : SystemState :=
-            { st with
-              objects :=
-                fun oid =>
-                  if oid = addr.cnode then
-                    some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
-                  else
-                    st.objects oid,
-              objectIndex :=
-                if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
-              lifecycle :=
-                {
-                  st.lifecycle with
-                    objectTypes :=
-                      fun oid =>
-                        if oid = addr.cnode then
-                          some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
-                        else
-                          st.lifecycle.objectTypes oid
-                    capabilityRefs := fun ref =>
-                      if ref.cnode = addr.cnode then
-                        ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
-                      else
-                        st.lifecycle.capabilityRefs ref
-                }
-            }
-          have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
-            simpa [revokedRefs, storedState, storeObject, hObj] using hStep
-          have hObjEq : st'.objects = storedState.objects :=
-            clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
-          have hLookupStored :
-              SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
-            have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
-              { cnode := addr.cnode, slot := slot } hObjEq
-            simpa [hEq] using hLookup
-          simp [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            CNode.lookup, CNode.revokeTargetLocal] at hLookupStored
-          rcases hLookupStored with ⟨slot', hFind⟩
-          have hPred :
-              ((decide (slot' = addr.slot) || !decide (cap.target = parent.target)) &&
-                decide (slot' = slot)) = true := by
-            have hPredRaw := List.find?_some
-              (p := fun entry : SeLe4n.Slot × Capability =>
-                (decide (entry.fst = addr.slot) || !decide (entry.snd.target = parent.target)) &&
-                  decide (entry.fst = slot))
-              (a := (slot', cap)) hFind
-            simpa using hPredRaw
-          have hSplit :
-              (decide (slot' = addr.slot) || !decide (cap.target = parent.target)) = true ∧
-              decide (slot' = slot) = true := by
-            simpa [Bool.and_eq_true] using hPred
-          have hEqSlot : slot' = slot := by
-            simpa using hSplit.2
-          have hOrProp : slot' = addr.slot ∨ cap.target ≠ parent.target := by
-            simpa using hSplit.1
-          by_cases hSlot : slot = addr.slot
-          · exact hSlot
-          · have hNotTarget : cap.target ≠ parent.target := by
-              rcases hOrProp with hSrc | hNe
-              · exfalso
-                exact hSlot (hEqSlot.symm.trans hSrc)
-              · exact hNe
-            exact False.elim (hNotTarget hTarget)
+          simp only [hObj, storeObject, clearCapabilityRefs] at hStep
+          cases hStep
+          simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
+            clearCapabilityRefsState_preserves_objects] at hLookup
+          simp at hLookup
+          exact CNode.revokeTargetLocal_same_target_must_be_source
+            cn addr.slot slot parent.target cap hLookup hTarget
 
 theorem cspaceLookupSlot_preserves_state
     (st st' : SystemState)
@@ -292,10 +232,25 @@ theorem cspaceInsertSlot_lookup_eq
       | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
-
-          simp [cspaceInsertSlot, hObj] at hStep
-          cases hStep
-          simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+          simp only [cspaceInsertSlot, hObj] at hStep
+          cases hSlot : cn.lookup slot with
+          | some _ => simp [hSlot] at hStep
+          | none =>
+            simp only [hSlot] at hStep
+            cases hStore : storeObject cnodeId (.cnode (cn.insert slot cap)) st with
+            | error e => simp [storeObject] at hStore
+            | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp only [hStore] at hStep
+              have hObjRef := storeCapabilityRef_preserves_objects stMid st'
+                { cnode := cnodeId, slot := slot } (some cap.target) hStep
+              have hObjMid := storeObject_objects_eq st stMid cnodeId
+                (.cnode (cn.insert slot cap)) hStore
+              have hFinal : st'.objects cnodeId =
+                  some (.cnode (cn.insert slot cap)) := by
+                rw [← hObjMid]; exact congrFun hObjRef cnodeId
+              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                hFinal, CNode.lookup, CNode.insert]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
@@ -340,6 +295,8 @@ theorem cspaceRevoke_preserves_source
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
       subst st1
+      have hCap : SystemState.lookupSlotCap st addr = some parent :=
+        (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
       cases hObj : st.objects addr.cnode with
       | none => simp [hLookup, hObj] at hStep
       | some obj =>
@@ -349,50 +306,19 @@ theorem cspaceRevoke_preserves_source
           | notification ntfn => simp [hLookup, hObj] at hStep
           | vspaceRoot root => simp [hLookup, hObj] at hStep
           | cnode cn =>
-
-              let revokedRefs : List SlotRef :=
-                (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
-                  (fun entry => { cnode := addr.cnode, slot := entry.fst })
-              let storedState : SystemState :=
-                { st with
-                  objects :=
-                    fun oid =>
-                      if oid = addr.cnode then
-                        some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
-                      else
-                        st.objects oid,
-                  objectIndex :=
-                    if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
-                  lifecycle :=
-                    {
-                      st.lifecycle with
-                        objectTypes :=
-                          fun oid =>
-                            if oid = addr.cnode then
-                              some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
-                            else
-                              st.lifecycle.objectTypes oid
-                        capabilityRefs := fun ref =>
-                          if ref.cnode = addr.cnode then
-                            ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
-                          else
-                            st.lifecycle.capabilityRefs ref
-                    }
-                }
-              have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
-                simpa [revokedRefs, storedState, storeObject, hLookup, hObj] using hStep
-              have hObjEq : st'.objects = storedState.objects :=
-                clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
-              have hCap : SystemState.lookupSlotCap st addr = some parent :=
-                (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
-              have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
-                simpa [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                  CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
-              have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
-                have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
-                simpa [hEq] using hCapStored
+              have hSlotCap : cn.lookup addr.slot = some parent := by
+                simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj] at hCap
+                exact hCap
+              -- Reduce all matches in hStep: cspaceLookupSlot, objects, storeObject, clearCapabilityRefs
+              simp only [hLookup, hObj, storeObject, clearCapabilityRefs] at hStep
+              -- hStep should now be: finalState = st' (after Except/Prod injectivity by simp)
+              -- Use the cspaceDeleteSlot pattern: simp followed by cases
+              cases hStep
               refine ⟨parent, ?_⟩
-              exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
+              rw [cspaceLookupSlot_ok_iff_lookupSlotCap]
+              simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
+                clearCapabilityRefsState_preserves_objects]
+              simp [CNode.lookup_revokeTargetLocal_source_eq_lookup, hSlotCap]
 
 theorem mintDerivedCap_attenuates
     (parent child : Capability)
@@ -787,18 +713,22 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
         | cnode preCn =>
           simp [hPre] at hStep
-          cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
-          | error e => simp [hStore] at hStep
-          | ok pair =>
-            obtain ⟨_, stMid⟩ := pair
-            simp [hStore] at hStep
-            have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-            have hObjMid := storeObject_objects_eq st stMid addr.cnode
-              (.cnode (preCn.insert addr.slot cap)) hStore
-            have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
-              rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-            rw [hFinal] at hObj; cases hObj
-            exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
+          cases hSlot : preCn.lookup addr.slot with
+          | some _ => simp [hSlot] at hStep
+          | none =>
+            simp [hSlot] at hStep
+            cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
+            | error e => simp [storeObject] at hStore
+            | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+              have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                (.cnode (preCn.insert addr.slot cap)) hStore
+              have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
+                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+              rw [hFinal] at hObj; cases hObj
+              exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
     · -- Unmodified CNodes: transfer directly from pre-state
       have hPreObj := cspaceInsertSlot_preserves_objects_ne st st' addr cap cnodeId hEq hStep
       rw [hPreObj] at hObj
@@ -847,27 +777,13 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
       cases preObj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
       | cnode preCn =>
-        simp [hPre] at hStep
-        cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
-        | error e => simp [hStore] at hStep
-        | ok pair =>
-          obtain ⟨_, stMid⟩ := pair
-          simp [hStore] at hStep
-          have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr none hStep
-          by_cases hEq : cnodeId = addr.cnode
-          · rw [hEq] at hObj
-            have hObjMid := storeObject_objects_eq st stMid addr.cnode
-              (.cnode (preCn.remove addr.slot)) hStore
-            have : st'.objects addr.cnode = some (.cnode (preCn.remove addr.slot)) := by
-              rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-            rw [this] at hObj; cases hObj
-            exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
-          · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
-              (.cnode (preCn.remove addr.slot)) hEq hStore
-            have : st'.objects cnodeId = st.objects cnodeId := by
-              rw [← hObjMid]; exact congrFun hObjRef cnodeId
-            rw [this] at hObj
-            exact hUnique cnodeId cn hObj
+        simp [hPre, storeObject, storeCapabilityRef] at hStep
+        cases hStep
+        by_cases hEq : cnodeId = addr.cnode
+        · subst hEq; simp at hObj; cases hObj
+          exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
+        · simp [hEq] at hObj
+          exact hUnique cnodeId cn hObj
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
@@ -896,30 +812,17 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
         cases preObj with
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hLookup, hPre] at hStep
         | cnode preCn =>
-          simp [hLookup, hPre] at hStep
-          cases hStore : storeObject addr.cnode
-            (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with
-          | error e => simp [hStore] at hStep
-          | ok pair =>
-            obtain ⟨_, stMid⟩ := pair
-            simp [hStore] at hStep
-            have hObjRef := clearCapabilityRefs_preserves_objects stMid st' _ hStep
-            by_cases hEq : cnodeId = addr.cnode
-            · rw [hEq] at hObj
-              have hObjMid := storeObject_objects_eq st stMid addr.cnode
-                (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) hStore
-              have : st'.objects addr.cnode =
-                  some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) := by
-                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-              rw [this] at hObj; cases hObj
-              exact CNode.revokeTargetLocal_slotsUnique preCn addr.slot parent.target
-                (hUnique addr.cnode preCn hPre)
-            · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
-                (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) hEq hStore
-              have : st'.objects cnodeId = st.objects cnodeId := by
-                rw [← hObjMid]; exact congrFun hObjRef cnodeId
-              rw [this] at hObj
-              exact hUnique cnodeId cn hObj
+          simp only [hLookup, hPre, storeObject, clearCapabilityRefs] at hStep
+          cases hStep
+          by_cases hEq : cnodeId = addr.cnode
+          · subst hEq
+            simp only [clearCapabilityRefsState_preserves_objects] at hObj
+            simp at hObj; cases hObj
+            exact CNode.revokeTargetLocal_slotsUnique preCn addr.slot parent.target
+              (hUnique addr.cnode preCn hPre)
+          · simp only [clearCapabilityRefsState_preserves_objects] at hObj
+            simp [hEq] at hObj
+            exact hUnique cnodeId cn hObj
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
@@ -940,11 +843,16 @@ def ipcSchedulerBlockedSendComponent (st : SystemState) : Prop :=
 def ipcSchedulerBlockedReceiveComponent (st : SystemState) : Prop :=
   blockedOnReceiveNotRunnable st
 
+/-- Named M3.5 coherence component: reply-blocked threads are not runnable. -/
+def ipcSchedulerBlockedReplyComponent (st : SystemState) : Prop :=
+  blockedOnReplyNotRunnable st
+
 /-- Named M3.5 aggregate coherence component for IPC+scheduler interaction. -/
 def ipcSchedulerCoherenceComponent (st : SystemState) : Prop :=
   ipcSchedulerRunnableReadyComponent st ∧
   ipcSchedulerBlockedSendComponent st ∧
-  ipcSchedulerBlockedReceiveComponent st
+  ipcSchedulerBlockedReceiveComponent st ∧
+  ipcSchedulerBlockedReplyComponent st
 
 theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState) :
     ipcSchedulerCoherenceComponent st ↔ ipcSchedulerContractPredicates st := by
@@ -1206,198 +1114,225 @@ theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
-        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
-  | send =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
-        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
-  | receive =>
-    simp [endpointSend, hObj, hState] at hStep
-    cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
-    case nil.some receiver =>
-      revert hStep
-      cases hStore : storeObject endpointId _ st with
-      | error e => simp
-      | ok pair =>
-        simp only []
-        cases hTcb : storeTcbIpcState pair.2 receiver _ with
-        | error e => simp
-        | ok st2 =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId receiver _ hUnique hStore hTcb
-          exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  have hUnique' : cspaceSlotUnique st' := by
+    unfold endpointSend at hStep
+    match hObj : st.objects endpointId with
+    | none => simp [hObj] at hStep
+    | some (.tcb _) | some (.notification _) | some (.cnode _) | some (.vspaceRoot _) =>
+      simp [hObj] at hStep
+    | some (.endpoint ep) =>
+      simp only [hObj] at hStep
+      match hRecv : ep.receiveQueue with
+      | receiver :: restRecv =>
+        simp only [hRecv] at hStep
+        match hStore : storeObject endpointId (.endpoint ⟨ep.sendQueue, restRecv⟩) st with
+        | .error e => simp [hStore] at hStep
+        | .ok ((), s1) =>
+          simp only [hStore] at hStep
+          match hTcb : storeTcbIpcState s1 receiver .ready with
+          | .error e => simp [hTcb] at hStep
+          | .ok s2 =>
+            simp only [hTcb] at hStep
+            have hEq : st' = ensureRunnable s2 receiver := by
+              have := Except.ok.inj hStep; cases this; rfl
+            subst hEq
+            exact cspaceSlotUnique_through_handshake_path st s1 s2 endpointId receiver _ hUnique hStore hTcb
+      | [] =>
+        simp only [hRecv] at hStep
+        match hStore : storeObject endpointId (.endpoint ⟨ep.sendQueue ++ [(sender, msg)], []⟩) st with
+        | .error e => simp [hStore] at hStep
+        | .ok ((), s1) =>
+          simp only [hStore] at hStep
+          match hTcb : storeTcbIpcState s1 sender (.blockedOnSend endpointId) with
+          | .error e => simp [hTcb] at hStep
+          | .ok s2 =>
+            simp only [hTcb] at hStep
+            have hEq : st' = removeRunnable s2 sender := by
+              have := Except.ok.inj hStep; cases this; rfl
+            subst hEq
+            exact cspaceSlotUnique_through_blocking_path st s1 s2 endpointId sender _ _ hUnique hStore hTcb
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique _ hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (result : Option (SeLe4n.ThreadId × MessagePayload))
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok (result, st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  obtain ⟨ep, hObj⟩ := endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep
-  simp [endpointAwaitReceive, hObj] at hStep
-  cases hState : ep.state <;> simp [hState] at hStep
-  case idle =>
-    cases hQueue : ep.queue <;> simp [hQueue] at hStep
-    case nil =>
-      cases hWait : ep.waitingReceiver <;> simp [hWait] at hStep
-      case none =>
-        revert hStep
-        cases hStore : storeObject endpointId _ st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          cases hTcb : storeTcbIpcState pair.2 receiver _ with
+  unfold endpointAwaitReceive at hStep
+  match hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some (.tcb _) | some (.notification _) | some (.cnode _) | some (.vspaceRoot _) =>
+      simp [hObj] at hStep
+  | some (.endpoint ep) =>
+      simp only [hObj] at hStep
+      match hSend : ep.sendQueue with
+      | (sender, msg) :: restSend =>
+          -- Handshake: sender found, deliver message
+          simp only [hSend] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId (.endpoint { sendQueue := restSend, receiveQueue := ep.receiveQueue }) st with
           | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-            have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId receiver _ _ hUnique hStore hTcb
-            exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+          | ok pair =>
+              simp only []
+              cases hTcb : storeTcbIpcState pair.2 sender .ready with
+              | error e => simp
+              | ok st2 =>
+                  intro hStep
+                  have hEq : st' = ensureRunnable st2 sender := by
+                    have := Except.ok.inj hStep; cases this; rfl
+                  subst hEq
+                  have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId sender _ hUnique hStore hTcb
+                  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+      | [] =>
+          -- Blocking: no sender, receiver blocks
+          simp only [hSend] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId (.endpoint { sendQueue := [], receiveQueue := ep.receiveQueue ++ [receiver] }) st with
+          | error e => simp
+          | ok pair =>
+              simp only []
+              cases hTcb : storeTcbIpcState pair.2 receiver (.blockedOnReceive endpointId) with
+              | error e => simp
+              | ok st2 =>
+                  intro hStep
+                  have hEq : st' = removeRunnable st2 receiver := by
+                    have := Except.ok.inj hStep; cases this; rfl
+                  subst hEq
+                  have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId receiver _ _ hUnique hStore hTcb
+                  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointReceive`. -/
 theorem endpointReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (result : SeLe4n.ThreadId × MessagePayload)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok (result, st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  obtain ⟨ep, hObj⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle => simp [endpointReceive, hObj, hState] at hStep
-  | receive => simp [endpointReceive, hObj, hState] at hStep
-  | send =>
-    cases hQueue : ep.queue with
-    | nil =>
-      cases hWait : ep.waitingReceiver <;> simp [endpointReceive, hObj, hState, hQueue, hWait] at hStep
-    | cons hd tl =>
-      cases hWait : ep.waitingReceiver with
-      | some _ => simp [endpointReceive, hObj, hState, hQueue, hWait] at hStep
-      | none =>
-        unfold endpointReceive at hStep; simp only [hObj, hState, hQueue, hWait] at hStep
-        revert hStep
-        cases hStore : storeObject endpointId _ st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          cases hTcb : storeTcbIpcState pair.2 hd _ with
+  unfold endpointReceive at hStep
+  match hObj : st.objects endpointId with
+  | none => simp [hObj] at hStep
+  | some (.tcb _) | some (.notification _) | some (.cnode _) | some (.vspaceRoot _) =>
+      simp [hObj] at hStep
+  | some (.endpoint ep) =>
+      simp only [hObj] at hStep
+      match hSend : ep.sendQueue with
+      | [] => simp [hSend] at hStep
+      | (sender, msg) :: rest =>
+          simp only [hSend] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId (.endpoint { sendQueue := rest, receiveQueue := ep.receiveQueue }) st with
           | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨hSenderEq, hStEq⟩
-            subst hStEq; subst hSenderEq
-            have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId hd _ hUnique hStore hTcb
-            exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+          | ok pair =>
+              simp only []
+              cases hTcb : storeTcbIpcState pair.2 sender .ready with
+              | error e => simp
+              | ok st2 =>
+                  intro hStep
+                  have hEq : st' = ensureRunnable st2 sender := by
+                    have := Except.ok.inj hStep; cases this; rfl
+                  subst hEq
+                  have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId sender _ hUnique hStore hTcb
+                  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (hInv : m3IpcSeedInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     m3IpcSeedInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
-  · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
-  · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
-  · exact endpointSend_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+  · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender msg hSched hStep
+  · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender msg hCap hStep
+  · exact endpointSend_preserves_ipcInvariant st st' endpointId sender msg hIpc hStep
 
 theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (result : Option (SeLe4n.ThreadId × MessagePayload))
     (hInv : m3IpcSeedInvariantBundle st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok (result, st')) :
     m3IpcSeedInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
-  · exact endpointAwaitReceive_preserves_schedulerInvariantBundle st st' endpointId receiver hSched hStep
-  · exact endpointAwaitReceive_preserves_capabilityInvariantBundle st st' endpointId receiver hCap hStep
-  · exact endpointAwaitReceive_preserves_ipcInvariant st st' endpointId receiver hIpc hStep
+  · exact endpointAwaitReceive_preserves_schedulerInvariantBundle st st' endpointId receiver result hSched hStep
+  · exact endpointAwaitReceive_preserves_capabilityInvariantBundle st st' endpointId receiver result hCap hStep
+  · exact endpointAwaitReceive_preserves_ipcInvariant st st' endpointId receiver result hIpc hStep
 
 theorem endpointReceive_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (result : SeLe4n.ThreadId × MessagePayload)
     (hInv : m3IpcSeedInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok (result, st')) :
     m3IpcSeedInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
-  · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
-  · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
-  · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+  · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId result hSched hStep
+  · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId result hCap hStep
+  · exact endpointReceive_preserves_ipcInvariant st st' endpointId result hIpc hStep
 
 theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessagePayload)
     (hInv : m35IpcSchedulerInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     m35IpcSchedulerInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender msg hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
-      (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+      (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender msg hContract hStep)
 
 theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (result : Option (SeLe4n.ThreadId × MessagePayload))
     (hInv : m35IpcSchedulerInvariantBundle st)
-    (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
+    (hStep : endpointAwaitReceive endpointId receiver st = .ok (result, st')) :
     m35IpcSchedulerInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId receiver hM3Seed hStep
+  · exact endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId receiver result hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
-      (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates st st' endpointId receiver hContract hStep)
+      (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates st st' endpointId receiver result hContract hStep)
 
 theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (result : SeLe4n.ThreadId × MessagePayload)
     (hInv : m35IpcSchedulerInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok (result, st')) :
     m35IpcSchedulerInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId result hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
-      (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+      (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId result hContract hStep)
 
 end SeLe4n.Kernel

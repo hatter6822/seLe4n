@@ -32,10 +32,14 @@ inductive AccessRight where
   | grantReply
   deriving Repr, DecidableEq
 
-/-- The addressable target of a capability in the abstract object universe. -/
+/-- The addressable target of a capability in the abstract object universe.
+
+WS-E4/M-12: `replyCap` models single-use reply capabilities that name a
+specific thread blocked on a Call operation. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+  | replyCap (thread : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
 structure Capability where
@@ -51,15 +55,39 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
-/-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
+/-- IPC message payload: message registers plus optional capability transfer.
 
-This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
-waiting-thread handshake story. -/
+WS-E4/M-02: Represents the data transferred during IPC operations. Message
+registers carry word-sized values; `transferredCaps` carries capability slot
+references that are transferred (copied) from sender to receiver. -/
+structure MessageInfo where
+  label : Nat := 0
+  extraCaps : Nat := 0
+  deriving Repr, DecidableEq
+
+structure MessagePayload where
+  registers : List Nat := []
+  transferredCaps : List CapTarget := []
+  info : MessageInfo := {}
+  deriving Repr, DecidableEq
+
+namespace MessagePayload
+
+def empty : MessagePayload := {}
+
+end MessagePayload
+
+/-- Per-thread IPC scheduler-visible status for blocking semantics.
+
+WS-E4/M-12: Extended with `blockedOnReply` to model bidirectional IPC
+(seL4_Call / seL4_ReplyRecv). A thread blocked on reply is waiting for the
+server to invoke `endpointReply` with its reply capability. -/
 inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -70,19 +98,32 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  ipcPayload : MessagePayload := .empty
+  replyCap : Option CapTarget := none
   deriving Repr, DecidableEq
 
-inductive EndpointState where
-  | idle
-  | send
-  | receive
-  deriving Repr, DecidableEq
+/-- WS-E4/M-01: Endpoint with separate send and receive queues.
 
+seL4 maintains separate send and receive queues on endpoints. At most one
+queue is non-empty at any time: a thread either waits to send (blocked on
+send) or waits to receive (blocked on receive), but mixed state is an
+invariant violation.
+
+The `sendQueue` holds senders blocked on the endpoint, each paired with
+their pending message payload. The `receiveQueue` holds receivers waiting
+for a message. -/
 structure Endpoint where
-  state : EndpointState
-  queue : List SeLe4n.ThreadId
-  waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List (SeLe4n.ThreadId × MessagePayload)
+  receiveQueue : List SeLe4n.ThreadId
   deriving Repr, DecidableEq
+
+namespace Endpoint
+
+def idle : Endpoint := { sendQueue := [], receiveQueue := [] }
+
+def isIdle (ep : Endpoint) : Bool := ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+
+end Endpoint
 
 inductive NotificationState where
   | idle
@@ -478,6 +519,22 @@ theorem mem_lookup_of_slotsUnique
       rw [← hSlot]; exact (Prod.eta entry) ▸ hEntryMem
     exact hUniq slot entry.snd cap hRewrite hMem
 
+/-- After `revokeTargetLocal`, any capability with the revoked target must be at the source slot.
+This is the core property that enables `cspaceRevoke_local_target_reduction`. -/
+theorem revokeTargetLocal_same_target_must_be_source
+    (cn : CNode) (sourceSlot slot : SeLe4n.Slot) (target : CapTarget) (cap : Capability)
+    (hLookup : (cn.revokeTargetLocal sourceSlot target).lookup slot = some cap)
+    (hTarget : cap.target = target) :
+    slot = sourceSlot := by
+  have hMem := lookup_mem_of_some _ slot cap hLookup
+  simp only [revokeTargetLocal] at hMem
+  rw [List.mem_filter] at hMem
+  obtain ⟨_, hPred⟩ := hMem
+  rw [decide_eq_true_eq] at hPred
+  rcases hPred with hSlot | hNotTarget
+  · exact hSlot
+  · exact absurd hTarget hNotTarget
+
 end CNode
 
 inductive KernelObject where
@@ -510,5 +567,110 @@ end KernelObject
 /-- Construct a capability that names an object directly. -/
 def makeObjectCap (id : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
   { target := .object id, rights }
+
+-- ============================================================================
+-- WS-E4 / C-03: Capability Derivation Tree (CDT) model
+-- ============================================================================
+
+/-- A reference to a specific capability slot in the system. -/
+structure SlotAddr where
+  cnode : SeLe4n.ObjId
+  slot : SeLe4n.Slot
+  deriving Repr, DecidableEq
+
+/-- An edge in the CDT: parent slot derived to child slot.
+
+When `cspaceMint` creates a derived capability, an edge is recorded from
+source (parent) to destination (child). `cspaceCopy` does NOT create CDT
+edges (copies are independent). -/
+structure CapDerivationEdge where
+  parent : SlotAddr
+  child : SlotAddr
+  deriving Repr, DecidableEq
+
+/-- The CDT tracks parent-child derivation relationships between capability slots.
+
+WS-E4/C-03: This is the foundational data structure for:
+- Acyclicity invariant (derivation chains are well-founded)
+- Cross-CNode revocation (C-04: walking the tree to find all derived caps)
+- Authority tracking (proving authority monotonicity globally) -/
+structure CapDerivationTree where
+  edges : List CapDerivationEdge
+  deriving Repr, DecidableEq
+
+namespace CapDerivationTree
+
+def empty : CapDerivationTree := { edges := [] }
+
+/-- Add a derivation edge (parent → child). -/
+def addEdge (cdt : CapDerivationTree) (parent child : SlotAddr) : CapDerivationTree :=
+  { edges := { parent, child } :: cdt.edges }
+
+/-- All immediate children of a given slot. -/
+def childrenOf (cdt : CapDerivationTree) (parent : SlotAddr) : List SlotAddr :=
+  (cdt.edges.filter (fun e => e.parent = parent)).map (fun e => e.child)
+
+/-- The parent of a given slot (if it has one). -/
+def parentOf (cdt : CapDerivationTree) (child : SlotAddr) : Option SlotAddr :=
+  (cdt.edges.find? (fun e => e.child = child)).map (fun e => e.parent)
+
+/-- Remove all edges where `addr` is the child (disconnect from parent). -/
+def removeAsChild (cdt : CapDerivationTree) (addr : SlotAddr) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.child ≠ addr) }
+
+/-- Remove all edges where `addr` is the parent (disconnect all children). -/
+def removeAsParent (cdt : CapDerivationTree) (addr : SlotAddr) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.parent ≠ addr) }
+
+/-- Remove all edges referencing `addr` as either parent or child. -/
+def removeSlot (cdt : CapDerivationTree) (addr : SlotAddr) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.parent ≠ addr && e.child ≠ addr) }
+
+/-- Collect all transitive descendants of a slot via bounded BFS.
+
+H-08-style fuel bound: if fuel runs out, the accumulated result is returned.
+This is conservative — fuel exhaustion means we stop traversing, which is
+safe for revocation (we revoke everything we found).
+
+The root itself is NOT included in the result — only proper descendants. -/
+def descendantsOf (cdt : CapDerivationTree) (root : SlotAddr) (fuel : Nat := 100) : List SlotAddr :=
+  let children := cdt.childrenOf root
+  go children [] fuel
+where
+  go (worklist : List SlotAddr) (acc : List SlotAddr) : Nat → List SlotAddr
+    | 0 => acc
+    | fuel + 1 =>
+      match worklist with
+      | [] => acc
+      | node :: rest =>
+        let children := (cdt.edges.filter (fun e => e.parent = node)).map (fun e => e.child)
+        let newChildren := children.filter (fun c => c ∉ acc && c ∉ rest && c ≠ node)
+        go (rest ++ newChildren) (node :: acc) fuel
+
+/-- The CDT is acyclic: no slot is a transitive descendant of itself.
+
+This means no derivation cycle exists — following parent→child edges from
+any slot will never return to that slot. -/
+def acyclic (cdt : CapDerivationTree) : Prop :=
+  ∀ addr, addr ∉ cdt.descendantsOf addr
+
+/-- The empty CDT is trivially acyclic. -/
+theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
+  intro addr
+  simp [descendantsOf, childrenOf, empty, descendantsOf.go]
+
+/-- Adding an edge preserves CDT structure (edges list grows by one). -/
+theorem addEdge_edges_eq (cdt : CapDerivationTree) (parent child : SlotAddr) :
+    (cdt.addEdge parent child).edges = { parent, child } :: cdt.edges := by
+  rfl
+
+/-- removeSlot only shrinks the edge list — it never adds edges. -/
+theorem removeSlot_edges_sub (cdt : CapDerivationTree) (addr : SlotAddr) :
+    ∀ e, e ∈ (cdt.removeSlot addr).edges → e ∈ cdt.edges := by
+  intro e hMem
+  simp [removeSlot, List.mem_filter] at hMem
+  exact hMem.1
+
+end CapDerivationTree
 
 end SeLe4n.Model

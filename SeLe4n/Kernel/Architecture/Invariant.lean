@@ -215,8 +215,9 @@ private theorem default_lifecycleInvariantBundle :
 
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro tid tcb hObj; simp at hObj
+  · intro tid tcb eid hObj; simp at hObj
   · intro tid tcb eid hObj; simp at hObj
   · intro tid tcb eid hObj; simp at hObj
 
