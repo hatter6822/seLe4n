@@ -1,6 +1,20 @@
 namespace SeLe4n
 
-/-- Identifier for objects in the global kernel object store. -/
+/-! ## H-06/WS-E3: Identifier sentinel convention
+
+All identifier types (`ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`, `Badge`,
+`ServiceId`, `ASID`, `VAddr`, `PAddr`) derive `Inhabited`, which generates a
+default instance of `⟨0⟩`. To prevent silent use of this magic value from
+causing aliasing with real kernel objects:
+
+**Convention:** ID value 0 is **reserved as a sentinel** meaning "unallocated"
+or "invalid". Kernel operations must never store a real object, thread, or
+service at ID 0. This mirrors seL4's convention where capability pointer 0
+(`seL4_CapNull`) is the null capability. The `isReserved` predicate on
+`ObjId`, `ThreadId`, and `ServiceId` identifies the sentinel value. -/
+
+/-- Identifier for objects in the global kernel object store.
+    Value 0 is reserved as sentinel (H-06/WS-E3). -/
 structure ObjId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -18,6 +32,12 @@ instance instOfNat (n : Nat) : OfNat ObjId n where
 
 instance : ToString ObjId where
   toString id := toString id.toNat
+
+/-- H-06/WS-E3: ID 0 is the reserved sentinel value. -/
+@[inline] def isReserved (id : ObjId) : Bool := id.val = 0
+
+/-- H-06/WS-E3: The sentinel ObjId (value 0). -/
+@[inline] def sentinel : ObjId := ⟨0⟩
 
 end ObjId
 
@@ -42,6 +62,12 @@ instance instOfNat (n : Nat) : OfNat ThreadId n where
 
 instance : ToString ThreadId where
   toString tid := toString tid.toNat
+
+/-- H-06/WS-E3: ID 0 is the reserved sentinel value. -/
+@[inline] def isReserved (id : ThreadId) : Bool := id.val = 0
+
+/-- H-06/WS-E3: The sentinel ThreadId (value 0). -/
+@[inline] def sentinel : ThreadId := ⟨0⟩
 
 end ThreadId
 
@@ -126,6 +152,9 @@ instance instOfNat (n : Nat) : OfNat ServiceId n where
 
 instance : ToString ServiceId where
   toString id := toString id.toNat
+
+/-- H-06/WS-E3: ID 0 is the reserved sentinel value. -/
+@[inline] def isReserved (id : ServiceId) : Bool := id.val = 0
 
 end ServiceId
 
@@ -274,5 +303,21 @@ instance {σ ε : Type} : Monad (KernelM σ ε) where
   bind := bind
 
 end KernelM
+
+-- ============================================================================
+-- H-06/WS-E3: Sentinel identity theorems
+-- ============================================================================
+
+/-- The default `ObjId` is the reserved sentinel (value 0). -/
+theorem ObjId.default_eq_sentinel : (default : ObjId) = ObjId.sentinel := rfl
+
+/-- The default `ThreadId` is the reserved sentinel (value 0). -/
+theorem ThreadId.default_eq_sentinel : (default : ThreadId) = ThreadId.sentinel := rfl
+
+/-- The sentinel ObjId is reserved. -/
+theorem ObjId.sentinel_isReserved : ObjId.sentinel.isReserved = true := rfl
+
+/-- The sentinel ThreadId is reserved. -/
+theorem ThreadId.sentinel_isReserved : ThreadId.sentinel.isReserved = true := rfl
 
 end SeLe4n

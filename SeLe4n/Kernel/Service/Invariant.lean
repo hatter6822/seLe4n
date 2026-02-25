@@ -947,4 +947,29 @@ theorem serviceRestart_error_from_start_phase
   simp only [hStop] at hErr
   exact ⟨stStopped, hStop, hErr⟩
 
+-- ============================================================================
+-- H-08/WS-E3: BFS soundness in Service/Invariant context
+-- ============================================================================
+
+/-- H-08/WS-E3: BFS conservatively reports a path when fuel is exhausted.
+Under the zero-fuel base case the BFS returns `true`, preventing any
+dependency registration when the fuel budget is insufficient. -/
+theorem serviceHasPathTo_fuel_zero (st : SystemState) (src target : ServiceId) :
+    serviceHasPathTo st src target 0 = true := by
+  simp [serviceHasPathTo, serviceHasPathTo.go]
+
+/-- H-08/WS-E3 adequacy: when BFS returns `false`, there genuinely is no
+nontrivial path from `a` to `b`. This is the soundness direction —
+the contrapositive of `bfs_complete_for_nontrivialPath`. -/
+theorem bfs_false_implies_no_nontrivialPath
+    {st : SystemState} {a b : ServiceId}
+    (hBfs : serviceHasPathTo st a b (serviceBfsFuel st) = false)
+    (hNe : a ≠ b)
+    (hBound : serviceCountBounded st) :
+    ¬ serviceNontrivialPath st a b := by
+  intro hPath
+  have hTrue := bfs_complete_for_nontrivialPath hPath hNe hBound
+  rw [hTrue] at hBfs
+  cases hBfs
+
 end SeLe4n.Kernel

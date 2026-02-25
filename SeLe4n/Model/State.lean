@@ -493,4 +493,65 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
+-- ============================================================================
+-- L-06/WS-E3: Default SystemState initialization proof
+-- ============================================================================
+
+/-- L-06/WS-E3: The default (empty) `SystemState` satisfies `lifecycleMetadataConsistent`.
+Both metadata maps return `none` for all inputs, and `objects` returns `none`
+for all IDs, so the consistency conditions hold trivially. This provides the
+base case for invariant induction — the system starts in a valid state. -/
+theorem default_systemState_lifecycleConsistent :
+    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
+  constructor
+  · intro oid
+    show (default : SystemState).lifecycle.objectTypes oid =
+      Option.map KernelObject.objectType ((default : SystemState).objects oid)
+    rfl
+  · intro ref
+    show (default : SystemState).lifecycle.capabilityRefs ref =
+      ((SystemState.lookupSlotCap (default : SystemState) ref).map Capability.target)
+    simp only [SystemState.lookupSlotCap, SystemState.lookupCNode]
+    rfl
+
+-- ============================================================================
+-- M-09/WS-E3: storeObject metadata sync correctness for type-changing stores
+-- ============================================================================
+
+/-- M-09/WS-E3: `storeObject` correctly synchronizes lifecycle metadata even when
+the stored object changes the type at `oid`. After storing, the metadata at `oid`
+reflects the new object's type, regardless of what was stored previously. -/
+theorem storeObject_metadata_sync_type_change
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes oid = some obj.objectType := by
+  unfold storeObject at hStep
+  cases hStep
+  simp
+
+/-- M-09/WS-E3: `storeObject` correctly synchronizes capability-reference metadata
+when the stored object changes from a CNode to a non-CNode (or vice versa).
+After storing a non-CNode, all capability references pointing into `oid` are
+cleared; after storing a CNode, they reflect the new CNode's slot contents.
+
+This closes the metadata sync hazard: for type-changing stores (e.g., replacing
+a CNode with a TCB), `storeObject` correctly clears all capability-reference
+metadata for the replaced CNode's slots (the `| _ => none` branch), maintaining
+the invariant that metadata reflects the actual object store. -/
+theorem storeObject_metadata_sync_capref_at_stored
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (slot : SeLe4n.Slot)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    SystemState.lookupCapabilityRefMeta st' { cnode := oid, slot := slot } =
+      match obj with
+      | .cnode cn => (cn.lookup slot).map Capability.target
+      | _ => none := by
+  unfold storeObject at hStep
+  cases hStep
+  cases obj <;> simp [SystemState.lookupCapabilityRefMeta]
+
 end SeLe4n.Model

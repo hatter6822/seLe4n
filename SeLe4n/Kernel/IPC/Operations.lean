@@ -5,9 +5,12 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  {
-    st with
-      scheduler := { st.scheduler with runnable := st.scheduler.runnable.filter (· ≠ tid) }
+  { st with
+      scheduler := {
+        st.scheduler with
+          runnable := st.scheduler.runnable.filter (· ≠ tid)
+          current := if st.scheduler.current = some tid then none else st.scheduler.current
+      }
   }
 
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
@@ -29,7 +32,13 @@ def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : Thre
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
-/-- Add a sender to an endpoint wait queue with explicit state transition. -/
+/-- Add a sender to an endpoint wait queue with explicit state transition.
+
+WS-E3/H-09: Thread IPC state transitions are now enforced:
+- **Blocking paths** (idle→send, send→send): the sender's IPC state is set to
+  `.blockedOnSend endpointId` and the sender is removed from the runnable queue.
+- **Handshake path** (receive→idle): the waiting receiver is unblocked — IPC state
+  set to `.ready` and added to the runnable queue. The sender does not block. -/
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
@@ -37,20 +46,39 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
         match ep.state with
         | .idle =>
             let ep' : Endpoint := { state := .send, queue := [sender], waitingReceiver := none }
-            storeObject endpointId (.endpoint ep') st
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' sender)
         | .send =>
             let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }
-            storeObject endpointId (.endpoint ep') st
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' sender)
         | .receive =>
             match ep.queue, ep.waitingReceiver with
-            | [], some _ =>
+            | [], some receiver =>
                 let ep' : Endpoint := { state := .idle, queue := [], waitingReceiver := none }
-                storeObject endpointId (.endpoint ep') st
+                match storeObject endpointId (.endpoint ep') st with
+                | .error e => .error e
+                | .ok ((), st') =>
+                    match storeTcbIpcState st' receiver .ready with
+                    | .error e => .error e
+                    | .ok st'' => .ok ((), ensureRunnable st'' receiver)
             | _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Register one waiting receiver on an idle endpoint. -/
+/-- Register one waiting receiver on an idle endpoint.
+
+WS-E3/H-09: After registration, the receiver's IPC state is set to
+`.blockedOnReceive endpointId` and the receiver is removed from the runnable queue.
+This makes the `blockedOnReceiveNotRunnable` contract predicate non-vacuous. -/
 def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
@@ -58,14 +86,23 @@ def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId
         match ep.state, ep.queue, ep.waitingReceiver with
         | .idle, [], none =>
             let ep' : Endpoint := { state := .receive, queue := [], waitingReceiver := some receiver }
-            storeObject endpointId (.endpoint ep') st
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' receiver)
         | .idle, _, _ => .error .endpointStateMismatch
         | .send, _, _ => .error .endpointStateMismatch
         | .receive, _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Consume one queued sender from an endpoint wait queue. -/
+/-- Consume one queued sender from an endpoint wait queue.
+
+WS-E3/H-09: After dequeuing a sender, the sender's IPC state is set to `.ready`
+and the sender is added to the runnable queue. This unblocks the sender that was
+previously blocked by `endpointSend`. -/
 def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects endpointId with
@@ -76,7 +113,10 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
             let ep' : Endpoint := { state := nextState, queue := rest, waitingReceiver := none }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
-            | .ok ((), st') => .ok (sender, st')
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender .ready with
+                | .error e => .error e
+                | .ok st'' => .ok (sender, ensureRunnable st'' sender)
         | .send, [], none => .error .endpointQueueEmpty
         | .send, _, some _ => .error .endpointStateMismatch
         | .idle, _, _ => .error .endpointStateMismatch
@@ -213,6 +253,178 @@ theorem removeRunnable_preserves_objects
     (removeRunnable st tid).objects = st.objects := by
   rfl
 
+/-- WS-E3/H-09: `ensureRunnable` only modifies the scheduler; all objects are preserved. -/
+theorem ensureRunnable_preserves_objects
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objects = st.objects := by
+  unfold ensureRunnable
+  split <;> rfl
+
+/-- WS-E3/H-09: `storeTcbIpcState` does not modify the scheduler. -/
+theorem storeTcbIpcState_scheduler_eq
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbIpcState at hStep
+  cases hTcb : lookupTcb st tid with
+  | none =>
+    simp [hTcb] at hStep
+    subst hStep; rfl
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep
+      subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+
+/-- WS-E3/H-09: `storeTcbIpcState` preserves endpoint objects. -/
+theorem storeTcbIpcState_preserves_endpoint
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (epId : SeLe4n.ObjId)
+    (ep : Endpoint)
+    (hEp : st.objects epId = some (.endpoint ep))
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.objects epId = some (.endpoint ep) := by
+  by_cases hEq : epId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    have hLookup : lookupTcb st tid = none := by
+      unfold lookupTcb; simp [hEp]
+    simp [hLookup] at hStep
+    subst hStep
+    exact hEp
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hStep]
+    exact hEp
+
+/-- WS-E3/H-09: `storeTcbIpcState` preserves CNode objects. -/
+theorem storeTcbIpcState_preserves_cnode
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (cnodeId : SeLe4n.ObjId)
+    (cn : CNode)
+    (hCn : st.objects cnodeId = some (.cnode cn))
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.objects cnodeId = some (.cnode cn) := by
+  by_cases hEq : cnodeId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    have hLookup : lookupTcb st tid = none := by
+      unfold lookupTcb; simp [hCn]
+    simp [hLookup] at hStep
+    subst hStep
+    exact hCn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hStep]
+    exact hCn
+
+/-- WS-E3/H-09: `storeTcbIpcState` preserves VSpaceRoot objects. -/
+theorem storeTcbIpcState_preserves_vspaceRoot
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId)
+    (vs : VSpaceRoot)
+    (hVs : st.objects oid = some (.vspaceRoot vs))
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.objects oid = some (.vspaceRoot vs) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    have hLookup : lookupTcb st tid = none := by
+      unfold lookupTcb; simp [hVs]
+    simp [hLookup] at hStep
+    subst hStep
+    exact hVs
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep]
+    exact hVs
+
+/-- WS-E3/H-09: Backward CNode preservation: if post-state has a CNode, pre-state had it.
+`storeTcbIpcState` only writes TCBs, so it cannot create or modify CNode objects. -/
+theorem storeTcbIpcState_cnode_backward
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId)
+    (cn : CNode)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hCn : st'.objects oid = some (.cnode cn)) :
+    st.objects oid = some (.cnode cn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    cases hLookup : lookupTcb st tid with
+    | none =>
+      simp [hLookup] at hStep; subst hStep; exact hCn
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hCn; cases hCn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hCn; exact hCn
+
+/-- WS-E3/H-09: Backward endpoint preservation for `storeTcbIpcState`. -/
+theorem storeTcbIpcState_endpoint_backward
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId)
+    (ep : Endpoint)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hEp : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    cases hLookup : lookupTcb st tid with
+    | none =>
+      simp [hLookup] at hStep; subst hStep; exact hEp
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hEp; exact hEp
+
+/-- WS-E3/H-09: Backward notification preservation for `storeTcbIpcState`. -/
+theorem storeTcbIpcState_notification_backward
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState)
+    (oid : SeLe4n.ObjId)
+    (ntfn : Notification)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hNtfn : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcState at hStep
+    cases hLookup : lookupTcb st tid with
+    | none =>
+      simp [hLookup] at hStep; subst hStep; exact hNtfn
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hNtfn; exact hNtfn
+
 /-- Double-wait is rejected: if the thread is already waiting,
 `notificationWait` returns `alreadyWaiting`. -/
 theorem notificationWait_error_alreadyWaiting
@@ -348,5 +560,128 @@ theorem notificationWait_wait_path_notification
               refine ⟨ntfn, ntfn', rfl, hBadge, hMem, ?_, rfl⟩
               rw [← hStEq, hRemObj]
               exact hNtfnPreserved
+
+-- ============================================================================
+-- WS-E3/H-09: Scheduler lemmas for removeRunnable and ensureRunnable
+-- ============================================================================
+
+theorem removeRunnable_scheduler_current
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).scheduler.current =
+      if st.scheduler.current = some tid then none else st.scheduler.current := by
+  rfl
+
+theorem removeRunnable_mem
+    (st : SystemState) (tid x : SeLe4n.ThreadId) :
+    x ∈ (removeRunnable st tid).scheduler.runnable ↔ x ∈ st.scheduler.runnable ∧ x ≠ tid := by
+  simp [removeRunnable, List.mem_filter]
+
+theorem removeRunnable_nodup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hNodup : st.scheduler.runnable.Nodup) :
+    (removeRunnable st tid).scheduler.runnable.Nodup := by
+  exact hNodup.sublist List.filter_sublist
+
+theorem ensureRunnable_scheduler_current
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).scheduler.current = st.scheduler.current := by
+  unfold ensureRunnable; split <;> rfl
+
+theorem ensureRunnable_mem_self
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    tid ∈ (ensureRunnable st tid).scheduler.runnable := by
+  unfold ensureRunnable
+  split
+  · assumption
+  · simp [List.mem_append]
+
+theorem ensureRunnable_mem_old
+    (st : SystemState) (tid x : SeLe4n.ThreadId)
+    (hMem : x ∈ st.scheduler.runnable) :
+    x ∈ (ensureRunnable st tid).scheduler.runnable := by
+  unfold ensureRunnable
+  split
+  · exact hMem
+  · exact List.mem_append_left _ hMem
+
+theorem ensureRunnable_nodup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hNodup : st.scheduler.runnable.Nodup) :
+    (ensureRunnable st tid).scheduler.runnable.Nodup := by
+  unfold ensureRunnable
+  split
+  · exact hNodup
+  · rename_i hNotMem
+    rw [List.nodup_append]
+    refine ⟨hNodup, ?_, ?_⟩
+    · exact .cons (fun _ h => absurd h List.not_mem_nil) .nil
+    · intro x hxl y hya
+      rw [List.mem_singleton] at hya; subst hya
+      exact fun heq => hNotMem (heq ▸ hxl)
+
+theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
+    (h : a.toObjId = b.toObjId) : a = b := by
+  cases a; cases b
+  simp [ThreadId.toObjId, ThreadId.toNat, ObjId.ofNat] at h
+  exact congrArg ThreadId.mk h
+
+/-- WS-E3/H-09: If `storeTcbIpcState st tid ipc` succeeds and the post-state has a TCB
+    at `tid.toObjId`, then that TCB has `ipcState = ipc`. Covers both the case where
+    lookupTcb found an existing TCB (which was updated) and the no-op case (which leads
+    to contradiction since lookupTcb failing means no TCB at tid). -/
+theorem storeTcbIpcState_ipcState_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (tcb : TCB) (hTcb : st'.objects tid.toObjId = some (.tcb tcb)) :
+    tcb.ipcState = ipc := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none =>
+    simp [hLookup] at hStep; subst hStep
+    unfold lookupTcb at hLookup; simp [hTcb] at hLookup
+  | some tcb' =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hAt := storeObject_objects_eq st pair.2 tid.toObjId _ hStore
+      rw [hAt] at hTcb; cases hTcb; rfl
+
+/-- WS-E3/H-09: Reverse membership for ensureRunnable. If a thread is in the runnable
+    queue after ensureRunnable, it was either already there or it is the added thread. -/
+theorem ensureRunnable_mem_reverse
+    (st : SystemState) (tid x : SeLe4n.ThreadId)
+    (hMem : x ∈ (ensureRunnable st tid).scheduler.runnable) :
+    x ∈ st.scheduler.runnable ∨ x = tid := by
+  unfold ensureRunnable at hMem
+  split at hMem
+  · exact .inl hMem
+  · rw [List.mem_append, List.mem_singleton] at hMem; exact hMem
+
+/-- WS-E3/H-09: A thread is never in its own removeRunnable result. -/
+theorem removeRunnable_not_mem_self
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    tid ∉ (removeRunnable st tid).scheduler.runnable := by
+  rw [removeRunnable_mem]; simp
+
+/-- WS-E3/H-09: If a TCB exists at `tid.toObjId` in the pre-state, then a TCB still
+    exists there after `storeTcbIpcState` (though the ipcState may have changed). -/
+theorem storeTcbIpcState_tcb_exists_at_target
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
+    ∃ tcb', st'.objects tid.toObjId = some (.tcb tcb') := by
+  rcases hTcb with ⟨tcb, hObj⟩
+  unfold storeTcbIpcState at hStep
+  have hLookup : lookupTcb st tid = some tcb := by unfold lookupTcb; simp [hObj]
+  simp only [hLookup] at hStep
+  cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hStore] at hStep
+  | ok pair =>
+    simp only [hStore] at hStep
+    have := Except.ok.inj hStep; subst this
+    exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
 
 end SeLe4n.Kernel

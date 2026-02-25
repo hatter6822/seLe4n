@@ -102,17 +102,23 @@ Returns `true` if there exists a path of dependency edges from `src` to
 `target`. Uses `fuel` as a bound on the number of distinct nodes expanded
 (set via `serviceBfsFuel`).
 
+H-08 (WS-E3): On fuel exhaustion the BFS returns `true` (conservatively
+assumes a path may exist). This is sound for cycle-detection callers: a
+false positive rejects a valid edge registration, while a false negative
+would silently allow a cycle — the safe default is to assume reachability.
+
 The BFS correctly handles:
 - empty graphs (no services → no path),
 - self-reachability (src = target → true immediately),
 - disconnected components (frontier exhaustion → false),
-- already-visited nodes (skipped without consuming fuel). -/
+- already-visited nodes (skipped without consuming fuel),
+- fuel exhaustion → true (conservative soundness). -/
 def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
   go [src] [] fuel
 where
   go (frontier visited : List ServiceId) : Nat → Bool
-  | 0 => false  -- fuel exhausted: conservatively report no path
+  | 0 => true  -- H-08/WS-E3: fuel exhausted — conservatively assume path exists
   | fuel + 1 =>
       match frontier with
       | [] => false  -- frontier empty: no path exists
@@ -260,5 +266,60 @@ theorem serviceRestart_ok_implies_staged_steps
       refine ⟨stStopped, ?_, ?_⟩
       · rfl
       · simpa [hStop] using hStep
+
+-- ============================================================================
+-- H-08/WS-E3: BFS fuel adequacy and soundness
+-- ============================================================================
+
+/-- H-08/WS-E3: Fuel exhaustion always returns `true` (conservative safe answer).
+This is the core soundness property: since `go` with zero fuel returns `true`,
+a `false` result from `serviceHasPathTo` can only come from genuine frontier
+depletion (no unvisited nodes remain), never from premature fuel exhaustion. -/
+theorem serviceHasPathTo_fuel_zero_is_true
+    (st : SystemState) (src target : ServiceId) :
+    serviceHasPathTo st src target 0 = true := by
+  simp [serviceHasPathTo, serviceHasPathTo.go]
+
+/-- H-08/WS-E3: When `serviceHasPathTo` returns `false`, it was NOT due to fuel
+exhaustion. Since fuel=0 returns `true`, a `false` result means the BFS
+completed exploration and genuinely found no path — the frontier was fully
+depleted. This provides the soundness bridge: `false` is reliable evidence
+of unreachability within the explored frontier. -/
+theorem serviceHasPathTo_false_implies_not_fuel_exhaustion
+    (st : SystemState) (src target : ServiceId) (fuel : Nat)
+    (hFalse : serviceHasPathTo st src target fuel = false) :
+    fuel ≠ 0 := by
+  intro hFuel
+  subst hFuel
+  simp [serviceHasPathTo, serviceHasPathTo.go] at hFalse
+
+/-- H-08/WS-E3: The BFS fuel bound is always at least as large as the number
+of known kernel objects. Since the BFS only expands unvisited nodes and skips
+already-visited ones without consuming fuel, this ensures that any path
+traversing only registered object-backed services is fully explored before
+fuel runs out. -/
+theorem serviceBfsFuel_adequate (st : SystemState) :
+    serviceBfsFuel st ≥ st.objectIndex.length := by
+  unfold serviceBfsFuel
+  omega
+
+/-- H-08/WS-E3: `serviceRegisterDependency` rejects an edge when
+`serviceHasPathTo` reports potential reachability (either found or fuel
+exhausted). This is the operational soundness property: the cycle check
+cannot produce false negatives. -/
+theorem serviceRegisterDependency_rejects_if_path_or_fuel_exhausted
+    (st : SystemState) (svcId depId : ServiceId)
+    (svc : ServiceGraphEntry)
+    (hSvc : lookupService st svcId = some svc)
+    (hDep : (lookupService st depId).isSome = true)
+    (hNeSelf : svcId ≠ depId)
+    (hNotPresent : depId ∉ svc.dependencies)
+    (hPath : serviceHasPathTo st depId svcId (serviceBfsFuel st) = true) :
+    serviceRegisterDependency svcId depId st = .error .cyclicDependency := by
+  unfold serviceRegisterDependency
+  cases hD : lookupService st depId with
+  | none => simp [hD] at hDep
+  | some _ =>
+    simp [hSvc, hNeSelf, hNotPresent, hPath]
 
 end SeLe4n.Kernel
