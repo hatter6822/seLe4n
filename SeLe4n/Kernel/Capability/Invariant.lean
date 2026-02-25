@@ -1154,9 +1154,28 @@ theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv
 
+/-- `storeTcbIpcState` writes a TCB (non-CNode), so `cspaceSlotUnique` is preserved. -/
+private theorem storeTcbIpcState_preserves_cspaceSlotUnique
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hUniq : cspaceSlotUnique st)
+    (hTcb : storeTcbIpcState st tid ipcState = .ok st') :
+    cspaceSlotUnique st' := by
+  unfold storeTcbIpcState at hTcb
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hTcb; subst hTcb; exact hUniq
+  | some tcb =>
+    simp only [hLookup] at hTcb
+    revert hTcb
+    cases hInner : storeObject tid.toObjId _ st with
+    | error e => simp
+    | ok pair =>
+      simp only [Except.ok.injEq]; intro hEq; subst hEq
+      exact cspaceSlotUnique_of_storeObject_nonCNode st pair.2 tid.toObjId _ hUniq hInner
+        (fun cn h => by cases h)
+
 /-- WS-E2 / H-01: Compositional preservation of `endpointSend`.
-Endpoint operations only modify endpoint objects — all CNodes are unchanged,
-so `cspaceSlotUnique` and `cspaceLookupSound` transfer directly from pre-state. -/
+Endpoint operations modify endpoint and TCB objects and the scheduler —
+all CNodes are unchanged, so `cspaceSlotUnique` transfers through the chain. -/
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1165,10 +1184,19 @@ theorem endpointSend_preserves_capabilityInvariantBundle
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointSend_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases endpointSend_chain st st' endpointId sender hStep with
+    ⟨ep', st1, st2, hStore, _, hChain⟩
+  have hU1 := cspaceSlotUnique_of_endpoint_store st st1 endpointId ep' hUnique hStore
+  rcases hChain with ⟨hTcbStep, hSt'⟩ | ⟨receiver, hTcbStep, hSt'⟩ <;> subst hSt'
+  · have hU2 := storeTcbIpcState_preserves_cspaceSlotUnique st1 st2 sender _ hU1 hTcbStep
+    have hUnique' := cspaceSlotUnique_of_objects_eq st2 _ hU2 rfl
+    exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique _ hUnique', hAttRule,
+      lifecycleAuthorityMonotonicity_holds _⟩
+  · have hU2 := storeTcbIpcState_preserves_cspaceSlotUnique st1 st2 receiver _ hU1 hTcbStep
+    have hUnique' := cspaceSlotUnique_of_objects_eq st2 _ hU2
+      (ensureRunnable_preserves_objects st2 receiver)
+    exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique _ hUnique', hAttRule,
+      lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
@@ -1179,10 +1207,14 @@ theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointAwaitReceive_ok_as_storeObject st st' endpointId receiver hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases endpointAwaitReceive_chain st st' endpointId receiver hStep with
+    ⟨ep', st1, st2, hStore, _, hTcbStep, hSt'⟩
+  subst hSt'
+  have hU1 := cspaceSlotUnique_of_endpoint_store st st1 endpointId ep' hUnique hStore
+  have hU2 := storeTcbIpcState_preserves_cspaceSlotUnique st1 st2 receiver _ hU1 hTcbStep
+  have hUnique' := cspaceSlotUnique_of_objects_eq st2 _ hU2 rfl
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique _ hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointReceive`. -/
 theorem endpointReceive_preserves_capabilityInvariantBundle
@@ -1193,10 +1225,15 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  rcases endpointReceive_ok_as_storeObject st st' endpointId sender hStep with ⟨ep', hStore⟩
-  have hUnique' := cspaceSlotUnique_of_endpoint_store st st' endpointId ep' hUnique hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st'⟩
+  rcases endpointReceive_chain st st' endpointId sender hStep with
+    ⟨ep', st1, st2, hStore, _, hTcbStep, hSt'⟩
+  subst hSt'
+  have hU1 := cspaceSlotUnique_of_endpoint_store st st1 endpointId ep' hUnique hStore
+  have hU2 := storeTcbIpcState_preserves_cspaceSlotUnique st1 st2 sender _ hU1 hTcbStep
+  have hUnique' := cspaceSlotUnique_of_objects_eq st2 _ hU2
+    (ensureRunnable_preserves_objects st2 sender)
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique _ hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds _⟩
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)

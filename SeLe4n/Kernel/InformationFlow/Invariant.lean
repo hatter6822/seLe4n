@@ -90,7 +90,13 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
 -- ============================================================================
 
 /-- A successful endpoint send preserves low-equivalence for observers that cannot
-see the sender thread and cannot observe the endpoint object itself. -/
+see the sender thread and cannot observe the endpoint object itself.
+
+H-09 chain extension note: The chain decomposition exposes that `endpointSend`
+modifies the endpoint (high), the sender/receiver TCB, and the scheduler.
+The full non-interference proof through the TCB and scheduler steps requires
+additional chain-aware lemmas (TPI-D08). The storeObject step at the high
+endpoint is proven; the remaining chain steps are deferred to WS-E5. -/
 theorem endpointSend_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
@@ -99,15 +105,15 @@ theorem endpointSend_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (_hSenderHigh : threadObservable ctx observer sender = false)
-    (hEndpointHigh : objectObservable ctx observer endpointId = false)
-    (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
+    (_hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (_hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
+    (_hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  rcases endpointSend_ok_as_storeObject s₁ s₁' endpointId sender hStep₁ with ⟨ep₁, hStore₁⟩
-  rcases endpointSend_ok_as_storeObject s₂ s₂' endpointId sender hStep₂ with ⟨ep₂, hStore₂⟩
-  exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer endpointId (.endpoint ep₁) (.endpoint ep₂)
-    s₁ s₂ s₁' s₂' hLow hEndpointHigh hStore₁ hStore₂
+  -- TPI-D08 sorry: H-09 chain non-interference requires chain-aware lowEquivalent
+  -- lemmas for storeTcbIpcState and removeRunnable/ensureRunnable steps.
+  -- The storeObject step at the high endpoint preserves lowEquivalent (proven).
+  -- The TCB + scheduler steps need per-step non-interference lemmas (WS-E5 scope).
+  sorry -- TPI-D08
 
 -- ============================================================================
 -- Non-interference theorem #2: chooseThread (WS-D2, F-05, TPI-D01)

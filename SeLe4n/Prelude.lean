@@ -1,6 +1,27 @@
+/-!
+# Typed Identifiers
+
+## Sentinel ID convention (H-06, WS-E3)
+
+All identifier types (`ObjId`, `ThreadId`, `DomainId`, `Priority`, `Irq`,
+`ServiceId`, `CPtr`, `Slot`, `Badge`, `ASID`) derive `Inhabited`, which
+produces a default value of `⟨0⟩`. This is an intentional design decision:
+
+- **ID 0 is reserved as the sentinel (default) value** for all identifier types.
+- Kernel operations MUST NOT assign ID 0 to live objects. The bootstrap state
+  builder enforces this by starting object allocation at ID 1.
+- The `Inhabited` instances are retained for Lean framework compatibility
+  (e.g., `Array.get!`, `HashMap.find!`, default structure fields). Removing
+  them would require pervasive API changes with no safety benefit, since the
+  sentinel convention achieves the same goal.
+- Future work (WS-E6/L-04) may add runtime validation to `ThreadId.toObjId`
+  and similar conversions to reject sentinel values at API boundaries.
+-/
+
 namespace SeLe4n
 
-/-- Identifier for objects in the global kernel object store. -/
+/-- Identifier for objects in the global kernel object store.
+H-06 (WS-E3): Value 0 is a reserved sentinel; see module-level docstring. -/
 structure ObjId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -21,7 +42,14 @@ instance : ToString ObjId where
 
 end ObjId
 
-/-- Identifier for threads (TCBs). -/
+/-- H-06 (WS-E3): An identifier is valid (non-sentinel) when its raw value is nonzero. -/
+def ObjId.valid (id : ObjId) : Prop := id.val ≠ 0
+
+/-- H-06: The Inhabited default is the sentinel value 0. -/
+theorem ObjId.sentinel_val : (default : ObjId).val = 0 := rfl
+
+/-- Identifier for threads (TCBs).
+H-06 (WS-E3): Value 0 is a reserved sentinel; see Prelude module-level docstring. -/
 structure ThreadId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -44,6 +72,16 @@ instance : ToString ThreadId where
   toString tid := toString tid.toNat
 
 end ThreadId
+
+/-- H-09 (WS-E3): ThreadId → ObjId is injective. Two thread identifiers that
+map to the same object identifier must be equal. This is used in IPC-scheduler
+contract proofs to ensure that storeTcbIpcState at one thread ID does not
+corrupt the TCB observed at a different thread ID. -/
+theorem ThreadId.toObjId_injective (t1 t2 : ThreadId)
+    (h : t1.toObjId = t2.toObjId) : t1 = t2 := by
+  cases t1 with | mk v1 => cases t2 with | mk v2 =>
+  simp [ThreadId.toObjId, ThreadId.toNat, ObjId.ofNat] at h
+  subst h; rfl
 
 /-- Scheduling domain identifier. -/
 structure DomainId where

@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Service.Invariant
 
 /-!
@@ -38,7 +39,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     m3IpcSeedInvariantBundle st ∧
     m35IpcSchedulerInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
-    serviceLifecycleCapabilityInvariantBundle st
+    serviceLifecycleCapabilityInvariantBundle st ∧
+    vspaceInvariantBundle st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where

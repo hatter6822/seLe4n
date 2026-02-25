@@ -493,4 +493,51 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
+-- ============================================================================
+-- M-09 (WS-E3): storeObject metadata sync for type-changing stores
+-- ============================================================================
+
+/-- M-09: After a type-changing `storeObject`, the lifecycle metadata at the
+target ID reflects the *new* object type, not the old one.
+
+This proves that `storeObject` correctly synchronizes metadata even when the
+stored object has a different type from what was previously at that ID. -/
+theorem storeObject_metadata_type_change
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (oldObj newObj : KernelObject)
+    (_hOld : st.objects oid = some oldObj)
+    (_hDifferentType : oldObj.objectType ≠ newObj.objectType)
+    (hStep : storeObject oid newObj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes oid = some newObj.objectType ∧
+    st'.objects oid = some newObj := by
+  constructor
+  · exact storeObject_updates_objectTypeMeta st st' oid newObj hStep
+  · exact storeObject_objects_eq st st' oid newObj hStep
+
+/-- M-09 corollary: type-changing stores preserve overall metadata consistency. -/
+theorem storeObject_type_change_preserves_consistency
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hConsistent : SystemState.lifecycleMetadataConsistent st)
+    (hStep : storeObject oid newObj st = .ok ((), st')) :
+    SystemState.lifecycleMetadataConsistent st' :=
+  storeObject_preserves_lifecycleMetadataConsistent st st' oid newObj hConsistent hStep
+
+-- ============================================================================
+-- L-06 (WS-E3): Default SystemState satisfies lifecycleMetadataConsistent
+-- ============================================================================
+
+/-- L-06: The default (initial) `SystemState` satisfies `lifecycleMetadataConsistent`.
+
+Since the default state has `objects = fun _ => none` and
+`lifecycle.objectTypes = fun _ => none`, both metadata-consistency conditions
+hold vacuously: there are no objects to be inconsistent about. -/
+theorem default_systemState_lifecycleMetadataConsistent :
+    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
+  constructor
+  · intro oid; rfl
+  · intro ref; rfl
+
 end SeLe4n.Model
