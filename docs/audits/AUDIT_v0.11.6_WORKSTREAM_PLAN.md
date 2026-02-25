@@ -51,10 +51,10 @@ related findings into coherent implementation slices.
 | H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
-| H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 |
-| H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 |
-| H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 |
-| H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 |
+| H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 | **RESOLVED** |
+| H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 | **RESOLVED** |
+| H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 | **RESOLVED** |
+| H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 | **RESOLVED** |
 | M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 |
 | M-02 | MEDIUM | No message payload in IPC | WS-E4 |
 | M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
@@ -62,7 +62,7 @@ related findings into coherent implementation slices.
 | M-05 | MEDIUM | No domain scheduling | WS-E6 |
 | M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 |
 | M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
-| M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 |
+| M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
 | M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
 | M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 |
@@ -72,7 +72,7 @@ related findings into coherent implementation slices.
 | L-03 | LOW | Missing monad helpers | WS-E6 |
 | L-04 | LOW | ID conversion without validation | WS-E6 |
 | L-05 | LOW | objectIndex never pruned | WS-E6 |
-| L-06 | LOW | No initialization proof | WS-E3 |
+| L-06 | LOW | No initialization proof | WS-E3 | **RESOLVED** |
 | L-07 | LOW | Fixture matching is fragile | WS-E1 | **RESOLVED** |
 | L-08 | LOW | Anchor presence ≠ correctness | WS-E1 | **RESOLVED** |
 
@@ -288,8 +288,8 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P0:** Baseline — close quick fixes, publish WS-E planning backbone,
   update documentation to reflect v0.11.6 audit (**completed**).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
-- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**current phase**).
-- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3.
+- **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
+- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**current phase**).
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
 
@@ -301,7 +301,7 @@ WS-E4 (CDT integration for capability flow proofs).
 |------------|--------|----------|--------------|-------|
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
-| WS-E3 | Planned | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
+| WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
@@ -320,3 +320,9 @@ WS-E4 (CDT integration for capability flow proofs).
 | C-01 | Reformulated `cspaceSlotUnique`/`cspaceLookupSound` from tautological to genuine structural invariants; bridge theorem + `capabilityInvariantBundle_of_slotUnique` | WS-E2 |
 | H-01 | All preservation proofs refactored to compositional style with transfer lemmas (`cspaceSlotUnique_of_storeObject_*`, CNode `insert/remove/revokeTargetLocal_slotsUnique`) | WS-E2 |
 | H-03 | End-to-end badge routing chain: `mintDerivedCap_badge_propagated` through `badge_notification_routing_consistent` | WS-E2 |
+| H-06 | Reserved ID 0 as sentinel with `isReserved`/`sentinel` helpers on `ObjId`, `ThreadId`, `ServiceId`; identity theorems (`default_eq_sentinel`, `sentinel_isReserved`) | WS-E3 |
+| H-07 | Added `vspaceInvariantBundle` to `proofLayerInvariantBundle` composition; adapter preservation theorems for timer/register operations | WS-E3 |
+| H-08 | Changed `serviceHasPathTo` fuel-exhaustion base case from `false` to `true` (conservative soundness); added `serviceHasPathTo_fuel_zero_is_true`, `serviceHasPathTo_false_implies_not_fuel_exhaustion`, `serviceBfsFuel_adequate`, `serviceRegisterDependency_rejects_if_path_or_fuel_exhausted`, `bfs_false_implies_no_nontrivialPath` | WS-E3 |
+| H-09 | Endpoint operations (`endpointSend`, `endpointAwaitReceive`, `endpointReceive`) now transition thread IPC state via multi-step chains (`storeObject` + `storeTcbIpcState` + `removeRunnable`/`ensureRunnable`); all invariant preservation proofs updated; IPC-scheduler contract predicates (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`) are non-vacuous | WS-E3 |
+| M-09 | Added `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored` proving metadata correctly synchronized for type-changing stores | WS-E3 |
+| L-06 | Added `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle` proving the default (empty) state satisfies all invariant bundles | WS-E3 |
