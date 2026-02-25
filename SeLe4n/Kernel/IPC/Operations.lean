@@ -71,6 +71,7 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
                     | .error e => .error e
                     | .ok st'' => .ok ((), ensureRunnable st'' receiver)
             | _, _ => .error .endpointStateMismatch
+        | .hasSenders | .hasReceivers => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -95,6 +96,8 @@ def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId
         | .idle, _, _ => .error .endpointStateMismatch
         | .send, _, _ => .error .endpointStateMismatch
         | .receive, _, _ => .error .endpointStateMismatch
+        | .hasSenders, _, _ => .error .endpointStateMismatch
+        | .hasReceivers, _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -121,6 +124,8 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
         | .send, _, some _ => .error .endpointStateMismatch
         | .idle, _, _ => .error .endpointStateMismatch
         | .receive, _, _ => .error .endpointStateMismatch
+        | .hasSenders, _, _ => .error .endpointStateMismatch
+        | .hasReceivers, _, _ => .error .endpointStateMismatch
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -682,5 +687,183 @@ theorem storeTcbIpcState_tcb_exists_at_target
     simp only [hStore] at hStep
     have := Except.ok.inj hStep; subst this
     exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
+
+-- ============================================================================
+-- WS-E4/M-02: TCB payload helpers
+-- ============================================================================
+
+/-- Store a message payload on a thread's TCB. -/
+def storeTcbPayload (st : SystemState) (tid : SeLe4n.ThreadId)
+    (payload : Option MessagePayload) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .ok st  -- no-op if TCB not found (defensive)
+  | some tcb =>
+      let tcb' := { tcb with ipcPayload := payload }
+      match storeObject tid.toObjId (.tcb tcb') st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
+/-- Read a message payload from a thread's TCB. -/
+def lookupTcbPayload (st : SystemState) (tid : SeLe4n.ThreadId) : Option MessagePayload :=
+  match lookupTcb st tid with
+  | none => none
+  | some tcb => tcb.ipcPayload
+
+/-- Store a reply capability (sender thread ID) on a receiver's TCB. -/
+def storeTcbReplyCap (st : SystemState) (receiver sender : SeLe4n.ThreadId)
+    : Except KernelError SystemState :=
+  match lookupTcb st receiver with
+  | none => .ok st  -- no-op if TCB not found
+  | some tcb =>
+      let tcb' := { tcb with replyCap := some sender }
+      match storeObject receiver.toObjId (.tcb tcb') st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
+-- ============================================================================
+-- WS-E4/M-01: Dual-queue endpoint operations (send/receive queue separation)
+-- ============================================================================
+
+/-- WS-E4/M-01: Send to endpoint using the dual-queue model.
+
+Sender enqueues on `sendQueue`. If a receiver is waiting on `receiveQueue`,
+the first receiver is dequeued and matched with the sender (rendezvous).
+WS-E4/M-02: Message payload is stored on the sender's TCB. -/
+def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (payload : Option MessagePayload := none) : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.receiveQueue with
+        | receiver :: restRecv =>
+            -- Rendezvous: match sender with first waiting receiver
+            let ep' : Endpoint := { ep with
+              receiveQueue := restRecv
+              state := if restRecv.isEmpty then .idle else .hasReceivers
+              sendQueue := ep.sendQueue
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                -- Store payload on sender's TCB for receiver to pick up
+                match storeTcbPayload st' sender payload with
+                | .error e => .error e
+                | .ok st'' =>
+                    -- Unblock receiver
+                    match storeTcbIpcState st'' receiver .ready with
+                    | .error e => .error e
+                    | .ok st''' => .ok ((), ensureRunnable st''' receiver)
+        | [] =>
+            -- No receiver waiting: enqueue sender
+            let ep' : Endpoint := { ep with
+              sendQueue := ep.sendQueue ++ [sender]
+              state := .hasSenders
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbPayload st' sender payload with
+                | .error e => .error e
+                | .ok st'' =>
+                    match storeTcbIpcState st'' sender (.blockedOnSend endpointId) with
+                    | .error e => .error e
+                    | .ok st''' => .ok ((), removeRunnable st''' sender)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-E4/M-01: Receive from endpoint using the dual-queue model.
+
+WS-E4/M-02: Returns the sender's ThreadId and its message payload.
+WS-E4/M-12: Also returns a one-shot reply capability for the sender. -/
+def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    : Kernel (SeLe4n.ThreadId × Option MessagePayload × Option Capability) :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.sendQueue with
+        | sender :: restSend =>
+            -- Rendezvous: dequeue first waiting sender
+            let ep' : Endpoint := { ep with
+              sendQueue := restSend
+              state := if restSend.isEmpty then .idle else .hasSenders
+              receiveQueue := ep.receiveQueue
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                -- Read payload from sender's TCB
+                let senderPayload := lookupTcbPayload st' sender
+                -- Create reply capability
+                let replyCap : Capability := {
+                  target := .replyCap sender
+                  rights := [.write]
+                  badge := none
+                }
+                -- Store reply cap on receiver's TCB
+                match storeTcbReplyCap st' receiver sender with
+                | .error e => .error e
+                | .ok st'' =>
+                    -- Unblock sender, set to blockedOnReply
+                    match storeTcbIpcState st'' sender (.blockedOnReply endpointId) with
+                    | .error e => .error e
+                    | .ok st''' =>
+                        .ok ((sender, senderPayload, some replyCap), st''')
+        | [] =>
+            -- No sender waiting: enqueue receiver
+            let ep' : Endpoint := { ep with
+              receiveQueue := ep.receiveQueue ++ [receiver]
+              state := .hasReceivers
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((receiver, none, none), removeRunnable st'' receiver)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+-- ============================================================================
+-- WS-E4/M-12: Reply operation for bidirectional IPC
+-- ============================================================================
+
+/-- WS-E4/M-12: Reply to a sender using a one-shot reply capability.
+
+The receiver sends a response message back to the original sender who is
+blocked on reply. The reply capability is consumed (single-use). -/
+def endpointReply (senderTid : SeLe4n.ThreadId) (payload : Option MessagePayload := none)
+    : Kernel Unit :=
+  fun st =>
+    -- Verify sender exists and is blocked on reply
+    match lookupTcb st senderTid with
+    | none => .error .objectNotFound
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            -- Store reply payload on sender's TCB
+            match storeTcbPayload st senderTid payload with
+            | .error e => .error e
+            | .ok st' =>
+                -- Set sender to ready and add to runnable
+                match storeTcbIpcState st' senderTid .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((), ensureRunnable st'' senderTid)
+        | _ => .error .replyCapRevoked
+
+/-- WS-E4/M-12: Atomic receive-and-reply (ReplyRecv) operation.
+
+Replies to the current sender, then waits for the next message on the endpoint.
+This combines reply + receive into a single atomic operation, matching seL4's
+`seL4_ReplyRecv` syscall semantics. -/
+def endpointReplyRecv (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replySender : SeLe4n.ThreadId) (replyPayload : Option MessagePayload := none)
+    : Kernel (SeLe4n.ThreadId × Option MessagePayload × Option Capability) :=
+  fun st =>
+    -- First: reply to the current sender
+    match endpointReply replySender replyPayload st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        -- Then: receive next message from endpoint
+        endpointReceiveDual endpointId receiver st'
 
 end SeLe4n.Kernel

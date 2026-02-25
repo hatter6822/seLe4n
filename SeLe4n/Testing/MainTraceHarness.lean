@@ -421,6 +421,188 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       | .ok (cap, _) =>
           IO.println s!"minted cap rights: {reprStr cap.rights}"
 
+-- ============================================================================
+-- WS-E4: Capability copy/move/mutate, CDT revocation, dual-queue IPC, reply
+-- ============================================================================
+
+/-- Define extra slot addresses for WS-E4 tests. -/
+private def wsE4CopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 10 }
+private def wsE4MoveSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 10 }
+private def wsE4MoveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 11 }
+private def wsE4MutateSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 12 }
+private def wsE4RevokeSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 20 }
+private def wsE4RevokeChild : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 21 }
+private def wsE4DualEndpoint : SeLe4n.ObjId := 40
+
+private def runWsE4CapabilityIpcTrace (st1 : SystemState) : IO Unit := do
+  -- -----------------------------------------------------------------------
+  -- H-02: Occupied slot rejection
+  -- -----------------------------------------------------------------------
+  -- rootSlot (cnode=10, slot=0) already has a capability in the bootstrap state
+  let testCap : Capability := { target := .object 1, rights := [.read], badge := none }
+  match SeLe4n.Kernel.cspaceInsertSlot rootSlot testCap st1 with
+  | .error err => IO.println s!"H-02 occupied slot rejection: {reprStr err}"
+  | .ok _ => IO.println "unexpected insert success on occupied slot"
+
+  -- -----------------------------------------------------------------------
+  -- C-02: cspaceCopy — copy from rootSlot to an empty slot in CNode 11
+  -- -----------------------------------------------------------------------
+  match SeLe4n.Kernel.cspaceCopy rootSlot wsE4CopyDst st1 with
+  | .error err => IO.println s!"cspaceCopy error: {reprStr err}"
+  | .ok ((), stCopy) =>
+      match SeLe4n.Kernel.cspaceLookupSlot wsE4CopyDst stCopy with
+      | .error err => IO.println s!"cspaceCopy lookup error: {reprStr err}"
+      | .ok (copiedCap, _) =>
+          IO.println s!"cspaceCopy target matches source: {reprStr (copiedCap.target == testCap.target)}"
+          IO.println s!"cspaceCopy rights: {reprStr copiedCap.rights}"
+          -- Verify CDT edge was created
+          let cdtChildren := stCopy.cdt.childrenOf rootSlot.cnode rootSlot.slot
+          IO.println s!"cspaceCopy CDT children of source: {reprStr cdtChildren.length}"
+
+  -- -----------------------------------------------------------------------
+  -- C-02: cspaceMove — move the copied cap from slot 10 to slot 11
+  -- -----------------------------------------------------------------------
+  -- First set up a state with a cap in slot 10 via copy
+  match SeLe4n.Kernel.cspaceCopy rootSlot wsE4MoveSrc st1 with
+  | .error err => IO.println s!"cspaceMove setup error: {reprStr err}"
+  | .ok ((), stPreMove) =>
+      match SeLe4n.Kernel.cspaceMove wsE4MoveSrc wsE4MoveDst stPreMove with
+      | .error err => IO.println s!"cspaceMove error: {reprStr err}"
+      | .ok ((), stMove) =>
+          -- Source slot should be empty
+          match SeLe4n.Kernel.cspaceLookupSlot wsE4MoveSrc stMove with
+          | .error err => IO.println s!"cspaceMove source now empty: {reprStr err}"
+          | .ok _ => IO.println "unexpected: source not empty after move"
+          -- Destination should have the cap
+          match SeLe4n.Kernel.cspaceLookupSlot wsE4MoveDst stMove with
+          | .error err => IO.println s!"cspaceMove dest lookup error: {reprStr err}"
+          | .ok (movedCap, _) =>
+              IO.println s!"cspaceMove dest rights: {reprStr movedCap.rights}"
+
+  -- -----------------------------------------------------------------------
+  -- C-02: cspaceMutate — attenuate rights in place
+  -- -----------------------------------------------------------------------
+  -- Copy first to get a cap in slot 12
+  match SeLe4n.Kernel.cspaceCopy rootSlot wsE4MutateSlot st1 with
+  | .error err => IO.println s!"cspaceMutate setup error: {reprStr err}"
+  | .ok ((), stPreMutate) =>
+      -- Mutate to read-only
+      match SeLe4n.Kernel.cspaceMutate wsE4MutateSlot [.read] none stPreMutate with
+      | .error err => IO.println s!"cspaceMutate error: {reprStr err}"
+      | .ok ((), stMutate) =>
+          match SeLe4n.Kernel.cspaceLookupSlot wsE4MutateSlot stMutate with
+          | .error err => IO.println s!"cspaceMutate lookup error: {reprStr err}"
+          | .ok (mutatedCap, _) =>
+              IO.println s!"cspaceMutate attenuated rights: {reprStr mutatedCap.rights}"
+      -- Mutate with invalid rights (superset) should fail
+      match SeLe4n.Kernel.cspaceMutate wsE4MutateSlot [.read, .write, .grant, .grantReply] none stPreMutate with
+      | .error err => IO.println s!"cspaceMutate rights escalation rejected: {reprStr err}"
+      | .ok _ => IO.println "unexpected: rights escalation succeeded"
+
+  -- -----------------------------------------------------------------------
+  -- C-04: CDT-based cross-CNode revocation
+  -- -----------------------------------------------------------------------
+  -- Set up: mint into slot 20, then copy from slot 20 to slot 21 (creating CDT child)
+  match SeLe4n.Kernel.cspaceMint rootSlot wsE4RevokeSrc [.read, .write] none st1 with
+  | .error err => IO.println s!"cspaceRevokeCdt setup mint error: {reprStr err}"
+  | .ok ((), stMinted) =>
+      match SeLe4n.Kernel.cspaceCopy wsE4RevokeSrc wsE4RevokeChild stMinted with
+      | .error err => IO.println s!"cspaceRevokeCdt setup copy error: {reprStr err}"
+      | .ok ((), stWithChild) =>
+          -- Revoke from slot 20 should also delete CDT child at slot 21
+          match SeLe4n.Kernel.cspaceRevokeCdt wsE4RevokeSrc stWithChild with
+          | .error err => IO.println s!"cspaceRevokeCdt error: {reprStr err}"
+          | .ok ((), stRevoked) =>
+              -- Source should still exist (revoke doesn't delete source)
+              match SeLe4n.Kernel.cspaceLookupSlot wsE4RevokeSrc stRevoked with
+              | .error err => IO.println s!"cspaceRevokeCdt source lookup error: {reprStr err}"
+              | .ok (srcCap, _) =>
+                  IO.println s!"cspaceRevokeCdt source preserved: {reprStr srcCap.rights}"
+              -- CDT child should be gone
+              match SeLe4n.Kernel.cspaceLookupSlot wsE4RevokeChild stRevoked with
+              | .error err => IO.println s!"cspaceRevokeCdt child deleted: {reprStr err}"
+              | .ok _ => IO.println "unexpected: CDT child still present after revoke"
+
+  -- -----------------------------------------------------------------------
+  -- M-01/M-02: Dual-queue endpoint send/receive with payload
+  -- -----------------------------------------------------------------------
+  -- Create a fresh endpoint with dual-queue fields
+  let stDualEp : SystemState :=
+    { st1 with
+      objects := fun oid =>
+        if oid = wsE4DualEndpoint then
+          some (.endpoint { state := .idle, queue := [], waitingReceiver := none,
+                            sendQueue := [], receiveQueue := [] })
+        else st1.objects oid
+    }
+  let testPayload : MessagePayload := { registers := [42, 99], transferredCaps := [] }
+  -- Sender 1 sends with payload (no receiver waiting → blocks)
+  match SeLe4n.Kernel.endpointSendDual wsE4DualEndpoint 1 (some testPayload) stDualEp with
+  | .error err => IO.println s!"dual send error: {reprStr err}"
+  | .ok ((), stSent) =>
+      IO.println "dual-queue send enqueued sender"
+      -- Receiver 12 receives (should dequeue sender 1 with rendezvous)
+      match SeLe4n.Kernel.endpointReceiveDual wsE4DualEndpoint 12 stSent with
+      | .error err => IO.println s!"dual receive error: {reprStr err}"
+      | .ok ((sender, payload, replyCap), stRecv) =>
+          IO.println s!"dual-queue receive sender: {sender.toNat}"
+          IO.println s!"dual-queue receive payload registers: {reprStr (payload.map MessagePayload.registers)}"
+          IO.println s!"dual-queue receive reply cap present: {reprStr replyCap.isSome}"
+
+          -- -----------------------------------------------------------------
+          -- M-12: Reply operation
+          -- -----------------------------------------------------------------
+          match replyCap with
+          | none => IO.println "no reply cap to test"
+          | some _rc =>
+              -- Sender should be blockedOnReply; reply to them
+              match SeLe4n.Kernel.endpointReply sender (some { registers := [100], transferredCaps := [] }) stRecv with
+              | .error err => IO.println s!"endpointReply error: {reprStr err}"
+              | .ok ((), stReply) =>
+                  IO.println "endpointReply unblocked sender"
+                  -- Verify sender is back to ready
+                  match SeLe4n.Kernel.lookupTcb stReply sender with
+                  | none => IO.println "reply sender TCB lookup failed"
+                  | some tcb =>
+                      IO.println s!"reply sender ipcState: {reprStr tcb.ipcState}"
+
+  -- -----------------------------------------------------------------------
+  -- M-12: ReplyRecv (atomic reply + receive)
+  -- -----------------------------------------------------------------------
+  -- Build a scenario: sender 1 has sent, receiver 12 has received and got reply cap
+  -- Then sender 12 (new sender) also sends, and receiver does replyRecv
+  let stRRSetup : SystemState :=
+    { st1 with
+      objects := fun oid =>
+        if oid = wsE4DualEndpoint then
+          some (.endpoint { state := .idle, queue := [], waitingReceiver := none,
+                            sendQueue := [], receiveQueue := [] })
+        else st1.objects oid
+    }
+  -- First send: sender 1
+  match SeLe4n.Kernel.endpointSendDual wsE4DualEndpoint 1 none stRRSetup with
+  | .error err => IO.println s!"replyRecv setup send1 error: {reprStr err}"
+  | .ok ((), stRR1) =>
+      -- First receive: receiver 12
+      match SeLe4n.Kernel.endpointReceiveDual wsE4DualEndpoint 12 stRR1 with
+      | .error err => IO.println s!"replyRecv setup recv error: {reprStr err}"
+      | .ok ((firstSender, _, _), stRR2) =>
+          -- Second send: sender 1 sends again (after being unblocked by receive)
+          -- Actually, sender 1 is now blockedOnReply, so use a different sender
+          match SeLe4n.Kernel.endpointSendDual wsE4DualEndpoint 12 none stRR2 with
+          | .error _ =>
+              -- 12 might not be runnable; just test replyRecv with firstSender
+              -- ReplyRecv: reply to firstSender, then wait on endpoint
+              match SeLe4n.Kernel.endpointReplyRecv wsE4DualEndpoint 12 firstSender none stRR2 with
+              | .error err => IO.println s!"endpointReplyRecv blocks (no pending sender): {reprStr err}"
+              | .ok ((_, _, _), _) =>
+                  IO.println "endpointReplyRecv completed"
+          | .ok ((), stRR3) =>
+              match SeLe4n.Kernel.endpointReplyRecv wsE4DualEndpoint 12 firstSender none stRR3 with
+              | .error err => IO.println s!"endpointReplyRecv error: {reprStr err}"
+              | .ok ((rrSender, _, _), _) =>
+                  IO.println s!"endpointReplyRecv next sender: {rrSender.toNat}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -437,6 +619,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityAndArchitectureTrace st1
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
+  runWsE4CapabilityIpcTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

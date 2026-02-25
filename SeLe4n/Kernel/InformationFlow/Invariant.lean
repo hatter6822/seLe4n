@@ -281,6 +281,8 @@ private theorem endpointSend_projection_preserved
           rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
               storeTcbIpcState_preserves_projection ctx observer pair.2 st2 receiver _ hRecvObjHigh hTcb,
               storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 -- ============================================================================
 -- Non-interference theorem #1: endpointSend (existing, retained)

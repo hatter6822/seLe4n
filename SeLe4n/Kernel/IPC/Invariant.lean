@@ -70,6 +70,8 @@ def endpointQueueWellFormed (ep : Endpoint) : Prop :=
   | .idle => ep.queue = [] ∧ ep.waitingReceiver = none
   | .send => ep.queue ≠ [] ∧ ep.waitingReceiver = none
   | .receive => ep.queue = [] ∧ ep.waitingReceiver.isSome
+  | .hasSenders => ep.sendQueue ≠ [] ∧ ep.receiveQueue = [] ∧ ep.waitingReceiver = none
+  | .hasReceivers => ep.sendQueue = [] ∧ ep.receiveQueue ≠ [] ∧ ep.waitingReceiver = none
 
 def endpointObjectValid (ep : Endpoint) : Prop :=
   match ep.waitingReceiver with
@@ -217,6 +219,8 @@ theorem endpointSend_result_wellFormed
           exact ⟨_, storeTcbIpcState_preserves_endpoint pair.2 st2 receiver _ endpointId _
             (storeObject_objects_eq st pair.2 endpointId _ hStore) hTcb,
             by simp [endpointQueueWellFormed]⟩
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 theorem endpointAwaitReceive_result_wellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -281,6 +285,8 @@ theorem endpointReceive_result_wellFormed
               (storeObject_objects_eq st pair.2 endpointId _ hStore) hTcb, ?_⟩
             simp only [endpointQueueWellFormed]
             cases tl <;> simp [List.isEmpty]
+  | hasSenders => simp [endpointReceive, hObj, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObj, hState] at hStep
 
 -- ============================================================================
 -- CNode backward-preservation: if post-state has a CNode, pre-state had it.
@@ -346,6 +352,8 @@ private theorem endpointSend_preserves_cnode
           by_cases hEq : oid = endpointId
           · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
           · rw [storeObject_objects_ne st pair.2 endpointId oid _ hEq hStore] at hCn1; exact hCn1
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 private theorem endpointAwaitReceive_preserves_cnode
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -412,6 +420,8 @@ private theorem endpointReceive_preserves_cnode
             by_cases hEq : oid = endpointId
             · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
             · rw [storeObject_objects_ne st pair.2 endpointId oid _ hEq hStore] at hCn1; exact hCn1
+  | hasSenders => simp [endpointReceive, hObj, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObj, hState] at hStep
 
 -- ============================================================================
 -- Endpoint backward-preservation: if post-state has an endpoint at oid ≠ target,
@@ -468,6 +478,8 @@ private theorem endpointSend_preserves_other_endpoint
           have hEp2 : st2.objects oid = some (.endpoint ep) := by rwa [ensureRunnable_preserves_objects] at hEp
           have hEp1 := storeTcbIpcState_endpoint_backward pair.2 st2 receiver _ oid ep hTcb hEp2
           rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at hEp1
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 -- ============================================================================
 -- Notification backward-preservation through endpoint operations
@@ -529,6 +541,8 @@ private theorem endpointSend_preserves_notification
           by_cases hEq : oid = endpointId
           · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
           · rwa [storeObject_objects_ne st pair.2 endpointId oid _ hEq hStore] at h1
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 -- ============================================================================
 -- IPC Invariant preservation
@@ -641,6 +655,8 @@ private theorem endpointReceive_preserves_other_endpoint
             have h2 : st2.objects oid = some (.endpoint ep') := by rwa [ensureRunnable_preserves_objects] at hObjPost
             have h1 := storeTcbIpcState_endpoint_backward pair.2 st2 hd _ oid ep' hTcb h2
             rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h1
+  | hasSenders => simp [endpointReceive, hObjEq, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObjEq, hState] at hStep
 
 private theorem endpointReceive_preserves_notification
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
@@ -675,6 +691,8 @@ private theorem endpointReceive_preserves_notification
             by_cases hEqId : oid = endpointId
             · subst hEqId; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
             · rwa [storeObject_objects_ne st pair.2 endpointId oid _ hEqId hStore] at h1
+  | hasSenders => simp [endpointReceive, hObjEq, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObjEq, hState] at hStep
 
 theorem endpointReceive_preserves_ipcInvariant
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
@@ -870,6 +888,8 @@ theorem endpointSend_preserves_schedulerInvariantBundle
                 have h_s1 := storeObject_objects_ne st pair.2 endpointId x.toObjId _ hNe1 hStore
                 have h_s2 := storeTcbIpcState_preserves_objects_ne pair.2 st2 receiver _ x.toObjId hNe2 hTcb
                 exact ⟨tcb, by rw [h_s2, h_s1]; exact hTcbObj⟩
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -995,6 +1015,8 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
                   exact ⟨tcb, by
                     rw [storeTcbIpcState_preserves_objects_ne pair.2 st2 hd _ x.toObjId hNe2 hTcb,
                         storeObject_objects_ne st pair.2 endpointId x.toObjId _ hNe1 hStore]; exact hTcbObj⟩
+  | hasSenders => simp [endpointReceive, hObj, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObj, hState] at hStep
 
 -- ============================================================================
 -- IPC Scheduler Contract Predicate Preservation (M3.5)
@@ -1182,6 +1204,8 @@ theorem endpointSend_preserves_ipcSchedulerContractPredicates
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
           have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st2 endpointId _ receiver _ hStore hTcb
           exact handshake_path_preserves_contracts st pair.2 st2 endpointId receiver _ hStore hTcb hSchedEq hReady hBlockSend hBlockRecv
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -1240,6 +1264,8 @@ theorem endpointReceive_preserves_ipcSchedulerContractPredicates
             subst hStEq; subst hSenderEq
             have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st2 endpointId _ hd _ hStore hTcb
             exact handshake_path_preserves_contracts st pair.2 st2 endpointId hd _ hStore hTcb hSchedEq hReady hBlockSend hBlockRecv
+  | hasSenders => simp [endpointReceive, hObj, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObj, hState] at hStep
 
 -- ============================================================================
 -- M3.5 step-6: per-predicate decomposition of bundled preservation theorems
@@ -1463,5 +1489,45 @@ theorem notificationWait_result_wellFormed_wait
   constructor
   · intro h; simp [List.append_eq_nil_iff] at h
   · rfl
+
+-- ============================================================================
+-- WS-E4: Dual-queue endpoint well-formedness definitions
+-- ============================================================================
+
+/-- WS-E4/M-01: Well-formedness for dual-queue endpoints.
+
+The dual-queue endpoint is well-formed when:
+- idle: both queues empty
+- hasSenders: send queue non-empty, receive queue empty
+- hasReceivers: send queue empty, receive queue non-empty -/
+def dualQueueEndpointWellFormed (ep : Endpoint) : Prop :=
+  match ep.state with
+  | .idle => ep.sendQueue = [] ∧ ep.receiveQueue = []
+  | .hasSenders => ep.sendQueue ≠ [] ∧ ep.receiveQueue = []
+  | .hasReceivers => ep.sendQueue = [] ∧ ep.receiveQueue ≠ []
+  | .send => True  -- legacy state, not used by dual-queue ops
+  | .receive => True  -- legacy state, not used by dual-queue ops
+
+/-- WS-E4/M-01: IPC invariant extended with dual-queue endpoint well-formedness. -/
+def dualQueueIpcInvariant (st : SystemState) : Prop :=
+  ipcInvariant st ∧
+  (∀ oid ep, st.objects oid = some (.endpoint ep) →
+    ep.state = .hasSenders ∨ ep.state = .hasReceivers ∨ ep.state = .idle →
+    dualQueueEndpointWellFormed ep)
+
+/-- WS-E4/M-12: Reply capability validity.
+
+A reply capability is valid when it references a thread that exists and is
+blocked on reply. -/
+def replyCapValid (st : SystemState) (senderTid : SeLe4n.ThreadId) : Prop :=
+  ∃ tcb, st.objects senderTid.toObjId = some (.tcb tcb) ∧
+    ∃ eid, tcb.ipcState = .blockedOnReply eid
+
+/-- WS-E4/M-12: BlockedOnReply threads are not runnable. -/
+def blockedOnReplyNotRunnable (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
+    st.objects tid.toObjId = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnReply endpointId →
+    tid ∉ st.scheduler.runnable
 
 end SeLe4n.Kernel

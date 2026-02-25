@@ -43,11 +43,11 @@ related findings into coherent implementation slices.
 | ID | Severity | Description | Workstream | Status |
 |----|----------|-------------|------------|--------|
 | C-01 | CRITICAL | Tautological proofs (cspaceSlotUnique, cspaceLookupSound) | WS-E2 | **RESOLVED** |
-| C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 |
-| C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 |
-| C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 |
+| C-02 | CRITICAL | Missing capability operations (copy, move, mutate) | WS-E4 | **RESOLVED** |
+| C-03 | CRITICAL | No Capability Derivation Tree (CDT) | WS-E4 | **RESOLVED** |
+| C-04 | CRITICAL | Local-only revocation (cannot cross CNode boundaries) | WS-E4 | **RESOLVED** |
 | H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
-| H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 |
+| H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 | **RESOLVED** |
 | H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
 | H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
 | H-05 | HIGH | No non-interference theorem | WS-E5 |
@@ -55,8 +55,8 @@ related findings into coherent implementation slices.
 | H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 | **RESOLVED** |
 | H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 | **RESOLVED** |
 | H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 | **RESOLVED** |
-| M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 |
-| M-02 | MEDIUM | No message payload in IPC | WS-E4 |
+| M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 | **RESOLVED** |
+| M-02 | MEDIUM | No message payload in IPC | WS-E4 | **RESOLVED** |
 | M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
 | M-04 | MEDIUM | No time-slice or preemption model | WS-E6 |
 | M-05 | MEDIUM | No domain scheduling | WS-E6 |
@@ -65,7 +65,7 @@ related findings into coherent implementation slices.
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
 | M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
-| M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 |
+| M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 | **RESOLVED** |
 | M-13 | MEDIUM | Integrity flow semantics contradict documentation | **RESOLVED** |
 | L-01 | LOW | API.lean is just imports | WS-E6 |
 | L-02 | LOW | Default memory returns zero for all addresses | WS-E6 |
@@ -289,8 +289,8 @@ WS-E4 (CDT integration for capability flow proofs).
   update documentation to reflect v0.11.6 audit (**completed**).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
-- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**current phase**).
-- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
+- **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
+- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4 (**current phase**).
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
 
 ---
@@ -302,7 +302,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E1 | **Completed** | Medium | M-10, M-11, F-14, L-07, L-08 | P1 |
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
-| WS-E4 | Planned | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
+| WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 

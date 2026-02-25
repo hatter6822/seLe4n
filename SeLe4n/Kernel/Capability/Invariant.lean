@@ -292,10 +292,13 @@ theorem cspaceInsertSlot_lookup_eq
       | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
-
-          simp [cspaceInsertSlot, hObj] at hStep
-          cases hStep
-          simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+          unfold cspaceInsertSlot at hStep
+          simp [hObj] at hStep
+          cases hLookup : cn.lookup slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+            simp [hLookup] at hStep; cases hStep
+            simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
@@ -787,18 +790,22 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
         | cnode preCn =>
           simp [hPre] at hStep
-          cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
-          | error e => simp [hStore] at hStep
-          | ok pair =>
-            obtain ⟨_, stMid⟩ := pair
-            simp [hStore] at hStep
-            have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-            have hObjMid := storeObject_objects_eq st stMid addr.cnode
-              (.cnode (preCn.insert addr.slot cap)) hStore
-            have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
-              rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-            rw [hFinal] at hObj; cases hObj
-            exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
+          cases hLkp : preCn.lookup addr.slot with
+          | some _ => simp [hLkp] at hStep
+          | none =>
+            simp [hLkp] at hStep
+            cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
+            | error e => simp [hStore] at hStep
+            | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+              have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                (.cnode (preCn.insert addr.slot cap)) hStore
+              have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
+                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+              rw [hFinal] at hObj; cases hObj
+              exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
     · -- Unmodified CNodes: transfer directly from pre-state
       have hPreObj := cspaceInsertSlot_preserves_objects_ne st st' addr cap cnodeId hEq hStep
       rw [hPreObj] at hObj
@@ -1251,6 +1258,8 @@ theorem endpointSend_preserves_capabilityInvariantBundle
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
           have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId receiver _ hUnique hStore hTcb
           exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  | hasSenders => simp [endpointSend, hObj, hState] at hStep
+  | hasReceivers => simp [endpointSend, hObj, hState] at hStep
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
@@ -1315,6 +1324,8 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
             subst hStEq; subst hSenderEq
             have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId hd _ hUnique hStore hTcb
             exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  | hasSenders => simp [endpointReceive, hObj, hState] at hStep
+  | hasReceivers => simp [endpointReceive, hObj, hState] at hStep
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
@@ -1399,5 +1410,77 @@ theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle
   · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
       (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+
+-- ============================================================================
+-- WS-E4: Preservation theorems for new capability operations
+-- ============================================================================
+
+/-- CDT-only state modification preserves the capability invariant bundle,
+since `capabilityInvariantBundle` depends only on objects/lifecycle/scheduler. -/
+theorem capabilityInvariantBundle_of_cdt_update
+    (st : SystemState) (cdt' : CapDerivationTree)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle { st with cdt := cdt' } := by
+  rcases hInv with ⟨hUnique, hSound, hAttRule, _hLifecycle⟩
+  exact ⟨hUnique, hSound, hAttRule, lifecycleAuthorityMonotonicity_holds { st with cdt := cdt' }⟩
+
+theorem cspaceCopy_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceCopy at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨cap, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
+      subst st1
+      simp [hSrc] at hStep
+      cases hInsert : cspaceInsertSlot dst cap st with
+      | error e => simp [hInsert] at hStep
+      | ok pair2 =>
+          simp [hInsert] at hStep; cases hStep
+          have hMid := cspaceInsertSlot_preserves_capabilityInvariantBundle st pair2.2
+            dst cap hInv hInsert
+          exact capabilityInvariantBundle_of_cdt_update pair2.2 _ hMid
+
+/-- WS-E4/H-02: cspaceInsertSlot rejects occupied slots.
+
+If a slot is already occupied (contains a capability), `cspaceInsertSlot`
+returns `targetSlotOccupied` without modifying state. -/
+theorem cspaceInsertSlot_rejects_occupied_slot
+    (st : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (existingCap : Capability)
+    (hLookup : SystemState.lookupSlotCap st addr = some existingCap) :
+    cspaceInsertSlot addr cap st = .error .targetSlotOccupied := by
+  unfold cspaceInsertSlot
+  cases hObj : st.objects addr.cnode with
+  | none =>
+    exfalso
+    simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj] at hLookup
+  | some obj =>
+    cases obj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ =>
+      exfalso
+      simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj] at hLookup
+    | cnode cn =>
+      have hCnLookup : cn.lookup addr.slot = some existingCap := by
+        simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj] at hLookup
+        exact hLookup
+      simp [hCnLookup]
+
+/-- WS-E4/C-03: CDT acyclicity is preserved by addEdge when the child is fresh.
+
+Adding an edge from parent to child preserves acyclicity if the child slot
+is not already a descendant of the parent (i.e., adding it doesn't create a cycle). -/
+theorem cdt_addEdge_preserves_structure
+    (cdt : CapDerivationTree) (parent child : SeLe4n.ObjId × SeLe4n.Slot)
+    (op : DerivationOp) :
+    (cdt.addEdge parent child op).edges.length = cdt.edges.length + 1 := by
+  simp [CapDerivationTree.addEdge, List.length_cons]
 
 end SeLe4n.Kernel

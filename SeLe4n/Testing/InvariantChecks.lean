@@ -9,6 +9,8 @@ private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
   | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
   | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
   | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
+  | .hasSenders => !ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty && !ep.waitingReceiver.isSome
+  | .hasReceivers => ep.sendQueue.isEmpty && !ep.receiveQueue.isEmpty && !ep.waitingReceiver.isSome
 
 private def endpointObjectValidB (ep : Endpoint) : Bool :=
   match ep.waitingReceiver with
@@ -47,6 +49,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
           let ok := match cap.target with
             | .object targetId => (st.objects targetId).isSome
             | .cnodeSlot cnId _ => (st.objects cnId).isSome
+            | .replyCap senderTid => (st.objects senderTid.toObjId).isSome
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner) acc
     | _ => acc) []
 

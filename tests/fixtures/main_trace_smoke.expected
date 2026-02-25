@@ -52,6 +52,23 @@ IPC-06    | high     | endpoint receive #3 (expected mismatch): SeLe4n.Model.Ker
 IPC-07    | high     | notification wait #1 result: none
 IPC-08    | high     | notification wait #2 result: some { val := 123 }
 CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
+E4-01     | critical | H-02 occupied slot rejection: SeLe4n.Model.KernelError.targetSlotOccupied
+E4-02     | high     | cspaceCopy target matches source: true
+E4-03     | high     | cspaceCopy rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+E4-04     | medium   | cspaceCopy CDT children of source: 1
+E4-05     | high     | cspaceMove source now empty: SeLe4n.Model.KernelError.invalidCapability
+E4-06     | high     | cspaceMove dest rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+E4-07     | high     | cspaceMutate attenuated rights: [SeLe4n.Model.AccessRight.read]
+E4-08     | high     | cspaceMutate rights escalation rejected: SeLe4n.Model.KernelError.invalidCapability
+E4-09     | high     | cspaceRevokeCdt source preserved: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
+E4-10     | high     | cspaceRevokeCdt child deleted: SeLe4n.Model.KernelError.invalidCapability
+E4-11     | high     | dual-queue send enqueued sender
+E4-12     | critical | dual-queue receive sender: 1
+E4-13     | high     | dual-queue receive payload registers: some [42, 99]
+E4-14     | high     | dual-queue receive reply cap present: true
+E4-15     | critical | endpointReply unblocked sender
+E4-16     | high     | reply sender ipcState: SeLe4n.Model.ThreadIpcState.ready
+E4-17     | high     | endpointReplyRecv next sender: 12
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
