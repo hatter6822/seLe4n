@@ -7,7 +7,7 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
@@ -46,6 +46,17 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
+
+## Resolved kernel hardening findings (WS-E3)
+
+| Finding | Description | Resolution |
+|---|---|---|
+| H-06 | Magic ID 0 sentinel issue | Reserved ID 0 as explicit sentinel with `isReserved`/`sentinel` predicates and identity theorems (`ObjId.default_eq_sentinel`, `ObjId.sentinel_isReserved`). |
+| H-07 | VSpace invariant bundle integration | `vspaceInvariantBundle` added to `proofLayerInvariantBundle` composition; adapter preservation theorems updated. |
+| H-08 | Cycle detection fuel exhaustion safety | `serviceHasPathTo.go` fuel-exhaustion returns `true` (conservative); adequacy and soundness theorems added. |
+| H-09 | Thread blocking in endpoint operations | `endpointSend`/`endpointAwaitReceive`/`endpointReceive` now transition TCB IPC state and update scheduler via `storeTcbIpcState`/`removeRunnable`/`ensureRunnable`. IPC-scheduler contract predicates are non-vacuous. |
+| M-09 | Metadata sync correctness in type-changing stores | `storeObject_type_change_objectType_sync`, `storeObject_type_change_capRef_cleared`, and `storeObject_type_change_preserves_lifecycleMetadataConsistent` theorems added. |
+| L-06 | Default SystemState initialization proof | `default_systemState_lifecycleMetadataConsistent` and `default_systemState_lifecycleInvariantBundle` theorems added. |
 
 ## Update policy
 

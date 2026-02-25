@@ -493,4 +493,55 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
+-- ============================================================================
+-- M-09/WS-E3: storeObject metadata sync soundness for type-changing stores
+-- ============================================================================
+
+/-- M-09/WS-E3: When `storeObject` replaces an object at `oid` with a
+    different-typed object, the post-state metadata correctly reflects the
+    *new* object's type rather than the old one. This holds regardless of
+    whether the object type changes, because `storeObject` unconditionally
+    sets `objectTypes oid = some obj.objectType`. -/
+theorem storeObject_type_change_objectType_sync
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (_oldObj newObj : KernelObject)
+    (_hOld : st.objects oid = some _oldObj)
+    (_hTypeChange : _oldObj.objectType ≠ newObj.objectType)
+    (hStep : storeObject oid newObj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes oid = some newObj.objectType := by
+  exact storeObject_updates_objectTypeMeta st st' oid newObj hStep
+
+/-- M-09/WS-E3: When `storeObject` replaces a CNode with a non-CNode object,
+    all capability-reference metadata entries for that CNode's slots are
+    correctly cleared to `none` in the post-state. -/
+theorem storeObject_type_change_capRef_cleared
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (ref : SlotRef)
+    (hCNode : ref.cnode = oid)
+    (hNotCNode : ∀ cn, newObj ≠ .cnode cn)
+    (hStep : storeObject oid newObj st = .ok ((), st')) :
+    st'.lifecycle.capabilityRefs ref = none := by
+  unfold storeObject at hStep
+  cases hStep
+  subst hCNode
+  simp only [ite_true]
+
+/-- M-09/WS-E3: `storeObject` metadata sync is sound for type-changing stores:
+    if metadata was consistent before the store, it remains consistent afterward,
+    even when the object type at `oid` changes. This is the key safety property
+    ensuring that type-changing reconfigurations do not create stale metadata. -/
+theorem storeObject_type_change_preserves_lifecycleMetadataConsistent
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (_oldObj newObj : KernelObject)
+    (_hOld : st.objects oid = some _oldObj)
+    (_hTypeChange : _oldObj.objectType ≠ newObj.objectType)
+    (hConsistent : SystemState.lifecycleMetadataConsistent st)
+    (hStep : storeObject oid newObj st = .ok ((), st')) :
+    SystemState.lifecycleMetadataConsistent st' :=
+  storeObject_preserves_lifecycleMetadataConsistent st st' oid newObj hConsistent hStep
+
 end SeLe4n.Model
