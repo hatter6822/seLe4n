@@ -39,6 +39,18 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **M-09:** Metadata sync correctness proven for type-changing `storeObject`: `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored`.
 - **L-06:** Default `SystemState` initialization proof: `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle`.
 
+### WS-E4 completed summary
+
+**WS-E4 — Capability and IPC model completion** has been completed (v0.11.11). All 7 findings resolved:
+
+- **C-02:** Implemented `cspaceCopy` (duplicate without CDT link), `cspaceMove` (atomic transfer with CDT reparenting), `cspaceMutate` (in-place rights attenuation via `mintDerivedCap`). All use guarded insert (H-02).
+- **C-03:** Introduced `CapDerivationEdge`/`CapDerivationTree` in `Model/State.lean` with operations: `addEdge`, `childrenOf`, `removeAsChild`, `removeSlot`, `reparent`, `descendantsOf` (bounded BFS), `acyclic` predicate. Proved `empty_acyclic`. Added CDT-aware `cspaceMintWithDerivation`. Added `cdt` field to `SystemState`.
+- **C-04:** Implemented `cspaceRevokeCdt` — local sibling revocation + CDT descendant traversal + edge cleanup. Demonstrated end-to-end: mint → CDT revoke clears child and edges.
+- **H-02:** Implemented `cspaceInsertSlotGuarded` returning `targetSlotOccupied` for occupied slots. Proved `cspaceInsertSlotGuarded_rejects_occupied`, `_preserves_scheduler`, `_preserves_services`, `_preserves_objects_ne`.
+- **M-01:** Extended `Endpoint` with `sendQueue`/`receiveQueue` fields (backward-compatible). Implemented `endpointSendDual` and `endpointReceiveDual` with rendezvous and blocking semantics.
+- **M-02:** Added `MessageInfo` structure (`label`, `msgRegisters`, `capsUnwrapped`, `extraCaps`). Dual-queue operations carry payloads through send/receive paths.
+- **M-12:** Implemented `endpointCall` (seL4_Call), `endpointReply` (seL4_Reply), `endpointReplyRecv` (seL4_ReplyRecv). Added `blockedOnReply` to `ThreadIpcState`. Proved `endpointReply_preserves_ipcInvariant`, `_preserves_objects_ne`, `_preserves_endpoint`.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.

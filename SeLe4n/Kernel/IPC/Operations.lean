@@ -683,4 +683,188 @@ theorem storeTcbIpcState_tcb_exists_at_target
     have := Except.ok.inj hStep; subst this
     exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
 
+-- ============================================================================
+-- WS-E4/M-01: Dual-queue endpoint operations
+-- ============================================================================
+
+/-- WS-E4/M-01,M-02: Dual-queue send with message payload.
+
+If a receiver is waiting on `receiveQueue`, performs rendezvous: dequeues the
+first receiver, unblocks it, and delivers the message. Otherwise, enqueues
+the sender with its message on `sendQueue` and blocks the sender. -/
+def endpointSendDual
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : MessageInfo) : Kernel Unit :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.receiveQueue with
+        | receiver :: restRecv =>
+            -- Rendezvous: handshake with waiting receiver
+            let ep' : Endpoint := { ep with
+              receiveQueue := restRecv
+              sendQueue := ep.sendQueue
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((), ensureRunnable st'' receiver)
+        | [] =>
+            -- No receiver: enqueue sender and block
+            let ep' : Endpoint := { ep with
+              sendQueue := ep.sendQueue ++ [(sender, msg)]
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok ((), removeRunnable st'' sender)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-E4/M-01,M-02: Dual-queue receive with message payload.
+
+If a sender is waiting on `sendQueue`, dequeues the first sender with its
+message, unblocks the sender. Otherwise, enqueues the receiver on
+`receiveQueue` and blocks. -/
+def endpointReceiveDual
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : Kernel (SeLe4n.ThreadId × MessageInfo) :=
+  fun st =>
+    match st.objects endpointId with
+    | some (.endpoint ep) =>
+        match ep.sendQueue with
+        | (sender, msg) :: restSend =>
+            -- Rendezvous: handshake with waiting sender
+            let ep' : Endpoint := { ep with
+              sendQueue := restSend
+              receiveQueue := ep.receiveQueue
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' sender .ready with
+                | .error e => .error e
+                | .ok st'' => .ok ((sender, msg), ensureRunnable st'' sender)
+        | [] =>
+            -- No sender: block receiver
+            let ep' : Endpoint := { ep with
+              receiveQueue := ep.receiveQueue ++ [receiver]
+            }
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok _st => .error .endpointQueueEmpty  -- receiver blocks, no message to return
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+-- ============================================================================
+-- WS-E4/M-12: Reply operation for bidirectional IPC
+-- ============================================================================
+
+/-- WS-E4/M-12: Call-and-block-for-reply (models seL4_Call).
+
+Sends a message through the endpoint, then blocks the caller waiting for a
+reply. If a receiver is available, the handshake completes immediately and
+the caller transitions to `blockedOnReply`. -/
+def endpointCall
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : MessageInfo) : Kernel Unit :=
+  fun st =>
+    match endpointSendDual endpointId caller msg st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        -- After send, block caller for reply
+        match storeTcbIpcState st' caller (.blockedOnReply endpointId) with
+        | .error e => .error e
+        | .ok st'' => .ok ((), removeRunnable st'' caller)
+
+/-- WS-E4/M-12: Reply to a blocked caller (models seL4_Reply).
+
+Validates that the target thread is actually blocked on reply, then unblocks
+it. Returns `noReplyCapability` if the target is not in `blockedOnReply` state. -/
+def endpointReply
+    (replyTo : SeLe4n.ThreadId)
+    (_msg : MessageInfo) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st replyTo with
+    | none => .error .noReplyCapability
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReply _ =>
+            match storeTcbIpcState st replyTo .ready with
+            | .error e => .error e
+            | .ok st' => .ok ((), ensureRunnable st' replyTo)
+        | _ => .error .noReplyCapability
+
+/-- WS-E4/M-12: Atomic reply-then-receive (models seL4_ReplyRecv).
+
+Replies to the current sender, then waits for the next message on the same
+endpoint. Composes `endpointReply` with `endpointReceiveDual`. -/
+def endpointReplyRecv
+    (endpointId : SeLe4n.ObjId)
+    (replyTo : SeLe4n.ThreadId)
+    (replyMsg : MessageInfo)
+    (receiver : SeLe4n.ThreadId) : Kernel (SeLe4n.ThreadId × MessageInfo) :=
+  fun st =>
+    match endpointReply replyTo replyMsg st with
+    | .error e => .error e
+    | .ok ((), st') => endpointReceiveDual endpointId receiver st'
+
+-- ============================================================================
+-- WS-E4: Supporting lemmas for new IPC operations
+-- ============================================================================
+
+/-- WS-E4/M-12: `endpointReply` preserves objects at IDs other than replyTo. -/
+theorem endpointReply_preserves_objects_ne
+    (st st' : SystemState)
+    (replyTo : SeLe4n.ThreadId) (msg : MessageInfo)
+    (oid : SeLe4n.ObjId)
+    (hNe : oid ≠ replyTo.toObjId)
+    (hStep : endpointReply replyTo msg st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold endpointReply at hStep
+  cases hTcb : lookupTcb st replyTo with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+      simp only [hTcb] at hStep
+      cases hIpc : tcb.ipcState with
+      | blockedOnReply ep =>
+          simp [hIpc] at hStep
+          cases hStore : storeTcbIpcState st replyTo .ready with
+          | error e => simp [hStore] at hStep
+          | ok st₂ =>
+              simp only [hStore] at hStep
+              have hInj : st' = ensureRunnable st₂ replyTo := by
+                cases hStep; rfl
+              subst hInj
+              rw [ensureRunnable_preserves_objects]
+              exact storeTcbIpcState_preserves_objects_ne st st₂ replyTo .ready oid hNe hStore
+      | ready => simp [hIpc] at hStep
+      | blockedOnSend _ => simp [hIpc] at hStep
+      | blockedOnReceive _ => simp [hIpc] at hStep
+      | blockedOnNotification _ => simp [hIpc] at hStep
+
+/-- WS-E4/M-12: `endpointReply` preserves endpoint objects. -/
+theorem endpointReply_preserves_endpoint
+    (st st' : SystemState)
+    (replyTo : SeLe4n.ThreadId) (msg : MessageInfo)
+    (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.objects epId = some (.endpoint ep))
+    (hStep : endpointReply replyTo msg st = .ok ((), st')) :
+    st'.objects epId = some (.endpoint ep) := by
+  by_cases hEq : epId = replyTo.toObjId
+  · subst hEq
+    unfold endpointReply at hStep
+    have hLookup : lookupTcb st replyTo = none := by
+      unfold lookupTcb; simp [hEp]
+    simp [hLookup] at hStep
+  · have h := endpointReply_preserves_objects_ne st st' replyTo msg epId hEq hStep
+    rw [h]; exact hEp
+
 end SeLe4n.Kernel

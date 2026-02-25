@@ -95,6 +95,20 @@ private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : Sys
     let duplicates := roots.filter fun (oid', asid') => asid' == asid && oid' != oid
     (s!"vspace ASID unique: oid={oid} asid={asid.toNat}", duplicates.isEmpty)
 
+/-- WS-E4/C-03 CDT acyclicity: no slot appears in its own transitive descendants.
+Validates the CDT invariant at runtime by checking `descendantsOf` for self-membership. -/
+private def cdtAcyclicityCheck (st : SystemState) : List (String × Bool) :=
+  let refs := st.cdt.edges.map fun e => e.parent
+  let uniqueRefs := refs.eraseDups
+  let checks := uniqueRefs.map fun ref =>
+    let desc := st.cdt.descendantsOf ref
+    let hasCycle := desc.any fun d => d == ref
+    (s!"cdt acyclic from: cnode={ref.cnode} slot={ref.slot}", !hasCycle)
+  if st.cdt.edges.isEmpty then
+    [("cdt acyclic (empty)", true)]
+  else
+    checks
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -126,6 +140,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ lifecycleMetadataChecks objectIds st
     ++ serviceGraphAcyclicityChecks serviceIds st fuel
     ++ vspaceAsidUniquenessChecks objectIds st
+    ++ cdtAcyclicityCheck st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

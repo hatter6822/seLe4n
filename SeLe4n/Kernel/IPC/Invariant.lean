@@ -1464,4 +1464,116 @@ theorem notificationWait_result_wellFormed_wait
   · intro h; simp [List.append_eq_nil_iff] at h
   · rfl
 
+-- ============================================================================
+-- WS-E4: Extended IPC invariant definitions
+-- ============================================================================
+
+/-- WS-E4/M-12: Threads blocked on reply must not be runnable. -/
+def blockedOnReplyNotRunnable (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
+    st.objects tid.toObjId = some (.tcb tcb) → tcb.ipcState = .blockedOnReply endpointId →
+    tid ∉ st.scheduler.runnable
+
+/-- WS-E4: Extended IPC-scheduler contract predicates including reply blocking.
+
+Extends `ipcSchedulerContractPredicates` with the fourth conjunct for
+`blockedOnReply` threads. -/
+def ipcSchedulerContractPredicatesE4 (st : SystemState) : Prop :=
+  ipcSchedulerContractPredicates st ∧ blockedOnReplyNotRunnable st
+
+/-- WS-E4/C-03: CDT acyclicity invariant component. -/
+def cdtAcyclicInvariant (st : SystemState) : Prop :=
+  st.cdt.acyclic
+
+-- ============================================================================
+-- WS-E4: Preservation of endpointReply
+-- ============================================================================
+
+/-- WS-E4: Helper — `lookupTcb` returning some implies TCB in object store. -/
+private theorem lookupTcb_some_implies_tcb_object
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hLookup : lookupTcb st tid = some tcb) :
+    st.objects tid.toObjId = some (.tcb tcb) := by
+  unfold lookupTcb at hLookup
+  cases h : st.objects tid.toObjId
+  · simp [h] at hLookup
+  · rename_i obj; cases obj <;> simp_all
+
+/-- WS-E4/M-12: `endpointReply` preserves IPC invariant.
+
+`endpointReply` only modifies a TCB's ipcState and the scheduler. It does
+not modify any endpoint or notification objects, so the IPC object invariants
+are preserved trivially via frame conditions. -/
+theorem endpointReply_preserves_ipcInvariant
+    (st st' : SystemState)
+    (replyTo : SeLe4n.ThreadId) (msg : MessageInfo)
+    (hInv : ipcInvariant st)
+    (hStep : endpointReply replyTo msg st = .ok ((), st')) :
+    ipcInvariant st' := by
+  constructor
+  · -- Endpoint invariant
+    intro oid ep hEp'
+    by_cases hEq : oid = replyTo.toObjId
+    · subst hEq
+      exfalso
+      unfold endpointReply at hStep
+      cases hTcb : lookupTcb st replyTo with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+          have hTcbObj := lookupTcb_some_implies_tcb_object st replyTo tcb hTcb
+          simp only [hTcb] at hStep
+          cases hIpc : tcb.ipcState with
+          | blockedOnReply ep' =>
+              simp [hIpc] at hStep
+              cases hStore : storeTcbIpcState st replyTo .ready with
+              | error e => simp [hStore] at hStep
+              | ok st₂ =>
+                  simp only [hStore] at hStep
+                  have hSt' : st' = ensureRunnable st₂ replyTo := by cases hStep; rfl
+                  subst hSt'
+                  rw [ensureRunnable_preserves_objects] at hEp'
+                  have := storeTcbIpcState_tcb_exists_at_target st st₂ replyTo .ready hStore ⟨tcb, hTcbObj⟩
+                  obtain ⟨tcb', hTcb'⟩ := this
+                  rw [hTcb'] at hEp'
+                  exact absurd hEp' (by intro h; exact KernelObject.noConfusion (Option.some.inj h))
+          | ready => simp [hIpc] at hStep
+          | blockedOnSend _ => simp [hIpc] at hStep
+          | blockedOnReceive _ => simp [hIpc] at hStep
+          | blockedOnNotification _ => simp [hIpc] at hStep
+    · have hObj := endpointReply_preserves_objects_ne st st' replyTo msg oid hEq hStep
+      rw [hObj] at hEp'
+      exact hInv.1 oid ep hEp'
+  · -- Notification invariant
+    intro oid ntfn hNtfn'
+    by_cases hEq : oid = replyTo.toObjId
+    · subst hEq
+      exfalso
+      unfold endpointReply at hStep
+      cases hTcb : lookupTcb st replyTo with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+          have hTcbObj := lookupTcb_some_implies_tcb_object st replyTo tcb hTcb
+          simp only [hTcb] at hStep
+          cases hIpc : tcb.ipcState with
+          | blockedOnReply ep' =>
+              simp [hIpc] at hStep
+              cases hStore : storeTcbIpcState st replyTo .ready with
+              | error e => simp [hStore] at hStep
+              | ok st₂ =>
+                  simp only [hStore] at hStep
+                  have hSt' : st' = ensureRunnable st₂ replyTo := by cases hStep; rfl
+                  subst hSt'
+                  rw [ensureRunnable_preserves_objects] at hNtfn'
+                  have := storeTcbIpcState_tcb_exists_at_target st st₂ replyTo .ready hStore ⟨tcb, hTcbObj⟩
+                  obtain ⟨tcb', hTcb'⟩ := this
+                  rw [hTcb'] at hNtfn'
+                  exact absurd hNtfn' (by intro h; exact KernelObject.noConfusion (Option.some.inj h))
+          | ready => simp [hIpc] at hStep
+          | blockedOnSend _ => simp [hIpc] at hStep
+          | blockedOnReceive _ => simp [hIpc] at hStep
+          | blockedOnNotification _ => simp [hIpc] at hStep
+    · have hObj := endpointReply_preserves_objects_ne st st' replyTo msg oid hEq hStep
+      rw [hObj] at hNtfn'
+      exact hInv.2 oid ntfn hNtfn'
+
 end SeLe4n.Kernel

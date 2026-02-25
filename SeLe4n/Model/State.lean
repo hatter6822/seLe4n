@@ -21,6 +21,9 @@ inductive KernelError where
   | alreadyWaiting
   | cyclicDependency
   | notImplemented
+  | targetSlotOccupied    -- WS-E4/H-02: guarded insert into occupied slot
+  | sourceSlotEmpty       -- WS-E4/C-02: copy/move from empty source
+  | noReplyCapability     -- WS-E4/M-12: reply to non-blocked thread
   deriving Repr, DecidableEq
 
 structure SchedulerState where
@@ -33,6 +36,79 @@ structure SlotRef where
   cnode : SeLe4n.ObjId
   slot : SeLe4n.Slot
   deriving Repr, DecidableEq
+
+-- ============================================================================
+-- WS-E4/C-03: Capability Derivation Tree (CDT) model
+-- ============================================================================
+
+/-- WS-E4/C-03: Edge in the capability derivation tree.
+
+Each edge records a parent→child relationship between capability slots.
+Created by `cspaceMint` (derivation); not created by `cspaceCopy` (independent
+duplicate per seL4 semantics). -/
+structure CapDerivationEdge where
+  parent : SlotRef
+  child : SlotRef
+  deriving Repr, DecidableEq
+
+/-- WS-E4/C-03: Flat-list CDT representation.
+
+Simple, executable, and sufficient for bounded-fuel traversal. -/
+structure CapDerivationTree where
+  edges : List CapDerivationEdge := []
+  deriving Repr, DecidableEq
+
+namespace CapDerivationTree
+
+def empty : CapDerivationTree := { edges := [] }
+
+/-- Add a parent→child derivation edge. -/
+def addEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapDerivationTree :=
+  { edges := { parent := parent, child := child } :: cdt.edges }
+
+/-- Direct children of a slot. -/
+def childrenOf (cdt : CapDerivationTree) (ref : SlotRef) : List SlotRef :=
+  (cdt.edges.filter (fun e => e.parent = ref)).map (fun e => e.child)
+
+/-- Remove all edges where `ref` appears as a child. -/
+def removeAsChild (cdt : CapDerivationTree) (ref : SlotRef) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.child ≠ ref) }
+
+/-- Remove all edges where `ref` appears as parent or child. -/
+def removeSlot (cdt : CapDerivationTree) (ref : SlotRef) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.parent ≠ ref ∧ e.child ≠ ref) }
+
+/-- Reparent all edges from `src` to `dst` (used by cspaceMove). -/
+def reparent (cdt : CapDerivationTree) (src dst : SlotRef) : CapDerivationTree :=
+  { edges := cdt.edges.map (fun e =>
+      let parent' := if e.parent = src then dst else e.parent
+      let child' := if e.child = src then dst else e.child
+      { parent := parent', child := child' }) }
+
+/-- Bounded-fuel BFS for transitive descendants. -/
+def descendantsOf (cdt : CapDerivationTree) (ref : SlotRef)
+    (fuel : Nat := cdt.edges.length + 1) : List SlotRef :=
+  go cdt.edges [ref] [] fuel
+where
+  go (edges : List CapDerivationEdge) (frontier visited : List SlotRef) :
+      Nat → List SlotRef
+    | 0 => visited
+    | fuel + 1 =>
+        let newChildren := frontier.flatMap (fun f =>
+          (edges.filter (fun e => e.parent = f ∧ decide (e.child ∉ visited))).map
+            (fun e => e.child))
+        if newChildren.isEmpty then visited
+        else go edges newChildren (visited ++ newChildren) fuel
+
+/-- WS-E4/C-03: CDT acyclicity — no slot can reach itself through edges. -/
+def acyclic (cdt : CapDerivationTree) : Prop :=
+  ∀ ref, ref ∉ cdt.descendantsOf ref
+
+theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
+  intro ref hMem
+  simp [descendantsOf, descendantsOf.go, empty] at hMem
+
+end CapDerivationTree
 
 /-- Lifecycle metadata required by the first M4-A transition story.
 
@@ -50,6 +126,7 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  cdt : CapDerivationTree := .empty  -- WS-E4/C-03
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +146,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    cdt := .empty
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -389,6 +467,29 @@ theorem storeObject_updates_objectTypeMeta
   simp at hStep
   cases hStep
   simp
+
+/-- WS-E4/C-03: `storeObject` preserves the CDT. -/
+theorem storeObject_cdt_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+/-- WS-E4/C-03: `storeCapabilityRef` preserves the CDT. -/
+theorem storeCapabilityRef_cdt_eq
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
 
 namespace SystemState
 

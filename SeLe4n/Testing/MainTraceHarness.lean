@@ -16,6 +16,11 @@ def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
 def demoNotification : SeLe4n.ObjId := 31
 
+-- WS-E4 test fixtures
+def wsE4MintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 5 }
+def wsE4CopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 6 }
+def wsE4MoveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 7 }
+
 def svcDb : ServiceId := 100
 def svcApi : ServiceId := 101
 def svcDenied : ServiceId := 102
@@ -421,6 +426,81 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       | .ok (cap, _) =>
           IO.println s!"minted cap rights: {reprStr cap.rights}"
 
+-- ============================================================================
+-- WS-E4: Capability and IPC model completion trace
+-- ============================================================================
+
+/-- WS-E4 capability trace: exercises C-02 (copy/move/mutate), C-03 (CDT-aware
+mint), C-04 (CDT revocation), and H-02 (guarded insert). -/
+private def runWsE4CapabilityTrace (st : SystemState) : IO Unit := do
+  -- C-03: CDT-aware mint with derivation tracking
+  match SeLe4n.Kernel.cspaceMintWithDerivation rootSlot wsE4MintDst [.read] none st with
+  | .error err => IO.println s!"ws-e4 mint-with-derivation error: {reprStr err}"
+  | .ok (_, stMint) =>
+      IO.println s!"ws-e4 mint-with-derivation cdt edges: {stMint.cdt.edges.length}"
+      -- C-02: Copy capability from minted slot to copy destination
+      match SeLe4n.Kernel.cspaceCopy wsE4MintDst wsE4CopyDst stMint with
+      | .error err => IO.println s!"ws-e4 cspace-copy error: {reprStr err}"
+      | .ok (_, stCopy) =>
+          match SeLe4n.Kernel.cspaceLookupSlot wsE4CopyDst stCopy with
+          | .error _ => IO.println "ws-e4 copy dst lookup failed"
+          | .ok (cap, _) => IO.println s!"ws-e4 cspace-copy dst rights: {reprStr cap.rights}"
+          -- C-02: Move capability from copy-dst to move-dst
+          match SeLe4n.Kernel.cspaceMove wsE4CopyDst wsE4MoveDst stCopy with
+          | .error err => IO.println s!"ws-e4 cspace-move error: {reprStr err}"
+          | .ok (_, stMove) =>
+              -- Source slot should now be empty
+              match SeLe4n.Kernel.cspaceLookupSlot wsE4CopyDst stMove with
+              | .error err => IO.println s!"ws-e4 move source cleared: {reprStr err}"
+              | .ok _ => IO.println "ws-e4 move source unexpectedly present"
+              -- Destination should have the capability
+              match SeLe4n.Kernel.cspaceLookupSlot wsE4MoveDst stMove with
+              | .error _ => IO.println "ws-e4 move dst lookup failed"
+              | .ok (cap, _) => IO.println s!"ws-e4 cspace-move dst rights: {reprStr cap.rights}"
+      -- H-02: Guarded insert rejects occupied slot
+      match SeLe4n.Kernel.cspaceCopy rootSlot wsE4MintDst stMint with
+      | .error err => IO.println s!"ws-e4 guarded-insert occupied-slot guard: {reprStr err}"
+      | .ok _ => IO.println "ws-e4 unexpected guarded-insert success on occupied slot"
+      -- C-04: CDT cross-CNode revocation
+      match SeLe4n.Kernel.cspaceRevokeCdt rootSlot stMint with
+      | .error err => IO.println s!"ws-e4 cdt-revoke error: {reprStr err}"
+      | .ok (_, stRevoke) =>
+          IO.println s!"ws-e4 cdt-revoke cdt edges post: {stRevoke.cdt.edges.length}"
+          match SeLe4n.Kernel.cspaceLookupSlot wsE4MintDst stRevoke with
+          | .error err => IO.println s!"ws-e4 cdt-revoke child cleared: {reprStr err}"
+          | .ok _ => IO.println "ws-e4 cdt-revoke child unexpectedly present"
+
+/-- WS-E4 IPC trace: exercises M-01 (dual queues), M-02 (payload),
+M-12 (reply/call/replyrecv). -/
+private def runWsE4IpcTrace (st : SystemState) : IO Unit := do
+  let msg1 : MessageInfo := { label := 42, msgRegisters := [100, 200], capsUnwrapped := 0, extraCaps := [] }
+  -- M-01/M-02: Dual-queue send (no receiver → sender blocks)
+  match SeLe4n.Kernel.endpointSendDual demoEndpoint 1 msg1 st with
+  | .error err => IO.println s!"ws-e4 dual-send error: {reprStr err}"
+  | .ok (_, stSend) =>
+      IO.println "ws-e4 dual-send queued sender"
+      -- M-01/M-02: Dual-queue receive (sender waiting → rendezvous)
+      match SeLe4n.Kernel.endpointReceiveDual demoEndpoint 12 stSend with
+      | .error err => IO.println s!"ws-e4 dual-recv error: {reprStr err}"
+      | .ok ((sender, recvMsg), stRecv) =>
+          IO.println s!"ws-e4 dual-recv sender: {sender} label: {recvMsg.label}"
+          -- M-12: Call-and-block (send + block for reply)
+          let callMsg : MessageInfo := { label := 7, msgRegisters := [300], capsUnwrapped := 0, extraCaps := [] }
+          match SeLe4n.Kernel.endpointCall demoEndpoint 1 callMsg stRecv with
+          | .error err => IO.println s!"ws-e4 endpoint-call error: {reprStr err}"
+          | .ok (_, stCall) =>
+              IO.println "ws-e4 endpoint-call caller blocked on reply"
+              -- M-12: Reply to blocked caller
+              let replyMsg : MessageInfo := { label := 8, msgRegisters := [400], capsUnwrapped := 0, extraCaps := [] }
+              match SeLe4n.Kernel.endpointReply 1 replyMsg stCall with
+              | .error err => IO.println s!"ws-e4 endpoint-reply error: {reprStr err}"
+              | .ok (_, stReply) =>
+                  IO.println "ws-e4 endpoint-reply unblocked caller"
+                  -- M-12: endpointReply rejects non-blocked thread
+                  match SeLe4n.Kernel.endpointReply 12 replyMsg stReply with
+                  | .error err => IO.println s!"ws-e4 reply-not-blocked guard: {reprStr err}"
+                  | .ok _ => IO.println "ws-e4 unexpected reply success on non-blocked thread"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -437,6 +517,8 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityAndArchitectureTrace st1
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
+  runWsE4CapabilityTrace st1
+  runWsE4IpcTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

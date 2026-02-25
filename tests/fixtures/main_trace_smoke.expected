@@ -52,6 +52,18 @@ IPC-06    | high     | endpoint receive #3 (expected mismatch): SeLe4n.Model.Ker
 IPC-07    | high     | notification wait #1 result: none
 IPC-08    | high     | notification wait #2 result: some { val := 123 }
 CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
+E4-CAP-01 | high     | ws-e4 mint-with-derivation cdt edges: 1
+E4-CAP-02 | high     | ws-e4 cspace-copy dst rights: [SeLe4n.Model.AccessRight.read]
+E4-CAP-03 | high     | ws-e4 move source cleared: SeLe4n.Model.KernelError.invalidCapability
+E4-CAP-04 | high     | ws-e4 cspace-move dst rights: [SeLe4n.Model.AccessRight.read]
+E4-CAP-05 | critical | ws-e4 guarded-insert occupied-slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
+E4-CAP-06 | high     | ws-e4 cdt-revoke cdt edges post: 0
+E4-CAP-07 | high     | ws-e4 cdt-revoke child cleared: SeLe4n.Model.KernelError.invalidCapability
+E4-IPC-01 | high     | ws-e4 dual-send queued sender
+E4-IPC-02 | critical | ws-e4 dual-recv sender: 1 label: 42
+E4-IPC-03 | critical | ws-e4 endpoint-call caller blocked on reply
+E4-IPC-04 | critical | ws-e4 endpoint-reply unblocked caller
+E4-IPC-05 | high     | ws-e4 reply-not-blocked guard: SeLe4n.Model.KernelError.noReplyCapability
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

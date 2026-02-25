@@ -234,4 +234,234 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         | _ => .error .objectNotFound
 
 
+-- ============================================================================
+-- WS-E4/H-02: Guarded capability slot insert
+-- ============================================================================
+
+/-- WS-E4/H-02: Insert a capability only into an empty slot.
+
+Returns `targetSlotOccupied` if the destination slot already holds a capability.
+This prevents silent overwrites of existing capabilities during copy/move/mint. -/
+def cspaceInsertSlotGuarded (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
+  fun st =>
+    match st.objects addr.cnode with
+    | some (.cnode cn) =>
+        match cn.lookup addr.slot with
+        | some _ => .error .targetSlotOccupied
+        | none =>
+            let cn' := cn.insert addr.slot cap
+            match storeObject addr.cnode (.cnode cn') st with
+            | .error e => .error e
+            | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
+    | _ => .error .objectNotFound
+
+-- ============================================================================
+-- WS-E4/C-02: CSpace copy, move, mutate operations
+-- ============================================================================
+
+/-- WS-E4/C-02: Copy a capability from source to destination.
+
+Copies the capability at `src` into `dst` without modification. Uses guarded
+insert (H-02) to prevent overwriting occupied slots. Does NOT create a CDT
+edge — seL4 Copy produces an independent duplicate. -/
+def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (cap, st') => cspaceInsertSlotGuarded dst cap st'
+
+/-- WS-E4/C-02: Move a capability from source to destination.
+
+Atomically transfers the capability: guarded insert at destination, then
+delete source. CDT edges are reparented from source to destination. -/
+def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        match cspaceInsertSlotGuarded dst cap st' with
+        | .error e => .error e
+        | .ok (_, st'') =>
+            match cspaceDeleteSlot src st'' with
+            | .error e => .error e
+            | .ok (_, st''') =>
+                .ok ((), { st''' with cdt := st'''.cdt.reparent src dst })
+
+/-- WS-E4/C-02: Mutate a capability's rights in-place.
+
+Replaces the capability at `addr` with an attenuated copy. The new rights
+must be a subset of the original rights (checked via `rightsSubset`).
+Badge can be overridden. Returns `invalidCapability` if rights are not
+attenuated. -/
+def cspaceMutate
+    (addr : CSpaceAddr)
+    (newRights : List AccessRight)
+    (newBadge : Option SeLe4n.Badge := none) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot addr st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        match mintDerivedCap cap newRights newBadge with
+        | .error e => .error e
+        | .ok derived =>
+            -- In-place mutation: delete old, insert derived at same slot
+            match cspaceDeleteSlot addr st' with
+            | .error e => .error e
+            | .ok (_, st'') => cspaceInsertSlot addr derived st''
+
+-- ============================================================================
+-- WS-E4/C-03: CDT-aware mint (derivation tracking)
+-- ============================================================================
+
+/-- WS-E4/C-03: Mint with CDT edge creation.
+
+Wraps `cspaceMint` and records a parent→child derivation edge in the CDT.
+This is the CDT-aware variant that should be used when tracking capability
+derivation lineage. -/
+def cspaceMintWithDerivation
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
+  fun st =>
+    match cspaceMint src dst rights badge st with
+    | .error e => .error e
+    | .ok (_, st') =>
+        .ok ((), { st' with cdt := st'.cdt.addEdge src dst })
+
+-- ============================================================================
+-- WS-E4/C-04: Cross-CNode CDT revocation
+-- ============================================================================
+
+/-- WS-E4/C-04: Revoke all transitive CDT descendants of a capability.
+
+Performs local revocation first (same CNode siblings), then walks the CDT
+to delete all transitive descendants across CNodes. The source capability
+at `addr` is preserved. -/
+def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    -- Step 1: local sibling revocation
+    match cspaceRevoke addr st with
+    | .error e => .error e
+    | .ok (_, stLocal) =>
+        -- Step 2: CDT descendant revocation
+        let descendants := stLocal.cdt.descendantsOf addr
+        let init : Except KernelError (Unit × SystemState) := .ok ((), stLocal)
+        let result := descendants.foldl (fun (acc : Except KernelError (Unit × SystemState)) ref =>
+          match acc with
+          | .error e => .error e
+          | .ok (_, stAcc) =>
+              match cspaceDeleteSlot ref stAcc with
+              | .error _ => Except.ok ((), stAcc)  -- skip already-deleted slots
+              | .ok (_, stDel) => Except.ok ((), stDel)
+        ) init
+        match result with
+        | .error e => .error e
+        | .ok (_, stFinal) =>
+            -- Step 3: Clean up CDT edges for all descendants + source children
+            let cdt' := descendants.foldl (fun cdt ref => cdt.removeSlot ref) stFinal.cdt
+            .ok ((), { stFinal with cdt := cdt' })
+
+-- ============================================================================
+-- WS-E4: Capability operation preservation theorems
+-- ============================================================================
+
+/-- WS-E4/H-02: Guarded insert rejects occupied slots. -/
+theorem cspaceInsertSlotGuarded_rejects_occupied
+    (st : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (cn : CNode)
+    (existingCap : Capability)
+    (hCNode : st.objects addr.cnode = some (.cnode cn))
+    (hOccupied : cn.lookup addr.slot = some existingCap) :
+    cspaceInsertSlotGuarded addr cap st = .error .targetSlotOccupied := by
+  unfold cspaceInsertSlotGuarded
+  simp [hCNode, hOccupied]
+
+/-- WS-E4/H-02: Guarded insert preserves scheduler. -/
+theorem cspaceInsertSlotGuarded_preserves_scheduler
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlotGuarded addr cap st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold cspaceInsertSlotGuarded at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hLookup : cn.lookup addr.slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+              simp [hLookup] at hStep
+              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+              | error e => simp [hStore] at hStep
+              | ok pair =>
+                  obtain ⟨_, stMid⟩ := pair
+                  simp [hStore] at hStep
+                  have hSchedMid := storeObject_scheduler_eq st stMid addr.cnode _ hStore
+                  have hSchedRef := storeCapabilityRef_preserves_scheduler stMid st' addr (some cap.target) hStep
+                  rw [hSchedRef, hSchedMid]
+
+/-- WS-E4/H-02: Guarded insert preserves services. -/
+theorem cspaceInsertSlotGuarded_preserves_services
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (hStep : cspaceInsertSlotGuarded addr cap st = .ok ((), st')) :
+    st'.services = st.services := by
+  unfold cspaceInsertSlotGuarded at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hLookup : cn.lookup addr.slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+              simp [hLookup] at hStep
+              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+              | error e => simp [hStore] at hStep
+              | ok pair =>
+                  obtain ⟨_, stMid⟩ := pair
+                  simp [hStore] at hStep
+                  have hSvcMid := storeObject_preserves_services st stMid addr.cnode _ hStore
+                  have hSvcRef := storeCapabilityRef_preserves_services stMid st' addr (some cap.target) hStep
+                  rw [hSvcRef, hSvcMid]
+
+/-- WS-E4/H-02: Guarded insert preserves objects at other ids. -/
+theorem cspaceInsertSlotGuarded_preserves_objects_ne
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (cap : Capability)
+    (oid : SeLe4n.ObjId)
+    (hNe : oid ≠ addr.cnode)
+    (hStep : cspaceInsertSlotGuarded addr cap st = .ok ((), st')) :
+    st'.objects oid = st.objects oid := by
+  unfold cspaceInsertSlotGuarded at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hLookup : cn.lookup addr.slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+              simp [hLookup] at hStep
+              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+              | error e => simp [hStore] at hStep
+              | ok pair =>
+                  obtain ⟨_, stMid⟩ := pair
+                  simp [hStore] at hStep
+                  have hObjMid := storeObject_objects_ne st stMid addr.cnode oid _ hNe hStore
+                  have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+                  rw [← hObjMid]; exact congrFun hObjRef oid
+
 end SeLe4n.Kernel

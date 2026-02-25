@@ -51,15 +51,27 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
-/-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
+/-- WS-E4/M-02: IPC message payload for endpoint send/receive operations.
 
-This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
-waiting-thread handshake story. -/
+Models seL4 message registers and capability transfer. `registers` carries the
+architecture-neutral message words, while `extraCaps` carries transferred
+capabilities (unwrapped during receive). -/
+structure MessageInfo where
+  label : Nat
+  msgRegisters : List Nat := []
+  capsUnwrapped : Nat := 0
+  extraCaps : List Capability := []
+  deriving Repr, DecidableEq
+
+/-- Per-thread IPC scheduler-visible status.
+
+WS-E4/M-12: Extended with `blockedOnReply` for bidirectional IPC (seL4_Call). -/
 inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -78,10 +90,19 @@ inductive EndpointState where
   | receive
   deriving Repr, DecidableEq
 
+/-- WS-E4/M-01: Endpoint with dual send/receive queues.
+
+`sendQueue` carries `(ThreadId × MessageInfo)` tuples — messages travel with
+senders, matching seL4's rendezvous semantics. `receiveQueue` holds threads
+waiting to receive. The legacy `queue`/`waitingReceiver` fields are retained
+for backward compatibility with WS-E3 proofs; new M-01 operations use the
+dual-queue fields exclusively. -/
 structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
   waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List (SeLe4n.ThreadId × MessageInfo) := []
+  receiveQueue : List SeLe4n.ThreadId := []
   deriving Repr, DecidableEq
 
 inductive NotificationState where
@@ -510,5 +531,6 @@ end KernelObject
 /-- Construct a capability that names an object directly. -/
 def makeObjectCap (id : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
   { target := .object id, rights }
+
 
 end SeLe4n.Model

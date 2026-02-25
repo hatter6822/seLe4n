@@ -35,7 +35,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **WS-E1** — Test infrastructure and CI hardening (**completed** — M-10, M-11, F-14, L-07, L-08)
 - **WS-E2** — Proof quality and invariant strengthening (**completed** — C-01, H-01, H-03)
 - **WS-E3** — Kernel semantic hardening (**completed** — H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4** — Capability and IPC model completion (**planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4** — Capability and IPC model completion (**completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5** — Information-flow maturity (**planned** — H-04, H-05, M-07)
 - **WS-E6** — Model completeness and documentation (**planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
@@ -48,8 +48,8 @@ Use the planning phases from the workstream backbone:
 - **Phase P0:** Baseline — close quick fixes, publish WS-E backbone (**completed**)
 - **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **current**
-- **Phase P4:** WS-E5 (information-flow maturity)
+- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
+- **Phase P4:** WS-E5 (information-flow maturity) — **current**
 - **Phase P5:** WS-E6 (model completeness/docs)
 
 ### 3.3 Prior completed portfolios (historical)

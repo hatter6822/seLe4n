@@ -1,3 +1,23 @@
+## [0.11.11] - 2026-02-25
+
+### WS-E4 — Capability and IPC model completion
+
+All 7 WS-E4 findings resolved with zero sorry/axiom. Synthesized from analysis of PRs #210–#213, selecting the best ideas from each.
+
+- **C-02 (Missing capability operations):** Implemented `cspaceCopy`, `cspaceMove`, `cspaceMutate` in `Capability/Operations.lean`. Copy produces an independent duplicate via guarded insert. Move atomically transfers with CDT reparenting. Mutate performs in-place rights attenuation via `mintDerivedCap`.
+- **C-03 (CDT model):** Introduced `CapDerivationEdge`, `CapDerivationTree` in `Model/State.lean` with operations `addEdge`, `childrenOf`, `removeAsChild`, `removeSlot`, `reparent`, `descendantsOf` (bounded-fuel BFS), and `acyclic` predicate. Proved `CapDerivationTree.empty_acyclic`. Added CDT-aware mint `cspaceMintWithDerivation` that records parent→child derivation edges. Added `cdt` field to `SystemState` (backward-compatible default).
+- **C-04 (Cross-CNode revocation):** Implemented `cspaceRevokeCdt` performing local sibling revocation + CDT descendant traversal + edge cleanup. Demonstrated via trace: mint → CDT revoke clears child slot and CDT edges.
+- **H-02 (Slot overwrite guard):** Implemented `cspaceInsertSlotGuarded` that rejects occupied slots with `targetSlotOccupied`. Proved `cspaceInsertSlotGuarded_rejects_occupied`, `_preserves_scheduler`, `_preserves_services`, `_preserves_objects_ne`. Used by `cspaceCopy` and `cspaceMove`.
+- **M-01 (Dual send/receive queues):** Extended `Endpoint` with separate `sendQueue` and `receiveQueue` fields (backward-compatible defaults). Implemented `endpointSendDual` and `endpointReceiveDual` with rendezvous and blocking semantics.
+- **M-02 (Message payload):** Added `MessageInfo` structure with `label`, `msgRegisters`, `capsUnwrapped`, `extraCaps` fields. Dual-queue IPC operations carry `MessageInfo` payloads through send/receive paths.
+- **M-12 (Reply operation):** Implemented `endpointCall` (seL4_Call: send + block for reply), `endpointReply` (seL4_Reply: validate blockedOnReply + unblock), `endpointReplyRecv` (seL4_ReplyRecv: atomic reply + receive). Added `blockedOnReply` variant to `ThreadIpcState`. Proved `endpointReply_preserves_ipcInvariant`, `endpointReply_preserves_objects_ne`, `endpointReply_preserves_endpoint`.
+- **IPC invariant extensions:** Added `blockedOnReplyNotRunnable`, `ipcSchedulerContractPredicatesE4`, `cdtAcyclicInvariant` definitions.
+- **New error variants:** `targetSlotOccupied`, `sourceSlotEmpty`, `noReplyCapability`.
+- **Test coverage:** Added WS-E4 capability trace (C-02/C-03/C-04/H-02) and IPC trace (M-01/M-02/M-12) to `MainTraceHarness.lean`. Added CDT acyclicity runtime check to `InvariantChecks.lean`. Added 13 fixture lines and 50+ tier-3 anchors. `test_full.sh` passes.
+- **CDT preservation:** Proved `storeObject_cdt_eq` and `storeCapabilityRef_cdt_eq` frame conditions.
+- Updated all canonical documentation: workstream plan, README, SELE4N_SPEC, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX, GitBook chapters.
+- Bumped package version to **`0.11.11`**.
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E4 preparation — proof infrastructure and documentation accuracy

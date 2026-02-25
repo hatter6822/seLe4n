@@ -520,6 +520,57 @@ run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTrac
 run_check "INVARIANT" rg -n 'runParameterizedTopologies' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'parameterized topology ok' tests/fixtures/main_trace_smoke.expected
 
+# WS-E4 capability/IPC model completion anchors.
+# C-02: CSpace copy/move/mutate operations must be defined.
+run_check "INVARIANT" rg -n '^def cspaceCopy' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceMove' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceMutate' SeLe4n/Kernel/Capability/Operations.lean
+# C-03: CDT model and CDT-aware mint.
+run_check "INVARIANT" rg -n '^structure CapDerivationTree' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^structure CapDerivationEdge' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def cspaceMintWithDerivation' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem empty_acyclic' SeLe4n/Model/State.lean
+# C-04: Cross-CNode CDT revocation.
+run_check "INVARIANT" rg -n '^def cspaceRevokeCdt' SeLe4n/Kernel/Capability/Operations.lean
+# H-02: Guarded insert + rejection theorem.
+run_check "INVARIANT" rg -n '^def cspaceInsertSlotGuarded' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlotGuarded_rejects_occupied' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlotGuarded_preserves_scheduler' SeLe4n/Kernel/Capability/Operations.lean
+# M-01: Dual send/receive queues.
+run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDual' SeLe4n/Kernel/IPC/Operations.lean
+# M-02: Message payload type.
+run_check "INVARIANT" rg -n '^structure MessageInfo' SeLe4n/Model/Object.lean
+# M-12: Reply operations for bidirectional IPC.
+run_check "INVARIANT" rg -n '^def endpointCall' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def endpointReply' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^def endpointReplyRecv' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_objects_ne' SeLe4n/Kernel/IPC/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_endpoint' SeLe4n/Kernel/IPC/Operations.lean
+# WS-E4 IPC invariant extensions.
+run_check "INVARIANT" rg -n '^def blockedOnReplyNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicatesE4' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def cdtAcyclicInvariant' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-E4 CDT runtime invariant check.
+run_check "INVARIANT" rg -n 'cdtAcyclicityCheck' SeLe4n/Testing/InvariantChecks.lean
+# WS-E4 new error variants.
+run_check "INVARIANT" rg -n '^\s*\| targetSlotOccupied' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| sourceSlotEmpty' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| noReplyCapability' SeLe4n/Model/State.lean
+# WS-E4 trace fixture anchors.
+run_check "TRACE" rg -n 'ws-e4 mint-with-derivation cdt edges' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 cspace-copy dst rights' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 guarded-insert occupied-slot guard' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 cdt-revoke child cleared' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 dual-send queued sender' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 dual-recv sender' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 endpoint-call caller blocked on reply' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 endpoint-reply unblocked caller' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'ws-e4 reply-not-blocked guard' tests/fixtures/main_trace_smoke.expected
+# WS-E4 documentation anchor.
+run_check "DOC" rg -n 'WS-E4' docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md
+
 # WS-E1 L-07 structured trace format anchors.
 run_check "TRACE" rg -n 'scenario_id \| risk_class \| expected_fragment' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n '^[A-Z]+-[0-9]+\s+\|' tests/fixtures/main_trace_smoke.expected
