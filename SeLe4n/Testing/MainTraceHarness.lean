@@ -66,7 +66,7 @@ def bootstrapState : SystemState :=
     })
     |>.withObject 11 (.cnode CNode.empty)
     |>.withObject 20 (.vspaceRoot { asid := 1, mappings := [] })
-    |>.withObject demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject demoEndpoint (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withService svcDb {
       identity := { sid := svcDb, backingObject := 12, owner := 10 }
@@ -234,22 +234,22 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   let stMultiEndpoint : SystemState :=
     { st1 with
       objects := fun oid =>
-        if oid = demoEndpoint then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-        else if oid = 31 then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+        if oid = demoEndpoint then some (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
+        else if oid = 31 then some (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
         else st1.objects oid
     }
-  match SeLe4n.Kernel.endpointSend demoEndpoint 4 stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSend demoEndpoint 4 .empty stMultiEndpoint with
   | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSend 31 5 stEp1 with
+      match SeLe4n.Kernel.endpointSend 31 5 .empty stEp1 with
       | .error err => IO.println s!"multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceive demoEndpoint stEp2 with
           | .error err => IO.println s!"multi-endpoint receive A error: {reprStr err}"
-          | .ok (senderA, stEp3) =>
+          | .ok ((senderA, _msgA), stEp3) =>
               match SeLe4n.Kernel.endpointReceive 31 stEp3 with
               | .error err => IO.println s!"multi-endpoint receive B error: {reprStr err}"
-              | .ok (senderB, _) =>
+              | .ok ((senderB, _msgB), _) =>
                   IO.println s!"multi-endpoint receive senders: {senderA}, {senderB}"
 
   let chainRoot : ServiceId := 205
@@ -320,7 +320,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
 
 private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) st1 with
   | .error err =>
       IO.println s!"lifecycle retype unauthorized branch: {reprStr err}"
   | .ok _ =>
@@ -334,12 +334,12 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       }
     }
   match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) stIllegalState with
+      (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) stIllegalState with
   | .error err => IO.println s!"lifecycle retype illegal-state branch: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected lifecycle retype success under stale metadata"
   match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) st1 with
   | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
       IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects 12).map KernelObject.objectType}"
@@ -351,19 +351,19 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       | .ok (_, st3) =>
           IO.println "created sibling cap with the same target"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype mintedSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) st3 with
           | .error err =>
               IO.println s!"composed transition alias guard (expected error): {reprStr err}"
           | .ok _ =>
               IO.println "unexpected composed transition success with aliased authority/cleanup"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype rootSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) st3 with
           | .error err =>
               IO.println s!"composed transition unauthorized branch: {reprStr err}"
           | .ok _ =>
               IO.println "unexpected composed transition success with wrong authority"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype lifecycleAuthSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] }) st3 with
           | .error err => IO.println s!"composed transition error: {reprStr err}"
           | .ok (_, st5) =>
               IO.println "composed revoke/delete/retype success"
@@ -378,29 +378,29 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
               match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
                   | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSend demoEndpoint 1 st6 with
+                      match SeLe4n.Kernel.endpointSend demoEndpoint 1 .empty st6 with
                       | .error err => IO.println s!"endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "handshake send matched waiting receiver"
-                          match SeLe4n.Kernel.endpointSend demoEndpoint 1 st7 with
+                          match SeLe4n.Kernel.endpointSend demoEndpoint 1 .empty st7 with
                           | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
-                              match SeLe4n.Kernel.endpointSend demoEndpoint 2 st8 with
+                              match SeLe4n.Kernel.endpointSend demoEndpoint 2 .empty st8 with
                               | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
                               | .ok (_, st9) =>
                                   IO.println "queued two senders on endpoint"
                                   match SeLe4n.Kernel.endpointReceive demoEndpoint st9 with
                                   | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
-                                  | .ok (sender1, st10) =>
+                                  | .ok ((sender1, _msg1), st10) =>
                                       IO.println s!"endpoint receive #1 sender: {sender1}"
                                       match SeLe4n.Kernel.endpointReceive demoEndpoint st10 with
                                       | .error err => IO.println s!"endpoint receive #2 error: {reprStr err}"
-                                      | .ok (sender2, st11) =>
+                                      | .ok ((sender2, _msg2), st11) =>
                                           IO.println s!"endpoint receive #2 sender: {sender2}"
                                           match SeLe4n.Kernel.endpointReceive demoEndpoint st11 with
                                           | .error err =>
                                               IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
-                                          | .ok (sender3, _) =>
+                                          | .ok ((sender3, _msg3), _) =>
                                                 IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
                                           match SeLe4n.Kernel.notificationWait demoNotification 2 st11 with
                                           | .error err => IO.println s!"notification wait #1 error: {reprStr err}"
@@ -470,7 +470,7 @@ private def buildParameterizedTopology
       (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := [] })
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
-    [ (⟨4000⟩, .endpoint { state := .idle, queue := [], waitingReceiver := none })
+    [ (⟨4000⟩, .endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
     , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := none })
     ]
   let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects

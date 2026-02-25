@@ -25,6 +25,12 @@ structure ServiceGraphEntry where
   isolatedFrom : List ServiceId
   deriving Repr, DecidableEq
 
+/-- Architecture-neutral address of a capability slot inside a CNode object. -/
+structure SlotRef where
+  cnode : SeLe4n.ObjId
+  slot : SeLe4n.Slot
+  deriving Repr, DecidableEq
+
 inductive AccessRight where
   | read
   | write
@@ -51,6 +57,121 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
+-- ============================================================================
+-- C-03/WS-E4: Capability Derivation Tree (CDT) model
+-- ============================================================================
+
+/-- A derivation edge records that a child capability was derived (minted/copied)
+from a parent slot. The CDT tracks all such edges for cross-CNode revocation.
+
+C-03/WS-E4: The CDT is a forest of derivation trees rooted at original
+capabilities. Each edge records the parent and child slot references. -/
+structure CapDerivationEdge where
+  parentSlot : SlotRef
+  childSlot : SlotRef
+  deriving Repr, DecidableEq
+
+/-- The Capability Derivation Tree: a list of parent→child edges recording
+which capability slot was derived from which. Used by cross-CNode revocation
+(C-04) to find all descendants of a capability. -/
+structure CapDerivationTree where
+  edges : List CapDerivationEdge
+  deriving Repr, DecidableEq
+
+namespace CapDerivationTree
+
+def empty : CapDerivationTree := { edges := [] }
+
+/-- Add a derivation edge from parent to child. -/
+def addEdge (cdt : CapDerivationTree) (parentRef childRef : SlotRef) : CapDerivationTree :=
+  { edges := { parentSlot := parentRef, childSlot := childRef } :: cdt.edges }
+
+/-- Remove all edges where the given slot is the child (used when deleting a cap). -/
+def removeChild (cdt : CapDerivationTree) (slot : SlotRef) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.childSlot ≠ slot) }
+
+/-- Remove all edges where the given slot is either parent or child. -/
+def removeSlot (cdt : CapDerivationTree) (slot : SlotRef) : CapDerivationTree :=
+  { edges := cdt.edges.filter (fun e => e.parentSlot ≠ slot ∧ e.childSlot ≠ slot) }
+
+/-- Find direct children of a given parent slot. -/
+def directChildren (cdt : CapDerivationTree) (parent : SlotRef) : List SlotRef :=
+  (cdt.edges.filter (fun e => e.parentSlot = parent)).map CapDerivationEdge.childSlot
+
+/-- Collect all transitive descendants of a slot via bounded BFS.
+Returns the list of all descendant slot references reachable from `root`. -/
+def descendants (cdt : CapDerivationTree) (root : SlotRef) (fuel : Nat) : List SlotRef :=
+  go [root] [] fuel
+where
+  go (worklist : List SlotRef) (visited : List SlotRef) : Nat → List SlotRef
+  | 0 => visited
+  | fuel + 1 =>
+    match worklist with
+    | [] => visited
+    | slot :: rest =>
+      if slot ∈ visited then go rest visited fuel
+      else
+        let children := cdt.directChildren slot
+        go (rest ++ children) (slot :: visited) fuel
+
+/-- CDT well-formedness: no self-loops and each slot appears as a child at most once
+(each capability has at most one derivation parent). -/
+def wellFormed (cdt : CapDerivationTree) : Prop :=
+  (∀ e, e ∈ cdt.edges → e.childSlot ≠ e.parentSlot) ∧
+  (∀ e₁ e₂, e₁ ∈ cdt.edges → e₂ ∈ cdt.edges →
+    e₁.childSlot = e₂.childSlot → e₁ = e₂)
+
+theorem empty_wellFormed : CapDerivationTree.empty.wellFormed := by
+  constructor
+  · intro e hMem; simp [CapDerivationTree.empty] at hMem
+  · intro e₁ e₂ h₁; simp [CapDerivationTree.empty] at h₁
+
+/-- Removing edges preserves well-formedness (filtering can only reduce the edge set). -/
+theorem removeChild_wellFormed
+    (cdt : CapDerivationTree) (slot : SlotRef)
+    (hWf : cdt.wellFormed) :
+    (cdt.removeChild slot).wellFormed := by
+  constructor
+  · intro e hMem
+    simp [removeChild, List.mem_filter] at hMem
+    exact hWf.1 e hMem.1
+  · intro e₁ e₂ h₁ h₂ hEq
+    simp [removeChild, List.mem_filter] at h₁ h₂
+    exact hWf.2 e₁ e₂ h₁.1 h₂.1 hEq
+
+theorem removeSlot_wellFormed
+    (cdt : CapDerivationTree) (slot : SlotRef)
+    (hWf : cdt.wellFormed) :
+    (cdt.removeSlot slot).wellFormed := by
+  constructor
+  · intro e hMem
+    simp [removeSlot, List.mem_filter] at hMem
+    exact hWf.1 e hMem.1
+  · intro e₁ e₂ h₁ h₂ hEq
+    simp [removeSlot, List.mem_filter] at h₁ h₂
+    exact hWf.2 e₁ e₂ h₁.1 h₂.1 hEq
+
+end CapDerivationTree
+
+-- ============================================================================
+-- M-02/WS-E4: IPC message payload model
+-- ============================================================================
+
+/-- IPC message payload carrying message registers and optionally transferred
+capabilities. Models the seL4 message register + capability transfer mechanism.
+
+M-02/WS-E4: Adds data transfer to IPC beyond the badge-only mechanism. -/
+structure IpcMessage where
+  registers : List Nat
+  caps : List Capability
+  deriving Repr, DecidableEq
+
+namespace IpcMessage
+
+def empty : IpcMessage := { registers := [], caps := [] }
+
+end IpcMessage
+
 /-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
 
 This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
@@ -60,6 +181,7 @@ inductive ThreadIpcState where
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -78,10 +200,23 @@ inductive EndpointState where
   | receive
   deriving Repr, DecidableEq
 
+/-- Endpoint object model for IPC.
+
+M-01/WS-E4: Restructured with separate send and receive queues to support
+concurrent senders and receivers, matching seL4's dual-queue model. The single
+`queue` field is replaced by `sendQueue` and `receiveQueue`.
+
+M-02/WS-E4: Added `pendingMessages` to carry message payloads associated with
+queued senders, stored in order corresponding to `sendQueue`.
+
+M-12/WS-E4: Added `replyQueue` for bidirectional IPC — threads waiting for
+a reply are tracked separately from the send/receive queues. -/
 structure Endpoint where
   state : EndpointState
-  queue : List SeLe4n.ThreadId
-  waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List SeLe4n.ThreadId
+  receiveQueue : List SeLe4n.ThreadId
+  pendingMessages : List IpcMessage := []
+  replyQueue : List (SeLe4n.ThreadId × SeLe4n.ThreadId) := []
   deriving Repr, DecidableEq
 
 inductive NotificationState where

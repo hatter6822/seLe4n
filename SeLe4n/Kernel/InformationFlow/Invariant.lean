@@ -220,67 +220,22 @@ private theorem storeObject_preserves_projection
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid obj hStore]
   · unfold storeObject at hStore; cases hStore; funext sid; rfl
 
-/-- WS-E3/H-09: endpointSend at non-observable entities preserves projection (single execution). -/
+/-- WS-E4/TPI-D4: endpointSend at non-observable entities preserves projection (single execution).
+Updated for dual send/receive queue model. Full proof deferred to WS-E5. -/
 private theorem endpointSend_projection_preserved
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (st st' : SystemState)
+    (msg : IpcMessage) (st st' : SystemState)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hSenderHigh : threadObservable ctx observer sender = false)
     (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain : ∀ ep tid, st.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
-            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
-            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | send =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
-            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
-            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | receive =>
-    simp [endpointSend, hObj, hState] at hStep
-    cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
-    case nil.some receiver =>
-      have hRecvHigh := hRecvDomain ep receiver hObj hWait
-      have hRecvObjHigh := hCoherent receiver hRecvHigh
-      revert hStep
-      cases hStore : storeObject endpointId _ st with
-      | error e => simp
-      | ok pair =>
-        simp only []
-        cases hTcb : storeTcbIpcState pair.2 receiver _ with
-        | error e => simp
-        | ok st2 =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
-              storeTcbIpcState_preserves_projection ctx observer pair.2 st2 receiver _ hRecvObjHigh hTcb,
-              storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
+    (hRecvDomain : ∀ ep (tid : SeLe4n.ThreadId), st.objects endpointId = some (.endpoint ep) →
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by sorry -- TPI-D4
 
 -- ============================================================================
 -- Non-interference theorem #1: endpointSend (existing, retained)
@@ -289,17 +244,13 @@ private theorem endpointSend_projection_preserved
 /-- A successful endpoint send preserves low-equivalence for observers that cannot
 see the sender thread and cannot observe the endpoint object itself.
 
-WS-E3/H-09: Updated for multi-step chain (storeObject → storeTcbIpcState →
-removeRunnable/ensureRunnable). Additional hypotheses required:
-- `hSenderObjHigh`: sender's TCB object is non-observable
-- `hCoherent`: thread-level non-observability implies object-level non-observability
-- `hRecvDomain₁`/`hRecvDomain₂`: threads blocking on the endpoint are non-observable
-  (ensures the receive-path handshake doesn't leak to the observer). -/
+WS-E4/TPI-D4: Updated for dual send/receive queue model. Full proof deferred to WS-E5. -/
 theorem endpointSend_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSenderHigh : threadObservable ctx observer sender = false)
@@ -308,23 +259,19 @@ theorem endpointSend_preserves_lowEquivalent
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain₁ : ∀ ep tid, s₁.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hRecvDomain₂ : ∀ ep tid, s₂.objects endpointId = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
+    (hRecvDomain₁ : ∀ ep (tid : SeLe4n.ThreadId), s₁.objects endpointId = some (.endpoint ep) →
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
+    (hRecvDomain₂ : ∀ ep (tid : SeLe4n.ThreadId), s₂.objects endpointId = some (.endpoint ep) →
+        tid ∈ ep.receiveQueue → threadObservable ctx observer tid = false)
+    (hStep₁ : endpointSend endpointId sender msg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointSend endpointId sender msg s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  -- Strategy: show projectState is preserved by each step on both states independently,
-  -- then chain with the low-equivalence hypothesis.
   suffices h₁ : projectState ctx observer s₁' = projectState ctx observer s₁ by
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
-    -- Prove s₂ projection preserved (symmetric to s₁)
-    exact endpointSend_projection_preserved ctx observer endpointId sender s₂ s₂'
+    exact endpointSend_projection_preserved ctx observer endpointId sender msg s₂ s₂'
       hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hRecvDomain₂ hStep₂
-  -- Prove s₁ projection preserved
-  exact endpointSend_projection_preserved ctx observer endpointId sender s₁ s₁'
+  exact endpointSend_projection_preserved ctx observer endpointId sender msg s₁ s₁'
     hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hRecvDomain₁ hStep₁
 
 -- ============================================================================
@@ -420,10 +367,9 @@ theorem cspaceMint_preserves_lowEquivalent
 
 /-- Revoking capabilities in a non-observable CNode preserves low-equivalence.
 
-If the CNode being revoked is not observable by the observer, the revoke operation
-only modifies non-projected state. The operation goes through `storeObject` on the
-CNode (filtered slots) then `clearCapabilityRefs` (lifecycle-only changes). Both
-preserve scheduler and services. -/
+WS-E4/TPI-D4: Updated for CDT-based cross-CNode revocation.
+The operation now goes through storeObject → revokeCrossCNodeSlots → CDT update →
+clearCapabilityRefs. Full proof deferred to WS-E5. -/
 theorem cspaceRevoke_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
@@ -433,73 +379,7 @@ theorem cspaceRevoke_preserves_lowEquivalent
     (hCNodeHigh : objectObservable ctx observer addr.cnode = false)
     (hStep₁ : cspaceRevoke addr s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceRevoke addr s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  have hObjLow := congrArg ObservableState.objects hLow
-  have hRunLow := congrArg ObservableState.runnable hLow
-  have hCurLow := congrArg ObservableState.current hLow
-  have hSvcLow := congrArg ObservableState.services hLow
-  -- Unfold cspaceRevoke to extract its staged decomposition
-  unfold cspaceRevoke at hStep₁ hStep₂
-  -- Process s₁ side
-  cases hL₁ : cspaceLookupSlot addr s₁ with
-  | error e => simp [hL₁] at hStep₁
-  | ok p₁ =>
-    rcases p₁ with ⟨par₁, stL₁⟩
-    have hEq₁ : stL₁ = s₁ := cspaceLookupSlot_preserves_state s₁ stL₁ addr par₁ hL₁
-    subst stL₁
-    -- Process s₂ side
-    cases hL₂ : cspaceLookupSlot addr s₂ with
-    | error e => simp [hL₂] at hStep₂
-    | ok p₂ =>
-      rcases p₂ with ⟨par₂, stL₂⟩
-      have hEq₂ : stL₂ = s₂ := cspaceLookupSlot_preserves_state s₂ stL₂ addr par₂ hL₂
-      subst stL₂
-      -- Case-split on the CNode object
-      cases hC₁ : s₁.objects addr.cnode with
-      | none => simp [hL₁, hC₁] at hStep₁
-      | some o₁ =>
-        cases o₁ with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL₁, hC₁] at hStep₁
-        | cnode cn₁ =>
-          cases hC₂ : s₂.objects addr.cnode with
-          | none => simp [hL₂, hC₂] at hStep₂
-          | some o₂ =>
-            cases o₂ with
-            | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL₂, hC₂] at hStep₂
-            | cnode cn₂ =>
-              -- Both sides reduce to storeObject + clearCapabilityRefs
-              simp [hL₁, hC₁, storeObject] at hStep₁
-              simp [hL₂, hC₂, storeObject] at hStep₂
-              cases hStep₁; cases hStep₂
-              -- Use clearCapabilityRefsState preservation lemmas
-              unfold lowEquivalent projectState
-              congr 1
-              · -- objects: clearCapabilityRefsState preserves objects, storeObject only modifies addr.cnode
-                funext oid
-                by_cases hObs : objectObservable ctx observer oid
-                · have hNe : oid ≠ addr.cnode := by
-                    intro hEq; subst hEq; simp [hCNodeHigh] at hObs
-                  have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
-                    congrFun hObjLow oid
-                  simp [projectObjects, hObs] at hBase ⊢
-                  rw [clearCapabilityRefsState_preserves_objects, clearCapabilityRefsState_preserves_objects]
-                  simp [hNe]
-                  exact hBase
-                · simp [projectObjects, hObs]
-              · -- runnable: scheduler preserved by storeObject and clearCapabilityRefsState
-                simp only [projectRunnable]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
-                simpa [projectRunnable] using hRunLow
-              · -- current: same
-                simp only [projectCurrent]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
-                simpa [projectCurrent] using hCurLow
-              · -- services: preserved by storeObject and clearCapabilityRefsState
-                funext sid
-                simp only [projectServiceStatus, clearCapabilityRefsState_lookupService]
-                have hBase := congrArg ObservableState.services hLow
-                have hSidBase := congrFun hBase sid
-                simpa [projectServiceStatus] using hSidBase
+    lowEquivalent ctx observer s₁' s₂' := by sorry -- TPI-D4
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)

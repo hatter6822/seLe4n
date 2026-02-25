@@ -72,7 +72,7 @@ Quick index. Full contracts and dependencies are in the v0.11.6 planning backbon
 - **WS-E1:** Test infrastructure and CI hardening -- **completed** (Medium; M-10, M-11, F-14, L-07, L-08)
 - **WS-E2:** Proof quality and invariant strengthening -- **completed** (High; C-01, H-01, H-03)
 - **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4:** Capability and IPC model completion -- planned (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4:** Capability and IPC model completion -- **in progress** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5:** Information-flow maturity -- planned (High; H-04, H-05, M-07)
 - **WS-E6:** Model completeness and documentation -- planned (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
@@ -94,7 +94,7 @@ Primary references:
 | `SeLe4n/Model/Object.lean`, `Model/State.lean` | Core model entities and kernel/system state |
 | `SeLe4n/Kernel/Scheduler/*` | Scheduler transitions and invariants |
 | `SeLe4n/Kernel/Capability/*` | CSpace/capability transitions and invariants |
-| `SeLe4n/Kernel/IPC/*` | Endpoint IPC transitions and invariants |
+| `SeLe4n/Kernel/IPC/*` | Endpoint IPC transitions and invariants (dual send/receive queues, message payloads) |
 | `SeLe4n/Kernel/Lifecycle/*` | Lifecycle/retype transitions and invariants |
 | `SeLe4n/Kernel/Service/*` | Service orchestration, policy checks, composed invariants |
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |

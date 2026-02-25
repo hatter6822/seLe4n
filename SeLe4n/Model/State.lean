@@ -28,12 +28,6 @@ structure SchedulerState where
   current : Option SeLe4n.ThreadId
   deriving Repr, DecidableEq
 
-/-- Architecture-neutral address of a capability slot inside a CNode object. -/
-structure SlotRef where
-  cnode : SeLe4n.ObjId
-  slot : SeLe4n.Slot
-  deriving Repr, DecidableEq
-
 /-- Lifecycle metadata required by the first M4-A transition story.
 
 `objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
@@ -50,6 +44,9 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  /-- C-03/WS-E4: Capability Derivation Tree tracking parent→child minting edges
+  for cross-CNode revocation support. -/
+  cdt : CapDerivationTree := .empty
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +66,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    cdt := .empty
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError

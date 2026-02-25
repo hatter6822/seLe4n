@@ -42,7 +42,7 @@ private def publicServiceEntry : ServiceGraphEntry :=
 
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject 1 (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
     |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
     |>.withService 1 sampleServiceEntry
     |>.withService 2 publicServiceEntry
@@ -69,7 +69,7 @@ Key differences from sampleState:
 - current thread: none (vs some tid=2, which is secret and projected to none anyway) -/
 private def altState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject 1 (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
     -- Secret object differs: different notification state and no pending badge
     |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withService 1 sampleServiceEntry
@@ -222,7 +222,7 @@ private def runInformationFlowChecks : IO Unit := do
   -- endpointSendChecked: public sender to public endpoint should succeed (same-domain flow)
   let publicEndpointState :=
     (BootstrapBuilder.empty
-      |>.withObject 10 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 10 (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
       |>.withRunnable [1]
       |>.withCurrent (some 1)
       |>.build)
@@ -234,8 +234,8 @@ private def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
-  let checkedResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
-  let uncheckedResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
+  let checkedResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 .empty publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSend 10 1 .empty publicEndpointState
   expect "same-domain endpointSendChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
       | .ok ((), s₁), .ok ((), s₂) => s₁.objects 10 = s₂.objects 10
@@ -249,7 +249,7 @@ private def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
+  let deniedResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 .empty publicEndpointState
   expect "secret-to-public endpointSendChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true

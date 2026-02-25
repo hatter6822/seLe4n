@@ -17,7 +17,7 @@ def probeBaseState : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
       if oid = probeEndpointId then
-        some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+        some (.endpoint { state := .idle, sendQueue := [], receiveQueue := [] })
       else
         none
   }
@@ -35,11 +35,10 @@ def pickThreadId (x : Nat) : SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofNat ((x % 8) + 1)
 
 def endpointConsistencyHolds (ep : Endpoint) : Bool :=
-  match ep.state, ep.queue.isEmpty, ep.waitingReceiver.isSome with
-  | .idle, true, false => true
-  | .send, false, false => true
-  | .receive, true, true => true
-  | _, _, _ => false
+  match ep.state with
+  | .idle => ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+  | .send => !ep.sendQueue.isEmpty
+  | .receive => !ep.receiveQueue.isEmpty
 
 def probeInvariantObjectIds : List SeLe4n.ObjId := [probeEndpointId]
 
@@ -56,7 +55,7 @@ def checkEndpointConsistency (st : SystemState) : Except String Unit :=
       if endpointConsistencyHolds ep then
         .ok ()
       else
-        .error s!"endpoint invariant mismatch: state={reprStr ep.state}, queue={reprStr ep.queue}, waitingReceiver={reprStr ep.waitingReceiver}"
+        .error s!"endpoint invariant mismatch: state={reprStr ep.state}, sendQueue={reprStr ep.sendQueue}, receiveQueue={reprStr ep.receiveQueue}"
   | some obj => .error s!"probe endpoint object changed unexpectedly: {reprStr obj}"
   | none => .error "probe endpoint object missing"
 
@@ -92,7 +91,7 @@ this function classifies each error and returns a structured outcome. -/
 def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
   match op with
   | .send =>
-      match SeLe4n.Kernel.endpointSend probeEndpointId tid st with
+      match SeLe4n.Kernel.endpointSend probeEndpointId tid .empty st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   | .awaitReceive =>

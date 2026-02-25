@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3 completed; WS-E4 through WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3 completed; WS-E4 in progress; WS-E5, WS-E6 planned.
 
 ---
 
@@ -100,7 +100,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.3 Critical — Model Completion
 
-- **WS-E4:** Capability and IPC model completion (critical; **planned** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4:** Capability and IPC model completion (critical; **in progress** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 
 ### 4.4 High — Security Assurance
 

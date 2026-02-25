@@ -16,7 +16,7 @@ Current milestone state:
 - WS-B portfolio (v0.9.0): all completed
 - WS-C portfolio (v0.9.32): all completed
 - WS-D portfolio (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E
-- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned
+- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1, WS-E2, WS-E3 completed; WS-E4 in progress; WS-E5, WS-E6 planned
 
 ## 2) Stable contracts contributors must preserve
 

@@ -6,14 +6,15 @@ namespace SeLe4n.Testing
 
 private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
   match ep.state with
-  | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
+  | .idle => ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+  | .send => !ep.sendQueue.isEmpty && ep.pendingMessages.length == ep.sendQueue.length
+  | .receive => !ep.receiveQueue.isEmpty && ep.sendQueue.isEmpty
 
 private def endpointObjectValidB (ep : Endpoint) : Bool :=
-  match ep.waitingReceiver with
-  | none => ep.state != .receive
-  | some _ => ep.state == .receive
+  match ep.state with
+  | .idle => ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+  | .send => !ep.sendQueue.isEmpty
+  | .receive => !ep.receiveQueue.isEmpty
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
