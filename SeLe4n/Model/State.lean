@@ -359,6 +359,26 @@ theorem storeObject_scheduler_eq
   cases hStore
   rfl
 
+theorem storeObject_irqHandlers_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+theorem storeObject_machine_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
 theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)

@@ -46,7 +46,10 @@ Security baseline reference:
 
 ## 4) Sequencing model (WS-E)
 
-- **Phase P0:** Baseline transition — publish v0.11.6 planning backbone, demote WS-D to historical — current
+- **Phase P0:** Baseline transition — publish v0.11.6 planning backbone, demote WS-D to historical — **completed**
+- **Phase P1:** WS-E1 + WS-E2 (test/CI hardening + proof quality) — **completed**
+- **Phase P2:** WS-E3 (kernel semantic hardening) — **completed**
+- **Phase P3:** WS-E4 (capability/IPC completion) — **current**
 
 See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) for full WS-E phase sequencing.
 

@@ -63,14 +63,17 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~895 lines)
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~890 lines)
-- `docs/spec/SEL4_SPEC.md` (~750 lines)
-- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~500 lines)
-- `scripts/test_tier3_invariant_surface.sh` (~480 lines)
-- `SeLe4n/Model/State.lean` (~496 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~470 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~447 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~1467 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~1403 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~974 lines)
+- `docs/spec/SEL4_SPEC.md` (~751 lines)
+- `SeLe4n/Kernel/IPC/Operations.lean` (~686 lines)
+- `SeLe4n/Model/State.lean` (~577 lines)
+- `scripts/test_tier3_invariant_surface.sh` (~533 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~532 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~531 lines)
+- `SeLe4n/Model/Object.lean` (~514 lines)
+- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids

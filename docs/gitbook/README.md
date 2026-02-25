@@ -5,8 +5,8 @@
 This GitBook is the long-form guide for architecture, workflow, and milestone context.
 
 ## Current project state
-- **Active findings baseline:** AUDIT v0.11.0 (end-to-end repository audit).
-- **Active execution baseline:** WS-D portfolio (v0.11.0 workstream plan).
+- **Active findings baseline:** AUDIT v0.11.6 (codebase audit).
+- **Active execution baseline:** WS-E portfolio (v0.11.6 workstream plan). WS-E1/E2/E3 completed; WS-E4 current phase (P3).
 - **Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`docs/dev_history/`](../dev_history/README.md).
 
 Specification documents:
@@ -28,9 +28,9 @@ Specification documents:
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
-  [v0.11.0 Audit Workstream Planning (WS-D)](32-v0.11.0-audit-workstream-planning.md)
+  [Comprehensive Audit 2026 Workstream Planning (WS-E)](24-comprehensive-audit-2026-workstream-planning.md)
 
 ## Development history
 

@@ -1,5 +1,18 @@
 ## [0.11.10] - 2026-02-25
 
+### WS-E4 preparation — proof infrastructure and documentation accuracy
+
+Synthesized from analysis of PRs #207 and #208, selecting the best ideas from each. All changes maintain zero sorry/axiom.
+
+- **CPtr sentinel infrastructure:** Added `CPtr.isReserved`, `CPtr.sentinel`, `CPtr.default_eq_sentinel`, `CPtr.sentinel_isReserved` to `Prelude.lean`, paralleling the existing ObjId/ThreadId/ServiceId sentinel convention (H-06). Prepares for seL4_CapNull (CPtr 0) modeling in WS-E4 capability operations.
+- **ServiceId sentinel completion:** Added `ServiceId.sentinel`, `ServiceId.default_eq_sentinel`, `ServiceId.sentinel_isReserved` to `Prelude.lean`, closing a gap where ServiceId had `isReserved` but lacked the full sentinel infrastructure.
+- **Machine-layer frame lemmas:** Added 13 read-after-write and frame theorems to `Machine.lean`: `readReg_writeReg_eq/ne`, `readMem_writeMem_eq/ne`, `writeReg_preserves_pc/sp`, `writeMem_preserves_regs/timer`, `setPC_preserves_memory/timer`, `tick_preserves_regs/memory`, `tick_timer_succ`. Foundation for architecture-boundary proofs in WS-E4.
+- **State-layer frame lemmas:** Added `storeObject_irqHandlers_eq` and `storeObject_machine_eq` to `Model/State.lean`, proving `storeObject` preserves IRQ handler mappings and machine state.
+- **Notification well-formedness theorems:** Added `notificationSignal_result_wellFormed_wake`, `notificationSignal_result_wellFormed_merge`, `notificationWait_result_wellFormed_badge`, `notificationWait_result_wellFormed_wait` to `IPC/Invariant.lean`. Building blocks for notification ipcInvariant preservation in WS-E4.
+- **Strengthened `serviceRestart_error_discards_state`:** Upgraded from trivial `True` to invariant-preservation statement (proves `serviceLifecycleCapabilityInvariantBundle` preservation on error path).
+- **`boundedAddressTranslation` docstring:** Annotated as forward declaration for WS-E6 (not yet integrated into `vspaceInvariantBundle`).
+- **Documentation accuracy audit:** Fixed stale references in `docs/gitbook/README.md` (pointed to v0.11.0 baseline instead of v0.11.6), `CONTRIBUTING.md` (workstream plan link), and `docs/gitbook/05-specification-and-roadmap.md` (phase status). Updated `CLAUDE.md` known-large-file entries to accurate line counts.
+
 ### WS-E3 Kernel semantic hardening (completed)
 
 All 6 WS-E3 findings resolved with zero sorry/axiom. Synthesized from analysis of PRs #201–#203, selecting the best approach for each finding.
