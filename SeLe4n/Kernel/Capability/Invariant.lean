@@ -292,10 +292,13 @@ theorem cspaceInsertSlot_lookup_eq
       | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
-
           simp [cspaceInsertSlot, hObj] at hStep
-          cases hStep
-          simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+          cases hLookupGuard : cn.lookup slot with
+          | some _ => simp [hLookupGuard] at hStep
+          | none =>
+              simp [hLookupGuard] at hStep
+              cases hStep
+              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
@@ -787,18 +790,23 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
         | cnode preCn =>
           simp [hPre] at hStep
-          cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
-          | error e => simp [hStore] at hStep
-          | ok pair =>
-            obtain ⟨_, stMid⟩ := pair
-            simp [hStore] at hStep
-            have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-            have hObjMid := storeObject_objects_eq st stMid addr.cnode
-              (.cnode (preCn.insert addr.slot cap)) hStore
-            have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
-              rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-            rw [hFinal] at hObj; cases hObj
-            exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
+          -- WS-E4/H-02: case split on occupied-slot guard
+          cases hLookup : preCn.lookup addr.slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+            simp [hLookup] at hStep
+            cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
+            | error e => simp [hStore] at hStep
+            | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp [hStore] at hStep
+              have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+              have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                (.cnode (preCn.insert addr.slot cap)) hStore
+              have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
+                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+              rw [hFinal] at hObj; cases hObj
+              exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
     · -- Unmodified CNodes: transfer directly from pre-state
       have hPreObj := cspaceInsertSlot_preserves_objects_ne st st' addr cap cnodeId hEq hStep
       rw [hPreObj] at hObj
@@ -923,6 +931,131 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
+-- ============================================================================
+-- WS-E4/C-02: Preservation theorems for new capability operations
+-- ============================================================================
+
+/-- WS-E4/C-02: cspaceCopy preserves capabilityInvariantBundle.
+Copy composes cspaceLookupSlot + cspaceInsertSlot, both of which preserve the bundle,
+plus a CDT update that only touches the cdt field. -/
+theorem cspaceCopy_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceCopy at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨cap, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
+      subst st1
+      cases hInsert : cspaceInsertSlot dst cap st with
+      | error e => simp [hSrc, hInsert] at hStep
+      | ok pair2 =>
+          rcases pair2 with ⟨_, st2⟩
+          simp [hSrc, hInsert] at hStep
+          cases hStep
+          -- st' = { st2 with cdt := ... }, capabilityInvariantBundle only depends on objects/lifecycle
+          have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv hInsert
+          -- CDT update doesn't change objects; extract cspaceSlotUnique and reconstruct bundle
+          rcases hBundleSt2 with ⟨hU2, _, hAtt2, _⟩
+          exact ⟨hU2, cspaceLookupSound_of_cspaceSlotUnique _ hU2, hAtt2,
+            lifecycleAuthorityMonotonicity_holds _⟩
+
+/-- WS-E4/C-02: cspaceMove preserves capabilityInvariantBundle.
+Move composes lookup + insert + delete, all of which preserve the bundle. -/
+theorem cspaceMove_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceMove src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceMove at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨cap, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
+      subst st1
+      cases hInsert : cspaceInsertSlot dst cap st with
+      | error e => simp [hSrc, hInsert] at hStep
+      | ok pair2 =>
+          rcases pair2 with ⟨_, st2⟩
+          cases hDelete : cspaceDeleteSlot src st2 with
+          | error e => simp [hSrc, hInsert, hDelete] at hStep
+          | ok pair3 =>
+              rcases pair3 with ⟨_, st3⟩
+              simp [hSrc, hInsert, hDelete] at hStep
+              cases hStep
+              have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv hInsert
+              have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2 hDelete
+              -- CDT reparent doesn't change objects; extract cspaceSlotUnique and reconstruct
+              rcases hBundleSt3 with ⟨hU3, _, hAtt3, _⟩
+              exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3, hAtt3,
+                lifecycleAuthorityMonotonicity_holds _⟩
+
+/-- WS-E4/C-03: cspaceMintWithCdt preserves capabilityInvariantBundle.
+Composes cspaceMint (already proven) + CDT edge addition. -/
+theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceMintWithCdt at hStep
+  cases hMint : cspaceMint src dst rights badge st with
+  | error e => simp [hMint] at hStep
+  | ok pair =>
+      rcases pair with ⟨_, st1⟩
+      simp [hMint] at hStep
+      cases hStep
+      -- CDT addEdge doesn't change objects; extract cspaceSlotUnique and reconstruct
+      have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv hMint
+      rcases hBundle with ⟨hU1, _, hAtt1, _⟩
+      exact ⟨hU1, cspaceLookupSound_of_cspaceSlotUnique _ hU1, hAtt1,
+        lifecycleAuthorityMonotonicity_holds _⟩
+
+-- ============================================================================
+-- WS-E4: Preservation theorems for endpointReply
+-- ============================================================================
+
+/-- WS-E4/M-12: endpointReply preserves capabilityInvariantBundle.
+Reply stores a TCB (not a CNode), so CSpace invariants are preserved. -/
+theorem endpointReply_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (target : SeLe4n.ThreadId)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : endpointReply target st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
+  unfold endpointReply at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp [hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hIpc] at hStep
+      | blockedOnSend _ => simp [hIpc] at hStep
+      | blockedOnReceive _ => simp [hIpc] at hStep
+      | blockedOnNotification _ => simp [hIpc] at hStep
+      | blockedOnReply epId =>
+          simp [hIpc] at hStep
+          cases hTcb : storeTcbIpcState st target .ready with
+          | error e => simp [hTcb] at hStep
+          | ok st1 =>
+              simp [hTcb] at hStep; cases hStep
+              -- storeTcbIpcState only writes TCBs, so CNode objects are unchanged
+              have hU1 : cspaceSlotUnique st1 := by
+                intro cnodeId cn hCn1
+                exact hUnique cnodeId cn (storeTcbIpcState_cnode_backward st st1 target .ready cnodeId cn hTcb hCn1)
+              have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
+                hU1 (ensureRunnable_preserves_objects st1 target)
+              exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
+                lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
 def m3IpcSeedInvariantBundle (st : SystemState) : Prop :=

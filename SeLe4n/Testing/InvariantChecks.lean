@@ -47,6 +47,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
           let ok := match cap.target with
             | .object targetId => (st.objects targetId).isSome
             | .cnodeSlot cnId _ => (st.objects cnId).isSome
+            | .replyCap tid => (st.objects tid.toObjId).isSome
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner) acc
     | _ => acc) []
 

@@ -1464,4 +1464,99 @@ theorem notificationWait_result_wellFormed_wait
   · intro h; simp [List.append_eq_nil_iff] at h
   · rfl
 
+-- ============================================================================
+-- WS-E4/M-12: Preservation theorems for endpointReply
+-- ============================================================================
+
+/-- WS-E4/M-12: endpointReply preserves schedulerInvariantBundle.
+Reply stores a TCB and calls ensureRunnable, similar to endpointReceive unblocking. -/
+theorem endpointReply_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (target : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : endpointReply target st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold endpointReply at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp [hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hIpc] at hStep
+      | blockedOnSend _ => simp [hIpc] at hStep
+      | blockedOnReceive _ => simp [hIpc] at hStep
+      | blockedOnNotification _ => simp [hIpc] at hStep
+      | blockedOnReply _ =>
+          simp [hIpc] at hStep
+          cases hTcb : storeTcbIpcState st target .ready with
+          | error e => simp [hTcb] at hStep
+          | ok st1 =>
+              simp [hTcb] at hStep; cases hStep
+              rcases hInv with ⟨hQueue, hRunUnique, hCurrent⟩
+              have hSchedEq := storeTcbIpcState_scheduler_eq st st1 target .ready hTcb
+              refine ⟨?_, ?_, ?_⟩
+              · -- queueCurrentConsistent
+                unfold queueCurrentConsistent
+                rw [ensureRunnable_scheduler_current, hSchedEq]
+                cases hCurr : st.scheduler.current with
+                | none => trivial
+                | some x =>
+                  have hMem : x ∈ st.scheduler.runnable := by
+                    have := hQueue; simp [queueCurrentConsistent, hCurr] at this; exact this
+                  exact ensureRunnable_mem_old st1 target x (hSchedEq ▸ hMem)
+              · -- runQueueUnique
+                exact ensureRunnable_nodup st1 target (hSchedEq ▸ hRunUnique)
+              · -- currentThreadValid
+                show currentThreadValid (ensureRunnable st1 target)
+                unfold currentThreadValid
+                simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
+                cases hCurr : st.scheduler.current with
+                | none => simp
+                | some x =>
+                  simp only []
+                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                    simp [currentThreadValid, hCurr] at hCurrent; exact hCurrent
+                  by_cases hNeTid : x.toObjId = target.toObjId
+                  · have hTargetTcb : ∃ tcb', st.objects target.toObjId = some (.tcb tcb') :=
+                      hNeTid ▸ hCTV'
+                    have h := storeTcbIpcState_tcb_exists_at_target st st1 target .ready hTcb hTargetTcb
+                    rwa [← hNeTid] at h
+                  · rcases hCTV' with ⟨tcb', hTcbObj⟩
+                    exact ⟨tcb', (storeTcbIpcState_preserves_objects_ne st st1 target .ready x.toObjId hNeTid hTcb) ▸ hTcbObj⟩
+
+/-- WS-E4/M-12: endpointReply preserves ipcInvariant.
+Reply modifies only a TCB (no endpoint/notification changes). -/
+theorem endpointReply_preserves_ipcInvariant
+    (st st' : SystemState)
+    (target : SeLe4n.ThreadId)
+    (hInv : ipcInvariant st)
+    (hStep : endpointReply target st = .ok ((), st')) :
+    ipcInvariant st' := by
+  unfold endpointReply at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp [hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hIpc] at hStep
+      | blockedOnSend _ => simp [hIpc] at hStep
+      | blockedOnReceive _ => simp [hIpc] at hStep
+      | blockedOnNotification _ => simp [hIpc] at hStep
+      | blockedOnReply _ =>
+          simp [hIpc] at hStep
+          cases hTcb : storeTcbIpcState st target .ready with
+          | error e => simp [hTcb] at hStep
+          | ok st1 =>
+              simp [hTcb] at hStep; cases hStep
+              rcases hInv with ⟨hEpInv, hNtfnInv⟩
+              constructor
+              · intro oid ep hObj
+                have hObjSt1 : st1.objects oid = some (.endpoint ep) := by
+                  rwa [ensureRunnable_preserves_objects st1 target] at hObj
+                exact hEpInv oid ep (storeTcbIpcState_endpoint_backward st st1 target .ready oid ep hTcb hObjSt1)
+              · intro oid ntfn hObj
+                have hObjSt1 : st1.objects oid = some (.notification ntfn) := by
+                  rwa [ensureRunnable_preserves_objects st1 target] at hObj
+                exact hNtfnInv oid ntfn (storeTcbIpcState_notification_backward st st1 target .ready oid ntfn hTcb hObjSt1)
+
 end SeLe4n.Kernel
