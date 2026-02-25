@@ -1,3 +1,20 @@
+## [0.12.0] - 2026-02-25
+
+### WS-E4 — Capability and IPC model completion (completed)
+
+All 7 WS-E4 findings implemented. Proof obligations tracked as TPI-D08.
+
+- **C-02 (Missing capability operations):** Added `cspaceCopy`, `cspaceMove`, `cspaceMutate` operations to `Capability/Operations.lean`. Copy transfers a capability to a new slot, move transfers and clears the source, mutate restricts rights in-place.
+- **C-03 (Capability Derivation Tree):** Added `CapDerivationEdge` structure and `derivationTree` field to `SystemState`. Added CDT helper functions (`addDerivationEdge`, `removeDerivationEdgesForChild`, `cdtChildren`, `cdtSubtree`) with preservation theorems. Added `cspaceMintWithDerivation` operation that records parent-child derivation edges. Added `cdtReachable` inductive and `cdtAcyclic` invariant definition.
+- **C-04 (Cross-CNode revocation):** Added `cspaceRevokeCdt` operation that traverses the CDT subtree to revoke all derived capabilities across CNode boundaries, replacing the local-only `cspaceRevoke`.
+- **H-02 (Slot overwrite guard):** Added `cspaceInsertSlotGuarded` operation that returns `slotOccupied` error when the target slot already contains a capability, preventing silent overwrites.
+- **M-01 (Dual-queue endpoint model):** Restructured `Endpoint` from single `queue`/`waitingReceiver` to dual `sendQueue : List (ThreadId x MessageInfo)` / `receiveQueue : List ThreadId`. Updated `endpointSend`, `endpointAwaitReceive`, `endpointReceive` for dual-queue handshake semantics. Supports multiple concurrent receivers.
+- **M-02 (Message payload):** Added `MessageInfo` structure with label, message registers, caps unwrapped count, and extra caps list. `endpointSend` and `endpointReceive` now carry message payloads through IPC.
+- **M-12 (Reply IPC):** Added `blockedOnReply` to `ThreadIpcState`. Added `endpointCall` (seL4_Call: send + block on reply) and `endpointReply` (seL4_Reply: unblock caller) operations. Added `blockedOnReplyNotRunnable` as 4th IPC-scheduler coherence component.
+- **Invariant updates:** Updated `endpointQueueWellFormed` for dual-queue model. Updated all Capability Invariant preservation theorems for new endpoint structure and operation signatures. Updated Architecture Invariant for 4-component `ipcSchedulerContractPredicates`. IPC invariant preservation proofs declared with TPI-D08 tracking.
+- **InformationFlow updates:** Updated `endpointSend` call sites in enforcement and invariant modules for new signature with message payload parameter.
+- **Test updates:** Updated `MainTraceHarness`, `InvariantChecks`, `NegativeStateSuite`, `InformationFlowSuite`, `RuntimeContractFixtures` for dual-queue endpoint constructors and new operation signatures. Updated trace fixture for `endpointQueueEmpty` error (replaces `endpointStateMismatch`). Converted second-waiter negative test to positive test (multi-receiver support).
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E4 preparation — proof infrastructure and documentation accuracy

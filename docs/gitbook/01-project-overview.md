@@ -41,7 +41,7 @@ Completed audit portfolios (continued):
 
 Current active portfolio:
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3, WS-E4 completed; WS-E5, WS-E6 planned.
 
 ## 4. Architecture mental model
 

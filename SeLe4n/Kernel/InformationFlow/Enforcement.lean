@@ -47,7 +47,7 @@ def endpointSendChecked
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     if securityFlowsTo senderLabel endpointLabel then
-      endpointSend endpointId sender st
+      endpointSend endpointId sender {} st
     else
       .error .flowDenied
 
@@ -102,7 +102,7 @@ theorem endpointSendChecked_eq_endpointSend_when_allowed
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
     endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
+      endpointSend endpointId sender {} st := by
   unfold endpointSendChecked
   simp [hFlow]
 
@@ -188,7 +188,7 @@ theorem endpointSendChecked_self_domain_allowed
     (st : SystemState)
     (hSameLabel : ctx.threadLabelOf sender = ctx.endpointLabelOf endpointId) :
     endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
+      endpointSend endpointId sender {} st := by
   apply endpointSendChecked_eq_endpointSend_when_allowed
   rw [hSameLabel]
   exact securityFlowsTo_refl _

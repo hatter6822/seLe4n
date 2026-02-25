@@ -4,16 +4,12 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
+/-- WS-E4/M-01: Runtime check for dual-queue endpoint well-formedness. -/
 private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
   match ep.state with
-  | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
-
-private def endpointObjectValidB (ep : Endpoint) : Bool :=
-  match ep.waitingReceiver with
-  | none => ep.state != .receive
-  | some _ => ep.state == .receive
+  | .idle => ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+  | .send => !ep.sendQueue.isEmpty && ep.receiveQueue.isEmpty
+  | .receive => ep.sendQueue.isEmpty && !ep.receiveQueue.isEmpty
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
@@ -114,8 +110,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     objectIds.foldr (fun oid acc =>
       match st.objects oid with
       | some (.endpoint ep) =>
-          (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) ::
-          (s!"endpoint waiter/state invariant: oid={oid}", endpointObjectValidB ep) :: acc
+          (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) :: acc
       | some (.notification ntfn) =>
           (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
       | _ => acc) []

@@ -242,9 +242,12 @@ run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvar
 # M3.5 step-1 state-model anchors must remain present.
 run_check "INVARIANT" rg -n '^inductive ThreadIpcState' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object.lean
-run_check "INVARIANT" rg -n '^\s*waitingReceiver\s*:\s*Option SeLe4n\.ThreadId' SeLe4n/Model/Object.lean
+# WS-E4/M-01: Dual-queue model replaces waitingReceiver with sendQueue/receiveQueue
+run_check "INVARIANT" rg -n '^\s*sendQueue\s*:' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^\s*receiveQueue\s*:' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-E4/M-01: endpointObjectValid replaced by endpointInvariant in dual-queue model
+run_check "INVARIANT" rg -n '^def endpointInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 
 
 # M4-A step-1 lifecycle metadata anchors must remain present.

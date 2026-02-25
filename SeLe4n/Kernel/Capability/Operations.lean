@@ -234,4 +234,117 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         | _ => .error .objectNotFound
 
 
+-- ============================================================================
+-- WS-E4/H-02: Guarded slot insert — rejects occupied slots
+-- ============================================================================
+
+/-- WS-E4/H-02: Insert a capability into an empty slot, rejecting occupied slots.
+
+Unlike `cspaceInsertSlot` (which silently overwrites), this operation checks
+that the target slot is unoccupied before inserting. Returns `slotOccupied`
+if a capability already exists at the destination. -/
+def cspaceInsertSlotGuarded (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
+  fun st =>
+    match st.objects addr.cnode with
+    | some (.cnode cn) =>
+        match cn.lookup addr.slot with
+        | some _ => .error .slotOccupied
+        | none =>
+            let cn' := cn.insert addr.slot cap
+            match storeObject addr.cnode (.cnode cn') st with
+            | .error e => .error e
+            | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
+    | _ => .error .objectNotFound
+
+-- ============================================================================
+-- WS-E4/C-02: Missing capability operations (copy, move, mutate)
+-- ============================================================================
+
+/-- WS-E4/C-02: Copy a capability from `src` to `dst` without rights modification.
+
+The destination slot must be empty (guarded insert). No CDT edge is created —
+copy produces an independent duplicate. -/
+def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (cap, st') => cspaceInsertSlotGuarded dst cap st'
+
+/-- WS-E4/C-02: Move a capability from `src` to `dst` with atomic source clearing.
+
+The destination slot must be empty (guarded insert). After a successful move,
+the source slot is empty and the destination contains the original capability.
+CDT edges referencing the source are updated to reference the destination. -/
+def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        match cspaceInsertSlotGuarded dst cap st' with
+        | .error e => .error e
+        | .ok ((), st'') =>
+            match cspaceDeleteSlot src st'' with
+            | .error e => .error e
+            | .ok ((), st''') =>
+                -- Update CDT edges: reparent children from src to dst
+                let dt' := st'''.derivationTree.map (fun e =>
+                  { e with
+                    parent := if e.parent = src then dst else e.parent
+                    child := if e.child = src then dst else e.child })
+                .ok ((), { st''' with derivationTree := dt' })
+
+/-- WS-E4/C-02: Mutate a capability in-place with new rights (must be subset). -/
+def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot addr st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        if rightsSubset rights cap.rights then
+          let cap' : Capability := { cap with rights := rights }
+          cspaceInsertSlot addr cap' st'
+        else
+          .error .invalidCapability
+
+-- ============================================================================
+-- WS-E4/C-03: CDT-aware mint (creates derivation edge)
+-- ============================================================================
+
+/-- WS-E4/C-03: Mint from source slot to destination slot with CDT edge creation.
+
+This extends `cspaceMint` to also record a parent→child derivation edge
+in the CDT, enabling cross-CNode revocation via `cspaceRevokeCdt`. -/
+def cspaceMintWithDerivation
+    (src dst : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
+  fun st =>
+    match cspaceMint src dst rights badge st with
+    | .error e => .error e
+    | .ok ((), st') => addDerivationEdge src dst st'
+
+-- ============================================================================
+-- WS-E4/C-04: Cross-CNode revocation via CDT traversal
+-- ============================================================================
+
+/-- WS-E4/C-04: Revoke all capabilities derived from the source slot via CDT.
+
+Traverses the CDT to find all transitive children of `addr` and removes them.
+The source slot itself is preserved. Uses bounded fuel derived from the CDT
+edge count for termination. -/
+def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot addr st with
+    | .error e => .error e
+    | .ok (_, st') =>
+        let fuel := st'.derivationTree.length + 1
+        let children := cdtSubtree st' addr fuel
+        -- Delete each derived capability and remove its CDT edges
+        let result := children.foldl (fun acc child =>
+          match acc with
+          | .error e => .error e
+          | .ok ((), stCur) =>
+              let stCur' := removeDerivationEdgesForChild child stCur
+              cspaceDeleteSlot child stCur') (.ok ((), st'))
+        result
+
 end SeLe4n.Kernel

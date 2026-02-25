@@ -21,6 +21,10 @@ inductive KernelError where
   | alreadyWaiting
   | cyclicDependency
   | notImplemented
+  /-- WS-E4/H-02: Target slot is already occupied. -/
+  | slotOccupied
+  /-- WS-E4/M-12: No reply capability available for the given thread. -/
+  | noReplyCapability
   deriving Repr, DecidableEq
 
 structure SchedulerState where
@@ -42,6 +46,12 @@ structure LifecycleMetadata where
   objectTypes : SeLe4n.ObjId → Option KernelObjectType
   capabilityRefs : SlotRef → Option CapTarget
 
+/-- WS-E4/C-03: A single parent→child edge in the Capability Derivation Tree. -/
+structure CapDerivationEdge where
+  parent : SlotRef
+  child : SlotRef
+  deriving Repr, DecidableEq
+
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
@@ -50,6 +60,9 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  /-- WS-E4/C-03: Capability Derivation Tree edges. Each edge records that
+  the capability at `child` was derived from the capability at `parent`. -/
+  derivationTree : List CapDerivationEdge := []
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -69,6 +82,7 @@ instance : Inhabited SystemState where
       objectTypes := fun _ => none
       capabilityRefs := fun _ => none
     }
+    derivationTree := []
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -132,6 +146,28 @@ def clearCapabilityRefsState : List SlotRef → SystemState → SystemState
 /-- Clear a finite list of slot-reference mappings. -/
 def clearCapabilityRefs (refs : List SlotRef) : Kernel Unit :=
   fun st => .ok ((), clearCapabilityRefsState refs st)
+
+/-- WS-E4/C-03: Add a derivation edge from parent to child in the CDT. -/
+def addDerivationEdge (parent child : SlotRef) : Kernel Unit :=
+  fun st =>
+    let edge : CapDerivationEdge := { parent, child }
+    .ok ((), { st with derivationTree := edge :: st.derivationTree })
+
+/-- WS-E4/C-03: Remove all derivation edges whose child matches the given ref. -/
+def removeDerivationEdgesForChild (child : SlotRef) (st : SystemState) : SystemState :=
+  { st with derivationTree := st.derivationTree.filter (fun e => e.child ≠ child) }
+
+/-- WS-E4/C-04: Collect all CDT children of a given slot reference. -/
+def cdtChildren (st : SystemState) (parent : SlotRef) : List SlotRef :=
+  (st.derivationTree.filter (fun e => e.parent = parent)).map (fun e => e.child)
+
+/-- WS-E4/C-04: Collect the entire CDT subtree rooted at `root` using bounded fuel. -/
+def cdtSubtree (st : SystemState) (root : SlotRef) (fuel : Nat) : List SlotRef :=
+  match fuel with
+  | 0 => []
+  | fuel' + 1 =>
+      let children := cdtChildren st root
+      children ++ children.foldl (fun acc child => acc ++ cdtSubtree st child fuel') []
 
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
@@ -573,5 +609,76 @@ theorem storeObject_metadata_sync_capref_at_stored
   unfold storeObject at hStep
   cases hStep
   cases obj <;> simp [SystemState.lookupCapabilityRefMeta]
+
+-- ============================================================================
+-- WS-E4/C-03: CDT preservation theorems
+-- ============================================================================
+
+theorem storeObject_derivationTree_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.derivationTree = st.derivationTree := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+theorem storeCapabilityRef_derivationTree_eq
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.derivationTree = st.derivationTree := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep
+  cases hStep
+  rfl
+
+theorem addDerivationEdge_preserves_objects
+    (st st' : SystemState)
+    (parent child : SlotRef)
+    (hStep : addDerivationEdge parent child st = .ok ((), st')) :
+    st'.objects = st.objects := by
+  unfold addDerivationEdge at hStep
+  cases hStep
+  rfl
+
+theorem addDerivationEdge_preserves_scheduler
+    (st st' : SystemState)
+    (parent child : SlotRef)
+    (hStep : addDerivationEdge parent child st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold addDerivationEdge at hStep
+  cases hStep
+  rfl
+
+theorem addDerivationEdge_preserves_services
+    (st st' : SystemState)
+    (parent child : SlotRef)
+    (hStep : addDerivationEdge parent child st = .ok ((), st')) :
+    st'.services = st.services := by
+  unfold addDerivationEdge at hStep
+  cases hStep
+  rfl
+
+theorem addDerivationEdge_preserves_lifecycle
+    (st st' : SystemState)
+    (parent child : SlotRef)
+    (hStep : addDerivationEdge parent child st = .ok ((), st')) :
+    st'.lifecycle = st.lifecycle := by
+  unfold addDerivationEdge at hStep
+  cases hStep
+  rfl
+
+theorem removeDerivationEdgesForChild_preserves_objects
+    (st : SystemState) (child : SlotRef) :
+    (removeDerivationEdgesForChild child st).objects = st.objects := by
+  rfl
+
+theorem removeDerivationEdgesForChild_preserves_scheduler
+    (st : SystemState) (child : SlotRef) :
+    (removeDerivationEdgesForChild child st).scheduler = st.scheduler := by
+  rfl
 
 end SeLe4n.Model

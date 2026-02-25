@@ -51,15 +51,16 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
-/-- Minimal per-thread IPC scheduler-visible status for M3.5 handshake scaffolding.
+/-- Per-thread IPC scheduler-visible status.
 
-This is intentionally narrow: only endpoint-local blocking states needed to model one deterministic
-waiting-thread handshake story. -/
+WS-E4/M-12: Extended with `blockedOnReply` for bidirectional IPC (seL4_Call/seL4_ReplyRecv
+semantics). A thread blocked on reply is waiting for a server to invoke `endpointReply`. -/
 inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 structure TCB where
@@ -72,16 +73,31 @@ structure TCB where
   ipcState : ThreadIpcState := .ready
   deriving Repr, DecidableEq
 
+/-- WS-E4/M-02: IPC message payload carrying register values and optional capability transfer. -/
+structure MessageInfo where
+  label : Nat := 0
+  msgRegisters : List Nat := []
+  capsUnwrapped : Nat := 0
+  extraCaps : List Capability := []
+  deriving Repr, DecidableEq
+
 inductive EndpointState where
   | idle
   | send
   | receive
   deriving Repr, DecidableEq
 
+/-- WS-E4/M-01: Endpoint with separate send and receive queues.
+
+Restructured from single-queue model:
+- `sendQueue`: threads blocked waiting to send (with their message payload)
+- `receiveQueue`: threads blocked waiting to receive
+This supports multiple concurrent receivers and separate queue management
+per seL4 endpoint semantics. -/
 structure Endpoint where
   state : EndpointState
-  queue : List SeLe4n.ThreadId
-  waitingReceiver : Option SeLe4n.ThreadId := none
+  sendQueue : List (SeLe4n.ThreadId × MessageInfo) := []
+  receiveQueue : List SeLe4n.ThreadId := []
   deriving Repr, DecidableEq
 
 inductive NotificationState where

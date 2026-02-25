@@ -62,21 +62,23 @@ Badge routing chain (H-03):
 
 Component level:
 
-- endpoint queue/object validity,
-- endpoint invariant,
-- `ipcInvariant` across object store.
+- `endpointQueueWellFormed` — WS-E4/M-01 dual-queue model: idle ↔ both empty, send ↔ sendQueue non-empty + receiveQueue empty, receive ↔ sendQueue empty + receiveQueue non-empty,
+- `endpointInvariant` — endpoint well-formedness wrapper,
+- `ipcInvariant` — all endpoints and notifications in the object store are well-formed.
 
 Preservation shape:
 
-- transition-level `endpointSend_preserves_ipcInvariant`, etc.
+- `endpointSend_preserves_ipcInvariant`, `endpointAwaitReceive_preserves_ipcInvariant`, `endpointReceive_preserves_ipcInvariant`,
+- WS-E4/M-12: `endpointCall_preserves_ipcInvariant`, `endpointReply_preserves_ipcInvariant`.
 
 ## 5. IPC-scheduler coherence (M3.5)
 
 Component level:
 
-- runnable threads should be IPC-ready,
-- blocked-on-send threads should not remain runnable,
-- blocked-on-receive threads should not remain runnable.
+- `runnableThreadIpcReady` — runnable threads should be IPC-ready,
+- `blockedOnSendNotRunnable` — blocked-on-send threads should not remain runnable,
+- `blockedOnReceiveNotRunnable` — blocked-on-receive threads should not remain runnable,
+- `blockedOnReplyNotRunnable` — WS-E4/M-12: blocked-on-reply threads should not remain runnable.
 
 Bundle level:
 

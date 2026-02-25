@@ -940,11 +940,16 @@ def ipcSchedulerBlockedSendComponent (st : SystemState) : Prop :=
 def ipcSchedulerBlockedReceiveComponent (st : SystemState) : Prop :=
   blockedOnReceiveNotRunnable st
 
+/-- Named M3.5 coherence component: reply-blocked threads are not runnable. -/
+def ipcSchedulerBlockedReplyComponent (st : SystemState) : Prop :=
+  blockedOnReplyNotRunnable st
+
 /-- Named M3.5 aggregate coherence component for IPC+scheduler interaction. -/
 def ipcSchedulerCoherenceComponent (st : SystemState) : Prop :=
   ipcSchedulerRunnableReadyComponent st ∧
   ipcSchedulerBlockedSendComponent st ∧
-  ipcSchedulerBlockedReceiveComponent st
+  ipcSchedulerBlockedReceiveComponent st ∧
+  ipcSchedulerBlockedReplyComponent st
 
 theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState) :
     ipcSchedulerCoherenceComponent st ↔ ipcSchedulerContractPredicates st := by
@@ -1201,19 +1206,36 @@ private theorem cspaceSlotUnique_through_handshake_path
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointSend`.
 WS-E3/H-09: Updated for multi-step chain (storeObject → storeTcbIpcState → removeRunnable/ensureRunnable).
+WS-E4/M-01: Updated for dual-queue endpoint semantics (sendQueue/receiveQueue).
 Endpoint and TCB stores do not affect CNodes, so capability invariants transfer. -/
 theorem endpointSend_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessageInfo)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
+  obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender msg hStep
+  unfold endpointSend at hStep; simp only [hObj] at hStep
+  cases hRecvQ : ep.receiveQueue with
+  | cons receiver restReceivers =>
+    -- Handshake path: deliver to waiting receiver
+    simp only [hRecvQ] at hStep; revert hStep
+    cases hStore : storeObject endpointId _ st with
+    | error e => simp
+    | ok pair =>
+      simp only []
+      cases hTcb : storeTcbIpcState pair.2 receiver _ with
+      | error e => simp
+      | ok st2 =>
+        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+        have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId receiver _ hUnique hStore hTcb
+        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  | nil =>
+    -- Blocking path: queue the sender
+    simp only [hRecvQ] at hStep; revert hStep
     cases hStore : storeObject endpointId _ st with
     | error e => simp
     | ok pair =>
@@ -1224,35 +1246,9 @@ theorem endpointSend_preserves_capabilityInvariantBundle
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
         have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
         exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
-  | send =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
-        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
-  | receive =>
-    simp [endpointSend, hObj, hState] at hStep
-    cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
-    case nil.some receiver =>
-      revert hStep
-      cases hStore : storeObject endpointId _ st with
-      | error e => simp
-      | ok pair =>
-        simp only []
-        cases hTcb : storeTcbIpcState pair.2 receiver _ with
-        | error e => simp
-        | ok st2 =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId receiver _ hUnique hStore hTcb
-          exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
-/-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
+/-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`.
+WS-E4/M-01: Updated for dual-queue endpoint semantics (sendQueue/receiveQueue). -/
 theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
@@ -1262,72 +1258,77 @@ theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
   obtain ⟨ep, hObj⟩ := endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep
-  simp [endpointAwaitReceive, hObj] at hStep
-  cases hState : ep.state <;> simp [hState] at hStep
-  case idle =>
-    cases hQueue : ep.queue <;> simp [hQueue] at hStep
-    case nil =>
-      cases hWait : ep.waitingReceiver <;> simp [hWait] at hStep
-      case none =>
-        revert hStep
-        cases hStore : storeObject endpointId _ st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          cases hTcb : storeTcbIpcState pair.2 receiver _ with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-            have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId receiver _ _ hUnique hStore hTcb
-            exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  unfold endpointAwaitReceive at hStep; simp only [hObj] at hStep
+  cases hSendQ : ep.sendQueue with
+  | cons pair restSenders =>
+    -- Handshake path: consume waiting sender
+    simp only [hSendQ] at hStep; revert hStep
+    cases hStore : storeObject endpointId _ st with
+    | error e => simp
+    | ok storePair =>
+      simp only []
+      cases hTcb : storeTcbIpcState storePair.2 pair.1 _ with
+      | error e => simp
+      | ok st2 =>
+        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+        have hU := cspaceSlotUnique_through_handshake_path st storePair.2 st2 endpointId pair.1 _ hUnique hStore hTcb
+        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  | nil =>
+    -- Blocking path: queue the receiver
+    simp only [hSendQ] at hStep; revert hStep
+    cases hStore : storeObject endpointId _ st with
+    | error e => simp
+    | ok storePair =>
+      simp only []
+      cases hTcb : storeTcbIpcState storePair.2 receiver _ with
+      | error e => simp
+      | ok st2 =>
+        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+        have hU := cspaceSlotUnique_through_blocking_path st storePair.2 st2 endpointId receiver _ _ hUnique hStore hTcb
+        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
-/-- WS-E2 / H-01: Compositional preservation of `endpointReceive`. -/
+/-- WS-E2 / H-01: Compositional preservation of `endpointReceive`.
+WS-E4/M-01+M-02: Updated for dual-queue semantics; returns (ThreadId × MessageInfo). -/
 theorem endpointReceive_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (sender : SeLe4n.ThreadId) (msg : MessageInfo)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok ((sender, msg), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
-  obtain ⟨ep, hObj⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle => simp [endpointReceive, hObj, hState] at hStep
-  | receive => simp [endpointReceive, hObj, hState] at hStep
-  | send =>
-    cases hQueue : ep.queue with
-    | nil =>
-      cases hWait : ep.waitingReceiver <;> simp [endpointReceive, hObj, hState, hQueue, hWait] at hStep
-    | cons hd tl =>
-      cases hWait : ep.waitingReceiver with
-      | some _ => simp [endpointReceive, hObj, hState, hQueue, hWait] at hStep
-      | none =>
-        unfold endpointReceive at hStep; simp only [hObj, hState, hQueue, hWait] at hStep
-        revert hStep
-        cases hStore : storeObject endpointId _ st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          cases hTcb : storeTcbIpcState pair.2 hd _ with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨hSenderEq, hStEq⟩
-            subst hStEq; subst hSenderEq
-            have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId hd _ hUnique hStore hTcb
-            exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
+  obtain ⟨ep, hObj⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender msg hStep
+  unfold endpointReceive at hStep; simp only [hObj] at hStep
+  cases hSendQ : ep.sendQueue with
+  | nil => simp [hSendQ] at hStep
+  | cons pair rest =>
+    simp only [hSendQ] at hStep; revert hStep
+    cases hStore : storeObject endpointId _ st with
+    | error e => simp
+    | ok storePair =>
+      simp only []
+      cases hTcb : storeTcbIpcState storePair.2 pair.1 _ with
+      | error e => simp
+      | ok st2 =>
+        simp only [Except.ok.injEq, Prod.mk.injEq]
+        intro ⟨⟨hSenderEq, _hMsgEq⟩, hStEq⟩
+        subst hStEq; subst hSenderEq
+        have hU := cspaceSlotUnique_through_handshake_path st storePair.2 st2 endpointId pair.1 _ hUnique hStore hTcb
+        exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
 theorem endpointSend_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessageInfo)
     (hInv : m3IpcSeedInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     m3IpcSeedInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
-  · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
-  · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
-  · exact endpointSend_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+  · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender msg hSched hStep
+  · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender msg hCap hStep
+  · exact endpointSend_preserves_ipcInvariant st st' endpointId sender msg hIpc hStep
 
 theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
@@ -1345,30 +1346,31 @@ theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle
 theorem endpointReceive_preserves_m3IpcSeedInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (sender : SeLe4n.ThreadId) (msg : MessageInfo)
     (hInv : m3IpcSeedInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok ((sender, msg), st')) :
     m3IpcSeedInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
-  · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
-  · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
-  · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender hIpc hStep
+  · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender msg hSched hStep
+  · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender msg hCap hStep
+  · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender msg hIpc hStep
 
 theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
+    (msg : MessageInfo)
     (hInv : m35IpcSchedulerInvariantBundle st)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
+    (hStep : endpointSend endpointId sender msg st = .ok ((), st')) :
     m35IpcSchedulerInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender msg hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
-      (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+      (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender msg hContract hStep)
 
 theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
@@ -1388,16 +1390,16 @@ theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle
 theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
+    (sender : SeLe4n.ThreadId) (msg : MessageInfo)
     (hInv : m35IpcSchedulerInvariantBundle st)
-    (hStep : endpointReceive endpointId st = .ok (sender, st')) :
+    (hStep : endpointReceive endpointId st = .ok ((sender, msg), st')) :
     m35IpcSchedulerInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender msg hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
-      (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
+      (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender msg hContract hStep)
 
 end SeLe4n.Kernel

@@ -46,6 +46,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
+| TPI-D08 | WS-E4 IPC invariant preservation proofs for dual-queue endpoint model. Covers 22 theorems across `IPC/Invariant.lean` and `InformationFlow/Invariant.lean`: endpoint send/awaitReceive/receive/call/reply + notification signal/wait preservation of ipcInvariant, schedulerInvariantBundle, ipcSchedulerContractPredicates, and uniqueWaiters. Operations are fully implemented; preservation theorem bodies are `sorry`-annotated pending mechanization. | WS-E4 | OPEN |
 
 ## Update policy
 
