@@ -493,45 +493,4 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
--- ============================================================================
--- M-09 (WS-E3): Named atomicity guarantee for storeObject metadata sync
--- ============================================================================
-
-/-- M-09 (WS-E3): `storeObject` preserves metadata consistency atomically.
-
-`storeObject` is a pure function that either succeeds and returns the fully-
-updated state (objects, objectTypes, capabilityRefs all updated in one step),
-or returns an error without modifying any component. There is no intermediate
-state in which some metadata components are updated and others are stale.
-
-This theorem names the existing `storeObject_preserves_lifecycleMetadataConsistent`
-result as the explicit M-09 safety property required by the workstream plan.
-
-The atomicity guarantee follows from the definition of `storeObject`:
-```
-  .ok ((), { st with objects := ..., objectIndex := ..., lifecycle := ... })
-```
-All three fields are updated in a single `{ st with ... }` expression, which
-is pure and cannot be interrupted or partially applied. -/
-theorem storeObject_metadata_sync_atomic
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hConsistent : SystemState.lifecycleMetadataConsistent st)
-    (hStep : storeObject id obj st = .ok ((), st')) :
-    SystemState.lifecycleMetadataConsistent st' :=
-  storeObject_preserves_lifecycleMetadataConsistent st st' id obj hConsistent hStep
-
-/-- M-09 corollary: if `storeObject` returns an error, no state change occurs
-and the pre-state metadata consistency is trivially preserved. -/
-theorem storeObject_error_preserves_metadata_consistency
-    (st : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (e : KernelError)
-    (_hErr : storeObject id obj st = .error e) :
-    False := by
-  unfold storeObject at _hErr
-  simp at _hErr
-
 end SeLe4n.Model

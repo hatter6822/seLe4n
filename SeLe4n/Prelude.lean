@@ -1,29 +1,6 @@
 namespace SeLe4n
 
-/-!
-# H-06 (WS-E3): Sentinel ID 0 design decision
-
-All identifier wrapper types (`ObjId`, `ThreadId`, `DomainId`, etc.) retain
-`Inhabited` instances that default to value 0.  ID 0 is **reserved as a
-sentinel** that no valid kernel allocation should produce.  This is the
-industry-standard pattern (cf. `NULL` in C, `INVALID_HANDLE` in Windows,
-pid 0 in POSIX).
-
-## Guarantees
-
-1. **No live kernel object is stored at ID 0** — the `storeObject` caller
-   must supply an id > 0.  A dedicated validity predicate `validId` encodes
-   this at the type level for use in invariants.
-2. **`default` (Inhabited) always returns the sentinel** — any code path
-   that accidentally synthesizes a default ID gets the sentinel, which will
-   fail every object-store lookup.
-3. Downstream invariants may strengthen this to `∀ id ∈ objectIndex,
-   id.val ≠ 0` once WS-E6 adds allocation validation.
--/
-
-/-- Identifier for objects in the global kernel object store.
-
-H-06 (WS-E3): Value 0 is a reserved sentinel; see module-level docstring. -/
+/-- Identifier for objects in the global kernel object store. -/
 structure ObjId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -44,15 +21,7 @@ instance : ToString ObjId where
 
 end ObjId
 
-/-- H-06 (WS-E3): An identifier is valid (non-sentinel) when its raw value is nonzero. -/
-def ObjId.valid (id : ObjId) : Prop := id.val ≠ 0
-
-/-- H-06 sentinel is the Inhabited default. -/
-theorem ObjId.sentinel_val : (default : ObjId).val = 0 := rfl
-
-/-- Identifier for threads (TCBs).
-
-H-06 (WS-E3): Value 0 is a reserved sentinel; see Prelude module-level docstring. -/
+/-- Identifier for threads (TCBs). -/
 structure ThreadId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited

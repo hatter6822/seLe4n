@@ -7,7 +7,7 @@ This index makes current semantic/proof/documentation claims auditable by linkin
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
 | Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1, WS-E2, WS-E3 completed; WS-E4..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| WS-E portfolio status (WS-E1, WS-E2 completed; WS-E3..WS-E6 planned). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
 | WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
@@ -46,17 +46,6 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
-
-## Open proof obligations (WS-E3 tracked issues)
-
-| ID | Description | Workstream | Deferred to | Status |
-|---|---|---|---|---|
-| TPI-D04 (E3) | IPC-scheduler contract predicate preservation through endpoint multi-step chains (endpointSend/endpointAwaitReceive/endpointReceive → storeTcbIpcState → removeRunnable/ensureRunnable). 9 per-component + 3 bundle theorems. | WS-E3 | WS-E4 | OPEN (sorry) |
-| TPI-D05 (E3) | Endpoint result well-formedness, IPC invariant preservation, CNode preservation, and non-interference preservation through multi-step endpoint chains. 12 theorems. | WS-E3 | WS-E4/E5 | OPEN (sorry) |
-
-**Note:** TPI-D04/D05 identifiers are reused from the WS-D era (where they tracked
-different obligations, now closed). The WS-E3 obligations above are distinguished by
-the `(E3)` suffix and are independent of the closed WS-D items.
 
 ## Update policy
 
