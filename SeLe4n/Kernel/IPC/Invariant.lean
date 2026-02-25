@@ -1418,4 +1418,50 @@ theorem notificationWait_preserves_uniqueWaiters
                   · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hStore] at h2
                 exact hInv oid ntfn hPre
 
+-- ============================================================================
+-- Notification operation ipcInvariant preservation (WS-E4 preparation)
+-- ============================================================================
+
+/-- notificationSignal result notification is well-formed:
+    - Wake path: remaining waiters determine idle/waiting state, badge cleared.
+    - Merge path: no waiters, active state with merged badge. -/
+theorem notificationSignal_result_wellFormed_wake
+    (rest : List SeLe4n.ThreadId) :
+    notificationQueueWellFormed
+      { state := if rest.isEmpty then NotificationState.idle else .waiting,
+        waitingThreads := rest,
+        pendingBadge := none } := by
+  unfold notificationQueueWellFormed
+  by_cases hEmpty : rest = []
+  · simp [hEmpty, List.isEmpty]
+  · have : rest.isEmpty = false := by simp [List.isEmpty]; cases rest <;> simp_all
+    simp [this, hEmpty]
+
+theorem notificationSignal_result_wellFormed_merge
+    (mergedBadge : SeLe4n.Badge) :
+    notificationQueueWellFormed
+      { state := .active,
+        waitingThreads := [],
+        pendingBadge := some mergedBadge } := by
+  unfold notificationQueueWellFormed; simp
+
+/-- notificationWait result notification is well-formed (badge-consume path):
+    idle state, empty waiters, no badge. -/
+theorem notificationWait_result_wellFormed_badge :
+    notificationQueueWellFormed
+      { state := NotificationState.idle, waitingThreads := [], pendingBadge := none } := by
+  unfold notificationQueueWellFormed; simp
+
+/-- notificationWait result notification is well-formed (wait path):
+    waiting state, non-empty waiter list (appended), no badge. -/
+theorem notificationWait_result_wellFormed_wait
+    (waiters : List SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId) :
+    notificationQueueWellFormed
+      { state := .waiting, waitingThreads := waiters ++ [waiter], pendingBadge := none } := by
+  unfold notificationQueueWellFormed
+  constructor
+  · intro h; simp [List.append_eq_nil_iff] at h
+  · rfl
+
 end SeLe4n.Kernel

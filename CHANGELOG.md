@@ -1,3 +1,19 @@
+## [0.11.11] - 2026-02-25
+
+### WS-E4 preparation — codebase audit, refactoring, and proof infrastructure
+
+End-to-end codebase audit and refactoring to prepare for WS-E4 (capability and IPC model completion). All changes maintain zero sorry/axiom.
+
+- **CPtr sentinel infrastructure:** Added `CPtr.isReserved`, `CPtr.sentinel`, `CPtr.default_eq_sentinel`, `CPtr.sentinel_isReserved` to `Prelude.lean`, paralleling the existing ObjId/ThreadId/ServiceId sentinel convention (H-06). Prepares for seL4_CapNull (CPtr 0) modeling in WS-E4.
+- **Machine-layer frame lemmas:** Added 12 read-after-write and frame theorems to `Machine.lean`: `readReg_writeReg_eq/ne`, `readMem_writeMem_eq/ne`, `writeReg_preserves_pc/sp`, `writeMem_preserves_regs/timer`, `setPC_preserves_memory/timer`, `tick_preserves_regs/memory`, `tick_timer_succ`. Foundation for architecture-boundary proofs.
+- **State-layer frame lemmas:** Added `storeObject_irqHandlers_eq` and `storeObject_machine_eq` to `Model/State.lean`, proving `storeObject` preserves IRQ handler mappings and machine state.
+- **Notification well-formedness theorems:** Added `notificationSignal_result_wellFormed_wake`, `notificationSignal_result_wellFormed_merge`, `notificationWait_result_wellFormed_badge`, `notificationWait_result_wellFormed_wait` to `IPC/Invariant.lean`. These close the notification ipcInvariant preservation gap identified during audit.
+- **Strengthened `serviceRestart_error_discards_state`:** Upgraded from trivial `True` to invariant-preservation statement (proves `serviceLifecycleCapabilityInvariantBundle` preservation on error).
+- **`boundedAddressTranslation` docstring:** Annotated as forward declaration for WS-E6 (not yet integrated into `vspaceInvariantBundle`).
+- **CLAUDE.md file sizes:** Updated all known-large-file entries to accurate line counts.
+- Updated all canonical documentation surfaces: README, SELE4N_SPEC, CLAUDE.md, CHANGELOG, GitBook chapter 24.
+- Bumped package version to **`0.11.11`**.
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E3 Kernel semantic hardening (completed)

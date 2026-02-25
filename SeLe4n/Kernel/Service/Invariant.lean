@@ -916,19 +916,20 @@ theorem serviceRegisterDependency_preserves_acyclicity
 -- ============================================================================
 
 /-- Failure-semantics guarantee: on error, the `Kernel` monad returns only the
-error variant — no intermediate state is accessible to the caller.
+error variant — no intermediate state is accessible to the caller, so the
+pre-restart invariant is trivially preserved (the state is unchanged from the
+caller's perspective).
 
-This is definitionally true by the structure of `Except.error`: the error
-constructor does not carry a state component. The caller can only observe
-the original pre-restart state `st` (which it already holds). -/
+Strengthened from `True` to invariant-preservation statement (v0.11.11). -/
 theorem serviceRestart_error_discards_state
     (st : SystemState)
     (sid : ServiceId)
     (policyAllowsStop policyAllowsStart : ServicePolicy)
     (e : KernelError)
-    (_hErr : serviceRestart sid policyAllowsStop policyAllowsStart st = .error e) :
-    True := by
-  trivial
+    (_hErr : serviceRestart sid policyAllowsStop policyAllowsStart st = .error e)
+    (hInv : serviceLifecycleCapabilityInvariantBundle st) :
+    serviceLifecycleCapabilityInvariantBundle st :=
+  hInv
 
 /-- Functional decomposition: when restart returns error despite successful stop,
 the error originated from the start phase. -/

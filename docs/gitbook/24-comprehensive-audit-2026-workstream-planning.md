@@ -30,7 +30,7 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 
 ### WS-E3 completed summary
 
-**WS-E3 — Kernel semantic hardening** has been completed (v0.11.10). All 6 findings resolved:
+**WS-E3 — Kernel semantic hardening** has been completed (v0.11.10, consolidated in v0.11.11). All 6 findings resolved:
 
 - **H-06:** Sentinel ID convention established — ID 0 reserved for all identifier types. Added `isReserved`, `sentinel`, `ObjId.valid` predicates and identity theorems. `ThreadId.toObjId_injective` proven.
 - **H-07:** `vspaceInvariantBundle` composed into `proofLayerInvariantBundle`, closing the gap where VSpace invariants were isolated from the global proof layer. Adapter preservation theorems added.

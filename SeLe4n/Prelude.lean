@@ -190,6 +190,17 @@ instance instOfNat (n : Nat) : OfNat CPtr n where
 instance : ToString CPtr where
   toString ptr := toString ptr.toNat
 
+/-- WS-E4 preparation: CPtr 0 corresponds to seL4_CapNull (null capability pointer).
+    Sentinel infrastructure parallels ObjId/ThreadId/ServiceId. -/
+@[inline] def isReserved (ptr : CPtr) : Bool := ptr.val = 0
+
+/-- The null capability pointer (CPtr 0), analogous to seL4_CapNull. -/
+@[inline] def sentinel : CPtr := ⟨0⟩
+
+theorem default_eq_sentinel : (default : CPtr) = CPtr.sentinel := rfl
+
+theorem sentinel_isReserved : CPtr.sentinel.isReserved = true := rfl
+
 end CPtr
 
 /-- Slot index within a CNode. -/
