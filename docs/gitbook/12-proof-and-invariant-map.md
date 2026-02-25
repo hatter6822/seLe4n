@@ -124,7 +124,7 @@ for unauthorized/illegal-state/success lifecycle retype outcomes plus composed l
 
 ## 8. M5 policy-surface layering (WS-M5-C complete)
 
-Policy surface entrypoints now live in `SeLe4n/Kernel/Service/Invariant.lean` and are explicitly
+Policy surface entrypoints now live in `SeLe4n/Kernel/Service/Invariant.lean` (with acyclicity proofs in `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean`) and are explicitly
 kept mutation-free:
 
 - reusable components: `policyBackingObjectTyped`, `policyOwnerAuthorityRefRecorded`,
@@ -245,7 +245,7 @@ Supporting infrastructure:
 
 The vacuous BFS-based acyclicity invariant (Risk 0) has been resolved via Strategy B:
 the invariant definition was corrected and a genuine 4-layer proof infrastructure was
-implemented in `SeLe4n/Kernel/Service/Invariant.lean`.
+implemented in `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean`.
 
 **Problem:** The original `serviceDependencyAcyclic` was defined as
 `∀ sid, ¬ serviceHasPathTo st sid sid fuel = true`, but `serviceHasPathTo` returns `true`

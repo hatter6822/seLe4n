@@ -1,3 +1,34 @@
+## [0.11.11] - 2026-02-25
+
+### Codebase reorganization for WS-E4 readiness
+
+Comprehensive end-to-end audit and structural reorganization to prepare for the WS-E4 (Capability and IPC model completion) workstream. Large invariant files split into focused submodules, test infrastructure updated, documentation fully synchronized.
+
+- **Capability/Invariant split (1,403 → 3 submodules):**
+  - `Invariant/Definitions.lean` (192 lines): Core predicates, composed bundle definitions (M3, M3.5, M4-A).
+  - `Invariant/Properties.lean` (618 lines): Authority reduction, attenuation, badge-override safety (F-06/TPI-D04), badge routing (H-03), derivation infrastructure.
+  - `Invariant/Preservation.lean` (628 lines): Per-operation preservation, cross-subsystem compositions, composed bundle preservation.
+  - `Invariant.lean` re-exports all submodules for backward compatibility.
+
+- **IPC/Invariant split (1,421 → 4 submodules):**
+  - `Invariant/Definitions.lean` (117 lines): Transport lemmas, endpoint/notification well-formedness, IPC-scheduler predicates.
+  - `Invariant/Helpers.lean` (430 lines): Decomposition theorems and frame conditions.
+  - `Invariant/Preservation.lean` (482 lines): Per-operation IPC and scheduler invariant preservation.
+  - `Invariant/Composition.lean` (437 lines): M3.5 contract predicates, composed bundle preservation, notification uniqueness.
+  - `Invariant.lean` re-exports all submodules for backward compatibility.
+
+- **Service/Invariant split (975 → 2 modules):**
+  - `Invariant/Acyclicity.lean` (641 lines): TPI-D07 BFS completeness framework (Layers 0–4).
+  - `Invariant.lean` (353 lines): Policy surface, bridge theorems, lifecycle preservation.
+
+- **Test infrastructure updates:**
+  - Updated Tier 3 invariant surface script for new file locations (95 path references).
+  - Updated L-08 theorem-body spot-check targets to cover all 13 invariant submodule files.
+  - Added explicit determinism enforcement to Tier 4 nightly candidates.
+
+- **Documentation synchronized:** README, SELE4N_SPEC, DEVELOPMENT, CHANGELOG, CLAIM_EVIDENCE_INDEX, CONTRIBUTING, GitBook chapters updated for v0.11.11.
+- Bumped package version to **`0.11.11`**.
+
 ## [0.11.10] - 2026-02-25
 
 ### WS-E3 Kernel semantic hardening (completed)

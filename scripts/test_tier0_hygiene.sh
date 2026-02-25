@@ -38,10 +38,16 @@ run_check "HYGIENE" "${SCRIPT_DIR}/test_docs_sync.sh"
 # A theorem is flagged if its body is only `:= by rfl`, `:= rfl`, or contains sorry.
 THEOREM_CHECK_TARGETS=(
   "SeLe4n/Kernel/Scheduler/Invariant.lean"
-  "SeLe4n/Kernel/Capability/Invariant.lean"
-  "SeLe4n/Kernel/IPC/Invariant.lean"
+  "SeLe4n/Kernel/Capability/Invariant/Definitions.lean"
+  "SeLe4n/Kernel/Capability/Invariant/Properties.lean"
+  "SeLe4n/Kernel/Capability/Invariant/Preservation.lean"
+  "SeLe4n/Kernel/IPC/Invariant/Definitions.lean"
+  "SeLe4n/Kernel/IPC/Invariant/Helpers.lean"
+  "SeLe4n/Kernel/IPC/Invariant/Preservation.lean"
+  "SeLe4n/Kernel/IPC/Invariant/Composition.lean"
   "SeLe4n/Kernel/Lifecycle/Invariant.lean"
   "SeLe4n/Kernel/Service/Invariant.lean"
+  "SeLe4n/Kernel/Service/Invariant/Acyclicity.lean"
   "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean"
   "SeLe4n/Kernel/InformationFlow/Invariant.lean"
 )

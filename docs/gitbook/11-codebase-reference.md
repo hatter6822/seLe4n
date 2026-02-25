@@ -33,13 +33,13 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Kernel/Scheduler/Operations.lean`
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
 - `SeLe4n/Kernel/Capability/Operations.lean`
-- `SeLe4n/Kernel/Capability/Invariant.lean`
+- `SeLe4n/Kernel/Capability/Invariant.lean` (aggregator; submodules: `Definitions`, `Properties`, `Preservation`)
 - `SeLe4n/Kernel/IPC/Operations.lean`
-- `SeLe4n/Kernel/IPC/Invariant.lean`
+- `SeLe4n/Kernel/IPC/Invariant.lean` (aggregator; submodules: `Definitions`, `Helpers`, `Preservation`, `Composition`)
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 - `SeLe4n/Kernel/Service/Operations.lean`
-- `SeLe4n/Kernel/Service/Invariant.lean`
+- `SeLe4n/Kernel/Service/Invariant.lean` (with submodule: `Acyclicity`)
 
 ### Architecture boundary
 

@@ -67,14 +67,14 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
   - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`).
-- `SeLe4n/Kernel/Capability/Invariant.lean`
+- `SeLe4n/Kernel/Capability/Invariant.lean` (aggregator; submodules: `Definitions`, `Properties`, `Preservation`)
   - capability invariants + composed milestone bundles + IPC/scheduler composition links.
 
 ### IPC subsystem
 
 - `SeLe4n/Kernel/IPC/Operations.lean`
   - endpoint transitions (`send`, `awaitReceive`, `receive`).
-- `SeLe4n/Kernel/IPC/Invariant.lean`
+- `SeLe4n/Kernel/IPC/Invariant.lean` (aggregator; submodules: `Definitions`, `Helpers`, `Preservation`, `Composition`)
   - endpoint + IPC invariants,
   - scheduler-coherence contract predicates,
   - preservation theorem entrypoints.
@@ -94,7 +94,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
   - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
   - staged-order theorem surface for restart composition.
-- `SeLe4n/Kernel/Service/Invariant.lean`
+- `SeLe4n/Kernel/Service/Invariant.lean` (with submodule: `Acyclicity`)
   - reusable policy predicate components and `servicePolicySurfaceInvariant`,
   - bridge lemmas connecting service policy assumptions to lifecycle/capability bundles,
   - explicit policy-denial check-vs-mutation theorem entrypoints.

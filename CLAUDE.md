@@ -4,7 +4,7 @@
 
 seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
 machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.28.0 toolchain, Lake build system, version 0.11.10.
+semantics. Lean 4.28.0 toolchain, Lake build system, version 0.11.11.
 
 ## Build and run
 
@@ -63,14 +63,16 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~895 lines)
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~890 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Properties.lean` (~618 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~628 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Preservation.lean` (~482 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Composition.lean` (~437 lines)
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~641 lines)
+- `SeLe4n/Model/State.lean` (~557 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~531 lines)
 - `docs/spec/SEL4_SPEC.md` (~750 lines)
-- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~500 lines)
-- `scripts/test_tier3_invariant_surface.sh` (~480 lines)
-- `SeLe4n/Model/State.lean` (~496 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~470 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~447 lines)
+- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)
+- `scripts/test_tier3_invariant_surface.sh` (~533 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids

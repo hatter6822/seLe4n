@@ -8,7 +8,7 @@ Thanks for contributing to seLe4n.
 2. **Testing tiers:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Project scope + workstreams:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
-5. **Workstream execution plan:** [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md)
+5. **Workstream execution plan:** [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
 Full handbook: [`docs/gitbook/README.md`](docs/gitbook/README.md)
 

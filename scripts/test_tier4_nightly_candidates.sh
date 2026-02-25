@@ -26,6 +26,7 @@ run_check "META" bash -lc "if [[ ! -s '${ARTIFACT_DIR}/scenario_seeds.txt' ]] ||
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run1.trace'
 run_check "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run2.trace'
 run_check "TRACE" bash -lc 'diff -u tests/artifacts/nightly/sele4n_run1.trace tests/artifacts/nightly/sele4n_run2.trace > tests/artifacts/nightly/sele4n_determinism.diff'
+run_check "TRACE" bash -lc 'if [ -s tests/artifacts/nightly/sele4n_determinism.diff ]; then echo "DETERMINISM FAILURE: traces differ between runs" >&2; cat tests/artifacts/nightly/sele4n_determinism.diff >&2; exit 1; fi'
 run_check "TRACE" rg -n 'service restart status: some' tests/artifacts/nightly/sele4n_run1.trace
 run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/artifacts/nightly/sele4n_run1.trace
 run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/artifacts/nightly/sele4n_run1.trace

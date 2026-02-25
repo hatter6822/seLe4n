@@ -44,7 +44,7 @@ run_check "INVARIANT" rg -n '^inductive NotificationState' SeLe4n/Model/Object.l
 run_check "INVARIANT" rg -n '^structure Notification' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant/
 run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 # WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
@@ -146,8 +146,8 @@ run_check "INVARIANT" bash -lc "if rg -n '^instance : Coe ThreadId ObjId where' 
 
 # Invariant bundle surface anchors (M1/M2/M3 composed entrypoints).
 run_check "INVARIANT" rg -n '^(def|abbrev) schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^def m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M1 closure anchors: scheduler transition APIs + preservation theorem entrypoints.
 run_check "INVARIANT" rg -n '^def chooseThread' SeLe4n/Kernel/Scheduler/Operations.lean
@@ -163,10 +163,10 @@ run_check "INVARIANT" rg -n '^def cspaceInsertSlot' SeLe4n/Kernel/Capability/Ope
 run_check "INVARIANT" rg -n '^def cspaceMint' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceDeleteSlot' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # WS-E2 closure anchors: proof quality and invariant strengthening.
 # C-01 remediation: non-tautological slot-uniqueness infrastructure at CNode level.
@@ -177,81 +177,81 @@ run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_slotsUnique' SeLe4n/Mode
 run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique' SeLe4n/Model/Object.lean
 # C-01/H-01 remediation: reformulated invariant definitions (non-tautological).
-run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_of_cspaceSlotUnique' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotUnique' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_of_cspaceSlotUnique' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotUnique' SeLe4n/Kernel/Capability/Invariant/
 # H-01 remediation: compositional storeObject transfer lemmas.
-run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_nonCNode' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_cnode' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_nonCNode' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_cnode' SeLe4n/Kernel/Capability/Invariant/
 # H-03 remediation: badge/notification routing consistency chain.
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant/
 
 # M3 seed IPC preservation theorem anchors.
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M3.5 step-2 transition anchors must remain present.
 run_check "INVARIANT" rg -n '^def endpointSend' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def endpointReceive' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M3.5 step-3 scheduler-contract predicate anchors must remain present.
-run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/
 
 # M3.5 step-4 composed bundle anchors must remain present.
-run_check "INVARIANT" rg -n '^def ipcSchedulerRunnableReadyComponent' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedSendComponent' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerRunnableReadyComponent' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedSendComponent' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^def m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M3.5 step-6 local-first preservation-theorem anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant/
 
 # M3.5 step-5 helper-lemma anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem tcb_lookup_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem not_runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem tcb_lookup_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem not_runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/
 
 # Bundle composition guard: M3 seed bundle must still compose scheduler + capability + IPC invariants.
-run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/Capability/Invariant/
 
 # M3.5 step-1 state-model anchors must remain present.
 run_check "INVARIANT" rg -n '^inductive ThreadIpcState' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^\s*waitingReceiver\s*:\s*Option SeLe4n\.ThreadId' SeLe4n/Model/Object.lean
-run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invariant/
 
 
 # M4-A step-1 lifecycle metadata anchors must remain present.
 run_check "INVARIANT" rg -n '^structure LifecycleMetadata' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def lifecycleMetadataConsistent' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4n/Kernel/Capability/Invariant/
 
 # M4-A step-3 lifecycle invariant layering anchors must remain present.
 run_check "INVARIANT" rg -n '^def lifecycleIdentityAliasingInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
@@ -271,23 +271,23 @@ run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityRefNoTypeAliasConflict_
 run_check "INVARIANT" rg -n '^theorem lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles' SeLe4n/Kernel/Capability/Invariant/
 
 # M4-A step-5 lifecycle preservation entrypoint anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M4-B WS-C preservation theorem expansion anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps' SeLe4n/Kernel/Lifecycle/Operations.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant/
 
 # M4-B WS-A composition transition anchors must remain present.
 run_check "INVARIANT" rg -n '^def lifecycleRevokeDeleteRetype' SeLe4n/Kernel/Lifecycle/Operations.lean
@@ -326,33 +326,33 @@ run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/State.lean
 
 # M5-C policy-surface anchors must remain present.
-run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^def policyBackingObjectTyped' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^def policyOwnerAuthorityRefRecorded' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^def policyOwnerAuthoritySlotPresent' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^def servicePolicySurfaceInvariant' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^def policyBackingObjectTyped' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^def policyOwnerAuthorityRefRecorded' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^def policyOwnerAuthoritySlotPresent' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^def servicePolicySurfaceInvariant' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStart_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStop_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/
 
 # M5-D proof-package anchors must remain present.
-run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/
 
 # WS-D3 F-06/TPI-D04 badge-override safety anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_target_preserved_with_badge_override' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_safe' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_target_preserved_with_badge_override' SeLe4n/Kernel/Capability/Invariant/
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_safe' SeLe4n/Kernel/Capability/Invariant/
 
 # WS-D3 F-08/TPI-D05 VSpace success preservation + TPI-001 round-trip anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem vspaceMapPage_success_preserves_vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
@@ -373,28 +373,28 @@ run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operat
 run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/
 
 # WS-D4 F-11 serviceRestart failure-semantics anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_discards_state' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_from_start_phase' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_discards_state' SeLe4n/Kernel/Service/
+run_check "INVARIANT" rg -n '^theorem serviceRestart_error_from_start_phase' SeLe4n/Kernel/Service/
 
 # WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^def uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^def uniqueWaiters' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_uniqueWaiters' SeLe4n/Kernel/IPC/Invariant/
 
 # WS-D3 F-16 module docstring classification anchors must remain present.
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant/
+run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Capability/Invariant/
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/InformationFlow/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Service/Invariant.lean
+run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Service/
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Architecture/Invariant.lean
 
 # M3.5 step-7 executable demonstration closure anchors.
