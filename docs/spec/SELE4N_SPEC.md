@@ -43,7 +43,7 @@ claims, and planning artifacts.
 - **Current package version:** `0.12.0` (`lakefile.toml`)
 - **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - **Active execution baseline:** [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
-- **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Current active portfolio:** WS-E (v0.11.6 codebase audit remediation), currently executing **Phase P3 / WS-E4**
 - **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
 
 ---
@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 through WS-E6 completed.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1..WS-E3 completed; WS-E4 in progress; WS-E5/WS-E6 planned.
 
 ---
 
@@ -100,15 +100,15 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.3 Critical — Model Completion
 
-- **WS-E4:** Capability and IPC model completion (critical; **completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4:** Capability and IPC model completion (critical; **in progress — current phase** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 
 ### 4.4 High — Security Assurance
 
-- **WS-E5:** Information-flow maturity (high; **completed** — H-04, H-05, M-07)
+- **WS-E5:** Information-flow maturity (high; **planned next** — H-04, H-05, M-07)
 
 ### 4.5 Low — Model Completeness and Documentation
 
-- **WS-E6:** Model completeness and documentation (low; **completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E6:** Model completeness and documentation (low; **planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
@@ -129,9 +129,9 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 - **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**completed**)
 - **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
-- **Phase P4:** WS-E5 (information-flow maturity) — **completed**
-- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
+- **Phase P3:** WS-E4 (capability/IPC completion) — **in progress (current)**
+- **Phase P4:** WS-E5 (information-flow maturity) — **planned**
+- **Phase P5:** WS-E6 (model completeness/docs) — **planned**
 
 ---
 

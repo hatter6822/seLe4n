@@ -23,7 +23,7 @@
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
 - **Current package version:** `0.12.0` (`lakefile.toml`)
-- **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Current active portfolio:** WS-E (v0.11.6 codebase audit remediation), currently executing **Phase P3 / WS-E4**
 - **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
 
 ## Specifications
@@ -72,9 +72,9 @@ Quick index. Full contracts and dependencies are in the v0.11.6 planning backbon
 - **WS-E1:** Test infrastructure and CI hardening -- **completed** (Medium; M-10, M-11, F-14, L-07, L-08)
 - **WS-E2:** Proof quality and invariant strengthening -- **completed** (High; C-01, H-01, H-03)
 - **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4:** Capability and IPC model completion -- **completed** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
-- **WS-E5:** Information-flow maturity -- **completed** (High; H-04, H-05, M-07)
-- **WS-E6:** Model completeness and documentation -- **completed** (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E4:** Capability and IPC model completion -- **in progress (current phase)** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E5:** Information-flow maturity -- **planned (next)** (High; H-04, H-05, M-07)
+- **WS-E6:** Model completeness and documentation -- **planned** (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Primary references:
 - [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)

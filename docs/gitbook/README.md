@@ -6,7 +6,7 @@ This GitBook is the long-form guide for architecture, workflow, and milestone co
 
 ## Current project state
 - **Active findings baseline:** AUDIT v0.11.6 (codebase audit).
-- **Active execution baseline:** WS-E portfolio (v0.11.6 workstream plan). WS-E1 through WS-E6 completed.
+- **Active execution baseline:** WS-E portfolio (v0.11.6 workstream plan). WS-E1..WS-E3 completed; WS-E4 in progress (Phase P3); WS-E5/WS-E6 planned.
 - **Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`docs/dev_history/`](../dev_history/README.md).
 
 Specification documents:
