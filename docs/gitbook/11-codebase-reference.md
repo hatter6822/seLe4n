@@ -24,7 +24,7 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
 - `SeLe4n/Model/Object.lean`
-  - object-level representations.
+  - object-level representations (including intrusive runnable-list links embedded in TCBs).
 - `SeLe4n/Model/State.lean`
   - global system-state composition and update helpers.
 

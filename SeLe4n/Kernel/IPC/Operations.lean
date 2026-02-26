@@ -22,6 +22,16 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
         { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
     | _ => st
 
+/-- WS-E4/M-13: expose runnable intrusive links carried in the TCB.
+
+The scheduler queue is still represented canonically by `st.scheduler.runnable`.
+These accessors provide a typed bridge for transitions/proofs that operate on
+intrusive list metadata without introducing separate list-node allocations. -/
+def runnableLinks (st : SystemState) (tid : SeLe4n.ThreadId) : Option (Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :=
+  match st.objects tid.toObjId with
+  | some (.tcb tcb) => some (tcb.runnablePrev, tcb.runnableNext)
+  | _ => none
+
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
     none
