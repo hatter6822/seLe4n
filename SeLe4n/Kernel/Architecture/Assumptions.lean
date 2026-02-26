@@ -117,4 +117,35 @@ theorem assumptionTransitionMap_nonempty (a : ArchAssumption) : (assumptionTrans
 theorem assumptionInvariantMap_nonempty (a : ArchAssumption) : (assumptionInvariantMap a).length > 0 := by
   cases a <;> decide
 
+-- ============================================================================
+-- M-08/WS-E6: Assumption-level coverage theorems
+-- ============================================================================
+
+/-- M-08/WS-E6: The assumption inventory is fully covered: every assumption
+maps to at least one contract obligation, transition surface, and invariant
+surface. This closes the structural coverage gap where assumptions existed
+but were not verified to connect to the proof layer.
+
+For proof-level consumption (assumptions consumed in adapter preservation
+theorems via `AdapterProofHooks`), see `Architecture.Invariant`. -/
+theorem assumptionInventory_fully_covered :
+    ∀ a ∈ assumptionInventory,
+      (assumptionContractMap a).length > 0 ∧
+      (assumptionTransitionMap a).length > 0 ∧
+      (assumptionInvariantMap a).length > 0 := by
+  intro a _
+  exact ⟨assumptionContractMap_nonempty a,
+         assumptionTransitionMap_nonempty a,
+         assumptionInvariantMap_nonempty a⟩
+
+/-- M-08/WS-E6: Every architecture assumption is both inventoried and has
+non-empty contract obligations. -/
+theorem assumption_proof_coverage_complete :
+    ∀ a : ArchAssumption,
+      a ∈ assumptionInventory ∧
+      (assumptionContractMap a).length > 0 := by
+  intro a
+  exact ⟨assumptionInventoryComplete_holds a,
+         assumptionContractMap_nonempty a⟩
+
 end SeLe4n.Kernel.Architecture

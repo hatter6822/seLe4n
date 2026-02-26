@@ -25,9 +25,34 @@ inductive KernelError where
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
+/-- M-05/WS-E6: Domain schedule entry for two-level temporal partitioning.
+
+Each entry specifies a scheduling domain and the number of ticks that domain
+is allowed to execute before the scheduler rotates to the next domain. This
+models seL4's `seL4_DomainSet` configuration. -/
+structure DomainScheduleEntry where
+  domain : SeLe4n.DomainId
+  length : Nat
+  deriving Repr, DecidableEq
+
+/-- M-05/WS-E6: Default domain schedule: single domain 0 with length 1.
+This is the trivial schedule where all threads share a single domain. -/
+def defaultDomainSchedule : List DomainScheduleEntry :=
+  [{ domain := 0, length := 1 }]
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  /-- M-05/WS-E6: Currently active scheduling domain. Only threads whose
+  `TCB.domain` matches `activeDomain` are eligible for selection. -/
+  activeDomain : SeLe4n.DomainId := 0
+  /-- M-05/WS-E6: Remaining ticks in the current domain's time window.
+  When this reaches 0, the scheduler rotates to the next domain in the
+  `domainSchedule` table. -/
+  domainTimeRemaining : Nat := 1
+  /-- M-05/WS-E6: Index into the domain schedule table for round-robin
+  domain rotation. -/
+  domainScheduleIndex : Nat := 0
   deriving Repr, DecidableEq
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
@@ -47,6 +72,24 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  /-- L-05/WS-E6: Monotonic append-only index of known object identifiers.
+
+  **Design rationale:** `objectIndex` only grows—IDs are prepended on first
+  `storeObject` and never removed, even when objects are logically deleted
+  (their `objects` mapping is set to `none`). This is an intentional design
+  choice for the formal model:
+
+  1. **Identity stability:** once an ObjId enters the index, proofs that
+     reference "∀ id ∈ objectIndex" remain valid across transitions. Pruning
+     would require re-establishing membership witnesses after every deletion.
+  2. **Simplicity:** the index serves as a finite witness set for invariant
+     checks and test iteration. Monotonicity avoids the complexity of
+     set-removal proofs (list permutation, membership transfer).
+  3. **Performance scope:** the O(n) cost of a growing index is acceptable
+     for the formal model's purpose. See F-17 documentation for the broader
+     O(n) design decision rationale and future migration path.
+
+  See `storeObject_objectIndex_monotone` for the formal monotonicity proof. -/
   objectIndex : List SeLe4n.ObjId
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
@@ -58,7 +101,8 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnable := [], current := none, activeDomain := 0,
+               domainTimeRemaining := 1, domainScheduleIndex := 0 }
 
 instance : Inhabited SystemState where
   default := {
@@ -110,6 +154,20 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
       }
     let objectIndex' := if id ∈ st.objectIndex then st.objectIndex else id :: st.objectIndex
     .ok ((), { st with objects := objects', objectIndex := objectIndex', lifecycle := lifecycle' })
+
+/-- L-05/WS-E6: `storeObject` only grows the objectIndex—every ID present
+before the store remains present after. This is the formal statement of the
+monotonic append-only design. -/
+theorem storeObject_objectIndex_monotone (id : SeLe4n.ObjId) (obj : KernelObject)
+    (st st' : SystemState) (x : SeLe4n.ObjId)
+    (hStep : storeObject id obj st = .ok ((), st'))
+    (hMem : x ∈ st.objectIndex) :
+    x ∈ st'.objectIndex := by
+  simp [storeObject] at hStep
+  cases hStep
+  by_cases hIn : id ∈ st.objectIndex
+  · simp [hIn, hMem]
+  · simp [hIn]; right; exact hMem
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=

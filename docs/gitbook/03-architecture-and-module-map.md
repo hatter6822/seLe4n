@@ -145,7 +145,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### API + executable
 
 - `SeLe4n/Kernel/API.lean`
-  - compatibility barrel import surface for clients.
+  - unified public kernel interface: `KernelAPIInvariant` bundle alias, 20+ entry-point
+    abbreviations (`apiSchedule`, `apiCspaceMint`, `apiEndpointSend`, etc.), API-level
+    preservation theorems, and `default_satisfies_kernelAPIInvariant`.
 - `Main.lean`
   - concrete scenario execution and trace output validated by fixture checks.
 

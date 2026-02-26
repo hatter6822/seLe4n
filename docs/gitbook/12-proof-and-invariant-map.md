@@ -383,3 +383,51 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 - `enforcementBoundary` — exhaustive 17-entry classification table,
 - `denied_preserves_state_*` — denial preservation for all 3 checked operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs.
+
+## 16. Model completeness and documentation (WS-E6 complete)
+
+### Scheduler extensions (M-03, M-04, M-05)
+
+Time-slice and domain scheduling extensions in `Scheduler/Operations.lean`:
+
+- **M-03** — `chooseThread_deterministic`: determinism theorem for scheduler thread selection.
+  `chooseBestRunnable` uses FIFO (list-position) tie-breaking, documented vs seL4 round-robin.
+- **M-04** — `handleTimerTick`: time-slice decrement and reschedule-on-expiry.
+  - `handleTimerTick_idle_advances_timer` — no current thread case.
+  - `handleTimerTick_decrement_timer` — non-expiry case preserves current thread.
+- **M-05** — Domain scheduling: `DomainScheduleEntry`, `filterByDomain`, `chooseDomainThread`,
+  `handleDomainTick`.
+  - `handleDomainTick_preserves_runnable` — run queue stability.
+  - `handleDomainTick_preserves_schedulerInvariantBundle` — bundle preservation.
+
+### Architecture assumption consumption (M-08)
+
+Assumption-to-proof chain witnesses in `Architecture/Invariant.lean` and `Assumptions.lean`:
+
+- `AssumptionConsumptionWitness` — structure connecting each `ArchAssumption` to its consuming
+  adapter operation and invariant preservation proof.
+- `assumptionInventory_fully_covered` — all 3 assumptions mapped to contracts/transitions/invariants.
+- `assumption_proof_coverage_complete` — proof coverage completeness theorem.
+- Per-assumption consumption: `timer_assumption_consumed_by_adapter`,
+  `register_assumption_consumed_by_adapter`, `memory_assumption_consumed_by_adapter`.
+
+### Unified API surface (L-01)
+
+`API.lean` now provides:
+
+- `KernelAPIInvariant` — alias for `proofLayerInvariantBundle`.
+- `default_satisfies_kernelAPIInvariant` — default state satisfies all invariants.
+- 20+ entry-point abbreviations (`apiSchedule`, `apiHandleYield`, `apiHandleTimerTick`,
+  `apiHandleDomainTick`, `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`, `apiCspaceMutate`,
+  `apiCspaceRevokeCdt`, `apiEndpointSend`, `apiEndpointReceive`, `apiEndpointReply`,
+  `apiEndpointCall`, `apiServiceStart`, `apiServiceStop`, `apiServiceRestart`, etc.).
+- API-level preservation theorems for scheduler operations.
+
+### Foundation improvements (L-02, L-03, L-04, L-05, F-17)
+
+- **L-02** — `defaultMemory_returns_zero`, `defaultMachineState_memory_zero` in `Machine.lean`.
+- **L-03** — Monad helpers (`get`, `set`, `modify`, `liftExcept`, `throw`) with 6 correctness theorems.
+- **L-04** — `toObjIdChecked` with sentinel guard; `toObjId_preserves_sentinel`,
+  `toObjId_valid_of_not_reserved`, `toObjIdChecked_some_iff`.
+- **L-05/F-17** — `storeObject_objectIndex_monotone` in `State.lean`; comprehensive docstrings
+  documenting O(n) design and monotonic append-only semantics.

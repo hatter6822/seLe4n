@@ -69,7 +69,9 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 ### API
 
 - `SeLe4n/Kernel/API.lean`
-  - barrel import surface for downstream clients.
+  - unified public kernel interface: `KernelAPIInvariant` bundle alias, 20+ entry-point
+    abbreviations (`apiSchedule`, `apiCspaceMint`, `apiEndpointSend`, etc.), API-level
+    preservation theorems, and `default_satisfies_kernelAPIInvariant`.
 
 ### Testing modules
 

@@ -57,7 +57,19 @@ namespace ThreadId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ThreadId) : Nat := id.val
 
-/-- Explicit conversion used at object-store boundaries. -/
+/-- Explicit conversion used at object-store boundaries.
+
+**L-04/WS-E6 design note:** This conversion is intentionally unchecked (pure
+identity mapping on the underlying `Nat`). Validation of the resulting `ObjId`
+is deferred to the object-store lookup boundary (`lookupObject`), which returns
+`.error .objectNotFound` when no object exists at the target ID. This is safe
+because:
+1. `ThreadId.toObjId_injective` guarantees no aliasing between distinct thread IDs.
+2. The sentinel convention (H-06) ensures ID 0 is never a valid store target.
+3. All kernel operations that consume `toObjId` immediately follow with a
+   `lookupObject` or pattern match that validates the object exists and is a TCB.
+
+See `ThreadId.toObjId_preserves_sentinel` for the sentinel-preservation proof. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance instOfNat (n : Nat) : OfNat ThreadId n where
@@ -72,6 +84,11 @@ instance : ToString ThreadId where
 /-- H-06/WS-E3: The sentinel ThreadId (value 0). -/
 @[inline] def sentinel : ThreadId := ⟨0⟩
 
+/-- L-04/WS-E6: Checked conversion that validates the thread ID is non-sentinel
+before producing an ObjId. Returns `none` for the reserved sentinel (ID 0). -/
+@[inline] def toObjIdChecked (id : ThreadId) : Option ObjId :=
+  if id.isReserved then none else some (id.toObjId)
+
 end ThreadId
 
 /-- H-09/WS-E3: ThreadId → ObjId is injective. Two thread identifiers that
@@ -83,6 +100,23 @@ theorem ThreadId.toObjId_injective (t1 t2 : ThreadId)
   cases t1 with | mk v1 => cases t2 with | mk v2 =>
   simp [ThreadId.toObjId, ThreadId.toNat, ObjId.ofNat] at h
   subst h; rfl
+
+/-- L-04/WS-E6: The sentinel ThreadId maps to the sentinel ObjId. -/
+theorem ThreadId.toObjId_preserves_sentinel :
+    ThreadId.sentinel.toObjId = ObjId.sentinel := rfl
+
+/-- L-04/WS-E6: A non-sentinel ThreadId maps to a non-sentinel ObjId. -/
+theorem ThreadId.toObjId_valid_of_not_reserved (tid : ThreadId)
+    (h : tid.isReserved = false) :
+    tid.toObjId.isReserved = false := by
+  simp [ThreadId.isReserved] at h
+  simp [ThreadId.toObjId, ThreadId.toNat, ObjId.ofNat, ObjId.isReserved, h]
+
+/-- L-04/WS-E6: `toObjIdChecked` returns `some` exactly when the ID is non-sentinel. -/
+theorem ThreadId.toObjIdChecked_some_iff (tid : ThreadId) :
+    tid.toObjIdChecked.isSome = true ↔ tid.isReserved = false := by
+  unfold ThreadId.toObjIdChecked ThreadId.isReserved
+  by_cases h : tid.val = 0 <;> simp [h]
 
 /-- Scheduling domain identifier. -/
 structure DomainId where
@@ -328,6 +362,46 @@ def bind {σ ε α β : Type} (m : KernelM σ ε α) (f : α → KernelM σ ε �
 instance {σ ε : Type} : Monad (KernelM σ ε) where
   pure := pure
   bind := bind
+
+/-- L-03/WS-E6: Read the current state without modifying it. -/
+def get {σ ε : Type} : KernelM σ ε σ :=
+  fun s => .ok (s, s)
+
+/-- L-03/WS-E6: Replace the current state entirely. -/
+def set {σ ε : Type} (s : σ) : KernelM σ ε Unit :=
+  fun _ => .ok ((), s)
+
+/-- L-03/WS-E6: Apply a pure transformation to the current state. -/
+def modify {σ ε : Type} (f : σ → σ) : KernelM σ ε Unit :=
+  fun s => .ok ((), f s)
+
+/-- L-03/WS-E6: Lift an `Except` computation into `KernelM`, propagating errors. -/
+def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
+  fun s =>
+    match e with
+    | .ok a => .ok (a, s)
+    | .error err => .error err
+
+/-- L-03/WS-E6: Raise an error, aborting the computation. -/
+def throw {σ ε α : Type} (err : ε) : KernelM σ ε α :=
+  fun _ => .error err
+
+-- L-03/WS-E6: Monad helper correctness theorems
+
+theorem get_eq (s : σ) : @get σ ε s = .ok (s, s) := rfl
+
+theorem set_eq (s s' : σ) : @set σ ε s' s = .ok ((), s') := rfl
+
+theorem modify_eq (f : σ → σ) (s : σ) : @modify σ ε f s = .ok ((), f s) := rfl
+
+theorem liftExcept_ok (a : α) (s : σ) :
+    @liftExcept σ ε α (.ok a) s = .ok (a, s) := rfl
+
+theorem liftExcept_error (err : ε) (s : σ) :
+    @liftExcept σ ε α (.error err) s = .error err := rfl
+
+theorem throw_eq (err : ε) (s : σ) :
+    @throw σ ε α err s = .error err := rfl
 
 end KernelM
 

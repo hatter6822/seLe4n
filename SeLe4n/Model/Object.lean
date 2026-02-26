@@ -82,6 +82,12 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- Thread Control Block.
+
+M-04/WS-E6: Added `timeSlice` field modeling the remaining time quanta before
+tick-based preemption. When `timeSlice` reaches 0, the scheduler preempts the
+thread and moves it to the back of the runnable queue. The default value of 5
+represents a reasonable initial quanta matching seL4's configurable time-slice. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -90,6 +96,7 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  timeSlice : Nat := 5
   deriving Repr, DecidableEq
 
 inductive EndpointState where

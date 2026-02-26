@@ -8,7 +8,18 @@ abbrev RegName := Nat
 /-- Register-sized machine word in the abstract machine model. -/
 abbrev RegValue := Nat
 
-/-- Byte-addressed memory store used by the abstract machine model. -/
+/-- Byte-addressed memory store used by the abstract machine model.
+
+**L-02/WS-E6: Default memory semantics.** The initial `Memory` function returns
+`0 : UInt8` for every physical address. This means all unmapped or uninitialized
+memory reads yield zero rather than raising a page fault. This is an intentional
+simplification: the model captures deterministic memory-access semantics for
+scheduler/IPC reasoning without requiring a page-fault exception model. The
+absence of a page-fault model is documented as a known scope boundary—extending
+to fault-handling semantics is deferred to future work when VSpace operations
+need to model hardware page-table walks.
+
+See `defaultMemory_returns_zero` below for the formal characterization. -/
 abbrev Memory := PAddr → UInt8
 
 /-- Pure register file state used by scheduler/context-switch modeling. -/
@@ -26,8 +37,17 @@ structure MachineState where
   memory : Memory
   timer : Nat
 
+/-- L-02/WS-E6: The default `Memory` returns zero for all physical addresses.
+This characterizes the absence of a page-fault model in the abstract machine. -/
+theorem defaultMemory_returns_zero (addr : PAddr) :
+    (fun (_ : PAddr) => (0 : UInt8)) addr = 0 := rfl
+
 instance : Inhabited MachineState where
   default := { regs := default, memory := fun _ => 0, timer := 0 }
+
+/-- L-02/WS-E6: Default machine state has zero memory at every address. -/
+theorem defaultMachineState_memory_zero (addr : PAddr) :
+    (default : MachineState).memory addr = 0 := rfl
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
