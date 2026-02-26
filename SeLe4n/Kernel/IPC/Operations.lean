@@ -5,13 +5,27 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let runnable' := st.scheduler.runnable.filter (· ≠ tid)
   { st with
       scheduler := {
         st.scheduler with
-          runnable := st.scheduler.runnable.filter (· ≠ tid)
+          runnable := runnable'
+          runnableQ := FifoQueue.ofList runnable'
           current := if st.scheduler.current = some tid then none else st.scheduler.current
       }
   }
+
+/-- O(1) enqueue-at-tail on the scheduler runnable queue record. -/
+def enqueueTailRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let q' := st.scheduler.runnableQ.enqueueTail tid
+  setRunnableQueue q' st
+
+/-- O(1) dequeue-from-head on the scheduler runnable queue record.
+Returns the removed head (if present) and the updated state. -/
+def dequeueHeadRunnable (st : SystemState) : Option (SeLe4n.ThreadId × SystemState) :=
+  match st.scheduler.runnableQ.dequeueHead with
+  | none => none
+  | some (tid, q') => some (tid, setRunnableQueue q' st)
 
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runnable then
@@ -19,7 +33,8 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   else
     match st.objects tid.toObjId with
     | some (.tcb _) =>
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
+        let runnable' := st.scheduler.runnable ++ [tid]
+        { st with scheduler := { st.scheduler with runnable := runnable', runnableQ := FifoQueue.ofList runnable' } }
     | _ => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=

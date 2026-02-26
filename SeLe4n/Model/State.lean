@@ -33,8 +33,56 @@ structure DomainScheduleEntry where
   length : Nat
   deriving Repr, DecidableEq
 
+/-- FIFO queue representation using front (`head`) and rear (`tail`) lists.
+`head` is consumed directly, while `tail` accumulates enqueue-at-tail elements in
+reverse order. When `head` is empty, we rotate `tail.reverse` into `head`.
+
+This provides O(1) enqueue-at-tail and amortized O(1) dequeue-from-head. -/
+structure FifoQueue (α : Type) where
+  head : List α
+  tail : List α
+  deriving Repr, DecidableEq
+
+namespace FifoQueue
+
+def empty : FifoQueue α := { head := [], tail := [] }
+
+def ofList (xs : List α) : FifoQueue α := { head := xs, tail := [] }
+
+def toList (q : FifoQueue α) : List α :=
+  q.head ++ q.tail.reverse
+
+def enqueueTail (q : FifoQueue α) (x : α) : FifoQueue α :=
+  { q with tail := x :: q.tail }
+
+def dequeueHead (q : FifoQueue α) : Option (α × FifoQueue α) :=
+  match q.head with
+  | x :: xs => some (x, { q with head := xs })
+  | [] =>
+      match q.tail.reverse with
+      | [] => none
+      | x :: xs => some (x, { head := xs, tail := [] })
+
+def contains [DecidableEq α] (q : FifoQueue α) (x : α) : Bool :=
+  x ∈ q.toList
+
+def filter (p : α → Bool) (q : FifoQueue α) : FifoQueue α :=
+  ofList <| q.toList.filter p
+
+def erase [DecidableEq α] (q : FifoQueue α) (x : α) : FifoQueue α :=
+  ofList <| q.toList.erase x
+
+def length (q : FifoQueue α) : Nat :=
+  q.head.length + q.tail.length
+
+def isEmpty (q : FifoQueue α) : Bool :=
+  q.head.isEmpty && q.tail.isEmpty
+
+end FifoQueue
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
+  runnableQ : FifoQueue SeLe4n.ThreadId := FifoQueue.ofList runnable
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -92,7 +140,7 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnable := [], runnableQ := FifoQueue.empty, current := none }
 
 instance : Inhabited SystemState where
   default := {
@@ -175,6 +223,16 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := { st.scheduler with current := tid }
     .ok ((), { st with scheduler := sched })
+
+/-- Keep the scheduler's list and queue views synchronized from a queue update. -/
+def setRunnableQueue (q : FifoQueue SeLe4n.ThreadId) (st : SystemState) : SystemState :=
+  { st with
+      scheduler := {
+        st.scheduler with
+          runnable := q.toList
+          runnableQ := q
+      }
+  }
 
 /-- Read one service graph entry. -/
 def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=

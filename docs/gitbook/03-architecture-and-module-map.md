@@ -53,6 +53,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Model/State.lean`
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
+  - scheduler runnable FIFO queue record (`FifoQueue` with `{head, tail}`) and synchronization helpers,
   - `lookupObject` / `storeObject` / `setCurrentThread`,
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 

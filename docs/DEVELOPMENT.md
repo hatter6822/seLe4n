@@ -21,10 +21,11 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 1. deterministic transition semantics (explicit success/failure branches),
 2. M3.5 IPC-scheduler handshake coherence semantics and trace anchors,
-3. local + composed invariant layering,
-4. theorem discoverability through stable naming,
-5. fixture-backed executable evidence (`Main.lean` + trace fixture),
-6. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
+3. synchronized scheduler runnable representations (list view + FIFO `{head, tail}` queue record),
+4. local + composed invariant layering,
+5. theorem discoverability through stable naming,
+6. fixture-backed executable evidence (`Main.lean` + trace fixture),
+7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
 
 ---
 
