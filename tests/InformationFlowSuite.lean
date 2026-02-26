@@ -294,6 +294,148 @@ private def runInformationFlowChecks : IO Unit := do
 
   IO.println "information-flow enforcement boundary checks passed [WS-D2 F-02]"
 
+  -- =========================================================================
+  -- WS-E5/H-04: N-level security domain lattice checks (≥3 domains)
+  -- =========================================================================
+
+  -- Three-domain linear lattice: 0=public, 1=internal, 2=secret
+  let d0 := SeLe4n.Kernel.SecurityDomainN.ofLevel 0  -- public
+  let d1 := SeLe4n.Kernel.SecurityDomainN.ofLevel 1  -- internal
+  let d2 := SeLe4n.Kernel.SecurityDomainN.ofLevel 2  -- secret
+
+  expect "N-domain: reflexive flow (public→public)"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d0 d0)
+
+  expect "N-domain: reflexive flow (internal→internal)"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d1 d1)
+
+  expect "N-domain: reflexive flow (secret→secret)"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d2 d2)
+
+  expect "N-domain: public→internal allowed"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d0 d1)
+
+  expect "N-domain: public→secret allowed"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d0 d2)
+
+  expect "N-domain: internal→secret allowed"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d1 d2)
+
+  expect "N-domain: secret→public denied"
+    (!(SeLe4n.Kernel.SecurityDomainN.flowsTo d2 d0))
+
+  expect "N-domain: secret→internal denied"
+    (!(SeLe4n.Kernel.SecurityDomainN.flowsTo d2 d1))
+
+  expect "N-domain: internal→public denied"
+    (!(SeLe4n.Kernel.SecurityDomainN.flowsTo d1 d0))
+
+  -- Verify transitivity: public→internal→secret
+  expect "N-domain: transitivity public→internal→secret"
+    (SeLe4n.Kernel.SecurityDomainN.flowsTo d0 d1 &&
+     SeLe4n.Kernel.SecurityDomainN.flowsTo d1 d2 &&
+     SeLe4n.Kernel.SecurityDomainN.flowsTo d0 d2)
+
+  -- Generic SecurityLattice interface checks
+  expect "generic lattice: SecurityLabel flowsTo is reflexive"
+    (SeLe4n.Kernel.genericFlowsTo secretLabel secretLabel)
+
+  expect "generic lattice: SecurityDomainN flowsTo is reflexive"
+    (SeLe4n.Kernel.genericFlowsTo d1 d1)
+
+  expect "generic lattice: SecurityDomainN allows upward flow"
+    (SeLe4n.Kernel.genericFlowsTo d0 d2)
+
+  expect "generic lattice: SecurityDomainN denies downward flow"
+    (!(SeLe4n.Kernel.genericFlowsTo d2 d0))
+
+  IO.println "WS-E5/H-04 three-domain lattice checks passed"
+
+  -- =========================================================================
+  -- WS-E5/H-04: Per-endpoint flow policy checks
+  -- =========================================================================
+
+  -- Default policy: defers to label-based flow
+  let defaultPctx : SeLe4n.Kernel.PolicyContext :=
+    { labels := publicCtx
+      endpointPolicy := fun _ => .useDefault }
+
+  let defaultPolicyResult := SeLe4n.Kernel.resolveEndpointFlow
+    defaultPctx publicLabel publicLabel 10
+  expect "per-endpoint: useDefault with same-domain allows flow"
+    defaultPolicyResult
+
+  -- permitAlways overrides labels: secret→public allowed
+  let permitPctx : SeLe4n.Kernel.PolicyContext :=
+    { labels := secretSenderCtx
+      endpointPolicy := fun _ => .permitAlways }
+
+  let permitResult := SeLe4n.Kernel.resolveEndpointFlow
+    permitPctx secretLabel publicLabel 10
+  expect "per-endpoint: permitAlways overrides denial"
+    permitResult
+
+  -- denyAlways overrides labels: same-domain denied
+  let denyPctx : SeLe4n.Kernel.PolicyContext :=
+    { labels := publicCtx
+      endpointPolicy := fun _ => .denyAlways }
+
+  let denyResult := SeLe4n.Kernel.resolveEndpointFlow
+    denyPctx publicLabel publicLabel 10
+  expect "per-endpoint: denyAlways overrides same-domain"
+    (!denyResult)
+
+  -- Mixed policy: endpoint 10 has permitAlways, endpoint 20 uses default
+  let mixedPctx : SeLe4n.Kernel.PolicyContext :=
+    { labels := secretSenderCtx
+      endpointPolicy := fun eid => if eid = 10 then .permitAlways else .useDefault }
+
+  expect "per-endpoint: mixed policy permits endpoint 10"
+    (SeLe4n.Kernel.resolveEndpointFlow mixedPctx secretLabel publicLabel 10)
+
+  expect "per-endpoint: mixed policy denies endpoint 20 (secret→public)"
+    (!(SeLe4n.Kernel.resolveEndpointFlow mixedPctx secretLabel publicLabel 20))
+
+  -- Policy-checked send with per-endpoint policy
+  let permitSendResult := SeLe4n.Kernel.endpointSendPolicyChecked
+    permitPctx 10 1 publicEndpointState
+  expect "per-endpoint: permitAlways send succeeds even for cross-domain"
+    (match permitSendResult with
+      | .ok _ => true
+      | .error _ => false)
+
+  let denySendResult := SeLe4n.Kernel.endpointSendPolicyChecked
+    denyPctx 10 1 publicEndpointState
+  expect "per-endpoint: denyAlways send returns flowDenied"
+    (match denySendResult with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-E5/H-04 per-endpoint flow policy checks passed"
+
+  -- =========================================================================
+  -- WS-E5/M-07: Enforcement boundary classification checks
+  -- =========================================================================
+
+  -- Verify that enforcement boundary soundness: denied flows produce errors
+  let deniedSendResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
+  expect "M-07: enforcement boundary blocks cross-domain endpointSend"
+    (match deniedSendResult with
+      | .error .flowDenied => true
+      | _ => false)
+
+  -- Verify that same-domain operations pass through unchecked
+  let allowedSendResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
+  expect "M-07: same-domain endpointSendChecked matches unchecked"
+    (match allowedSendResult, uncheckedSendResult with
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects 10 = s₂.objects 10
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  IO.println "WS-E5/M-07 enforcement boundary classification checks passed"
+  IO.println "all WS-E5 information-flow maturity checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=

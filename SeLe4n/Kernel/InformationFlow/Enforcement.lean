@@ -193,4 +193,68 @@ theorem endpointSendChecked_self_domain_allowed
   rw [hSameLabel]
   exact securityFlowsTo_refl _
 
+-- ============================================================================
+-- WS-E5/H-04: Per-endpoint flow policy enforcement
+-- ============================================================================
+
+/-- WS-E5/H-04: Policy-checked endpoint send using per-endpoint flow policy.
+    Uses `resolveEndpointFlow` which supports per-endpoint overrides
+    (`permitAlways`, `denyAlways`) alongside the default label-based check. -/
+def endpointSendPolicyChecked
+    (pctx : PolicyContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    let senderLabel := pctx.labels.threadLabelOf sender
+    let endpointLabel := pctx.labels.endpointLabelOf endpointId
+    if resolveEndpointFlow pctx senderLabel endpointLabel endpointId then
+      endpointSend endpointId sender st
+    else
+      .error .flowDenied
+
+/-- WS-E5/H-04: When per-endpoint policy resolves to allow, the policy-checked
+    send behaves identically to the unchecked send. -/
+theorem endpointSendPolicyChecked_eq_send_when_allowed
+    (pctx : PolicyContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hAllow : resolveEndpointFlow pctx
+                (pctx.labels.threadLabelOf sender)
+                (pctx.labels.endpointLabelOf endpointId)
+                endpointId = true) :
+    endpointSendPolicyChecked pctx endpointId sender st =
+      endpointSend endpointId sender st := by
+  unfold endpointSendPolicyChecked
+  simp [hAllow]
+
+/-- WS-E5/H-04: When per-endpoint policy resolves to deny, the policy-checked
+    send returns `flowDenied` without modifying state. -/
+theorem endpointSendPolicyChecked_flowDenied
+    (pctx : PolicyContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hDeny : resolveEndpointFlow pctx
+               (pctx.labels.threadLabelOf sender)
+               (pctx.labels.endpointLabelOf endpointId)
+               endpointId = false) :
+    endpointSendPolicyChecked pctx endpointId sender st =
+      .error .flowDenied := by
+  unfold endpointSendPolicyChecked
+  simp [hDeny]
+
+/-- WS-E5/H-04: With default policy context, the policy-checked send equals
+    the standard label-checked send. -/
+theorem endpointSendPolicyChecked_default_eq_checked
+    (pctx : PolicyContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hDefault : pctx.endpointPolicy endpointId = .useDefault) :
+    endpointSendPolicyChecked pctx endpointId sender st =
+      endpointSendChecked pctx.labels endpointId sender st := by
+  unfold endpointSendPolicyChecked endpointSendChecked
+  simp [resolveEndpointFlow, hDefault]
+
 end SeLe4n.Kernel

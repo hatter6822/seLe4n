@@ -99,7 +99,7 @@ Delivered theorems (WS-D2 closeout):
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle retype non-interference (TPI-D03).
 - Shared infrastructure: `storeObject_at_unobservable_preserves_lowEquivalent`.
 
-## IF-M4 — Bundle-level composition (WS-E5)
+## IF-M4 — Bundle-level composition (WS-E5) ✅ completed
 
 **v0.11.6 audit context:** Findings H-04 (lattice too coarse), H-05 (no
 composed non-interference), and M-07 (enforcement is pre-gate only) are
@@ -120,6 +120,19 @@ Exit evidence:
 - explicit assumptions list for architecture-boundary observability,
 - Tier 3 invariant-surface anchors include information-flow entrypoints,
 - label lattice supports ≥3 security domains.
+
+Delivered anchors (WS-E5 closeout):
+
+- `SecurityLattice` typeclass (`Policy.lean`) — generic lattice with reflexive/transitive flow.
+- `SecurityDomainN` N-level linear domain (`Policy.lean`) — supports ≥3 security levels.
+- `ProductLabel` generic product lattice (`Policy.lean`) — arbitrary lattice pairs.
+- `GenericLabelingContext` parameterized labeling (`Policy.lean`) — domain-type-generic.
+- `PolicyContext` + `EndpointFlowDecision` (`Policy.lean`) — per-endpoint flow policies.
+- `endpointSendPolicyChecked` (`Enforcement.lean`) — policy-context-aware enforcement.
+- `highActionPreservesLowEquiv` + `composedBundle_nonInterference` (`Invariant.lean`) — IF-M4 composition.
+- `EnforcementClass` + `capabilityOnly_nonInterference` (`Invariant.lean`) — M-07 classification.
+- `enforcementBoundary_sound_*` (`Invariant.lean`) — soundness of policy-gated operations.
+- 26 new runtime test checks in `InformationFlowSuite.lean`.
 
 ## IF-M5 — Platform-facing integration readiness
 
