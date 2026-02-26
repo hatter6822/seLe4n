@@ -107,3 +107,9 @@ Primary references:
 ## Historical note
 
 Prior workstream plans (WS-C, WS-B), older audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters are archived in [`docs/dev_history/`](docs/dev_history/README.md) for traceability.
+
+## Security defaults update (WS-E4/WS-E5 hardening)
+
+- IPC thread-state writes are now fail-closed: `storeTcbIpcState` returns `.error .objectNotFound` when the target TCB does not exist, preventing endpoint/notification queue poisoning by ghost thread IDs.
+- Trace and harness paths now exercise policy-checked entry points (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) using `defaultLabelingContext` by default.
+- The executable trace fixture was updated accordingly to assert the new fail-closed IPC behavior.

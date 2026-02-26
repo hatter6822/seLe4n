@@ -196,11 +196,13 @@ private theorem storeTcbIpcState_preserves_projection
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
-    simp [hLookup] at hStep; subst hStep; rfl
+    have hImpossible : False := by
+      simpa [storeTcbIpcState, hLookup] using hStep
+    exact False.elim hImpossible
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
+    | error e => cases hStore
     | ok pair =>
       simp only [hStore] at hStep
       have := Except.ok.inj hStep; subst this

@@ -796,7 +796,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
           | none =>
             simp [hLookup] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
-            | error e => simp [hStore] at hStep
+            | error e => cases hStore
             | ok pair =>
               obtain ⟨_, stMid⟩ := pair
               simp [hStore] at hStep
@@ -857,7 +857,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
       | cnode preCn =>
         simp [hPre] at hStep
         cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
-        | error e => simp [hStore] at hStep
+        | error e => cases hStore
         | ok pair =>
           obtain ⟨_, stMid⟩ := pair
           simp [hStore] at hStep
@@ -907,7 +907,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
           simp [hLookup, hPre] at hStep
           cases hStore : storeObject addr.cnode
             (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with
-          | error e => simp [hStore] at hStep
+          | error e => cases hStore
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair
             simp [hStore] at hStep
@@ -1295,11 +1295,14 @@ private theorem cspaceSlotUnique_of_storeTcbIpcState
     cspaceSlotUnique st' := by
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep; subst hStep; exact hUniq
+  | none =>
+    have hImpossible : False := by
+      simpa [storeTcbIpcState, hLookup] using hStep
+    exact False.elim hImpossible
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
+    | error e => cases hStore
     | ok pair =>
       simp only [hStore] at hStep
       have := Except.ok.inj hStep; subst this

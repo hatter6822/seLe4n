@@ -148,3 +148,9 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+## 16) Security hardening conventions (WS-E4/WS-E5)
+
+- Treat `storeTcbIpcState` as fail-closed infrastructure: missing TCBs must surface `.objectNotFound` (never silent success).
+- For executable harnesses and examples, prefer checked information-flow entry points (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) with an explicit labeling context.
+- If trace behavior changes due hardening, update `tests/fixtures/main_trace_smoke.expected` in the same PR with rationale.

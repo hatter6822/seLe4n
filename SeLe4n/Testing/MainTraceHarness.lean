@@ -174,7 +174,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"service start dependency branch: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected service start success with unsatisfied dependencies"
-  match SeLe4n.Kernel.serviceRestart svcRestart allowAll allowAll st1 with
+  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcRestart svcRestart allowAll allowAll st1 with
   | .error err => IO.println s!"service restart error: {reprStr err}"
   | .ok (_, stRestarted) =>
       IO.println s!"service restart status: {reprStr <| (SeLe4n.Model.lookupService stRestarted svcRestart).map ServiceGraphEntry.status}"
@@ -186,11 +186,11 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"service stop illegal-state branch: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected service stop success from stopped state"
-  match SeLe4n.Kernel.serviceRestart svcRestart denyAll allowAll st1 with
+  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcRestart svcRestart denyAll allowAll st1 with
   | .error err => IO.println s!"service restart stop-stage failure: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected service restart success when stop policy denies"
-  match SeLe4n.Kernel.serviceRestart svcRestartBroken allowAll allowAll st1 with
+  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcRestartBroken svcRestartBroken allowAll allowAll st1 with
   | .error err => IO.println s!"service restart start-stage failure: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected service restart success with broken dependencies"
@@ -238,10 +238,10 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
         else if oid = 31 then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
         else st1.objects oid
     }
-  match SeLe4n.Kernel.endpointSend demoEndpoint 4 stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 4 stMultiEndpoint with
   | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSend 31 5 stEp1 with
+      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext 31 5 stEp1 with
       | .error err => IO.println s!"multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceive demoEndpoint stEp2 with
@@ -343,10 +343,10 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
       IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects 12).map KernelObject.objectType}"
-  match SeLe4n.Kernel.cspaceMint rootSlot mintedSlot [.read] none st1 with
+  match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot [.read] none st1 with
   | .error err => IO.println s!"cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
-      match SeLe4n.Kernel.cspaceMint rootSlot siblingSlot [.read] none st2 with
+      match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot siblingSlot [.read] none st2 with
       | .error err => IO.println s!"sibling mint error: {reprStr err}"
       | .ok (_, st3) =>
           IO.println "created sibling cap with the same target"
@@ -375,17 +375,17 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
               | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
               | .ok (cap, _) =>
                   IO.println s!"unexpected cap after delete: {reprStr cap}"
-              match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
+              match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 12 st5 with
                   | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSend demoEndpoint 1 st6 with
+                      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 st6 with
                       | .error err => IO.println s!"endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "handshake send matched waiting receiver"
-                          match SeLe4n.Kernel.endpointSend demoEndpoint 1 st7 with
+                          match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 st7 with
                           | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
-                              match SeLe4n.Kernel.endpointSend demoEndpoint 2 st8 with
+                              match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 12 st8 with
                               | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
                               | .ok (_, st9) =>
                                   IO.println "queued two senders on endpoint"
@@ -412,7 +412,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
                                                   match SeLe4n.Kernel.notificationSignal demoNotification 123 st13 with
                                                   | .error err => IO.println s!"notification signal #2 error: {reprStr err}"
                                                   | .ok (_, st14) =>
-                                                      match SeLe4n.Kernel.notificationWait demoNotification 2 st14 with
+                                                      match SeLe4n.Kernel.notificationWait demoNotification 12 st14 with
                                                       | .error err => IO.println s!"notification wait #2 error: {reprStr err}"
                                                       | .ok (badge2, _) =>
                                                           IO.println s!"notification wait #2 result: {reprStr badge2}"

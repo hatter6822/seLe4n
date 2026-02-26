@@ -204,3 +204,9 @@ in [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
+### 9.1 Current hardening defaults
+
+- IPC TCB-state writes are fail-closed: operations that depend on `storeTcbIpcState` must return `.objectNotFound` when the addressed thread is absent.
+- The model keeps both checked and unchecked operation families for research modularity, but executable harnesses use checked wrappers by default to make IFC enforcement explicit at call-sites.
+- Sentinel (`0`) thread IDs are rejected at IPC thread-state update boundaries by requiring TCB resolution before mutation.
