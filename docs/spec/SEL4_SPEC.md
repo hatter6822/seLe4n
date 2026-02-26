@@ -203,6 +203,9 @@ between sender and receiver through **Endpoint** objects acting as rendezvous po
   `seL4_NBSend`).
 - If no sender is waiting, the receiver blocks.
 - The kernel never buffers IPC data internally.
+- Model hardening rule: endpoint/notification queue transitions must fail if the
+  referenced thread TCB does not exist; queue updates are never committed without
+  a matching TCB IPC-state transition.
 
 ### 5.2 IPC Message Format
 

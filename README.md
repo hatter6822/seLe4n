@@ -80,6 +80,16 @@ Primary references:
 - [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 - [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](docs/audits/AUDIT_CODEBASE_v0.11.6.md)
 
+
+## Recent hardening notes
+
+- IPC/notification thread-state writes are now strict: `storeTcbIpcState` returns
+  `objectNotFound` when the target TCB is absent (including reserved/sentinel thread IDs),
+  preventing queue entries without corresponding TCB transitions.
+- Main trace and probe harnesses now exercise IFC-gated wrappers
+  (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default,
+  while unchecked primitives remain available for research slices.
+
 ## Completed workstreams (WS-D, historical)
 
 - **WS-D1..WS-D4:** all completed. WS-D5/D6 items absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).

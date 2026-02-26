@@ -194,11 +194,13 @@ private theorem storeTcbIpcState_preserves_projection
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold storeTcbIpcState at hStep
+  have hNotReserved : tid.isReserved = false := by
+    cases hTidRes : tid.isReserved <;> simp [hTidRes] at hStep ⊢
   cases hLookup : lookupTcb st tid with
   | none =>
-    simp [hLookup] at hStep; subst hStep; rfl
+    simp [hNotReserved, hLookup] at hStep
   | some tcb =>
-    simp only [hLookup] at hStep
+    simp only [hNotReserved, hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
