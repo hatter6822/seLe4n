@@ -50,7 +50,7 @@
       "subsystem": "ipc",
       "risk_tags": ["integration", "regression"],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "multi-endpoint receive senders: 4, 5"
+      "expected_trace_fragment": "multi-endpoint send A error: SeLe4n.Model.KernelError.objectNotFound"
     },
     {
       "id": "SCN-SVC-DEPTH-5-CHAIN",

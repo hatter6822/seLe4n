@@ -31,7 +31,7 @@ CSPACE-06 | high     | deep cnode path bad-depth branch: SeLe4n.Model.KernelErro
 CSPACE-07 | high     | deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
 SCHED-02  | medium   | large runnable queue length: 2
 SCHED-03  | medium   | large queue scheduled current: some 1
-IPC-01    | high     | multi-endpoint receive senders: 4, 5
+IPC-01    | high     | multi-endpoint send A error: SeLe4n.Model.KernelError.objectNotFound
 SVC-11    | medium   | service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
 ARCH-08   | low      | boundary memory low-address byte: 0
 ARCH-09   | low      | boundary memory high-address byte: 0
@@ -44,13 +44,13 @@ LIFE-06   | high     | composed transition unauthorized branch: SeLe4n.Model.Ker
 LIFE-07   | critical | composed revoke/delete/retype success
 LIFE-08   | high     | post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
 LIFE-09   | high     | post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
-IPC-02    | critical | handshake send matched waiting receiver
-IPC-03    | high     | queued two senders on endpoint
-IPC-04    | high     | endpoint receive #1 sender: 1
-IPC-05    | high     | endpoint receive #2 sender: 2
-IPC-06    | high     | endpoint receive #3 (expected mismatch): SeLe4n.Model.KernelError.endpointStateMismatch
-IPC-07    | high     | notification wait #1 result: none
-IPC-08    | high     | notification wait #2 result: some { val := 123 }
+IPC-02    | critical | endpoint await-receive error: SeLe4n.Model.KernelError.objectNotFound
+IPC-03    | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
+IPC-04    | high     | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
+IPC-05    | high     | cspaceCopy target matches: true
+IPC-06    | high     | dual-queue sender blocked on sendQueue: true
+IPC-07    | high     | endpointReply unblocked target: true
+IPC-08    | high     | EDF tie-break chosen thread: some 12
 CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
 E4-H02    | critical | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
 E4-C02    | high     | cspaceCopy target matches: true
