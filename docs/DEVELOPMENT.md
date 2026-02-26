@@ -69,6 +69,12 @@ Every milestone-moving PR should include:
 
 ---
 
+## 3.1 Security hardening defaults
+
+- IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
+- `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
+- Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
+
 ## 4) Daily contributor loop
 
 1. Sync branch and choose one coherent WS-E slice (prefer next priority in the active plan, starting with current phase targets).
