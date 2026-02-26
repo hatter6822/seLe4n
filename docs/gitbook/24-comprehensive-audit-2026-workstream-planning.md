@@ -59,7 +59,7 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. All works
 
 **WS-E6 — Model completeness and documentation** has been completed. All 10 findings resolved:
 
-- **M-03:** Fixed-priority + FIFO tie-breaking semantics documented on `chooseThread` with seL4 comparison (256 priority levels + round-robin vs unbounded Nat + FIFO).
+- **M-03:** Fixed-priority + EDF (Earliest Deadline First) tie-breaking — `TCB.deadline` field, `edfBetterThan` comparator, three-level selection (priority > deadline > FIFO position) in `chooseBestRunnable` and `chooseBestRunnableInDomain`; seL4 comparison documented; three EDF trace scenarios.
 - **M-04:** Time-slice preemption model — `TCB.timeSlice` field (default 5), `tickPreempt` operation decrements time-slice and reschedules on exhaustion via `handleYield`.
 - **M-05:** Domain scheduling — `SchedulerState` extended with `activeDomain`, `domainTicks`, `domainSchedule`, `domainScheduleIndex`; `chooseBestRunnableInDomain`, `chooseThreadInDomain`, `advanceDomainSchedule` operations; `timerTick` combines domain advancement and preemption.
 - **M-08:** Architecture assumptions connected to proofs — `runtimeContractSatisfiesAssumptions`, `bootContractSatisfiesAssumptions` predicates; `assumption_coverage_complete`, `assumption_contract_transition_chain_closed` theorems; 5-part chain closure documentation.

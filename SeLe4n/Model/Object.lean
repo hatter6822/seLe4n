@@ -82,12 +82,20 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
-/-- WS-E6/M-04: Thread Control Block.
+/-- WS-E6/M-03+M-04: Thread Control Block.
 
 `timeSlice` models the remaining time quanta before preemption. When `timeSlice`
 reaches 0, the scheduler should preempt the thread (see `tickPreempt` in
 `Scheduler/Operations.lean`). The default value of 5 models seL4's configurable
-time-slice length. A value of 0 means the thread's quantum is exhausted. -/
+time-slice length. A value of 0 means the thread's quantum is exhausted.
+
+`deadline` supports EDF (Earliest Deadline First) tie-breaking within the
+fixed-priority scheduler. When two threads have the same priority, the one with
+the earlier (smaller) deadline is scheduled first. A value of `none` means the
+thread has no deadline and is treated as having an infinite deadline (scheduled
+after all same-priority threads that do have deadlines). This models mixed
+real-time workloads where some threads are deadline-sensitive and others are
+best-effort within their priority band. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -96,7 +104,8 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
-  timeSlice : Nat := 5   -- WS-E6/M-04: remaining time quanta before preemption
+  timeSlice : Nat := 5      -- WS-E6/M-04: remaining time quanta before preemption
+  deadline : Option Nat := none  -- WS-E6/M-03: EDF tie-breaking deadline
   deriving Repr, DecidableEq
 
 inductive EndpointState where

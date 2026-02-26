@@ -480,7 +480,7 @@ private def runWsE4Trace (st1 : SystemState) : IO Unit := do
 -- WS-E6: Model completeness and documentation trace scenarios
 -- ============================================================================
 
-/-- WS-E6 test: time-slice preemption, domain scheduling -/
+/-- WS-E6 test: time-slice preemption, domain scheduling, EDF tie-breaking -/
 private def runWsE6Trace (st1 : SystemState) : IO Unit := do
   -- M-04: Test time-slice tick with no current thread (no-op)
   match SeLe4n.Kernel.tickPreempt 5 st1 with
@@ -503,6 +503,53 @@ private def runWsE6Trace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"domain thread selection error: {reprStr err}"
   | .ok (tid, _) =>
       IO.println s!"domain thread selection: {reprStr (tid.map SeLe4n.ThreadId.toNat)}"
+  -- M-03: EDF tie-breaking — build state with 3 same-priority threads
+  -- Thread 501: priority 50, deadline 100 (earliest)
+  -- Thread 502: priority 50, deadline 200 (later)
+  -- Thread 503: priority 50, no deadline (infinite — scheduled last)
+  let tcb501 : TCB := ⟨501, 50, 0, 10, 20, 0, .ready, 5, some 100⟩
+  let tcb502 : TCB := ⟨502, 50, 0, 10, 20, 0, .ready, 5, some 200⟩
+  let tcb503 : TCB := ⟨503, 50, 0, 10, 20, 0, .ready, 5, none⟩
+  let edfObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (501 : SeLe4n.ObjId) then some (.tcb tcb501)
+    else if oid = (502 : SeLe4n.ObjId) then some (.tcb tcb502)
+    else if oid = (503 : SeLe4n.ObjId) then some (.tcb tcb503)
+    else none
+  let edfSched : SchedulerState := ⟨[503, 502, 501], none, 0, 5, [(0, 5)], 0⟩
+  let edfSt : SystemState :=
+    { (default : SystemState) with objects := edfObjects, scheduler := edfSched, objectIndex := [501, 502, 503] }
+  -- EDF should pick thread 501 (earliest deadline 100) despite being last in list
+  match SeLe4n.Kernel.chooseThread edfSt with
+  | .error _ => IO.println "edf tie-break error"
+  | .ok (tid, _) =>
+      IO.println s!"edf earliest-deadline wins: {reprStr (tid.map SeLe4n.ThreadId.toNat)}"
+  -- EDF: deadline beats no-deadline at same priority
+  -- Build state with thread 502 (deadline 200) and 503 (no deadline)
+  let edfObjects2 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (502 : SeLe4n.ObjId) then some (.tcb tcb502)
+    else if oid = (503 : SeLe4n.ObjId) then some (.tcb tcb503)
+    else none
+  let edfSched2 : SchedulerState := ⟨[503, 502], none, 0, 5, [(0, 5)], 0⟩
+  let edfSt2 : SystemState :=
+    { (default : SystemState) with objects := edfObjects2, scheduler := edfSched2, objectIndex := [502, 503] }
+  match SeLe4n.Kernel.chooseThread edfSt2 with
+  | .error _ => IO.println "edf deadline-beats-none error"
+  | .ok (tid, _) =>
+      IO.println s!"edf deadline-beats-none: {reprStr (tid.map SeLe4n.ThreadId.toNat)}"
+  -- EDF: higher priority always wins regardless of deadline
+  let tcb501hi : TCB := ⟨501, 50, 0, 10, 20, 0, .ready, 5, some 10⟩
+  let tcb502hi : TCB := ⟨502, 100, 0, 10, 20, 0, .ready, 5, some 9999⟩
+  let edfObjects3 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (501 : SeLe4n.ObjId) then some (.tcb tcb501hi)
+    else if oid = (502 : SeLe4n.ObjId) then some (.tcb tcb502hi)
+    else none
+  let edfSched3 : SchedulerState := ⟨[501, 502], none, 0, 5, [(0, 5)], 0⟩
+  let edfSt3 : SystemState :=
+    { (default : SystemState) with objects := edfObjects3, scheduler := edfSched3, objectIndex := [501, 502] }
+  match SeLe4n.Kernel.chooseThread edfSt3 with
+  | .error _ => IO.println "edf priority-over-deadline error"
+  | .ok (tid, _) =>
+      IO.println s!"edf priority-over-deadline: {reprStr (tid.map SeLe4n.ThreadId.toNat)}"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds

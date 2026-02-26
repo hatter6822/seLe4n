@@ -60,6 +60,9 @@ E6-M04a   | medium   | tick preempt no-current: false
 E6-M04b   | medium   | tick preempt active-thread: false
 E6-M05a   | medium   | domain schedule advance: false
 E6-M05b   | medium   | domain thread selection: some 1
+E6-M03a   | high     | edf earliest-deadline wins: some 501
+E6-M03b   | high     | edf deadline-beats-none: some 502
+E6-M03c   | high     | edf priority-over-deadline: some 502
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

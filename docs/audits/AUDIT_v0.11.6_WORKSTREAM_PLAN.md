@@ -298,10 +298,13 @@ WS-E4 (CDT integration for capability flow proofs).
 
 **Scope:**
 
-1. ~~M-03~~ Implement fixed-priority + FIFO tie-breaking semantics and document
-   the difference from seL4 round-robin — **DONE** (extensive docstring on
-   `chooseThread` documenting FIFO tie-breaking, seL4 comparison with 256
-   priority levels + round-robin vs unbounded Nat + FIFO, determinism guarantee).
+1. ~~M-03~~ Implement fixed-priority + EDF tie-breaking semantics and document
+   the difference from seL4 round-robin — **DONE** (`TCB.deadline` field added;
+   `edfBetterThan` comparator; `chooseBestRunnable` and
+   `chooseBestRunnableInDomain` use three-level tie-breaking:
+   priority > EDF deadline > FIFO position. Extensive docstring on
+   `chooseThread` documenting EDF semantics, seL4 comparison, and determinism
+   guarantee. Three EDF trace scenarios in harness).
 2. ~~M-04~~ Model time-slice decrement and tick-based preemption using
    `TCB.timeSlice` and `MachineState.timer` — **DONE** (`TCB.timeSlice`
    field added with default 5; `tickPreempt` operation decrements time-slice

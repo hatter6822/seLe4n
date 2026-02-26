@@ -31,7 +31,7 @@ for consumers (executable harness, proof clients, test infrastructure).
 
 | Category | Operations | Stability |
 |---|---|---|
-| **Scheduler** | `schedule`, `handleYield`, `chooseThread`, `tickPreempt`, `timerTick` | Stable |
+| **Scheduler** | `schedule`, `handleYield`, `chooseThread` (EDF tie-breaking), `chooseThreadInDomain`, `tickPreempt`, `timerTick`, `advanceDomainSchedule` | Stable |
 | **Capability** | `cspaceLookupSlot`, `cspaceLookupPath`, `cspaceInsertSlot`, `cspaceMint`, `cspaceCopy`, `cspaceDeleteSlot`, `cspaceRevoke` | Stable |
 | **IPC** | `endpointSend`, `endpointReceive`, `endpointAwaitReceive`, `endpointReply`, `endpointSendDual`, `notificationSignal`, `notificationWait` | Stable |
 | **Lifecycle** | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Stable |

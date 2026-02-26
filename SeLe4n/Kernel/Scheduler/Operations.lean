@@ -4,10 +4,22 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- WS-E6/M-03: EDF tie-breaking comparison.
+
+Returns `true` when `candidate` should replace `incumbent` at the same priority
+level. A thread with a concrete deadline beats one without (`none` = infinite).
+Among two concrete deadlines, the earlier (smaller) one wins. When both are
+`none`, the incumbent keeps its position (FIFO fallback). -/
+private def edfBetterThan (candidate : Option Nat) (incumbent : Option Nat) : Bool :=
+  match candidate, incumbent with
+  | some cd, some id => cd < id    -- earlier deadline wins
+  | some _,  none    => true       -- concrete deadline beats no-deadline
+  | none,    _       => false      -- no-deadline never preempts
+
 private def chooseBestRunnable
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × Option Nat)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × Option Nat)) :=
   match runnable with
   | [] => .ok best
   | tid :: rest =>
@@ -15,9 +27,17 @@ private def chooseBestRunnable
       | some (.tcb tcb) =>
           let best' :=
             match best with
-            | none => some (tid, tcb.priority)
-            | some (_, bestPrio) =>
-                if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+            | none => some (tid, tcb.priority, tcb.deadline)
+            | some (_, bestPrio, bestDeadline) =>
+                if bestPrio.toNat < tcb.priority.toNat then
+                  -- Strictly higher priority: always replace
+                  some (tid, tcb.priority, tcb.deadline)
+                else if bestPrio.toNat = tcb.priority.toNat then
+                  -- Same priority: EDF tie-breaking
+                  if edfBetterThan tcb.deadline bestDeadline then
+                    some (tid, tcb.priority, tcb.deadline)
+                  else best
+                else best
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
@@ -34,33 +54,47 @@ private def rotateCurrentToBack
 
 /-- WS-E6/M-03: Choose the highest-priority runnable thread.
 
-**Fixed-priority scheduling with FIFO tie-breaking (M-03):**
+**Fixed-priority scheduling with EDF tie-breaking (M-03):**
 
-This scheduler uses fixed-priority preemptive scheduling. Each thread has a
-static `Priority` value; the thread with the highest numeric priority is
-selected. Tie-breaking is **FIFO (first-in-first-out)**: when multiple threads
-share the highest priority, the thread that appears first in `runnable` order
-wins. This is deterministic and position-stable.
+This scheduler uses fixed-priority preemptive scheduling with Earliest Deadline
+First (EDF) tie-breaking. Each thread has a static `Priority` value; the thread
+with the highest numeric priority is selected. When multiple threads share the
+highest priority, **EDF tie-breaking** resolves the winner:
+
+1. A thread with a concrete `deadline` (`.some d`) beats a thread without one
+   (`.none`, treated as infinite deadline).
+2. Among threads with concrete deadlines, the earlier (smaller) deadline wins.
+3. When both threads have no deadline (`.none`), FIFO position in the `runnable`
+   list breaks the tie (left-biased fold preserves insertion order).
+
+This three-level scheme (priority > deadline > FIFO) supports mixed real-time
+workloads: deadline-sensitive threads within the same priority band are scheduled
+by urgency, while best-effort threads (no deadline) yield to deadline-bearing
+peers.
 
 **Comparison with seL4:**
 - seL4 uses 256 priority levels with **round-robin** within each level.
   Same-priority threads rotate after consuming their time slice.
-- This model uses unbounded `Nat` priorities with FIFO tie-breaking rather
+- This model uses unbounded `Nat` priorities with **EDF tie-breaking** rather
   than round-robin. The `handleYield` operation rotates the current thread
-  to the back of the queue, approximating round-robin at the API level.
+  to the back of the queue, approximating round-robin at the API level for
+  threads with no deadline.
 - seL4 distinguishes MCP (maximum controlled priority) from current priority;
   this model uses a single `Priority` field.
+- seL4 does not natively support EDF; this is a model-level extension that
+  enhances the scheduling semantics for mixed-criticality reasoning.
 
 **Determinism guarantee:** `chooseBestRunnable` is a pure fold over the
-`runnable` list. The fold is left-biased: the first thread to achieve the
-maximum priority wins. Since `runnable` is a `List` (ordered), the tie-breaking
-order is fully determined by the list position. -/
+`runnable` list. The fold compares priority first, then deadline (via
+`edfBetterThan`), then falls back to FIFO order. Since `runnable` is a `List`
+(ordered) and all comparisons are total, the tie-breaking order is fully
+determined. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match chooseBestRunnable st.objects st.scheduler.runnable none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- Scheduler step for the bootstrap model.
 
@@ -144,7 +178,7 @@ private def chooseBestRunnableInDomain
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
     (activeDomain : SeLe4n.DomainId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × Option Nat)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × Option Nat)) :=
   match runnable with
   | [] => .ok best
   | tid :: rest =>
@@ -153,9 +187,15 @@ private def chooseBestRunnableInDomain
           let best' :=
             if tcb.domain = activeDomain then
               match best with
-              | none => some (tid, tcb.priority)
-              | some (_, bestPrio) =>
-                  if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+              | none => some (tid, tcb.priority, tcb.deadline)
+              | some (_, bestPrio, bestDeadline) =>
+                  if bestPrio.toNat < tcb.priority.toNat then
+                    some (tid, tcb.priority, tcb.deadline)
+                  else if bestPrio.toNat = tcb.priority.toNat then
+                    if edfBetterThan tcb.deadline bestDeadline then
+                      some (tid, tcb.priority, tcb.deadline)
+                    else best
+                  else best
             else
               best
           chooseBestRunnableInDomain objects rest activeDomain best'
@@ -171,7 +211,7 @@ def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
     match chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- WS-E6/M-05: Advance the domain schedule by one tick.
 
