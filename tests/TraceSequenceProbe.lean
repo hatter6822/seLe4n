@@ -12,16 +12,17 @@ inductive ProbeOp where
   deriving Repr
 
 def probeEndpointId : SeLe4n.ObjId := 300
+def probeThreadCount : Nat := 8
 
 def probeThreadIds : List SeLe4n.ObjId :=
-  List.range 8 |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
+  List.range probeThreadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
 
 def probeBaseState : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
       if oid = probeEndpointId then
         some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ 8 then
+      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ probeThreadCount then
         some (.tcb { tid := SeLe4n.ThreadId.ofNat oid.toNat
                    , priority := 0
                    , domain := default
@@ -43,7 +44,7 @@ def pickOp (x : Nat) : ProbeOp :=
   | _ => .receive
 
 def pickThreadId (x : Nat) : SeLe4n.ThreadId :=
-  SeLe4n.ThreadId.ofNat ((x % 8) + 1)
+  SeLe4n.ThreadId.ofNat ((x % probeThreadCount) + 1)
 
 def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   match ep.state, ep.queue.isEmpty, ep.waitingReceiver.isSome with
