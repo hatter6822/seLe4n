@@ -57,6 +57,12 @@ Use the planning phases from the workstream backbone:
 - **WS-D1..WS-D4:** completed. WS-D5/D6 absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 - **WS-C1..WS-C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
+## 3.5 Security defaults and explicit unsafe surfaces
+
+- `storeTcbIpcState` is strict: missing target TCBs now return `objectNotFound`.
+- `lookupTcb` rejects reserved sentinel IDs (`ThreadId = 0`) at the boundary.
+- Harness/integration traces should prefer `endpointSendChecked`, `cspaceMintChecked`, and `serviceRestartChecked` (typically with an explicit labeling context). Unchecked primitives remain for explicit boundary modeling.
+
 ### 3.4 PR-to-workstream discipline
 
 Every milestone-moving PR should include:

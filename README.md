@@ -65,6 +65,12 @@ Additional resources:
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 
+## Security hardening defaults
+
+- IPC/notification thread-state writes are now **strict**: `storeTcbIpcState` returns `objectNotFound` when the target TCB does not exist, rather than silently succeeding.
+- `lookupTcb` now rejects reserved sentinel thread IDs (`ThreadId = 0`) at the lookup boundary.
+- The executable trace harness now exercises information-flow policy-checked entrypoints (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default using `defaultLabelingContext`; unchecked operations remain available for proof/research slices.
+
 ## Active workstreams (WS-E)
 
 Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.

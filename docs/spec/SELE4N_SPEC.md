@@ -83,6 +83,12 @@ on the semantic and proof foundations of the previous one.
 
 ---
 
+## 3.5 Security semantics clarifications
+
+1. IPC/notification TCB-state stores are strict: `storeTcbIpcState` returns `objectNotFound` when the target TCB is absent.
+2. Reserved sentinel thread IDs (`ThreadId = 0`) are rejected by `lookupTcb`.
+3. Information-flow checked wrappers are the default executable integration surface; unchecked operations remain available as explicit low-level semantics.
+
 ## 4. Active Workstream Portfolio (WS-E)
 
 The WS-E portfolio addresses 32 findings from the v0.11.6 codebase audit

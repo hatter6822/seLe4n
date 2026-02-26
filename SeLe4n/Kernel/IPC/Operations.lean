@@ -23,13 +23,16 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     | _ => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
-  match st.objects tid.toObjId with
-  | some (.tcb tcb) => some tcb
-  | _ => none
+  if tid.isReserved then
+    none
+  else
+    match st.objects tid.toObjId with
+    | some (.tcb tcb) => some tcb
+    | _ => none
 
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
   match lookupTcb st tid with
-  | none => .ok st
+  | none => .error .objectNotFound
   | some tcb =>
       match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
       | .error e => .error e
@@ -216,7 +219,6 @@ theorem storeTcbIpcState_preserves_objects_ne
   cases hTcb : lookupTcb st tid with
   | none =>
     simp [hTcb] at hStep
-    subst hStep; rfl
   | some tcb =>
     simp only [hTcb] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -244,8 +246,6 @@ theorem storeTcbIpcState_preserves_notification
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hNtfn]
     simp [hLookup] at hStep
-    subst hStep
-    exact hNtfn
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hStep]
     exact hNtfn
 
@@ -277,7 +277,6 @@ theorem storeTcbIpcState_scheduler_eq
   cases hTcb : lookupTcb st tid with
   | none =>
     simp [hTcb] at hStep
-    subst hStep; rfl
   | some tcb =>
     simp only [hTcb] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -304,8 +303,6 @@ theorem storeTcbIpcState_preserves_endpoint
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hEp]
     simp [hLookup] at hStep
-    subst hStep
-    exact hEp
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hStep]
     exact hEp
 
@@ -325,8 +322,6 @@ theorem storeTcbIpcState_preserves_cnode
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hCn]
     simp [hLookup] at hStep
-    subst hStep
-    exact hCn
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hStep]
     exact hCn
 
@@ -346,8 +341,6 @@ theorem storeTcbIpcState_preserves_vspaceRoot
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hVs]
     simp [hLookup] at hStep
-    subst hStep
-    exact hVs
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep]
     exact hVs
 
@@ -367,7 +360,7 @@ theorem storeTcbIpcState_cnode_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      simp [hLookup] at hStep; subst hStep; exact hCn
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -393,7 +386,7 @@ theorem storeTcbIpcState_endpoint_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      simp [hLookup] at hStep; subst hStep; exact hEp
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -419,7 +412,7 @@ theorem storeTcbIpcState_notification_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      simp [hLookup] at hStep; subst hStep; exact hNtfn
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -650,8 +643,7 @@ theorem storeTcbIpcState_ipcState_eq
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
-    simp [hLookup] at hStep; subst hStep
-    unfold lookupTcb at hLookup; simp [hTcb] at hLookup
+    simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc }) st with
@@ -690,7 +682,14 @@ theorem storeTcbIpcState_tcb_exists_at_target
     ∃ tcb', st'.objects tid.toObjId = some (.tcb tcb') := by
   rcases hTcb with ⟨tcb, hObj⟩
   unfold storeTcbIpcState at hStep
-  have hLookup : lookupTcb st tid = some tcb := by unfold lookupTcb; simp [hObj]
+  have hNotReserved : tid.isReserved = false := by
+    by_cases hRes : tid.isReserved = true
+    · unfold lookupTcb at hStep
+      simp [hRes] at hStep
+    · simp [hRes]
+  have hLookup : lookupTcb st tid = some tcb := by
+    unfold lookupTcb
+    simp [hNotReserved, hObj]
   simp only [hLookup] at hStep
   cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
   | error e => simp [hStore] at hStep
