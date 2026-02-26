@@ -33,6 +33,39 @@ structure DomainScheduleEntry where
   length : Nat
   deriving Repr, DecidableEq
 
+/-- FIFO queue record represented as `{head, tail}`.
+
+`head` stores dequeue-facing items in-order; `tail` stores newly enqueued items
+in reverse order so `enqueueTail` is O(1), while `dequeueHead` is amortized O(1). -/
+structure SchedulerQueue (α : Type) where
+  head : List α := []
+  tail : List α := []
+  deriving Repr, DecidableEq
+
+namespace SchedulerQueue
+
+def empty : SchedulerQueue α := { head := [], tail := [] }
+
+def ofList (xs : List α) : SchedulerQueue α := { head := xs, tail := [] }
+
+def toList (q : SchedulerQueue α) : List α :=
+  q.head ++ q.tail.reverse
+
+/-- O(1): add one item to queue tail. -/
+def enqueueTail (q : SchedulerQueue α) (x : α) : SchedulerQueue α :=
+  { q with tail := x :: q.tail }
+
+/-- O(1) amortized: remove one item from queue head. -/
+def dequeueHead (q : SchedulerQueue α) : Option (α × SchedulerQueue α) :=
+  match q.head with
+  | x :: xs => some (x, { head := xs, tail := q.tail })
+  | [] =>
+      match q.tail.reverse with
+      | [] => none
+      | x :: xs => some (x, { head := xs, tail := [] })
+
+end SchedulerQueue
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId

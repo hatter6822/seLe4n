@@ -115,6 +115,9 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
    - Current canonical trace helper names for these slices:
      - `runCapabilityIpcTrace`
      - `runSchedulerTimingDomainTrace`
+   - Scheduler FIFO helpers:
+     - `SchedulerQueue.enqueueTail` / `SchedulerQueue.dequeueHead`
+     - `enqueueTailRunnable` / `dequeueHeadRunnable`
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
 6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core

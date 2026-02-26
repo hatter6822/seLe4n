@@ -99,6 +99,25 @@ private def chooseBestRunnable
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
+/-- Scheduler runnable-list enqueue primitive.
+
+This uses the new `{head, tail}` queue record and exposes deterministic FIFO
+queue semantics while preserving the legacy runnable-list representation in
+`SchedulerState`. -/
+def enqueueTailRunnable
+    (runnable : List SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId) : List SeLe4n.ThreadId :=
+  (SchedulerQueue.enqueueTail (SchedulerQueue.ofList runnable) tid).toList
+
+/-- Scheduler runnable-list dequeue primitive.
+
+Returns `(head, rest)` when non-empty, otherwise `none`. -/
+def dequeueHeadRunnable
+    (runnable : List SeLe4n.ThreadId) : Option (SeLe4n.ThreadId × List SeLe4n.ThreadId) :=
+  match SchedulerQueue.dequeueHead (SchedulerQueue.ofList runnable) with
+  | none => none
+  | some (tid, q') => some (tid, q'.toList)
+
 private def rotateCurrentToBack
     (current : Option SeLe4n.ThreadId)
     (runnable : List SeLe4n.ThreadId) : Except KernelError (List SeLe4n.ThreadId) :=
@@ -106,7 +125,7 @@ private def rotateCurrentToBack
   | none => .ok runnable
   | some tid =>
       if tid ∈ runnable then
-        .ok (runnable.erase tid ++ [tid])
+        .ok (enqueueTailRunnable (runnable.erase tid) tid)
       else
         .error .schedulerInvariantViolation
 

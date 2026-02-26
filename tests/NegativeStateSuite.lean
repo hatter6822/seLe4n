@@ -298,6 +298,21 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"yield current thread expected tid 8, got {reprStr stYielded.scheduler.current}"
 
+  let qEnqueued := SeLe4n.Kernel.enqueueTailRunnable [7, 8] (SeLe4n.ThreadId.ofNat 9)
+  if qEnqueued = [SeLe4n.ThreadId.ofNat 7, SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 9] then
+    IO.println "positive check passed [scheduler enqueue_tail]: [7,8,9]"
+  else
+    throw <| IO.userError s!"scheduler enqueue_tail expected [7,8,9], got {reprStr qEnqueued}"
+
+  match SeLe4n.Kernel.dequeueHeadRunnable qEnqueued with
+  | some (headTid, qRest) =>
+      if headTid = SeLe4n.ThreadId.ofNat 7 ∧ qRest = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 9] then
+        IO.println "positive check passed [scheduler dequeue_head]: head=7 rest=[8,9]"
+      else
+        throw <| IO.userError s!"scheduler dequeue_head mismatch head={reprStr headTid} rest={reprStr qRest}"
+  | none =>
+      throw <| IO.userError "scheduler dequeue_head unexpectedly returned none"
+
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
