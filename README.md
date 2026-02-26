@@ -65,6 +65,12 @@ Additional resources:
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 
+## Security-default operational notes
+
+- IPC/notification thread-state stores are **strict**: `storeTcbIpcState` now returns `objectNotFound` when the target TCB is missing (including sentinel thread ID 0), instead of silently succeeding.
+- `ThreadId.toObjIdChecked` is now used at IPC TCB lookup/scheduler boundaries (`lookupTcb`, `ensureRunnable`, `storeTcbIpcState`) so reserved sentinel IDs are rejected centrally.
+- Trace harnesses prefer policy-gated operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) with `defaultLabelingContext` to make enforcement-on-default behavior explicit for consumers.
+
 ## Active workstreams (WS-E)
 
 Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.

@@ -24,7 +24,9 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 3. local + composed invariant layering,
 4. theorem discoverability through stable naming,
 5. fixture-backed executable evidence (`Main.lean` + trace fixture),
-6. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
+6. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
+7. strict thread-ID handling for IPC writes: missing/sentinel TCB targets must fail (no silent `storeTcbIpcState` success),
+8. default-to-checked IFC wrappers in executable harness paths unless the scenario explicitly targets unchecked semantics.
 
 ---
 

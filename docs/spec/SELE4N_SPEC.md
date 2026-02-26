@@ -36,6 +36,14 @@ in one engineering loop:
 The project reduces a common systems-assurance failure mode: drift between code, proof
 claims, and planning artifacts.
 
+### 1.1 Security-default execution semantics
+
+The executable model adopts the following defaults for security-relevant transitions:
+
+- IPC/notification thread-state writes are strict: missing or sentinel thread IDs must fail with explicit errors (no silent success).
+- Sentinel ID 0 remains reserved at operational boundaries and is rejected by checked ID handling in thread lookup/write paths.
+- Harness-facing flows should default to policy-gated operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) unless a scenario intentionally targets unchecked semantics.
+
 ---
 
 ## 2. Current State Snapshot
