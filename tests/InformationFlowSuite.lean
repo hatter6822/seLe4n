@@ -294,6 +294,128 @@ private def runInformationFlowChecks : IO Unit := do
 
   IO.println "information-flow enforcement boundary checks passed [WS-D2 F-02]"
 
+  -- =========================================================================
+  -- WS-E5/H-04: Parameterized domain lattice checks (≥3 domains)
+  -- =========================================================================
+
+  -- 3-domain linear order: domain 0 → domain 1 → domain 2
+  let threeDomain := SeLe4n.Kernel.DomainFlowPolicy.linearOrder
+
+  expect "H-04 linear order: domain 0 flows to domain 1"
+    (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨0⟩ ⟨1⟩)
+
+  expect "H-04 linear order: domain 1 flows to domain 2"
+    (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨1⟩ ⟨2⟩)
+
+  expect "H-04 linear order: domain 0 flows to domain 2 (transitive)"
+    (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨0⟩ ⟨2⟩)
+
+  expect "H-04 linear order: domain 2 cannot flow to domain 0"
+    (!(SeLe4n.Kernel.domainFlowsTo threeDomain ⟨2⟩ ⟨0⟩))
+
+  expect "H-04 linear order: domain 2 cannot flow to domain 1"
+    (!(SeLe4n.Kernel.domainFlowsTo threeDomain ⟨2⟩ ⟨1⟩))
+
+  expect "H-04 linear order: self-flow (reflexive)"
+    (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨1⟩ ⟨1⟩)
+
+  -- Test allowAll policy
+  let allPolicy := SeLe4n.Kernel.DomainFlowPolicy.allowAll
+
+  expect "H-04 allowAll: any domain flows to any domain"
+    (SeLe4n.Kernel.domainFlowsTo allPolicy ⟨5⟩ ⟨0⟩ &&
+     SeLe4n.Kernel.domainFlowsTo allPolicy ⟨0⟩ ⟨99⟩)
+
+  -- Test legacy embedding preserves semantics
+  let embeddedPublic := SeLe4n.Kernel.embedLegacyLabel publicLabel
+  let embeddedSecret := SeLe4n.Kernel.embedLegacyLabel secretLabel
+
+  expect "H-04 legacy embedding: public maps to domain 0"
+    (embeddedPublic.id = 0)
+
+  expect "H-04 legacy embedding: kernelTrusted maps to domain 3"
+    (embeddedSecret.id = 3)
+
+  expect "H-04 legacy embedding: public→secret flow preserved under linearOrder"
+    (SeLe4n.Kernel.domainFlowsTo SeLe4n.Kernel.DomainFlowPolicy.linearOrder
+      embeddedPublic embeddedSecret)
+
+  expect "H-04 legacy embedding: secret→public flow denied under linearOrder"
+    (!(SeLe4n.Kernel.domainFlowsTo SeLe4n.Kernel.DomainFlowPolicy.linearOrder
+      embeddedSecret embeddedPublic))
+
+  -- Test GenericLabelingContext
+  let genericCtx : SeLe4n.Kernel.GenericLabelingContext := {
+    policy := SeLe4n.Kernel.DomainFlowPolicy.linearOrder
+    objectDomainOf := fun oid => if oid = 1 then ⟨0⟩ else ⟨2⟩
+    threadDomainOf := fun tid => if tid = 1 then ⟨0⟩ else ⟨1⟩
+    endpointDomainOf := fun _ => ⟨1⟩
+    serviceDomainOf := fun _ => ⟨0⟩
+  }
+
+  expect "H-04 generic context: thread 1 (domain 0) → endpoint (domain 1)"
+    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf 1) (genericCtx.endpointDomainOf 10))
+
+  expect "H-04 generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
+    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf 2) (genericCtx.endpointDomainOf 10))
+
+  expect "H-04 generic context: object 2 (domain 2) cannot flow to service (domain 0)"
+    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf 2) (genericCtx.serviceDomainOf 1)))
+
+  -- Test per-endpoint flow policy
+  let customEndpointPolicy : SeLe4n.Kernel.DomainFlowPolicy :=
+    { canFlow := fun src dst => src.id = dst.id }  -- same-domain only
+
+  let epPolicy : SeLe4n.Kernel.EndpointFlowPolicy :=
+    { endpointPolicy := fun eid => if eid = 10 then some customEndpointPolicy else none }
+
+  expect "H-04 per-endpoint: endpoint 10 has custom policy (same-domain only)"
+    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 10 ⟨1⟩ ⟨1⟩ &&
+     !(SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 10 ⟨0⟩ ⟨1⟩))
+
+  expect "H-04 per-endpoint: endpoint 20 falls back to global policy"
+    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 20 ⟨0⟩ ⟨1⟩)
+
+  IO.println "WS-E5/H-04 parameterized domain lattice checks passed"
+
+  -- =========================================================================
+  -- WS-E5/M-07: Enforcement boundary classification checks
+  -- =========================================================================
+
+  expect "M-07 enforcement boundary: 3 policy-gated operations defined"
+    ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
+      match c with | .policyGated _ => true | _ => false)).length == 3)
+
+  expect "M-07 enforcement boundary: capability-only operations defined"
+    ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
+      match c with | .capabilityOnly _ => true | _ => false)).length > 0)
+
+  expect "M-07 enforcement boundary: read-only operations defined"
+    ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
+      match c with | .readOnly _ => true | _ => false)).length > 0)
+
+  expect "M-07 enforcement boundary: total 17 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 17)
+
+  -- Verify enforcement boundary: denied flows produce errors
+  let deniedSendResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
+  expect "M-07: enforcement boundary blocks cross-domain endpointSend"
+    (match deniedSendResult with
+      | .error .flowDenied => true
+      | _ => false)
+
+  -- Verify that same-domain operations pass through unchecked
+  let allowedSendResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
+  expect "M-07: same-domain endpointSendChecked matches unchecked"
+    (match allowedSendResult, uncheckedSendResult with
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects 10 = s₂.objects 10
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  IO.println "WS-E5/M-07 enforcement boundary checks passed"
+  IO.println "all WS-E5 information-flow maturity checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=

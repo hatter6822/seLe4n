@@ -40,7 +40,7 @@ claims, and planning artifacts.
 
 ## 2. Current State Snapshot
 
-- **Current package version:** `0.11.11` (`lakefile.toml`)
+- **Current package version:** `0.11.12` (`lakefile.toml`)
 - **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - **Active execution baseline:** [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 - **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3, WS-E4 completed; WS-E5 through WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3, WS-E4, WS-E5 completed; WS-E6 planned.
 
 ---
 
@@ -104,7 +104,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.4 High — Security Assurance
 
-- **WS-E5:** Information-flow maturity (high; **planned** — H-04, H-05, M-07)
+- **WS-E5:** Information-flow maturity (high; **completed** — H-04, H-05, M-07)
 
 ### 4.5 Low — Model Completeness and Documentation
 
@@ -130,7 +130,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 - **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
 - **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
-- **Phase P4:** WS-E5 (information-flow maturity)
+- **Phase P4:** WS-E5 (information-flow maturity) — **completed**
 - **Phase P5:** WS-E6 (model completeness/docs)
 
 ---
