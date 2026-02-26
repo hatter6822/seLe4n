@@ -193,4 +193,142 @@ theorem endpointSendChecked_self_domain_allowed
   rw [hSameLabel]
   exact securityFlowsTo_refl _
 
+-- ============================================================================
+-- WS-E5/M-07: Enforcement boundary specification
+-- ============================================================================
+
+/-! ## M-07 — Enforcement Boundary Specification
+
+This section formally classifies all kernel operations into enforcement categories
+and proves that the three policy-checked wrappers are sufficient for the
+enforcement boundary.
+
+**Canonical classification (17 operations):**
+
+| Category | Operations |
+|---|---|
+| **Policy-gated** (3) | `endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked` |
+| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
+| **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
+| **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
+
+Policy-gated operations cross domain boundaries and carry explicit information-flow
+risk. Capability-only operations derive authority entirely from capability
+possession. Read-only operations produce no state mutation. Internal operations
+are building blocks used by the public API under capability-guarded contexts.
+
+The `*_denied_preserves_state` theorems prove that when a policy-gated operation
+denies a flow, no state change occurs. The `enforcement_sufficiency_*` theorems
+prove the complete disjunction: each checked operation either delegates to the
+unchecked version or returns `flowDenied`, covering all cases. -/
+
+/-- WS-E5/M-07: Classification of kernel operations for enforcement purposes. -/
+inductive EnforcementClass where
+  | policyGated (name : String)
+  | capabilityOnly (name : String)
+  | readOnly (name : String)
+  deriving Repr
+
+/-- WS-E5/M-07: Canonical enforcement boundary classification table (17 entries). -/
+def enforcementBoundary : List EnforcementClass :=
+  [ .policyGated "endpointSendChecked"
+  , .policyGated "cspaceMintChecked"
+  , .policyGated "serviceRestartChecked"
+  , .capabilityOnly "cspaceLookupSlot"
+  , .capabilityOnly "cspaceInsertSlot"
+  , .capabilityOnly "cspaceDeleteSlot"
+  , .capabilityOnly "cspaceRevoke"
+  , .capabilityOnly "cspaceCopy"
+  , .capabilityOnly "cspaceMove"
+  , .capabilityOnly "notificationSignal"
+  , .readOnly "chooseThread"
+  , .readOnly "lookupObject"
+  , .readOnly "lookupService"
+  , .readOnly "cspaceResolvePath"
+  , .capabilityOnly "lifecycleRetypeObject"
+  , .capabilityOnly "lifecycleRevokeDeleteRetype"
+  , .capabilityOnly "storeObject"
+  ]
+
+-- ============================================================================
+-- WS-E5/M-07: Denied-preserves-state theorems
+-- ============================================================================
+
+/-- When the policy denies flow, `endpointSendChecked` produces no state change. -/
+theorem endpointSendChecked_denied_preserves_state
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
+               (ctx.endpointLabelOf endpointId) = false) :
+    ¬∃ st', endpointSendChecked ctx endpointId sender st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [endpointSendChecked, hDeny] at h
+
+/-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
+theorem cspaceMintChecked_denied_preserves_state
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = false) :
+    ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [cspaceMintChecked, hDeny] at h
+
+/-- When the policy denies flow, `serviceRestartChecked` produces no state change. -/
+theorem serviceRestartChecked_denied_preserves_state
+    (ctx : LabelingContext) (orchestrator sid : ServiceId)
+    (policyAllowsStop policyAllowsStart : ServicePolicy)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.serviceLabelOf orchestrator)
+               (ctx.serviceLabelOf sid) = false) :
+    ¬∃ st', serviceRestartChecked ctx orchestrator sid
+              policyAllowsStop policyAllowsStart st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [serviceRestartChecked, hDeny] at h
+
+-- ============================================================================
+-- WS-E5/M-07: Enforcement sufficiency theorems (complete disjunction)
+-- ============================================================================
+
+/-- `endpointSendChecked` either delegates to unchecked or returns `flowDenied`. -/
+theorem enforcement_sufficiency_endpointSend
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (st : SystemState) :
+    (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true ∧
+       endpointSendChecked ctx endpointId sender st = endpointSend endpointId sender st) ∨
+    (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = false ∧
+       endpointSendChecked ctx endpointId sender st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
+  | true => left; exact ⟨rfl, by simp [endpointSendChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [endpointSendChecked, hFlow]⟩
+
+/-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
+theorem enforcement_sufficiency_cspaceMint
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
+       cspaceMintChecked ctx src dst rights badge st = cspaceMint src dst rights badge st) ∨
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false ∧
+       cspaceMintChecked ctx src dst rights badge st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
+  | true => left; exact ⟨rfl, by simp [cspaceMintChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [cspaceMintChecked, hFlow]⟩
+
+/-- `serviceRestartChecked` either delegates to unchecked or returns `flowDenied`. -/
+theorem enforcement_sufficiency_serviceRestart
+    (ctx : LabelingContext) (orchestrator sid : ServiceId)
+    (policyAllowsStop policyAllowsStart : ServicePolicy)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) = true ∧
+       serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
+         serviceRestart sid policyAllowsStop policyAllowsStart st) ∨
+    (securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) = false ∧
+       serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
+         .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) with
+  | true => left; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
+
 end SeLe4n.Kernel

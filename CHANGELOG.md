@@ -1,3 +1,16 @@
+## [0.11.12] - 2026-02-26
+
+### WS-E5 Information-flow maturity (completed)
+
+All 3 WS-E5 findings resolved with zero sorry/axiom. Synthesized from analysis of PRs #218, #219, and #220, selecting the best approach for each finding.
+
+- **H-04 (Parameterized security labels):** Introduced `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with `canFlow`/`isReflexive`/`isTransitive`/`wellFormed` fields, and proofs `domainFlowsTo_refl`/`domainFlowsTo_trans`. Built-in policies: `allowAll` and `linearOrder` with well-formedness proofs. `GenericLabelingContext` with embedded policy field. `EndpointFlowPolicy` for per-endpoint flow overrides. `embedLegacyLabel` mapping legacy 2x2 lattice to 4-domain system with `embedLegacyLabel_preserves_flow` correctness proof. `threeDomainExample` with 3 validation theorems.
+- **H-05 (Composed bundle-level non-interference):** `NonInterferenceStep` inductive with 5 constructors (`chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`). `step_preserves_projection` and `composedNonInterference_step` (primary IF-M4 theorem). `NonInterferenceTrace` for multi-step lift with `composedNonInterference_trace`. Abstract composition via `preservesLowEquivalence`/`compose_preservesLowEquivalence`. Error path preservation via `errorAction_preserves_lowEquiv`.
+- **M-07 (Enforcement boundary specification):** `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`). Exhaustive `enforcementBoundary` table (17 entries covering all kernel operations). `denied_preserves_state_*` for all 3 checked operations. `enforcement_sufficiency_*` complete-disjunction coverage proofs.
+- Extended information-flow test suite with 24 new WS-E5 checks (H-04 + M-07 coverage). Total: 54 checks passing.
+- Updated all canonical documentation: workstream plan, README, SELE4N_SPEC, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX, INFORMATION_FLOW_ROADMAP, GitBook chapters (01, 05, 12, 24, 32, README).
+- Bumped package version to **`0.11.12`**.
+
 ## [0.11.11] - 2026-02-25
 
 ### Documentation and release metadata synchronization

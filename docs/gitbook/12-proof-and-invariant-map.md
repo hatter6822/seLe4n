@@ -353,3 +353,33 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 - `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02),
 - `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
+
+### IF-M4 bundle-level non-interference (WS-E5 complete)
+
+**H-04 — Parameterized security labels (≥3 domains):**
+
+- `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with `canFlow`/`isReflexive`/`isTransitive`/`wellFormed`,
+- `domainFlowsTo` with `domainFlowsTo_refl`/`domainFlowsTo_trans` proofs,
+- Built-in policies: `DomainFlowPolicy.allowAll`, `DomainFlowPolicy.linearOrder` with well-formedness proofs,
+- `GenericLabelingContext` with embedded policy field,
+- `EndpointFlowPolicy` for per-endpoint flow overrides,
+- `embedLegacyLabel` mapping legacy 2x2 lattice to 4-domain system,
+- `embedLegacyLabel_preserves_flow` correctness proof,
+- `threeDomainExample` with 3 named validation theorems.
+
+**H-05 — Composed bundle-level non-interference:**
+
+- `NonInterferenceStep` inductive (5 constructors: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`),
+- `step_preserves_projection` — single-step projection preservation,
+- `composedNonInterference_step` — primary IF-M4 single-step theorem,
+- `NonInterferenceTrace` inductive (`nil`/`cons`),
+- `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
+- `preservesLowEquivalence`, `compose_preservesLowEquivalence` — abstract composition,
+- `errorAction_preserves_lowEquiv` — error path preservation.
+
+**M-07 — Enforcement boundary specification:**
+
+- `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
+- `enforcementBoundary` — exhaustive 17-entry classification table,
+- `denied_preserves_state_*` — denial preservation for all 3 checked operations,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs.

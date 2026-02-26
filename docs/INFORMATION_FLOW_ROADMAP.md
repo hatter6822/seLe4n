@@ -99,7 +99,7 @@ Delivered theorems (WS-D2 closeout):
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle retype non-interference (TPI-D03).
 - Shared infrastructure: `storeObject_at_unobservable_preserves_lowEquivalent`.
 
-## IF-M4 — Bundle-level composition (WS-E5)
+## IF-M4 — Bundle-level composition (WS-E5) ✅ completed
 
 **v0.11.6 audit context:** Findings H-04 (lattice too coarse), H-05 (no
 composed non-interference), and M-07 (enforcement is pre-gate only) are
@@ -120,6 +120,35 @@ Exit evidence:
 - explicit assumptions list for architecture-boundary observability,
 - Tier 3 invariant-surface anchors include information-flow entrypoints,
 - label lattice supports ≥3 security domains.
+
+Delivered anchors (WS-E5 closeout):
+
+**H-04 — Parameterized security labels** (`Policy.lean`):
+
+- `SecurityDomain` — Nat-indexed domain type supporting arbitrary domain counts,
+- `DomainFlowPolicy` with `canFlow` predicate, `linearOrder`, `allowAll` constructors,
+- `GenericLabelingContext` — per-object/thread/endpoint/service domain assignment,
+- `EndpointFlowPolicy` — per-endpoint flow policy overrides,
+- `embedLegacyLabel` — embedding from legacy 2×2 lattice into N-domain system,
+- `embedLegacyLabel_preserves_flow` — correctness proof for legacy embedding,
+- `threeDomain_kernel_not_to_userland` — 3-domain policy example with proof.
+
+**H-05 — Composed bundle non-interference** (`Invariant.lean`):
+
+- `NonInterferenceStep` — inductive covering 5 operation families,
+- `composedNonInterference_step` — single-step bundle non-interference (IF-M4),
+- `NonInterferenceTrace` — multi-step trace inductive,
+- `composedNonInterference_trace` — trace-level bundle non-interference (IF-M4),
+- `preservesLowEquivalence` — abstract NI predicate,
+- `compose_preservesLowEquivalence` — two-operation sequential composition,
+- `errorAction_preserves_lowEquiv` — failure path preservation.
+
+**M-07 — Enforcement boundary specification** (`Enforcement.lean`):
+
+- `EnforcementClass` — canonical classification (policyGated / capabilityOnly / readOnly),
+- `enforcementBoundary` — 17-entry canonical operation classification table,
+- denial-preserves-state theorems for all 3 checked operations,
+- `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
 
 ## IF-M5 — Platform-facing integration readiness
 

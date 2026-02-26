@@ -7,7 +7,7 @@ The current active execution baseline is the **WS-E portfolio** based on the v0.
 - Findings baseline: [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - Canonical planning source: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
-See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
+See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E5 are completed; WS-E6 is planned.
 
 ### WS-E1 completed summary
 
@@ -38,6 +38,22 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **H-09:** Endpoint operations (`endpointSend`, `endpointAwaitReceive`, `endpointReceive`) now perform compound 3-step transitions: `storeObject` → `storeTcbIpcState` → `removeRunnable`/`ensureRunnable`. IPC-scheduler contract predicates are now non-vacuous. All invariant preservation proofs rewritten for compound transitions.
 - **M-09:** Metadata sync correctness proven for type-changing `storeObject`: `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored`.
 - **L-06:** Default `SystemState` initialization proof: `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle`.
+
+### WS-E4 completed summary
+
+**WS-E4 — Capability and IPC model completion** has been completed (v0.11.11). All 7 findings resolved:
+
+- **C-02, C-03, C-04:** Capability model completeness — CNode operations, slot management, and authority tracking gaps closed.
+- **H-02:** IPC completion — endpoint/notification operations fully covered with invariant preservation.
+- **M-01, M-02, M-12:** Model refinements — object metadata, type safety, and reference tracking.
+
+### WS-E5 completed summary
+
+**WS-E5 — Information-flow maturity** has been completed (v0.11.12). All 3 findings resolved:
+
+- **H-04:** Parameterized security labels supporting ≥3 domains — `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexive/transitive well-formedness proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` backward-compatibility with preservation proof, `threeDomainExample` validation.
+- **H-05:** Composed bundle-level non-interference — `NonInterferenceStep` inductive (5 kernel operations), `composedNonInterference_step` single-step theorem, `NonInterferenceTrace` multi-step lift, `composedNonInterference_trace`, `errorAction_preserves_lowEquiv`. Completes IF-M4 milestone.
+- **M-07:** Enforcement boundary specification — `EnforcementClass` 3-way classification (`policyGated`/`capabilityOnly`/`readOnly`), exhaustive 17-entry `enforcementBoundary` table, denial preservation theorems, complete-disjunction sufficiency proofs.
 
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
