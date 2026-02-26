@@ -168,21 +168,23 @@ private theorem ensureRunnable_preserves_projection
   unfold ensureRunnable
   split
   · rfl
-  · have hRun : projectRunnable ctx observer
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-        projectRunnable ctx observer st := by
-      simp only [projectRunnable]
-      exact list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
-    have hObj : projectObjects ctx observer
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-        projectObjects ctx observer st := rfl
-    have hCur : projectCurrent ctx observer
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-        projectCurrent ctx observer st := rfl
-    have hSvc : projectServiceStatus ctx observer
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-        projectServiceStatus ctx observer st := funext fun _ => rfl
-    simp only [projectState, hObj, hRun, hCur, hSvc]
+  · split
+    · have hRun : projectRunnable ctx observer
+          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          projectRunnable ctx observer st := by
+        simp only [projectRunnable]
+        exact list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
+      have hObj : projectObjects ctx observer
+          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          projectObjects ctx observer st := rfl
+      have hCur : projectCurrent ctx observer
+          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          projectCurrent ctx observer st := rfl
+      have hSvc : projectServiceStatus ctx observer
+          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          projectServiceStatus ctx observer st := funext fun _ => rfl
+      simp only [projectState, hObj, hRun, hCur, hSvc]
+    · rfl
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 private theorem storeTcbIpcState_preserves_projection

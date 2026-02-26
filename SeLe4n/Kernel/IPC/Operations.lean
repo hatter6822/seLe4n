@@ -17,7 +17,10 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runnable then
     st
   else
-    { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
+    match st.objects tid.toObjId with
+    | some (.tcb _) =>
+        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
+    | _ => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   match st.objects tid.toObjId with
@@ -259,7 +262,9 @@ theorem ensureRunnable_preserves_objects
     (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).objects = st.objects := by
   unfold ensureRunnable
-  split <;> rfl
+  split
+  · rfl
+  · split <;> rfl
 
 /-- WS-E3/H-09: `storeTcbIpcState` does not modify the scheduler. -/
 theorem storeTcbIpcState_scheduler_eq
@@ -585,15 +590,20 @@ theorem removeRunnable_nodup
 theorem ensureRunnable_scheduler_current
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).scheduler.current = st.scheduler.current := by
-  unfold ensureRunnable; split <;> rfl
+  unfold ensureRunnable
+  split
+  · rfl
+  · split <;> rfl
 
 theorem ensureRunnable_mem_self
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
     tid ∈ (ensureRunnable st tid).scheduler.runnable := by
+  obtain ⟨tcb, hTcb⟩ := hTcb
   unfold ensureRunnable
   split
   · assumption
-  · simp [List.mem_append]
+  · simp only [hTcb]; simp [List.mem_append]
 
 theorem ensureRunnable_mem_old
     (st : SystemState) (tid x : SeLe4n.ThreadId)
@@ -602,7 +612,9 @@ theorem ensureRunnable_mem_old
   unfold ensureRunnable
   split
   · exact hMem
-  · exact List.mem_append_left _ hMem
+  · split
+    · exact List.mem_append_left _ hMem
+    · exact hMem
 
 theorem ensureRunnable_nodup
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -612,12 +624,14 @@ theorem ensureRunnable_nodup
   split
   · exact hNodup
   · rename_i hNotMem
-    rw [List.nodup_append]
-    refine ⟨hNodup, ?_, ?_⟩
-    · exact .cons (fun _ h => absurd h List.not_mem_nil) .nil
-    · intro x hxl y hya
-      rw [List.mem_singleton] at hya; subst hya
-      exact fun heq => hNotMem (heq ▸ hxl)
+    split
+    · rw [List.nodup_append]
+      refine ⟨hNodup, ?_, ?_⟩
+      · exact .cons (fun _ h => absurd h List.not_mem_nil) .nil
+      · intro x hxl y hya
+        rw [List.mem_singleton] at hya; subst hya
+        exact fun heq => hNotMem (heq ▸ hxl)
+    · exact hNodup
 
 /-- Alias referencing the canonical `ThreadId.toObjId_injective` in Prelude. -/
 theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
@@ -657,7 +671,9 @@ theorem ensureRunnable_mem_reverse
   unfold ensureRunnable at hMem
   split at hMem
   · exact .inl hMem
-  · rw [List.mem_append, List.mem_singleton] at hMem; exact hMem
+  · split at hMem
+    · rw [List.mem_append, List.mem_singleton] at hMem; exact hMem
+    · exact .inl hMem
 
 /-- WS-E3/H-09: A thread is never in its own removeRunnable result. -/
 theorem removeRunnable_not_mem_self

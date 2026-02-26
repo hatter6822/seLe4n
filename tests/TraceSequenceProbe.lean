@@ -13,11 +13,22 @@ inductive ProbeOp where
 
 def probeEndpointId : SeLe4n.ObjId := 300
 
+def probeThreadIds : List SeLe4n.ObjId :=
+  List.range 8 |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
+
 def probeBaseState : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
       if oid = probeEndpointId then
         some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ 8 then
+        some (.tcb { tid := SeLe4n.ThreadId.ofNat oid.toNat
+                   , priority := 0
+                   , domain := default
+                   , cspaceRoot := default
+                   , vspaceRoot := default
+                   , ipcBuffer := default
+                   , ipcState := .ready })
       else
         none
   }
@@ -41,7 +52,7 @@ def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   | .receive, true, true => true
   | _, _, _ => false
 
-def probeInvariantObjectIds : List SeLe4n.ObjId := [probeEndpointId]
+def probeInvariantObjectIds : List SeLe4n.ObjId := probeThreadIds ++ [probeEndpointId]
 
 def checkStateInvariants (st : SystemState) : Except String Unit :=
   let failures := (stateInvariantChecksFor probeInvariantObjectIds st).filterMap fun (label, ok) => if ok then none else some label
