@@ -29,6 +29,8 @@ Preservation shape:
 - `chooseThread_preserves_*`
 - `schedule_preserves_*`
 - `handleYield_preserves_*`
+- `chooseThreadInDomain_preserves_schedulerInvariantBundle`
+- `scheduleDomain_preserves_schedulerInvariantBundle`
 
 ## 3. Capability invariants (M2)
 

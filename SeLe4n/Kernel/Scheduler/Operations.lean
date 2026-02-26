@@ -658,4 +658,41 @@ theorem chooseThreadInDomain_preserves_state
           rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
           simpa using hSt.symm
 
+/-- M-05/WS-E6: `chooseThreadInDomain` preserves the scheduler invariant bundle
+because it is a pure read operation. -/
+theorem chooseThreadInDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : chooseThreadInDomain st = .ok (next, st')) :
+    schedulerInvariantBundle st' := by
+  rcases chooseThreadInDomain_preserves_state st st' next hStep with rfl
+  simpa using hInv
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the scheduler invariant bundle.
+Domain-time accounting only updates domain-local scheduler fields, and the expiry
+path composes `switchDomain` and `schedule`, each of which preserves the bundle. -/
+theorem scheduleDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSwitch : switchDomain st with
+    | error e => simp [hSwitch] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSwitched =>
+            have hSwitchInv : schedulerInvariantBundle stSwitched :=
+              switchDomain_preserves_schedulerInvariantBundle st stSwitched hInv hSwitch
+            have hSched : schedule stSwitched = .ok ((), st') := by
+              simpa [hSwitch] using hStep
+            exact schedule_preserves_schedulerInvariantBundle stSwitched st' hSwitchInv hSched
+  · have hNotExpire : ¬st.scheduler.domainTimeRemaining ≤ 1 := hExpire
+    simp [hNotExpire] at hStep
+    cases hStep
+    exact hInv
+
 end SeLe4n.Kernel

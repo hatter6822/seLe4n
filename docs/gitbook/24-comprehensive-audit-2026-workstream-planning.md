@@ -61,7 +61,7 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 thr
 
 - **M-03:** Three-level EDF scheduling (`isBetterCandidate`: priority > deadline > FIFO) with `isBetterCandidate_irrefl`/`_asymm` algebraic theorems. `Deadline` typed identifier. `TCB.deadline` field.
 - **M-04:** Time-slice preemption via `timerTick` operation (decrement/reset+reschedule). `TCB.timeSlice` field. `defaultTimeSlice` constant. `timeSlicePositive` invariant.
-- **M-05:** Domain scheduling with `DomainScheduleEntry`, `filterByDomain`, `chooseThreadInDomain`, `switchDomain`, `scheduleDomain`. `currentThreadInActiveDomain` invariant. Preservation theorems.
+- **M-05:** Domain scheduling with `DomainScheduleEntry`, `filterByDomain`, `chooseThreadInDomain`, `switchDomain`, `scheduleDomain`. `currentThreadInActiveDomain` invariant. Preservation theorems include `switchDomain_preserves_schedulerInvariantBundle`, `chooseThreadInDomain_preserves_schedulerInvariantBundle`, and `scheduleDomain_preserves_schedulerInvariantBundle`.
 - **M-08:** Architecture assumption consumption bridges connecting structural axioms to adapter preservation proofs.
 - **F-17:** O(n) design decision ADR with rationale, scope note, and migration path.
 - **L-01:** Unified `API.lean` with `apiInvariantBundle` alias, base-case theorem, and 30+ entry-point stability table.
