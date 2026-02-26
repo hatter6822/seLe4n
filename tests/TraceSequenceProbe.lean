@@ -12,17 +12,16 @@ inductive ProbeOp where
   deriving Repr
 
 def probeEndpointId : SeLe4n.ObjId := 300
-def probeThreadCount : Nat := 8
 
-def probeThreadIds : List SeLe4n.ObjId :=
-  List.range probeThreadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
+def probeThreadIds (threadCount : Nat) : List SeLe4n.ObjId :=
+  List.range threadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
 
-def probeBaseState : SystemState :=
+def probeBaseState (threadCount : Nat) : SystemState :=
   { (default : SystemState) with
     objects := fun oid =>
       if oid = probeEndpointId then
         some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ probeThreadCount then
+      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ threadCount then
         some (.tcb { tid := SeLe4n.ThreadId.ofNat oid.toNat
                    , priority := 0
                    , domain := default
@@ -43,8 +42,8 @@ def pickOp (x : Nat) : ProbeOp :=
   | 1 => .awaitReceive
   | _ => .receive
 
-def pickThreadId (x : Nat) : SeLe4n.ThreadId :=
-  SeLe4n.ThreadId.ofNat ((x % probeThreadCount) + 1)
+def pickThreadId (threadCount : Nat) (x : Nat) : SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofNat ((x % threadCount) + 1)
 
 def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   match ep.state, ep.queue.isEmpty, ep.waitingReceiver.isSome with
@@ -53,10 +52,11 @@ def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   | .receive, true, true => true
   | _, _, _ => false
 
-def probeInvariantObjectIds : List SeLe4n.ObjId := probeThreadIds ++ [probeEndpointId]
+def probeInvariantObjectIds (threadCount : Nat) : List SeLe4n.ObjId :=
+  probeThreadIds threadCount ++ [probeEndpointId]
 
-def checkStateInvariants (st : SystemState) : Except String Unit :=
-  let failures := (stateInvariantChecksFor probeInvariantObjectIds st).filterMap fun (label, ok) => if ok then none else some label
+def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String Unit :=
+  let failures := (stateInvariantChecksFor (probeInvariantObjectIds threadCount) st).filterMap fun (label, ok) => if ok then none else some label
   if failures.isEmpty then
     .ok ()
   else
@@ -127,34 +127,39 @@ structure ProbeStats where
 instance : Inhabited ProbeStats where
   default := { totalSteps := 0, mutations := 0, expectedFailures := 0, unexpectedFailures := [] }
 
-partial def runProbeLoop (steps : Nat) (seed : Nat) (st : SystemState)
+partial def runProbeLoop (threadCount : Nat) (steps : Nat) (seed : Nat) (st : SystemState)
     (stats : ProbeStats) : Except String (ProbeStats × SystemState) := do
   checkEndpointConsistency st
-  checkStateInvariants st
+  checkStateInvariants threadCount st
   if steps = 0 then
     .ok (stats, st)
   else
     let next := nextRand seed
     let op := pickOp next
-    let tid := pickThreadId next
+    let tid := pickThreadId threadCount next
     let stats' := { stats with totalSteps := stats.totalSteps + 1 }
     match stepOp op tid st with
     | .mutated st' =>
         -- Invariant checks run here on the ACTUALLY MUTATED state
-        runProbeLoop (steps - 1) next st' { stats' with mutations := stats'.mutations + 1 }
+        runProbeLoop threadCount (steps - 1) next st' { stats' with mutations := stats'.mutations + 1 }
     | .expectedFailure _ =>
         -- State unchanged; skip redundant invariant re-check on the no-op state
-        runProbeLoop (steps - 1) next st { stats' with expectedFailures := stats'.expectedFailures + 1 }
+        runProbeLoop threadCount (steps - 1) next st { stats' with expectedFailures := stats'.expectedFailures + 1 }
     | .unexpectedFailure _ detail =>
         -- Record the unexpected failure but continue probing to collect all failures
         let stats'' := { stats' with unexpectedFailures := stats'.unexpectedFailures ++ [detail] }
-        runProbeLoop (steps - 1) next st stats''
+        runProbeLoop threadCount (steps - 1) next st stats''
 
-def runProbe (seed : Nat) (steps : Nat) : Except String ProbeStats := do
-  let (stats, _) ← runProbeLoop steps seed probeBaseState default
+/-- Derive thread count from seed. Range: 2–16 (at least 2 for sender/receiver IPC). -/
+def pickThreadCount (seed : Nat) : Nat :=
+  (seed % 15) + 2
+
+def runProbe (seed : Nat) (steps : Nat) : Except String (ProbeStats × Nat) := do
+  let threadCount := pickThreadCount seed
+  let (stats, _) ← runProbeLoop threadCount steps seed (probeBaseState threadCount) default
   -- After the loop, report any unexpected failures as a probe failure
   if stats.unexpectedFailures.isEmpty then
-    .ok stats
+    .ok (stats, threadCount)
   else
     .error s!"probe completed with {stats.unexpectedFailures.length} unexpected failure(s): {reprStr stats.unexpectedFailures}"
 
@@ -169,7 +174,7 @@ def main (args : List String) : IO Unit := do
   let seed := parseNatArg (args.getD 0 "7") 7
   let steps := parseNatArg (args.getD 1 "250") 250
   match SeLe4n.Testing.runProbe seed steps with
-  | .ok stats =>
-      IO.println s!"trace sequence probe passed: seed={seed}, steps={steps}, mutations={stats.mutations}, expectedFailures={stats.expectedFailures}, unexpectedFailures=0"
+  | .ok (stats, threadCount) =>
+      IO.println s!"trace sequence probe passed: seed={seed}, steps={steps}, threads={threadCount}, mutations={stats.mutations}, expectedFailures={stats.expectedFailures}, unexpectedFailures=0"
   | .error msg =>
       throw <| IO.userError s!"trace sequence probe failed: seed={seed}, steps={steps}, detail={msg}"
