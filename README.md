@@ -70,6 +70,7 @@ Additional resources:
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
+- Scheduler FIFO queue primitives are now modeled explicitly as a `{head, tail}` record (`FifoQueue`) with `enqueueTail`/`dequeueHead` operations, and scheduler helpers expose runnable-tail enqueue/head dequeue behavior through this representation.
 
 ## Stable naming updates (trace + invariant surface)
 

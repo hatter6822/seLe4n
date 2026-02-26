@@ -179,6 +179,10 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 5. fixture-backed executable evidence (`Main.lean` + trace fixture),
 6. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
 
+Scheduler queue model note: runnable FIFO handling now has an explicit queue-record
+surface (`FifoQueue` with `{head, tail}` storage) and dedicated
+`enqueueTail`/`dequeueHead` operations used by scheduler-facing helpers.
+
 ---
 
 ## 8. Audit Baselines

@@ -106,9 +106,25 @@ private def rotateCurrentToBack
   | none => .ok runnable
   | some tid =>
       if tid ∈ runnable then
-        .ok (runnable.erase tid ++ [tid])
+        let q := FifoQueue.fromList (runnable.erase tid)
+        .ok ((q.enqueueTail tid).toList)
       else
         .error .schedulerInvariantViolation
+
+/-- Convert scheduler runnable list into FIFO queue record `{head, tail}`. -/
+def runnableQueue (st : SystemState) : FifoQueue SeLe4n.ThreadId :=
+  FifoQueue.fromList st.scheduler.runnable
+
+/-- Enqueue one thread at runnable-queue tail in O(1) over queue record. -/
+def enqueueTail (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  { st with scheduler := { st.scheduler with runnable := ((runnableQueue st).enqueueTail tid).toList } }
+
+/-- Dequeue one thread from runnable-queue head.
+Returns the popped head (if any) and updated scheduler state. -/
+def dequeueHead (st : SystemState) : Option (SeLe4n.ThreadId × SystemState) :=
+  match (runnableQueue st).dequeueHead with
+  | none => none
+  | some (tid, q') => some (tid, { st with scheduler := { st.scheduler with runnable := q'.toList } })
 
 /-- M-03/WS-E6: Choose the highest-priority runnable thread using three-level
 deterministic selection: priority > EDF deadline > FIFO queue order.

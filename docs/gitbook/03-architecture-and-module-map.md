@@ -61,7 +61,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
   - M1 component invariants and scheduler bundle alias.
 - `SeLe4n/Kernel/Scheduler/Operations.lean`
-  - scheduling transitions + preservation theorem families.
+  - scheduling transitions + preservation theorem families,
+  - runnable FIFO helper operations (`enqueueTail`, `dequeueHead`) backed by
+    queue-record representation (`FifoQueue {head, tail}`).
 
 ### Capability subsystem
 

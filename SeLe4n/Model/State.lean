@@ -33,6 +33,41 @@ structure DomainScheduleEntry where
   length : Nat
   deriving Repr, DecidableEq
 
+/-- FIFO queue record with explicit `{head, tail}` representation.
+
+`head` stores dequeue-ready elements in-order.
+`tail` stores newly enqueued elements in reverse order so `enqueueTail`
+is O(1) via cons.
+
+Use `toList` only at module boundaries that still consume plain lists. -/
+structure FifoQueue (α : Type) where
+  head : List α
+  tail : List α
+  deriving Repr, DecidableEq
+
+namespace FifoQueue
+
+def empty : FifoQueue α := { head := [], tail := [] }
+
+def fromList (xs : List α) : FifoQueue α :=
+  { head := xs, tail := [] }
+
+def toList (q : FifoQueue α) : List α :=
+  q.head ++ q.tail.reverse
+
+def enqueueTail (q : FifoQueue α) (x : α) : FifoQueue α :=
+  { q with tail := x :: q.tail }
+
+def dequeueHead (q : FifoQueue α) : Option (α × FifoQueue α) :=
+  match q.head with
+  | x :: xs => some (x, { q with head := xs })
+  | [] =>
+      match q.tail.reverse with
+      | [] => none
+      | x :: xs => some (x, { head := xs, tail := [] })
+
+end FifoQueue
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId

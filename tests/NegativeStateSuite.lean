@@ -284,6 +284,22 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  -- FIFO queue record operations: enqueue at tail, dequeue from head
+  let stQueued := SeLe4n.Kernel.enqueueTail schedPriorityState (SeLe4n.ThreadId.ofNat 9)
+  if stQueued.scheduler.runnable = [SeLe4n.ThreadId.ofNat 7, SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 9] then
+    IO.println "positive check passed [enqueueTail appends to runnable tail]: [7,8,9]"
+  else
+    throw <| IO.userError s!"enqueueTail expected runnable [7,8,9], got {reprStr stQueued.scheduler.runnable}"
+  match SeLe4n.Kernel.dequeueHead stQueued with
+  | some (tid, stDequeued) =>
+      if tid = SeLe4n.ThreadId.ofNat 7 ∧
+         stDequeued.scheduler.runnable = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 9] then
+        IO.println "positive check passed [dequeueHead pops runnable head]: popped 7, remaining [8,9]"
+      else
+        throw <| IO.userError s!"dequeueHead FIFO mismatch: popped={reprStr tid}, queue={reprStr stDequeued.scheduler.runnable}"
+  | none =>
+      throw <| IO.userError "dequeueHead unexpectedly returned none on non-empty queue"
+
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
