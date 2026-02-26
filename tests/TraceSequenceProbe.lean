@@ -104,7 +104,7 @@ this function classifies each error and returns a structured outcome. -/
 def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
   match op with
   | .send =>
-      match SeLe4n.Kernel.endpointSend probeEndpointId tid st with
+      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   | .awaitReceive =>
