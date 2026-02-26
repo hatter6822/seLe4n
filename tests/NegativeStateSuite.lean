@@ -284,6 +284,15 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  match stPriorityScheduled.objects 7, stPriorityScheduled.objects 8 with
+  | some (.tcb t7), some (.tcb t8) =>
+      if t7.prev = none ∧ t7.next = some 8 ∧ t8.prev = some 7 ∧ t8.next = none then
+        IO.println "positive check passed [intrusive runnable links bootstrap]: 7 <-> 8"
+      else
+        throw <| IO.userError s!"intrusive runnable links bootstrap mismatch: t7=({reprStr t7.prev},{reprStr t7.next}) t8=({reprStr t8.prev},{reprStr t8.next})"
+  | _, _ =>
+      throw <| IO.userError "intrusive runnable links bootstrap expected TCBs 7 and 8"
+
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
@@ -297,6 +306,8 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [yield current thread]: current = tid 8 (highest priority after rotation)"
   else
     throw <| IO.userError s!"yield current thread expected tid 8, got {reprStr stYielded.scheduler.current}"
+
+
 
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty

@@ -65,7 +65,7 @@ def withMachine (builder : BootstrapBuilder) (machine : SeLe4n.MachineState) : B
 
 /-- Materialize a full `SystemState` from the builder tables. -/
 def build (builder : BootstrapBuilder) : SystemState :=
-  {
+  relinkRunnable {
     machine := builder.machine
     objects := listLookup builder.objects
     objectIndex := builder.objects.map Prod.fst

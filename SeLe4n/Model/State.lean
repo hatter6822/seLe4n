@@ -176,6 +176,29 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
     let sched := { st.scheduler with current := tid }
     .ok ((), { st with scheduler := sched })
 
+/-- Update intrusive runnable links (`prev`/`next`) for one TCB. -/
+def storeTcbLinks
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (prev next : Option SeLe4n.ThreadId) : SystemState :=
+  match st.objects tid.toObjId with
+  | some (.tcb tcb) =>
+      let objects' : SeLe4n.ObjId → Option KernelObject :=
+        fun oid => if oid = tid.toObjId then some (.tcb { tcb with prev := prev, next := next }) else st.objects oid
+      { st with objects := objects' }
+  | _ => st
+
+/-- Recompute intrusive runnable links for all runnable TCBs in queue order. -/
+def relinkRunnable (st : SystemState) : SystemState :=
+  let rec go (acc : SystemState) (prev : Option SeLe4n.ThreadId) (q : List SeLe4n.ThreadId) : SystemState :=
+    match q with
+    | [] => acc
+    | tid :: rest =>
+        let next := rest.head?
+        let acc' := storeTcbLinks acc tid prev next
+        go acc' (some tid) rest
+  go st none st.scheduler.runnable
+
 /-- Read one service graph entry. -/
 def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=
   st.services sid
