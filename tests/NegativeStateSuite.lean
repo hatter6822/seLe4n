@@ -366,6 +366,33 @@ private def runNegativeChecks : IO Unit := do
   | .error err =>
     throw <| IO.userError s!"service dependency A→B registration failed: {reprStr err}"
 
+  -- ==========================================================================
+  -- L-09/WS-E6: Secure API wrapper checks
+  -- ==========================================================================
+
+  let ctx := SeLe4n.Kernel.defaultLabelingContext
+  expectError "secure endpoint send missing sender tcb"
+    (SeLe4n.Kernel.endpointSendSecure ctx endpointId (SeLe4n.ThreadId.ofNat 777) baseState)
+    .objectNotFound
+
+  expectError "secure endpoint send reserved ids"
+    (SeLe4n.Kernel.endpointSendSecure ctx 0 (SeLe4n.ThreadId.ofNat 7) baseState)
+    .invalidCapability
+
+  let dupAsidState : SystemState :=
+    { baseState with
+      objects := fun oid =>
+        if oid = 21 then
+          some (.vspaceRoot { asid := asidPrimary, mappings := [] })
+        else
+          baseState.objects oid
+      objectIndex := 21 :: baseState.objectIndex
+    }
+
+  expectError "secure vspace lookup rejects duplicate asid roots"
+    (SeLe4n.Kernel.vspaceLookupSecure asidPrimary vaddrPrimary dupAsidState)
+    .illegalState
+
 end SeLe4n.Testing
 
 def main : IO Unit :=

@@ -110,6 +110,8 @@ WS-D portfolio (WS-D5/D6).
 
 - **WS-E6:** Model completeness and documentation (low; **completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
+- L-09 secure wrappers (`SeLe4n/Kernel/SecureAPI.lean`) provide hardened entrypoints: sentinel-ID rejection, mandatory sender/receiver TCB-presence checks for IPC/notification waits, and strict ASID-uniqueness guards for VSpace map/unmap/lookup.
+
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 

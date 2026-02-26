@@ -100,6 +100,7 @@ Primary references:
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
 | `SeLe4n/Kernel/InformationFlow/*` | Information-flow policy, projection, and low-equivalence |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface, invariant bundle alias, stability table |
+| `SeLe4n/Kernel/SecureAPI.lean` | Hardened wrappers: sentinel-ID rejection, strict IPC TCB presence checks, info-flow-gated entrypoints, ASID-uniqueness guard for VSpace |
 | `Main.lean` | Executable trace/demo harness |
 | `tests/fixtures/main_trace_smoke.expected` | Stable trace expectation anchors |
 | `scripts/test_tier*.sh` | Tiered quality gates used by CI and local workflows |

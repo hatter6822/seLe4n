@@ -55,3 +55,5 @@ When a claim changes:
 2. update GitBook mirror(s) in the same PR,
 3. refresh this table row(s) for changed claims,
 4. run `./scripts/test_docs_sync.sh` and at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).
+
+| Hardened external entrypoints reject sentinel IDs, enforce IPC TCB presence, and gate strict VSpace uniqueness checks. | `SeLe4n/Kernel/SecureAPI.lean`; `tests/NegativeStateSuite.lean` secure-wrapper negative checks | `./scripts/test_smoke.sh` | Verified by executable negative-state suite scenarios and smoke pipeline. |

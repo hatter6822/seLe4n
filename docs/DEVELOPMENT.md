@@ -148,3 +148,9 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+
+## L-09 secure entrypoint wrappers
+
+- `SeLe4n/Kernel/SecureAPI.lean` adds hardened wrappers for external consumers.
+- Guards include sentinel-ID rejection, IPC sender/receiver TCB-presence checks, IFC-checked entrypoints (`endpointSendSecure`, `cspaceMintSecure`, `serviceRestartSecure`), and strict ASID-root uniqueness wrappers for VSpace operations.
