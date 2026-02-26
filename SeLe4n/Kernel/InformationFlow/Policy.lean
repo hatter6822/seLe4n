@@ -117,4 +117,153 @@ theorem securityFlowsTo_trans
                 (confidentialityFlowsTo_trans ac bc cc h₁.left h₂.left)
                 (integrityFlowsTo_trans ci bi ai h₂.right h₁.right)
 
+-- ============================================================================
+-- WS-E5/H-04: Parameterized security domain lattice (3+ domains)
+-- ============================================================================
+
+/-- Three-level confidentiality lattice supporting 3+ security domains.
+WS-E5/H-04: Extends the binary low/high limitation. -/
+inductive ConfidentialityLevel where
+  | pub
+  | internal_
+  | secret_
+  deriving Repr, DecidableEq
+
+/-- Three-level integrity lattice supporting 3+ security domains.
+WS-E5/H-04: Extends the binary untrusted/trusted limitation. -/
+inductive IntegrityLevel where
+  | untrusted_
+  | endorsed
+  | trusted_
+  deriving Repr, DecidableEq
+
+/-- Confidentiality level ordering: pub <= internal_ <= secret_. -/
+def confidentialityLevelFlowsTo : ConfidentialityLevel -> ConfidentialityLevel -> Bool
+  | .pub, _ => true
+  | .internal_, .pub => false
+  | .internal_, _ => true
+  | .secret_, .secret_ => true
+  | .secret_, _ => false
+
+/-- Integrity level ordering: untrusted_ <= endorsed <= trusted_. -/
+def integrityLevelFlowsTo : IntegrityLevel -> IntegrityLevel -> Bool
+  | .untrusted_, _ => true
+  | .endorsed, .untrusted_ => false
+  | .endorsed, _ => true
+  | .trusted_, .trusted_ => true
+  | .trusted_, _ => false
+
+theorem confidentialityLevelFlowsTo_refl (c : ConfidentialityLevel) :
+    confidentialityLevelFlowsTo c c = true := by
+  cases c <;> rfl
+
+theorem confidentialityLevelFlowsTo_trans
+    (a b c : ConfidentialityLevel)
+    (h1 : confidentialityLevelFlowsTo a b = true)
+    (h2 : confidentialityLevelFlowsTo b c = true) :
+    confidentialityLevelFlowsTo a c = true := by
+  cases a <;> cases b <;> cases c <;> simp [confidentialityLevelFlowsTo] at *
+
+theorem integrityLevelFlowsTo_refl (i : IntegrityLevel) :
+    integrityLevelFlowsTo i i = true := by
+  cases i <;> rfl
+
+theorem integrityLevelFlowsTo_trans
+    (a b c : IntegrityLevel)
+    (h1 : integrityLevelFlowsTo a b = true)
+    (h2 : integrityLevelFlowsTo b c = true) :
+    integrityLevelFlowsTo a c = true := by
+  cases a <;> cases b <;> cases c <;> simp [integrityLevelFlowsTo] at *
+
+/-- Three-domain security label: 3 confidentiality x 3 integrity = 9 labels.
+WS-E5/H-04: Satisfies the validation gate of at least 3 security domains. -/
+structure ThreeDomainLabel where
+  conf : ConfidentialityLevel
+  integ : IntegrityLevel
+  deriving Repr, DecidableEq
+
+/-- Combined flow relation for three-domain labels. -/
+def threeDomainFlowsTo (src dst : ThreeDomainLabel) : Bool :=
+  confidentialityLevelFlowsTo src.conf dst.conf &&
+    integrityLevelFlowsTo dst.integ src.integ
+
+theorem threeDomainFlowsTo_refl (l : ThreeDomainLabel) :
+    threeDomainFlowsTo l l = true := by
+  cases l with
+  | mk c i =>
+    simp [threeDomainFlowsTo, confidentialityLevelFlowsTo_refl, integrityLevelFlowsTo_refl]
+
+theorem threeDomainFlowsTo_trans
+    (a b c : ThreeDomainLabel)
+    (h1 : threeDomainFlowsTo a b = true)
+    (h2 : threeDomainFlowsTo b c = true) :
+    threeDomainFlowsTo a c = true := by
+  cases a with
+  | mk ac ai =>
+    cases b with
+    | mk bc bi =>
+      cases c with
+      | mk cc ci =>
+        simp [threeDomainFlowsTo] at h1 h2 |-
+        exact And.intro
+          (confidentialityLevelFlowsTo_trans ac bc cc h1.left h2.left)
+          (integrityLevelFlowsTo_trans ci bi ai h2.right h1.right)
+
+namespace ThreeDomainLabel
+
+def publicUntrusted : ThreeDomainLabel :=
+  { conf := .pub, integ := .untrusted_ }
+
+def internalEndorsed : ThreeDomainLabel :=
+  { conf := .internal_, integ := .endorsed }
+
+def secretTrusted : ThreeDomainLabel :=
+  { conf := .secret_, integ := .trusted_ }
+
+def internalTrusted : ThreeDomainLabel :=
+  { conf := .internal_, integ := .trusted_ }
+
+def publicTrusted : ThreeDomainLabel :=
+  { conf := .pub, integ := .trusted_ }
+
+end ThreeDomainLabel
+
+/-- Labeling context parameterized by a generic label type.
+WS-E5/H-04: Supports per-endpoint flow policies. -/
+structure GenericLabelingContext (L : Type) where
+  objectLabelOf : SeLe4n.ObjId -> L
+  threadLabelOf : SeLe4n.ThreadId -> L
+  endpointLabelOf : SeLe4n.ObjId -> L
+  serviceLabelOf : ServiceId -> L
+  /-- Per-endpoint flow policy. Defaults to always-allow. -/
+  endpointPolicyOf : SeLe4n.ObjId -> L -> L -> Bool := fun _ _ _ => true
+
+/-- Convert existing LabelingContext to generic form. -/
+def LabelingContext.toGeneric (ctx : LabelingContext) :
+    GenericLabelingContext SecurityLabel :=
+  { objectLabelOf := ctx.objectLabelOf
+    threadLabelOf := ctx.threadLabelOf
+    endpointLabelOf := ctx.endpointLabelOf
+    serviceLabelOf := ctx.serviceLabelOf
+    endpointPolicyOf := fun _ src dst => securityFlowsTo src dst }
+
+/-- WS-E5/H-04: Three-domain labeling context with 3 distinct security domains. -/
+def sampleThreeDomainContext : GenericLabelingContext ThreeDomainLabel :=
+  { objectLabelOf := fun oid =>
+      if oid.val <= 10 then ThreeDomainLabel.publicUntrusted
+      else if oid.val <= 20 then ThreeDomainLabel.internalEndorsed
+      else ThreeDomainLabel.secretTrusted
+    threadLabelOf := fun tid =>
+      if tid.val <= 10 then ThreeDomainLabel.publicUntrusted
+      else if tid.val <= 20 then ThreeDomainLabel.internalEndorsed
+      else ThreeDomainLabel.secretTrusted
+    endpointLabelOf := fun oid =>
+      if oid.val <= 10 then ThreeDomainLabel.publicUntrusted
+      else if oid.val <= 20 then ThreeDomainLabel.internalEndorsed
+      else ThreeDomainLabel.secretTrusted
+    serviceLabelOf := fun sid =>
+      if sid.val <= 10 then ThreeDomainLabel.publicUntrusted
+      else if sid.val <= 20 then ThreeDomainLabel.internalEndorsed
+      else ThreeDomainLabel.secretTrusted }
+
 end SeLe4n.Kernel

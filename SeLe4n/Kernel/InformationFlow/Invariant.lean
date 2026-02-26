@@ -529,4 +529,154 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
   exact storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer target newObj newObj s₁ s₂ s₁' s₂' hLow hTargetHigh hStore₁ hStore₂
 
+
+-- ============================================================================
+-- WS-E5/H-05: Composed bundle-level non-interference (IF-M4)
+-- ============================================================================
+
+/-- An operation preserves low-equivalence when, given any two low-equivalent
+input states that both succeed, the output states are also low-equivalent.
+WS-E5/H-05: This is the standard non-interference predicate. -/
+def preservesLowEquivalence (ctx : LabelingContext) (observer : IfObserver)
+    (op : Kernel Unit) : Prop :=
+  forall (s1 s2 s1' s2' : SystemState),
+    lowEquivalent ctx observer s1 s2 ->
+    op s1 = .ok ((), s1') ->
+    op s2 = .ok ((), s2') ->
+    lowEquivalent ctx observer s1' s2'
+
+/-- Execute a trace (list of kernel operations) sequentially. -/
+def executeTrace : List (Kernel Unit) -> Kernel Unit
+  | [] => KernelM.pure ()
+  | op :: rest => fun st =>
+    match op st with
+    | Except.error e => Except.error e
+    | Except.ok ((), st') => executeTrace rest st'
+
+/-- WS-E5/H-05: Sequential composition of two low-equivalence-preserving
+operations preserves low-equivalence.
+The two operations are run sequentially: op1 produces an intermediate state,
+then op2 runs on that intermediate state. -/
+theorem compose_preservesLowEquivalence
+    (ctx : LabelingContext) (observer : IfObserver)
+    (op1 op2 : Kernel Unit)
+    (h1 : preservesLowEquivalence ctx observer op1)
+    (h2 : preservesLowEquivalence ctx observer op2)
+    (s1 s2 mid1 mid2 s1' s2' : SystemState)
+    (hLow : lowEquivalent ctx observer s1 s2)
+    (hOp1_1 : op1 s1 = .ok ((), mid1))
+    (hOp1_2 : op1 s2 = .ok ((), mid2))
+    (hOp2_1 : op2 mid1 = .ok ((), s1'))
+    (hOp2_2 : op2 mid2 = .ok ((), s2')) :
+    lowEquivalent ctx observer s1' s2' := by
+  have hLowMid := h1 s1 s2 mid1 mid2 hLow hOp1_1 hOp1_2
+  exact h2 mid1 mid2 s1' s2' hLowMid hOp2_1 hOp2_2
+
+/-- WS-E5/H-05: If every operation in a trace individually preserves
+low-equivalence, then executing the entire trace sequentially preserves
+low-equivalence. This is the composed bundle-level non-interference theorem
+connecting IF-M3 seeds into IF-M4 composition. -/
+theorem trace_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (ops : List (Kernel Unit))
+    (hAll : forall op, op ∈ ops -> preservesLowEquivalence ctx observer op)
+    (s1 s2 s1' s2' : SystemState)
+    (hLow : lowEquivalent ctx observer s1 s2)
+    (hExec1 : executeTrace ops s1 = .ok ((), s1'))
+    (hExec2 : executeTrace ops s2 = .ok ((), s2')) :
+    lowEquivalent ctx observer s1' s2' := by
+  induction ops generalizing s1 s2 with
+  | nil =>
+    simp [executeTrace, KernelM.pure] at hExec1 hExec2
+    cases hExec1; cases hExec2; exact hLow
+  | cons op rest ih =>
+    simp only [executeTrace] at hExec1 hExec2
+    cases hop1 : op s1 with
+    | error e => rw [hop1] at hExec1; simp at hExec1
+    | ok pair1 =>
+      rw [hop1] at hExec1
+      cases pair1 with
+      | mk u1 st1' =>
+        cases u1
+        cases hop2 : op s2 with
+        | error e => rw [hop2] at hExec2; simp at hExec2
+        | ok pair2 =>
+          rw [hop2] at hExec2
+          cases pair2 with
+          | mk u2 st2' =>
+            cases u2
+            have hOpPreserves : preservesLowEquivalence ctx observer op :=
+              hAll op (by simp)
+            have hLowMid := hOpPreserves s1 s2 st1' st2' hLow hop1 hop2
+            have hRestAll : forall op', op' ∈ rest ->
+                preservesLowEquivalence ctx observer op' :=
+              fun op' h => hAll op' (by simp [h])
+            exact ih hRestAll st1' st2' hLowMid hExec1 hExec2
+
+-- ============================================================================
+-- WS-E5/H-05: Witness theorems (seeds satisfy preservesLowEquivalence)
+-- ============================================================================
+
+/-- chooseThread unconditionally preserves low-equivalence (read-only operation). -/
+theorem chooseThread_preservesLowEquivalence
+    (ctx : LabelingContext) (observer : IfObserver) :
+    preservesLowEquivalence ctx observer
+      (fun st => match chooseThread st with
+        | Except.error e => Except.error e
+        | Except.ok (_, st') => Except.ok ((), st')) := by
+  intro s1 s2 s1' s2' hLow hStep1 hStep2
+  simp only [] at hStep1 hStep2
+  cases hC1 : chooseThread s1 with
+  | error e => rw [hC1] at hStep1; simp at hStep1
+  | ok pair1 =>
+    rw [hC1] at hStep1
+    cases pair1 with
+    | mk next1 stC1 =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep1
+      cases hC2 : chooseThread s2 with
+      | error e => rw [hC2] at hStep2; simp at hStep2
+      | ok pair2 =>
+        rw [hC2] at hStep2
+        cases pair2 with
+        | mk next2 stC2 =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep2
+          have hEq1 := chooseThread_preserves_state s1 stC1 next1 hC1
+          have hEq2 := chooseThread_preserves_state s2 stC2 next2 hC2
+          rw [<- hStep1.2, hEq1, <- hStep2.2, hEq2]; exact hLow
+
+/-- WS-E5/H-05: Concrete composed non-interference witness.
+Executing endpointSend followed by cspaceMint, both at high-domain entities,
+preserves low-equivalence. Demonstrates IF-M4 bundle composition over
+the IPC and capability subsystems. -/
+theorem endpointSend_then_cspaceMint_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (src dst : CSpaceAddr) (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (s1 s2 s1' s2' s1'' s2'' : SystemState)
+    (hLow : lowEquivalent ctx observer s1 s2)
+    (hSenderHigh : threadObservable ctx observer sender = false)
+    (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
+    (hEndpointHigh : objectObservable ctx observer eid = false)
+    (hCoherent : forall tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false ->
+        objectObservable ctx observer tid.toObjId = false)
+    (hRecvDomain1 : forall ep tid, s1.objects eid = some (.endpoint ep) ->
+        ep.waitingReceiver = some tid -> threadObservable ctx observer tid = false)
+    (hRecvDomain2 : forall ep tid, s2.objects eid = some (.endpoint ep) ->
+        ep.waitingReceiver = some tid -> threadObservable ctx observer tid = false)
+    (hSend1 : endpointSend eid sender s1 = .ok ((), s1'))
+    (hSend2 : endpointSend eid sender s2 = .ok ((), s2'))
+    (hSrcHigh : objectObservable ctx observer src.cnode = false)
+    (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hMint1 : cspaceMint src dst rights badge s1' = .ok ((), s1''))
+    (hMint2 : cspaceMint src dst rights badge s2' = .ok ((), s2'')) :
+    lowEquivalent ctx observer s1'' s2'' := by
+  have hLowMid : lowEquivalent ctx observer s1' s2' :=
+    endpointSend_preserves_lowEquivalent ctx observer eid sender s1 s2 s1' s2'
+      hLow hSenderHigh hSenderObjHigh hEndpointHigh hCoherent
+      hRecvDomain1 hRecvDomain2 hSend1 hSend2
+  exact cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
+    s1' s2' s1'' s2'' hLowMid hSrcHigh hDstHigh hMint1 hMint2
+
 end SeLe4n.Kernel

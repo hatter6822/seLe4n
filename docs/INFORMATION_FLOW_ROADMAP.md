@@ -99,7 +99,7 @@ Delivered theorems (WS-D2 closeout):
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle retype non-interference (TPI-D03).
 - Shared infrastructure: `storeObject_at_unobservable_preserves_lowEquivalent`.
 
-## IF-M4 — Bundle-level composition (WS-E5)
+## IF-M4 — Bundle-level composition (WS-E5) ✅ completed
 
 **v0.11.6 audit context:** Findings H-04 (lattice too coarse), H-05 (no
 composed non-interference), and M-07 (enforcement is pre-gate only) are
@@ -120,6 +120,21 @@ Exit evidence:
 - explicit assumptions list for architecture-boundary observability,
 - Tier 3 invariant-surface anchors include information-flow entrypoints,
 - label lattice supports ≥3 security domains.
+
+Delivered anchors (WS-E5 closeout):
+
+- **H-04:** `ConfidentialityLevel` (3-level), `IntegrityLevel` (3-level),
+  `ThreeDomainLabel` (3×3 = 9 labels), `GenericLabelingContext` parameterized
+  by label type with per-endpoint flow policies. `Policy.lean:120–269`.
+- **H-05:** `preservesLowEquivalence` predicate, `executeTrace` sequential
+  composition, `compose_preservesLowEquivalence`, `trace_preserves_lowEquivalent`
+  (inductive over arbitrary-length traces),
+  `endpointSend_then_cspaceMint_preserves_lowEquivalent` (concrete cross-subsystem
+  composed witness). `Invariant.lean:533–697`.
+- **M-07:** Four-category enforcement boundary documented in `Enforcement.lean`
+  (policy-gated / NI-proven / capability-bounded / internal helpers).
+  Completeness theorems: `endpointSendChecked_complete`, `cspaceMintChecked_complete`,
+  `serviceRestartChecked_complete`. `Enforcement.lean:196–310`.
 
 ## IF-M5 — Platform-facing integration readiness
 

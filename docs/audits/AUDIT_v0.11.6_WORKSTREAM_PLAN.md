@@ -49,8 +49,8 @@ related findings into coherent implementation slices.
 | H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 | **RESOLVED** |
 | H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
-| H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
-| H-05 | HIGH | No non-interference theorem | WS-E5 |
+| H-04 | HIGH | Two-level security lattice too coarse | WS-E5 | **RESOLVED** |
+| H-05 | HIGH | No non-interference theorem | WS-E5 | **RESOLVED** |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 | **RESOLVED** |
 | H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 | **RESOLVED** |
 | H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 | **RESOLVED** |
@@ -60,7 +60,7 @@ related findings into coherent implementation slices.
 | M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
 | M-04 | MEDIUM | No time-slice or preemption model | WS-E6 |
 | M-05 | MEDIUM | No domain scheduling | WS-E6 |
-| M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 |
+| M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 | **RESOLVED** |
 | M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
@@ -247,20 +247,38 @@ theorems; CDT acyclicity proven; cross-CNode revocation demonstrated. ✓
 
 **Findings:** H-04, H-05, M-07
 
+**Status:** **COMPLETED**
+
 **Scope:**
 
 1. **H-04** Parameterize security labels by a domain type rather than
    hardcoding `{low, high} × {untrusted, trusted}`. Support 3+ security
    domains, per-endpoint flow policies.
+   — *Resolved:* Three-level `ConfidentialityLevel` (pub/internal/secret) and
+   `IntegrityLevel` (untrusted/endorsed/trusted) lattices with reflexivity and
+   transitivity proofs. `ThreeDomainLabel` structure (3×3 = 9 labels) with
+   `threeDomainFlowsTo` flow relation. `GenericLabelingContext` parameterized
+   by arbitrary label type with per-endpoint flow policies.
 2. **H-05** Prove at least one composed bundle-level non-interference
    theorem (connecting IF-M3 seeds into IF-M4 composition). This advances
    the IF roadmap from scaffolding to evidence.
+   — *Resolved:* `preservesLowEquivalence` predicate, `executeTrace` sequential
+   composition, `compose_preservesLowEquivalence` (two-operation composition),
+   `trace_preserves_lowEquivalent` (arbitrary-length trace induction),
+   `endpointSend_then_cspaceMint_preserves_lowEquivalent` (concrete cross-subsystem
+   composed witness over IPC+capability).
 3. **M-07** Prove that unchecked operations cannot leak information when
    the enforcement gate is bypassed — or explicitly document which
    operations require the `*Checked` wrapper.
+   — *Resolved:* Comprehensive four-category enforcement boundary documented in
+   `Enforcement.lean`: (1) policy-gated, (2) NI-proven, (3) capability-bounded,
+   (4) internal helpers. Completeness theorems for all three checked operations
+   (`endpointSendChecked_complete`, `cspaceMintChecked_complete`,
+   `serviceRestartChecked_complete`). Transitive flow safety theorem.
 
 **Validation gate:** `test_full.sh` passes; at least one composed
 non-interference theorem exists; label lattice supports ≥3 domains.
+All gates satisfied.
 
 **Dependencies:** WS-E3 (endpoint blocking makes IF proofs meaningful),
 WS-E4 (CDT integration for capability flow proofs).
@@ -306,7 +324,7 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
-- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
+- **Phase P4:** WS-E5 (information-flow maturity) — **completed**.
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
 
 ---
@@ -319,7 +337,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
-| WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
+| WS-E5 | **Completed** | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 
 ---

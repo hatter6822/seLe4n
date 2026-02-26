@@ -294,6 +294,105 @@ private def runInformationFlowChecks : IO Unit := do
 
   IO.println "information-flow enforcement boundary checks passed [WS-D2 F-02]"
 
+  -- ========================================================================
+  -- WS-E5/H-04: Three-domain parameterized security lattice
+  -- ========================================================================
+
+  -- Confidentiality level ordering: pub <= internal_ <= secret_
+  expect "H-04: pub flows to internal"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .pub .internal_ == true)
+  expect "H-04: pub flows to secret"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .pub .secret_ == true)
+  expect "H-04: internal flows to secret"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .internal_ .secret_ == true)
+  expect "H-04: secret cannot flow to pub"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .secret_ .pub == false)
+  expect "H-04: secret cannot flow to internal"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .secret_ .internal_ == false)
+  expect "H-04: internal cannot flow to pub"
+    (SeLe4n.Kernel.confidentialityLevelFlowsTo .internal_ .pub == false)
+
+  -- Integrity level ordering: untrusted_ <= endorsed <= trusted_
+  expect "H-04: untrusted flows to endorsed"
+    (SeLe4n.Kernel.integrityLevelFlowsTo .untrusted_ .endorsed == true)
+  expect "H-04: untrusted flows to trusted"
+    (SeLe4n.Kernel.integrityLevelFlowsTo .untrusted_ .trusted_ == true)
+  expect "H-04: endorsed flows to trusted"
+    (SeLe4n.Kernel.integrityLevelFlowsTo .endorsed .trusted_ == true)
+  expect "H-04: trusted cannot flow to untrusted"
+    (SeLe4n.Kernel.integrityLevelFlowsTo .trusted_ .untrusted_ == false)
+
+  -- ThreeDomainLabel combined flow checks
+  let pubUntrusted := SeLe4n.Kernel.ThreeDomainLabel.publicUntrusted
+  let intEndorsed := SeLe4n.Kernel.ThreeDomainLabel.internalEndorsed
+  let secTrusted := SeLe4n.Kernel.ThreeDomainLabel.secretTrusted
+
+  expect "H-04: publicUntrusted flows to self"
+    (SeLe4n.Kernel.threeDomainFlowsTo pubUntrusted pubUntrusted == true)
+  expect "H-04: secretTrusted flows to self"
+    (SeLe4n.Kernel.threeDomainFlowsTo secTrusted secTrusted == true)
+  expect "H-04: publicUntrusted cannot flow to secretTrusted (integrity)"
+    (SeLe4n.Kernel.threeDomainFlowsTo pubUntrusted secTrusted == false)
+  expect "H-04: secretTrusted cannot flow to publicUntrusted (confidentiality)"
+    (SeLe4n.Kernel.threeDomainFlowsTo secTrusted pubUntrusted == false)
+
+  -- GenericLabelingContext with three-domain labels
+  let threeCtx := SeLe4n.Kernel.sampleThreeDomainContext
+  expect "H-04: sampleThreeDomainContext object label for oid=5 is publicUntrusted"
+    (threeCtx.objectLabelOf 5 == pubUntrusted)
+  expect "H-04: sampleThreeDomainContext object label for oid=15 is internalEndorsed"
+    (threeCtx.objectLabelOf 15 == intEndorsed)
+  expect "H-04: sampleThreeDomainContext object label for oid=25 is secretTrusted"
+    (threeCtx.objectLabelOf 25 == secTrusted)
+
+  IO.println "three-domain parameterized lattice checks passed [WS-E5 H-04]"
+
+  -- ========================================================================
+  -- WS-E5/M-07: Enforcement gate completeness
+  -- ========================================================================
+
+  -- serviceRestartChecked: same-domain restart should be allowed
+  let svcState :=
+    (BootstrapBuilder.empty
+      |>.withService 10 {
+          identity := { sid := 10, backingObject := 10, owner := 1 }
+          status := .running
+          dependencies := []
+          isolatedFrom := [] }
+      |>.build)
+
+  let sameSvcCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let allowPolicy : SeLe4n.Kernel.ServicePolicy := fun _ => true
+
+  let checkedRestart := SeLe4n.Kernel.serviceRestartChecked sameSvcCtx 10 10 allowPolicy allowPolicy svcState
+  let uncheckedRestart := SeLe4n.Kernel.serviceRestart 10 allowPolicy allowPolicy svcState
+  expect "M-07: same-domain serviceRestartChecked matches unchecked restart"
+    (match checkedRestart, uncheckedRestart with
+      | .ok _, .ok _ => true
+      | .error e1, .error e2 => e1 == e2
+      | _, _ => false)
+
+  -- Cross-domain restart should be denied (secret orchestrator → public service)
+  -- securityFlowsTo secretLabel publicLabel = false because high→low confidentiality is blocked
+  let crossSvcCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun sid => if sid == 10 then publicLabel else secretLabel }
+
+  let deniedRestart := SeLe4n.Kernel.serviceRestartChecked crossSvcCtx 20 10 allowPolicy allowPolicy svcState
+  expect "M-07: cross-domain serviceRestartChecked returns flowDenied"
+    (match deniedRestart with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "enforcement gate completeness checks passed [WS-E5 M-07]"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=
