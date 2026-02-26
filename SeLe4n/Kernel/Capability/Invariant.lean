@@ -60,7 +60,7 @@ components compositionally):
 
 **Error-case preservation theorems** (trivially true — the error path returns
 unchanged state, so any pre-state invariant holds trivially in the post-state):
-- `lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle`
+- `lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle`
 - `cspaceLookupSlot_preserves_capabilityInvariantBundle` (read-only, no mutation)
 
 Error-case theorems are retained for proof-surface completeness and compositional
@@ -1091,7 +1091,7 @@ def ipcSchedulerCouplingInvariantBundle (st : SystemState) : Prop :=
 
 /-- M4-A composed bundle entrypoint:
 M3.5 IPC+scheduler composition plus lifecycle metadata/invariant obligations. -/
-def m4aLifecycleInvariantBundle (st : SystemState) : Prop :=
+def lifecycleCompositionInvariantBundle (st : SystemState) : Prop :=
   ipcSchedulerCouplingInvariantBundle st ∧ lifecycleInvariantBundle st
 
 theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle
@@ -1206,19 +1206,19 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
       hNewObjCNodeUniq hStep
   · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hNewObjNotificationInv hStep
 
-theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
+theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
-    (hInv : m4aLifecycleInvariantBundle st)
+    (hInv : lifecycleCompositionInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    m4aLifecycleInvariantBundle st' := by
+    lifecycleCompositionInvariantBundle st' := by
   rcases hInv with ⟨hM35, hLifecycle⟩
   rcases hM35 with ⟨hM3, _hCoherence⟩
   have hM3' : coreIpcInvariantBundle st' :=
@@ -1275,14 +1275,14 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
       newObj hLifecycleDeleted hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
 
-theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
+theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)
     (authority cleanup : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hAlias : authority = cleanup)
-    (hInv : m4aLifecycleInvariantBundle st) :
-    m4aLifecycleInvariantBundle st := by
+    (hInv : lifecycleCompositionInvariantBundle st) :
+    lifecycleCompositionInvariantBundle st := by
   have _hExpected : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState :=
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv

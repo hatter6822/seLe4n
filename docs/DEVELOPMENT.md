@@ -111,6 +111,7 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
    - Current canonical IPC composition names:
      - `coreIpcInvariantBundle`
      - `ipcSchedulerCouplingInvariantBundle`
+     - `lifecycleCompositionInvariantBundle`
    - Current canonical trace helper names for these slices:
      - `runCapabilityIpcTrace`
      - `runSchedulerTimingDomainTrace`

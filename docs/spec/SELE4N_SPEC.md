@@ -174,7 +174,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 2. M3.5 IPC-scheduler handshake coherence semantics and trace anchors,
 3. local + composed invariant layering,
 4. theorem discoverability through stable naming,
-   - canonical IPC composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`,
+   - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`, `lifecycleCompositionInvariantBundle`,
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 5. fixture-backed executable evidence (`Main.lean` + trace fixture),
 6. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).

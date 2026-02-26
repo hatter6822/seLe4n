@@ -119,7 +119,7 @@ local and composed lifecycle preservation entrypoints (`lifecycleRetypeObject_pr
 `lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`,
 `lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant`,
 `lifecycleRetypeObject_preserves_coreIpcInvariantBundle`, and
-`lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle`), and fixture-backed executable trace evidence
+`lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle`), and fixture-backed executable trace evidence
 for unauthorized/illegal-state/success lifecycle retype outcomes plus composed lifecycle+capability behavior.
 
 ## 8. M5 policy-surface layering (WS-M5-C complete)

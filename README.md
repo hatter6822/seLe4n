@@ -77,6 +77,7 @@ Additional resources:
 - `runSchedulerTimingDomainTrace` (formerly WS-labeled trace helper) now names the EDF/time-slice/domain scheduler scenario group by function.
 - `coreIpcInvariantBundle` names the composed scheduler+capability+IPC invariant bundle.
 - `ipcSchedulerCouplingInvariantBundle` names the bundle that extends `coreIpcInvariantBundle` with runnable/blocked IPC-scheduler coherence obligations.
+- `lifecycleCompositionInvariantBundle` names the composed IPC-scheduler+lifecycle metadata bundle (previously stage-labeled as M4-A).
 
 ## Active workstreams (WS-E)
 
