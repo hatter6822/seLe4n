@@ -74,6 +74,7 @@ Every milestone-moving PR should include:
 - IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
+- Intrusive run-queue metadata is modeled in-core: TCBs expose `rqPrev`/`rqNext`, scheduler state exposes `runQueueHead`/`runQueueTail`, and `rebuildIntrusiveRunQueue` materializes links from the runnable list without external queue-node allocation.
 
 ## 4) Daily contributor loop
 

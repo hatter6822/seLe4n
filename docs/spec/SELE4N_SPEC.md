@@ -88,6 +88,7 @@ on the semantic and proof foundations of the previous one.
 - IPC thread-state updates fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace/probe harnesses exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
+- Intrusive run-queue metadata is now first-class in the model: TCBs carry `rqPrev`/`rqNext`; scheduler state carries `runQueueHead`/`runQueueTail`; and `rebuildIntrusiveRunQueue` synchronizes these links from runnable order.
 
 ## 4. Active Workstream Portfolio (WS-E)
 
@@ -106,7 +107,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.3 Critical — Model Completion
 
-- **WS-E4:** Capability and IPC model completion (critical; **completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4:** Capability and IPC model completion (critical; **completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12, M-13)
 
 ### 4.4 High — Security Assurance
 

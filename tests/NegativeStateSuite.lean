@@ -78,7 +78,8 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.withRunnable [7, 8]
-    |>.build)
+    |>.build
+    |> SeLe4n.Model.rebuildIntrusiveRunQueue)
 
 private def invariantObjectIds : List SeLe4n.ObjId :=
   [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 7, 8]
@@ -129,6 +130,15 @@ private def expectOk
 
 private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
+
+  -- WS-E4/M-13: intrusive run-queue links are embedded in TCBs
+  match baseState.objects 7, baseState.objects 8 with
+  | some (.tcb t7), some (.tcb t8) =>
+      if t7.rqPrev = none && t7.rqNext = some 8 && t8.rqPrev = some 7 && t8.rqNext = none then
+        IO.println "positive check passed [intrusive run-queue links]: 7 <-> 8"
+      else
+        throw <| IO.userError s!"intrusive run-queue link mismatch: t7=({reprStr t7.rqPrev},{reprStr t7.rqNext}) t8=({reprStr t8.rqPrev},{reprStr t8.rqNext})"
+  | _, _ => throw <| IO.userError "expected runnable TCB fixtures for intrusive link check"
   expectError "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
     .objectNotFound

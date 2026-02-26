@@ -35,6 +35,10 @@ structure DomainScheduleEntry where
 
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
+  /-- WS-E4/M-13: intrusive run-queue head pointer (into TCB `rqNext` chain). -/
+  runQueueHead : Option SeLe4n.ThreadId := none
+  /-- WS-E4/M-13: intrusive run-queue tail pointer (into TCB `rqPrev` chain). -/
+  runQueueTail : Option SeLe4n.ThreadId := none
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -92,7 +96,7 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnable := [], runQueueHead := none, runQueueTail := none, current := none }
 
 instance : Inhabited SystemState where
   default := {
@@ -110,6 +114,43 @@ instance : Inhabited SystemState where
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
+
+/-- WS-E4/M-13: overwrite intrusive run-queue links for one TCB if it exists. -/
+def storeTcbRunQueueLinks
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (tid : SeLe4n.ThreadId)
+    (prev next : Option SeLe4n.ThreadId) : SeLe4n.ObjId → Option KernelObject :=
+  fun oid =>
+    if oid = tid.toObjId then
+      match objects oid with
+      | some (.tcb tcb) => some (.tcb { tcb with rqPrev := prev, rqNext := next })
+      | other => other
+    else
+      objects oid
+
+private def rebuildIntrusiveRunQueueLinksLoop
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId)
+    : SeLe4n.ObjId → Option KernelObject :=
+  match runnable with
+  | [] => objects
+  | tid :: rest =>
+      let next := rest.head?
+      let objects' := storeTcbRunQueueLinks objects tid prev next
+      rebuildIntrusiveRunQueueLinksLoop objects' rest (some tid)
+
+/-- WS-E4/M-13: materialize intrusive run-queue metadata from the canonical
+`scheduler.runnable` ordering.
+
+This keeps the executable/proof surface backward-compatible (the list remains
+the source of truth) while eliminating external queue-node allocation by
+embedding queue links in each TCB. -/
+def rebuildIntrusiveRunQueue (st : SystemState) : SystemState :=
+  let runnable := st.scheduler.runnable
+  let objects' := rebuildIntrusiveRunQueueLinksLoop st.objects runnable none
+  let sched' := { st.scheduler with runQueueHead := runnable.head?, runQueueTail := runnable.getLast? }
+  { st with objects := objects', scheduler := sched' }
 
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
   fun st =>
