@@ -196,7 +196,7 @@ private theorem storeTcbIpcState_preserves_projection
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
-    simp [hLookup] at hStep; subst hStep; rfl
+    simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with

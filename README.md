@@ -107,3 +107,10 @@ Primary references:
 ## Historical note
 
 Prior workstream plans (WS-C, WS-B), older audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters are archived in [`docs/dev_history/`](docs/dev_history/README.md) for traceability.
+
+
+## Security defaults
+
+- **Reserved identifier enforcement:** thread-boundary IPC helpers reject sentinel-style thread identifiers before transition effects are committed.
+- **IPC TCB update integrity:** `storeTcbIpcState` now fails with `objectNotFound` when the target TCB is missing, preventing queue-only ghost updates.
+- **Information-flow default usage:** executable harnesses call `endpointSendChecked`, `cspaceMintChecked`, and `serviceRestartChecked` by default using an explicit labeling context. Unchecked variants remain available for research/proof decomposition but should be treated as unsafe-by-default primitives.

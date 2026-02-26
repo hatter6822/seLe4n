@@ -148,3 +148,12 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+
+---
+
+### 10. Security defaults
+
+1. **Do not use sentinel IDs (`0`) as live object/service/thread identifiers.** Kernel IPC transitions that consume thread IDs must reject reserved/sentinel thread values before mutating state.
+2. **IPC/notification transitions require real TCBs.** `storeTcbIpcState` errors on missing targets; callers must provision TCB objects for all queued participants.
+3. **Prefer policy-checked entry points in executable consumers.** Use `endpointSendChecked`, `cspaceMintChecked`, and `serviceRestartChecked` unless you are explicitly modeling unchecked internal primitives for proof or experiment scope.

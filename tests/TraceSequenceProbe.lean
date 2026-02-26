@@ -13,6 +13,12 @@ inductive ProbeOp where
 
 def probeEndpointId : SeLe4n.ObjId := 300
 
+def permissiveLabelingContext : SeLe4n.Kernel.LabelingContext :=
+  { objectLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.publicLabel
+    threadLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.publicLabel
+    endpointLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.publicLabel
+    serviceLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.publicLabel }
+
 def probeThreadIds (threadCount : Nat) : List SeLe4n.ObjId :=
   List.range threadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
 
@@ -104,7 +110,7 @@ this function classifies each error and returns a structured outcome. -/
 def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
   match op with
   | .send =>
-      match SeLe4n.Kernel.endpointSend probeEndpointId tid st with
+      match SeLe4n.Kernel.endpointSendChecked permissiveLabelingContext probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   | .awaitReceive =>

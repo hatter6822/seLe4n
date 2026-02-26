@@ -204,3 +204,12 @@ in [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
+
+### Security defaulting and sentinel policy
+
+The executable model enforces three normative defaults:
+
+1. **Sentinel rejection at object-store boundaries:** operations that consume thread identities in IPC paths must reject reserved sentinel thread identifiers (`0`) before mutating model state.
+2. **No silent IPC state writes for missing threads:** thread IPC-state updates must fail when the target TCB is absent; queue mutation without corresponding TCB mutation is not allowed.
+3. **Checked IFC wrappers as integration default:** consumer-facing traces/harnesses should call `endpointSendChecked`, `cspaceMintChecked`, and `serviceRestartChecked` by default, with unchecked primitives retained only for controlled modeling contexts.

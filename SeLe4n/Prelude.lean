@@ -61,12 +61,12 @@ namespace ThreadId
 
 **Design note (deferred validation):** This conversion is unchecked — it does
 not verify that the resulting `ObjId` actually maps to a TCB in the object store.
-Validation is intentionally deferred to the store-access boundary: callers that
-retrieve a `KernelObject` via `st.objects tid.toObjId` immediately pattern-match
-on `.tcb tcb`, so invalid IDs are caught deterministically at use site. This
-avoids carrying an extra proof obligation through every intermediate function.
-See `ThreadId.toObjId_injective` for the injectivity proof that ensures two
-distinct thread IDs cannot alias the same object. -/
+Sentinel rejection is enforced at thread-boundary helpers such as
+`lookupTcb`/`storeTcbIpcState`, and callers should use `toObjIdChecked` when
+building object identifiers from external thread inputs. This keeps intermediate plumbing lightweight
+while still providing deterministic rejection of reserved identifiers at
+operational entry points. See `ThreadId.toObjId_injective` for the injectivity
+proof that ensures two distinct thread IDs cannot alias the same object. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance instOfNat (n : Nat) : OfNat ThreadId n where
