@@ -4,30 +4,52 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- M-03/WS-E6: Fixed-priority selection with deterministic FIFO tie-breaking.
+/-- M-03/WS-E6: EDF deadline comparison. Returns `true` when `candidate` has a
+strictly earlier deadline than `current`, justifying replacement of the current
+best. Deadline semantics:
+- **0 = no deadline** (infinite): lowest urgency among equal-priority threads.
+- **Non-zero = absolute deadline**: lower value = earlier = more urgent.
+- Both 0 → `false` (FIFO: keep current best).
+- Candidate 0, current non-zero → `false` (current has urgency).
+- Candidate non-zero, current 0 → `true` (candidate has urgency).
+- Both non-zero → `candidate < current` (earlier deadline wins). -/
+private def edfBetter (candidateDeadline currentDeadline : Nat) : Bool :=
+  match candidateDeadline, currentDeadline with
+  | 0, _ => false
+  | _, 0 => true
+  | d1, d2 => d1 < d2
+
+/-- M-03/WS-E6: Fixed-priority selection with EDF (Earliest Deadline First)
+tie-breaking.
 
 **Scheduling semantics:** This function implements a fixed-priority scheduler
-with strictly deterministic tie-breaking. The selection policy is:
+with a two-level deterministic tie-breaking policy:
 
 1. **Higher numeric priority wins:** A thread with `priority.toNat = 200` beats
    one with `priority.toNat = 100`. This inverts some conventions but is
    consistent throughout the model.
-2. **FIFO tie-breaking:** When two threads share the same priority, the one
-   appearing first in the runnable queue is selected. Since `chooseBestRunnable`
-   replaces `best` only on strict-less-than (`bestPrio.toNat < tcb.priority.toNat`),
-   the earliest-enqueued thread of the highest priority wins.
+2. **EDF tie-breaking:** When two threads share the same priority, the thread
+   with the earlier (lower non-zero) deadline wins. A deadline of 0 means "no
+   real-time constraint" and is treated as infinite (lowest urgency).
+3. **FIFO fallback:** When both priority and deadline are equal (or both
+   deadlines are 0), the thread appearing first in the runnable queue wins.
 
 **Divergence from seL4:** The real seL4 scheduler uses round-robin within equal
-priority levels (rotating the head after each quantum expires). This model uses
-FIFO order as a deliberate simplification—round-robin is recovered when combined
-with `handleTimerTick` (M-04), which moves the running thread to the back of the
-queue on time-slice expiry, achieving the same rotation effect.
+priority levels (rotating the head after each quantum expires). This model
+extends the selection policy with EDF tie-breaking, providing a richer
+scheduling model that supports mixed criticality workloads. Round-robin
+rotation is still recovered via `handleTimerTick` (M-04), which moves the
+running thread to the back of the queue on time-slice expiry.
+
+The accumulator tracks `(ThreadId × Priority × Deadline)` to enable the
+two-level comparison at each step.
 
 See `chooseThread_deterministic` for the determinism proof. -/
 private def chooseBestRunnable
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × Nat)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × Nat)) :=
   match runnable with
   | [] => .ok best
   | tid :: rest =>
@@ -35,9 +57,15 @@ private def chooseBestRunnable
       | some (.tcb tcb) =>
           let best' :=
             match best with
-            | none => some (tid, tcb.priority)
-            | some (_, bestPrio) =>
-                if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+            | none => some (tid, tcb.priority, tcb.deadline)
+            | some (_, bestPrio, bestDeadline) =>
+                if bestPrio.toNat < tcb.priority.toNat then
+                  some (tid, tcb.priority, tcb.deadline)
+                else if bestPrio.toNat == tcb.priority.toNat &&
+                        edfBetter tcb.deadline bestDeadline then
+                  some (tid, tcb.priority, tcb.deadline)
+                else
+                  best
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
@@ -52,14 +80,15 @@ private def rotateCurrentToBack
       else
         .error .schedulerInvariantViolation
 
-/-- Choose the highest-priority runnable thread. Tie-breaking is deterministic: the first
-thread in runnable-order wins when priorities are equal. -/
+/-- Choose the highest-priority runnable thread. Tie-breaking is deterministic:
+among equal-priority threads, the one with the earliest deadline wins (EDF);
+on deadline tie, the first in runnable-order wins (FIFO). -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match chooseBestRunnable st.objects st.scheduler.runnable none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- Scheduler step for the bootstrap model.
 
@@ -173,11 +202,10 @@ theorem chooseThread_preserves_state
       | none =>
           rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
           simpa using hSt.symm
-      | some pair =>
-          cases pair with
-          | mk tid prio =>
-              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-              simpa using hSt.symm
+      | some triple =>
+          obtain ⟨tid, _, _⟩ := triple
+          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
 
  theorem schedule_preserves_wellFormed
     (st st' : SystemState)
@@ -451,6 +479,55 @@ theorem chooseThread_deterministic
   cases hEq; exact ⟨rfl, rfl⟩
 
 -- ============================================================================
+-- M-03/WS-E6: EDF comparison properties
+-- ============================================================================
+
+/-- M-03/WS-E6: `edfBetter` is irreflexive — no deadline is strictly earlier
+than itself. This guarantees FIFO stability: equal-deadline threads retain
+their queue ordering. -/
+theorem edfBetter_irrefl (d : Nat) : edfBetter d d = false := by
+  unfold edfBetter
+  cases d with
+  | zero => rfl
+  | succ n => simp [Nat.lt_irrefl]
+
+/-- M-03/WS-E6: A non-zero deadline always beats the "no deadline" sentinel (0).
+This ensures that threads with real-time constraints are preferred over
+unconstrained threads at equal priority. -/
+theorem edfBetter_nonzero_beats_zero (d : Nat) (h : d ≠ 0) :
+    edfBetter d 0 = true := by
+  unfold edfBetter
+  cases d with
+  | zero => exact absurd rfl h
+  | succ n => rfl
+
+/-- M-03/WS-E6: The "no deadline" sentinel (0) never beats any deadline.
+This is the dual of `edfBetter_nonzero_beats_zero`. -/
+theorem edfBetter_zero_loses (d : Nat) : edfBetter 0 d = false := by
+  unfold edfBetter; rfl
+
+/-- M-03/WS-E6: For two non-zero deadlines, `edfBetter` selects the
+strictly earlier one (`<`). -/
+theorem edfBetter_nonzero_iff (a b : Nat) (ha : a ≠ 0) (hb : b ≠ 0) :
+    edfBetter a b = true ↔ a < b := by
+  obtain ⟨n, rfl⟩ := Nat.exists_eq_succ_of_ne_zero ha
+  obtain ⟨m, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hb
+  simp [edfBetter]
+
+/-- M-03/WS-E6: `edfBetter` is asymmetric on non-zero deadlines — if `a`
+beats `b`, then `b` does not beat `a`. -/
+theorem edfBetter_asymm (a b : Nat) (h : edfBetter a b = true) :
+    edfBetter b a = false := by
+  unfold edfBetter at h ⊢
+  cases a with
+  | zero => simp at h
+  | succ n =>
+      cases b with
+      | zero => rfl
+      | succ m =>
+          simp at h ⊢; omega
+
+-- ============================================================================
 -- M-05/WS-E6: Domain-aware thread selection
 -- ============================================================================
 
@@ -491,7 +568,7 @@ def chooseDomainThread : Kernel (Option SeLe4n.ThreadId) :=
         -- Fall back to unrestricted selection if domain filtering causes issues
         chooseThread st
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 -- ============================================================================
 -- M-04/WS-E6: Time-slice decrement and tick-based preemption

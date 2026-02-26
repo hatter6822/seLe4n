@@ -298,6 +298,134 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"yield current thread expected tid 8, got {reprStr stYielded.scheduler.current}"
 
+  -- ==========================================================================
+  -- M-03/WS-E6: EDF tie-breaking tests
+  -- ==========================================================================
+
+  -- Two threads with equal priority but different deadlines: earlier deadline wins
+  let edfState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 10 (.tcb {
+        tid := 10
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        deadline := 100    -- later deadline
+      })
+      |>.withObject 11 (.tcb {
+        tid := 11
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        deadline := 30     -- earlier deadline (wins EDF)
+      })
+      |>.withRunnable [10, 11]
+      |>.withCurrent none
+      |>.build)
+  let (_, stEdf) ← expectOkState "EDF tie-breaking: earlier deadline wins"
+    (SeLe4n.Kernel.schedule edfState)
+  if stEdf.scheduler.current = some (SeLe4n.ThreadId.ofNat 11) then
+    IO.println "positive check passed [EDF tie-breaking]: current = tid 11 (deadline 30 < 100)"
+  else
+    throw <| IO.userError s!"EDF tie-breaking expected current = tid 11 (earlier deadline), got {reprStr stEdf.scheduler.current}"
+
+  -- EDF: thread with deadline beats thread without deadline (deadline 0 = no constraint)
+  let edfVsNoDeadline : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 12 (.tcb {
+        tid := 12
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        deadline := 0      -- no deadline (infinite)
+      })
+      |>.withObject 13 (.tcb {
+        tid := 13
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        deadline := 200    -- has a deadline (wins over no-deadline)
+      })
+      |>.withRunnable [12, 13]
+      |>.withCurrent none
+      |>.build)
+  let (_, stEdfVsNone) ← expectOkState "EDF: deadline beats no-deadline"
+    (SeLe4n.Kernel.schedule edfVsNoDeadline)
+  if stEdfVsNone.scheduler.current = some (SeLe4n.ThreadId.ofNat 13) then
+    IO.println "positive check passed [EDF vs no-deadline]: current = tid 13 (has deadline beats no-deadline)"
+  else
+    throw <| IO.userError s!"EDF vs no-deadline expected current = tid 13, got {reprStr stEdfVsNone.scheduler.current}"
+
+  -- EDF: equal priority + equal deadline → FIFO (first in queue wins)
+  let edfFifo : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 14 (.tcb {
+        tid := 14
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        deadline := 75
+      })
+      |>.withObject 15 (.tcb {
+        tid := 15
+        priority := 50
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        deadline := 75     -- same deadline → FIFO
+      })
+      |>.withRunnable [14, 15]
+      |>.withCurrent none
+      |>.build)
+  let (_, stEdfFifo) ← expectOkState "EDF FIFO fallback: equal deadline → queue order"
+    (SeLe4n.Kernel.schedule edfFifo)
+  if stEdfFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 14) then
+    IO.println "positive check passed [EDF FIFO fallback]: current = tid 14 (first in queue on deadline tie)"
+  else
+    throw <| IO.userError s!"EDF FIFO expected current = tid 14, got {reprStr stEdfFifo.scheduler.current}"
+
+  -- Priority still dominates EDF: higher priority wins even with later deadline
+  let priorityBeatsEdf : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 16 (.tcb {
+        tid := 16
+        priority := 100    -- higher priority
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        deadline := 999    -- later deadline doesn't matter
+      })
+      |>.withObject 17 (.tcb {
+        tid := 17
+        priority := 50     -- lower priority
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        deadline := 1      -- earliest possible deadline
+      })
+      |>.withRunnable [16, 17]
+      |>.withCurrent none
+      |>.build)
+  let (_, stPriOverEdf) ← expectOkState "priority dominates EDF"
+    (SeLe4n.Kernel.schedule priorityBeatsEdf)
+  if stPriOverEdf.scheduler.current = some (SeLe4n.ThreadId.ofNat 16) then
+    IO.println "positive check passed [priority > EDF]: current = tid 16 (higher priority wins despite later deadline)"
+  else
+    throw <| IO.userError s!"priority > EDF expected current = tid 16, got {reprStr stPriOverEdf.scheduler.current}"
+
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]

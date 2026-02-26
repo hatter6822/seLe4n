@@ -301,7 +301,7 @@ WS-E4 (CDT integration for capability flow proofs).
 **Scope:**
 
 1. ~~**M-03** Implement fixed-priority + EDF tie-breaking semantics and document the difference from
-   seL4 round-robin.~~ **DONE** — documented FIFO tie-breaking in `chooseBestRunnable`; added `chooseThread_deterministic` theorem.
+   seL4 round-robin.~~ **DONE** — implemented EDF (Earliest Deadline First) tie-breaking: added `deadline` field to `TCB`, `edfBetter` comparison function, three-level selection (priority → EDF → FIFO) in `chooseBestRunnable`; `edfBetter_irrefl`, `edfBetter_nonzero_beats_zero`, `edfBetter_zero_loses`, `edfBetter_nonzero_iff`, `edfBetter_asymm` theorems; 4 runtime EDF tests; `chooseThread_deterministic` theorem.
 2. ~~**M-04** Model time-slice decrement and tick-based preemption using
    `TCB.timeSlice` and `MachineState.timer`.~~ **DONE** — added `timeSlice` field to `TCB`; implemented `handleTimerTick` with preservation theorems.
 3. ~~**M-05** Implement domain scheduling using `DomainId` in TCB for
@@ -379,7 +379,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |
 | H-05 | Composed bundle-level non-interference (IF-M4): `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` single-step composition, `NonInterferenceTrace` + `composedNonInterference_trace` trace-level composition, `preservesLowEquivalence` abstract predicate, `compose_preservesLowEquivalence` sequential composition | WS-E5 |
 | M-07 | Enforcement boundary specification: `EnforcementClass` classification (`policyGated`/`capabilityOnly`/`readOnly`), `enforcementBoundary` canonical table (17 entries), `*_denied_preserves_state` theorems, `enforcement_sufficiency_*` theorems proving 3 checked wrappers are sufficient | WS-E5 |
-| M-03 | Documented FIFO tie-breaking semantics in `chooseBestRunnable` docstring (vs seL4 round-robin); `chooseThread_deterministic` theorem | WS-E6 |
+| M-03 | Fixed-priority + EDF tie-breaking: `deadline` field on `TCB` (default 0 = no constraint), `edfBetter` comparison, three-level selection (priority → EDF → FIFO) in `chooseBestRunnable`; `edfBetter_irrefl`, `edfBetter_nonzero_beats_zero`, `edfBetter_zero_loses`, `edfBetter_nonzero_iff`, `edfBetter_asymm` theorems; 4 EDF runtime tests; `chooseThread_deterministic` determinism theorem | WS-E6 |
 | M-04 | Added `timeSlice` field to `TCB` (default 5); `handleTimerTick` operation with slice decrement and reschedule-on-expiry; `handleTimerTick_idle_advances_timer`, `handleTimerTick_decrement_timer` theorems | WS-E6 |
 | M-05 | `DomainScheduleEntry` structure, `defaultDomainSchedule`, `activeDomain`/`domainTimeRemaining`/`domainScheduleIndex` in `SchedulerState`; `filterByDomain`, `chooseDomainThread`, `handleDomainTick` operations; `handleDomainTick_preserves_runnable`, `handleDomainTick_preserves_schedulerInvariantBundle` theorems | WS-E6 |
 | M-08 | `AssumptionConsumptionWitness` structure in `Architecture/Invariant.lean`; `assumptionInventory_fully_covered`, `assumption_proof_coverage_complete` in `Assumptions.lean`; per-assumption consumption theorems (`timer_assumption_consumed_by_adapter`, `register_assumption_consumed_by_adapter`, `memory_assumption_consumed_by_adapter`) | WS-E6 |

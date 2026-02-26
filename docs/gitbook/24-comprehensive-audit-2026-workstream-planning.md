@@ -59,7 +59,7 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. All works
 
 **WS-E6 — Model completeness and documentation** has been completed (v0.11.12). All 10 findings resolved:
 
-- **M-03:** Documented FIFO tie-breaking semantics in `chooseBestRunnable` (vs seL4 round-robin); added `chooseThread_deterministic` theorem.
+- **M-03:** Fixed-priority + EDF tie-breaking — `deadline` field on `TCB`, `edfBetter` comparison, three-level selection (priority → EDF → FIFO) in `chooseBestRunnable`; 5 EDF comparison theorems (`edfBetter_irrefl`, `edfBetter_nonzero_beats_zero`, `edfBetter_zero_loses`, `edfBetter_nonzero_iff`, `edfBetter_asymm`); 4 runtime EDF tests; `chooseThread_deterministic` determinism theorem.
 - **M-04:** Added `timeSlice` field to `TCB`; implemented `handleTimerTick` with slice decrement and reschedule-on-expiry; `handleTimerTick_idle_advances_timer`, `handleTimerTick_decrement_timer` theorems.
 - **M-05:** Two-level domain scheduling — `DomainScheduleEntry`, `activeDomain`, `handleDomainTick`, `chooseDomainThread` with preservation theorems.
 - **M-08:** Architecture assumption consumption — `AssumptionConsumptionWitness` structure, `assumptionInventory_fully_covered`, per-assumption consumption theorems.

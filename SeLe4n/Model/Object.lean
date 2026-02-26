@@ -84,10 +84,17 @@ inductive ThreadIpcState where
 
 /-- Thread Control Block.
 
-M-04/WS-E6: Added `timeSlice` field modeling the remaining time quanta before
-tick-based preemption. When `timeSlice` reaches 0, the scheduler preempts the
-thread and moves it to the back of the runnable queue. The default value of 5
-represents a reasonable initial quanta matching seL4's configurable time-slice. -/
+M-04/WS-E6: `timeSlice` models the remaining time quanta before tick-based
+preemption. When `timeSlice` reaches 0, the scheduler preempts the thread
+and moves it to the back of the runnable queue. Default 5 matches seL4's
+configurable time-slice.
+
+M-03/WS-E6: `deadline` supports EDF (Earliest Deadline First) tie-breaking.
+When two threads share the same fixed priority, the thread with the earlier
+(lower non-zero) deadline is selected first. A deadline of 0 means "no
+real-time constraint" and is treated as infinite (lowest urgency among
+equal-priority threads). This is a model extension — seL4 uses round-robin
+tie-breaking within equal priority levels rather than EDF. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -97,6 +104,8 @@ structure TCB where
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
   timeSlice : Nat := 5
+  /-- M-03/WS-E6: Absolute deadline for EDF tie-breaking. 0 = no deadline (infinite). -/
+  deadline : Nat := 0
   deriving Repr, DecidableEq
 
 inductive EndpointState where

@@ -30,6 +30,15 @@ Preservation shape:
 - `schedule_preserves_*`
 - `handleYield_preserves_*`
 
+Selection policy (M-03/WS-E6):
+
+- Fixed-priority with EDF (Earliest Deadline First) tie-breaking via `edfBetter`
+- Three-level: (1) highest priority, (2) earliest non-zero deadline, (3) FIFO queue order
+- `chooseThread_deterministic` — functional determinism proof
+- `edfBetter_irrefl`, `edfBetter_asymm` — ordering properties
+- `edfBetter_nonzero_beats_zero`, `edfBetter_zero_loses` — sentinel handling
+- `edfBetter_nonzero_iff` — characterization for non-zero deadlines
+
 ## 3. Capability invariants (M2)
 
 Component level:
@@ -390,8 +399,12 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 
 Time-slice and domain scheduling extensions in `Scheduler/Operations.lean`:
 
-- **M-03** — `chooseThread_deterministic`: determinism theorem for scheduler thread selection.
-  `chooseBestRunnable` uses FIFO (list-position) tie-breaking, documented vs seL4 round-robin.
+- **M-03** — Fixed-priority + EDF (Earliest Deadline First) tie-breaking in `chooseBestRunnable`.
+  Three-level selection: (1) highest numeric priority wins, (2) on priority tie, earliest
+  non-zero deadline wins via `edfBetter`, (3) on deadline tie, FIFO queue order wins.
+  `TCB.deadline` field (default 0 = no real-time constraint). EDF comparison theorems:
+  `edfBetter_irrefl`, `edfBetter_nonzero_beats_zero`, `edfBetter_zero_loses`,
+  `edfBetter_nonzero_iff`, `edfBetter_asymm`. `chooseThread_deterministic` for determinism.
 - **M-04** — `handleTimerTick`: time-slice decrement and reschedule-on-expiry.
   - `handleTimerTick_idle_advances_timer` — no current thread case.
   - `handleTimerTick_decrement_timer` — non-expiry case preserves current thread.

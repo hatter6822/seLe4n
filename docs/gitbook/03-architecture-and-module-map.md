@@ -61,7 +61,10 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
   - M1 component invariants and scheduler bundle alias.
 - `SeLe4n/Kernel/Scheduler/Operations.lean`
-  - scheduling transitions + preservation theorem families.
+  - scheduling transitions: fixed-priority selection with EDF (Earliest Deadline First)
+    tie-breaking, time-slice preemption, domain scheduling, yield rotation.
+  - EDF comparison (`edfBetter`) + 5 algebraic theorems.
+  - preservation theorem families for scheduler invariant bundle.
 
 ### Capability subsystem
 
