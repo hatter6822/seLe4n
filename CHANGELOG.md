@@ -1,3 +1,23 @@
+## [0.12.0] - 2026-02-26
+
+### WS-E6 Model completeness and documentation (completed)
+
+All 10 WS-E6 findings resolved with zero sorry/axiom. Synthesized from analysis of PRs #223, #224, and #225, selecting the best approach for each finding. This closes the entire WS-E portfolio.
+
+- **M-03 (EDF tie-breaking):** Three-level scheduling comparison via `isBetterCandidate` (priority > deadline > FIFO). `Deadline` typed identifier. `TCB.deadline` field. `isBetterCandidate_irrefl` FIFO stability and `isBetterCandidate_asymm` strict ordering theorems. `edfCurrentHasEarliestDeadline` invariant predicate.
+- **M-04 (Time-slice preemption):** `TCB.timeSlice` field (default 5). `defaultTimeSlice` constant. `timerTick` operation with decrement/reset+reschedule. `timeSlicePositive` invariant predicate.
+- **M-05 (Domain scheduling):** `DomainScheduleEntry`, `filterByDomain`, `chooseThreadInDomain` (with fallback), `switchDomain`, `scheduleDomain`. `currentThreadInActiveDomain` invariant. Preservation theorems.
+- **M-08 (Architecture assumption consumption):** Three consumption bridge theorems connecting structural axioms to adapter proofs. 4-step consumption chain documented.
+- **F-17 (O(n) design decision ADR):** `docs/ON_DESIGN_DECISION_ADR.md` with rationale, scope note, complexity comparison, migration path.
+- **L-01 (Unified API surface):** `apiInvariantBundle` alias, `apiInvariantBundle_default` theorem, entry-point stability table (30+ operations).
+- **L-02 (Memory zero-default):** Comprehensive documentation and 4 theorems (`default_memory_returns_zero`, `default_registerFile_pc_zero`, `default_registerFile_sp_zero`, `default_timer_zero`).
+- **L-03 (Monad helpers):** `KernelM.get/set/modify/liftExcept/throw` with 6 correctness theorems.
+- **L-04 (toObjId documentation):** Design rationale documented. `toObjIdChecked` safe variant with `toObjIdChecked_eq_some_of_not_reserved` theorem.
+- **L-05 (objectIndex monotonicity):** Design rationale documented. `storeObject_objectIndex_monotone` theorem.
+- WS-E6 trace scenarios: EDF tie-breaking, timer tick, domain switching. 7 new fixture anchors.
+- All documentation synchronized. WS-E6 marked COMPLETED across all surfaces.
+- Bumped package version to **`0.12.0`** (minor version bump for WS-E portfolio completion).
+
 ## [0.11.12] - 2026-02-26
 
 ### WS-E5 Information-flow maturity (completed)
