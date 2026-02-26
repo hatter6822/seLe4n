@@ -74,6 +74,7 @@ Every milestone-moving PR should include:
 - IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
+- Dual endpoint wait queues are modeled as explicit `{head, tail}` FIFOs (`SeLe4n.Queue`), and IPC dual-queue transitions use `enqueueTail`/`dequeueHead` instead of list-tail append patterns.
 
 ## 4) Daily contributor loop
 

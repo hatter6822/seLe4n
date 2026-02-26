@@ -457,4 +457,47 @@ theorem ServiceId.default_eq_sentinel : (default : ServiceId) = ServiceId.sentin
 /-- The sentinel ServiceId is reserved. -/
 theorem ServiceId.sentinel_isReserved : ServiceId.sentinel.isReserved = true := rfl
 
+-- ============================================================================
+-- WS-E7: FIFO queue representation with explicit {head, tail}
+-- ============================================================================
+
+/-- Queue represented as `{head, tail}` lists.
+
+`head` stores the dequeue-facing prefix in-order.
+`tail` stores enqueue-only elements in reverse order.
+`toList` materializes FIFO order as `head ++ tail.reverse`.
+
+`enqueueTail` is O(1); `dequeueHead` is O(1) on non-empty `head` and performs
+one `reverse` only when rotating buffered tail elements. -/
+structure Queue (α : Type) where
+  head : List α
+  tail : List α
+  deriving Repr, DecidableEq
+
+namespace Queue
+
+def empty : Queue α := { head := [], tail := [] }
+
+def toList (q : Queue α) : List α := q.head ++ q.tail.reverse
+
+def isEmpty (q : Queue α) : Bool := q.head.isEmpty && q.tail.isEmpty
+
+def enqueueTail (q : Queue α) (a : α) : Queue α :=
+  { q with tail := a :: q.tail }
+
+def dequeueHead (q : Queue α) : Option (α × Queue α) :=
+  match q.head with
+  | x :: xs => some (x, { head := xs, tail := q.tail })
+  | [] =>
+      match q.tail.reverse with
+      | [] => none
+      | x :: xs => some (x, { head := xs, tail := [] })
+
+def singleton (a : α) : Queue α := { head := [a], tail := [] }
+
+instance : Inhabited (Queue α) where
+  default := empty
+
+end Queue
+
 end SeLe4n

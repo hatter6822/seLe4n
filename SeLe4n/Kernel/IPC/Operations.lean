@@ -706,8 +706,8 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
+        match SeLe4n.Queue.dequeueHead ep.receiveQueue with
+        | some (receiver, restRecv) =>
             -- Rendezvous: match sender with first waiting receiver
             let ep' : Endpoint := { ep with receiveQueue := restRecv }
             match storeObject endpointId (.endpoint ep') st with
@@ -716,9 +716,9 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 match storeTcbIpcState st' receiver .ready with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
-        | [] =>
+        | none =>
             -- No receiver waiting: enqueue sender and block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [sender] }
+            let ep' : Endpoint := { ep with sendQueue := SeLe4n.Queue.enqueueTail ep.sendQueue sender }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -737,8 +737,8 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.sendQueue with
-        | sender :: restSend =>
+        match SeLe4n.Queue.dequeueHead ep.sendQueue with
+        | some (sender, restSend) =>
             -- Rendezvous: dequeue first waiting sender
             let ep' : Endpoint := { ep with sendQueue := restSend }
             match storeObject endpointId (.endpoint ep') st with
@@ -747,9 +747,9 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                 match storeTcbIpcState st' sender .ready with
                 | .error e => .error e
                 | .ok st'' => .ok (sender, ensureRunnable st'' sender)
-        | [] =>
+        | none =>
             -- No sender waiting: enqueue receiver and block
-            let ep' : Endpoint := { ep with receiveQueue := ep.receiveQueue ++ [receiver] }
+            let ep' : Endpoint := { ep with receiveQueue := SeLe4n.Queue.enqueueTail ep.receiveQueue receiver }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -773,8 +773,8 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
+        match SeLe4n.Queue.dequeueHead ep.receiveQueue with
+        | some (receiver, restRecv) =>
             -- Rendezvous with receiver, then block caller for reply
             let ep' : Endpoint := { ep with receiveQueue := restRecv }
             match storeObject endpointId (.endpoint ep') st with
@@ -787,9 +787,9 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
-        | [] =>
+        | none =>
             -- No receiver: enqueue as sender, block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [caller] }
+            let ep' : Endpoint := { ep with sendQueue := SeLe4n.Queue.enqueueTail ep.sendQueue caller }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>

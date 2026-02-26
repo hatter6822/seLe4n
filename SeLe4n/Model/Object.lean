@@ -121,8 +121,8 @@ structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
   waitingReceiver : Option SeLe4n.ThreadId := none
-  sendQueue : List SeLe4n.ThreadId := []
-  receiveQueue : List SeLe4n.ThreadId := []
+  sendQueue : SeLe4n.Queue SeLe4n.ThreadId := .empty
+  receiveQueue : SeLe4n.Queue SeLe4n.ThreadId := .empty
   deriving Repr, DecidableEq
 
 inductive NotificationState where
