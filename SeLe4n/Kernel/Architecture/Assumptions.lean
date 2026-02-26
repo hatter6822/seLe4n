@@ -28,8 +28,8 @@ inductive TransitionSurface where
 inductive InvariantSurface where
   | schedulerInvariantBundle
   | capabilityInvariantBundle
-  | m3IpcSeedInvariantBundle
-  | m35IpcSchedulerInvariantBundle
+  | coreIpcInvariantBundle
+  | ipcSchedulerCouplingInvariantBundle
   | lifecycleInvariantBundle
   | serviceInvariantBundle
   deriving Repr, DecidableEq
@@ -83,8 +83,8 @@ def assumptionTransitionMap : ArchAssumption → List TransitionSurface
 /-- Assumption-to-invariant mapping extracted from current theorem bundles. -/
 def assumptionInvariantMap : ArchAssumption → List InvariantSurface
   | .deterministicTimerProgress => [.schedulerInvariantBundle]
-  | .deterministicRegisterContext => [.schedulerInvariantBundle, .m35IpcSchedulerInvariantBundle]
-  | .memoryAccessSafety => [.m3IpcSeedInvariantBundle, .m35IpcSchedulerInvariantBundle]
+  | .deterministicRegisterContext => [.schedulerInvariantBundle, .ipcSchedulerCouplingInvariantBundle]
+  | .memoryAccessSafety => [.coreIpcInvariantBundle, .ipcSchedulerCouplingInvariantBundle]
   | .bootObjectTyping => [.capabilityInvariantBundle, .lifecycleInvariantBundle]
   | .irqRoutingTotality => [.schedulerInvariantBundle, .serviceInvariantBundle]
 

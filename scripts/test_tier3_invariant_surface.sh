@@ -147,7 +147,7 @@ run_check "INVARIANT" bash -lc "if rg -n '^instance : Coe ThreadId ObjId where' 
 # Invariant bundle surface anchors (M1/M2/M3 composed entrypoints).
 run_check "INVARIANT" rg -n '^(def|abbrev) schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M1 closure anchors: scheduler transition APIs + preservation theorem entrypoints.
 run_check "INVARIANT" rg -n '^def chooseThread' SeLe4n/Kernel/Scheduler/Operations.lean
@@ -191,14 +191,14 @@ run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeL
 run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3 seed IPC preservation theorem anchors.
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-2 transition anchors must remain present.
 run_check "INVARIANT" rg -n '^def endpointSend' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def endpointReceive' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-3 scheduler-contract predicate anchors must remain present.
 run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
@@ -215,10 +215,10 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedSendComponent' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^def m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-6 local-first preservation-theorem anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
@@ -280,7 +280,7 @@ run_check "INVARIANT" rg -n '^def m4aLifecycleInvariantBundle' SeLe4n/Kernel/Cap
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M4-B WS-C preservation theorem expansion anchors must remain present.

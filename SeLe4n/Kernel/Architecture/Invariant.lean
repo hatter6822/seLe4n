@@ -40,8 +40,8 @@ but not included in the top-level composed bundle. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧
     capabilityInvariantBundle st ∧
-    m3IpcSeedInvariantBundle st ∧
-    m35IpcSchedulerInvariantBundle st ∧
+    coreIpcInvariantBundle st ∧
+    ipcSchedulerCouplingInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
     serviceLifecycleCapabilityInvariantBundle st ∧
     vspaceInvariantBundle st
@@ -230,14 +230,14 @@ theorem default_system_state_proofLayerInvariantBundle :
            by intro oid cn s c hObj; simp at hObj,
            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
            by exact lifecycleAuthorityMonotonicity_holds _⟩
-  -- 3. m3IpcSeedInvariantBundle
+  -- 3. coreIpcInvariantBundle
   · exact ⟨default_schedulerInvariantBundle,
            ⟨by intro oid cn hObj; simp at hObj,
             by intro oid cn s c hObj; simp at hObj,
             by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
             by exact lifecycleAuthorityMonotonicity_holds _⟩,
            default_ipcInvariant⟩
-  -- 4. m35IpcSchedulerInvariantBundle
+  -- 4. ipcSchedulerCouplingInvariantBundle
   · exact ⟨⟨default_schedulerInvariantBundle,
             ⟨by intro oid cn hObj; simp at hObj,
              by intro oid cn s c hObj; simp at hObj,

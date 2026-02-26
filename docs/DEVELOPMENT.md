@@ -108,6 +108,12 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 1. Keep proofs local-first; compose afterward.
 2. Prefer explicit theorem statements and stable names.
 3. Keep invariant bundles factored and named.
+   - Current canonical IPC composition names:
+     - `coreIpcInvariantBundle`
+     - `ipcSchedulerCouplingInvariantBundle`
+   - Current canonical trace helper names for these slices:
+     - `runCapabilityIpcTrace`
+     - `runSchedulerTimingDomainTrace`
 4. Avoid hidden global simplification behavior.
 5. Never add `axiom`/`sorry` to core proof surfaces.
 6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core

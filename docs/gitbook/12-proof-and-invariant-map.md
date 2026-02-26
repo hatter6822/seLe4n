@@ -82,7 +82,7 @@ Bundle level:
 
 - `ipcSchedulerContractPredicates`
 - `ipcSchedulerCoherenceComponent`
-- `m35IpcSchedulerInvariantBundle`
+- `ipcSchedulerCouplingInvariantBundle`
 
 Preservation shape:
 
@@ -118,7 +118,7 @@ This explicit split now includes transition-local lifecycle helper lemmas in `Li
 local and composed lifecycle preservation entrypoints (`lifecycleRetypeObject_preserves_lifecycleInvariantBundle`,
 `lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`,
 `lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant`,
-`lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle`, and
+`lifecycleRetypeObject_preserves_coreIpcInvariantBundle`, and
 `lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle`), and fixture-backed executable trace evidence
 for unauthorized/illegal-state/success lifecycle retype outcomes plus composed lifecycle+capability behavior.
 
