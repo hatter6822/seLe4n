@@ -1,4 +1,5 @@
 import SeLe4n.Model.State
+import SeLe4n.Model.ThreadQueue
 
 namespace SeLe4n.Kernel
 
@@ -59,7 +60,7 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' sender)
         | .send =>
-            let ep' : Endpoint := { state := .send, queue := ep.queue ++ [sender], waitingReceiver := none }
+            let ep' : Endpoint := { state := .send, queue := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ep.queue) sender).toList, waitingReceiver := none }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -135,8 +136,9 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
   fun st =>
     match st.objects notificationId with
     | some (.notification ntfn) =>
-        match ntfn.waitingThreads with
-        | waiter :: rest =>
+        match ThreadQueue.dequeue_head (ThreadQueue.ofList ntfn.waitingThreads) with
+        | some (waiter, qrest) =>
+            let rest := qrest.toList
             let nextState : NotificationState := if rest.isEmpty then .idle else .waiting
             let ntfn' : Notification := {
               state := nextState
@@ -149,7 +151,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 match storeTcbIpcState st' waiter .ready with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
-        | [] =>
+        | none =>
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.ofNat (existing.toNat ||| badge.toNat)
@@ -190,7 +192,7 @@ def notificationWait
             else
               let ntfn' : Notification := {
                 state := .waiting
-                waitingThreads := ntfn.waitingThreads ++ [waiter]
+                waitingThreads := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ntfn.waitingThreads) waiter).toList
                 pendingBadge := none
               }
               match storeObject notificationId (.notification ntfn') st with
@@ -506,7 +508,7 @@ theorem notificationWait_wait_path_notification
       ntfn.pendingBadge = none ∧
       waiter ∉ ntfn.waitingThreads ∧
       st'.objects notifId = some (.notification ntfn') ∧
-      ntfn'.waitingThreads = ntfn.waitingThreads ++ [waiter] := by
+      ntfn'.waitingThreads = (ThreadQueue.enqueue_tail (ThreadQueue.ofList ntfn.waitingThreads) waiter).toList := by
   unfold notificationWait at hStep
   cases hObj : st.objects notifId with
   | none => simp [hObj] at hStep
@@ -536,7 +538,7 @@ theorem notificationWait_wait_path_notification
         by_cases hMem : waiter ∈ ntfn.waitingThreads
         · simp [hMem] at hStep
         · simp only [hMem, ite_false] at hStep
-          let ntfn' : Notification := { state := .waiting, waitingThreads := ntfn.waitingThreads ++ [waiter], pendingBadge := none }
+          let ntfn' : Notification := { state := .waiting, waitingThreads := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ntfn.waitingThreads) waiter).toList, pendingBadge := none }
           revert hStep
           cases hStore : storeObject notifId (.notification ntfn') st with
           | error e => simp
@@ -618,12 +620,14 @@ theorem ensureRunnable_nodup
   · exact hNodup
   · rename_i hNotMem
     split
-    · rw [List.nodup_append]
-      refine ⟨hNodup, ?_, ?_⟩
-      · exact .cons (fun _ h => absurd h List.not_mem_nil) .nil
-      · intro x hxl y hya
-        rw [List.mem_singleton] at hya; subst hya
-        exact fun heq => hNotMem (heq ▸ hxl)
+    · have hOld : (st.scheduler.runnable ++ [tid]).Nodup := by
+        rw [List.nodup_append]
+        refine ⟨hNodup, ?_, ?_⟩
+        · exact .cons (fun _ h => absurd h List.not_mem_nil) .nil
+        · intro x hxl y hya
+          rw [List.mem_singleton] at hya; subst hya
+          exact fun heq => hNotMem (heq ▸ hxl)
+      simpa using hOld
     · exact hNodup
 
 /-- Alias referencing the canonical `ThreadId.toObjId_injective` in Prelude. -/
@@ -664,7 +668,7 @@ theorem ensureRunnable_mem_reverse
   split at hMem
   · exact .inl hMem
   · split at hMem
-    · rw [List.mem_append, List.mem_singleton] at hMem; exact hMem
+    · simpa using hMem
     · exact .inl hMem
 
 /-- WS-E3/H-09: A thread is never in its own removeRunnable result. -/
@@ -706,19 +710,19 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
+        match ThreadQueue.dequeue_head (ThreadQueue.ofList ep.receiveQueue) with
+        | some (receiver, qrest) =>
             -- Rendezvous: match sender with first waiting receiver
-            let ep' : Endpoint := { ep with receiveQueue := restRecv }
+            let ep' : Endpoint := { ep with receiveQueue := qrest.toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' receiver .ready with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
-        | [] =>
+        | none =>
             -- No receiver waiting: enqueue sender and block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [sender] }
+            let ep' : Endpoint := { ep with sendQueue := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ep.sendQueue) sender).toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -737,19 +741,19 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.sendQueue with
-        | sender :: restSend =>
+        match ThreadQueue.dequeue_head (ThreadQueue.ofList ep.sendQueue) with
+        | some (sender, qrest) =>
             -- Rendezvous: dequeue first waiting sender
-            let ep' : Endpoint := { ep with sendQueue := restSend }
+            let ep' : Endpoint := { ep with sendQueue := qrest.toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' sender .ready with
                 | .error e => .error e
                 | .ok st'' => .ok (sender, ensureRunnable st'' sender)
-        | [] =>
+        | none =>
             -- No sender waiting: enqueue receiver and block
-            let ep' : Endpoint := { ep with receiveQueue := ep.receiveQueue ++ [receiver] }
+            let ep' : Endpoint := { ep with receiveQueue := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ep.receiveQueue) receiver).toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -773,10 +777,10 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
+        match ThreadQueue.dequeue_head (ThreadQueue.ofList ep.receiveQueue) with
+        | some (receiver, qrest) =>
             -- Rendezvous with receiver, then block caller for reply
-            let ep' : Endpoint := { ep with receiveQueue := restRecv }
+            let ep' : Endpoint := { ep with receiveQueue := qrest.toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -787,9 +791,9 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
-        | [] =>
+        | none =>
             -- No receiver: enqueue as sender, block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [caller] }
+            let ep' : Endpoint := { ep with sendQueue := (ThreadQueue.enqueue_tail (ThreadQueue.ofList ep.sendQueue) caller).toList }
             match storeObject endpointId (.endpoint ep') st with
             | .error e => .error e
             | .ok ((), st') =>

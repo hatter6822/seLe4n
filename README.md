@@ -68,6 +68,7 @@ Additional resources:
 ## Security hardening defaults
 
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
+- Queue manipulations now route through `SeLe4n.Model.ThreadQueue` (`{head, tail}` representation) with `enqueue_tail` / `dequeue_head` adapters used by scheduler and IPC paths to preserve FIFO behavior while enabling O(1) queue-end operations.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
 

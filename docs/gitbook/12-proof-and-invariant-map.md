@@ -383,3 +383,6 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 - `enforcementBoundary` — exhaustive 17-entry classification table,
 - `denied_preserves_state_*` — denial preservation for all 3 checked operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs.
+
+
+- Queue execution helpers (`ThreadQueue.enqueue_tail` / `ThreadQueue.dequeue_head`) are used in scheduler and IPC operational paths to maintain FIFO queue semantics with constant-time queue-end updates.

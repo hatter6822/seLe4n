@@ -749,3 +749,8 @@ seL4 and its L4 predecessors have been deployed in:
 - [seL4 Verified Configurations](https://docs.sel4.systems/projects/sel4/verified-configurations.html)
 - [Klein et al., "seL4: Formal Verification of an OS Kernel" (SOSP 2009)](https://www.sigops.org/s/conferences/sosp/2009/papers/klein-sosp09.pdf)
 - [seL4 on Wikipedia](https://en.wikipedia.org/wiki/SeL4)
+
+
+### seLe4n queue execution note
+
+The executable seLe4n model routes scheduler and IPC FIFO queue updates through a `{head, tail}` queue adapter (`SeLe4n.Model.ThreadQueue`) using `enqueue_tail` and `dequeue_head` helper operations.

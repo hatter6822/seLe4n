@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Model.ThreadQueue
 
 namespace SeLe4n.Kernel
 
@@ -106,7 +107,7 @@ private def rotateCurrentToBack
   | none => .ok runnable
   | some tid =>
       if tid ∈ runnable then
-        .ok (runnable.erase tid ++ [tid])
+        .ok ((ThreadQueue.enqueue_tail (ThreadQueue.ofList (runnable.erase tid)) tid).toList)
       else
         .error .schedulerInvariantViolation
 
@@ -528,15 +529,17 @@ theorem handleYield_preserves_runQueueUnique
             have hErase : (st.scheduler.runnable.erase tid).Nodup := hUnique.erase tid
             have hNotMemErase : tid ∉ st.scheduler.runnable.erase tid := by
               exact List.Nodup.not_mem_erase (a := tid) hUnique
-            have hApp : (st.scheduler.runnable.erase tid ++ [tid]).Nodup := by
-              refine List.nodup_append.2 ?_
-              refine ⟨hErase, by simp, ?_⟩
-              intro x hx y hy
-              have hyTid : y = tid := by simpa using hy
-              subst hyTid
-              intro hEq
-              subst hEq
-              exact hNotMemErase hx
+            have hApp : ((ThreadQueue.enqueue_tail (ThreadQueue.ofList (st.scheduler.runnable.erase tid)) tid).toList).Nodup := by
+              have hOld : (st.scheduler.runnable.erase tid ++ [tid]).Nodup := by
+                refine List.nodup_append.2 ?_
+                refine ⟨hErase, by simp, ?_⟩
+                intro x hx y hy
+                have hyTid : y = tid := by simpa using hy
+                subst hyTid
+                intro hEq
+                subst hEq
+                exact hNotMemErase hx
+              simpa using hOld
             simpa [stMoved, runQueueUnique, hTid, hMem] using hApp
           · simp at hRotate
       have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep

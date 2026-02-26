@@ -161,3 +161,5 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+- Queue operations: prefer `SeLe4n.Model.ThreadQueue.enqueue_tail` and `dequeue_head` for scheduler/IPC queue updates instead of direct list append/pop patterns.
