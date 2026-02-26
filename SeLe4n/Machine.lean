@@ -8,7 +8,24 @@ abbrev RegName := Nat
 /-- Register-sized machine word in the abstract machine model. -/
 abbrev RegValue := Nat
 
-/-- Byte-addressed memory store used by the abstract machine model. -/
+/-- L-02/WS-E6: Byte-addressed memory store used by the abstract machine model.
+
+**Zero-default semantics:** The default `Memory` function returns `0 : UInt8` for
+all addresses (`fun _ => 0`). This models zero-initialized physical memory at boot
+time — a common hardware convention and an explicit seL4 kernel assumption for
+zeroed untyped memory regions.
+
+**No page-fault model:** Memory access is total (every address returns a byte).
+The model does not distinguish mapped from unmapped pages; access control is
+enforced at the VSpace adapter layer (`vspaceLookup` returns `translationFault`
+for unmapped virtual addresses). Future work may add a partial-memory model
+behind the existing `RuntimeBoundaryContract.memoryAccessAllowed` predicate.
+
+**Migration path:** When/if the model introduces partial memory or page-table
+effects, the `Memory` type will change to `PAddr → Option UInt8` or an
+equivalent, and adapter bridges will convert between the new and old interfaces.
+The `RuntimeBoundaryContract.memoryAccessAllowed` predicate already provides
+the extension point for this transition. -/
 abbrev Memory := PAddr → UInt8
 
 /-- Pure register file state used by scheduler/context-switch modeling. -/
@@ -95,5 +112,27 @@ theorem tick_preserves_memory (ms : MachineState) :
 
 theorem tick_timer_succ (ms : MachineState) :
     (tick ms).timer = ms.timer + 1 := rfl
+
+-- ============================================================================
+-- L-02/WS-E6: Default memory zero-initialization proofs
+-- ============================================================================
+
+/-- L-02/WS-E6: Default memory returns zero for all addresses.
+This formalizes the zero-initialization assumption documented on `Memory`. -/
+theorem default_memory_returns_zero (addr : PAddr) :
+    (default : MachineState).memory addr = 0 := rfl
+
+/-- L-02/WS-E6: Default register file has PC = 0.
+Combined with zero memory, this ensures the boot entry point is deterministic. -/
+theorem default_registerFile_pc_zero :
+    (default : RegisterFile).pc = 0 := rfl
+
+/-- L-02/WS-E6: Default register file has SP = 0. -/
+theorem default_registerFile_sp_zero :
+    (default : RegisterFile).sp = 0 := rfl
+
+/-- L-02/WS-E6: Default timer starts at zero. -/
+theorem default_timer_zero :
+    (default : MachineState).timer = 0 := rfl
 
 end SeLe4n

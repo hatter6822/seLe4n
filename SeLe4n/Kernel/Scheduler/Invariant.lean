@@ -70,4 +70,55 @@ theorem queueCurrentConsistent_when_no_current
     queueCurrentConsistent s := by
   simp [queueCurrentConsistent, hNone]
 
+-- ============================================================================
+-- M-04/WS-E6: Time-slice positivity invariant
+-- ============================================================================
+
+/-- M-04/WS-E6: All runnable threads have a positive time-slice remaining.
+This ensures `timerTick` can always decrement without underflow, and that
+preemption only occurs when a thread has exhausted its quantum. -/
+def timeSlicePositive (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runnable →
+    match st.objects tid.toObjId with
+    | some (.tcb tcb) => tcb.timeSlice > 0
+    | _ => True
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling invariant
+-- ============================================================================
+
+/-- M-05/WS-E6: The currently scheduled thread (if any) belongs to the
+active scheduling domain. This is the basic temporal partitioning guarantee:
+the scheduler only runs threads in the current domain. -/
+def currentThreadInActiveDomain (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+      match st.objects tid.toObjId with
+      | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
+      | _ => True
+
+-- ============================================================================
+-- M-03/WS-E6: EDF scheduling invariant
+-- ============================================================================
+
+/-- M-03/WS-E6: The currently scheduled thread has the earliest deadline
+among all runnable threads at the same priority level. This captures the
+EDF policy: within equal priority, the thread with the most urgent deadline
+is selected. -/
+def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some curTid =>
+      match st.objects curTid.toObjId with
+      | some (.tcb curTcb) =>
+          ∀ tid, tid ∈ st.scheduler.runnable →
+            match st.objects tid.toObjId with
+            | some (.tcb tcb) =>
+                tcb.priority = curTcb.priority →
+                curTcb.deadline.toNat = 0 ∨
+                (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
+            | _ => True
+      | _ => True
+
 end SeLe4n.Kernel

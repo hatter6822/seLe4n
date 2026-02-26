@@ -19,3 +19,56 @@ import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.Architecture.VSpace
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
+
+/-!
+# L-01/WS-E6: Unified Public Kernel API
+
+This module provides the public entry-point surface for the seLe4n kernel model.
+Previously it was just an import barrel (finding L-01); it now defines:
+
+1. **`apiInvariantBundle`** — a top-level alias for the composed proof-layer
+   invariant bundle, giving API consumers a single entry point.
+2. **`apiInvariantBundle_default`** — base-case theorem proving the bundle
+   holds for the default (empty) state.
+3. **Entry-point stability table** — documents which subsystem operations
+   are considered part of the stable public API.
+
+## Entry-point stability classification
+
+| Entry point | Subsystem | Stability |
+|---|---|---|
+| `schedule`, `handleYield` | Scheduler | Stable |
+| `timerTick` | Scheduler (M-04) | Stable |
+| `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Stable |
+| `chooseThread`, `chooseThreadInDomain` | Scheduler | Stable |
+| `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
+| `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable |
+| `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
+| `endpointSend`, `endpointReceive`, `endpointAwaitReceive` | IPC | Stable |
+| `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
+| `endpointSendDual`, `endpointReceiveDual` | IPC | Stable |
+| `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
+| `serviceStart`, `serviceStop`, `serviceRestart` | Service | Stable |
+| `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
+| `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
+| `endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
+-/
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+
+/-- L-01/WS-E6: Unified public API invariant bundle.
+Alias for `Architecture.proofLayerInvariantBundle` — the composed bundle of all
+active subsystem invariants. API consumers should use this name to avoid coupling
+to the internal architecture module. -/
+abbrev apiInvariantBundle := Architecture.proofLayerInvariantBundle
+
+/-- L-01/WS-E6: The default (empty) state satisfies the API invariant bundle.
+This is the base case for inductive invariant arguments: the system starts
+in a valid state. -/
+theorem apiInvariantBundle_default :
+    apiInvariantBundle (default : SystemState) :=
+  Architecture.default_system_state_proofLayerInvariantBundle
+
+end SeLe4n.Kernel

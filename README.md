@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.11.12-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.12.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -22,7 +22,7 @@
 
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 - **Active execution baseline:** `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
-- **Current package version:** `0.11.12` (`lakefile.toml`)
+- **Current package version:** `0.12.0` (`lakefile.toml`)
 - **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 - **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
 
@@ -74,7 +74,7 @@ Quick index. Full contracts and dependencies are in the v0.11.6 planning backbon
 - **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4:** Capability and IPC model completion -- **completed** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5:** Information-flow maturity -- **completed** (High; H-04, H-05, M-07)
-- **WS-E6:** Model completeness and documentation -- planned (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E6:** Model completeness and documentation -- **completed** (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Primary references:
 - [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
@@ -99,6 +99,7 @@ Primary references:
 | `SeLe4n/Kernel/Service/*` | Service orchestration, policy checks, composed invariants |
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
 | `SeLe4n/Kernel/InformationFlow/*` | Information-flow policy, projection, and low-equivalence |
+| `SeLe4n/Kernel/API.lean` | Unified public API surface, invariant bundle alias, stability table |
 | `Main.lean` | Executable trace/demo harness |
 | `tests/fixtures/main_trace_smoke.expected` | Stable trace expectation anchors |
 | `scripts/test_tier*.sh` | Tiered quality gates used by CI and local workflows |

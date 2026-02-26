@@ -82,6 +82,10 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- Thread Control Block.
+
+M-03/WS-E6: `deadline` field for EDF tie-breaking. Default 0 = no deadline.
+M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -90,6 +94,14 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  /-- M-04/WS-E6: Remaining time-slice ticks before preemption. Reset to
+      `defaultTimeSlice` on expiry. Default value matches seL4's
+      CONFIG_TIMER_TICK_MS-based quantum. -/
+  timeSlice : Nat := 5
+  /-- M-03/WS-E6: Scheduling deadline for EDF tie-breaking within same
+      priority level. 0 = no deadline (lowest urgency). Lower nonzero
+      values are more urgent. -/
+  deadline : SeLe4n.Deadline := 0
   deriving Repr, DecidableEq
 
 inductive EndpointState where

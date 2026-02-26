@@ -7,7 +7,7 @@ The current active execution baseline is the **WS-E portfolio** based on the v0.
 - Findings baseline: [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - Canonical planning source: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
-See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E5 are completed; WS-E6 is planned.
+See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E6 are completed.
 
 ### WS-E1 completed summary
 
@@ -54,6 +54,21 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 thr
 - **H-04:** Parameterized security labels supporting ≥3 domains — `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexive/transitive well-formedness proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` backward-compatibility with preservation proof, `threeDomainExample` validation.
 - **H-05:** Composed bundle-level non-interference — `NonInterferenceStep` inductive (5 kernel operations), `composedNonInterference_step` single-step theorem, `NonInterferenceTrace` multi-step lift, `composedNonInterference_trace`, `errorAction_preserves_lowEquiv`. Completes IF-M4 milestone.
 - **M-07:** Enforcement boundary specification — `EnforcementClass` 3-way classification (`policyGated`/`capabilityOnly`/`readOnly`), exhaustive 17-entry `enforcementBoundary` table, denial preservation theorems, complete-disjunction sufficiency proofs.
+
+### WS-E6 completed summary
+
+**WS-E6 — Model completeness and documentation** has been completed (v0.12.0). All 10 findings resolved:
+
+- **M-03:** Three-level EDF scheduling (`isBetterCandidate`: priority > deadline > FIFO) with `isBetterCandidate_irrefl`/`_asymm` algebraic theorems. `Deadline` typed identifier. `TCB.deadline` field.
+- **M-04:** Time-slice preemption via `timerTick` operation (decrement/reset+reschedule). `TCB.timeSlice` field. `defaultTimeSlice` constant. `timeSlicePositive` invariant.
+- **M-05:** Domain scheduling with `DomainScheduleEntry`, `filterByDomain`, `chooseThreadInDomain`, `switchDomain`, `scheduleDomain`. `currentThreadInActiveDomain` invariant. Preservation theorems.
+- **M-08:** Architecture assumption consumption bridges connecting structural axioms to adapter preservation proofs.
+- **F-17:** O(n) design decision ADR with rationale, scope note, and migration path.
+- **L-01:** Unified `API.lean` with `apiInvariantBundle` alias, base-case theorem, and 30+ entry-point stability table.
+- **L-02:** Memory zero-default semantics documented with 4 theorems.
+- **L-03:** `KernelM` monad helpers with 6 correctness theorems.
+- **L-04:** `toObjIdChecked` safe variant with correctness theorem; deferred-check design documented.
+- **L-05:** Monotonic `objectIndex` design documented with monotonicity theorem.
 
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 

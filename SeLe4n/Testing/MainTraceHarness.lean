@@ -476,6 +476,84 @@ private def runWsE4Trace (st1 : SystemState) : IO Unit := do
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
       IO.println s!"endpointReply unblocked target: {unblocked}"
 
+-- ============================================================================
+-- WS-E6: Model completeness trace scenarios
+-- ============================================================================
+
+/-- WS-E6 test: M-03 EDF tie-breaking, M-04 time-slice preemption, M-05 domain scheduling -/
+private def runWsE6Trace (st1 : SystemState) : IO Unit := do
+  -- M-03: EDF tie-breaking — two threads at same priority, different deadlines
+  let edfTcbA : KernelObject := .tcb {
+    tid := 1, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, deadline := 50 }
+  let edfTcbB : KernelObject := .tcb {
+    tid := 12, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 8192,
+    ipcState := .ready, deadline := 30 }
+  let edfObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = 1 then some edfTcbA
+    else if oid = 12 then some edfTcbB
+    else st1.objects oid
+  let stEdf : SystemState := { st1 with
+    objects := edfObjects,
+    scheduler := { st1.scheduler with runnable := [1, 12], current := none } }
+  match SeLe4n.Kernel.chooseThread stEdf with
+  | .error err => IO.println s!"EDF choose error: {reprStr err}"
+  | .ok (chosen, _) =>
+      IO.println s!"EDF tie-break chosen thread: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+
+  -- M-04: Time-slice preemption — tick down until expiry triggers reschedule
+  let tickTcb : KernelObject := .tcb {
+    tid := 1, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, timeSlice := 2 }
+  let tickObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = 1 then some tickTcb else st1.objects oid
+  let stTick : SystemState := { st1 with
+    objects := tickObjects,
+    scheduler := { st1.scheduler with runnable := [1, 12], current := some 1 } }
+  match SeLe4n.Kernel.timerTick stTick with
+  | .error err => IO.println s!"timer tick decrement error: {reprStr err}"
+  | .ok ((), stTicked) =>
+      -- After one tick with timeSlice=2, slice becomes 1 (decrement path)
+      match stTicked.objects (SeLe4n.ThreadId.toObjId 1) with
+      | some (.tcb tcb) =>
+          IO.println s!"timer tick remaining slice: {tcb.timeSlice}"
+      | _ => IO.println "timer tick: thread not found after tick"
+  -- Now tick again — this should trigger expiry and reschedule
+  let expiryTcb : KernelObject := .tcb {
+    tid := 1, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, timeSlice := 1 }
+  let expiryObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = 1 then some expiryTcb else st1.objects oid
+  let stExpiry : SystemState := { st1 with
+    objects := expiryObjects,
+    scheduler := { st1.scheduler with runnable := [1, 12], current := some 1 } }
+  match SeLe4n.Kernel.timerTick stExpiry with
+  | .error err => IO.println s!"timer tick expiry error: {reprStr err}"
+  | .ok ((), stExpired) =>
+      IO.println s!"timer tick expiry rescheduled current: {reprStr (stExpired.scheduler.current.map SeLe4n.ThreadId.toNat)}"
+      match stExpired.objects (SeLe4n.ThreadId.toObjId 1) with
+      | some (.tcb tcb) =>
+          IO.println s!"timer tick expiry reset slice: {tcb.timeSlice}"
+      | _ => IO.println "timer tick expiry: thread not found"
+
+  -- M-05: Domain scheduling — switch domain and verify active domain changes
+  let domSchedule : List DomainScheduleEntry :=
+    [{ domain := 0, length := 3 }, { domain := 1, length := 5 }]
+  let stDom : SystemState := { st1 with
+    scheduler := { st1.scheduler with
+      runnable := [1, 12], current := some 1,
+      activeDomain := 0, domainTimeRemaining := 1,
+      domainSchedule := domSchedule, domainScheduleIndex := 0 } }
+  match SeLe4n.Kernel.switchDomain stDom with
+  | .error err => IO.println s!"domain switch error: {reprStr err}"
+  | .ok ((), stSwitched) =>
+      IO.println s!"domain switch active domain: {stSwitched.scheduler.activeDomain.toNat}"
+      IO.println s!"domain switch time remaining: {stSwitched.scheduler.domainTimeRemaining}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -493,6 +571,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
   runWsE4Trace st1
+  runWsE6Trace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

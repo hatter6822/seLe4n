@@ -57,7 +57,16 @@ namespace ThreadId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ThreadId) : Nat := id.val
 
-/-- Explicit conversion used at object-store boundaries. -/
+/-- L-04/WS-E6: Explicit conversion used at object-store boundaries.
+
+**Design note (deferred validation):** This conversion is unchecked — it does
+not verify that the resulting `ObjId` actually maps to a TCB in the object store.
+Validation is intentionally deferred to the store-access boundary: callers that
+retrieve a `KernelObject` via `st.objects tid.toObjId` immediately pattern-match
+on `.tcb tcb`, so invalid IDs are caught deterministically at use site. This
+avoids carrying an extra proof obligation through every intermediate function.
+See `ThreadId.toObjId_injective` for the injectivity proof that ensures two
+distinct thread IDs cannot alias the same object. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance instOfNat (n : Nat) : OfNat ThreadId n where
@@ -71,6 +80,17 @@ instance : ToString ThreadId where
 
 /-- H-06/WS-E3: The sentinel ThreadId (value 0). -/
 @[inline] def sentinel : ThreadId := ⟨0⟩
+
+/-- L-04/WS-E6: Checked variant of `toObjId` that rejects sentinel thread IDs.
+Returns `none` for the reserved sentinel (value 0). -/
+@[inline] def toObjIdChecked (id : ThreadId) : Option ObjId :=
+  if id.isReserved then .none else .some (id.toObjId)
+
+/-- L-04/WS-E6: `toObjIdChecked` agrees with `toObjId` on non-sentinel inputs. -/
+theorem toObjIdChecked_eq_some_of_not_reserved (id : ThreadId)
+    (hNotRes : id.isReserved = false) :
+    id.toObjIdChecked = some id.toObjId := by
+  simp [toObjIdChecked, hNotRes]
 
 end ThreadId
 
@@ -125,6 +145,34 @@ instance : ToString Priority where
   toString prio := toString prio.toNat
 
 end Priority
+
+/-- M-03/WS-E6: Scheduling deadline for EDF (Earliest Deadline First) tie-breaking.
+A deadline of 0 means "no deadline set" (infinite deadline, lowest urgency among
+threads with deadlines). Nonzero values represent relative urgency: lower values
+are more urgent. This convention makes the type total without requiring `Option Nat`
+and preserves backward compatibility (all existing TCBs default to deadline 0). -/
+structure Deadline where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace Deadline
+
+@[inline] def ofNat (n : Nat) : Deadline := ⟨n⟩
+@[inline] def toNat (d : Deadline) : Nat := d.val
+
+instance instOfNat (n : Nat) : OfNat Deadline n where
+  ofNat := ⟨n⟩
+
+instance : ToString Deadline where
+  toString d := toString d.toNat
+
+/-- The default deadline (no deadline set). -/
+@[inline] def none : Deadline := ⟨0⟩
+
+/-- An immediate deadline (most urgent). -/
+@[inline] def immediate : Deadline := ⟨1⟩
+
+end Deadline
 
 /-- Interrupt request line identifier. -/
 structure Irq where
@@ -328,6 +376,57 @@ def bind {σ ε α β : Type} (m : KernelM σ ε α) (f : α → KernelM σ ε �
 instance {σ ε : Type} : Monad (KernelM σ ε) where
   pure := pure
   bind := bind
+
+end KernelM
+
+-- ============================================================================
+-- L-03/WS-E6: Standard monad helpers for KernelM
+-- ============================================================================
+
+namespace KernelM
+
+/-- L-03/WS-E6: Read the current state. -/
+def get {σ ε : Type} : KernelM σ ε σ :=
+  fun s => .ok (s, s)
+
+/-- L-03/WS-E6: Replace the entire state. -/
+def set {σ ε : Type} (s : σ) : KernelM σ ε Unit :=
+  fun _ => .ok ((), s)
+
+/-- L-03/WS-E6: Modify the state with a pure function. -/
+def modify {σ ε : Type} (f : σ → σ) : KernelM σ ε Unit :=
+  fun s => .ok ((), f s)
+
+/-- L-03/WS-E6: Lift an `Except` into the monad (fail on error). -/
+def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
+  fun s =>
+    match e with
+    | .ok a => .ok (a, s)
+    | .error err => .error err
+
+/-- L-03/WS-E6: Fail with an error. -/
+def throw {σ ε α : Type} (err : ε) : KernelM σ ε α :=
+  fun _ => .error err
+
+-- L-03: Correctness theorems for monad helpers
+
+theorem get_returns_state {σ ε : Type} (s : σ) :
+    @get σ ε s = .ok (s, s) := rfl
+
+theorem set_replaces_state {σ ε : Type} (s s' : σ) :
+    @set σ ε s' s = .ok ((), s') := rfl
+
+theorem modify_applies_function {σ ε : Type} (f : σ → σ) (s : σ) :
+    @modify σ ε f s = .ok ((), f s) := rfl
+
+theorem liftExcept_ok {σ ε α : Type} (a : α) (s : σ) :
+    @liftExcept σ ε α (.ok a) s = .ok (a, s) := rfl
+
+theorem liftExcept_error {σ ε α : Type} (err : ε) (s : σ) :
+    @liftExcept σ ε α (.error err) s = .error err := rfl
+
+theorem throw_errors {σ ε α : Type} (err : ε) (s : σ) :
+    @KernelM.throw σ ε α err s = .error err := rfl
 
 end KernelM
 
