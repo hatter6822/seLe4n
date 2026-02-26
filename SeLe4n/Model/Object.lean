@@ -90,7 +90,16 @@ the back of its priority class in the runnable queue.
 
 M-05/WS-E6: The `domain` field enables two-level temporal partitioning where the
 scheduler first selects the active domain, then chooses among threads within that
-domain by priority. -/
+domain by priority.
+
+**EDF tie-breaking:** The `deadline` field enables Earliest Deadline First
+tie-breaking among threads at the same fixed priority. This models seL4 MCS
+sporadic-server semantics where `deadline = release_time + period`. The scheduler
+uses a three-level deterministic selection:
+1. **Priority** (higher wins — higher `.toNat` value)
+2. **Deadline** (earlier wins — lower `.toNat` value)
+3. **FIFO** (earlier in runnable list wins — stable tie-break)
+A `deadline` of 0 represents the most urgent (immediate) deadline. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -103,6 +112,10 @@ structure TCB where
   `timerTick`; when zero, the scheduler rotates the thread to the back of its
   priority class. Default is 5 ticks (configurable at construction). -/
   timeSlice : Nat := 5
+  /-- EDF scheduling deadline (abstract timestamp). Among threads with equal
+  priority, the scheduler prefers the thread with the lowest (earliest) deadline.
+  Default 0 = most urgent. Models seL4 MCS SchedContext deadline semantics. -/
+  deadline : SeLe4n.Deadline := ⟨0⟩
   deriving Repr, DecidableEq
 
 inductive EndpointState where

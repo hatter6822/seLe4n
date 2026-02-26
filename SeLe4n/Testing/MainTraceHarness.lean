@@ -513,6 +513,81 @@ private def runWsE6Trace (st1 : SystemState) : IO Unit := do
       | .ok (chosen, _) =>
           IO.println s!"domain schedule empty-domain chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
 
+-- ============================================================================
+-- EDF tie-breaking trace scenarios
+-- ============================================================================
+
+/-- EDF test: Three scenarios verifying priority > deadline > FIFO ordering.
+Constructs custom states with threads at controlled priorities and deadlines
+to exercise each level of the three-level selection. -/
+private def runEdfTrace (_st1 : SystemState) : IO Unit := do
+  -- EDF-01: Same priority (50), different deadlines (thread A deadline=10, B deadline=100)
+  -- Expected: A wins (earlier deadline)
+  let edfTcbA : KernelObject := .tcb {
+    tid := 70, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨10⟩ }
+  let edfTcbB : KernelObject := .tcb {
+    tid := 71, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨100⟩ }
+  let edfObj1 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (70 : SeLe4n.ThreadId).toObjId then some edfTcbA
+    else if oid = (71 : SeLe4n.ThreadId).toObjId then some edfTcbB
+    else none
+  let edfSt1 : SystemState := { (default : SystemState) with
+    objects := edfObj1,
+    scheduler := { runnable := [70, 71], current := none } }
+  match SeLe4n.Kernel.chooseThread edfSt1 with
+  | .error err => IO.println s!"EDF same-prio error: {reprStr err}"
+  | .ok (chosen, _) =>
+      IO.println s!"EDF same-prio earlier-deadline chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+  -- EDF-02: Higher priority wins despite later deadline
+  -- Thread C: priority=80, deadline=999; Thread D: priority=50, deadline=1
+  -- Expected: C wins (higher priority dominates)
+  let edfTcbC : KernelObject := .tcb {
+    tid := 72, priority := 80, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨999⟩ }
+  let edfTcbD : KernelObject := .tcb {
+    tid := 73, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨1⟩ }
+  let edfObj2 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (72 : SeLe4n.ThreadId).toObjId then some edfTcbC
+    else if oid = (73 : SeLe4n.ThreadId).toObjId then some edfTcbD
+    else none
+  let edfSt2 : SystemState := { (default : SystemState) with
+    objects := edfObj2,
+    scheduler := { runnable := [73, 72], current := none } }
+  match SeLe4n.Kernel.chooseThread edfSt2 with
+  | .error err => IO.println s!"EDF prio-dominates error: {reprStr err}"
+  | .ok (chosen, _) =>
+      IO.println s!"EDF priority-dominates chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+  -- EDF-03: Same priority, same deadline — FIFO wins (earlier in list)
+  -- Thread E: priority=50, deadline=10 (list position 0)
+  -- Thread F: priority=50, deadline=10 (list position 1)
+  -- Expected: E wins (FIFO — appears earlier in runnable list)
+  let edfTcbE : KernelObject := .tcb {
+    tid := 74, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨10⟩ }
+  let edfTcbF : KernelObject := .tcb {
+    tid := 75, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    deadline := ⟨10⟩ }
+  let edfObj3 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = (74 : SeLe4n.ThreadId).toObjId then some edfTcbE
+    else if oid = (75 : SeLe4n.ThreadId).toObjId then some edfTcbF
+    else none
+  let edfSt3 : SystemState := { (default : SystemState) with
+    objects := edfObj3,
+    scheduler := { runnable := [74, 75], current := none } }
+  match SeLe4n.Kernel.chooseThread edfSt3 with
+  | .error err => IO.println s!"EDF FIFO-tiebreak error: {reprStr err}"
+  | .ok (chosen, _) =>
+      IO.println s!"EDF same-prio-same-deadline FIFO chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -531,6 +606,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runLifecycleAndEndpointTrace st1
   runWsE4Trace st1
   runWsE6Trace st1
+  runEdfTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

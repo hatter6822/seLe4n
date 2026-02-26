@@ -135,6 +135,35 @@ instance : ToString Priority where
 
 end Priority
 
+/-- Scheduling deadline timestamp for EDF (Earliest Deadline First) tie-breaking.
+
+Models seL4 MCS sporadic-server deadline semantics where each thread has a deadline
+computed as `release_time + period`. Among threads at the same fixed priority, the
+scheduler selects the one with the earliest (lowest) deadline value. A deadline of 0
+represents the most urgent deadline (immediate). -/
+structure Deadline where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace Deadline
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : Deadline := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (d : Deadline) : Nat := d.val
+
+instance instOfNat (n : Nat) : OfNat Deadline n where
+  ofNat := ⟨n⟩
+
+instance : ToString Deadline where
+  toString d := toString d.toNat
+
+/-- Deadline 0 is the most urgent (immediate) deadline. -/
+@[inline] def immediate : Deadline := ⟨0⟩
+
+end Deadline
+
 /-- Interrupt request line identifier. -/
 structure Irq where
   val : Nat

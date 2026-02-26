@@ -157,6 +157,12 @@ run_check "INVARIANT" rg -n '^theorem chooseThread_preserves_schedulerInvariantB
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations.lean
 run_check "INVARIANT" rg -n '^theorem handleYield_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations.lean
 
+# EDF tie-breaking anchors: deadline type, invariant, and determinism theorems.
+run_check "INVARIANT" rg -n '^def edfCurrentHasEarliestDeadline' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem chooseBestRunnable_deterministic' SeLe4n/Kernel/Scheduler/Operations.lean
+run_check "INVARIANT" rg -n '^theorem isBetterCandidate_irrefl' SeLe4n/Kernel/Scheduler/Operations.lean
+run_check "INVARIANT" rg -n '^theorem isBetterCandidate_asymm' SeLe4n/Kernel/Scheduler/Operations.lean
+
 # M2 closure anchors: CSpace transition APIs + capability-bundle preservation theorem entrypoints.
 run_check "INVARIANT" rg -n '^def cspaceLookupSlot' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceInsertSlot' SeLe4n/Kernel/Capability/Operations.lean

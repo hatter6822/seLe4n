@@ -19,6 +19,10 @@ Component level:
 - `runQueueUnique`
 - `currentThreadValid`
 - `queueCurrentConsistent`
+- `timeSlicePositive` — all runnable threads have positive time-slice (WS-E6/M-04)
+- `currentThreadInActiveDomain` — current thread belongs to active domain (WS-E6/M-05)
+- `edfCurrentHasEarliestDeadline` — current thread has earliest deadline among same-priority peers (EDF)
+- `deadlineWellFormed` — deadline validity (trivially true for Nat-based deadlines; extension point)
 
 Bundle level:
 
@@ -29,6 +33,17 @@ Preservation shape:
 - `chooseThread_preserves_*`
 - `schedule_preserves_*`
 - `handleYield_preserves_*`
+- `switchDomain_preserves_schedulerInvariantBundle`
+
+EDF correctness:
+
+- `chooseBestRunnable_deterministic` — same inputs, same output (pure function)
+- `chooseThread_deterministic` — same state, same result
+- `chooseThreadInDomain_deterministic` — same state, same result (domain-filtered)
+- `isBetterCandidate_irrefl` — FIFO stability (a thread is never strictly better than itself)
+- `isBetterCandidate_asymm` — strict ordering (if A beats B, B does not beat A)
+- `chooseBestRunnable_nil` — empty list returns accumulator unchanged
+- `deadlineWellFormed_always` — Nat-based deadlines are always well-formed
 
 ## 3. Capability invariants (M2)
 

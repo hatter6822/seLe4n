@@ -38,8 +38,9 @@ over execution efficiency.
 
 2. **Deterministic semantics.** Lists provide a canonical iteration order that
    makes tie-breaking, queue ordering, and traversal deterministic by
-   construction. Hash-based structures would require explicit ordering
-   contracts.
+   construction. The scheduler's three-level selection (priority > deadline >
+   FIFO) exploits list position as the final stable tie-break. Hash-based
+   structures would require explicit ordering contracts.
 
 3. **Bounded model scope.** The abstract model operates on small, finite state
    spaces (tens of objects, not millions). O(n) is functionally equivalent to

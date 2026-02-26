@@ -98,4 +98,52 @@ def currentThreadInActiveDomain (st : SystemState) : Prop :=
       | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
       | _ => True
 
+-- ============================================================================
+-- EDF (Earliest Deadline First) invariant predicates
+-- ============================================================================
+
+/-- The current thread, if any, has the earliest deadline among all runnable
+threads at the same priority. This ensures the EDF tie-breaking invariant is
+maintained after each scheduling decision: no runnable thread exists with the
+same priority but a strictly earlier deadline than the currently selected thread.
+
+This property is an **output invariant** — it holds immediately after
+`chooseThread`/`schedule` completes. External state mutations (e.g., setting
+a thread's deadline via a system call) may temporarily violate it until the
+next scheduling decision. -/
+def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some curTid =>
+      match st.objects curTid.toObjId with
+      | some (.tcb curTcb) =>
+          ∀ tid, tid ∈ st.scheduler.runnable →
+            match st.objects tid.toObjId with
+            | some (.tcb tcb) =>
+                tcb.priority.toNat = curTcb.priority.toNat →
+                curTcb.deadline.toNat ≤ tcb.deadline.toNat
+            | _ => True
+      | _ => True
+
+/-- Every runnable thread has a well-formed deadline (non-negative, which is
+trivially true for `Nat`-based deadlines). This predicate exists as a
+documentation anchor and extension point for future deadline-validity
+constraints (e.g., deadline ≤ some upper bound, or deadline > current time). -/
+def deadlineWellFormed (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runnable →
+    match st.objects tid.toObjId with
+    | some (.tcb _) => True  -- Nat-based deadlines are always ≥ 0
+    | _ => True
+
+/-- `deadlineWellFormed` holds trivially for all states because `Deadline.val`
+is a `Nat` and all `Nat` values satisfy the (currently trivial) well-formedness
+predicate. This theorem documents the design choice and serves as a regression
+guard if the predicate is strengthened in the future. -/
+theorem deadlineWellFormed_always (st : SystemState) : deadlineWellFormed st := by
+  intro tid _
+  cases st.objects tid.toObjId with
+  | none => trivial
+  | some obj =>
+      cases obj <;> trivial
+
 end SeLe4n.Kernel

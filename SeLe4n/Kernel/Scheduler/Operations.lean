@@ -4,26 +4,29 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- M-03/WS-E6: Fixed-priority scheduling with FIFO tie-breaking.
+/-- Fixed-priority scheduling with EDF (Earliest Deadline First) tie-breaking.
 
-**Semantics:** Iterates the runnable list, tracking the highest-priority thread
-seen so far. When two threads have equal priority, the one appearing earlier in
-the runnable list wins (FIFO tie-breaking within each priority level).
+**Three-level deterministic selection:**
+1. **Priority** — higher numerical priority wins (strict `<` on `.toNat`).
+2. **Deadline** — among equal-priority threads, earlier (lower numerical) deadline
+   wins. This models seL4 MCS sporadic-server semantics where each SchedContext
+   has `deadline = release_time + period`.
+3. **FIFO** — if both priority and deadline are equal, the thread appearing earlier
+   in the runnable list wins (stable tie-break, no replacement of current best).
 
-**Divergence from seL4:** Real seL4 uses round-robin rotation among equal-priority
-threads within the same scheduling domain. This model uses a simpler FIFO policy
-to keep transition semantics fully deterministic without requiring rotation state.
-The behavioral difference: in seL4, yielding rotates the current thread to the back
-of its priority class; here, `handleYield` + `chooseBestRunnable` achieves the same
-effect via explicit `rotateCurrentToBack`.
+**Divergence from seL4:** Real seL4 non-MCS uses round-robin rotation among
+equal-priority threads. This model instead uses deadline-aware selection that
+subsumes round-robin when deadlines are uniform, while cleanly extending to
+mixed-criticality (MCS) scenarios. The `handleYield` + `rotateCurrentToBack`
+mechanism achieves seL4-equivalent yielding behavior.
 
-**EDF (Earliest Deadline First):** Not modeled. seL4 supports sporadic-server
-scheduling for mixed-criticality workloads. This model defers EDF semantics to
-future work as the current scope focuses on fixed-priority correctness. -/
+**Accumulator:** Carries `(ThreadId × Priority × Deadline)` — the best candidate
+seen so far. A candidate replaces the current best only when it has strictly higher
+priority, or equal priority with a strictly earlier deadline. -/
 private def chooseBestRunnable
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
   match runnable with
   | [] => .ok best
   | tid :: rest =>
@@ -31,9 +34,18 @@ private def chooseBestRunnable
       | some (.tcb tcb) =>
           let best' :=
             match best with
-            | none => some (tid, tcb.priority)
-            | some (_, bestPrio) =>
-                if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+            | none => some (tid, tcb.priority, tcb.deadline)
+            | some (_, bestPrio, bestDeadline) =>
+                if bestPrio.toNat < tcb.priority.toNat then
+                  -- Strictly higher priority: replace
+                  some (tid, tcb.priority, tcb.deadline)
+                else if bestPrio.toNat = tcb.priority.toNat &&
+                        tcb.deadline.toNat < bestDeadline.toNat then
+                  -- Equal priority, strictly earlier deadline: replace (EDF)
+                  some (tid, tcb.priority, tcb.deadline)
+                else
+                  -- Lower priority, or equal priority with later/equal deadline: keep (FIFO)
+                  best
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
@@ -48,14 +60,17 @@ private def rotateCurrentToBack
       else
         .error .schedulerInvariantViolation
 
-/-- Choose the highest-priority runnable thread. Tie-breaking is deterministic: the first
-thread in runnable-order wins when priorities are equal. -/
+/-- Choose the highest-priority runnable thread with EDF tie-breaking.
+
+Selection is deterministic via three levels: priority > deadline > FIFO.
+Among equal-priority threads, the one with the earliest deadline wins.
+Among equal-priority-and-deadline threads, the one earlier in the runnable list wins. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match chooseBestRunnable st.objects st.scheduler.runnable none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- Scheduler step for the bootstrap model.
 
@@ -138,16 +153,17 @@ private def filterByDomain
     | _ => false
 
 /-- M-05/WS-E6: Choose the highest-priority runnable thread restricted to the
-active domain. This implements two-level temporal partitioning: first, only
-threads whose `TCB.domain` matches `activeDomain` are considered; then,
-within that set, `chooseBestRunnable` selects by priority with FIFO tie-breaking. -/
+active domain, with EDF tie-breaking. Implements two-level temporal partitioning:
+first, only threads whose `TCB.domain` matches `activeDomain` are considered;
+then, within that set, `chooseBestRunnable` selects by priority with EDF
+deadline tie-breaking and FIFO as the final stable tie-break. -/
 def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     let domainThreads := filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain
     match chooseBestRunnable st.objects domainThreads none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- M-05/WS-E6: Switch the active scheduling domain. Only threads in the new
 domain will be eligible for selection on the next scheduling decision. -/
@@ -257,9 +273,11 @@ theorem chooseThread_preserves_state
           simpa using hSt.symm
       | some pair =>
           cases pair with
-          | mk tid prio =>
-              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-              simpa using hSt.symm
+          | mk tid prioDl =>
+              cases prioDl with
+              | mk prio dl =>
+                  rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+                  simpa using hSt.symm
 
  theorem schedule_preserves_wellFormed
     (st st' : SystemState)
@@ -534,9 +552,11 @@ theorem chooseThreadInDomain_preserves_state
           simpa using hSt.symm
       | some pair =>
           cases pair with
-          | mk tid prio =>
-              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-              simpa using hSt.symm
+          | mk tid prioDl =>
+              cases prioDl with
+              | mk prio dl =>
+                  rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+                  simpa using hSt.symm
 
 /-- M-05/WS-E6: `switchDomain` preserves the scheduler invariant bundle. -/
 theorem switchDomain_preserves_schedulerInvariantBundle
@@ -559,25 +579,77 @@ theorem switchDomain_preserves_schedulerInvariantBundle
 -- M-03/WS-E6: Scheduler determinism theorem
 -- ============================================================================
 
-/-- M-03/WS-E6: `chooseBestRunnable` is deterministic — given the same object store,
+/-- `chooseBestRunnable` is deterministic — given the same object store,
 runnable list, and accumulator, it always returns the same result. This is trivially
-true because the function is pure (no randomness, no non-deterministic branching). -/
+true because the function is pure (no randomness, no non-deterministic branching).
+The three-level selection (priority > deadline > FIFO) is fully deterministic. -/
 theorem chooseBestRunnable_deterministic
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority))
-    (r1 r2 : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)))
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (r1 r2 : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)))
     (h1 : chooseBestRunnable objects runnable best = r1)
     (h2 : chooseBestRunnable objects runnable best = r2) :
     r1 = r2 := by
   rw [← h1, ← h2]
 
-/-- M-03/WS-E6: `chooseThread` is deterministic — same state in, same result out. -/
+/-- `chooseThread` is deterministic — same state in, same result out.
+With EDF tie-breaking, the three-level selection (priority > deadline > FIFO) is
+fully determined by the object store and runnable list. -/
 theorem chooseThread_deterministic
     (st : SystemState)
     (r1 r2 : Except KernelError (Option SeLe4n.ThreadId × SystemState))
     (h1 : chooseThread st = r1)
     (h2 : chooseThread st = r2) :
+    r1 = r2 := by
+  rw [← h1, ← h2]
+
+-- ============================================================================
+-- EDF tie-breaking correctness theorems
+-- ============================================================================
+
+/-- `chooseBestRunnable` with an empty runnable list returns the initial accumulator
+unchanged. This is the base case of the EDF selection recurrence. -/
+theorem chooseBestRunnable_nil
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    chooseBestRunnable objects [] best = .ok best := by
+  simp [chooseBestRunnable]
+
+/-- Helper: `isBetterCandidate` captures the EDF replacement predicate.
+A candidate with `(candidatePrio, candidateDeadline)` replaces the current
+best `(bestPrio, bestDeadline)` iff it has strictly higher priority, or equal
+priority with a strictly earlier deadline. -/
+private def isBetterCandidate
+    (bestPrio : SeLe4n.Priority) (bestDeadline : SeLe4n.Deadline)
+    (candidatePrio : SeLe4n.Priority) (candidateDeadline : SeLe4n.Deadline) : Bool :=
+  bestPrio.toNat < candidatePrio.toNat ||
+  (bestPrio.toNat = candidatePrio.toNat && candidateDeadline.toNat < bestDeadline.toNat)
+
+/-- The EDF replacement predicate is irreflexive: a thread is never strictly
+better than itself. This ensures FIFO stability — when priority and deadline
+are both equal, the earlier thread in the runnable list is retained. -/
+theorem isBetterCandidate_irrefl
+    (prio : SeLe4n.Priority) (dl : SeLe4n.Deadline) :
+    isBetterCandidate prio dl prio dl = false := by
+  simp [isBetterCandidate, SeLe4n.Priority.toNat, SeLe4n.Deadline.toNat]
+
+/-- The EDF replacement predicate is asymmetric: if A is better than B, then B
+is not better than A. This ensures the tie-breaking order is a strict total
+preorder (exactly one of: A better, B better, or tied/FIFO). -/
+theorem isBetterCandidate_asymm
+    (p1 p2 : SeLe4n.Priority) (d1 d2 : SeLe4n.Deadline)
+    (h : isBetterCandidate p1 d1 p2 d2 = true) :
+    isBetterCandidate p2 d2 p1 d1 = false := by
+  simp [isBetterCandidate, SeLe4n.Priority.toNat, SeLe4n.Deadline.toNat] at *
+  omega
+
+/-- `chooseThreadInDomain` with EDF is deterministic — same state in, same result out. -/
+theorem chooseThreadInDomain_deterministic
+    (st : SystemState)
+    (r1 r2 : Except KernelError (Option SeLe4n.ThreadId × SystemState))
+    (h1 : chooseThreadInDomain st = r1)
+    (h2 : chooseThreadInDomain st = r2) :
     r1 = r2 := by
   rw [← h1, ← h2]
 

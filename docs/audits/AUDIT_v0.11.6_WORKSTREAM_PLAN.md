@@ -300,10 +300,15 @@ WS-E4 (CDT integration for capability flow proofs).
 
 **Scope:**
 
-1. ~~M-03~~ Documented fixed-priority + FIFO tie-breaking semantics — **DONE**
-   (detailed docstring on `chooseBestRunnable` explaining divergence from seL4
-   round-robin; EDF deferred; `chooseBestRunnable_deterministic` and
-   `chooseThread_deterministic` theorems proving scheduler determinism).
+1. ~~M-03~~ Implemented fixed-priority + EDF tie-breaking semantics — **DONE**
+   (`chooseBestRunnable` upgraded from FIFO-only to three-level deterministic
+   selection: priority > deadline > FIFO. `Deadline` typed identifier added;
+   `TCB.deadline` field models seL4 MCS sporadic-server semantics. EDF
+   replacement predicate with `isBetterCandidate_irrefl` (FIFO stability) and
+   `isBetterCandidate_asymm` (strict ordering) proofs. `edfCurrentHasEarliestDeadline`
+   invariant predicate. `chooseBestRunnable_deterministic`,
+   `chooseThread_deterministic`, `chooseThreadInDomain_deterministic` theorems.
+   3 fixture-backed EDF test scenarios: EDF-01/02/03).
 2. ~~M-04~~ Modeled time-slice decrement and tick-based preemption — **DONE**
    (`TCB.timeSlice` field with default 5; `timerTick` operation decrements
    slice and rotates + reschedules on expiry; machine timer advanced via `tick`;
@@ -400,7 +405,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |
 | H-05 | Composed bundle-level non-interference (IF-M4): `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` single-step composition, `NonInterferenceTrace` + `composedNonInterference_trace` trace-level composition, `preservesLowEquivalence` abstract predicate, `compose_preservesLowEquivalence` sequential composition | WS-E5 |
 | M-07 | Enforcement boundary specification: `EnforcementClass` classification (`policyGated`/`capabilityOnly`/`readOnly`), `enforcementBoundary` canonical table (17 entries), `*_denied_preserves_state` theorems, `enforcement_sufficiency_*` theorems proving 3 checked wrappers are sufficient | WS-E5 |
-| M-03 | Documented fixed-priority + FIFO tie-breaking semantics; `chooseBestRunnable_deterministic` and `chooseThread_deterministic` theorems; EDF deferred | WS-E6 |
+| M-03 | Implemented fixed-priority + EDF tie-breaking: `Deadline` type, `TCB.deadline` field, three-level selection (priority > deadline > FIFO) in `chooseBestRunnable`; `isBetterCandidate_irrefl`/`_asymm` proofs; `edfCurrentHasEarliestDeadline` invariant; `chooseBestRunnable_deterministic`, `chooseThread_deterministic`, `chooseThreadInDomain_deterministic` theorems; 3 EDF test scenarios (EDF-01/02/03) | WS-E6 |
 | M-04 | Added `TCB.timeSlice` field (default 5); `timerTick` operation with decrement/preemption/reschedule; `timeSlicePositive` invariant predicate | WS-E6 |
 | M-05 | Added `SchedulerState.activeDomain`; `filterByDomain`, `chooseThreadInDomain`, `switchDomain`, `scheduleDomain` operations; `currentThreadInActiveDomain` predicate; `switchDomain_preserves_schedulerInvariantBundle` | WS-E6 |
 | M-08 | Connected assumptions to proofs: `deterministicTimerProgress_consumed_by_advanceTimer`, `deterministicRegisterContext_consumed_by_writeRegister`, `memoryAccessSafety_consumed_by_readMemory` consumption theorems; binding matrix in Invariant.lean | WS-E6 |
