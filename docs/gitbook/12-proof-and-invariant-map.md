@@ -353,3 +353,26 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 - `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02),
 - `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
+
+### IF-M4 bundle-level composition (WS-E5 / H-04, H-05, M-07 complete)
+
+**Parameterized security labels (H-04)** in `Policy.lean`:
+
+- `SecurityDomain` — Nat-indexed domain type supporting arbitrary domain counts,
+- `DomainFlowPolicy` with `canFlow` predicate, `linearOrder`, `allowAll` constructors,
+- `GenericLabelingContext` — per-object/thread/endpoint/service domain assignment,
+- `EndpointFlowPolicy` — per-endpoint flow policy overrides,
+- `embedLegacyLabel` — embedding from legacy 2×2 lattice into N-domain system.
+
+**Composed bundle non-interference (H-05)** in `Invariant.lean`:
+
+- `NonInterferenceStep` — inductive covering 5 operation families,
+- `composedNonInterference_step` — single-step bundle non-interference (IF-M4),
+- `NonInterferenceTrace` — multi-step trace inductive,
+- `composedNonInterference_trace` — trace-level bundle non-interference (IF-M4).
+
+**Enforcement boundary specification (M-07)** in `Enforcement.lean`:
+
+- `EnforcementClass` — canonical classification (policyGated / capabilityOnly / readOnly),
+- `enforcementBoundary` — 17-entry canonical operation classification table,
+- denial-preserves-state and gateway-equivalence theorems for all checked operations.

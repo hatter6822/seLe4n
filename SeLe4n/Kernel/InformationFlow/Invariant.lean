@@ -86,6 +86,22 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc']
 
 -- ============================================================================
+-- WS-E5: clearCapabilityRefsState preserves projection (used by composed proofs)
+-- ============================================================================
+
+/-- clearCapabilityRefsState preserves the observer projection for any refs list. -/
+private theorem clearCapabilityRefsState_preserves_projectState
+    (ctx : LabelingContext) (observer : IfObserver)
+    (refs : List SlotRef) (st : SystemState) :
+    projectState ctx observer (clearCapabilityRefsState refs st) =
+      projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext oid; simp [projectObjects, clearCapabilityRefsState_preserves_objects]
+  · simp [projectRunnable, clearCapabilityRefsState_preserves_scheduler]
+  · simp [projectCurrent, clearCapabilityRefsState_preserves_scheduler]
+  · funext sid; simp [projectServiceStatus, clearCapabilityRefsState_lookupService]
+
+-- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
 -- ============================================================================
 
@@ -528,5 +544,216 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
     ⟨_, _, _, _, _, _, hStore₂⟩
   exact storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer target newObj newObj s₁ s₂ s₁' s₂' hLow hTargetHigh hStore₁ hStore₂
+
+-- ============================================================================
+-- WS-E5/H-05: Composed bundle-level non-interference (IF-M4)
+-- ============================================================================
+
+/-! ## H-05 — Composed Bundle-Level Non-Interference
+
+This section connects the IF-M3 seed theorems into a composed IF-M4
+bundle-level non-interference result. The composition demonstrates that
+any sequence of high-domain kernel operations from the covered subsystems
+preserves low-equivalence for unrelated observers.
+
+Design:
+- `NonInterferenceStep` is an inductive encoding of a single kernel step
+  that has been proven to preserve low-equivalence.
+- `stepPreservesLowEquivalent` proves that any single step preserves
+  low-equivalence, dispatching to the appropriate seed theorem.
+- `tracePreservesLowEquivalent` composes by induction over a list of steps.
+
+This is the first IF-M4 theorem, advancing the information-flow proof surface
+from transition-level seeds to bundle-level composition. -/
+
+/-- WS-E5/H-05: A single kernel step that preserves low-equivalence.
+
+Each constructor carries the parameters and hypotheses needed by the
+corresponding seed theorem. The step is parameterized by its effect on
+a single `SystemState`. -/
+inductive NonInterferenceStep
+    (ctx : LabelingContext) (observer : IfObserver) : SystemState → SystemState → Prop where
+  /-- A `chooseThread` step that selects the next thread to run. -/
+  | chooseThread
+      (s s' : SystemState)
+      (next : Option SeLe4n.ThreadId)
+      (hStep : chooseThread s = .ok (next, s')) :
+      NonInterferenceStep ctx observer s s'
+  /-- An `endpointSend` step at a non-observable endpoint by a non-observable sender. -/
+  | endpointSend
+      (s s' : SystemState)
+      (endpointId : SeLe4n.ObjId)
+      (sender : SeLe4n.ThreadId)
+      (hEndpointHigh : objectObservable ctx observer endpointId = false)
+      (hSenderHigh : threadObservable ctx observer sender = false)
+      (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
+      (hCoherent : ∀ tid : SeLe4n.ThreadId,
+          threadObservable ctx observer tid = false →
+          objectObservable ctx observer tid.toObjId = false)
+      (hRecvDomain : ∀ ep tid, s.objects endpointId = some (.endpoint ep) →
+          ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
+      (hStep : endpointSend endpointId sender s = .ok ((), s')) :
+      NonInterferenceStep ctx observer s s'
+  /-- A `cspaceMint` step in a non-observable CNode. -/
+  | cspaceMint
+      (s s' : SystemState)
+      (src dst : CSpaceAddr)
+      (rights : List AccessRight)
+      (badge : Option SeLe4n.Badge)
+      (hSrcHigh : objectObservable ctx observer src.cnode = false)
+      (hDstHigh : objectObservable ctx observer dst.cnode = false)
+      (hStep : cspaceMint src dst rights badge s = .ok ((), s')) :
+      NonInterferenceStep ctx observer s s'
+  /-- A `cspaceRevoke` step in a non-observable CNode. -/
+  | cspaceRevoke
+      (s s' : SystemState)
+      (addr : CSpaceAddr)
+      (hCNodeHigh : objectObservable ctx observer addr.cnode = false)
+      (hStep : cspaceRevoke addr s = .ok ((), s')) :
+      NonInterferenceStep ctx observer s s'
+  /-- A `lifecycleRetypeObject` step at a non-observable target. -/
+  | lifecycleRetype
+      (s s' : SystemState)
+      (authority : CSpaceAddr)
+      (target : SeLe4n.ObjId)
+      (newObj : KernelObject)
+      (hTargetHigh : objectObservable ctx observer target = false)
+      (hStep : lifecycleRetypeObject authority target newObj s = .ok ((), s')) :
+      NonInterferenceStep ctx observer s s'
+
+/-- WS-E5/H-05: A single non-interference step preserves the low-equivalence
+projection for a single execution (one-sided projection preservation).
+
+This is a helper for the composed theorem: it shows that any step from the
+`NonInterferenceStep` family preserves `projectState`. -/
+private theorem step_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s s' : SystemState)
+    (hStep : NonInterferenceStep ctx observer s s') :
+    projectState ctx observer s' = projectState ctx observer s := by
+  cases hStep with
+  | chooseThread next hOp =>
+    have hEq := chooseThread_preserves_state s s' next hOp
+    subst hEq; rfl
+  | endpointSend eid sender hEH hSH hSOH hCoh hRD hOp =>
+    exact endpointSend_projection_preserved ctx observer eid sender s s'
+      hEH hSH hSOH hCoh hRD hOp
+  | cspaceMint src dst rights badge _hSH hDH hOp =>
+    -- cspaceMint at non-observable dst: show projection preserved
+    unfold cspaceMint at hOp
+    cases hL : cspaceLookupSlot src s with
+    | error e => simp [hL] at hOp
+    | ok p =>
+      rcases p with ⟨parent, stL⟩
+      have hEqL := cspaceLookupSlot_preserves_state s stL src parent hL
+      subst stL
+      cases hM : mintDerivedCap parent rights badge with
+      | error e => simp [hL, hM] at hOp
+      | ok child =>
+        have hInsert : cspaceInsertSlot dst child s = .ok ((), s') := by simpa [hL, hM] using hOp
+        simp only [projectState]; congr 1
+        · funext oid
+          by_cases hObs : objectObservable ctx observer oid
+          · have hNeDst : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDH] at hObs
+            simp [projectObjects, hObs, cspaceInsertSlot_preserves_objects_ne s s' dst child oid hNeDst hInsert]
+          · simp [projectObjects, hObs]
+        · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler s s' dst child hInsert]
+        · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler s s' dst child hInsert]
+        · funext sid
+          simp [projectServiceStatus, lookupService,
+                show s'.services = s.services from cspaceInsertSlot_preserves_services s s' dst child hInsert]
+  | cspaceRevoke addr hCH hOp =>
+    -- Reuse the existing two-run proof infrastructure by constructing
+    -- a storeObject witness and using storeObject_preserves_projection.
+    unfold cspaceRevoke at hOp
+    cases hL : cspaceLookupSlot addr s with
+    | error e => simp [hL] at hOp
+    | ok p =>
+      rcases p with ⟨_parent, stL⟩
+      have hEqL := cspaceLookupSlot_preserves_state s stL addr _parent hL
+      subst stL
+      cases hC : s.objects addr.cnode with
+      | none => simp [hL, hC] at hOp
+      | some obj =>
+        cases obj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL, hC] at hOp
+        | cnode cn =>
+          -- s' = clearCapabilityRefsState refs (storeObject result)
+          -- Strategy: decompose into storeObject step, then clearCapabilityRefs step
+          cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot _parent.target)) s with
+          | error e => simp [hL, hC, hStore] at hOp
+          | ok pair =>
+            rcases pair with ⟨_, stMid⟩
+            -- clearCapabilityRefs always succeeds
+            simp [hL, hC, hStore, clearCapabilityRefs] at hOp; cases hOp
+            -- Two-stage projection preservation: storeObject then clearCapabilityRefsState
+            have hProj1 := storeObject_preserves_projection ctx observer s stMid
+              addr.cnode _ hCH hStore
+            -- clearCapabilityRefsState preserves projection for any refs list
+            rw [clearCapabilityRefsState_preserves_projectState]
+            exact hProj1
+  | lifecycleRetype auth tgt nObj hTgtH hOp =>
+    rcases lifecycleRetypeObject_ok_as_storeObject s s' auth tgt nObj hOp with
+      ⟨_, _, _, _, _, _, hStore⟩
+    exact storeObject_preserves_projection ctx observer s s' tgt nObj hTgtH hStore
+
+/-- WS-E5/H-05: **Composed bundle-level non-interference theorem (IF-M4).**
+
+If two states are low-equivalent for an observer, and both execute the same
+non-interference step (from any of the covered subsystems), then the resulting
+states are also low-equivalent.
+
+This advances the IF roadmap from IF-M3 (transition-level seeds) to IF-M4
+(bundle-level composition) as required by the WS-E5 validation gate. -/
+theorem composedNonInterference_step
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hStep₁ : NonInterferenceStep ctx observer s₁ s₁')
+    (hStep₂ : NonInterferenceStep ctx observer s₂ s₂') :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have h₁ := step_preserves_projection ctx observer s₁ s₁' hStep₁
+  have h₂ := step_preserves_projection ctx observer s₂ s₂' hStep₂
+  unfold lowEquivalent; rw [h₁, h₂]; exact hLow
+
+/-- WS-E5/H-05: A kernel trace is a sequence of non-interference steps. -/
+inductive NonInterferenceTrace
+    (ctx : LabelingContext) (observer : IfObserver) : SystemState → SystemState → Prop where
+  | nil (s : SystemState) : NonInterferenceTrace ctx observer s s
+  | cons (s s' s'' : SystemState)
+      (hStep : NonInterferenceStep ctx observer s s')
+      (hTail : NonInterferenceTrace ctx observer s' s'') :
+      NonInterferenceTrace ctx observer s s''
+
+/-- WS-E5/H-05: A non-interference trace preserves the observer projection
+(single-state, induction over trace structure). -/
+private theorem trace_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s s' : SystemState)
+    (hTrace : NonInterferenceTrace ctx observer s s') :
+    projectState ctx observer s' = projectState ctx observer s := by
+  induction hTrace with
+  | nil _ => rfl
+  | cons s₀ s₁ s₂ hStep _hTail ih =>
+    rw [ih, step_preserves_projection ctx observer s₀ s₁ hStep]
+
+/-- WS-E5/H-05: **Trace-level non-interference composition (IF-M4).**
+
+If two states are low-equivalent, and both execute corresponding traces
+of non-interference steps, then the final states are also low-equivalent.
+This generalizes `composedNonInterference_step` to arbitrary-length traces.
+
+Proof: each trace preserves projection independently, so low-equivalence
+threads through the pre-state equivalence. -/
+theorem composedNonInterference_trace
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hTrace₁ : NonInterferenceTrace ctx observer s₁ s₁')
+    (hTrace₂ : NonInterferenceTrace ctx observer s₂ s₂') :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have h₁ := trace_preserves_projection ctx observer s₁ s₁' hTrace₁
+  have h₂ := trace_preserves_projection ctx observer s₂ s₂' hTrace₂
+  unfold lowEquivalent; rw [h₁, h₂]; exact hLow
 
 end SeLe4n.Kernel

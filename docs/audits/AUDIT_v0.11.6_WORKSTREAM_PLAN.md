@@ -49,8 +49,8 @@ related findings into coherent implementation slices.
 | H-01 | HIGH | Non-compositional preservation proofs | WS-E2 | **RESOLVED** |
 | H-02 | HIGH | Silent slot overwrites in cspaceInsertSlot | WS-E4 | **RESOLVED** |
 | H-03 | HIGH | Badge override safety gap | WS-E2 | **RESOLVED** |
-| H-04 | HIGH | Two-level security lattice too coarse | WS-E5 |
-| H-05 | HIGH | No non-interference theorem | WS-E5 |
+| H-04 | HIGH | Two-level security lattice too coarse | WS-E5 | **RESOLVED** |
+| H-05 | HIGH | No non-interference theorem | WS-E5 | **RESOLVED** |
 | H-06 | HIGH | Inhabited instances create magic ID 0 | WS-E3 | **RESOLVED** |
 | H-07 | HIGH | VSpace missing from composed invariant bundle | WS-E3 | **RESOLVED** |
 | H-08 | HIGH | BFS cycle detection unsound on fuel exhaustion | WS-E3 | **RESOLVED** |
@@ -60,7 +60,7 @@ related findings into coherent implementation slices.
 | M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
 | M-04 | MEDIUM | No time-slice or preemption model | WS-E6 |
 | M-05 | MEDIUM | No domain scheduling | WS-E6 |
-| M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 |
+| M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 | **RESOLVED** |
 | M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
@@ -249,18 +249,41 @@ theorems; CDT acyclicity proven; cross-CNode revocation demonstrated. ✓
 
 **Scope:**
 
-1. **H-04** Parameterize security labels by a domain type rather than
-   hardcoding `{low, high} × {untrusted, trusted}`. Support 3+ security
-   domains, per-endpoint flow policies.
-2. **H-05** Prove at least one composed bundle-level non-interference
-   theorem (connecting IF-M3 seeds into IF-M4 composition). This advances
-   the IF roadmap from scaffolding to evidence.
-3. **M-07** Prove that unchecked operations cannot leak information when
-   the enforcement gate is bypassed — or explicitly document which
-   operations require the `*Checked` wrapper.
+1. ~~H-04~~ Parameterize security labels by a domain type rather than
+   hardcoding `{low, high} × {untrusted, trusted}` — **DONE**
+   (`SecurityDomain` Nat-indexed type; `DomainFlowPolicy` with `canFlow`
+   function; `GenericLabelingContext` with parameterized domain assignments;
+   `EndpointFlowPolicy` for per-endpoint flow overrides;
+   `DomainFlowPolicy.linearOrder` and `.allowAll` built-in policies;
+   `embedLegacyLabel` maps legacy 2×2 lattice into 4-domain linear lattice
+   with `embedLegacyLabel_preserves_flow` correctness theorem;
+   `threeDomainExample` demonstrates ≥3 domain support;
+   lattice properties proved: reflexivity, transitivity, well-formedness).
+2. ~~H-05~~ Prove at least one composed bundle-level non-interference
+   theorem — **DONE**
+   (`NonInterferenceStep` inductive encoding 5 operation families;
+   `step_preserves_projection` one-sided projection preservation;
+   `composedNonInterference_step` single-step two-run composition (IF-M4);
+   `NonInterferenceTrace` inductive trace type;
+   `trace_preserves_projection` trace-level projection preservation;
+   `composedNonInterference_trace` trace-level two-run composition (IF-M4);
+   advances IF roadmap from IF-M3 seeds to IF-M4 bundle composition).
+3. ~~M-07~~ Prove that unchecked operations cannot leak information when
+   the enforcement gate is bypassed — **DONE**
+   (`EnforcementClass` inductive classifying operations as `policyGated`,
+   `capabilityOnly`, or `readOnly`; `enforcementBoundary` canonical
+   classification table; `endpointSendChecked_denied_preserves_state`,
+   `cspaceMintChecked_denied_preserves_state`,
+   `serviceRestartChecked_denied_preserves_state` proving denied flows
+   produce no state change; `enforcement_sufficiency_endpointSend`,
+   `enforcement_sufficiency_cspaceMint`,
+   `enforcement_sufficiency_serviceRestart` proving the three checked
+   wrappers are sufficient for the enforcement boundary).
 
 **Validation gate:** `test_full.sh` passes; at least one composed
-non-interference theorem exists; label lattice supports ≥3 domains.
+non-interference theorem exists; label lattice supports ≥3 domains. ✓
+
+**Status:** **COMPLETED**
 
 **Dependencies:** WS-E3 (endpoint blocking makes IF proofs meaningful),
 WS-E4 (CDT integration for capability flow proofs).
@@ -306,7 +329,7 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P1:** WS-E1 (test/CI hardening — **completed**) + WS-E2 (proof quality — **completed**).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
-- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4.
+- **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4 (**completed**).
 - **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
 
 ---
@@ -319,7 +342,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E2 | **Completed** | High | C-01, H-01, H-03 | P1 |
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
-| WS-E5 | Planned | High | H-04, H-05, M-07 | P4 |
+| WS-E5 | **Completed** | High | H-04, H-05, M-07 | P4 |
 | WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 
 ---
@@ -349,3 +372,6 @@ WS-E4 (CDT integration for capability flow proofs).
 | M-01 | Added `sendQueue`/`receiveQueue` fields to `Endpoint`; `endpointSendDual`/`endpointReceiveDual` with rendezvous; legacy operations preserved | WS-E4 |
 | M-02 | Added `IpcMessage` structure (registers, caps, badge) used by dual-queue and reply operations | WS-E4 |
 | M-12 | Added `blockedOnReply` thread state, `replyCap` capability target, `endpointReply`/`endpointCall`/`endpointReplyRecv` operations; preservation theorems for `endpointReply` across scheduler, capability, and IPC invariant bundles | WS-E4 |
+| H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |
+| H-05 | Composed bundle-level non-interference (IF-M4): `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` single-step composition, `NonInterferenceTrace` + `composedNonInterference_trace` trace-level composition | WS-E5 |
+| M-07 | Enforcement boundary specification: `EnforcementClass` classification (`policyGated`/`capabilityOnly`/`readOnly`), `enforcementBoundary` canonical table, denied-preserves-state theorems, `enforcement_sufficiency_*` theorems proving 3 checked wrappers are sufficient | WS-E5 |

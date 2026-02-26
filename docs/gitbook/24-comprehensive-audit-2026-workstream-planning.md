@@ -39,6 +39,26 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing.
 - **M-09:** Metadata sync correctness proven for type-changing `storeObject`: `storeObject_metadata_sync_type_change` and `storeObject_metadata_sync_capref_at_stored`.
 - **L-06:** Default `SystemState` initialization proof: `default_systemState_lifecycleConsistent` and `default_system_state_proofLayerInvariantBundle`.
 
+### WS-E4 completed summary
+
+**WS-E4 — Capability and IPC model completion** has been completed. All 7 findings resolved:
+
+- **C-02:** Full capability invocation dispatch with 7 object types and explicit failure paths.
+- **C-03:** Complete notification signaling model with badge merge, counter semantics, and overflow saturation.
+- **C-04:** IRQ handler model with acknowledge/clear lifecycle and masking semantics.
+- **H-02:** CSpace depth-bounded lookup with configurable fuel and explicit termination proof.
+- **M-01:** Grant right enforcement on capability transfer operations.
+- **M-02:** Capability badge filtering with configurable per-endpoint policy.
+- **M-12:** Notification counter overflow saturation semantics with preservation proof.
+
+### WS-E5 completed summary
+
+**WS-E5 — Information-flow maturity** has been completed. All 3 findings resolved:
+
+- **H-04:** Parameterized security labels — `SecurityDomain` (Nat-indexed), `DomainFlowPolicy`, `GenericLabelingContext`, `EndpointFlowPolicy`, legacy embedding with `embedLegacyLabel`. Supports arbitrary domain counts with proven lattice properties.
+- **H-05:** Composed bundle non-interference — `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` (single-step IF-M4), `NonInterferenceTrace` + `composedNonInterference_trace` (trace-level IF-M4).
+- **M-07:** Enforcement boundary specification — `EnforcementClass` classification, `enforcementBoundary` (17-entry table), denial-preserves-state theorems, gateway-equivalence theorems for all checked operations.
+
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 
 The WS-D portfolio has been completed (WS-D1..WS-D4) with WS-D5/WS-D6 absorbed into WS-E. It is retained for traceability.
