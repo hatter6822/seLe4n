@@ -85,7 +85,10 @@ inductive ThreadIpcState where
 /-- Thread Control Block.
 
 M-03/WS-E6: `deadline` field for EDF tie-breaking. Default 0 = no deadline.
-M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum. -/
+M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum.
+WS-E4/P3: Added intrusive ready-queue link fields (`runQueueNext`/`runQueuePrev`)
+stored directly in each TCB. This enables queue bookkeeping without allocating
+separate queue-node objects. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -102,6 +105,12 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
+  /-- WS-E4/P3: Intrusive doubly-linked ready-queue next pointer.
+      `none` indicates end-of-queue. -/
+  runQueueNext : Option SeLe4n.ThreadId := none
+  /-- WS-E4/P3: Intrusive doubly-linked ready-queue previous pointer.
+      `none` indicates start-of-queue. -/
+  runQueuePrev : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
 inductive EndpointState where

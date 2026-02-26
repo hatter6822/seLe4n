@@ -72,6 +72,7 @@ Every milestone-moving PR should include:
 ## 3.1 Security hardening defaults
 
 - IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
+- TCB layout now includes intrusive ready-queue links (`runQueueNext`/`runQueuePrev`) and `SchedulerState` includes queue endpoint pointers (`readyHead`/`readyTail`) for pointer-based runnable-list bookkeeping.
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
 

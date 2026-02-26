@@ -36,6 +36,12 @@ structure DomainScheduleEntry where
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  /-- WS-E4/P3: Optional intrusive ready-queue head pointer.
+      Kept as explicit scheduler metadata so queue endpoints do not require
+      scanning the runnable list. -/
+  readyHead : Option SeLe4n.ThreadId := none
+  /-- WS-E4/P3: Optional intrusive ready-queue tail pointer. -/
+  readyTail : Option SeLe4n.ThreadId := none
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
   activeDomain : SeLe4n.DomainId := 0

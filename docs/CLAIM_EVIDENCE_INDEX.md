@@ -55,3 +55,5 @@ When a claim changes:
 2. update GitBook mirror(s) in the same PR,
 3. refresh this table row(s) for changed claims,
 4. run `./scripts/test_docs_sync.sh` and at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).
+
+- Intrusive runnable-queue metadata is modeled in-object via `TCB.runQueueNext`/`TCB.runQueuePrev` and scheduler endpoint pointers `SchedulerState.readyHead`/`SchedulerState.readyTail` (`SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean`).
