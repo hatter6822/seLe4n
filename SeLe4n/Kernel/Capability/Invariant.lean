@@ -1296,9 +1296,7 @@ private theorem cspaceSlotUnique_of_storeTcbIpcState
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
-    have hImpossible : False := by
-      simpa [storeTcbIpcState, hLookup] using hStep
-    exact False.elim hImpossible
+    simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with

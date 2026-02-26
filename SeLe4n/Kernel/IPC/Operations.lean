@@ -215,9 +215,7 @@ theorem storeTcbIpcState_preserves_objects_ne
   unfold storeTcbIpcState at hStep
   cases hTcb : lookupTcb st tid with
   | none =>
-    have hImpossible : False := by
-      simpa [storeTcbIpcState, hTcb] using hStep
-    exact False.elim hImpossible
+    simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -276,9 +274,7 @@ theorem storeTcbIpcState_scheduler_eq
   unfold storeTcbIpcState at hStep
   cases hTcb : lookupTcb st tid with
   | none =>
-    have hImpossible : False := by
-      simpa [storeTcbIpcState, hTcb] using hStep
-    exact False.elim hImpossible
+    simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -365,9 +361,7 @@ theorem storeTcbIpcState_cnode_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      have hImpossible : False := by
-        simpa [storeTcbIpcState, hLookup] using hStep
-      exact False.elim hImpossible
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -393,9 +387,7 @@ theorem storeTcbIpcState_endpoint_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      have hImpossible : False := by
-        simpa [storeTcbIpcState, hLookup] using hStep
-      exact False.elim hImpossible
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -421,9 +413,7 @@ theorem storeTcbIpcState_notification_backward
     unfold storeTcbIpcState at hStep
     cases hLookup : lookupTcb st tid with
     | none =>
-      have hImpossible : False := by
-        simpa [storeTcbIpcState, hLookup] using hStep
-      exact False.elim hImpossible
+      simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
@@ -654,9 +644,7 @@ theorem storeTcbIpcState_ipcState_eq
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
-    have hImpossible : False := by
-      simpa [storeTcbIpcState, hLookup] using hStep
-    exact False.elim hImpossible
+    simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc }) st with
