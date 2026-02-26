@@ -375,6 +375,10 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
               | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
               | .ok (cap, _) =>
                   IO.println s!"unexpected cap after delete: {reprStr cap}"
+              match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 2 st5 with
+              | .error err => IO.println s!"endpoint await-receive missing-thread branch: {reprStr err}"
+              | .ok _ =>
+                  IO.println "unexpected endpoint await-receive success for missing thread 2"
               match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 1 st5 with
                   | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
