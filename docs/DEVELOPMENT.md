@@ -6,7 +6,7 @@ This guide is the day-to-day operating manual for contributors.
 
 It is aligned to the **current active slice**:
 
-- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1, WS-E2, WS-E3, WS-E4, WS-E5 completed; WS-E6 planned)**,
+- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1 through WS-E6 completed)**,
 - completed predecessor: **WS-D portfolio (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E)**,
 - completed predecessor before that: **WS-C portfolio (WS-C1..WS-C8)**.
 
@@ -37,7 +37,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **WS-E3** — Kernel semantic hardening (**completed** — H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4** — Capability and IPC model completion (**completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5** — Information-flow maturity (**completed** — H-04, H-05, M-07)
-- **WS-E6** — Model completeness and documentation (**planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E6** — Model completeness and documentation (**completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Canonical detail: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 
@@ -50,7 +50,7 @@ Use the planning phases from the workstream backbone:
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
 - **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
 - **Phase P4:** WS-E5 (information-flow maturity) — **completed**
-- **Phase P5:** WS-E6 (model completeness/docs)
+- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
 
 ### 3.3 Prior completed portfolios (historical)
 

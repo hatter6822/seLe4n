@@ -117,4 +117,29 @@ theorem assumptionTransitionMap_nonempty (a : ArchAssumption) : (assumptionTrans
 theorem assumptionInvariantMap_nonempty (a : ArchAssumption) : (assumptionInvariantMap a).length > 0 := by
   cases a <;> decide
 
+-- ============================================================================
+-- M-08/WS-E6: Assumption consumption documentation
+-- ============================================================================
+
+/-! ## M-08/WS-E6: How assumptions are consumed
+
+Each architecture assumption above is not merely declared — it is actively
+consumed by the adapter preservation proofs in `Invariant.lean`. The consumption
+chain works as follows:
+
+1. **Declaration** (this file): Each `ArchAssumption` enumerates a hardware
+   property the model relies on.
+2. **Contract** (this file): `RuntimeBoundaryContract` and companions encode
+   the assumption as a typed, decidable predicate.
+3. **Adapter** (`Adapter.lean`): Each adapter operation (`adapterAdvanceTimer`,
+   etc.) checks the relevant contract predicate at runtime, failing with
+   `unsupportedBinding` if the assumption is violated.
+4. **Preservation** (`Invariant.lean`): `AdapterProofHooks` requires a proof
+   that the invariant bundle is preserved when the contract holds. The
+   consumption bridge theorems (`deterministicTimerProgress_consumed_by_advanceTimer`,
+   etc.) witness this chain explicitly.
+
+This four-step chain ensures every declared assumption has a concrete proof-level
+consumer, closing the gap identified in finding M-08. -/
+
 end SeLe4n.Kernel.Architecture

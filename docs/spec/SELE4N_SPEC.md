@@ -79,7 +79,7 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.4 Active Audit Portfolio (WS-E)
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1, WS-E2, WS-E3, WS-E4, WS-E5 completed; WS-E6 planned.
+- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 through WS-E6 completed.
 
 ---
 
@@ -108,7 +108,7 @@ WS-D portfolio (WS-D5/D6).
 
 ### 4.5 Low — Model Completeness and Documentation
 
-- **WS-E6:** Model completeness and documentation (low; **planned** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E6:** Model completeness and documentation (low; **completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
@@ -131,7 +131,7 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 - **Phase P2:** WS-E3 (kernel hardening) — **completed**
 - **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
 - **Phase P4:** WS-E5 (information-flow maturity) — **completed**
-- **Phase P5:** WS-E6 (model completeness/docs)
+- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
 
 ---
 

@@ -57,21 +57,21 @@ related findings into coherent implementation slices.
 | H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 | **RESOLVED** |
 | M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 | **RESOLVED** |
 | M-02 | MEDIUM | No message payload in IPC | WS-E4 | **RESOLVED** |
-| M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
-| M-04 | MEDIUM | No time-slice or preemption model | WS-E6 |
-| M-05 | MEDIUM | No domain scheduling | WS-E6 |
+| M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 | **RESOLVED** |
+| M-04 | MEDIUM | No time-slice or preemption model | WS-E6 | **RESOLVED** |
+| M-05 | MEDIUM | No domain scheduling | WS-E6 | **RESOLVED** |
 | M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 | **RESOLVED** |
-| M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
+| M-08 | MEDIUM | Assumptions are structural only | WS-E6 | **RESOLVED** |
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
 | M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
 | M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 | **RESOLVED** |
 | M-13 | MEDIUM | Integrity flow semantics contradict documentation | **RESOLVED** |
-| L-01 | LOW | API.lean is just imports | WS-E6 |
-| L-02 | LOW | Default memory returns zero for all addresses | WS-E6 |
-| L-03 | LOW | Missing monad helpers | WS-E6 |
-| L-04 | LOW | ID conversion without validation | WS-E6 |
-| L-05 | LOW | objectIndex never pruned | WS-E6 |
+| L-01 | LOW | API.lean is just imports | WS-E6 | **RESOLVED** |
+| L-02 | LOW | Default memory returns zero for all addresses | WS-E6 | **RESOLVED** |
+| L-03 | LOW | Missing monad helpers | WS-E6 | **RESOLVED** |
+| L-04 | LOW | ID conversion without validation | WS-E6 | **RESOLVED** |
+| L-05 | LOW | objectIndex never pruned | WS-E6 | **RESOLVED** |
 | L-06 | LOW | No initialization proof | WS-E3 | **RESOLVED** |
 | L-07 | LOW | Fixture matching is fragile | WS-E1 | **RESOLVED** |
 | L-08 | LOW | Anchor presence ≠ correctness | WS-E1 | **RESOLVED** |
@@ -85,7 +85,7 @@ related findings into coherent implementation slices.
 | F-13 | LOW | Version badge discrepancy | — | **RESOLVED** (v0.11.6 correct) |
 | F-14 | LOW | SHA-pin GitHub Actions | WS-E1 | **RESOLVED** |
 | F-15 | LOW | Add permissions block to CI workflows | WS-E1 | **RESOLVED** |
-| F-17 | LOW | Document O(n) design decision | WS-E6 | Pending |
+| F-17 | LOW | Document O(n) design decision | WS-E6 | **RESOLVED** |
 
 ---
 
@@ -298,27 +298,58 @@ WS-E4 (CDT integration for capability flow proofs).
 
 **Scope:**
 
-1. **M-03** Implement fixed-priority + EDF tie-breaking semantics and document the difference from
-   seL4 round-robin.
-2. **M-04** Model time-slice decrement and tick-based preemption using
-   `TCB.timeSlice` and `MachineState.timer`.
-3. **M-05** Implement domain scheduling using `DomainId` in TCB for
-   two-level temporal partitioning.
-4. **M-08** Connect architecture assumptions to actual proofs (consume
-   boundary contracts in adapter preservation theorems).
-5. **F-17** Document O(n) data structure design decision with rationale,
-   scope note, and future migration path.
-6. **L-01** Define unified public API in `API.lean` with entry-point
-   composition and API-level invariant bundle.
-7. **L-02** Document default-memory-returns-zero semantics and absence
-   of page-fault model.
-8. **L-03** Add standard monad helpers (`get`, `set`, `modify`,
-   `liftExcept`) to `KernelM`.
-9. **L-04** Add validation to `ThreadId.toObjId` or document the deferred
-   check assumption.
-10. **L-05** Document monotonic `objectIndex` as intentional design.
+1. ~~M-03~~ Implement fixed-priority + EDF tie-breaking semantics — **DONE**
+   (`isBetterCandidate` three-level comparison: priority > EDF deadline > FIFO;
+   `isBetterCandidate_irrefl` FIFO stability theorem;
+   `isBetterCandidate_asymm` strict ordering theorem;
+   `chooseBestRunnable` upgraded to `(ThreadId × Priority × Deadline)` accumulator;
+   `Deadline` typed identifier in `Prelude.lean`; `TCB.deadline` field).
+2. ~~M-04~~ Model time-slice decrement and tick-based preemption — **DONE**
+   (`TCB.timeSlice` field with default 5; `defaultTimeSlice` named constant;
+   `timerTick` operation: decrement on tick, reset+rotate+reschedule on expiry;
+   `timeSlicePositive` invariant predicate in scheduler invariant suite).
+3. ~~M-05~~ Implement domain scheduling — **DONE**
+   (`DomainScheduleEntry` structure; `SchedulerState.activeDomain`,
+   `.domainTimeRemaining`, `.domainSchedule`, `.domainScheduleIndex` fields;
+   `filterByDomain` helper; `chooseThreadInDomain` with fallback to unrestricted;
+   `switchDomain` modular schedule advance; `scheduleDomain` tick handler;
+   `currentThreadInActiveDomain` invariant predicate;
+   `switchDomain_preserves_schedulerInvariantBundle`,
+   `chooseThreadInDomain_preserves_state` preservation theorems).
+4. ~~M-08~~ Connect architecture assumptions to proofs — **DONE**
+   (`deterministicTimerProgress_consumed_by_advanceTimer`,
+   `deterministicRegisterContext_consumed_by_writeRegister`,
+   `memoryAccessSafety_consumed_by_readMemory` consumption bridge theorems;
+   assumption-to-proof binding matrix in Architecture/Invariant.lean;
+   4-step consumption chain documented in Architecture/Assumptions.lean).
+5. ~~F-17~~ Document O(n) design decision — **DONE**
+   (`docs/ON_DESIGN_DECISION_ADR.md` — rationale, scope note, affected
+   operations with complexity comparison, migration path via abstract
+   `FiniteMap` interface).
+6. ~~L-01~~ Define unified public API in `API.lean` — **DONE**
+   (`apiInvariantBundle` alias for `proofLayerInvariantBundle`;
+   `apiInvariantBundle_default` base-case theorem;
+   entry-point stability classification table covering 30+ operations).
+7. ~~L-02~~ Document default-memory-returns-zero semantics — **DONE**
+   (comprehensive docstring on `Memory` type in `Machine.lean`;
+   `default_memory_returns_zero`, `default_registerFile_pc_zero`,
+   `default_registerFile_sp_zero`, `default_timer_zero` theorems).
+8. ~~L-03~~ Add standard monad helpers — **DONE**
+   (`KernelM.get`, `.set`, `.modify`, `.liftExcept`, `.throw` with
+   6 correctness theorems: `get_spec`, `set_spec`, `modify_spec`,
+   `liftExcept_ok`, `liftExcept_err`, `throw_spec`).
+9. ~~L-04~~ Document `ThreadId.toObjId` deferred-check design — **DONE**
+   (extensive docstring on `toObjId` with design rationale;
+   `toObjIdChecked` safe variant with `Option` result;
+   `toObjIdChecked_eq_some_of_not_reserved` correctness theorem).
+10. ~~L-05~~ Document monotonic `objectIndex` design — **DONE**
+    (extensive docstring on `objectIndex` field with intentional-design
+    rationale, migration path, and performance note;
+    `storeObject_objectIndex_monotone` monotonicity theorem).
 
-**Validation gate:** `test_full.sh` passes; documentation synchronized.
+**Validation gate:** `test_full.sh` passes; documentation synchronized. ✓
+
+**Status:** **COMPLETED**
 
 **Dependencies:** WS-E4 (capability model changes may affect API definition).
 
@@ -332,7 +363,7 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4 (**completed**).
-- **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
+- **Phase P5:** WS-E6 (model completeness/docs) — **completed**.
 
 ---
 
@@ -345,7 +376,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | **Completed** | High | H-04, H-05, M-07 | P4 |
-| WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
+| WS-E6 | **Completed** | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 
 ---
 
@@ -377,3 +408,13 @@ WS-E4 (CDT integration for capability flow proofs).
 | H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |
 | H-05 | Composed bundle-level non-interference (IF-M4): `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` single-step composition, `NonInterferenceTrace` + `composedNonInterference_trace` trace-level composition, `preservesLowEquivalence` abstract predicate, `compose_preservesLowEquivalence` sequential composition | WS-E5 |
 | M-07 | Enforcement boundary specification: `EnforcementClass` classification (`policyGated`/`capabilityOnly`/`readOnly`), `enforcementBoundary` canonical table (17 entries), `*_denied_preserves_state` theorems, `enforcement_sufficiency_*` theorems proving 3 checked wrappers are sufficient | WS-E5 |
+| M-03 | Three-level scheduling comparison (`isBetterCandidate`: priority > EDF deadline > FIFO); `Deadline` typed identifier; `TCB.deadline` field; `isBetterCandidate_irrefl`, `isBetterCandidate_asymm` algebraic property theorems; `edfCurrentHasEarliestDeadline` invariant predicate | WS-E6 |
+| M-04 | Time-slice preemption: `TCB.timeSlice` field, `defaultTimeSlice` constant, `timerTick` operation (decrement/reset+reschedule), `timeSlicePositive` invariant predicate | WS-E6 |
+| M-05 | Domain scheduling: `DomainScheduleEntry`, `SchedulerState.activeDomain`/`.domainTimeRemaining`/`.domainSchedule`/`.domainScheduleIndex`, `filterByDomain`, `chooseThreadInDomain` (with fallback), `switchDomain`, `scheduleDomain`, `currentThreadInActiveDomain` invariant, preservation theorems | WS-E6 |
+| M-08 | Architecture assumption consumption bridges: `deterministicTimerProgress_consumed_by_advanceTimer`, `deterministicRegisterContext_consumed_by_writeRegister`, `memoryAccessSafety_consumed_by_readMemory`; 4-step consumption chain documented | WS-E6 |
+| F-17 | O(n) design decision ADR (`docs/ON_DESIGN_DECISION_ADR.md`): rationale, scope note, affected operations with complexity comparison, migration path via abstract `FiniteMap` interface | WS-E6 |
+| L-01 | Unified API surface: `apiInvariantBundle` alias, `apiInvariantBundle_default` base-case theorem, entry-point stability classification table (30+ operations) | WS-E6 |
+| L-02 | Default-memory-returns-zero documentation and theorems (`default_memory_returns_zero`, `default_registerFile_pc_zero`, `default_registerFile_sp_zero`, `default_timer_zero`) | WS-E6 |
+| L-03 | Monad helpers (`KernelM.get/set/modify/liftExcept/throw`) with 6 correctness theorems | WS-E6 |
+| L-04 | `ThreadId.toObjId` deferred-check design documented; `toObjIdChecked` safe variant with `toObjIdChecked_eq_some_of_not_reserved` theorem | WS-E6 |
+| L-05 | Monotonic `objectIndex` design documented; `storeObject_objectIndex_monotone` theorem | WS-E6 |

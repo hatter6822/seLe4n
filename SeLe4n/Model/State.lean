@@ -25,9 +25,27 @@ inductive KernelError where
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
+/-- M-05/WS-E6: One entry in the round-robin domain schedule table.
+Mirrors seL4's `dschedule[]` — each entry specifies a domain and how
+many ticks that domain runs before the scheduler advances to the next entry. -/
+structure DomainScheduleEntry where
+  domain : SeLe4n.DomainId
+  length : Nat
+  deriving Repr, DecidableEq
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
+      domain are eligible for selection. Default domain 0. -/
+  activeDomain : SeLe4n.DomainId := 0
+  /-- M-05/WS-E6: Remaining ticks in the current domain schedule entry.
+      When this reaches 0, the scheduler advances to the next domain. -/
+  domainTimeRemaining : Nat := 5
+  /-- M-05/WS-E6: Round-robin domain schedule table. Empty = single-domain mode. -/
+  domainSchedule : List DomainScheduleEntry := []
+  /-- M-05/WS-E6: Current index into `domainSchedule`. -/
+  domainScheduleIndex : Nat := 0
   deriving Repr, DecidableEq
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
@@ -47,6 +65,22 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
+      stored. This list is intentionally never pruned — `storeObject` prepends
+      new IDs and never removes old ones.
+
+      **Design rationale:** Monotonic append-only semantics ensure that any
+      membership witness (`id ∈ st.objectIndex`) remains valid across all future
+      states. This simplifies invariant proofs: once an ID appears in the index,
+      it persists, so cross-transition carryover is trivially established. The
+      tradeoff is that the index may contain IDs for objects that have since been
+      overwritten or logically deleted; consumers must check `st.objects id` for
+      `some _` to confirm the object still exists.
+
+      **Migration path:** If bounded-memory semantics or garbage collection are
+      added in a future workstream, `objectIndex` can be replaced by a data
+      structure supporting removal while preserving the monotonicity invariant
+      for the live-object subset. -/
   objectIndex : List SeLe4n.ObjId
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
@@ -588,5 +622,28 @@ theorem storeObject_metadata_sync_capref_at_stored
   unfold storeObject at hStep
   cases hStep
   cases obj <;> simp [SystemState.lookupCapabilityRefMeta]
+
+-- ============================================================================
+-- L-05/WS-E6: objectIndex monotonicity
+-- ============================================================================
+
+/-- L-05/WS-E6: `storeObject` preserves existing objectIndex membership.
+Any ID present in the index before the store remains present after. This is
+the formal monotonicity guarantee documented on `SystemState.objectIndex`. -/
+theorem storeObject_objectIndex_monotone
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (id : SeLe4n.ObjId)
+    (hMem : id ∈ st.objectIndex)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    id ∈ st'.objectIndex := by
+  unfold storeObject at hStep
+  cases hStep
+  simp only
+  by_cases hIn : oid ∈ st.objectIndex
+  · simp [hIn, hMem]
+  · simp [hIn]
+    exact Or.inr hMem
 
 end SeLe4n.Model

@@ -7,7 +7,7 @@ The current active execution baseline is the **WS-E portfolio** based on the v0.
 - Findings baseline: [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - Canonical planning source: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
-See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E5 are completed; WS-E6 is planned.
+See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E6 are completed.
 
 ### WS-E1 completed summary
 

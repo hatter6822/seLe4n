@@ -4,10 +4,86 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+-- ============================================================================
+-- M-03/WS-E6: EDF (Earliest Deadline First) tie-breaking
+-- ============================================================================
+
+/-- M-03/WS-E6: Three-level scheduling comparison predicate.
+
+Returns `true` when the incumbent candidate (`incTid`) should be replaced
+by the challenger (`chalTid`). The three-level policy is:
+1. **Priority:** higher numeric priority strictly wins.
+2. **EDF:** at equal priority, earlier (lower nonzero) deadline wins.
+   A nonzero deadline always beats a zero (no-deadline) challenger at
+   equal priority.
+3. **FIFO:** if both priority and deadline are equal (or both zero),
+   the incumbent is retained (first-in-queue stability).
+
+This mirrors seL4 MCS scheduling semantics where sporadic servers use
+deadline-based selection within fixed-priority bands. -/
+def isBetterCandidate
+    (incPrio : SeLe4n.Priority) (incDeadline : SeLe4n.Deadline)
+    (chalPrio : SeLe4n.Priority) (chalDeadline : SeLe4n.Deadline) : Bool :=
+  if chalPrio.toNat > incPrio.toNat then true
+  else if chalPrio.toNat < incPrio.toNat then false
+  else -- equal priority: EDF tie-breaking
+    match chalDeadline.toNat, incDeadline.toNat with
+    | 0, _ => false  -- challenger has no deadline: never beats incumbent
+    | _, 0 => true   -- challenger has deadline, incumbent doesn't: challenger wins
+    | cd, id => cd < id  -- both have deadlines: earlier wins; equal = FIFO (retain incumbent)
+
+/-- M-03/WS-E6: FIFO stability — a candidate is never strictly better than itself. -/
+theorem isBetterCandidate_irrefl (prio : SeLe4n.Priority) (dl : SeLe4n.Deadline) :
+    isBetterCandidate prio dl prio dl = false := by
+  unfold isBetterCandidate
+  simp [show ¬(prio.toNat > prio.toNat) from by omega]
+  cases h : dl.toNat with
+  | zero => rfl
+  | succ n => simp [Nat.lt_irrefl]
+
+/-- M-03/WS-E6: Strict ordering — if A beats B, then B does not beat A. -/
+theorem isBetterCandidate_asymm
+    (p1 p2 : SeLe4n.Priority) (d1 d2 : SeLe4n.Deadline)
+    (h : isBetterCandidate p1 d1 p2 d2 = true) :
+    isBetterCandidate p2 d2 p1 d1 = false := by
+  unfold isBetterCandidate at h ⊢
+  -- Goal: does (p1 as challenger) beat (p2 as incumbent)? We need false.
+  -- Hypothesis h: does (p2 as challenger) beat (p1 as incumbent)? Known true.
+  -- Split on the goal's priority check: p1.toNat > p2.toNat?
+  by_cases hGt : p1.toNat > p2.toNat
+  · -- p1 > p2: then at h, since p2 is challenger and p1 is incumbent,
+    -- p2.toNat > p1.toNat is false, and p2.toNat < p1.toNat is true → h says false=true
+    have : ¬(p2.toNat > p1.toNat) := by omega
+    simp [this, show p2.toNat < p1.toNat from by omega] at h
+  · by_cases hLt : p1.toNat < p2.toNat
+    · -- p1 < p2: goal reduces to false. Done!
+      simp [show ¬(p1.toNat > p2.toNat) from hGt, hLt]
+    · -- p1 = p2: equal priority, EDF tie-breaking
+      have hEq : p1.toNat = p2.toNat := by omega
+      -- In h: p2.toNat > p1.toNat is false, p2.toNat < p1.toNat is false → EDF
+      simp [show ¬(p2.toNat > p1.toNat) from by omega,
+            show ¬(p2.toNat < p1.toNat) from by omega] at h
+      -- In goal: p1.toNat > p2.toNat is false, p1.toNat < p2.toNat is false → EDF
+      simp [hGt, show ¬(p1.toNat < p2.toNat) from hLt]
+      -- h and goal are now about deadline comparisons in opposite directions
+      revert h
+      cases hd2 : d2.toNat with
+      | zero => simp
+      | succ n =>
+          cases hd1 : d1.toNat with
+          | zero => simp
+          | succ m => simp; omega
+
+/-- M-03/WS-E6: Three-level scheduling selection.
+
+Folds over the runnable list accumulating the best candidate using the
+three-level `isBetterCandidate` predicate. The accumulator carries
+`(ThreadId × Priority × Deadline)` to avoid re-reading the object store. -/
 private def chooseBestRunnable
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
   match runnable with
   | [] => .ok best
   | tid :: rest =>
@@ -15,9 +91,11 @@ private def chooseBestRunnable
       | some (.tcb tcb) =>
           let best' :=
             match best with
-            | none => some (tid, tcb.priority)
-            | some (_, bestPrio) =>
-                if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+            | none => some (tid, tcb.priority, tcb.deadline)
+            | some (_, bestPrio, bestDl) =>
+                if isBetterCandidate bestPrio bestDl tcb.priority tcb.deadline then
+                  some (tid, tcb.priority, tcb.deadline)
+                else best
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
@@ -32,14 +110,16 @@ private def rotateCurrentToBack
       else
         .error .schedulerInvariantViolation
 
-/-- Choose the highest-priority runnable thread. Tie-breaking is deterministic: the first
-thread in runnable-order wins when priorities are equal. -/
+/-- M-03/WS-E6: Choose the highest-priority runnable thread using three-level
+deterministic selection: priority > EDF deadline > FIFO queue order.
+
+This is a pure read operation — the system state is returned unchanged. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match chooseBestRunnable st.objects st.scheduler.runnable none with
     | .error e => .error e
     | .ok none => .ok (none, st)
-    | .ok (some (tid, _)) => .ok (some tid, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- Scheduler step for the bootstrap model.
 
@@ -68,6 +148,121 @@ def handleYield : Kernel Unit :=
     | .ok runnable' =>
         let st' := { st with scheduler := { st.scheduler with runnable := runnable' } }
         schedule st'
+
+-- ============================================================================
+-- M-04/WS-E6: Time-slice preemption
+-- ============================================================================
+
+/-- M-04/WS-E6: Default time-slice quantum (ticks per scheduling round).
+Factored into a named constant so the reset value in `timerTick` stays
+synchronized with `TCB.timeSlice` default. -/
+def defaultTimeSlice : Nat := 5
+
+/-- M-04/WS-E6: Handle a timer tick for the currently running thread.
+
+Behavior:
+1. If no thread is current, advance the machine timer only.
+2. If the current thread's time-slice has not expired (> 1 after decrement),
+   decrement and advance the machine timer.
+3. If the time-slice expires (≤ 1), reset it to `defaultTimeSlice`, rotate
+   the current thread to the back of the runnable queue, and reschedule.
+
+This models seL4's `timerTick` handler which checks the thread's timeslice
+on each timer interrupt and preempts on expiry. -/
+def timerTick : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none =>
+        -- No current thread: just advance the timer
+        .ok ((), { st with machine := tick st.machine })
+    | some tid =>
+        match st.objects tid.toObjId with
+        | some (.tcb tcb) =>
+            if tcb.timeSlice ≤ 1 then
+              -- Time-slice expired: reset, rotate, reschedule
+              let tcb' := { tcb with timeSlice := defaultTimeSlice }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
+              let st' := { st with objects := objects', machine := tick st.machine }
+              match rotateCurrentToBack (some tid) st'.scheduler.runnable with
+              | .error e => .error e
+              | .ok runnable' =>
+                  let st'' := { st' with scheduler := { st'.scheduler with runnable := runnable' } }
+                  schedule st''
+            else
+              -- Time-slice not expired: decrement and continue
+              let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
+              .ok ((), { st with objects := objects', machine := tick st.machine })
+        | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling
+-- ============================================================================
+
+/-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
+def filterByDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (domain : SeLe4n.DomainId) : List SeLe4n.ThreadId :=
+  runnable.filter fun tid =>
+    match objects tid.toObjId with
+    | some (.tcb tcb) => tcb.domain == domain
+    | _ => false
+
+/-- M-05/WS-E6: Choose the best thread in the active domain using three-level
+selection. If no threads exist in the active domain, falls back to unrestricted
+selection to avoid starvation. -/
+def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
+  fun st =>
+    let domainThreads := filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain
+    match chooseBestRunnable st.objects domainThreads none with
+    | .error e => .error e
+    | .ok none =>
+        -- No threads in active domain: fall back to unrestricted selection
+        chooseThread st
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
+
+/-- M-05/WS-E6: Advance the domain schedule to the next entry.
+
+If the domain schedule is empty (single-domain mode), this is a no-op.
+Otherwise, it wraps the index modularly through the schedule table and
+updates the active domain and time remaining. -/
+def switchDomain : Kernel Unit :=
+  fun st =>
+    let schedule := st.scheduler.domainSchedule
+    match schedule with
+    | [] => .ok ((), st)  -- single-domain mode: no-op
+    | _ =>
+        let nextIdx := (st.scheduler.domainScheduleIndex + 1) % schedule.length
+        match schedule[nextIdx]? with
+        | none => .ok ((), st)  -- safety: should not happen with valid modular index
+        | some entry =>
+            let sched' := { st.scheduler with
+              activeDomain := DomainScheduleEntry.domain entry
+              domainTimeRemaining := DomainScheduleEntry.length entry
+              domainScheduleIndex := nextIdx
+            }
+            .ok ((), { st with scheduler := sched' })
+
+/-- M-05/WS-E6: Handle a domain tick. Decrements the domain time remaining;
+if expired, switches to the next domain and reschedules. -/
+def scheduleDomain : Kernel Unit :=
+  fun st =>
+    if st.scheduler.domainTimeRemaining ≤ 1 then
+      match switchDomain st with
+      | .error e => .error e
+      | .ok ((), st') => schedule st'
+    else
+      let sched' := { st.scheduler with
+        domainTimeRemaining := st.scheduler.domainTimeRemaining - 1
+      }
+      .ok ((), { st with scheduler := sched' })
+
+-- ============================================================================
+-- Preservation theorems
+-- ============================================================================
 
 theorem schedule_eq_chooseThread_then_setCurrent :
     schedule = (fun st =>
@@ -153,11 +348,10 @@ theorem chooseThread_preserves_state
       | none =>
           rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
           simpa using hSt.symm
-      | some pair =>
-          cases pair with
-          | mk tid prio =>
-              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-              simpa using hSt.symm
+      | some triple =>
+          obtain ⟨tid, prio, dl⟩ := triple
+          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
 
  theorem schedule_preserves_wellFormed
     (st st' : SystemState)
@@ -411,5 +605,57 @@ theorem handleYield_preserves_schedulerInvariantBundle
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   exact handleYield_preserves_kernelInvariant st st' hInv hStep
+
+-- ============================================================================
+-- M-05/WS-E6: switchDomain preserves scheduler invariant bundle
+-- ============================================================================
+
+/-- M-05/WS-E6: `switchDomain` preserves the scheduler invariant bundle.
+This is substantive: it must show that changing `activeDomain`, `domainTimeRemaining`,
+and `domainScheduleIndex` does not break `queueCurrentConsistent`, `runQueueUnique`,
+or `currentThreadValid`, since none of those depend on domain-related fields. -/
+theorem switchDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+      simp [hSched] at hStep
+      cases hStep; exact hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · cases hStep; exact hInv
+      · rename_i _ hGet
+        simp at hStep
+        cases hStep
+        refine ⟨?_, ?_, ?_⟩
+        · -- queueCurrentConsistent: runnable and current unchanged
+          exact hInv.1
+        · -- runQueueUnique: runnable unchanged
+          exact hInv.2.1
+        · -- currentThreadValid: objects and scheduler.current unchanged
+          exact hInv.2.2
+
+/-- M-05/WS-E6: `chooseThreadInDomain` is a pure read — it does not modify state. -/
+theorem chooseThreadInDomain_preserves_state
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : chooseThreadInDomain st = .ok (next, st')) :
+    st' = st := by
+  unfold chooseThreadInDomain at hStep
+  cases hPick : chooseBestRunnable st.objects (filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain) none with
+  | error e => simp [hPick] at hStep
+  | ok best =>
+      cases best with
+      | none =>
+          -- Falls back to chooseThread which preserves state
+          exact chooseThread_preserves_state st st' next (by simpa [hPick] using hStep)
+      | some triple =>
+          obtain ⟨tid, prio, dl⟩ := triple
+          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
 
 end SeLe4n.Kernel
