@@ -298,8 +298,8 @@ WS-E4 (CDT integration for capability flow proofs).
 
 **Scope:**
 
-1. **M-03** Document priority tie-breaking semantics and difference from
-   seL4 round-robin. Optionally implement round-robin within same-priority.
+1. **M-03** Implement fixed-priority + EDF tie-breaking semantics and document the difference from
+   seL4 round-robin.
 2. **M-04** Model time-slice decrement and tick-based preemption using
    `TCB.timeSlice` and `MachineState.timer`.
 3. **M-05** Implement domain scheduling using `DomainId` in TCB for
