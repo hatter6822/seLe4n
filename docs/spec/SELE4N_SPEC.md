@@ -135,6 +135,14 @@ Authoritative detail for per-workstream goals, dependencies, and evidence gates:
 
 ---
 
+## Security boundary defaults
+
+1. Sentinel discipline: identifier value `0` is reserved and should be rejected/filtered at API boundaries.
+2. IPC state update strictness: missing-TCB updates must return `objectNotFound` (no silent no-op success).
+3. IFC-by-default guidance: integration surfaces should prefer policy-checked operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
+
+---
+
 ## 6. Acceptance Expectations
 
 ### 6.1 Per-Workstream Acceptance Gates

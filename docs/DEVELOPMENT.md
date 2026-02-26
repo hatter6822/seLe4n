@@ -67,6 +67,14 @@ Every milestone-moving PR should include:
 4. synchronized docs updates (README/spec/development/GitBook as needed),
 5. explicit deferrals (if any) and destination workstream.
 
+### 3.5 Security hardening defaults
+
+- Treat identifier value `0` as reserved sentinel input; use checked conversions (for example `ThreadId.toObjIdChecked`) when crossing trust boundaries.
+- `storeTcbIpcState` must return `objectNotFound` when the target TCB does not exist; silent success is forbidden.
+- For integration and harness code, default to checked IFC entry points (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
+
+---
+
 ---
 
 ## 4) Daily contributor loop

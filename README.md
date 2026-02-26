@@ -56,6 +56,12 @@ Additional resources:
 - Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Change history: [`CHANGELOG.md`](CHANGELOG.md)
 
+## Security hardening defaults
+
+- IPC state writes are strict: `storeTcbIpcState` now returns `objectNotFound` when the target TCB is missing, instead of silently succeeding.
+- ID-0 remains a reserved sentinel. Use checked conversion helpers (for example `ThreadId.toObjIdChecked`) at boundaries that ingest external IDs.
+- Information-flow checked entry points (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) are the recommended default for integration and trace harnesses.
+
 ## Validation commands
 
 ```bash
