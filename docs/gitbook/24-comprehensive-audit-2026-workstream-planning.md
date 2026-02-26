@@ -7,7 +7,7 @@ The current active execution baseline is the **WS-E portfolio** based on the v0.
 - Findings baseline: [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
 - Canonical planning source: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 
-See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 through WS-E5 are completed; WS-E6 is planned.
+See the workstream plan for WS-E1..WS-E6 details and phase sequencing. All workstreams (WS-E1 through WS-E6) are completed.
 
 ### WS-E1 completed summary
 
@@ -54,6 +54,21 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 thr
 - **H-04:** Parameterized security labels supporting ≥3 domains — `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexive/transitive well-formedness proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` backward-compatibility with preservation proof, `threeDomainExample` validation.
 - **H-05:** Composed bundle-level non-interference — `NonInterferenceStep` inductive (5 kernel operations), `composedNonInterference_step` single-step theorem, `NonInterferenceTrace` multi-step lift, `composedNonInterference_trace`, `errorAction_preserves_lowEquiv`. Completes IF-M4 milestone.
 - **M-07:** Enforcement boundary specification — `EnforcementClass` 3-way classification (`policyGated`/`capabilityOnly`/`readOnly`), exhaustive 17-entry `enforcementBoundary` table, denial preservation theorems, complete-disjunction sufficiency proofs.
+
+### WS-E6 completed summary
+
+**WS-E6 — Model completeness and documentation** has been completed. All 10 findings resolved:
+
+- **M-03:** Fixed-priority + FIFO tie-breaking semantics documented on `chooseThread` with seL4 comparison (256 priority levels + round-robin vs unbounded Nat + FIFO).
+- **M-04:** Time-slice preemption model — `TCB.timeSlice` field (default 5), `tickPreempt` operation decrements time-slice and reschedules on exhaustion via `handleYield`.
+- **M-05:** Domain scheduling — `SchedulerState` extended with `activeDomain`, `domainTicks`, `domainSchedule`, `domainScheduleIndex`; `chooseBestRunnableInDomain`, `chooseThreadInDomain`, `advanceDomainSchedule` operations; `timerTick` combines domain advancement and preemption.
+- **M-08:** Architecture assumptions connected to proofs — `runtimeContractSatisfiesAssumptions`, `bootContractSatisfiesAssumptions` predicates; `assumption_coverage_complete`, `assumption_contract_transition_chain_closed` theorems; 5-part chain closure documentation.
+- **F-17:** O(n) data structure design decision documented on `SystemState` — clarity-over-performance rationale, bounded scope, migration path to `HashMap`/`RBMap`.
+- **L-01:** Unified public API in `API.lean` — module docstring with API stability table (8 subsystems), `kernelAPIInvariantBundle`, `default_system_state_kernelAPIInvariantBundle`.
+- **L-02:** Default-memory-returns-zero semantics documented on `Memory` type in `Machine.lean`.
+- **L-03:** Standard monad helpers (`get`, `set`, `modify`, `liftExcept`) added to `KernelM` in `Prelude.lean`.
+- **L-04:** `ThreadId.toObjId` deferred validation assumption documented with injectivity guarantee.
+- **L-05:** Monotonic `objectIndex` documented as intentional discovery-set design.
 
 ## Historical: WS-D portfolio (v0.11.0 — completed)
 

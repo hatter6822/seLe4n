@@ -74,7 +74,7 @@ Quick index. Full contracts and dependencies are in the v0.11.6 planning backbon
 - **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
 - **WS-E4:** Capability and IPC model completion -- **completed** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
 - **WS-E5:** Information-flow maturity -- **completed** (High; H-04, H-05, M-07)
-- **WS-E6:** Model completeness and documentation -- planned (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+- **WS-E6:** Model completeness and documentation -- **completed** (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
 Primary references:
 - [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
@@ -99,6 +99,7 @@ Primary references:
 | `SeLe4n/Kernel/Service/*` | Service orchestration, policy checks, composed invariants |
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
 | `SeLe4n/Kernel/InformationFlow/*` | Information-flow policy, projection, and low-equivalence |
+| `SeLe4n/Kernel/API.lean` | Unified public kernel API with composed invariant bundle |
 | `Main.lean` | Executable trace/demo harness |
 | `tests/fixtures/main_trace_smoke.expected` | Stable trace expectation anchors |
 | `scripts/test_tier*.sh` | Tiered quality gates used by CI and local workflows |

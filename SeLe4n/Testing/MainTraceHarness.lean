@@ -476,6 +476,34 @@ private def runWsE4Trace (st1 : SystemState) : IO Unit := do
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
       IO.println s!"endpointReply unblocked target: {unblocked}"
 
+-- ============================================================================
+-- WS-E6: Model completeness and documentation trace scenarios
+-- ============================================================================
+
+/-- WS-E6 test: time-slice preemption, domain scheduling -/
+private def runWsE6Trace (st1 : SystemState) : IO Unit := do
+  -- M-04: Test time-slice tick with no current thread (no-op)
+  match SeLe4n.Kernel.tickPreempt 5 st1 with
+  | .error err => IO.println s!"tick preempt no-current error: {reprStr err}"
+  | .ok (preempted, _) =>
+      IO.println s!"tick preempt no-current: {preempted}"
+  -- M-04: Test time-slice tick with a current thread set
+  let stWithCurrent := { st1 with scheduler := { st1.scheduler with current := some 1 } }
+  match SeLe4n.Kernel.tickPreempt 5 stWithCurrent with
+  | .error err => IO.println s!"tick preempt active-thread error: {reprStr err}"
+  | .ok (preempted, _) =>
+      IO.println s!"tick preempt active-thread: {preempted}"
+  -- M-05: Test domain schedule advancement
+  match SeLe4n.Kernel.advanceDomainSchedule st1 with
+  | .error err => IO.println s!"domain schedule advance error: {reprStr err}"
+  | .ok (switched, _) =>
+      IO.println s!"domain schedule advance: {switched}"
+  -- M-05: Test domain-aware thread selection
+  match SeLe4n.Kernel.chooseThreadInDomain st1 with
+  | .error err => IO.println s!"domain thread selection error: {reprStr err}"
+  | .ok (tid, _) =>
+      IO.println s!"domain thread selection: {reprStr (tid.map SeLe4n.ThreadId.toNat)}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -493,6 +521,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
   runWsE4Trace st1
+  runWsE6Trace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

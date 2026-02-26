@@ -25,9 +25,24 @@ inductive KernelError where
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
+/-- WS-E6/M-05: Scheduler state with domain scheduling support.
+
+`activeDomain` tracks the currently executing scheduling domain. In seL4, the
+kernel partitions CPU time into fixed-length domain slots — only threads whose
+`TCB.domain` matches `activeDomain` are eligible for scheduling within the
+current slot. `domainTicks` counts remaining ticks in the current domain slot;
+when exhausted, the scheduler rotates to the next domain.
+
+The `domainSchedule` list defines the round-robin domain rotation order with
+per-domain tick budgets. When `domainTicks` reaches 0, the scheduler advances
+to the next `(DomainId, tickBudget)` entry in the schedule. -/
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  activeDomain : SeLe4n.DomainId := 0              -- WS-E6/M-05
+  domainTicks : Nat := 5                            -- WS-E6/M-05
+  domainSchedule : List (SeLe4n.DomainId × Nat) := [(0, 5)] -- WS-E6/M-05
+  domainScheduleIndex : Nat := 0                    -- WS-E6/M-05
   deriving Repr, DecidableEq
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
@@ -44,6 +59,38 @@ structure LifecycleMetadata where
   objectTypes : SeLe4n.ObjId → Option KernelObjectType
   capabilityRefs : SlotRef → Option CapTarget
 
+/-- WS-E6/F-17/L-05: Global kernel system state.
+
+**O(n) data-structure design decision (F-17):** The `objects` field is a pure
+function `ObjId → Option KernelObject` and `objectIndex` is a `List ObjId`.
+Both are O(n) structures — lookup is O(1) but discovery (iterating all objects)
+is O(n) via the index list. This is an intentional modeling choice:
+
+- **Clarity over performance.** Pure functions are trivially referentially
+  transparent, making equational reasoning and `simp`-based proof automation
+  straightforward. A `HashMap` or balanced tree would complicate proofs
+  without improving the model's expressiveness.
+- **Bounded scope.** The model targets proof-level reasoning, not runtime
+  efficiency. Test topologies use ≤100 objects; proof obligations never
+  iterate the full store.
+- **Migration path.** If performance becomes a concern for large executable
+  simulations, `objects` can be replaced with `Std.HashMap ObjId KernelObject`
+  and `objectIndex` with `Std.HashSet ObjId`. All theorem statements reference
+  the function interface (`st.objects id = some obj`), so the migration is
+  local to the state representation.
+
+**Monotonic objectIndex (L-05):** `objectIndex` grows monotonically —
+`storeObject` appends new IDs but never removes them. This is intentional:
+
+- The index serves as a *discovery set* for bounded iteration (VSpace ASID
+  resolution, runtime invariant checks). Monotonic growth ensures that every
+  object ever stored remains discoverable.
+- Pruning would require a garbage-collection pass to identify unreachable
+  objects, adding complexity without proof benefit. The seL4 kernel itself
+  does not garbage-collect untyped memory — retype/revoke are explicit.
+- The `objectIndex` list may contain IDs whose `objects` mapping has been
+  overwritten (type-changed via retype). This is safe because consumers
+  always re-check `st.objects id` after discovery. -/
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject

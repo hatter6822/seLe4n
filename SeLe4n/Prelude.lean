@@ -57,7 +57,18 @@ namespace ThreadId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ThreadId) : Nat := id.val
 
-/-- Explicit conversion used at object-store boundaries. -/
+/-- WS-E6/L-04: Explicit conversion used at object-store boundaries.
+
+**Validation assumption (deferred check):** This conversion assumes that the
+caller has already ensured the ThreadId is non-sentinel (value ≠ 0) and refers
+to a live TCB in the object store. The runtime check is deferred to the
+operation boundary — `lookupObject` and `storeObject` reject missing or
+incorrectly-typed objects immediately after the conversion.
+
+The injectivity theorem `ThreadId.toObjId_injective` guarantees that distinct
+thread identifiers map to distinct object identifiers, so no aliasing occurs.
+Sentinel validation is handled by `ThreadId.isReserved` at API boundaries
+(see WS-E3/H-06). -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance instOfNat (n : Nat) : OfNat ThreadId n where
@@ -328,6 +339,25 @@ def bind {σ ε α β : Type} (m : KernelM σ ε α) (f : α → KernelM σ ε �
 instance {σ ε : Type} : Monad (KernelM σ ε) where
   pure := pure
   bind := bind
+
+/-- WS-E6/L-03: Read the current state without modifying it. -/
+def get {σ ε : Type} : KernelM σ ε σ :=
+  fun s => Except.ok (s, s)
+
+/-- WS-E6/L-03: Replace the current state. -/
+def set {σ ε : Type} (s : σ) : KernelM σ ε Unit :=
+  fun _ => Except.ok ((), s)
+
+/-- WS-E6/L-03: Apply a pure transformation to the current state. -/
+def modify {σ ε : Type} (f : σ → σ) : KernelM σ ε Unit :=
+  fun s => Except.ok ((), f s)
+
+/-- WS-E6/L-03: Lift an `Except` value into `KernelM`, threading the state through unchanged. -/
+def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
+  fun s =>
+    match e with
+    | .ok a => Except.ok (a, s)
+    | .error err => .error err
 
 end KernelM
 

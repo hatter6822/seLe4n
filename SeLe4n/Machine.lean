@@ -8,7 +8,31 @@ abbrev RegName := Nat
 /-- Register-sized machine word in the abstract machine model. -/
 abbrev RegValue := Nat
 
-/-- Byte-addressed memory store used by the abstract machine model. -/
+/-- WS-E6/L-02: Byte-addressed memory store used by the abstract machine model.
+
+**Default-memory-returns-zero semantics:** The default `Memory` value is
+`fun _ => 0`, meaning every physical address reads as zero until explicitly
+written. This is an intentional modeling choice:
+
+1. **No page-fault model.** All addresses are valid and accessible. The real
+   seL4 kernel mediates memory access through page tables and raises faults for
+   unmapped pages; this model abstracts that away because the formalization
+   focuses on kernel-level state transitions, not hardware MMU behavior.
+
+2. **No allocation/deallocation.** Memory is infinite and flat. Physical memory
+   partitioning (untyped memory, device regions) is not modeled because the
+   formalization scope covers capability and scheduling semantics, not memory
+   management internals.
+
+3. **Deterministic reads.** Any address always returns a deterministic value,
+   which supports the project's invariant that all transitions are explicit and
+   deterministic. Non-deterministic hardware behavior (ECC errors, device
+   MMIO) is excluded by the `memoryAccessSafety` architecture assumption
+   (see `Architecture/Assumptions.lean`).
+
+Migration path: when physical memory partitioning is modeled, `Memory` should
+become `PAddr → Option UInt8` with `none` representing unmapped regions, and
+reads of unmapped addresses should produce a `translationFault` error. -/
 abbrev Memory := PAddr → UInt8
 
 /-- Pure register file state used by scheduler/context-switch modeling. -/
@@ -26,6 +50,8 @@ structure MachineState where
   memory : Memory
   timer : Nat
 
+/-- WS-E6/L-02: Default machine state. Memory returns zero for all addresses
+(see `Memory` documentation above for rationale). Timer starts at 0. -/
 instance : Inhabited MachineState where
   default := { regs := default, memory := fun _ => 0, timer := 0 }
 
