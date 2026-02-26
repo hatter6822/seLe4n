@@ -204,3 +204,9 @@ in [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
+## Security semantics defaults
+
+- `storeTcbIpcState` is fail-closed for missing threads (`objectNotFound`), preventing queue-only ghost thread transitions in IPC/notification paths.
+- Sentinel identifier `0` is reserved; checked conversion/validation is required at operational boundaries.
+- Information-flow checked wrappers are the recommended default surface for harness/integration entry points.

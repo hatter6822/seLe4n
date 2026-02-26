@@ -56,6 +56,13 @@ Additional resources:
 - Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Change history: [`CHANGELOG.md`](CHANGELOG.md)
 
+
+## Security defaults
+
+- IPC TCB-state writes now fail with `objectNotFound` when the target thread does not exist (no silent success path).
+- ID value `0` remains a reserved sentinel; operational callers should use checked entry points or explicit `isReserved` guards.
+- Trace harness paths now use policy-checked entry points (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default.
+
 ## Validation commands
 
 ```bash

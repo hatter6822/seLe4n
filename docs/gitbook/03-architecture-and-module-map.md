@@ -203,3 +203,5 @@ This direction should be preserved to prevent proof cycles and maintain module r
 3. bundle composition should remain additive,
 4. theorem naming should remain discoverable,
 5. docs and fixtures should evolve with semantics in the same change set.
+
+> Operational note: executable harnesses should call checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for focused semantics research.

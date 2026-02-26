@@ -148,3 +148,7 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+### Secure-by-default harness calls
+
+When writing executable traces or integration-style tests, prefer `endpointSendChecked`, `cspaceMintChecked`, and `serviceRestartChecked` by default. Use unchecked operations only for explicit low-level semantics experiments.
