@@ -35,7 +35,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **WS-E1** — Test infrastructure and CI hardening (**completed** — M-10, M-11, F-14, L-07, L-08)
 - **WS-E2** — Proof quality and invariant strengthening (**completed** — C-01, H-01, H-03)
 - **WS-E3** — Kernel semantic hardening (**completed** — H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4** — Capability and IPC model completion (**completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
+- **WS-E4** — Capability and IPC model completion (**completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12, M-13)
 - **WS-E5** — Information-flow maturity (**completed** — H-04, H-05, M-07)
 - **WS-E6** — Model completeness and documentation (**completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
 
@@ -72,6 +72,7 @@ Every milestone-moving PR should include:
 ## 3.1 Security hardening defaults
 
 - IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
+- TCB objects now include intrusive queue-link fields (`next`, `prev`) so queue linkage can be captured directly in-thread without allocating separate list-node objects.
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
 
