@@ -71,6 +71,14 @@ Additional resources:
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
 
+## Stable naming updates (trace + invariant surface)
+
+- `runCapabilityIpcTrace` (formerly WS-labeled trace helper) now names the capability/IPC scenario group by function.
+- `runSchedulerTimingDomainTrace` (formerly WS-labeled trace helper) now names the EDF/time-slice/domain scheduler scenario group by function.
+- `coreIpcInvariantBundle` names the composed scheduler+capability+IPC invariant bundle.
+- `ipcSchedulerCouplingInvariantBundle` names the bundle that extends `coreIpcInvariantBundle` with runnable/blocked IPC-scheduler coherence obligations.
+- `lifecycleCompositionInvariantBundle` names the composed IPC-scheduler+lifecycle metadata bundle (previously stage-labeled as M4-A).
+
 ## Active workstreams (WS-E)
 
 Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.

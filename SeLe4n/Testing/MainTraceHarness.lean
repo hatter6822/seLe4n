@@ -426,7 +426,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
 -- ============================================================================
 
 /-- WS-E4 test: H-02 guard, cspaceCopy, dual-queue, reply operations -/
-private def runWsE4Trace (st1 : SystemState) : IO Unit := do
+private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   -- H-02: Try inserting into occupied slot (slot 0 already has a cap)
   let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
   let testCap : Capability := { target := .object 1, rights := [.read], badge := none }
@@ -481,7 +481,7 @@ private def runWsE4Trace (st1 : SystemState) : IO Unit := do
 -- ============================================================================
 
 /-- WS-E6 test: M-03 EDF tie-breaking, M-04 time-slice preemption, M-05 domain scheduling -/
-private def runWsE6Trace (st1 : SystemState) : IO Unit := do
+private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
   -- M-03: EDF tie-breaking — two threads at same priority, different deadlines
   let edfTcbA : KernelObject := .tcb {
     tid := 1, priority := 100, domain := 0,
@@ -570,8 +570,8 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityAndArchitectureTrace st1
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
-  runWsE4Trace st1
-  runWsE6Trace st1
+  runCapabilityIpcTrace st1
+  runSchedulerTimingDomainTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

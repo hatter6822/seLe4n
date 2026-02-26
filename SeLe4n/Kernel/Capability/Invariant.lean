@@ -60,7 +60,7 @@ components compositionally):
 
 **Error-case preservation theorems** (trivially true — the error path returns
 unchanged state, so any pre-state invariant holds trivially in the post-state):
-- `lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle`
+- `lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle`
 - `cspaceLookupSlot_preserves_capabilityInvariantBundle` (read-only, no mutation)
 
 Error-case theorems are retained for proof-surface completeness and compositional
@@ -1058,7 +1058,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
                 lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
-def m3IpcSeedInvariantBundle (st : SystemState) : Prop :=
+def coreIpcInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
@@ -1086,13 +1086,13 @@ theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState)
 /-- M3.5 composed bundle entrypoint layered over the M3 IPC seed bundle.
 
 This is the step-4 composition target for active-slice endpoint/scheduler coupling. -/
-def m35IpcSchedulerInvariantBundle (st : SystemState) : Prop :=
-  m3IpcSeedInvariantBundle st ∧ ipcSchedulerCoherenceComponent st
+def ipcSchedulerCouplingInvariantBundle (st : SystemState) : Prop :=
+  coreIpcInvariantBundle st ∧ ipcSchedulerCoherenceComponent st
 
 /-- M4-A composed bundle entrypoint:
 M3.5 IPC+scheduler composition plus lifecycle metadata/invariant obligations. -/
-def m4aLifecycleInvariantBundle (st : SystemState) : Prop :=
-  m35IpcSchedulerInvariantBundle st ∧ lifecycleInvariantBundle st
+def lifecycleCompositionInvariantBundle (st : SystemState) : Prop :=
+  ipcSchedulerCouplingInvariantBundle st ∧ lifecycleInvariantBundle st
 
 theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle
     (st st' : SystemState)
@@ -1186,18 +1186,18 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
       have hNtfnSt : st.objects oid = some (.notification ntfn) := by simpa [hPreserved] using hNtfn
       exact hNotificationInv oid ntfn hNtfnSt
 
-theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
+theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
-    (hInv : m3IpcSeedInvariantBundle st)
+    (hInv : coreIpcInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hCurrentValid : currentThreadValid st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    m3IpcSeedInvariantBundle st' := by
+    coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
@@ -1206,23 +1206,23 @@ theorem lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle
       hNewObjCNodeUniq hStep
   · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjEndpointInv hNewObjNotificationInv hStep
 
-theorem lifecycleRetypeObject_preserves_m4aLifecycleInvariantBundle
+theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
-    (hInv : m4aLifecycleInvariantBundle st)
+    (hInv : lifecycleCompositionInvariantBundle st)
     (hNewObjEndpointInv : ∀ ep, newObj = .endpoint ep → endpointInvariant ep)
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    m4aLifecycleInvariantBundle st' := by
+    lifecycleCompositionInvariantBundle st' := by
   rcases hInv with ⟨hM35, hLifecycle⟩
   rcases hM35 with ⟨hM3, _hCoherence⟩
-  have hM3' : m3IpcSeedInvariantBundle st' :=
-    lifecycleRetypeObject_preserves_m3IpcSeedInvariantBundle st st' authority target newObj hM3
+  have hM3' : coreIpcInvariantBundle st' :=
+    lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
       hNewObjEndpointInv hNewObjNotificationInv hNewObjCNodeUniq hCurrentValid hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
@@ -1275,14 +1275,14 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
       newObj hLifecycleDeleted hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
 
-theorem lifecycleRevokeDeleteRetype_error_preserves_m4aLifecycleInvariantBundle
+theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)
     (authority cleanup : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hAlias : authority = cleanup)
-    (hInv : m4aLifecycleInvariantBundle st) :
-    m4aLifecycleInvariantBundle st := by
+    (hInv : lifecycleCompositionInvariantBundle st) :
+    lifecycleCompositionInvariantBundle st := by
   have _hExpected : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState :=
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv
@@ -1449,87 +1449,87 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
             have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId hd _ hUnique hStore hTcb
             exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _⟩
 
-theorem endpointSend_preserves_m3IpcSeedInvariantBundle
+theorem endpointSend_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hInv : m3IpcSeedInvariantBundle st)
+    (hInv : coreIpcInvariantBundle st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    m3IpcSeedInvariantBundle st' := by
+    coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
   · exact endpointSend_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
   · exact endpointSend_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
   · exact endpointSend_preserves_ipcInvariant st st' endpointId sender hIpc hStep
 
-theorem endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle
+theorem endpointAwaitReceive_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
-    (hInv : m3IpcSeedInvariantBundle st)
+    (hInv : coreIpcInvariantBundle st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    m3IpcSeedInvariantBundle st' := by
+    coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
   · exact endpointAwaitReceive_preserves_schedulerInvariantBundle st st' endpointId receiver hSched hStep
   · exact endpointAwaitReceive_preserves_capabilityInvariantBundle st st' endpointId receiver hCap hStep
   · exact endpointAwaitReceive_preserves_ipcInvariant st st' endpointId receiver hIpc hStep
 
-theorem endpointReceive_preserves_m3IpcSeedInvariantBundle
+theorem endpointReceive_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hInv : m3IpcSeedInvariantBundle st)
+    (hInv : coreIpcInvariantBundle st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    m3IpcSeedInvariantBundle st' := by
+    coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpc⟩
   refine ⟨?_, ?_, ?_⟩
   · exact endpointReceive_preserves_schedulerInvariantBundle st st' endpointId sender hSched hStep
   · exact endpointReceive_preserves_capabilityInvariantBundle st st' endpointId sender hCap hStep
   · exact endpointReceive_preserves_ipcInvariant st st' endpointId sender hIpc hStep
 
-theorem endpointSend_preserves_m35IpcSchedulerInvariantBundle
+theorem endpointSend_preserves_ipcSchedulerCouplingInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hInv : ipcSchedulerCouplingInvariantBundle st)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    m35IpcSchedulerInvariantBundle st' := by
+    ipcSchedulerCouplingInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointSend_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointSend_preserves_coreIpcInvariantBundle st st' endpointId sender hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
       (endpointSend_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
 
-theorem endpointAwaitReceive_preserves_m35IpcSchedulerInvariantBundle
+theorem endpointAwaitReceive_preserves_ipcSchedulerCouplingInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
-    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hInv : ipcSchedulerCouplingInvariantBundle st)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    m35IpcSchedulerInvariantBundle st' := by
+    ipcSchedulerCouplingInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointAwaitReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId receiver hM3Seed hStep
+  · exact endpointAwaitReceive_preserves_coreIpcInvariantBundle st st' endpointId receiver hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
       (endpointAwaitReceive_preserves_ipcSchedulerContractPredicates st st' endpointId receiver hContract hStep)
 
-theorem endpointReceive_preserves_m35IpcSchedulerInvariantBundle
+theorem endpointReceive_preserves_ipcSchedulerCouplingInvariantBundle
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (hInv : m35IpcSchedulerInvariantBundle st)
+    (hInv : ipcSchedulerCouplingInvariantBundle st)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    m35IpcSchedulerInvariantBundle st' := by
+    ipcSchedulerCouplingInvariantBundle st' := by
   rcases hInv with ⟨hM3Seed, hIpcSched⟩
   have hContract : ipcSchedulerContractPredicates st :=
     (ipcSchedulerCoherenceComponent_iff_contractPredicates st).1 hIpcSched
   refine ⟨?_, ?_⟩
-  · exact endpointReceive_preserves_m3IpcSeedInvariantBundle st st' endpointId sender hM3Seed hStep
+  · exact endpointReceive_preserves_coreIpcInvariantBundle st st' endpointId sender hM3Seed hStep
   · exact (ipcSchedulerCoherenceComponent_iff_contractPredicates st').2
       (endpointReceive_preserves_ipcSchedulerContractPredicates st st' endpointId sender hContract hStep)
 
