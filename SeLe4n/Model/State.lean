@@ -35,6 +35,10 @@ structure DomainScheduleEntry where
 
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
+  /-- WS-E4/P3: Head pointer for intrusive runnable queue. -/
+  runnableHead : Option SeLe4n.ThreadId := none
+  /-- WS-E4/P3: Tail pointer for intrusive runnable queue. -/
+  runnableTail : Option SeLe4n.ThreadId := none
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -92,7 +96,7 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnable := [], runnableHead := none, runnableTail := none, current := none }
 
 instance : Inhabited SystemState where
   default := {

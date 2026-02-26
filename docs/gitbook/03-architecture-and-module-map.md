@@ -46,7 +46,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Model/Object.lean`
   - capability rights/targets,
-  - TCB structure + IPC state,
+  - TCB structure + IPC state + intrusive runnable links (`runQueueNext`/`runQueuePrev`),
   - endpoint protocol fields,
   - CNode slot store and local revoke helper,
   - `KernelObject` discriminated union.

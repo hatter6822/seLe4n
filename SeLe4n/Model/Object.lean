@@ -102,6 +102,12 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
+  /-- WS-E4/P3: Intrusive run-queue next pointer.
+      `none` means this TCB is either not queued or currently at queue tail. -/
+  runQueueNext : Option SeLe4n.ThreadId := none
+  /-- WS-E4/P3: Intrusive run-queue previous pointer.
+      `none` means this TCB is either not queued or currently at queue head. -/
+  runQueuePrev : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
 inductive EndpointState where
