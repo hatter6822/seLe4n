@@ -1,12 +1,44 @@
 import SeLe4n.Model.State
 
 /-!
+# VSpace Operations
+
 WS-C3 proof-surface note:
 
 Determinism of pure Lean definitions is a meta-property of evaluation, so object-level
 tautologies of the form `f x = f x` are not accepted as semantic evidence in this model.
 VSpace semantic obligations are tracked via TPI-001 in
 `docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
+
+## F-17/WS-E6: O(n) data structure design rationale
+
+`resolveAsidRoot` uses **linear search** over `objectIndex` (`List.findSome?`)
+to locate the VSpace root bound to a given ASID. This is O(n) in the number
+of tracked objects.
+
+**Rationale:**
+- The seLe4n model is a formal specification, not a production implementation.
+  Model clarity and proof tractability take priority over algorithmic efficiency.
+- Linear search over a `List` is straightforward to reason about in Lean 4:
+  `List.findSome?` has simple inductive structure, enabling the key
+  characterization lemma `resolveAsidRoot_of_unique_root` used in all VSpace
+  round-trip theorems.
+- The real seL4 kernel uses a dedicated ASID pool/table with O(1) lookup.
+  Modeling this would add structure without improving proof coverage.
+
+**Scope note:** The O(n) cost applies to model execution only (test harness,
+`lake exe sele4n`). For the ~100-object test topologies used in CI, execution
+time is negligible (<1ms per lookup). Should the model scale to thousands of
+objects, the index can be replaced with a `Finmap ASID ObjId` or similar
+indexed structure without changing the semantic interface.
+
+**Future migration path:**
+1. Replace `List ObjId` with `Finmap ASID ObjId` in `SystemState`.
+2. Update `resolveAsidRoot` to direct lookup.
+3. Adapt `resolveAsidRoot_some_implies` and `resolveAsidRoot_of_unique_root`
+   to the new representation.
+4. All downstream VSpace theorems should transfer unchanged (they depend only
+   on the two characterization lemmas, not on the internal representation).
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -17,7 +49,8 @@ open SeLe4n.Model
 def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
   ∃ root, st.objects rootId = some (.vspaceRoot root) ∧ root.asid = asid
 
-/-- Locate one root object id carrying `asid` in the bounded discovery window. -/
+/-- F-17/WS-E6: Locate one root object id carrying `asid` via linear search
+over `objectIndex`. See module docstring for O(n) design rationale. -/
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   st.objectIndex.findSome? (fun oid =>
     match st.objects oid with

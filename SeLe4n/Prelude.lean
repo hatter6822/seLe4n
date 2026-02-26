@@ -72,6 +72,33 @@ instance : ToString ThreadId where
 /-- H-06/WS-E3: The sentinel ThreadId (value 0). -/
 @[inline] def sentinel : ThreadId := ⟨0⟩
 
+/-! ### L-04/WS-E6: Validated ID conversion
+
+`ThreadId.toObjId` performs unconditional conversion without checking that the
+thread ID is non-sentinel. This is safe in the current model because:
+
+1. All kernel operations that accept a `ThreadId` draw it from the scheduler's
+   `runnable` list or `current` field, which are populated only by valid
+   (non-sentinel) thread IDs.
+2. The `ThreadId.toObjId_injective` theorem guarantees the mapping is 1:1,
+   so no aliasing occurs.
+3. The `toObjIdChecked` variant below provides an explicitly validated
+   conversion for use at system boundaries where the sentinel might appear. -/
+
+/-- L-04/WS-E6: Validated conversion that rejects the sentinel thread ID.
+Returns `none` for the reserved sentinel (ID 0), ensuring callers at system
+boundaries handle the invalid case explicitly. -/
+@[inline] def toObjIdChecked (id : ThreadId) : Option ObjId :=
+  if id.isReserved then none else some id.toObjId
+
+/-- L-04/WS-E6: `toObjIdChecked` rejects the sentinel. -/
+theorem toObjIdChecked_sentinel : ThreadId.sentinel.toObjIdChecked = none := rfl
+
+/-- L-04/WS-E6: `toObjIdChecked` accepts non-sentinel IDs. -/
+theorem toObjIdChecked_of_not_reserved (id : ThreadId) (h : id.isReserved = false) :
+    id.toObjIdChecked = some id.toObjId := by
+  simp [toObjIdChecked, h]
+
 end ThreadId
 
 /-- H-09/WS-E3: ThreadId → ObjId is injective. Two thread identifiers that
@@ -328,6 +355,47 @@ def bind {σ ε α β : Type} (m : KernelM σ ε α) (f : α → KernelM σ ε �
 instance {σ ε : Type} : Monad (KernelM σ ε) where
   pure := pure
   bind := bind
+
+/-! ### L-03/WS-E6: Standard monad helpers
+
+These helpers bring `KernelM` into alignment with standard state-monad
+vocabulary (`get`, `set`, `modify`, `liftExcept`), reducing boilerplate at
+call sites and improving readability of transition definitions. -/
+
+/-- L-03/WS-E6: Read the current state without modifying it. -/
+def get : KernelM σ ε σ :=
+  fun s => .ok (s, s)
+
+/-- L-03/WS-E6: Replace the entire state. -/
+def set (s : σ) : KernelM σ ε Unit :=
+  fun _ => .ok ((), s)
+
+/-- L-03/WS-E6: Apply a pure transformation to the state. -/
+def modify (f : σ → σ) : KernelM σ ε Unit :=
+  fun s => .ok ((), f s)
+
+/-- L-03/WS-E6: Lift an `Except` value into the kernel monad, threading
+the state through unchanged on success and surfacing the error on failure. -/
+def liftExcept (m : Except ε α) : KernelM σ ε α :=
+  fun s =>
+    match m with
+    | .ok a => .ok (a, s)
+    | .error e => .error e
+
+-- L-03/WS-E6: Helper correctness theorems
+
+theorem get_eq (s : σ) : @get σ ε s = .ok (s, s) := rfl
+
+theorem set_eq (s s' : σ) : @set σ ε s' s = .ok ((), s') := rfl
+
+theorem modify_eq (f : σ → σ) (s : σ) :
+    @modify σ ε f s = .ok ((), f s) := rfl
+
+theorem liftExcept_ok (a : α) (s : σ) :
+    (liftExcept (.ok a) : KernelM σ ε α) s = .ok (a, s) := rfl
+
+theorem liftExcept_error (e : ε) (s : σ) :
+    (liftExcept (.error e) : KernelM σ ε α) s = .error e := rfl
 
 end KernelM
 

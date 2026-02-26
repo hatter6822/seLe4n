@@ -1,5 +1,39 @@
 import SeLe4n.Kernel.Scheduler.Invariant
 
+/-!
+# Scheduler Operations (M1 + WS-E6)
+
+## M-03/WS-E6: Priority tie-breaking semantics
+
+**Design choice:** When multiple runnable threads share the same (highest) priority,
+`chooseBestRunnable` selects the **first thread in runnable-order** (FIFO). This
+differs from seL4, where same-priority threads are scheduled in a **round-robin**
+fashion with each thread receiving a full time-slice quantum before the next runs.
+
+**Rationale:**
+- FIFO tie-breaking is simpler to formalize and yields a deterministic, total
+  ordering on the runnable queue without additional bookkeeping.
+- The `handleYield` operation provides voluntary rotation, and the M-04
+  `timerTick` preemption operation below models involuntary rotation on
+  time-slice expiry, together approximating seL4 round-robin behavior.
+- A full round-robin scheduler can be layered on top of this foundation in
+  future work by using `timerTick` as the involuntary rotation driver.
+
+## M-04/WS-E6: Time-slice decrement and tick-based preemption
+
+`timerTick` models seL4's timer interrupt handler: it decrements the current
+thread's `timeSlice` and, when exhausted, resets the slice and rotates the
+thread to the back of the queue (involuntary yield). This closes the gap where
+`MachineState.timer` existed but was never used for preemption.
+
+## M-05/WS-E6: Domain scheduling
+
+`nextDomain` advances the circular domain schedule, switching `currentDomain`
+and resetting `domainTimeRemaining`. `chooseThreadDomain` is a domain-aware
+variant of `chooseThread` that only considers threads whose TCB domain matches
+`currentDomain`. Together these model seL4's two-level temporal partitioning.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -411,5 +445,144 @@ theorem handleYield_preserves_schedulerInvariantBundle
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   exact handleYield_preserves_kernelInvariant st st' hInv hStep
+
+-- ============================================================================
+-- M-04/WS-E6: Time-slice decrement and tick-based preemption
+-- ============================================================================
+
+/-- M-04/WS-E6: Timer tick handler modeling seL4's `timerTick`.
+
+Decrements the current thread's `timeSlice`. When it reaches zero:
+1. Resets the time-slice to `defaultTimeSlice`.
+2. Moves the current thread to the back of the runnable queue (involuntary yield).
+3. Reschedules.
+
+If no thread is current, or the current thread's time-slice is not yet exhausted,
+this is a no-op (returns success with the updated time-slice only). -/
+def timerTick : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none => .ok ((), st)
+    | some tid =>
+        match st.objects tid.toObjId with
+        | some (.tcb tcb) =>
+            let newSlice := tcb.timeSlice - 1
+            if newSlice = 0 then
+              -- Time-slice exhausted: reset and involuntary yield
+              let tcb' := { tcb with timeSlice := defaultTimeSlice }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
+              let st' := { st with objects := objects' }
+              handleYield st'
+            else
+              -- Decrement time-slice
+              let tcb' := { tcb with timeSlice := newSlice }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
+              .ok ((), { st with objects := objects' })
+        | _ => .error .schedulerInvariantViolation
+
+/-- M-04/WS-E6: `timerTick` on an empty scheduler is a no-op. -/
+theorem timerTick_no_current (st : SystemState)
+    (hNone : st.scheduler.current = none) :
+    timerTick st = .ok ((), st) := by
+  simp [timerTick, hNone]
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling (two-level temporal partitioning)
+-- ============================================================================
+
+/-- M-05/WS-E6: Advance to the next entry in the circular domain schedule.
+
+If the domain schedule is empty, this is a no-op. Otherwise, advances
+`domainScheduleIdx` modulo the schedule length and sets `currentDomain`
+and `domainTimeRemaining` from the new entry. Models seL4's `nextDomain`. -/
+def nextDomain : Kernel Unit :=
+  fun st =>
+    match st.scheduler.domainSchedule with
+    | [] => .ok ((), st)
+    | entry :: rest =>
+        let schedule := entry :: rest
+        let nextIdx := (st.scheduler.domainScheduleIdx + 1) % schedule.length
+        have hLen : 0 < schedule.length := by simp [schedule]
+        let nextEntry := schedule[nextIdx]'(Nat.mod_lt _ hLen)
+        let sched' := { st.scheduler with
+          currentDomain := nextEntry.domain
+          domainScheduleIdx := nextIdx
+          domainTimeRemaining := nextEntry.length
+        }
+        .ok ((), { st with scheduler := sched' })
+
+/-- M-05/WS-E6: Domain-aware thread selection.
+
+Like `chooseThread` but only considers runnable threads whose TCB domain
+matches `currentDomain`. Models seL4's domain-filtered scheduling. -/
+private def chooseBestRunnableInDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (domain : SeLe4n.DomainId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority)) : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)) :=
+  match runnable with
+  | [] => .ok best
+  | tid :: rest =>
+      match objects tid.toObjId with
+      | some (.tcb tcb) =>
+          let best' :=
+            if tcb.domain = domain then
+              match best with
+              | none => some (tid, tcb.priority)
+              | some (_, bestPrio) =>
+                  if bestPrio.toNat < tcb.priority.toNat then some (tid, tcb.priority) else best
+            else
+              best
+          chooseBestRunnableInDomain objects rest domain best'
+      | _ => .error .schedulerInvariantViolation
+
+/-- M-05/WS-E6: Choose the highest-priority runnable thread in the current domain. -/
+def chooseThreadDomain : Kernel (Option SeLe4n.ThreadId) :=
+  fun st =>
+    match chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.currentDomain none with
+    | .error e => .error e
+    | .ok none => .ok (none, st)
+    | .ok (some (tid, _)) => .ok (some tid, st)
+
+/-- M-05/WS-E6: `chooseThreadDomain` does not modify state. -/
+theorem chooseThreadDomain_preserves_state
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : chooseThreadDomain st = .ok (next, st')) :
+    st' = st := by
+  unfold chooseThreadDomain at hStep
+  cases hPick : chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.currentDomain none with
+  | error e => simp [hPick] at hStep
+  | ok best =>
+      cases best with
+      | none =>
+          rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
+      | some pair =>
+          cases pair with
+          | mk tid prio =>
+              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+              simpa using hSt.symm
+
+/-- M-05/WS-E6: `nextDomain` preserves the scheduler invariant bundle.
+Domain switching only changes domain metadata fields, not `runnable` or `current`. -/
+theorem nextDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : nextDomain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold nextDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+      simp [hSched] at hStep
+      cases hStep
+      exact hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      cases hStep
+      -- The new state only changes domain metadata fields; runnable/current/objects unchanged
+      exact hInv
 
 end SeLe4n.Kernel

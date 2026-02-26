@@ -16,7 +16,7 @@ Current milestone state:
 - WS-B portfolio (v0.9.0): all completed
 - WS-C portfolio (v0.9.32): all completed
 - WS-D portfolio (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E
-- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1, WS-E2, WS-E3, WS-E4, WS-E5 completed; WS-E6 planned
+- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1, WS-E2, WS-E3, WS-E4, WS-E5, WS-E6 all completed
 
 ## 2) Stable contracts contributors must preserve
 
@@ -51,6 +51,7 @@ Security baseline reference:
 - **Phase P2:** WS-E3 (kernel semantic hardening) — **completed**
 - **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
 - **Phase P4:** WS-E5 (information-flow maturity) — **completed**
+- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
 
 See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) for full WS-E phase sequencing.
 

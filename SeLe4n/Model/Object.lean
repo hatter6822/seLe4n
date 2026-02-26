@@ -82,6 +82,11 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- M-04/WS-E6: Default time-slice quantum for new threads.
+In seL4 this is `CONFIG_TIME_SLICE` (typically 5 ticks). The seLe4n model
+uses a configurable default; callers may override per-thread. -/
+def defaultTimeSlice : Nat := 5
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -90,6 +95,10 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  /-- M-04/WS-E6: Remaining time-slice ticks before tick-based preemption.
+  Decremented by `timerTick`; when it reaches 0 the scheduler reschedules.
+  Models seL4's `tcbTimeSlice` field. -/
+  timeSlice : Nat := defaultTimeSlice
   deriving Repr, DecidableEq
 
 inductive EndpointState where

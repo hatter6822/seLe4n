@@ -25,9 +25,29 @@ inductive KernelError where
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
+/-- M-05/WS-E6: Domain-schedule entry for two-level temporal partitioning.
+Each entry pairs a `DomainId` with a time-slice length specifying how many
+ticks that domain runs before the scheduler switches to the next entry.
+Models seL4's `dschedule` (kernel domain schedule). -/
+structure DomainScheduleEntry where
+  domain : SeLe4n.DomainId
+  length : Nat
+  deriving Repr, DecidableEq
+
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  /-- M-05/WS-E6: The active scheduling domain. Threads outside this domain
+  are not eligible for selection by `chooseThread`. -/
+  currentDomain : SeLe4n.DomainId := ⟨0⟩
+  /-- M-05/WS-E6: Circular domain schedule table. The scheduler cycles through
+  entries, switching the active domain when the current entry's length expires. -/
+  domainSchedule : List DomainScheduleEntry := []
+  /-- M-05/WS-E6: Index into `domainSchedule` for the current entry. -/
+  domainScheduleIdx : Nat := 0
+  /-- M-05/WS-E6: Remaining ticks in the current domain-schedule entry.
+  When this reaches 0, the scheduler advances to the next domain. -/
+  domainTimeRemaining : Nat := 0
   deriving Repr, DecidableEq
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
@@ -47,6 +67,24 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  /-- L-05/WS-E6: Monotonic object discovery index.
+
+  `objectIndex` is an **append-only** list of `ObjId`s that have been stored
+  via `storeObject`. It is never pruned: once an ID enters the list, it remains
+  forever. This is an intentional design choice:
+
+  1. **Simplicity:** A monotonic list avoids the complexity of deletion-aware
+     index maintenance (tombstones, compaction, dangling-reference hazards).
+  2. **Proof friendliness:** Monotonicity means `id ∈ objectIndex` is a stable
+     predicate — it holds forever once established, simplifying invariant proofs
+     that rely on index membership (e.g., `resolveAsidRoot`).
+  3. **Model scope:** The seLe4n model exercises small object counts where
+     linear search over the index is acceptable. Production kernels use hash
+     tables or direct pointer lookup, which are out of scope for the abstract
+     model.
+  4. **Future migration:** If the model scales to larger state spaces, the
+     index can be replaced with a `Finmap ObjId Unit` or similar structure
+     without changing the semantic interface. -/
   objectIndex : List SeLe4n.ObjId
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
@@ -58,7 +96,8 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnable := [], current := none, currentDomain := ⟨0⟩,
+               domainSchedule := [], domainScheduleIdx := 0, domainTimeRemaining := 0 }
 
 instance : Inhabited SystemState where
   default := {

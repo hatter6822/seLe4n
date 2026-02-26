@@ -2,13 +2,47 @@ import SeLe4n.Prelude
 
 namespace SeLe4n
 
+/-!
+# Machine State Primitives
+
+## L-02/WS-E6: Default memory semantics
+
+The abstract machine model uses a total function `PAddr → UInt8` for memory,
+defaulting to `0` for all unmapped addresses. This models a zero-initialized
+physical address space — reads from any address always succeed and return a
+deterministic value.
+
+**Design choice:** There is intentionally no page-fault model. In the real
+seL4 kernel, unmapped virtual addresses trigger a VM fault that is forwarded
+to the thread's fault handler. The seLe4n model abstracts this away because:
+
+1. Page faults are an architecture-specific mechanism handled by the VSpace
+   subsystem's `vspaceLookup` (which returns `.translationFault` for unmapped
+   virtual addresses).
+2. Physical memory access is modeled as always-valid at the machine layer,
+   with access control enforced by the `RuntimeBoundaryContract.memoryAccessAllowed`
+   predicate in the architecture adapter layer.
+3. Zero-initialization is a safe default: it does not leak information from
+   prior allocations, matching seL4's kernel memory zeroing guarantee.
+
+## F-17/WS-E6: O(n) data structure design rationale (Machine layer)
+
+The `RegisterFile.gpr` field uses a function `RegName → RegValue` rather than
+an array or hash map. This yields O(1) reads but O(1) writes that produce
+closures (effectively building a chain of `if` tests). For the abstract model's
+small register set this is acceptable. See also the F-17 note in `VSpace.lean`
+for the analogous `objectIndex` discussion.
+-/
+
 /-- General-purpose register index in the abstract machine model. -/
 abbrev RegName := Nat
 
 /-- Register-sized machine word in the abstract machine model. -/
 abbrev RegValue := Nat
 
-/-- Byte-addressed memory store used by the abstract machine model. -/
+/-- Byte-addressed memory store used by the abstract machine model.
+L-02/WS-E6: Total function returning 0 for all unmapped addresses;
+no page-fault model (see module docstring). -/
 abbrev Memory := PAddr → UInt8
 
 /-- Pure register file state used by scheduler/context-switch modeling. -/
