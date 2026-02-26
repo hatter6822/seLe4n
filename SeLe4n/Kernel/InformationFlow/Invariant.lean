@@ -144,7 +144,7 @@ private theorem removeRunnable_preserves_projection
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (removeRunnable st tid) = projectState ctx observer st := by
   have hRun : projectRunnable ctx observer (removeRunnable st tid) = projectRunnable ctx observer st := by
-    simp only [projectRunnable, removeRunnable]
+    simp only [projectRunnable, removeRunnable, runnable_withRunnable, runnable_setCurrent]
     exact list_filter_ne_then_filter_eq st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
   have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
     simp only [projectCurrent, removeRunnable]
@@ -170,18 +170,18 @@ private theorem ensureRunnable_preserves_projection
   · rfl
   · split
     · have hRun : projectRunnable ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          { st with scheduler := st.scheduler.enqueueTail tid } =
           projectRunnable ctx observer st := by
-        simp only [projectRunnable]
+        simp only [projectRunnable, runnable_enqueueTail]
         exact list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
       have hObj : projectObjects ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          { st with scheduler := st.scheduler.enqueueTail tid } =
           projectObjects ctx observer st := rfl
       have hCur : projectCurrent ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          { st with scheduler := st.scheduler.enqueueTail tid } =
           projectCurrent ctx observer st := rfl
       have hSvc : projectServiceStatus ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
+          { st with scheduler := st.scheduler.enqueueTail tid } =
           projectServiceStatus ctx observer st := funext fun _ => rfl
       simp only [projectState, hObj, hRun, hCur, hSvc]
     · rfl

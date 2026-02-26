@@ -146,7 +146,7 @@ def handleYield : Kernel Unit :=
     match rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
     | .error e => .error e
     | .ok runnable' =>
-        let st' := { st with scheduler := { st.scheduler with runnable := runnable' } }
+        let st' := { st with scheduler := st.scheduler.withRunnable runnable' }
         schedule st'
 
 -- ============================================================================
@@ -187,7 +187,7 @@ def timerTick : Kernel Unit :=
               match rotateCurrentToBack (some tid) st'.scheduler.runnable with
               | .error e => .error e
               | .ok runnable' =>
-                  let st'' := { st' with scheduler := { st'.scheduler with runnable := runnable' } }
+                  let st'' := { st' with scheduler := st'.scheduler.withRunnable runnable' }
                   schedule st''
             else
               -- Time-slice not expired: decrement and continue
@@ -305,7 +305,7 @@ theorem setCurrentThread_preserves_queueCurrentConsistent
     queueCurrentConsistent st'.scheduler := by
   simp [setCurrentThread] at hStep
   cases hStep
-  simp [queueCurrentConsistent, hMem]
+  simpa [queueCurrentConsistent, SchedulerState.runnable] using hMem
 
 theorem setCurrentThread_preserves_runQueueUnique
     (st st' : SystemState)
@@ -494,7 +494,7 @@ theorem handleYield_preserves_wellFormed
   cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
   | error e => simp [hRotate] at hStep
   | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnable runnable' }
       have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
       exact schedule_preserves_wellFormed stMoved st' hSched
 
@@ -513,7 +513,7 @@ theorem handleYield_preserves_runQueueUnique
   cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
   | error e => simp [hRotate] at hStep
   | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnable runnable' }
       have hMovedUnique : runQueueUnique stMoved.scheduler := by
         by_cases hCur : st.scheduler.current = none
         · have hRunEq : runnable' = st.scheduler.runnable := by
@@ -550,7 +550,7 @@ theorem handleYield_preserves_currentThreadValid
   cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
   | error e => simp [hRotate] at hStep
   | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := { st.scheduler with runnable := runnable' } }
+      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnable runnable' }
       have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
       exact schedule_preserves_currentThreadValid stMoved st' hSched
 

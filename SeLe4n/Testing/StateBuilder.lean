@@ -71,7 +71,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndex := builder.objects.map Prod.fst
     services := listLookup builder.services
     scheduler := {
-      runnable := builder.runnable
+      runnableQueue := FifoQueue.ofList builder.runnable
       current := builder.current
     }
     irqHandlers := listLookup builder.irqHandlers

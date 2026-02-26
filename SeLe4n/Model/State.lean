@@ -33,8 +33,46 @@ structure DomainScheduleEntry where
   length : Nat
   deriving Repr, DecidableEq
 
+/-- Functional FIFO queue with explicit `{head, tail}` lists.
+
+`head` stores the dequeue frontier in-order; `tail` stores newly enqueued
+elements in reverse order so `enqueueTail` is constant-time. -/
+structure FifoQueue (α : Type) where
+  head : List α
+  tail : List α
+  deriving Repr, DecidableEq
+
+namespace FifoQueue
+
+def empty : FifoQueue α := { head := [], tail := [] }
+
+def toList (q : FifoQueue α) : List α :=
+  q.head ++ q.tail.reverse
+
+def ofList (xs : List α) : FifoQueue α :=
+  { head := xs, tail := [] }
+
+def enqueueTail (q : FifoQueue α) (x : α) : FifoQueue α :=
+  if q.head.isEmpty then
+    { head := q.tail.reverse ++ [x], tail := [] }
+  else
+    { q with tail := x :: q.tail }
+
+def dequeueHead (q : FifoQueue α) : Option (α × FifoQueue α) :=
+  match q.head with
+  | x :: xs =>
+      let q' :=
+        if xs.isEmpty then
+          { head := q.tail.reverse, tail := [] }
+        else
+          { q with head := xs }
+      some (x, q')
+  | [] => none
+
+end FifoQueue
+
 structure SchedulerState where
-  runnable : List SeLe4n.ThreadId
+  runnableQueue : FifoQueue SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -47,6 +85,48 @@ structure SchedulerState where
   /-- M-05/WS-E6: Current index into `domainSchedule`. -/
   domainScheduleIndex : Nat := 0
   deriving Repr, DecidableEq
+
+namespace SchedulerState
+
+def runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
+  s.runnableQueue.toList
+
+def withRunnable (s : SchedulerState) (runnable : List SeLe4n.ThreadId) : SchedulerState :=
+  { s with runnableQueue := FifoQueue.ofList runnable }
+
+def enqueueTail (s : SchedulerState) (tid : SeLe4n.ThreadId) : SchedulerState :=
+  { s with runnableQueue := s.runnableQueue.enqueueTail tid }
+
+def dequeueHead (s : SchedulerState) : Option (SeLe4n.ThreadId × SchedulerState) :=
+  match s.runnableQueue.dequeueHead with
+  | none => none
+  | some (tid, queue') => some (tid, { s with runnableQueue := queue' })
+
+end SchedulerState
+
+
+@[simp] theorem toList_ofList (xs : List α) : (FifoQueue.ofList xs).toList = xs := by
+  simp [FifoQueue.ofList, FifoQueue.toList]
+
+@[simp] theorem toList_enqueueTail (q : FifoQueue α) (x : α) :
+    (q.enqueueTail x).toList = q.toList ++ [x] := by
+  cases hList : q.head with
+  | nil =>
+      simp [FifoQueue.enqueueTail, FifoQueue.toList, hList]
+  | cons y ys =>
+      simp [FifoQueue.enqueueTail, FifoQueue.toList, hList, List.reverse_cons, List.append_assoc]
+
+@[simp] theorem runnable_withRunnable (s : SchedulerState) (runnable : List SeLe4n.ThreadId) :
+    (s.withRunnable runnable).runnable = runnable := by
+  simp [SchedulerState.withRunnable, SchedulerState.runnable]
+
+@[simp] theorem runnable_setCurrent (s : SchedulerState) (current : Option SeLe4n.ThreadId) :
+    ({ s with current := current }).runnable = s.runnable := by
+  rfl
+
+@[simp] theorem runnable_enqueueTail (s : SchedulerState) (tid : SeLe4n.ThreadId) :
+    (s.enqueueTail tid).runnable = s.runnable ++ [tid] := by
+  simp [SchedulerState.enqueueTail, SchedulerState.runnable]
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
@@ -92,7 +172,7 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runnableQueue := .empty, current := none }
 
 instance : Inhabited SystemState where
   default := {
