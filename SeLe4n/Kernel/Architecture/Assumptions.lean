@@ -117,4 +117,29 @@ theorem assumptionTransitionMap_nonempty (a : ArchAssumption) : (assumptionTrans
 theorem assumptionInvariantMap_nonempty (a : ArchAssumption) : (assumptionInvariantMap a).length > 0 := by
   cases a <;> decide
 
+/-! ## M-08/WS-E6: Assumption consumption status
+
+Each architecture assumption now has a corresponding consumption path:
+
+- **`deterministicTimerProgress`** → Consumed by `adapterAdvanceTimer` via
+  `RuntimeBoundaryContract.timerMonotonic`. Preservation proven in
+  `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`.
+
+- **`deterministicRegisterContext`** → Consumed by `adapterWriteRegister` via
+  `RuntimeBoundaryContract.registerContextStable`. Preservation proven in
+  `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle`.
+
+- **`memoryAccessSafety`** → Consumed by `adapterReadMemory` via
+  `RuntimeBoundaryContract.memoryAccessAllowed`. Preservation proven in
+  `adapterReadMemory_ok_preserves_proofLayerInvariantBundle`.
+
+- **`bootObjectTyping`** → Consumed by initialization via
+  `BootBoundaryContract.objectTypeMetadataConsistent`. Base case proven in
+  `default_system_state_proofLayerInvariantBundle`.
+
+- **`irqRoutingTotality`** → Structural assumption consumed by the interrupt
+  contract skeleton `InterruptBoundaryContract.irqHandlerMapped`. Runtime
+  consumption deferred to future IRQ adapter implementation.
+-/
+
 end SeLe4n.Kernel.Architecture

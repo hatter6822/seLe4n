@@ -476,6 +476,43 @@ private def runWsE4Trace (st1 : SystemState) : IO Unit := do
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
       IO.println s!"endpointReply unblocked target: {unblocked}"
 
+-- ============================================================================
+-- WS-E6: Model completeness trace scenarios
+-- ============================================================================
+
+/-- WS-E6 test: M-04 timer-tick preemption, M-05 domain scheduling -/
+private def runWsE6Trace (st1 : SystemState) : IO Unit := do
+  -- M-04: Timer tick with active current thread (time-slice decrement)
+  let stWithCurrent : SystemState :=
+    { st1 with scheduler := { st1.scheduler with current := some 1 } }
+  match SeLe4n.Kernel.timerTick stWithCurrent with
+  | .error err => IO.println s!"timer tick decrement error: {reprStr err}"
+  | .ok (_, stTicked) =>
+      match stTicked.objects (SeLe4n.ThreadId.toObjId 1) with
+      | some (.tcb tcb) =>
+          IO.println s!"timer tick decremented time-slice: {tcb.timeSlice}"
+      | _ => IO.println "timer tick thread not found"
+  -- M-04: Timer tick with no current thread
+  let stNoCurrent : SystemState :=
+    { st1 with scheduler := { st1.scheduler with current := none } }
+  match SeLe4n.Kernel.timerTick stNoCurrent with
+  | .error err => IO.println s!"timer tick no-current error: {reprStr err}"
+  | .ok (_, stTicked) =>
+      IO.println s!"timer tick no-current timer advanced: {stTicked.machine.timer}"
+  -- M-05: Domain-aware scheduling (thread 1 is in domain 0, thread 12 is in domain 0)
+  match SeLe4n.Kernel.chooseThreadInDomain st1 with
+  | .error err => IO.println s!"domain schedule same-domain error: {reprStr err}"
+  | .ok (chosen, _) =>
+      IO.println s!"domain schedule same-domain chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+  -- M-05: Switch to domain 1 (no threads) and try to schedule
+  match SeLe4n.Kernel.switchDomain 1 st1 with
+  | .error err => IO.println s!"switch domain error: {reprStr err}"
+  | .ok (_, stSwitched) =>
+      match SeLe4n.Kernel.chooseThreadInDomain stSwitched with
+      | .error err => IO.println s!"domain schedule empty-domain error: {reprStr err}"
+      | .ok (chosen, _) =>
+          IO.println s!"domain schedule empty-domain chosen: {reprStr (chosen.map SeLe4n.ThreadId.toNat)}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -493,6 +530,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
   runWsE4Trace st1
+  runWsE6Trace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

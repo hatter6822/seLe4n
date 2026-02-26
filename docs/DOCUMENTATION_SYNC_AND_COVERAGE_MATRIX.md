@@ -22,6 +22,7 @@ Use this file during planning and PR review to keep documentation status aligned
 | Historical execution portfolios | `docs/dev_history/audits/` | Archived to `docs/dev_history/gitbook/` | Historical-only; see `docs/dev_history/README.md`. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
 | Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | `30-ws-c7-model-structure-and-maintainability.md` | ADR is canonical; GitBook chapter stays concise and links back. |
+| O(n) data-structure ADR (WS-E6/F-17) | `docs/ON_DESIGN_DECISION_ADR.md` | — | ADR is canonical; no GitBook mirror needed (design note, not chapter-level topic). |
 | Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Command/process changes must update both. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require synchronized updates. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
@@ -54,7 +55,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (WS-E portfolio; WS-E1, WS-E2, WS-E3, WS-E4, WS-E5 completed; WS-E6 planned).
+- Active planning baseline: `AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (WS-E portfolio; WS-E1–WS-E6 completed).
 - Active findings baseline: `AUDIT_CODEBASE_v0.11.6.md`.
 - Prior completed portfolio: WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E.
 - Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.

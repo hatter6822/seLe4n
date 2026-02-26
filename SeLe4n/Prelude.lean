@@ -57,7 +57,16 @@ namespace ThreadId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ThreadId) : Nat := id.val
 
-/-- Explicit conversion used at object-store boundaries. -/
+/-- Explicit conversion used at object-store boundaries.
+
+L-04/WS-E6: This conversion assumes that every `ThreadId t` is stored in the
+global object store at key `ObjId.ofNat t.toNat`. No runtime validation is
+performed — correctness is ensured *by construction* through `storeObject`,
+which stores TCBs at the corresponding `ObjId`. The injectivity theorem
+`ThreadId.toObjId_injective` (below) guarantees that distinct thread IDs map
+to distinct object IDs, preventing aliasing. A future defensive variant could
+add an explicit object-store membership check, but the current design trades
+that for proof simplicity and deterministic cost. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance instOfNat (n : Nat) : OfNat ThreadId n where
@@ -328,6 +337,42 @@ def bind {σ ε α β : Type} (m : KernelM σ ε α) (f : α → KernelM σ ε �
 instance {σ ε : Type} : Monad (KernelM σ ε) where
   pure := pure
   bind := bind
+
+/-- L-03/WS-E6: Read the current state without modification. -/
+def get {σ ε : Type} : KernelM σ ε σ :=
+  fun s => .ok (s, s)
+
+/-- L-03/WS-E6: Replace the current state entirely. -/
+def set {σ ε : Type} (s : σ) : KernelM σ ε Unit :=
+  fun _ => .ok ((), s)
+
+/-- L-03/WS-E6: Apply a pure transformation to the current state. -/
+def modify {σ ε : Type} (f : σ → σ) : KernelM σ ε Unit :=
+  fun s => .ok ((), f s)
+
+/-- L-03/WS-E6: Lift an `Except` value into `KernelM`, propagating errors. -/
+def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
+  fun s =>
+    match e with
+    | .ok a => .ok (a, s)
+    | .error err => .error err
+
+-- L-03/WS-E6: Correctness properties for monad helpers
+
+theorem get_returns_state {σ ε : Type} (s : σ) :
+    (@get σ ε) s = .ok (s, s) := rfl
+
+theorem set_replaces_state {σ ε : Type} (s s' : σ) :
+    (@set σ ε s') s = .ok ((), s') := rfl
+
+theorem modify_applies_f {σ ε : Type} (f : σ → σ) (s : σ) :
+    (@modify σ ε f) s = .ok ((), f s) := rfl
+
+theorem liftExcept_ok {σ ε α : Type} (a : α) (s : σ) :
+    (@liftExcept σ ε α (.ok a)) s = .ok (a, s) := rfl
+
+theorem liftExcept_error {σ ε α : Type} (e : ε) (s : σ) :
+    (@liftExcept σ ε α (.error e)) s = .error e := rfl
 
 end KernelM
 

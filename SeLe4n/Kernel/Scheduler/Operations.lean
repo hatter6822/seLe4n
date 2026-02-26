@@ -4,6 +4,22 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- M-03/WS-E6: Fixed-priority scheduling with FIFO tie-breaking.
+
+**Semantics:** Iterates the runnable list, tracking the highest-priority thread
+seen so far. When two threads have equal priority, the one appearing earlier in
+the runnable list wins (FIFO tie-breaking within each priority level).
+
+**Divergence from seL4:** Real seL4 uses round-robin rotation among equal-priority
+threads within the same scheduling domain. This model uses a simpler FIFO policy
+to keep transition semantics fully deterministic without requiring rotation state.
+The behavioral difference: in seL4, yielding rotates the current thread to the back
+of its priority class; here, `handleYield` + `chooseBestRunnable` achieves the same
+effect via explicit `rotateCurrentToBack`.
+
+**EDF (Earliest Deadline First):** Not modeled. seL4 supports sporadic-server
+scheduling for mixed-criticality workloads. This model defers EDF semantics to
+future work as the current scope focuses on fixed-priority correctness. -/
 private def chooseBestRunnable
     (objects : SeLe4n.ObjId → Option KernelObject)
     (runnable : List SeLe4n.ThreadId)
@@ -68,6 +84,92 @@ def handleYield : Kernel Unit :=
     | .ok runnable' =>
         let st' := { st with scheduler := { st.scheduler with runnable := runnable' } }
         schedule st'
+
+-- ============================================================================
+-- M-04/WS-E6: Time-slice decrement and tick-based preemption
+-- ============================================================================
+
+/-- M-04/WS-E6: Decrement the current thread's time-slice. When the slice
+reaches zero, rotate the thread to the back of the runnable queue (preemption)
+and reschedule. Also advances the machine timer via `tick`.
+
+This models seL4's timer-interrupt handler where the kernel decrements the
+running thread's time budget and preempts on expiry. -/
+def timerTick : Kernel Unit :=
+  fun st =>
+    let st' := { st with machine := SeLe4n.tick st.machine }
+    match st'.scheduler.current with
+    | none => .ok ((), st')
+    | some tid =>
+        match st'.objects tid.toObjId with
+        | some (.tcb tcb) =>
+            if tcb.timeSlice ≤ 1 then
+              -- Time-slice expired: reset slice and rotate to back of queue
+              let tcb' := { tcb with timeSlice := 5 }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st'.objects oid
+              let st'' := { st' with objects := objects' }
+              match rotateCurrentToBack (some tid) st''.scheduler.runnable with
+              | .error e => .error e
+              | .ok runnable' =>
+                  let st''' := { st'' with scheduler := { st''.scheduler with runnable := runnable' } }
+                  schedule st'''
+            else
+              -- Decrement time-slice
+              let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+              let objects' : SeLe4n.ObjId → Option KernelObject :=
+                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st'.objects oid
+              .ok ((), { st' with objects := objects' })
+        | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling — two-level temporal partitioning
+-- ============================================================================
+
+/-- M-05/WS-E6: Filter the runnable list to only threads in a given domain.
+Returns threads whose `TCB.domain` matches `domain`. -/
+private def filterByDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (domain : SeLe4n.DomainId) : List SeLe4n.ThreadId :=
+  runnable.filter fun tid =>
+    match objects tid.toObjId with
+    | some (.tcb tcb) => tcb.domain == domain
+    | _ => false
+
+/-- M-05/WS-E6: Choose the highest-priority runnable thread restricted to the
+active domain. This implements two-level temporal partitioning: first, only
+threads whose `TCB.domain` matches `activeDomain` are considered; then,
+within that set, `chooseBestRunnable` selects by priority with FIFO tie-breaking. -/
+def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
+  fun st =>
+    let domainThreads := filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain
+    match chooseBestRunnable st.objects domainThreads none with
+    | .error e => .error e
+    | .ok none => .ok (none, st)
+    | .ok (some (tid, _)) => .ok (some tid, st)
+
+/-- M-05/WS-E6: Switch the active scheduling domain. Only threads in the new
+domain will be eligible for selection on the next scheduling decision. -/
+def switchDomain (domain : SeLe4n.DomainId) : Kernel Unit :=
+  fun st =>
+    .ok ((), { st with scheduler := { st.scheduler with activeDomain := domain } })
+
+/-- M-05/WS-E6: Schedule using domain-aware thread selection. Combines M-05
+domain partitioning with the standard schedule logic. -/
+def scheduleDomain : Kernel Unit :=
+  fun st =>
+    match chooseThreadInDomain st with
+    | .error e => .error e
+    | .ok (none, st') => setCurrentThread none st'
+    | .ok (some tid, st') =>
+        match st'.objects tid.toObjId with
+        | some (.tcb _) =>
+            if tid ∈ st'.scheduler.runnable then
+              setCurrentThread (some tid) st'
+            else
+              .error .schedulerInvariantViolation
+        | _ => .error .schedulerInvariantViolation
 
 theorem schedule_eq_chooseThread_then_setCurrent :
     schedule = (fun st =>
@@ -411,5 +513,72 @@ theorem handleYield_preserves_schedulerInvariantBundle
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   exact handleYield_preserves_kernelInvariant st st' hInv hStep
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling preservation theorems
+-- ============================================================================
+
+/-- M-05/WS-E6: `chooseThreadInDomain` does not modify state. -/
+theorem chooseThreadInDomain_preserves_state
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : chooseThreadInDomain st = .ok (next, st')) :
+    st' = st := by
+  unfold chooseThreadInDomain at hStep
+  cases hPick : chooseBestRunnable st.objects (filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain) none with
+  | error e => simp [hPick] at hStep
+  | ok best =>
+      cases best with
+      | none =>
+          rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
+      | some pair =>
+          cases pair with
+          | mk tid prio =>
+              rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+              simpa using hSt.symm
+
+/-- M-05/WS-E6: `switchDomain` preserves the scheduler invariant bundle. -/
+theorem switchDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (domain : SeLe4n.DomainId)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : switchDomain domain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  simp [switchDomain] at hStep
+  cases hStep
+  refine ⟨?_, ?_, ?_⟩
+  · -- queueCurrentConsistent: runnable unchanged, current unchanged
+    simpa [queueCurrentConsistent] using hInv.1
+  · -- runQueueUnique: runnable unchanged
+    simpa [runQueueUnique] using hInv.2.1
+  · -- currentThreadValid: objects unchanged
+    simpa [currentThreadValid] using hInv.2.2
+
+-- ============================================================================
+-- M-03/WS-E6: Scheduler determinism theorem
+-- ============================================================================
+
+/-- M-03/WS-E6: `chooseBestRunnable` is deterministic — given the same object store,
+runnable list, and accumulator, it always returns the same result. This is trivially
+true because the function is pure (no randomness, no non-deterministic branching). -/
+theorem chooseBestRunnable_deterministic
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority))
+    (r1 r2 : Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority)))
+    (h1 : chooseBestRunnable objects runnable best = r1)
+    (h2 : chooseBestRunnable objects runnable best = r2) :
+    r1 = r2 := by
+  rw [← h1, ← h2]
+
+/-- M-03/WS-E6: `chooseThread` is deterministic — same state in, same result out. -/
+theorem chooseThread_deterministic
+    (st : SystemState)
+    (r1 r2 : Except KernelError (Option SeLe4n.ThreadId × SystemState))
+    (h1 : chooseThread st = r1)
+    (h2 : chooseThread st = r2) :
+    r1 = r2 := by
+  rw [← h1, ← h2]
 
 end SeLe4n.Kernel

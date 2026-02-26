@@ -82,6 +82,15 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- Thread control block modeling per-thread kernel state.
+
+M-04/WS-E6: Added `timeSlice` field for tick-based preemption modeling. When
+`timeSlice` reaches zero the scheduler may preempt the thread and rotate it to
+the back of its priority class in the runnable queue.
+
+M-05/WS-E6: The `domain` field enables two-level temporal partitioning where the
+scheduler first selects the active domain, then chooses among threads within that
+domain by priority. -/
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -90,6 +99,10 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  /-- M-04/WS-E6: Remaining time-slice ticks before preemption. Decremented by
+  `timerTick`; when zero, the scheduler rotates the thread to the back of its
+  priority class. Default is 5 ticks (configurable at construction). -/
+  timeSlice : Nat := 5
   deriving Repr, DecidableEq
 
 inductive EndpointState where

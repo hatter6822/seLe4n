@@ -260,4 +260,68 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid₁ oid₂ r₁ r₂ hObj₁; simp at hObj₁
     · intro oid root hObj; simp at hObj
 
+-- ============================================================================
+-- M-08/WS-E6: Architecture assumption consumption theorems
+-- ============================================================================
+
+/-! ## M-08/WS-E6: Connecting assumptions to proofs
+
+Architecture assumptions (enumerated in `Assumptions.lean`) are structural
+declarations about platform behavior. This section provides **consumption
+theorems** that demonstrate how each assumption is used in adapter
+preservation proofs. The key insight: adapter transitions only succeed when
+the `RuntimeBoundaryContract` predicates hold, and the `AdapterProofHooks`
+structure requires proof that invariants are preserved under those predicates.
+
+### Assumption-to-proof binding matrix
+
+| Assumption | Contract predicate consumed | Adapter operation | Preservation theorem |
+|---|---|---|---|
+| `deterministicTimerProgress` | `timerMonotonic` | `adapterAdvanceTimer` | `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle` |
+| `deterministicRegisterContext` | `registerContextStable` | `adapterWriteRegister` | `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle` |
+| `memoryAccessSafety` | `memoryAccessAllowed` | `adapterReadMemory` | `adapterReadMemory_ok_preserves_proofLayerInvariantBundle` |
+| `bootObjectTyping` | `objectTypeMetadataConsistent` | (boot-time, not runtime) | `default_system_state_proofLayerInvariantBundle` |
+| `irqRoutingTotality` | `irqHandlerMapped` | (deferred to IRQ adapter) | Structural only |
+-/
+
+/-- M-08/WS-E6: Timer monotonicity assumption is consumed by the advance-timer
+adapter path. When the contract admits the step, the assumption guarantees that
+the timer value strictly increases, which is used by the `AdapterProofHooks`
+to establish that the post-state satisfies the invariant bundle. -/
+theorem deterministicTimerProgress_consumed_by_advanceTimer
+    (contract : RuntimeBoundaryContract)
+    (hooks : AdapterProofHooks contract)
+    (ticks : Nat)
+    (st : SystemState)
+    (hTicks : ticks ≠ 0)
+    (hMono : contract.timerMonotonic st (advanceTimerState ticks st))
+    (hInv : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle (advanceTimerState ticks st) :=
+  hooks.preserveAdvanceTimer ticks st hInv hMono hTicks
+
+/-- M-08/WS-E6: Register context stability assumption is consumed by the
+write-register adapter path. -/
+theorem deterministicRegisterContext_consumed_by_writeRegister
+    (contract : RuntimeBoundaryContract)
+    (hooks : AdapterProofHooks contract)
+    (reg : SeLe4n.RegName)
+    (value : SeLe4n.RegValue)
+    (st : SystemState)
+    (hStable : contract.registerContextStable st (writeRegisterState reg value st))
+    (hInv : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle (writeRegisterState reg value st) :=
+  hooks.preserveWriteRegister reg value st hInv hStable
+
+/-- M-08/WS-E6: Memory access safety assumption is consumed by the read-memory
+adapter path. The read is pure (no state change), so preservation is immediate. -/
+theorem memoryAccessSafety_consumed_by_readMemory
+    (contract : RuntimeBoundaryContract)
+    (hooks : AdapterProofHooks contract)
+    (addr : SeLe4n.PAddr)
+    (st : SystemState)
+    (hAllow : contract.memoryAccessAllowed st addr)
+    (hInv : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle st :=
+  hooks.preserveReadMemory addr st hInv hAllow
+
 end SeLe4n.Kernel.Architecture

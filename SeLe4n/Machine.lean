@@ -8,7 +8,15 @@ abbrev RegName := Nat
 /-- Register-sized machine word in the abstract machine model. -/
 abbrev RegValue := Nat
 
-/-- Byte-addressed memory store used by the abstract machine model. -/
+/-- Byte-addressed memory store used by the abstract machine model.
+
+L-02/WS-E6: The default memory model is a total function returning zero for every
+address. This is an intentional simplification: the abstract model treats all of
+physical memory as readable and zero-initialized. There is **no page-fault model**
+— every `PAddr` resolves to a valid byte without trapping. This diverges from real
+hardware where unmapped or protected pages would raise a fault. The design choice
+keeps transition semantics deterministic and total, deferring fault-handling to a
+future expansion behind the VSpace abstraction layer. -/
 abbrev Memory := PAddr → UInt8
 
 /-- Pure register file state used by scheduler/context-switch modeling. -/
@@ -95,5 +103,19 @@ theorem tick_preserves_memory (ms : MachineState) :
 
 theorem tick_timer_succ (ms : MachineState) :
     (tick ms).timer = ms.timer + 1 := rfl
+
+-- ============================================================================
+-- L-02/WS-E6: Default memory semantics documentation properties
+-- ============================================================================
+
+/-- L-02/WS-E6: The default `MachineState` returns zero for any physical address.
+This documents the absence of a page-fault model — all reads are total and
+zero-initialized. -/
+theorem default_memory_returns_zero (addr : PAddr) :
+    (default : MachineState).memory addr = 0 := rfl
+
+/-- L-02/WS-E6: The default register file has program counter zero. -/
+theorem default_registerFile_pc_zero :
+    (default : RegisterFile).pc = 0 := rfl
 
 end SeLe4n

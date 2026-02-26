@@ -70,4 +70,32 @@ theorem queueCurrentConsistent_when_no_current
     queueCurrentConsistent s := by
   simp [queueCurrentConsistent, hNone]
 
+-- ============================================================================
+-- M-04/WS-E6: Time-slice invariant predicates
+-- ============================================================================
+
+/-- M-04/WS-E6: All runnable threads must have a positive time-slice. A thread
+with zero remaining time-slice should have already been preempted and had its
+slice reset by `timerTick`. -/
+def timeSlicePositive (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runnable →
+    match st.objects tid.toObjId with
+    | some (.tcb tcb) => tcb.timeSlice > 0
+    | _ => True
+
+-- ============================================================================
+-- M-05/WS-E6: Domain scheduling invariant predicates
+-- ============================================================================
+
+/-- M-05/WS-E6: The current thread, if any, must belong to the active domain.
+This ensures the scheduler's two-level partitioning is consistent: the running
+thread should always be in the currently active domain. -/
+def currentThreadInActiveDomain (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+      match st.objects tid.toObjId with
+      | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
+      | _ => True
+
 end SeLe4n.Kernel

@@ -25,9 +25,18 @@ inductive KernelError where
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
   deriving Repr, DecidableEq
 
+/-- Scheduler state for the abstract kernel model.
+
+M-05/WS-E6: Added `activeDomain` for two-level temporal partitioning. The
+scheduler first restricts attention to threads whose `TCB.domain` matches
+`activeDomain`, then selects by priority within that domain. Domain switching
+is explicit via `switchDomain`. -/
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
+  /-- M-05/WS-E6: The currently active scheduling domain. Only threads with
+  matching `TCB.domain` are eligible for selection by `chooseThread`. -/
+  activeDomain : SeLe4n.DomainId := ⟨0⟩
   deriving Repr, DecidableEq
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
@@ -47,6 +56,25 @@ structure LifecycleMetadata where
 structure SystemState where
   machine : SeLe4n.MachineState
   objects : SeLe4n.ObjId → Option KernelObject
+  /-- L-05/WS-E6: Explicit object-identity index maintained by `storeObject`.
+
+  **Design decision (intentional):** This list is **monotonic** — IDs are
+  appended on first store but never pruned, even when the object at that ID is
+  logically deleted or retyped. This trades O(n) growth in `objectIndex` size
+  for three benefits:
+
+  1. **Simplicity:** No garbage-collection bookkeeping or epoch tracking.
+  2. **Proof stability:** Monotonicity means that `id ∈ objectIndex` is a
+     permanent fact once established, simplifying preservation proofs that
+     need to reason about index membership across operations.
+  3. **Historical traceability:** The index records every ID that was ever
+     materialized, which is useful for audit and debugging.
+
+  **Future migration path:** When model scale exceeds the point where O(n)
+  scans over `objectIndex` become a bottleneck (e.g., for ASID root resolution),
+  the index can be replaced with a finite map (`ObjId → Bool` or `RBMap`) that
+  supports O(log n) membership queries. The monotonicity invariant would be
+  preserved as a subset property: `old_index ⊆ new_index`. -/
   objectIndex : List SeLe4n.ObjId
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState

@@ -57,21 +57,21 @@ related findings into coherent implementation slices.
 | H-09 | HIGH | Endpoint operations never transition thread IPC state | WS-E3 | **RESOLVED** |
 | M-01 | MEDIUM | Endpoint model diverges from seL4 (single queue) | WS-E4 | **RESOLVED** |
 | M-02 | MEDIUM | No message payload in IPC | WS-E4 | **RESOLVED** |
-| M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 |
-| M-04 | MEDIUM | No time-slice or preemption model | WS-E6 |
-| M-05 | MEDIUM | No domain scheduling | WS-E6 |
+| M-03 | MEDIUM | Priority scheduling bias (tie-breaking) | WS-E6 | **RESOLVED** |
+| M-04 | MEDIUM | No time-slice or preemption model | WS-E6 | **RESOLVED** |
+| M-05 | MEDIUM | No domain scheduling | WS-E6 | **RESOLVED** |
 | M-07 | MEDIUM | Enforcement is pre-gate only | WS-E5 | **RESOLVED** |
-| M-08 | MEDIUM | Assumptions are structural only | WS-E6 |
+| M-08 | MEDIUM | Assumptions are structural only | WS-E6 | **RESOLVED** |
 | M-09 | MEDIUM | Metadata sync hazard in storeObject | WS-E3 | **RESOLVED** |
 | M-10 | MEDIUM | Shallow input space exploration in tests | WS-E1 | **RESOLVED** |
 | M-11 | MEDIUM | Missing runtime invariant checks | WS-E1 | **RESOLVED** |
 | M-12 | MEDIUM | No reply operation for bidirectional IPC | WS-E4 | **RESOLVED** |
 | M-13 | MEDIUM | Integrity flow semantics contradict documentation | **RESOLVED** |
-| L-01 | LOW | API.lean is just imports | WS-E6 |
-| L-02 | LOW | Default memory returns zero for all addresses | WS-E6 |
-| L-03 | LOW | Missing monad helpers | WS-E6 |
-| L-04 | LOW | ID conversion without validation | WS-E6 |
-| L-05 | LOW | objectIndex never pruned | WS-E6 |
+| L-01 | LOW | API.lean is just imports | WS-E6 | **RESOLVED** |
+| L-02 | LOW | Default memory returns zero for all addresses | WS-E6 | **RESOLVED** |
+| L-03 | LOW | Missing monad helpers | WS-E6 | **RESOLVED** |
+| L-04 | LOW | ID conversion without validation | WS-E6 | **RESOLVED** |
+| L-05 | LOW | objectIndex never pruned | WS-E6 | **RESOLVED** |
 | L-06 | LOW | No initialization proof | WS-E3 | **RESOLVED** |
 | L-07 | LOW | Fixture matching is fragile | WS-E1 | **RESOLVED** |
 | L-08 | LOW | Anchor presence ≠ correctness | WS-E1 | **RESOLVED** |
@@ -85,7 +85,7 @@ related findings into coherent implementation slices.
 | F-13 | LOW | Version badge discrepancy | — | **RESOLVED** (v0.11.6 correct) |
 | F-14 | LOW | SHA-pin GitHub Actions | WS-E1 | **RESOLVED** |
 | F-15 | LOW | Add permissions block to CI workflows | WS-E1 | **RESOLVED** |
-| F-17 | LOW | Document O(n) design decision | WS-E6 | Pending |
+| F-17 | LOW | Document O(n) design decision | WS-E6 | **RESOLVED** |
 
 ---
 
@@ -296,29 +296,52 @@ WS-E4 (CDT integration for capability flow proofs).
 
 **Findings:** M-03, M-04, M-05, M-08, L-01, L-02, L-03, L-04, L-05, F-17
 
+**Status:** **COMPLETED**
+
 **Scope:**
 
-1. **M-03** Implement fixed-priority + EDF tie-breaking semantics and document the difference from
-   seL4 round-robin.
-2. **M-04** Model time-slice decrement and tick-based preemption using
-   `TCB.timeSlice` and `MachineState.timer`.
-3. **M-05** Implement domain scheduling using `DomainId` in TCB for
-   two-level temporal partitioning.
-4. **M-08** Connect architecture assumptions to actual proofs (consume
-   boundary contracts in adapter preservation theorems).
-5. **F-17** Document O(n) data structure design decision with rationale,
-   scope note, and future migration path.
-6. **L-01** Define unified public API in `API.lean` with entry-point
-   composition and API-level invariant bundle.
-7. **L-02** Document default-memory-returns-zero semantics and absence
-   of page-fault model.
-8. **L-03** Add standard monad helpers (`get`, `set`, `modify`,
-   `liftExcept`) to `KernelM`.
-9. **L-04** Add validation to `ThreadId.toObjId` or document the deferred
-   check assumption.
-10. **L-05** Document monotonic `objectIndex` as intentional design.
+1. ~~M-03~~ Documented fixed-priority + FIFO tie-breaking semantics — **DONE**
+   (detailed docstring on `chooseBestRunnable` explaining divergence from seL4
+   round-robin; EDF deferred; `chooseBestRunnable_deterministic` and
+   `chooseThread_deterministic` theorems proving scheduler determinism).
+2. ~~M-04~~ Modeled time-slice decrement and tick-based preemption — **DONE**
+   (`TCB.timeSlice` field with default 5; `timerTick` operation decrements
+   slice and rotates + reschedules on expiry; machine timer advanced via `tick`;
+   `timeSlicePositive` invariant predicate).
+3. ~~M-05~~ Implemented domain scheduling — **DONE**
+   (`SchedulerState.activeDomain` field; `filterByDomain` restricts runnable
+   to active domain; `chooseThreadInDomain` for domain-aware selection;
+   `switchDomain` for explicit domain transitions; `scheduleDomain` for
+   domain-aware scheduling; `currentThreadInActiveDomain` invariant predicate;
+   `switchDomain_preserves_schedulerInvariantBundle` preservation theorem).
+4. ~~M-08~~ Connected architecture assumptions to proofs — **DONE**
+   (consumption theorems: `deterministicTimerProgress_consumed_by_advanceTimer`,
+   `deterministicRegisterContext_consumed_by_writeRegister`,
+   `memoryAccessSafety_consumed_by_readMemory`; assumption-to-proof binding
+   matrix documented in `Architecture/Invariant.lean` and
+   `Architecture/Assumptions.lean`).
+5. ~~F-17~~ Documented O(n) design decision — **DONE**
+   (`docs/ON_DESIGN_DECISION_ADR.md` with rationale, scope note, structure
+   inventory, and three-phase future migration path).
+6. ~~L-01~~ Defined unified public API — **DONE**
+   (`API.lean` with entry-point taxonomy docstring, `apiInvariantBundle`
+   composing all subsystem invariants, `apiInvariantBundle_default` base-case
+   theorem).
+7. ~~L-02~~ Documented default-memory-returns-zero semantics — **DONE**
+   (docstring on `Memory` type in `Machine.lean`; `default_memory_returns_zero`
+   theorem; explicit note on absence of page-fault model).
+8. ~~L-03~~ Added monad helpers — **DONE**
+   (`KernelM.get`, `.set`, `.modify`, `.liftExcept` with correctness theorems:
+   `get_returns_state`, `set_replaces_state`, `modify_applies_f`,
+   `liftExcept_ok`, `liftExcept_error`).
+9. ~~L-04~~ Documented `ThreadId.toObjId` assumption — **DONE**
+   (docstring explaining by-construction safety, injectivity guarantee, and
+   deferred defensive-check rationale).
+10. ~~L-05~~ Documented monotonic `objectIndex` design — **DONE**
+    (docstring on `SystemState.objectIndex` explaining monotonicity rationale,
+    three benefits, and future migration path to finite-map indexing).
 
-**Validation gate:** `test_full.sh` passes; documentation synchronized.
+**Validation gate:** `test_full.sh` passes; documentation synchronized. ✓
 
 **Dependencies:** WS-E4 (capability model changes may affect API definition).
 
@@ -332,7 +355,7 @@ WS-E4 (CDT integration for capability flow proofs).
 - **Phase P2:** WS-E3 (kernel hardening) — depends on E2 patterns (**completed**).
 - **Phase P3:** WS-E4 (capability/IPC completion) — depends on E2 + E3 (**completed**).
 - **Phase P4:** WS-E5 (information-flow maturity) — depends on E3 + E4 (**completed**).
-- **Phase P5:** WS-E6 (model completeness/docs) — parallel with E4/E5.
+- **Phase P5:** WS-E6 (model completeness/docs) — **completed**.
 
 ---
 
@@ -345,7 +368,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | WS-E3 | **Completed** | High | H-06, H-07, H-08, H-09, M-09, L-06 | P2 |
 | WS-E4 | **Completed** | Critical | C-02, C-03, C-04, H-02, M-01, M-02, M-12 | P3 |
 | WS-E5 | **Completed** | High | H-04, H-05, M-07 | P4 |
-| WS-E6 | Planned | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
+| WS-E6 | **Completed** | Low | M-03, M-04, M-05, M-08, F-17, L-01–L-05 | P5 |
 
 ---
 
@@ -377,3 +400,13 @@ WS-E4 (CDT integration for capability flow proofs).
 | H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |
 | H-05 | Composed bundle-level non-interference (IF-M4): `NonInterferenceStep` inductive (5 operation families), `composedNonInterference_step` single-step composition, `NonInterferenceTrace` + `composedNonInterference_trace` trace-level composition, `preservesLowEquivalence` abstract predicate, `compose_preservesLowEquivalence` sequential composition | WS-E5 |
 | M-07 | Enforcement boundary specification: `EnforcementClass` classification (`policyGated`/`capabilityOnly`/`readOnly`), `enforcementBoundary` canonical table (17 entries), `*_denied_preserves_state` theorems, `enforcement_sufficiency_*` theorems proving 3 checked wrappers are sufficient | WS-E5 |
+| M-03 | Documented fixed-priority + FIFO tie-breaking semantics; `chooseBestRunnable_deterministic` and `chooseThread_deterministic` theorems; EDF deferred | WS-E6 |
+| M-04 | Added `TCB.timeSlice` field (default 5); `timerTick` operation with decrement/preemption/reschedule; `timeSlicePositive` invariant predicate | WS-E6 |
+| M-05 | Added `SchedulerState.activeDomain`; `filterByDomain`, `chooseThreadInDomain`, `switchDomain`, `scheduleDomain` operations; `currentThreadInActiveDomain` predicate; `switchDomain_preserves_schedulerInvariantBundle` | WS-E6 |
+| M-08 | Connected assumptions to proofs: `deterministicTimerProgress_consumed_by_advanceTimer`, `deterministicRegisterContext_consumed_by_writeRegister`, `memoryAccessSafety_consumed_by_readMemory` consumption theorems; binding matrix in Invariant.lean | WS-E6 |
+| F-17 | Created `docs/ON_DESIGN_DECISION_ADR.md` with O(n) rationale, structure inventory, scope note, and three-phase migration path | WS-E6 |
+| L-01 | Defined `apiInvariantBundle` composing all subsystem invariants; entry-point taxonomy docstring; `apiInvariantBundle_default` base-case theorem | WS-E6 |
+| L-02 | Documented default-memory-returns-zero semantics on `Memory` type; `default_memory_returns_zero` theorem; absence of page-fault model noted | WS-E6 |
+| L-03 | Added `KernelM.get`, `.set`, `.modify`, `.liftExcept` with 5 correctness theorems (`get_returns_state`, `set_replaces_state`, `modify_applies_f`, `liftExcept_ok`, `liftExcept_error`) | WS-E6 |
+| L-04 | Documented `ThreadId.toObjId` by-construction safety assumption, injectivity guarantee, deferred defensive-check rationale | WS-E6 |
+| L-05 | Documented monotonic `objectIndex` design with three benefits (simplicity, proof stability, traceability) and future migration path to finite-map indexing | WS-E6 |

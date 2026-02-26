@@ -56,6 +56,10 @@ E4-H02    | critical | H-02 occupied slot guard: SeLe4n.Model.KernelError.target
 E4-C02    | high     | cspaceCopy target matches: true
 E4-M01    | high     | dual-queue sender blocked on sendQueue: true
 E4-M12    | high     | endpointReply unblocked target: true
+E6-M04-01 | medium   | timer tick decremented time-slice: 4
+E6-M04-02 | medium   | timer tick no-current timer advanced: 1
+E6-M05-01 | medium   | domain schedule same-domain chosen: some 1
+E6-M05-02 | medium   | domain schedule empty-domain chosen: none
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
