@@ -451,6 +451,38 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  let crossDomainState : SystemState :=
+    { schedPriorityState with
+      objects := fun oid =>
+        if oid = (SeLe4n.ThreadId.ofNat 7).toObjId then
+          some (.tcb {
+            tid := 7
+            priority := 80
+            domain := 1
+            cspaceRoot := cnodeId
+            vspaceRoot := 20
+            ipcBuffer := 4096
+            ipcState := .ready
+          })
+        else
+          schedPriorityState.objects oid
+      scheduler := { schedPriorityState.scheduler with activeDomain := 0, current := none } }
+  let (_, stCrossDomainScheduled) ← expectOkState "schedule filters runnable set to active domain"
+    (SeLe4n.Kernel.schedule crossDomainState)
+  if stCrossDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+    IO.println "positive check passed [schedule domain filter]: active domain thread selected"
+  else
+    throw <| IO.userError "schedule domain filter expected current = tid 8"
+
+  let noActiveDomainRunnableState : SystemState :=
+    { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := 2 } }
+  let (_, stNoActiveDomainRunnable) ← expectOkState "schedule returns idle when no active-domain runnable threads"
+    (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
+  if stNoActiveDomainRunnable.scheduler.current = none then
+    IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
+  else
+    throw <| IO.userError "schedule domain isolation expected current = none"
+
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
@@ -472,6 +504,12 @@ private def runNegativeChecks : IO Unit := do
       |>.build)
   expectError "schedule malformed runnable target"
     (SeLe4n.Kernel.schedule malformedSched)
+    .schedulerInvariantViolation
+
+  let malformedOffDomain : SystemState :=
+    { malformedSched with scheduler := { malformedSched.scheduler with activeDomain := 1 } }
+  expectError "schedule malformed runnable target in non-active domain still rejected"
+    (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation
 
   -- ==========================================================================

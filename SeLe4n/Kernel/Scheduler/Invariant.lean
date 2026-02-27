@@ -50,14 +50,40 @@ def currentThreadValid (st : SystemState) : Prop :=
   | none => True
   | some tid => ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb)
 
-/-- Invariant bundle that should eventually mirror seL4 proof obligations. -/
+/-- M-05/WS-E6: The currently scheduled thread (if any) belongs to the
+active scheduling domain. This is the basic temporal partitioning guarantee:
+the scheduler only runs threads in the current domain. -/
+def currentThreadInActiveDomain (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+      match st.objects tid.toObjId with
+      | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
+      | _ => True
+
+/-- Invariant bundle that should eventually mirror seL4 proof obligations.
+
+M-05 domain partitioning is treated as normative in WS-E6: whenever a current
+thread exists, it must belong to `activeDomain`. -/
 def kernelInvariant (st : SystemState) : Prop :=
+  queueCurrentConsistent st.scheduler ∧
+    runQueueUnique st.scheduler ∧
+    currentThreadValid st ∧
+    currentThreadInActiveDomain st
+
+/-- Scheduler Invariant Bundle v1 entrypoint used by composed IPC/architecture bundles.
+
+`kernelInvariant` now includes the domain-partitioning obligation
+`currentThreadInActiveDomain`; this compatibility bundle intentionally keeps the
+legacy triad used by cross-subsystem composition surfaces. -/
+def schedulerInvariantBundle (st : SystemState) : Prop :=
   queueCurrentConsistent st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
 
-/-- Scheduler Invariant Bundle v1 entrypoint used by milestone wording in the spec/docs.
-This is an alias of `kernelInvariant` to keep theorem names aligned with the development guide
-without changing existing proof call sites. -/
-abbrev schedulerInvariantBundle (st : SystemState) : Prop :=
+/-- Canonical scheduler invariant bundle for domain-partitioning semantics.
+
+This is the normative scheduler proof surface and includes
+`currentThreadInActiveDomain`. -/
+abbrev canonicalSchedulerInvariantBundle (st : SystemState) : Prop :=
   kernelInvariant st
 
 theorem schedulerWellFormed_iff_queueCurrentConsistent (s : SchedulerState) :
@@ -82,21 +108,6 @@ def timeSlicePositive (st : SystemState) : Prop :=
     match st.objects tid.toObjId with
     | some (.tcb tcb) => tcb.timeSlice > 0
     | _ => True
-
--- ============================================================================
--- M-05/WS-E6: Domain scheduling invariant
--- ============================================================================
-
-/-- M-05/WS-E6: The currently scheduled thread (if any) belongs to the
-active scheduling domain. This is the basic temporal partitioning guarantee:
-the scheduler only runs threads in the current domain. -/
-def currentThreadInActiveDomain (st : SystemState) : Prop :=
-  match st.scheduler.current with
-  | none => True
-  | some tid =>
-      match st.objects tid.toObjId with
-      | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
-      | _ => True
 
 -- ============================================================================
 -- M-03/WS-E6: EDF scheduling invariant
