@@ -79,8 +79,9 @@ theorem isBetterCandidate_asymm
 Folds over the runnable list accumulating the best candidate using the
 three-level `isBetterCandidate` predicate. The accumulator carries
 `(ThreadId × Priority × Deadline)` to avoid re-reading the object store. -/
-private def chooseBestRunnable
+private def chooseBestRunnableBy
     (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
     Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
@@ -90,28 +91,7 @@ private def chooseBestRunnable
       match objects tid.toObjId with
       | some (.tcb tcb) =>
           let best' :=
-            match best with
-            | none => some (tid, tcb.priority, tcb.deadline)
-            | some (_, bestPrio, bestDl) =>
-                if isBetterCandidate bestPrio bestDl tcb.priority tcb.deadline then
-                  some (tid, tcb.priority, tcb.deadline)
-                else best
-          chooseBestRunnable objects rest best'
-      | _ => .error .schedulerInvariantViolation
-
-private def chooseBestRunnableInDomain
-    (objects : SeLe4n.ObjId → Option KernelObject)
-    (runnable : List SeLe4n.ThreadId)
-    (activeDomain : SeLe4n.DomainId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
-    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
-  match runnable with
-  | [] => .ok best
-  | tid :: rest =>
-      match objects tid.toObjId with
-      | some (.tcb tcb) =>
-          let best' :=
-            if tcb.domain == activeDomain then
+            if eligible tcb then
               match best with
               | none => some (tid, tcb.priority, tcb.deadline)
               | some (_, bestPrio, bestDl) =>
@@ -121,8 +101,16 @@ private def chooseBestRunnableInDomain
                     best
             else
               best
-          chooseBestRunnableInDomain objects rest activeDomain best'
+          chooseBestRunnableBy objects eligible rest best'
       | _ => .error .schedulerInvariantViolation
+
+private def chooseBestRunnableInDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (activeDomain : SeLe4n.DomainId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  chooseBestRunnableBy objects (fun tcb => tcb.domain == activeDomain) runnable best
 
 private def rotateCurrentToBack
     (current : Option SeLe4n.ThreadId)
@@ -730,6 +718,49 @@ theorem switchDomain_preserves_schedulerInvariantBundle
           exact hInv.2.1
         · -- currentThreadValid: current is none
           simp [currentThreadValid]
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the active-domain current-thread
+obligation when it holds in the pre-state. -/
+theorem scheduleDomain_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hInv : currentThreadInActiveDomain st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSw =>
+            have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
+            exact schedule_preserves_currentThreadInActiveDomain stSw st' hSched
+  · simp [hExpire] at hStep
+    cases hStep
+    simpa [currentThreadInActiveDomain] using hInv
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the scheduler invariant bundle. -/
+theorem scheduleDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSw =>
+            have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
+            have hSwInv : schedulerInvariantBundle stSw :=
+              switchDomain_preserves_schedulerInvariantBundle st stSw hInv (by simp [hSw])
+            exact schedule_preserves_schedulerInvariantBundle stSw st' hSwInv hSched
+  · simp [hExpire] at hStep
+    cases hStep
+    exact hInv
 
 /-- M-05/WS-E6: `chooseThreadInDomain` is a pure read — it does not modify state. -/
 theorem chooseThreadInDomain_preserves_state
