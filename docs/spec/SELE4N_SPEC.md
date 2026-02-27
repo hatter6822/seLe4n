@@ -179,7 +179,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
    - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`, `lifecycleCompositionInvariantBundle`,
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
-7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
+7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
+8. top-level import hygiene: keep `SeLe4n.lean` minimal and avoid duplicate/redundant subsystem imports; `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
 
 ---
 
