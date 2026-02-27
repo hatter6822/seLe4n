@@ -290,8 +290,32 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
   let (_, stDualFifo2) ← expectOkState "dual queue fifo enqueue sender 8"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualFifo1)
+  match (stDualFifo2.objects (SeLe4n.ThreadId.ofNat 7).toObjId),
+        (stDualFifo2.objects (SeLe4n.ThreadId.ofNat 8).toObjId) with
+  | some (.tcb sender7), some (.tcb sender8) =>
+      if sender7.queuePrev = none ∧ sender7.queueNext = some (SeLe4n.ThreadId.ofNat 8) ∧
+         sender8.queuePrev = some (SeLe4n.ThreadId.ofNat 7) ∧ sender8.queueNext = none then
+        IO.println "positive check passed [dual queue intrusive links wired]"
+      else
+        throw <| IO.userError
+          s!"dual queue intrusive links expected 7<->8 chain, got 7={reprStr (sender7.queuePrev, sender7.queueNext)} 8={reprStr (sender8.queuePrev, sender8.queueNext)}"
+  | _, _ => throw <| IO.userError "dual queue intrusive links expected sender tcbs"
+
   let (fifoFirst, stDualFifo3) ← expectOkState "dual queue fifo receive #1"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo2)
+  match stDualFifo3.objects endpointId,
+        (stDualFifo3.objects (SeLe4n.ThreadId.ofNat 7).toObjId),
+        (stDualFifo3.objects (SeLe4n.ThreadId.ofNat 8).toObjId) with
+  | some (.endpoint ep), some (.tcb sender7), some (.tcb sender8) =>
+      if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 8) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 8) ∧
+         sender7.queuePrev = none ∧ sender7.queueNext = none ∧
+         sender8.queuePrev = none ∧ sender8.queueNext = none then
+        IO.println "positive check passed [dual queue dequeue updates links and endpoint bounds]"
+      else
+        throw <| IO.userError
+          s!"dual queue dequeue expected singleton sender8 queue and cleared links, got sendQ={reprStr ep.sendQ} 7={reprStr (sender7.queuePrev, sender7.queueNext)} 8={reprStr (sender8.queuePrev, sender8.queueNext)}"
+  | _, _, _ => throw <| IO.userError "dual queue dequeue expected endpoint and sender tcbs"
+
   let (fifoSecond, stDualFifo4) ← expectOkState "dual queue fifo receive #2"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo3)
 
