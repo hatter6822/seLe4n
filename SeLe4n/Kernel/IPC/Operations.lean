@@ -761,7 +761,9 @@ private def endpointQueueEnqueue
       match lookupTcb st tid with
       | none => .error .objectNotFound
       | some tcb =>
-          if tcb.queuePrev.isSome || tcb.queueNext.isSome then
+          if tcb.ipcState ≠ .ready then
+            .error .alreadyWaiting
+          else if tcb.queuePrev.isSome || tcb.queueNext.isSome then
             .error .illegalState
           else
             let q := if isReceiveQ then ep.receiveQ else ep.sendQ

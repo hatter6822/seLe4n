@@ -300,6 +300,16 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{reprStr fifoFirst},{reprStr fifoSecond}]"
 
+  expectError "dual queue sender double-wait prevention"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) stDualFifo1)
+    .alreadyWaiting
+
+  let (_, stDualRecvWait1) ← expectOkState "dual queue receiver wait #1"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) baseState)
+  expectError "dual queue receiver double-wait prevention"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvWait1)
+    .alreadyWaiting
+
   match stDualFifo4.objects endpointId with
   | some (.endpoint ep) =>
       if ep.sendQ.head = none ∧ ep.sendQ.tail = none then

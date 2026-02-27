@@ -25,6 +25,7 @@ Current milestone state:
 3. architecture-boundary assumption/adapter interfaces from M6,
 4. fixture-backed executable evidence,
 5. tiered testing gates used in CI and local workflows.
+6. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queueNext`) with duplicate-wait rejection (`alreadyWaiting`).
 
 ## 3) Active workstream portfolio (WS-E)
 
