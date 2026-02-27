@@ -103,7 +103,10 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
-  cdt : CapDerivationTree := .empty   -- WS-E4/C-03: Capability Derivation Tree
+  cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
+  cdtSlotNode : SlotRef → Option CdtNodeId := fun _ => none
+  cdtNodeSlot : CdtNodeId → Option SlotRef := fun _ => none
+  cdtNextNode : CdtNodeId := 0
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -124,6 +127,9 @@ instance : Inhabited SystemState where
       capabilityRefs := fun _ => none
     }
     cdt := .empty
+    cdtSlotNode := fun _ => none
+    cdtNodeSlot := fun _ => none
+    cdtNextNode := 0
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -491,6 +497,90 @@ def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelO
 /-- Lifecycle metadata view of capability slot reference mapping. -/
 def lookupCapabilityRefMeta (st : SystemState) (ref : SlotRef) : Option CapTarget :=
   st.lifecycle.capabilityRefs ref
+
+
+/-- Read the stable CDT node currently referenced by a CSpace slot, if any. -/
+def lookupCdtNodeOfSlot (st : SystemState) (ref : SlotRef) : Option CdtNodeId :=
+  st.cdtSlotNode ref
+
+/-- Read the current CSpace slot backpointer of a stable CDT node, if any. -/
+def lookupCdtSlotOfNode (st : SystemState) (node : CdtNodeId) : Option SlotRef :=
+  st.cdtNodeSlot node
+
+/-- Slot-address projection of the node-based CDT as observed from CSpace slots. -/
+def observedCdtEdges (st : SystemState) : List CapDerivationTree.ObservedDerivationEdge :=
+  st.cdt.projectObservedEdges (fun node =>
+    (lookupCdtSlotOfNode st node).map (fun ref => (ref.cnode, ref.slot)))
+
+/-- Abstraction theorem: observed slot-level CDT equals projection of node graph
+through node→slot mapping. -/
+theorem observedCdtEdges_eq_projection (st : SystemState) :
+    observedCdtEdges st =
+      st.cdt.projectObservedEdges (fun node =>
+        (lookupCdtSlotOfNode st node).map (fun ref => (ref.cnode, ref.slot))) := by
+  simp [observedCdtEdges, lookupCdtSlotOfNode]
+
+/-- Attach slot `ref` to `node` and maintain bidirectional consistency.
+If the slot/node already point elsewhere, stale opposite links are cleared. -/
+def attachSlotToCdtNode (st : SystemState) (ref : SlotRef) (node : CdtNodeId) : SystemState :=
+  let prevNode := st.cdtSlotNode ref
+  let prevRef := st.cdtNodeSlot node
+  {
+    st with
+      cdtSlotNode := fun ref' =>
+        if ref' = ref then some node
+        else
+          match prevRef with
+          | some oldRef => if ref' = oldRef then none else st.cdtSlotNode ref'
+          | none => st.cdtSlotNode ref'
+      cdtNodeSlot := fun node' =>
+        if node' = node then some ref
+        else
+          match prevNode with
+          | some oldNode => if node' = oldNode then none else st.cdtNodeSlot node'
+          | none => st.cdtNodeSlot node'
+  }
+
+/-- Detach a slot from its CDT node, clearing both slot→node and node→slot maps. -/
+def detachSlotFromCdt (st : SystemState) (ref : SlotRef) : SystemState :=
+  match st.cdtSlotNode ref with
+  | none => st
+  | some node =>
+      {
+        st with
+          cdtSlotNode := fun ref' => if ref' = ref then none else st.cdtSlotNode ref'
+          cdtNodeSlot := fun node' => if node' = node then none else st.cdtNodeSlot node'
+      }
+
+/-- Ensure `ref` has a CDT node; allocate one if absent. -/
+def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × SystemState :=
+  match st.cdtSlotNode ref with
+  | some node => (node, st)
+  | none =>
+      let node := st.cdtNextNode
+      let st' :=
+        {
+          st with
+            cdtNextNode := node + 1
+            cdtSlotNode := fun ref' => if ref' = ref then some node else st.cdtSlotNode ref'
+            cdtNodeSlot := fun node' => if node' = node then some ref else st.cdtNodeSlot node'
+        }
+      (node, st')
+
+
+theorem attachSlotToCdtNode_objects_eq (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
+    (attachSlotToCdtNode st ref node).objects = st.objects := by
+  simp [attachSlotToCdtNode]
+
+theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
+    (detachSlotFromCdt st ref).objects = st.objects := by
+  unfold detachSlotFromCdt
+  split <;> simp
+
+theorem ensureCdtNodeForSlot_objects_eq (st : SystemState) (ref : SlotRef) :
+    (ensureCdtNodeForSlot st ref).snd.objects = st.objects := by
+  unfold ensureCdtNodeForSlot
+  split <;> rfl
 
 /-- `lookupSlotCap` is determined entirely by the object store. -/
 theorem lookupSlotCap_eq_of_objects_eq

@@ -68,7 +68,8 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### Capability subsystem
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
-  - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`).
+  - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke).
+  - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`) and move-as-pointer-update semantics.
 - `SeLe4n/Kernel/Capability/Invariant.lean`
   - capability invariants + composed milestone bundles + IPC/scheduler composition links.
 

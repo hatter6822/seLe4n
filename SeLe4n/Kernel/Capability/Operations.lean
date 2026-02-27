@@ -279,8 +279,10 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
         match cspaceInsertSlot dst cap st' with
         | .error e => .error e
         | .ok ((), st'') =>
-            let cdt' := st''.cdt.addEdge (src.cnode, src.slot) (dst.cnode, dst.slot) .copy
-            .ok ((), { st'' with cdt := cdt' })
+            let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
+            let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+            let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
+            .ok ((), { stDst with cdt := cdt' })
 
 /-- WS-E4/C-02: Move a capability from source to destination.
 
@@ -298,14 +300,13 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
             match cspaceDeleteSlot src st'' with
             | .error e => .error e
             | .ok ((), st''') =>
-                -- CDT edge reparent: update edges that referenced src to reference dst
-                let srcAddr : SlotAddr := (src.cnode, src.slot)
-                let dstAddr : SlotAddr := (dst.cnode, dst.slot)
-                let reparented := st'''.cdt.edges.map (fun e =>
-                  if e.parent = srcAddr then { e with parent := dstAddr }
-                  else if e.child = srcAddr then { e with child := dstAddr }
-                  else e)
-                .ok ((), { st''' with cdt := { edges := reparented } })
+                -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
+                match SystemState.lookupCdtNodeOfSlot st''' src with
+                | none => .ok ((), st''')
+                | some srcNode =>
+                    let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
+                    let stCleared := { stMoved with cdtSlotNode := fun ref => if ref = src then none else stMoved.cdtSlotNode ref }
+                    .ok ((), stCleared)
 
 /-- WS-E4/C-02: Mutate a capability's rights in place without creating a derivation.
 
@@ -341,8 +342,10 @@ def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : List AccessRight)
     match cspaceMint src dst rights badge st with
     | .error e => .error e
     | .ok ((), st') =>
-        let cdt' := st'.cdt.addEdge (src.cnode, src.slot) (dst.cnode, dst.slot) .mint
-        .ok ((), { st' with cdt := cdt' })
+        let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st' src
+        let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+        let cdt' := stDst.cdt.addEdge srcNode dstNode .mint
+        .ok ((), { stDst with cdt := cdt' })
 
 -- ============================================================================
 -- WS-E4/C-04: Cross-CNode CDT revocation
@@ -362,19 +365,24 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
     match cspaceRevoke addr st with
     | .error e => .error e
     | .ok ((), stLocal) =>
-        -- Walk CDT descendants and delete each one
-        let rootSlot : SlotAddr := (addr.cnode, addr.slot)
-        let descendants := stLocal.cdt.descendantsOf rootSlot
-        let result := descendants.foldl (fun acc desc =>
-          match acc with
-          | .error e => .error e
-          | .ok ((), stAcc) =>
-              let descAddr : CSpaceAddr := { cnode := desc.1, slot := desc.2 }
-              match cspaceDeleteSlot descAddr stAcc with
-              | .error _ => .ok ((), stAcc)  -- skip if already deleted
-              | .ok ((), stDel) =>
-                  .ok ((), { stDel with cdt := stDel.cdt.removeSlot desc })
-        ) (.ok ((), stLocal))
-        result
+        -- Walk CDT descendants in node space, then project to slots for deletion.
+        match SystemState.lookupCdtNodeOfSlot stLocal addr with
+        | none => .ok ((), stLocal)
+        | some rootNode =>
+            let descendants := stLocal.cdt.descendantsOf rootNode
+            let result := descendants.foldl (fun acc node =>
+              match acc with
+              | .error e => .error e
+              | .ok ((), stAcc) =>
+                  match SystemState.lookupCdtSlotOfNode stAcc node with
+                  | none => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
+                  | some descAddr =>
+                      match cspaceDeleteSlot descAddr stAcc with
+                      | .error _ => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
+                      | .ok ((), stDel) =>
+                          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                          .ok ((), { stDetached with cdt := stDetached.cdt.removeNode node })
+            ) (.ok ((), stLocal))
+            result
 
 end SeLe4n.Kernel

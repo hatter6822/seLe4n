@@ -955,14 +955,23 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
       | error e => simp [hSrc, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
-          simp [hSrc, hInsert] at hStep
-          cases hStep
-          -- st' = { st2 with cdt := ... }, capabilityInvariantBundle only depends on objects/lifecycle
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv hInsert
-          -- CDT update doesn't change objects; extract cspaceSlotUnique and reconstruct bundle
           rcases hBundleSt2 with ⟨hU2, _, hAtt2, _⟩
-          exact ⟨hU2, cspaceLookupSound_of_cspaceSlotUnique _ hU2, hAtt2,
-            lifecycleAuthorityMonotonicity_holds _⟩
+          cases hEnsSrc : SystemState.ensureCdtNodeForSlot st2 src with
+          | mk srcNode stSrc =>
+              cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
+              | mk dstNode stDst =>
+                  simp [hSrc, hInsert, hEnsSrc, hEnsDst] at hStep
+                  cases hStep
+                  have hObjSrc : stSrc.objects = st2.objects := by
+                    simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st2 src
+                  have hObjDst : stDst.objects = stSrc.objects := by
+                    simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq stSrc dst
+                  have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .copy }).objects = st2.objects := by
+                    simp [hObjDst, hObjSrc]
+                  have hU' := cspaceSlotUnique_of_objects_eq st2 { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .copy } hU2 hObjFinal
+                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt2,
+                    lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E4/C-02: cspaceMove preserves capabilityInvariantBundle.
 Move composes lookup + insert + delete, all of which preserve the bundle. -/
@@ -987,14 +996,30 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
           | error e => simp [hSrc, hInsert, hDelete] at hStep
           | ok pair3 =>
               rcases pair3 with ⟨_, st3⟩
-              simp [hSrc, hInsert, hDelete] at hStep
-              cases hStep
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv hInsert
               have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2 hDelete
-              -- CDT reparent doesn't change objects; extract cspaceSlotUnique and reconstruct
               rcases hBundleSt3 with ⟨hU3, _, hAtt3, _⟩
-              exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3, hAtt3,
-                lifecycleAuthorityMonotonicity_holds _⟩
+              -- Node-stable move only updates CDT/mapping fields, never objects.
+              cases hNode : SystemState.lookupCdtNodeOfSlot st3 src with
+              | none =>
+                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  cases hStep
+                  exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3, hAtt3,
+                    lifecycleAuthorityMonotonicity_holds _⟩
+              | some srcNode =>
+                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  cases hStep
+                  have hObjEq :
+                      ({ SystemState.attachSlotToCdtNode st3 dst srcNode with
+                          cdtSlotNode := fun ref => if ref = src then none else (SystemState.attachSlotToCdtNode st3 dst srcNode).cdtSlotNode ref
+                      }).objects = st3.objects := by
+                    simp [SystemState.attachSlotToCdtNode]
+                  have hU' := cspaceSlotUnique_of_objects_eq st3
+                    { SystemState.attachSlotToCdtNode st3 dst srcNode with
+                      cdtSlotNode := fun ref => if ref = src then none else (SystemState.attachSlotToCdtNode st3 dst srcNode).cdtSlotNode ref }
+                    hU3 hObjEq
+                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt3,
+                    lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- WS-E4/C-03: cspaceMintWithCdt preserves capabilityInvariantBundle.
 Composes cspaceMint (already proven) + CDT edge addition. -/
@@ -1011,13 +1036,23 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
   | error e => simp [hMint] at hStep
   | ok pair =>
       rcases pair with ⟨_, st1⟩
-      simp [hMint] at hStep
-      cases hStep
-      -- CDT addEdge doesn't change objects; extract cspaceSlotUnique and reconstruct
       have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv hMint
       rcases hBundle with ⟨hU1, _, hAtt1, _⟩
-      exact ⟨hU1, cspaceLookupSound_of_cspaceSlotUnique _ hU1, hAtt1,
-        lifecycleAuthorityMonotonicity_holds _⟩
+      cases hEnsSrc : SystemState.ensureCdtNodeForSlot st1 src with
+      | mk srcNode stSrc =>
+          cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
+          | mk dstNode stDst =>
+              simp [hMint, hEnsSrc, hEnsDst] at hStep
+              cases hStep
+              have hObjSrc : stSrc.objects = st1.objects := by
+                simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st1 src
+              have hObjDst : stDst.objects = stSrc.objects := by
+                simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq stSrc dst
+              have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint }).objects = st1.objects := by
+                simp [hObjDst, hObjSrc]
+              have hU' := cspaceSlotUnique_of_objects_eq st1 { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint } hU1 hObjFinal
+              exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt1,
+                lifecycleAuthorityMonotonicity_holds _⟩
 
 -- ============================================================================
 -- WS-E4: Preservation theorems for endpointReply
