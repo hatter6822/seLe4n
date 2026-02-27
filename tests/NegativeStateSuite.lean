@@ -543,6 +543,11 @@ private def runNegativeChecks : IO Unit := do
           })
         else
           mixedDomainFifoState.objects oid })
+  if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+    IO.println "positive check passed [schedule mixed domain FIFO]: earlier queue element retained"
+  else
+    throw <| IO.userError "schedule mixed domain FIFO expected current = tid 10"
+
   let scheduleDomainSwitchState : SystemState :=
     { mixedDomainFifoState with
       scheduler := { mixedDomainFifoState.scheduler with
