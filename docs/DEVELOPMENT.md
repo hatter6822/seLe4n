@@ -28,7 +28,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Current execution slice (WS-E portfolio)
+## 3) Completed execution slice (WS-E portfolio)
 
 ### 3.1 Workstreams and intent
 
@@ -69,14 +69,14 @@ Every milestone-moving PR should include:
 
 ---
 
-## 3.1 Security hardening defaults
+## 4) Security hardening defaults
 
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, and dual-queue double-wait rejection (`alreadyWaiting`).
 
-## 4) Daily contributor loop
+## 5) Daily contributor loop
 
 1. Sync branch and choose one coherent WS-E slice (prefer next priority in the active plan, starting with current phase targets).
 2. Implement the minimal semantic/proof/doc delta.
@@ -104,7 +104,7 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 
 ---
 
-## 5) Proof engineering standards
+## 6) Proof engineering standards
 
 1. Keep proofs local-first; compose afterward.
 2. Prefer explicit theorem statements and stable names.
@@ -127,7 +127,7 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 
 ---
 
-## 6) Documentation synchronization rules
+## 7) Documentation synchronization rules
 
 For changes that alter behavior, theorem surfaces, or slice status, update in the same PR:
 
@@ -142,7 +142,7 @@ for cross-document synchronization expectations.
 
 ---
 
-## 7) Definition of done (milestone-moving changes)
+## 8) Definition of done (milestone-moving changes)
 
 A change is done when all are true:
 
@@ -154,7 +154,7 @@ A change is done when all are true:
 
 ---
 
-## 8) Quick checklist (copy into PRs)
+## 9) Quick checklist (copy into PRs)
 
 - [ ] Workstream ID(s) identified.
 - [ ] Scope is one coherent slice.
