@@ -440,8 +440,19 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stCopy) =>
       match SeLe4n.Kernel.cspaceLookupSlot copyDst stCopy with
       | .error err => IO.println s!"cspaceCopy lookup error: {reprStr err}"
-      | .ok (copiedCap, _) =>
+      | .ok (copiedCap, stCopy2) =>
           IO.println s!"cspaceCopy target matches: {copiedCap.target == testCap.target}"
+          -- C-05: move slot identity via slot→node remap and check projected CDT view
+          let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 99 }
+          match SeLe4n.Kernel.cspaceMove copyDst moveDst stCopy2 with
+          | .error err => IO.println s!"cspaceMove error: {reprStr err}"
+          | .ok (_, stMoved) =>
+              let observed := stMoved.cdt.observedFromCSpace
+              let hasProjected : Bool :=
+                observed.any (fun e =>
+                  e.parent = (rootSlot.cnode, rootSlot.slot) ∧
+                  e.child = (moveDst.cnode, moveDst.slot))
+              IO.println s!"cspaceMove projected CDT edge updated: {hasProjected}"
   -- M-01: Dual-queue endpoint send/receive
   let dualEpId : SeLe4n.ObjId := demoEndpoint
   -- Set up fresh state with idle endpoint for dual-queue test

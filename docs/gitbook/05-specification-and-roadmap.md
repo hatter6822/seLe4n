@@ -27,6 +27,7 @@ Current milestone state:
 5. fixture-backed executable evidence,
 6. tiered testing gates used in CI and local workflows.
 7. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queuePPrev`/`queueNext`) with runtime intrusive-queue invariant checks (head/tail coherence, cycle-free traversal, prev/pprev/next linkage), malformed-`queuePPrev` rejection (`illegalState`), and duplicate-wait rejection (`alreadyWaiting`).
+8. Capability derivation tracking uses stable CDT node identities and slot→node mapping/backpointers; slot-observed CDT edges are defined by projection through the mapping, so `cspaceMove` performs slot-pointer remap instead of rewriting all CDT edges.
 
 ## 3) Active workstream portfolio (WS-E)
 

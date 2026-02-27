@@ -544,11 +544,15 @@ theorem mem_lookup_of_slotsUnique
 end CNode
 
 -- ============================================================================
--- WS-E4/C-03: Capability Derivation Tree (CDT) model
+-- WS-E4/C-03 + C-05: Capability Derivation Tree (CDT) model
 -- ============================================================================
 
 /-- A slot address in the global capability namespace: (CNode ObjId, Slot). -/
 abbrev SlotAddr := SeLe4n.ObjId × SeLe4n.Slot
+
+/-- Stable CDT node identity. Slots point to nodes; node-node edges remain stable
+across slot moves. -/
+abbrev CdtNodeId := Nat
 
 /-- The operation that created a derivation edge. -/
 inductive DerivationOp where
@@ -556,98 +560,185 @@ inductive DerivationOp where
   | copy
   deriving Repr, DecidableEq
 
-/-- A single edge in the Capability Derivation Tree.
-
-WS-E4/C-03: Each edge records the parent and child slot addresses and
-the operation that created the derivation. The CDT is a forest:
-each slot has at most one parent but may have many children. -/
+/-- Stable CDT graph edge over node identities. -/
 structure CapDerivationEdge where
+  parent : CdtNodeId
+  child : CdtNodeId
+  op : DerivationOp
+  deriving Repr, DecidableEq
+
+/-- View edge projected back through CSpace slots. -/
+structure SlotDerivationEdge where
   parent : SlotAddr
   child : SlotAddr
   op : DerivationOp
   deriving Repr, DecidableEq
 
-namespace CapDerivationEdge
-
-def isChildOf (edge : CapDerivationEdge) (addr : SlotAddr) : Bool :=
-  edge.child = addr
-
-def isParentOf (edge : CapDerivationEdge) (addr : SlotAddr) : Bool :=
-  edge.parent = addr
-
-end CapDerivationEdge
+/-- A stable CDT node with explicit slot backpointers. -/
+structure CapDerivationNode where
+  id : CdtNodeId
+  slots : List SlotAddr := []
+  deriving Repr, DecidableEq
 
 /-- The Capability Derivation Tree stored at the system level.
 
-WS-E4/C-03: A list of derivation edges forming a forest. Operations maintain
-the acyclicity invariant: no slot can be both ancestor and descendant of itself. -/
+WS-E4/C-05: Edges are over stable nodes, while `slotMap` maps each live CSpace
+slot to its node. Slot observations are recovered by projection. -/
 structure CapDerivationTree where
+  nextNode : CdtNodeId := 0
+  nodes : List CapDerivationNode := []
+  slotMap : List (SlotAddr × CdtNodeId) := []
   edges : List CapDerivationEdge := []
   deriving Repr, DecidableEq
 
 namespace CapDerivationTree
 
-def empty : CapDerivationTree := { edges := [] }
+def empty : CapDerivationTree := { nextNode := 0, nodes := [], slotMap := [], edges := [] }
 
-/-- Add a derivation edge from parent to child. -/
+def findNode? (cdt : CapDerivationTree) (nid : CdtNodeId) : Option CapDerivationNode :=
+  cdt.nodes.find? (fun n => n.id = nid)
+
+def nodeSlots (cdt : CapDerivationTree) (nid : CdtNodeId) : List SlotAddr :=
+  (cdt.findNode? nid).map CapDerivationNode.slots |>.getD []
+
+def slotNode? (cdt : CapDerivationTree) (slot : SlotAddr) : Option CdtNodeId :=
+  (cdt.slotMap.find? (fun e => e.fst = slot)).map Prod.snd
+
+def upsertNode (cdt : CapDerivationTree) (nid : CdtNodeId) (f : CapDerivationNode → CapDerivationNode)
+    : CapDerivationTree :=
+  let existed := cdt.findNode? nid
+  let base := existed.getD { id := nid, slots := [] }
+  let node' := f base
+  let nodes' := node' :: cdt.nodes.filter (fun n => n.id ≠ nid)
+  { cdt with nodes := nodes' }
+
+/-- Remove one slot backpointer. If its node becomes slotless, prune the node and
+incident edges. -/
+def unbindSlot (cdt : CapDerivationTree) (slot : SlotAddr) : CapDerivationTree :=
+  match cdt.slotNode? slot with
+  | none => cdt
+  | some nid =>
+      let slotMap' := cdt.slotMap.filter (fun e => e.fst ≠ slot)
+      let nodes' := cdt.nodes.map (fun n =>
+        if n.id = nid then { n with slots := n.slots.filter (fun s => s ≠ slot) } else n)
+      let becameEmpty : Bool :=
+        match nodes'.find? (fun n => n.id = nid) with
+        | some n => n.slots.isEmpty
+        | none => true
+      match becameEmpty with
+      | true =>
+        { cdt with
+          slotMap := slotMap'.filter (fun e => e.snd ≠ nid)
+          nodes := nodes'.filter (fun n => n.id ≠ nid)
+          edges := cdt.edges.filter (fun e => e.parent ≠ nid ∧ e.child ≠ nid) }
+      | false =>
+        { cdt with slotMap := slotMap', nodes := nodes' }
+
+def bindSlotToNode (cdt : CapDerivationTree) (slot : SlotAddr) (nid : CdtNodeId) : CapDerivationTree :=
+  let cdtCleared := unbindSlot cdt slot
+  let cdtMap := { cdtCleared with slotMap := (slot, nid) :: cdtCleared.slotMap }
+  upsertNode cdtMap nid (fun n =>
+    if slot ∈ n.slots then n else { n with slots := slot :: n.slots })
+
+def ensureNodeForSlot (cdt : CapDerivationTree) (slot : SlotAddr) : CdtNodeId × CapDerivationTree :=
+  match cdt.slotNode? slot with
+  | some nid => (nid, cdt)
+  | none =>
+      let nid := cdt.nextNode
+      let cdt1 :=
+        { cdt with
+          nextNode := nid + 1
+          nodes := { id := nid, slots := [slot] } :: cdt.nodes
+          slotMap := (slot, nid) :: cdt.slotMap }
+      (nid, cdt1)
+
+/-- Add a derivation edge between slot-observed capabilities by linking their
+stable backing nodes. -/
 def addEdge (cdt : CapDerivationTree) (parent child : SlotAddr)
     (op : DerivationOp) : CapDerivationTree :=
-  { edges := { parent, child, op } :: cdt.edges }
+  let (parentId, cdt1) := ensureNodeForSlot cdt parent
+  let (childId, cdt2) := ensureNodeForSlot cdt1 child
+  { cdt2 with edges := { parent := parentId, child := childId, op := op } :: cdt2.edges }
 
-/-- Find all direct children of a given slot address. -/
+/-- Move slot identity without touching node-node edges. -/
+def moveSlot (cdt : CapDerivationTree) (src dst : SlotAddr) : CapDerivationTree :=
+  match cdt.slotNode? src with
+  | none => cdt
+  | some nid =>
+      let cdt1 := unbindSlot cdt dst
+      let slotMap' := cdt1.slotMap.filter (fun e => e.fst ≠ src)
+      let nodesNoSrc := cdt1.nodes.map (fun n =>
+        if n.id = nid then { n with slots := n.slots.filter (fun s => s ≠ src) } else n)
+      let cdt2 := { cdt1 with slotMap := slotMap', nodes := nodesNoSrc }
+      let cdt3 := { cdt2 with slotMap := (dst, nid) :: cdt2.slotMap }
+      upsertNode cdt3 nid (fun n =>
+        if dst ∈ n.slots then n else { n with slots := dst :: n.slots })
+
+/-- Project node-node edges through the slot map into CSpace-observed edges. -/
+def projectedSlotEdges (cdt : CapDerivationTree) : List SlotDerivationEdge :=
+  cdt.edges.foldr (fun e acc =>
+    let parents := nodeSlots cdt e.parent
+    let children := nodeSlots cdt e.child
+    let projectedForEdge :=
+      parents.foldr (fun p accP =>
+        (children.map (fun c => ({ parent := p, child := c, op := e.op } : SlotDerivationEdge))) ++ accP) []
+    projectedForEdge ++ acc) []
+
+/-- External CDT view as observed from CSpace slot identities. -/
+def observedFromCSpace (cdt : CapDerivationTree) : List SlotDerivationEdge :=
+  projectedSlotEdges cdt
+
+theorem observedFromCSpace_eq_projection (cdt : CapDerivationTree) :
+    observedFromCSpace cdt = projectedSlotEdges cdt := rfl
+
+/-- Find all direct child slots of an observed slot. -/
 def childrenOf (cdt : CapDerivationTree) (addr : SlotAddr)
     : List SlotAddr :=
-  (cdt.edges.filter (fun e => e.isParentOf addr)).map CapDerivationEdge.child
+  ((observedFromCSpace cdt).filter (fun e => e.parent = addr)).map SlotDerivationEdge.child
 
-/-- Find the parent of a given slot address, if any. -/
+/-- Find one direct parent slot of an observed slot, if any. -/
 def parentOf (cdt : CapDerivationTree) (addr : SlotAddr)
     : Option SlotAddr :=
-  (cdt.edges.find? (fun e => e.isChildOf addr)).map CapDerivationEdge.parent
+  ((observedFromCSpace cdt).find? (fun e => e.child = addr)).map SlotDerivationEdge.parent
 
-/-- Remove all edges referencing a given slot as child (detach from parent). -/
-def removeAsChild (cdt : CapDerivationTree) (addr : SlotAddr)
-    : CapDerivationTree :=
-  { edges := cdt.edges.filter (fun e => ¬e.isChildOf addr) }
-
-/-- Remove all edges referencing a given slot as parent (detach all children). -/
-def removeAsParent (cdt : CapDerivationTree) (addr : SlotAddr)
-    : CapDerivationTree :=
-  { edges := cdt.edges.filter (fun e => ¬e.isParentOf addr) }
-
-/-- Remove all edges where the given slot appears as parent or child. -/
+/-- Remove all observed references of a slot. -/
 def removeSlot (cdt : CapDerivationTree) (addr : SlotAddr)
     : CapDerivationTree :=
-  { edges := cdt.edges.filter (fun e => ¬e.isParentOf addr ∧ ¬e.isChildOf addr) }
+  unbindSlot cdt addr
 
-/-- Collect all descendants of a slot via bounded BFS traversal.
-Uses fuel = edges.length to ensure termination and completeness
-for acyclic trees. -/
+/-- Collect all descendants of a slot through node edges and project to slots. -/
 def descendantsOf (cdt : CapDerivationTree) (root : SlotAddr)
     : List SlotAddr :=
-  go cdt.edges.length [root] []
+  match cdt.slotNode? root with
+  | none => []
+  | some rootId =>
+      let descNodes := go cdt.edges.length [rootId] []
+      descNodes.foldr (fun nid acc => nodeSlots cdt nid ++ acc) []
 where
-  go : Nat → List SlotAddr → List SlotAddr → List SlotAddr
+  go : Nat → List CdtNodeId → List CdtNodeId → List CdtNodeId
     | 0, _, acc => acc
     | _ + 1, [], acc => acc
     | fuel + 1, node :: rest, acc =>
-        let children := (cdt.edges.filter (fun e => e.isParentOf node)).map CapDerivationEdge.child
+        let children := (cdt.edges.filter (fun e => e.parent = node)).map CapDerivationEdge.child
         let newChildren := children.filter (fun c => c ∉ acc)
         go fuel (rest ++ newChildren) (acc ++ newChildren)
 
-/-- CDT acyclicity: no slot reaches itself through derivation edges. -/
+/-- CDT acyclicity: no node reaches itself through derivation edges. -/
 def acyclic (cdt : CapDerivationTree) : Prop :=
-  ∀ e ∈ cdt.edges, (e.parent.1, e.parent.2) ∉ cdt.descendantsOf e.child
+  ∀ e ∈ cdt.edges, e.parent ∉ go cdt.edges.length [e.child] []
+where
+  go : Nat → List CdtNodeId → List CdtNodeId → List CdtNodeId
+    | 0, _, acc => acc
+    | _ + 1, [], acc => acc
+    | fuel + 1, node :: rest, acc =>
+        let children := (cdt.edges.filter (fun ed => ed.parent = node)).map CapDerivationEdge.child
+        let newChildren := children.filter (fun c => c ∉ acc)
+        go fuel (rest ++ newChildren) (acc ++ newChildren)
 
 theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
   intro e hMem
   simp [CapDerivationTree.empty] at hMem
 
-/-- Removing a slot preserves a subset of edges. -/
-theorem removeSlot_edges_sub (cdt : CapDerivationTree) (addr : SlotAddr) :
-    ∀ e ∈ (cdt.removeSlot addr).edges, e ∈ cdt.edges := by
-  intro e hMem
-  simp [removeSlot] at hMem
-  exact hMem.1
 
 end CapDerivationTree
 
