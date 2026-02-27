@@ -166,25 +166,38 @@ private theorem ensureRunnable_preserves_projection
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (ensureRunnable st tid) = projectState ctx observer st := by
   unfold ensureRunnable
-  split
-  · rfl
-  · split
-    · have hRun : projectRunnable ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-          projectRunnable ctx observer st := by
-        simp only [projectRunnable]
-        exact list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
-      have hObj : projectObjects ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-          projectObjects ctx observer st := rfl
-      have hCur : projectCurrent ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-          projectCurrent ctx observer st := rfl
-      have hSvc : projectServiceStatus ctx observer
-          { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } } =
-          projectServiceStatus ctx observer st := funext fun _ => rfl
-      simp only [projectState, hObj, hRun, hCur, hSvc]
-    · rfl
+  by_cases hMem : tid ∈ st.scheduler.runnable
+  · simp [hMem]
+  · simp [hMem]
+    cases hObjTcb : st.objects tid.toObjId with
+    | none => simp
+    | some obj =>
+      cases obj with
+      | endpoint ep => simp
+      | notification ntfn => simp
+      | cnode cn => simp
+      | vspaceRoot root => simp
+      | tcb tcb =>
+          have hRun : List.filter (threadObservable ctx observer) (st.scheduler.runnable ++ [tid]) =
+              List.filter (threadObservable ctx observer) st.scheduler.runnable :=
+            list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
+          have hObj : projectObjects ctx observer
+              { st with scheduler := {
+                  st.scheduler with
+                  runnable := st.scheduler.runnable ++ [tid]
+                  runnableHead := some (st.scheduler.runnable.head?.getD tid)
+                  runnableTail := some tid
+                } } = projectObjects ctx observer st := rfl
+          have hSvc : projectServiceStatus ctx observer
+              { st with scheduler := {
+                  st.scheduler with
+                  runnable := st.scheduler.runnable ++ [tid]
+                  runnableHead := some (st.scheduler.runnable.head?.getD tid)
+                  runnableTail := some tid
+                } } = projectServiceStatus ctx observer st := by
+            funext sid
+            rfl
+          simp [projectState, projectCurrent, projectRunnable, hRun, hObj, hSvc]
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 private theorem storeTcbIpcState_preserves_projection

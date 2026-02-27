@@ -5,10 +5,13 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let runnable' := st.scheduler.runnable.filter (· ≠ tid)
   { st with
       scheduler := {
         st.scheduler with
-          runnable := st.scheduler.runnable.filter (· ≠ tid)
+          runnable := runnable'
+          runnableHead := runnable'.head?
+          runnableTail := runnable'.getLast?
           current := if st.scheduler.current = some tid then none else st.scheduler.current
       }
   }
@@ -19,7 +22,15 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   else
     match st.objects tid.toObjId with
     | some (.tcb _) =>
-        { st with scheduler := { st.scheduler with runnable := st.scheduler.runnable ++ [tid] } }
+        let runnable' := st.scheduler.runnable ++ [tid]
+        { st with
+            scheduler := {
+              st.scheduler with
+                runnable := runnable'
+                runnableHead := runnable'.head?
+                runnableTail := runnable'.getLast?
+            }
+        }
     | _ => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
