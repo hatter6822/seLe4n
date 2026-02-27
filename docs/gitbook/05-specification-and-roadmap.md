@@ -23,7 +23,7 @@ Current milestone state:
 1. deterministic kernel transition behavior,
 2. layered invariants + preservation theorem continuity,
 3. architecture-boundary assumption/adapter interfaces from M6,
-4. domain-aware scheduler policy (`schedule` is active-domain only; no cross-domain fallback) with `currentThreadInActiveDomain` in the scheduler bundle,
+4. domain-aware scheduler policy (`chooseThread`/`schedule` are active-domain only; no cross-domain fallback) with `currentThreadInActiveDomain` in the canonical scheduler bundle and `scheduleDomain` switch/tick consistency checks,
 5. fixture-backed executable evidence,
 6. tiered testing gates used in CI and local workflows.
 7. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queuePPrev`/`queueNext`) with runtime intrusive-queue invariant checks (head/tail coherence, cycle-free traversal, prev/pprev/next linkage), malformed-`queuePPrev` rejection (`illegalState`), and duplicate-wait rejection (`alreadyWaiting`).
