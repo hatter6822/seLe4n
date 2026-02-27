@@ -816,22 +816,32 @@ def endpointQueueRemoveDual
                 if q.head.isNone || q.tail.isNone then
                   .error .illegalState
                 else
-                  let applyPrev : Except KernelError SystemState :=
+                  let pprevConsistent : Bool :=
                     match pprev with
-                    | .endpointHead =>
-                        let q' : IntrusiveQueue := { head := tcb.queueNext, tail := q.tail }
-                        let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
-                        match storeObject endpointId (.endpoint ep') st with
-                        | .error e => .error e
-                        | .ok ((), st1) => .ok st1
-                    | .tcbNext prevTid =>
-                        match lookupTcb st prevTid with
-                        | none => .error .objectNotFound
-                        | some prevTcb =>
-                            match storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
-                            | .error e => .error e
-                            | .ok st1 => .ok st1
-                  match applyPrev with
+                    | .endpointHead => q.head = some tid && tcb.queuePrev.isNone
+                    | .tcbNext prevTid => q.head ≠ some tid && tcb.queuePrev = some prevTid
+                  if !pprevConsistent then
+                    .error .illegalState
+                  else
+                    let applyPrev : Except KernelError SystemState :=
+                      match pprev with
+                      | .endpointHead =>
+                          let q' : IntrusiveQueue := { head := tcb.queueNext, tail := q.tail }
+                          let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                          match storeObject endpointId (.endpoint ep') st with
+                          | .error e => .error e
+                          | .ok ((), st1) => .ok st1
+                      | .tcbNext prevTid =>
+                          match lookupTcb st prevTid with
+                          | none => .error .objectNotFound
+                          | some prevTcb =>
+                              if prevTcb.queueNext ≠ some tid then
+                                .error .illegalState
+                              else
+                                match storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
+                                | .error e => .error e
+                                | .ok st1 => .ok st1
+                    match applyPrev with
                   | .error e => .error e
                   | .ok st1 =>
                       let newTail : Option SeLe4n.ThreadId :=

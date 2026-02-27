@@ -154,6 +154,24 @@ private def expectThreadQueueLinks
   | _ =>
       throw <| IO.userError s!"{label}: expected TCB object"
 
+private def corruptThreadQueueLinks
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId)
+    (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match st.objects tid.toObjId with
+  | some (.tcb tcb) =>
+      .ok {
+        st with
+        objects := fun oid =>
+          if oid = tid.toObjId then
+            some (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next })
+          else
+            st.objects oid
+      }
+  | _ => .error .objectNotFound
+
 private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectError "lookup wrong object type"
@@ -347,6 +365,24 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [dual queue remove preserves remaining FIFO order]"
   else
     throw <| IO.userError s!"dual queue remove expected [7,9], got [{reprStr rmFirst},{reprStr rmSecond}]"
+
+  let stMalformedHeadPPrev ← expectOk "dual queue malformed pprev state (head points to prev tcbNext)"
+    (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
+  expectError "dual queue malformed pprev rejects head non-endpoint owner"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stMalformedHeadPPrev)
+    .illegalState
+
+  let stMalformedPrevNext ← expectOk "dual queue malformed pprev state (prev next mismatch)"
+    (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
+  expectError "dual queue malformed pprev rejects stale prev pointer"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stMalformedPrevNext)
+    .illegalState
+
+  let stMalformedDetached ← expectOk "dual queue malformed pprev detached thread in empty queue"
+    (corruptThreadQueueLinks baseState (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
+  expectError "dual queue malformed pprev rejects detached thread marked as queued"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stMalformedDetached)
+    .illegalState
 
   if fifoFirst = SeLe4n.ThreadId.ofNat 7 ∧ fifoSecond = SeLe4n.ThreadId.ofNat 8 then
     IO.println "positive check passed [dual queue fifo ordering preserved]"
