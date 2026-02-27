@@ -12,7 +12,7 @@ Current stage context: **WS-E portfolio (v0.11.6 audit remediation) with WS-E1..
   - full `lake build` to verify definitions, theorem scripts, and module integration.
 - **Tier 2 (trace/behavior)**
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
-  - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
+  - malformed/negative and IF-M1 runtime suites (`lake env lean --run tests/NegativeStateSuite.lean`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
   - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.

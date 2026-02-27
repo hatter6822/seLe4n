@@ -4,8 +4,6 @@ import SeLe4n.Testing.InvariantChecks
 
 open SeLe4n.Model
 
-set_option maxRecDepth 4096
-
 namespace SeLe4n.Testing
 
 private def endpointId : SeLe4n.ObjId := 40
@@ -174,7 +172,34 @@ private def corruptThreadQueueLinks
       }
   | _ => .error .objectNotFound
 
-private def runNegativeChecks : IO Unit := do
+@[noinline] private def checkDualQueueReceiveMiddleRemoval : IO Unit := do
+  let (_, stDualRecvRm1) ← expectOk "dual queue remove enqueue receiver 7"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  let (_, stDualRecvRm2) ← expectOk "dual queue remove enqueue receiver 8"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualRecvRm1)
+  let (_, stDualRecvRm3) ← expectOk "dual queue remove enqueue receiver 9"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvRm2)
+  let (_, stDualRecvRm4) ← expectOk "dual queue remove middle receiver 8"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId true (SeLe4n.ThreadId.ofNat 8) stDualRecvRm3)
+  expectThreadQueueLinks "dual queue remove middle clears receiver 8 links"
+    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 8) none none none
+  expectThreadQueueLinks "dual queue remove middle repairs receiver 7 -> receiver 9"
+    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9))
+  expectThreadQueueLinks "dual queue remove middle repairs receiver 9 <- receiver 7"
+    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
+  let (_, stDualRecvRm5) ← expectOk "dual queue sender wakes receiver 7 after middle remove"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRecvRm4)
+  let (_, stDualRecvRm6) ← expectOk "dual queue sender wakes receiver 9 after middle remove"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRecvRm5)
+  match stDualRecvRm6.objects endpointId with
+  | some (.endpoint ep) =>
+      if ep.receiveQ.head = none ∧ ep.receiveQ.tail = none then
+        IO.println "positive check passed [dual queue remove drains receive queue]"
+      else
+        throw <| IO.userError "dual queue remove expected empty intrusive receiveQ"
+  | _ => throw <| IO.userError "dual queue remove expected endpoint object while checking receiveQ"
+
+@[noinline] private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectError "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
@@ -481,32 +506,7 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"dual queue remove expected [7,9], got [{reprStr rmFirst},{reprStr rmSecond}]"
 
-  let (_, stDualRecvRm1) ← expectOk "dual queue remove enqueue receiver 7"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
-  let (_, stDualRecvRm2) ← expectOk "dual queue remove enqueue receiver 8"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualRecvRm1)
-  let (_, stDualRecvRm3) ← expectOk "dual queue remove enqueue receiver 9"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvRm2)
-  let (_, stDualRecvRm4) ← expectOk "dual queue remove middle receiver 8"
-    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId true (SeLe4n.ThreadId.ofNat 8) stDualRecvRm3)
-  expectThreadQueueLinks "dual queue remove middle clears receiver 8 links"
-    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 8) none none none
-  expectThreadQueueLinks "dual queue remove middle repairs receiver 7 -> receiver 9"
-    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9))
-  expectThreadQueueLinks "dual queue remove middle repairs receiver 9 <- receiver 7"
-    stDualRecvRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
-  let (_, stDualRecvRm5) ← expectOk "dual queue sender wakes receiver 7 after middle remove"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRecvRm4)
-  let (_, stDualRecvRm6) ← expectOk "dual queue sender wakes receiver 9 after middle remove"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRecvRm5)
-  match stDualRecvRm6.objects endpointId with
-  | some (.endpoint ep) =>
-      if ep.receiveQ.head = none ∧ ep.receiveQ.tail = none then
-        IO.println "positive check passed [dual queue remove drains receive queue]"
-      else
-        throw <| IO.userError "dual queue remove expected empty intrusive receiveQ"
-  | _ => throw <| IO.userError "dual queue remove expected endpoint object while checking receiveQ"
-
+  checkDualQueueReceiveMiddleRemoval
   let stMalformedHeadPPrev ← expectOk "dual queue malformed pprev state (head points to prev tcbNext)"
     (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
   expectError "dual queue malformed pprev rejects head non-endpoint owner"
