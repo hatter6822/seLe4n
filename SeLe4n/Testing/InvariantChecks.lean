@@ -15,6 +15,52 @@ private def endpointObjectValidB (ep : Endpoint) : Bool :=
   | none => ep.state != .receive
   | some _ => ep.state == .receive
 
+private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+  match st.objects tid.toObjId with
+  | some (.tcb tcb) => some tcb
+  | _ => none
+
+private partial def intrusiveQueueReachable
+    (st : SystemState)
+    (tail : SeLe4n.ThreadId)
+    (expectedPrev : Option SeLe4n.ThreadId)
+    (cursor : Option SeLe4n.ThreadId)
+    (visited : List SeLe4n.ThreadId)
+    (fuel : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel + 1 =>
+      match cursor with
+      | none => false
+      | some tid =>
+          if tid ∈ visited then
+            false
+          else
+            match lookupQueueTcbB st tid with
+            | none => false
+            | some tcb =>
+                if tcb.queuePrev != expectedPrev then
+                  false
+                else if tid == tail then
+                  tcb.queueNext.isNone
+                else
+                  match tcb.queueNext with
+                  | none => false
+                  | some nextTid =>
+                      intrusiveQueueReachable st tail (some tid) (some nextTid) (tid :: visited) fuel
+
+private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : Bool :=
+  match q.head, q.tail with
+  | none, none => true
+  | some head, some tail =>
+      match lookupQueueTcbB st head, lookupQueueTcbB st tail with
+      | some headTcb, some tailTcb =>
+          headTcb.queuePrev.isNone
+            && tailTcb.queueNext.isNone
+            && intrusiveQueueReachable st tail none (some head) [] (st.objectIndex.length + 1)
+      | _, _ => false
+  | _, _ => false
+
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
   | .idle => ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
@@ -116,6 +162,8 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
       match st.objects oid with
       | some (.endpoint ep) =>
           (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) ::
+          (s!"endpoint intrusive sendQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.sendQ) ::
+          (s!"endpoint intrusive receiveQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.receiveQ) ::
           (s!"endpoint waiter/state invariant: oid={oid}", endpointObjectValidB ep) :: acc
       | some (.notification ntfn) =>
           (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
