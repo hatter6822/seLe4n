@@ -1,18 +1,17 @@
 ## [0.12.2] - 2026-02-27
 
-### Documentation and release metadata synchronization
+### Optimization work continues
 
-- Bumped patch version to **`0.12.2`** in `lakefile.toml`.
-- Updated current-version references in canonical docs (`README.md`, `docs/spec/SELE4N_SPEC.md`).
-- Updated GitBook status mirror (`docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`) to the new patch release marker.
+- **Node-stable CDT model:** capability derivation edges are tracked over stable CDT node IDs while CSpace slots map to nodes (`cdtSlotNode`/`cdtNodeSlot`); `cspaceMove` performs slot→node pointer transfer plus backpointer fixup instead of global edge rewrite, and `cspaceDeleteSlot` detaches slot↔node mappings to prevent stale CDT aliasing on slot reuse.
+- Provide an opt-in strict variant of CDT-aware revoke that does not swallow deletion errors but surfaces the first descendant deletion failure for auditability and debugging.
+- Record precise failing context (CDT node, projected slot when present, and concrete KernelError) so tooling/tests can assert and report offending slot/state.
 
 ## [0.12.1] - 2026-02-27
 
-### Documentation and release metadata synchronization
+### Optimization work begins
 
-- Bumped patch version to **`0.12.1`** in `lakefile.toml`.
-- Updated current-version references in canonical docs (`README.md`, `docs/spec/SELE4N_SPEC.md`).
-- Updated GitBook status mirror (`docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`) to the new patch release marker.
+- **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`).
+- **Domain-aware scheduler policy:** selection is unified under active-domain filtering (`chooseThread`/`chooseThreadInDomain`), `kernelInvariant`/`canonicalSchedulerInvariantBundle` enforce `currentThreadInActiveDomain`, and regression coverage includes mixed runnable-set filtering plus `scheduleDomain` switch/tick consistency checks.
 
 ## [0.12.0] - 2026-02-26
 
