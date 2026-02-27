@@ -75,6 +75,7 @@ Every milestone-moving PR should include:
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) and per-thread links (`queuePrev`/`queueNext`), with explicit coverage in `negative_state_suite` (enqueue/block, rendezvous/dequeue, FIFO ordering, queue drain, duplicate-wait rejection via `alreadyWaiting`).
+- Runtime invariant checks additionally assert intrusive endpoint queue linkage coherence (queue boundary shape, acyclic chain traversal, `queuePrev`/`queueNext` consistency, and tail alignment).
 
 ## 4) Daily contributor loop
 

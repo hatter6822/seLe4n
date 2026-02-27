@@ -89,6 +89,7 @@ on the semantic and proof foundations of the previous one.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace/probe harnesses exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`Endpoint.sendQ`/`Endpoint.receiveQ`) with per-thread links (`TCB.queuePrev`/`TCB.queueNext`); executable coverage is enforced in `negative_state_suite` (block, rendezvous, FIFO, drain, duplicate-wait rejection via `alreadyWaiting`).
+- Runtime invariant checks also enforce intrusive queue linkage coherence (boundary shape, acyclic traversal, per-link `queuePrev`/`queueNext` consistency, and tail agreement for non-empty chains).
 
 ## 4. Active Workstream Portfolio (WS-E)
 

@@ -15,6 +15,33 @@ private def endpointObjectValidB (ep : Endpoint) : Bool :=
   | none => ep.state != .receive
   | some _ => ep.state == .receive
 
+private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : Bool :=
+  match q.head, q.tail with
+  | none, none => true
+  | some _, none => false
+  | none, some _ => false
+  | some head, some tail =>
+      let fuel := st.objectIndex.length + 1
+      let rec walk (current : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId)
+          (seen : List SeLe4n.ThreadId) (remaining : Nat) : Bool × Option SeLe4n.ThreadId :=
+        match remaining with
+        | 0 => (false, none)
+        | n + 1 =>
+            if current ∈ seen then
+              (false, none)
+            else
+              match st.objects current.toObjId with
+              | some (.tcb tcb) =>
+                  if tcb.queuePrev != prev then
+                    (false, none)
+                  else
+                    match tcb.queueNext with
+                    | none => (true, some current)
+                    | some next => walk next (some current) (current :: seen) n
+              | _ => (false, none)
+      let (ok, last) := walk head none [] fuel
+      ok && last == some tail
+
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
   | .idle => ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
@@ -117,6 +144,8 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
       | some (.endpoint ep) =>
           (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) ::
           (s!"endpoint waiter/state invariant: oid={oid}", endpointObjectValidB ep) :: acc
+          |> List.cons (s!"endpoint sendQ intrusive-list invariant: oid={oid}", intrusiveQueueWellFormedB st ep.sendQ)
+          |> List.cons (s!"endpoint receiveQ intrusive-list invariant: oid={oid}", intrusiveQueueWellFormedB st ep.receiveQ)
       | some (.notification ntfn) =>
           (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
       | _ => acc) []

@@ -76,7 +76,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **M7 (complete):** audit-remediation coverage (WS-A1..WS-A8) fully integrated into tiered gates.
 - **WS-D (completed):** WS-D1 test validity, WS-D2 information-flow enforcement, WS-D3 proof gaps, WS-D4 kernel hardening all landed with updated Tier 2/3 coverage. WS-D5/WS-D6 absorbed into WS-E.
 - **WS-E (active):** v0.11.6 audit remediation workstreams (WS-E1..WS-E6) driving next round of tier coverage updates.
-- **WS-E1 (completed):** Test infrastructure and CI hardening — SHA-pinned all GitHub Actions (F-14), added 5 runtime invariant check families (M-11: CSpace coherency, capability rights, lifecycle metadata, service acyclicity, VSpace ASID uniqueness), parameterized test topologies with 3 configurations (M-10), structured trace format with scenario/risk metadata (L-07), and theorem-body spot-check validation (L-08).
+- **WS-E1 (completed):** Test infrastructure and CI hardening — SHA-pinned all GitHub Actions (F-14), added 6 runtime invariant check families (M-11: CSpace coherency, capability rights, lifecycle metadata, service acyclicity, VSpace ASID uniqueness, endpoint intrusive-queue linkage coherence), parameterized test topologies with 3 configurations (M-10), structured trace format with scenario/risk metadata (L-07), and theorem-body spot-check validation (L-08).
 
 ## Practical failure triage
 
