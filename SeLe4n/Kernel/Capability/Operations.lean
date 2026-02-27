@@ -238,7 +238,12 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
         let cn' := cn.remove addr.slot
         match storeObject addr.cnode (.cnode cn') st with
         | .error e => .error e
-        | .ok (_, st') => storeCapabilityRef addr none st'
+        | .ok (_, st') =>
+            match storeCapabilityRef addr none st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                let stDetached := SystemState.detachSlotFromCdt st'' addr
+                .ok ((), stDetached)
     | _ => .error .objectNotFound
 
 /-- Revoke capabilities with the same target as the source in the containing CNode.
@@ -297,16 +302,16 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
         match cspaceInsertSlot dst cap st' with
         | .error e => .error e
         | .ok ((), st'') =>
+            let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
             match cspaceDeleteSlot src st'' with
             | .error e => .error e
             | .ok ((), st''') =>
                 -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
-                match SystemState.lookupCdtNodeOfSlot st''' src with
+                match srcNode? with
                 | none => .ok ((), st''')
                 | some srcNode =>
                     let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
-                    let stCleared := { stMoved with cdtSlotNode := fun ref => if ref = src then none else stMoved.cdtSlotNode ref }
-                    .ok ((), stCleared)
+                    .ok ((), stMoved)
 
 /-- WS-E4/C-02: Mutate a capability's rights in place without creating a derivation.
 

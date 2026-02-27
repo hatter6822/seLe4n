@@ -165,7 +165,7 @@ theorem cspaceDeleteSlot_authority_reduction
 
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
-          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup_remove_eq_none]
+          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -329,7 +329,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
           simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            CNode.lookup_remove_eq_none]
+            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)
@@ -860,22 +860,31 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
         | error e => simp [hStore] at hStep
         | ok pair =>
           obtain ⟨_, stMid⟩ := pair
-          simp [hStore] at hStep
-          have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr none hStep
-          by_cases hEq : cnodeId = addr.cnode
-          · rw [hEq] at hObj
-            have hObjMid := storeObject_objects_eq st stMid addr.cnode
-              (.cnode (preCn.remove addr.slot)) hStore
-            have : st'.objects addr.cnode = some (.cnode (preCn.remove addr.slot)) := by
-              rw [← hObjMid]; exact congrFun hObjRef addr.cnode
-            rw [this] at hObj; cases hObj
-            exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
-          · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
-              (.cnode (preCn.remove addr.slot)) hEq hStore
-            have : st'.objects cnodeId = st.objects cnodeId := by
-              rw [← hObjMid]; exact congrFun hObjRef cnodeId
-            rw [this] at hObj
-            exact hUnique cnodeId cn hObj
+          cases hRef : storeCapabilityRef addr none stMid with
+          | error e => simp [hStore, hRef] at hStep
+          | ok pairRef =>
+            obtain ⟨_, stRef⟩ := pairRef
+            simp [hStore, hRef] at hStep
+            cases hStep
+            have hObjRef : stRef.objects = stMid.objects :=
+              storeCapabilityRef_preserves_objects stMid stRef addr none hRef
+            have hObjDetach : (SystemState.detachSlotFromCdt stRef addr).objects = stRef.objects :=
+              SystemState.detachSlotFromCdt_objects_eq stRef addr
+            by_cases hEq : cnodeId = addr.cnode
+            · rw [hEq] at hObj
+              have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                (.cnode (preCn.remove addr.slot)) hStore
+              have : (SystemState.detachSlotFromCdt stRef addr).objects addr.cnode =
+                  some (.cnode (preCn.remove addr.slot)) := by
+                rw [hObjDetach, hObjRef, ← hObjMid]
+              rw [this] at hObj; cases hObj
+              exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
+            · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
+                (.cnode (preCn.remove addr.slot)) hEq hStore
+              have : (SystemState.detachSlotFromCdt stRef addr).objects cnodeId = st.objects cnodeId := by
+                rw [hObjDetach, hObjRef, ← hObjMid]
+              rw [this] at hObj
+              exact hUnique cnodeId cn hObj
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
     lifecycleAuthorityMonotonicity_holds st'⟩
 
@@ -1000,7 +1009,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2 hDelete
               rcases hBundleSt3 with ⟨hU3, _, hAtt3, _⟩
               -- Node-stable move only updates CDT/mapping fields, never objects.
-              cases hNode : SystemState.lookupCdtNodeOfSlot st3 src with
+              cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
@@ -1009,14 +1018,10 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               | some srcNode =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
-                  have hObjEq :
-                      ({ SystemState.attachSlotToCdtNode st3 dst srcNode with
-                          cdtSlotNode := fun ref => if ref = src then none else (SystemState.attachSlotToCdtNode st3 dst srcNode).cdtSlotNode ref
-                      }).objects = st3.objects := by
-                    simp [SystemState.attachSlotToCdtNode]
+                  have hObjEq : (SystemState.attachSlotToCdtNode st3 dst srcNode).objects = st3.objects :=
+                    SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode
                   have hU' := cspaceSlotUnique_of_objects_eq st3
-                    { SystemState.attachSlotToCdtNode st3 dst srcNode with
-                      cdtSlotNode := fun ref => if ref = src then none else (SystemState.attachSlotToCdtNode st3 dst srcNode).cdtSlotNode ref }
+                    (SystemState.attachSlotToCdtNode st3 dst srcNode)
                     hU3 hObjEq
                   exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt3,
                     lifecycleAuthorityMonotonicity_holds _⟩
