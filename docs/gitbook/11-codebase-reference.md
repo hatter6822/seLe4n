@@ -24,7 +24,7 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
 - `SeLe4n/Model/Object.lean`
-  - object-level representations (including TCB intrusive queue link fields).
+  - object-level representations (including TCB intrusive queue link fields and CDT stable-node graph + slot projection model).
 - `SeLe4n/Model/State.lean`
   - global system-state composition and update helpers (including runnable
     queue endpoint synchronization via `SchedulerState.withRunnableQueue`).
