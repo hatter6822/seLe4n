@@ -154,6 +154,24 @@ private def expectThreadQueueLinks
   | _ =>
       throw <| IO.userError s!"{label}: expected TCB object"
 
+private def expectCurrentThreadInDomain
+    (label : String)
+    (st : SystemState)
+    (domain : SeLe4n.DomainId) : IO Unit :=
+  match st.scheduler.current with
+  | none =>
+      throw <| IO.userError s!"{label}: expected current thread in domain {domain.toNat}, got none"
+  | some tid =>
+      match st.objects tid.toObjId with
+      | some (.tcb tcb) =>
+          if tcb.domain = domain then
+            IO.println s!"positive check passed [{label}]"
+          else
+            throw <| IO.userError
+              s!"{label}: expected current thread domain={domain.toNat}, got domain={tcb.domain.toNat}"
+      | _ =>
+          throw <| IO.userError s!"{label}: expected current thread to resolve to a TCB"
+
 private def corruptThreadQueueLinks
     (st : SystemState)
     (tid : SeLe4n.ThreadId)
@@ -473,6 +491,10 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [schedule domain filter]: active domain thread selected"
   else
     throw <| IO.userError "schedule domain filter expected current = tid 8"
+  expectCurrentThreadInDomain
+    "schedule domain filter current-thread/domain consistency"
+    stCrossDomainScheduled
+    stCrossDomainScheduled.scheduler.activeDomain
 
   let noActiveDomainRunnableState : SystemState :=
     { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := 2 } }
@@ -482,6 +504,39 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
   else
     throw <| IO.userError "schedule domain isolation expected current = none"
+
+  -- Domain tick regression: when a domain slice expires, scheduler must switch
+  -- domains and then choose only from the new active domain.
+  let domainSwitchCrossMixState : SystemState :=
+    { crossDomainState with
+      scheduler := {
+        crossDomainState.scheduler with
+        activeDomain := 0
+        domainTimeRemaining := 1
+        domainSchedule := [
+          { domain := 0, length := 1 },
+          { domain := 1, length := 3 }
+        ]
+        domainScheduleIndex := 0
+      } }
+  let (_, stDomainTickSwitched) ← expectOkState "scheduleDomain switches domain then schedules inside new domain"
+    (SeLe4n.Kernel.scheduleDomain domainSwitchCrossMixState)
+  if stDomainTickSwitched.scheduler.activeDomain = 1 ∧
+     stDomainTickSwitched.scheduler.current = some (SeLe4n.ThreadId.ofNat 7) then
+    IO.println "positive check passed [scheduleDomain cross-domain mix]: switched to domain 1 and chose tid 7"
+  else
+    throw <| IO.userError
+      s!"scheduleDomain cross-domain mix expected activeDomain=1,current=tid7 got activeDomain={stDomainTickSwitched.scheduler.activeDomain.toNat}, current={reprStr stDomainTickSwitched.scheduler.current}"
+  if stDomainTickSwitched.scheduler.domainScheduleIndex = 1 ∧
+     stDomainTickSwitched.scheduler.domainTimeRemaining = 3 then
+    IO.println "positive check passed [scheduleDomain tick advances index and reloads domain budget]"
+  else
+    throw <| IO.userError
+      s!"scheduleDomain tick expected index=1,budget=3 got index={stDomainTickSwitched.scheduler.domainScheduleIndex}, budget={stDomainTickSwitched.scheduler.domainTimeRemaining}"
+  expectCurrentThreadInDomain
+    "scheduleDomain tick current-thread/domain consistency"
+    stDomainTickSwitched
+    stDomainTickSwitched.scheduler.activeDomain
 
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"

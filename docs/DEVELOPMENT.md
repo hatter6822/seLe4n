@@ -21,8 +21,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 1. deterministic transition semantics (explicit success/failure branches),
 2. M3.5 IPC-scheduler handshake coherence semantics and trace anchors,
-3. local + composed invariant layering (including `currentThreadInActiveDomain` in `schedulerInvariantBundle`),
-4. domain-aware scheduling semantics (`schedule` only chooses from `activeDomain`),
+3. local + composed invariant layering (including `currentThreadInActiveDomain` in the scheduler/kernel invariant bundle),
+4. domain-aware scheduling semantics (`schedule` only chooses from `activeDomain`), with regression checks that enforce off-domain priority exclusion and current-thread/domain consistency on domain ticks,
 5. theorem discoverability through stable naming,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).

@@ -22,7 +22,8 @@ Component level:
 
 Bundle level:
 
-- `schedulerInvariantBundle` (alias over `kernelInvariant`)
+- `schedulerInvariantBundle` (compatibility triad: queue/current + uniqueness + current-thread validity)
+- `kernelInvariant` (normative scheduler/kernel invariant bundle including `currentThreadInActiveDomain`, with regression evidence for mixed-domain runnable exclusion and post-tick current-thread/domain consistency)
 
 Preservation shape:
 

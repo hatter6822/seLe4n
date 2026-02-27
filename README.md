@@ -25,7 +25,7 @@
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 - **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`).
-- **Domain-aware scheduler policy:** `schedule` is domain-strict (no cross-domain fallback) and `kernelInvariant`/`canonicalSchedulerInvariantBundle` include `currentThreadInActiveDomain`; `switchDomain` clears `current` before selecting the next domain thread.
+- **Domain-aware scheduler policy:** `schedule` is domain-strict (no cross-domain fallback), `kernelInvariant` treats `currentThreadInActiveDomain` as normative, and `scheduleDomain` regression checks cover cross-domain runnable mixes with explicit active-domain advancement, budget/index reload, and current-thread/domain consistency checks after domain ticks.
 
 ## Specifications
 

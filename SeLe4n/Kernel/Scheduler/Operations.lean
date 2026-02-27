@@ -99,31 +99,6 @@ private def chooseBestRunnable
           chooseBestRunnable objects rest best'
       | _ => .error .schedulerInvariantViolation
 
-private def chooseBestRunnableInDomain
-    (objects : SeLe4n.ObjId → Option KernelObject)
-    (runnable : List SeLe4n.ThreadId)
-    (activeDomain : SeLe4n.DomainId)
-    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
-    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
-  match runnable with
-  | [] => .ok best
-  | tid :: rest =>
-      match objects tid.toObjId with
-      | some (.tcb tcb) =>
-          let best' :=
-            if tcb.domain == activeDomain then
-              match best with
-              | none => some (tid, tcb.priority, tcb.deadline)
-              | some (_, bestPrio, bestDl) =>
-                  if isBetterCandidate bestPrio bestDl tcb.priority tcb.deadline then
-                    some (tid, tcb.priority, tcb.deadline)
-                  else
-                    best
-            else
-              best
-          chooseBestRunnableInDomain objects rest activeDomain best'
-      | _ => .error .schedulerInvariantViolation
-
 private def rotateCurrentToBack
     (current : Option SeLe4n.ThreadId)
     (runnable : List SeLe4n.ThreadId) : Except KernelError (List SeLe4n.ThreadId) :=
@@ -134,6 +109,16 @@ private def rotateCurrentToBack
         .ok (runnable.erase tid ++ [tid])
       else
         .error .schedulerInvariantViolation
+
+private def validateRunnableTCBs
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId) : Except KernelError Unit :=
+  match runnable with
+  | [] => .ok ()
+  | tid :: rest =>
+      match objects tid.toObjId with
+      | some (.tcb _) => validateRunnableTCBs objects rest
+      | _ => .error .schedulerInvariantViolation
 
 /-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
 def filterByDomain
@@ -152,10 +137,14 @@ This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
+    match validateRunnableTCBs st.objects st.scheduler.runnable with
     | .error e => .error e
-    | .ok none => .ok (none, st)
-    | .ok (some (tid, _, _)) => .ok (some tid, st)
+    | .ok () =>
+        let activeRunnable := filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain
+        match chooseBestRunnable st.objects activeRunnable none with
+        | .error e => .error e
+        | .ok none => .ok (none, st)
+        | .ok (some (tid, _, _)) => .ok (some tid, st)
 
 /-- Scheduler step for the bootstrap model.
 
@@ -362,17 +351,21 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread at hStep
-  cases hPick : chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
-  | error e => simp [hPick] at hStep
-  | ok best =>
-      cases best with
-      | none =>
-          rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
-          simpa using hSt.symm
-      | some triple =>
-          obtain ⟨tid, prio, dl⟩ := triple
-          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-          simpa using hSt.symm
+  cases hValid : validateRunnableTCBs st.objects st.scheduler.runnable with
+  | error e => simp [hValid] at hStep
+  | ok _ =>
+      cases hPick : chooseBestRunnable st.objects
+          (filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain) none with
+      | error e => simp [hValid, hPick] at hStep
+      | ok best =>
+          cases best with
+          | none =>
+              rcases (by simpa [hValid, hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
+              simpa using hSt.symm
+          | some triple =>
+              obtain ⟨tid, prio, dl⟩ := triple
+              rcases (by simpa [hValid, hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+              simpa using hSt.symm
 
 
 theorem schedule_preserves_wellFormed
@@ -730,6 +723,91 @@ theorem switchDomain_preserves_schedulerInvariantBundle
           exact hInv.2.1
         · -- currentThreadValid: current is none
           simp [currentThreadValid]
+
+/-- M-05/WS-E6: `switchDomain` preserves domain partitioning by construction.
+`switchDomain` clears `current`, so `currentThreadInActiveDomain` is immediate in
+the post-state. -/
+theorem switchDomain_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hInv : currentThreadInActiveDomain st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+      simp [hSched] at hStep
+      cases hStep
+      simpa using hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · cases hStep
+        simpa using hInv
+      · rename_i _ hGet
+        simp at hStep
+        cases hStep
+        simp [currentThreadInActiveDomain]
+
+/-- M-05/WS-E6: `switchDomain` preserves the scheduler/kernel invariant bundle.
+The domain component is guaranteed by `switchDomain_preserves_currentThreadInActiveDomain`.
+-/
+theorem switchDomain_preserves_kernelInvariant
+    (st st' : SystemState)
+    (hInv : kernelInvariant st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    kernelInvariant st' := by
+  exact ⟨
+    (switchDomain_preserves_schedulerInvariantBundle st st' ⟨hInv.1, hInv.2.1, hInv.2.2.1⟩ hStep).1,
+    (switchDomain_preserves_schedulerInvariantBundle st st' ⟨hInv.1, hInv.2.1, hInv.2.2.1⟩ hStep).2.1,
+    (switchDomain_preserves_schedulerInvariantBundle st st' ⟨hInv.1, hInv.2.1, hInv.2.2.1⟩ hStep).2.2,
+    switchDomain_preserves_currentThreadInActiveDomain st st' hInv.2.2.2 hStep
+  ⟩
+
+/-- M-05/WS-E6: `scheduleDomain` preserves domain partitioning.
+If the domain quantum expires, we switch domains then schedule; otherwise
+`current`/`activeDomain` are unchanged. -/
+theorem scheduleDomain_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hInv : currentThreadInActiveDomain st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExp : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExp] at hStep
+    cases hSwitch : switchDomain st with
+    | error e => simp [hSwitch] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSwitched =>
+            have hSched : schedule stSwitched = .ok ((), st') := by
+              simpa [hSwitch] using hStep
+            exact schedule_preserves_currentThreadInActiveDomain stSwitched st' hSched
+  · simp [hExp] at hStep
+    cases hStep
+    simpa using hInv
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the scheduler/kernel invariant bundle. -/
+theorem scheduleDomain_preserves_kernelInvariant
+    (st st' : SystemState)
+    (hInv : kernelInvariant st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    kernelInvariant st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExp : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExp] at hStep
+    cases hSwitch : switchDomain st with
+    | error e => simp [hSwitch] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSwitched =>
+            have hInvSwitched : kernelInvariant stSwitched :=
+              switchDomain_preserves_kernelInvariant st stSwitched hInv (by simp [hSwitch])
+            have hSched : schedule stSwitched = .ok ((), st') := by
+              simpa [hSwitch] using hStep
+            exact schedule_preserves_kernelInvariant stSwitched st' hInvSwitched hSched
+  · simp [hExp] at hStep
+    cases hStep
+    simpa [kernelInvariant] using hInv
 
 /-- M-05/WS-E6: `chooseThreadInDomain` is a pure read — it does not modify state. -/
 theorem chooseThreadInDomain_preserves_state
