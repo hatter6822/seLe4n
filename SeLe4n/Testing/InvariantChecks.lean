@@ -39,7 +39,7 @@ private partial def intrusiveQueueReachable
             match lookupQueueTcbB st tid with
             | none => false
             | some tcb =>
-                if tcb.queuePrev != expectedPrev then
+                if tcb.queuePPrev != expectedPrev || tcb.queuePrev != expectedPrev then
                   false
                 else if tid == tail then
                   tcb.queueNext.isNone
@@ -55,7 +55,7 @@ private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : 
   | some head, some tail =>
       match lookupQueueTcbB st head, lookupQueueTcbB st tail with
       | some headTcb, some tailTcb =>
-          headTcb.queuePrev.isNone
+          headTcb.queuePPrev.isNone && headTcb.queuePrev.isNone
             && tailTcb.queueNext.isNone
             && intrusiveQueueReachable st tail none (some head) [] (st.objectIndex.length + 1)
       | _, _ => false

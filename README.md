@@ -23,6 +23,8 @@
 - **Current package version:** `0.12.1` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
+- **IPC queue note:** Endpoint intrusive queues track per-thread `queuePPrev`/`queuePrev`/`queueNext` links, enabling O(1) arbitrary detach without traversal.
 
 ## Specifications
 

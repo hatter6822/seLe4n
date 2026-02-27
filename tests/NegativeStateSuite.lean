@@ -144,11 +144,11 @@ private def expectThreadQueueLinks
     (expectedPrev expectedNext : Option SeLe4n.ThreadId) : IO Unit :=
   match st.objects tid.toObjId with
   | some (.tcb tcb) =>
-      if tcb.queuePrev = expectedPrev ∧ tcb.queueNext = expectedNext then
+      if tcb.queuePPrev = expectedPrev ∧ tcb.queuePrev = expectedPrev ∧ tcb.queueNext = expectedNext then
         IO.println s!"positive check passed [{label}]"
       else
         throw <| IO.userError
-          s!"{label}: expected queuePrev={reprStr expectedPrev} queueNext={reprStr expectedNext}, got prev={reprStr tcb.queuePrev} next={reprStr tcb.queueNext}"
+          s!"{label}: expected queuePPrev/queuePrev={reprStr expectedPrev} queueNext={reprStr expectedNext}, got pprev={reprStr tcb.queuePPrev} prev={reprStr tcb.queuePrev} next={reprStr tcb.queueNext}"
   | _ =>
       throw <| IO.userError s!"{label}: expected TCB object"
 
@@ -326,6 +326,29 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [dual queue fifo ordering preserved]"
   else
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{reprStr fifoFirst},{reprStr fifoSecond}]"
+
+  let (_, stArbRm1) ← expectOkState "dual queue enqueue sender 7 for arbitrary remove"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  let (_, stArbRm2) ← expectOkState "dual queue enqueue sender 8 for arbitrary remove"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stArbRm1)
+  let (_, stArbRm3) ← expectOkState "dual queue enqueue sender 9 for arbitrary remove"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) stArbRm2)
+  let stArbRm4 ← expectOk "dual queue O(1) arbitrary remove middle sender"
+    (SeLe4n.Kernel.endpointQueueRemove endpointId false (SeLe4n.ThreadId.ofNat 8) stArbRm3)
+  expectThreadQueueLinks "dual queue arbitrary remove keeps sender 7 linked to 9"
+    stArbRm4 (SeLe4n.ThreadId.ofNat 7) none (some (SeLe4n.ThreadId.ofNat 9))
+  expectThreadQueueLinks "dual queue arbitrary remove rewires sender 9 to sender 7"
+    stArbRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) none
+  expectThreadQueueLinks "dual queue arbitrary remove clears sender 8 links"
+    stArbRm4 (SeLe4n.ThreadId.ofNat 8) none none
+
+  match stArbRm4.objects endpointId with
+  | some (.endpoint ep) =>
+      if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 9) then
+        IO.println "positive check passed [dual queue arbitrary remove preserves head/tail]"
+      else
+        throw <| IO.userError s!"dual queue arbitrary remove expected sendQ head=7 tail=9, got {reprStr ep.sendQ}"
+  | _ => throw <| IO.userError "dual queue arbitrary remove expected endpoint object"
 
   expectError "dual queue sender double-wait prevention"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) stDualFifo1)

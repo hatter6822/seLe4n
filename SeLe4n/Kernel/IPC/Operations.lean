@@ -702,7 +702,7 @@ theorem storeTcbIpcState_tcb_exists_at_target
 private def tcbWithQueueLinks
     (tcb : TCB)
     (prev next : Option SeLe4n.ThreadId) : TCB :=
-  { tcb with queuePrev := prev, queueNext := next }
+  { tcb with queuePPrev := prev, queuePrev := prev, queueNext := next }
 
 private def storeTcbQueueLinks
     (st : SystemState)
@@ -765,7 +765,7 @@ private def endpointQueueEnqueue
       | some tcb =>
           if tcb.ipcState ≠ .ready then
             .error .alreadyWaiting
-          else if tcb.queuePrev.isSome || tcb.queueNext.isSome then
+          else if tcb.queuePPrev.isSome || tcb.queuePrev.isSome || tcb.queueNext.isSome then
             .error .illegalState
           else
             let q := if isReceiveQ then ep.receiveQ else ep.sendQ
@@ -785,9 +785,60 @@ private def endpointQueueEnqueue
                     match storeObject endpointId (.endpoint ep') st with
                     | .error e => .error e
                     | .ok ((), st1) =>
-                        match storeTcbQueueLinks st1 tailTid tailTcb.queuePrev (some tid) with
+                        match storeTcbQueueLinks st1 tailTid tailTcb.queuePPrev (some tid) with
                         | .error e => .error e
                         | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) none
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+/-- WS-E4/M-13: O(1) removal of an arbitrary thread from an intrusive endpoint
+queue using per-membership `queuePPrev` metadata. No queue traversal needed. -/
+def endpointQueueRemove
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.objects endpointId with
+  | some (.endpoint ep) =>
+      let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+      match lookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
+          let next := tcb.queueNext
+          let prev := tcb.queuePPrev
+          let q' : IntrusiveQueue :=
+            if q.tail = some tid then
+              match prev with
+              | none => { head := next, tail := none }
+              | some prevTid => { head := q.head, tail := some prevTid }
+            else
+              match prev with
+              | none => { head := next, tail := q.tail }
+              | some _ => q
+          let stPrevResult :=
+            match prev with
+            | none => Except.ok st
+            | some prevTid =>
+                match lookupTcb st prevTid with
+                | none => Except.error KernelError.objectNotFound
+                | some prevTcb => storeTcbQueueLinks st prevTid prevTcb.queuePPrev next
+          match stPrevResult with
+          | .error e => .error e
+          | .ok st1 =>
+              let stNextResult :=
+                match next with
+                | none => Except.ok st1
+                | some nextTid =>
+                    match lookupTcb st1 nextTid with
+                    | none => Except.error KernelError.objectNotFound
+                    | some nextTcb => storeTcbQueueLinks st1 nextTid prev nextTcb.queueNext
+              match stNextResult with
+              | .error e => .error e
+              | .ok st2 =>
+                  let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                  match storeObject endpointId (.endpoint ep') st2 with
+                  | .error e => .error e
+                  | .ok ((), st3) => storeTcbQueueLinks st3 tid none none
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 

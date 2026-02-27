@@ -103,7 +103,11 @@ structure TCB where
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
-      `none`/`none` means detached from intrusive endpoint wait queues. -/
+      `queuePPrev` models Linux-style `pprev` ownership metadata: `none` means
+      the node is currently the queue head (or detached), while `some prevTid`
+      points to the predecessor node whose `queueNext` links to this TCB.
+      `none`/`none` in (`queuePrev`,`queueNext`) means detached. -/
+  queuePPrev : Option SeLe4n.ThreadId := none
   queuePrev : Option SeLe4n.ThreadId := none
   queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
@@ -116,7 +120,8 @@ inductive EndpointState where
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
-Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
+Queue membership links are stored in the waiting TCBs
+(`queuePPrev`/`queuePrev`/`queueNext`).
 The endpoint stores only queue boundaries. -/
 structure IntrusiveQueue where
   head : Option SeLe4n.ThreadId := none
