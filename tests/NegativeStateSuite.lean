@@ -290,8 +290,26 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
   let (_, stDualFifo2) ← expectOkState "dual queue fifo enqueue sender 8"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualFifo1)
+
+  match (stDualFifo2.objects (SeLe4n.ThreadId.ofNat 7).toObjId, stDualFifo2.objects (SeLe4n.ThreadId.ofNat 8).toObjId) with
+  | (some (.tcb sender7), some (.tcb sender8)) =>
+      if sender7.queueNext = some (SeLe4n.ThreadId.ofNat 8) ∧ sender8.queuePrev = some (SeLe4n.ThreadId.ofNat 7) then
+        IO.println "positive check passed [dual queue intrusive links stitched 7↔8]"
+      else
+        throw <| IO.userError s!"dual queue intrusive links expected 7.next=8 and 8.prev=7, got sender7={reprStr sender7} sender8={reprStr sender8}"
+  | _ => throw <| IO.userError "dual queue intrusive links expected sender TCBs"
+
   let (fifoFirst, stDualFifo3) ← expectOkState "dual queue fifo receive #1"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo2)
+
+  match stDualFifo3.objects (SeLe4n.ThreadId.ofNat 8).toObjId with
+  | some (.tcb sender8AfterPop) =>
+      if sender8AfterPop.queuePrev = none then
+        IO.println "positive check passed [dual queue pop rewrites new head prev=nil]"
+      else
+        throw <| IO.userError s!"dual queue pop expected sender 8 prev=nil, got {reprStr sender8AfterPop.queuePrev}"
+  | _ => throw <| IO.userError "dual queue pop expected sender 8 TCB"
+
   let (fifoSecond, stDualFifo4) ← expectOkState "dual queue fifo receive #2"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo3)
 
@@ -309,6 +327,36 @@ private def runNegativeChecks : IO Unit := do
   expectError "dual queue receiver double-wait prevention"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvWait1)
     .alreadyWaiting
+
+  let staleLinkedReadyState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject endpointId (.endpoint {
+        state := .idle
+        queue := []
+      })
+      |>.withObject 7 (.tcb {
+        tid := 7
+        priority := 10
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 4096
+        ipcState := .ready
+        queuePrev := some (SeLe4n.ThreadId.ofNat 8)
+      })
+      |>.withObject 8 (.tcb {
+        tid := 8
+        priority := 10
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 8192
+        ipcState := .ready
+      })
+      |>.build)
+  expectError "dual queue stale intrusive-link rejection"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) staleLinkedReadyState)
+    .illegalState
 
   match stDualFifo4.objects endpointId with
   | some (.endpoint ep) =>
