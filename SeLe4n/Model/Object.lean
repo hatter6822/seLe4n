@@ -103,9 +103,15 @@ structure TCB where
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
-      `none`/`none` means detached from intrusive endpoint wait queues. -/
+      `none`/`none` means detached from intrusive endpoint wait queues.
+
+      WS-E4/M-02: `queuePPrev` models the Linux-style intrusive `pprev`
+      pointer used for O(1) removal of arbitrary queued waiters: `none` means
+      this node is currently the queue head (or detached), while `some prevTid`
+      means `prevTid.queueNext = some tid`. -/
   queuePrev : Option SeLe4n.ThreadId := none
   queueNext : Option SeLe4n.ThreadId := none
+  queuePPrev : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
 inductive EndpointState where

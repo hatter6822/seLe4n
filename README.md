@@ -23,6 +23,7 @@
 - **Current package version:** `0.12.1` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 
 ## Specifications
 
@@ -64,6 +65,8 @@ Additional resources:
 ```
 
 ## Completed workstreams (WS-D, historical)
+
+- IPC dual queues are intrusive and now carry `queuePrev`/`queueNext`/`queuePPrev` metadata in TCBs, enabling O(1) arbitrary waiter removal via `endpointQueueRemoveDual`.
 
 - **WS-E1..WS-E6:** all completed. See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 - **WS-D1..WS-D4:** all completed. WS-D5/D6 items absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
