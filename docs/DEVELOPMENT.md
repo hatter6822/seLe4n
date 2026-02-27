@@ -74,7 +74,7 @@ Every milestone-moving PR should include:
 - IPC thread-state writes no longer succeed silently for missing TCBs; `storeTcbIpcState` now returns `objectNotFound` when lookup fails (including sentinel thread ID `0`).
 - `lookupTcb` treats thread ID `0` as reserved and returns `none`, enforcing the documented sentinel policy at runtime operation boundaries.
 - Runtime harness traces now use checked information-flow wrappers by default (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`).
-- Scheduler bookkeeping now records runnable queue endpoints (`runnableHead`, `runnableTail`), and TCBs expose `queuePrev`/`queueNext` intrusive link fields so queue ownership can move away from standalone node allocation.
+- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) and per-thread links (`queuePrev`/`queueNext`), with explicit coverage in `negative_state_suite` (enqueue/block, rendezvous/dequeue, FIFO ordering, queue drain, duplicate-wait rejection via `alreadyWaiting`).
 
 ## 4) Daily contributor loop
 

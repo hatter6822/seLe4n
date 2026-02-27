@@ -102,10 +102,8 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
-  /-- WS-E7: Intrusive doubly-linked queue hooks embedded in each TCB.
-      Queue owners (scheduler/IPC objects) maintain head/tail thread IDs,
-      while TCB-local links represent membership without allocating list-node
-      wrapper objects. `none` means no predecessor/successor in the queue. -/
+  /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
+      `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
   queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
@@ -116,19 +114,27 @@ inductive EndpointState where
   | receive
   deriving Repr, DecidableEq
 
+/-- Intrusive FIFO queue metadata for endpoint wait queues.
+
+Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
+The endpoint stores only queue boundaries. -/
+structure IntrusiveQueue where
+  head : Option SeLe4n.ThreadId := none
+  tail : Option SeLe4n.ThreadId := none
+  deriving Repr, DecidableEq
+
 /-- Endpoint object model.
 
-WS-E4/M-01: Extended with `sendQueue` and `receiveQueue` fields for dual-queue
-endpoint semantics supporting multiple concurrent receivers. Legacy fields
-(`state`, `queue`, `waitingReceiver`) retained for backward compatibility with
-existing WS-E3 IPC operations and proofs; new dual-queue operations use the
-separate queue fields. -/
+WS-E4/M-01: Dual-queue endpoint semantics are intrusive-list backed.
+`sendQ`/`receiveQ` store queue boundaries, while per-thread links are kept in
+TCBs. Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) remain for
+backward compatibility with prior operations/proofs. -/
 structure Endpoint where
   state : EndpointState
   queue : List SeLe4n.ThreadId
   waitingReceiver : Option SeLe4n.ThreadId := none
-  sendQueue : List SeLe4n.ThreadId := []
-  receiveQueue : List SeLe4n.ThreadId := []
+  sendQ : IntrusiveQueue := {}
+  receiveQ : IntrusiveQueue := {}
   deriving Repr, DecidableEq
 
 inductive NotificationState where

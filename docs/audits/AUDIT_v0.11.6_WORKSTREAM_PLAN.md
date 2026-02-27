@@ -220,7 +220,7 @@ are non-vacuous; VSpace in composed bundle.
    `.targetSlotOccupied` if occupied; `cspaceInsertSlot_rejects_occupied_slot`
    theorem; 4 existing preservation proofs updated for the new guard).
 5. ~~M-01~~ Dual-queue endpoint model — **DONE**
-   (Additive: `sendQueue`/`receiveQueue` fields added to `Endpoint`;
+   (Additive: `sendQ`/`receiveQ` intrusive queue boundaries added to `Endpoint` with thread links in `TCB.queuePrev`/`TCB.queueNext`;
    `endpointSendDual`/`endpointReceiveDual` operations with rendezvous;
    legacy single-queue operations preserved for backward compatibility).
 6. ~~M-02~~ Message payload in IPC — **DONE**
@@ -402,7 +402,7 @@ WS-E4 (CDT integration for capability flow proofs).
 | C-03 | Implemented `CapDerivationTree` model with `addEdge`, `childrenOf`, `parentOf`, `removeSlot`, `descendantsOf` (BFS), `acyclic` predicate, `empty_acyclic` theorem; `cspaceMintWithCdt` creates derivation edge on mint | WS-E4 |
 | C-04 | Implemented `cspaceRevokeCdt` traversing CDT descendant tree for cross-CNode revocation | WS-E4 |
 | H-02 | Guarded `cspaceInsertSlot` with `cn.lookup addr.slot` check returning `.targetSlotOccupied`; `cspaceInsertSlot_rejects_occupied_slot` theorem; 4 existing preservation proofs updated | WS-E4 |
-| M-01 | Added `sendQueue`/`receiveQueue` fields to `Endpoint`; `endpointSendDual`/`endpointReceiveDual` with rendezvous; legacy operations preserved | WS-E4 |
+| M-01 | Added intrusive `sendQ`/`receiveQ` queue boundaries to `Endpoint` plus `TCB.queuePrev`/`TCB.queueNext` links; `endpointSendDual`/`endpointReceiveDual` with rendezvous; legacy operations preserved | WS-E4 |
 | M-02 | Added `IpcMessage` structure (registers, caps, badge) used by dual-queue and reply operations | WS-E4 |
 | M-12 | Added `blockedOnReply` thread state, `replyCap` capability target, `endpointReply`/`endpointCall`/`endpointReplyRecv` operations; preservation theorems for `endpointReply` across scheduler, capability, and IPC invariant bundles | WS-E4 |
 | H-04 | Parameterized security labels: `SecurityDomain` (Nat-indexed), `DomainFlowPolicy` with reflexivity/transitivity proofs, `GenericLabelingContext`, `EndpointFlowPolicy` per-endpoint overrides, `embedLegacyLabel` with `embedLegacyLabel_preserves_flow`, `threeDomainExample` demonstrating ≥3 domains | WS-E5 |

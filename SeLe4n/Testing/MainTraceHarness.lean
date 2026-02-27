@@ -447,7 +447,7 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   -- Set up fresh state with idle endpoint for dual-queue test
   let dualEp : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
-    sendQueue := [], receiveQueue := [] }
+    sendQ := {}, receiveQ := {} }
   let dualObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
     if oid = dualEpId then some dualEp else st1.objects oid
   let stDual : SystemState := { st1 with objects := dualObjects }
@@ -456,7 +456,7 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stSent) =>
       match (stSent.objects dualEpId) with
       | some (.endpoint ep) =>
-          IO.println s!"dual-queue sender blocked on sendQueue: {!ep.sendQueue.isEmpty}"
+          IO.println s!"dual-queue sender blocked on sendQ non-empty: {ep.sendQ.head.isSome}"
       | _ => IO.println "dual-queue endpoint missing after send"
   -- M-12: Reply operation
   -- Create a state with a thread blocked on reply
