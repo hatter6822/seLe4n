@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.12.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.12.2-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -20,7 +20,7 @@
 
 ## Current state (authoritative snapshot)
 
-- **Current package version:** `0.12.1` (`lakefile.toml`)
+- **Current package version:** `0.12.2` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`

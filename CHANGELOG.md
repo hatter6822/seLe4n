@@ -1,3 +1,11 @@
+## [0.12.2] - 2026-02-27
+
+### Documentation and release metadata synchronization
+
+- Bumped patch version to **`0.12.2`** in `lakefile.toml`.
+- Updated current-version references in canonical docs (`README.md`, `docs/spec/SELE4N_SPEC.md`).
+- Updated GitBook status mirror (`docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md`) to the new patch release marker.
+
 ## [0.12.1] - 2026-02-27
 
 ### Documentation and release metadata synchronization
