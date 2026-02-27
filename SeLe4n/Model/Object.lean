@@ -105,6 +105,9 @@ structure TCB where
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
+  /-- WS-E4/M-13 intrusive-list `pprev` metadata.
+      Mirrors the predecessor ownership used for O(1) arbitrary removal. -/
+  queuePPrev : Option SeLe4n.ThreadId := none
   queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
@@ -116,7 +119,7 @@ inductive EndpointState where
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
-Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
+Queue membership links are stored in the waiting TCBs (`queuePrev`/`queuePPrev`/`queueNext`).
 The endpoint stores only queue boundaries. -/
 structure IntrusiveQueue where
   head : Option SeLe4n.ThreadId := none
@@ -126,7 +129,8 @@ structure IntrusiveQueue where
 /-- Endpoint object model.
 
 WS-E4/M-01: Dual-queue endpoint semantics are intrusive-list backed.
-`sendQ`/`receiveQ` store queue boundaries, while per-thread links are kept in
+`sendQ`/`receiveQ` store queue boundaries, while per-thread links (`queueNext`
+plus predecessor-pointer metadata `queuePPrev`) are kept in
 TCBs. Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) remain for
 backward compatibility with prior operations/proofs. -/
 structure Endpoint where

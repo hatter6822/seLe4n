@@ -39,7 +39,7 @@ private partial def intrusiveQueueReachable
             match lookupQueueTcbB st tid with
             | none => false
             | some tcb =>
-                if tcb.queuePrev != expectedPrev then
+                if tcb.queuePrev != expectedPrev || tcb.queuePPrev != expectedPrev then
                   false
                 else if tid == tail then
                   tcb.queueNext.isNone

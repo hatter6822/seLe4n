@@ -144,11 +144,11 @@ private def expectThreadQueueLinks
     (expectedPrev expectedNext : Option SeLe4n.ThreadId) : IO Unit :=
   match st.objects tid.toObjId with
   | some (.tcb tcb) =>
-      if tcb.queuePrev = expectedPrev ∧ tcb.queueNext = expectedNext then
+      if tcb.queuePrev = expectedPrev ∧ tcb.queuePPrev = expectedPrev ∧ tcb.queueNext = expectedNext then
         IO.println s!"positive check passed [{label}]"
       else
         throw <| IO.userError
-          s!"{label}: expected queuePrev={reprStr expectedPrev} queueNext={reprStr expectedNext}, got prev={reprStr tcb.queuePrev} next={reprStr tcb.queueNext}"
+          s!"{label}: expected queuePrev/queuePPrev={reprStr expectedPrev} queueNext={reprStr expectedNext}, got prev={reprStr tcb.queuePrev} pprev={reprStr tcb.queuePPrev} next={reprStr tcb.queueNext}"
   | _ =>
       throw <| IO.userError s!"{label}: expected TCB object"
 
@@ -350,6 +350,29 @@ private def runNegativeChecks : IO Unit := do
   expectError "dual queue receiver double-wait prevention"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvWait1)
     .alreadyWaiting
+
+  let (_, stRm1) ← expectOkState "dual queue remove enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  let (_, stRm2) ← expectOkState "dual queue remove enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stRm1)
+  let (_, stRm3) ← expectOkState "dual queue remove enqueue sender 9"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) stRm2)
+  let stRm4 ← expectOk "dual queue O(1) remove middle sender"
+    (SeLe4n.Kernel.endpointQueueRemove endpointId false (SeLe4n.ThreadId.ofNat 8) stRm3)
+  expectThreadQueueLinks "dual queue remove middle clears sender 8"
+    stRm4 (SeLe4n.ThreadId.ofNat 8) none none
+  expectThreadQueueLinks "dual queue remove middle rewires sender 7"
+    stRm4 (SeLe4n.ThreadId.ofNat 7) none (some (SeLe4n.ThreadId.ofNat 9))
+  expectThreadQueueLinks "dual queue remove middle rewires sender 9"
+    stRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) none
+
+  match stRm4.objects endpointId with
+  | some (.endpoint ep) =>
+      if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 9) then
+        IO.println "positive check passed [dual queue remove middle keeps queue boundaries]"
+      else
+        throw <| IO.userError s!"dual queue remove middle expected head=7 tail=9, got {reprStr ep.sendQ}"
+  | _ => throw <| IO.userError "dual queue remove middle expected endpoint object"
 
   match stDualFifo4.objects endpointId with
   | some (.endpoint ep) =>

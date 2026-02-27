@@ -701,17 +701,17 @@ theorem storeTcbIpcState_tcb_exists_at_target
 
 private def tcbWithQueueLinks
     (tcb : TCB)
-    (prev next : Option SeLe4n.ThreadId) : TCB :=
-  { tcb with queuePrev := prev, queueNext := next }
+    (prev pprev next : Option SeLe4n.ThreadId) : TCB :=
+  { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }
 
 private def storeTcbQueueLinks
     (st : SystemState)
     (tid : SeLe4n.ThreadId)
-    (prev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+    (prev pprev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
   match lookupTcb st tid with
   | none => .error .objectNotFound
   | some tcb =>
-      match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev next)) st with
+      match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
@@ -743,11 +743,11 @@ private def endpointQueuePopHead
                     | some nextTid =>
                         match lookupTcb st1 nextTid with
                         | none => Except.error KernelError.objectNotFound
-                        | some nextTcb => storeTcbQueueLinks st1 nextTid none nextTcb.queueNext
+                        | some nextTcb => storeTcbQueueLinks st1 nextTid none none nextTcb.queueNext
                   match st2Result with
                   | .error e => .error e
                   | .ok st2 =>
-                      match storeTcbQueueLinks st2 tid none none with
+                      match storeTcbQueueLinks st2 tid none none none with
                       | .error e => .error e
                       | .ok st3 => .ok (tid, st3)
   | some _ => .error .invalidCapability
@@ -765,7 +765,7 @@ private def endpointQueueEnqueue
       | some tcb =>
           if tcb.ipcState ≠ .ready then
             .error .alreadyWaiting
-          else if tcb.queuePrev.isSome || tcb.queueNext.isSome then
+          else if tcb.queuePPrev.isSome || tcb.queueNext.isSome then
             .error .illegalState
           else
             let q := if isReceiveQ then ep.receiveQ else ep.sendQ
@@ -775,7 +775,7 @@ private def endpointQueueEnqueue
                 let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
                 match storeObject endpointId (.endpoint ep') st with
                 | .error e => .error e
-                | .ok ((), st1) => storeTcbQueueLinks st1 tid none none
+                | .ok ((), st1) => storeTcbQueueLinks st1 tid none none none
             | some tailTid =>
                 match lookupTcb st tailTid with
                 | none => .error .objectNotFound
@@ -785,11 +785,70 @@ private def endpointQueueEnqueue
                     match storeObject endpointId (.endpoint ep') st with
                     | .error e => .error e
                     | .ok ((), st1) =>
-                        match storeTcbQueueLinks st1 tailTid tailTcb.queuePrev (some tid) with
+                        match storeTcbQueueLinks st1 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some tid) with
                         | .error e => .error e
-                        | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) none
+                        | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) (some tailTid) none
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
+
+/-- WS-E4/M-13: O(1) removal of an arbitrary intrusive-queue member.
+
+Uses per-node `queuePPrev` metadata plus `queueNext` to splice a node without
+list traversal. -/
+def endpointQueueRemove
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.objects endpointId, lookupTcb st tid with
+  | some (.endpoint ep), some tcb =>
+      let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+      let pprev := tcb.queuePPrev
+      let next := tcb.queueNext
+      let updateHead (qCur : IntrusiveQueue) : IntrusiveQueue :=
+        match next with
+        | some nextTid => { qCur with head := some nextTid }
+        | none => {}
+      let updateTail (qCur : IntrusiveQueue) : IntrusiveQueue :=
+        match pprev with
+        | some prevTid => { qCur with tail := some prevTid }
+        | none => {}
+      let q1 :=
+        if q.head = some tid then updateHead q
+        else q
+      let q2 :=
+        if q.tail = some tid then updateTail q1
+        else q1
+      if q.head ≠ some tid && pprev.isNone then
+        .error .illegalState
+      else
+        let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q2 } else { ep with sendQ := q2 }
+        match storeObject endpointId (.endpoint ep') st with
+        | .error e => .error e
+        | .ok ((), st1) =>
+            let st2Result :=
+              match pprev with
+              | none => Except.ok st1
+              | some prevTid =>
+                  match lookupTcb st1 prevTid with
+                  | none => Except.error KernelError.objectNotFound
+                  | some prevTcb => storeTcbQueueLinks st1 prevTid prevTcb.queuePrev prevTcb.queuePPrev next
+            match st2Result with
+            | .error e => .error e
+            | .ok st2 =>
+                let st3Result :=
+                  match next with
+                  | none => Except.ok st2
+                  | some nextTid =>
+                      match lookupTcb st2 nextTid with
+                      | none => Except.error KernelError.objectNotFound
+                      | some nextTcb => storeTcbQueueLinks st2 nextTid pprev pprev nextTcb.queueNext
+                match st3Result with
+                | .error e => .error e
+                | .ok st3 => storeTcbQueueLinks st3 tid none none none
+  | some (.endpoint _), none => .error .objectNotFound
+  | some _, _ => .error .invalidCapability
+  | none, _ => .error .objectNotFound
 
 /-- WS-E4/M-01: Send to endpoint using intrusive dual-queue semantics.
 

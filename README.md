@@ -23,6 +23,7 @@
 - **Current package version:** `0.12.1` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 
 ## Specifications
 
@@ -51,6 +52,7 @@ lake exe sele4n
 
 Additional resources:
 
+- **Endpoint intrusive queues:** Dual IPC wait queues include per-member predecessor metadata (`queuePPrev`) to support O(1) arbitrary removal (`endpointQueueRemove`) and are covered by negative-state/invariant checks.
 - Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Change history: [`CHANGELOG.md`](CHANGELOG.md)
 
