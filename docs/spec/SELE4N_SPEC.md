@@ -88,7 +88,7 @@ on the semantic and proof foundations of the previous one.
 - IPC thread-state updates fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace/probe harnesses exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
-- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`Endpoint.sendQ`/`Endpoint.receiveQ`) with per-thread links (`TCB.queuePrev`/`TCB.queueNext`); executable coverage is enforced in `negative_state_suite` (block, rendezvous, FIFO, drain, duplicate-wait rejection via `alreadyWaiting`).
+- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`Endpoint.sendQ`/`Endpoint.receiveQ`) with per-thread links (`TCB.queuePrev`/`TCB.queueNext`); executable invariant checks enforce `intrusiveQueueWellFormed` over queue boundaries and links (head/tail coherence, cycle-free reachability, and prev/next link consistency), while `negative_state_suite` covers send/receive block-rendezvous FIFO/drain paths, duplicate-wait rejection via `alreadyWaiting`, and explicit queue-link runtime assertions.
 
 ## 4. Active Workstream Portfolio (WS-E)
 
