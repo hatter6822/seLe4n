@@ -298,14 +298,9 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
             match cspaceDeleteSlot src st'' with
             | .error e => .error e
             | .ok ((), st''') =>
-                -- CDT edge reparent: update edges that referenced src to reference dst
                 let srcAddr : SlotAddr := (src.cnode, src.slot)
                 let dstAddr : SlotAddr := (dst.cnode, dst.slot)
-                let reparented := st'''.cdt.edges.map (fun e =>
-                  if e.parent = srcAddr then { e with parent := dstAddr }
-                  else if e.child = srcAddr then { e with child := dstAddr }
-                  else e)
-                .ok ((), { st''' with cdt := { edges := reparented } })
+                .ok ((), { st''' with cdt := st'''.cdt.moveSlotNode srcAddr dstAddr })
 
 /-- WS-E4/C-02: Mutate a capability's rights in place without creating a derivation.
 

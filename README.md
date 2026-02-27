@@ -26,6 +26,7 @@
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 - **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`).
 - **Domain-aware scheduler policy:** selection is unified under active-domain filtering (`chooseThread`/`chooseThreadInDomain`), `kernelInvariant`/`canonicalSchedulerInvariantBundle` enforce `currentThreadInActiveDomain`, and regression coverage includes mixed runnable-set filtering plus `scheduleDomain` switch/tick consistency checks.
+- **CDT node/slot split for capability moves:** CDT derivation edges are now stored over stable node identities, with CSpace slots mapped to nodes via backpointers; `cspaceMove` updates slot-to-node pointers (`moveSlotNode`) instead of rewriting all global edges.
 
 ## Specifications
 

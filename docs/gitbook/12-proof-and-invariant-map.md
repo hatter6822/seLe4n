@@ -40,6 +40,7 @@ Component level:
 - `lifecycleAuthorityMonotonicity` — authority only decreases through lifecycle operations.
 
 Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness from slot uniqueness.
+CDT projection theorem: `CapDerivationTree.mem_projectedEdges_iff` characterizes observable CSpace derivation edges as the projection of stable node-level edges through slot mappings.
 
 Bundle level:
 
