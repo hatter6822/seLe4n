@@ -24,7 +24,7 @@
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 - **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
-- **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`).
+- **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`), and runtime regression coverage now exercises middle-removal/drain paths on both intrusive queues (`sendQ` and `receiveQ`).
 - **Domain-aware scheduler policy:** selection is unified under active-domain filtering (`chooseThread`/`chooseThreadInDomain`), `kernelInvariant`/`canonicalSchedulerInvariantBundle` enforce `currentThreadInActiveDomain`, and regression coverage includes mixed runnable-set filtering plus `scheduleDomain` switch/tick consistency checks.
 - **Node-stable CDT model:** capability derivation edges are tracked over stable CDT node IDs while CSpace slots map to nodes (`cdtSlotNode`/`cdtNodeSlot`); `cspaceMove` performs slot→node pointer transfer plus backpointer fixup instead of global edge rewrite, `cspaceDeleteSlot` detaches slot↔node mappings to prevent stale CDT aliasing on slot reuse, and `cspaceRevokeCdtStrict` now surfaces the first descendant-delete failure with offending slot context.
 

@@ -27,7 +27,7 @@ Current milestone state:
 5. fixture-backed executable evidence,
 6. tiered testing gates used in CI and local workflows,
 7. top-level import hygiene: keep `SeLe4n.lean` minimal and avoid duplicate/redundant subsystem imports; `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface,
-8. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queuePPrev`/`queueNext`) with runtime intrusive-queue invariant checks (head/tail coherence, cycle-free traversal, prev/pprev/next linkage), malformed-`queuePPrev` rejection (`illegalState`), and duplicate-wait rejection (`alreadyWaiting`).
+8. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queuePPrev`/`queueNext`) with runtime intrusive-queue invariant checks (head/tail coherence, cycle-free traversal, prev/pprev/next linkage), malformed-`queuePPrev` rejection (`illegalState`), duplicate-wait rejection (`alreadyWaiting`), and regression checks for O(1) middle removal/drain behavior on both `sendQ` and `receiveQ`.
 
 ## 3) Active workstream portfolio (WS-E)
 
