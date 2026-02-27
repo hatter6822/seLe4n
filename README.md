@@ -20,11 +20,9 @@
 
 ## Current state (authoritative snapshot)
 
-- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
-- **Active execution baseline:** `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
 - **Current package version:** `0.12.1` (`lakefile.toml`)
-- **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
-- **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
+- **Current active portfolio:** In-Planning
+- **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
 
 ## Specifications
 
@@ -65,23 +63,9 @@ Additional resources:
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 
-## Active workstreams (WS-E)
-
-Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.
-
-- **WS-E1:** Test infrastructure and CI hardening -- **completed** (Medium; M-10, M-11, F-14, L-07, L-08)
-- **WS-E2:** Proof quality and invariant strengthening -- **completed** (High; C-01, H-01, H-03)
-- **WS-E3:** Kernel semantic hardening -- **completed** (High; H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4:** Capability and IPC model completion -- **completed** (Critical; C-02, C-03, C-04, H-02, M-01, M-02, M-12)
-- **WS-E5:** Information-flow maturity -- **completed** (High; H-04, H-05, M-07)
-- **WS-E6:** Model completeness and documentation -- **completed** (Low; M-03, M-04, M-05, M-08, F-17, L-01–L-05)
-
-Primary references:
-- [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
-- [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](docs/audits/AUDIT_CODEBASE_v0.11.6.md)
-
 ## Completed workstreams (WS-D, historical)
 
+- **WS-E1..WS-E6:** all completed. See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
 - **WS-D1..WS-D4:** all completed. WS-D5/D6 items absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 - **WS-C1..WS-C8:** all completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
