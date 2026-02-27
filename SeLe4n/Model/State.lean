@@ -23,6 +23,8 @@ inductive KernelError where
   | notImplemented
   | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
+  | descendantDeleteFailed (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (cause : KernelError)
+      -- WS-E4/C-04 strict revoke: first descendant delete failure + offending slot context
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.

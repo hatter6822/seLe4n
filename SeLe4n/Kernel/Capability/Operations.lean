@@ -390,4 +390,34 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
             ) (.ok ((), stLocal))
             result
 
+/-- WS-E4/C-04 strict revoke variant.
+
+Same traversal as `cspaceRevokeCdt`, but it is strict about descendant deletion:
+it aborts on the first `cspaceDeleteSlot` failure and returns a contextualized
+error that records the offending descendant slot. -/
+def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceRevoke addr st with
+    | .error e => .error e
+    | .ok ((), stLocal) =>
+        match SystemState.lookupCdtNodeOfSlot stLocal addr with
+        | none => .ok ((), stLocal)
+        | some rootNode =>
+            let descendants := stLocal.cdt.descendantsOf rootNode
+            let result := descendants.foldl (fun acc node =>
+              match acc with
+              | .error e => .error e
+              | .ok ((), stAcc) =>
+                  match SystemState.lookupCdtSlotOfNode stAcc node with
+                  | none => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
+                  | some descAddr =>
+                      match cspaceDeleteSlot descAddr stAcc with
+                      | .error err =>
+                          .error (.descendantDeleteFailed descAddr.cnode descAddr.slot err)
+                      | .ok ((), stDel) =>
+                          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                          .ok ((), { stDetached with cdt := stDetached.cdt.removeNode node })
+            ) (.ok ((), stLocal))
+            result
+
 end SeLe4n.Kernel

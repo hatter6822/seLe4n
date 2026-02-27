@@ -231,6 +231,72 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
 
+  let strictRootNode : CdtNodeId := 10
+  let strictChildNode : CdtNodeId := 11
+  let strictGoodDesc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := 3 }
+  let strictBadDesc : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := 9 }
+
+  let strictSuccessSeed : SystemState :=
+    { baseState with
+      objects := fun oid =>
+        if oid = cnodeId then
+          some (.cnode {
+            guard := 0
+            radix := 0
+            slots := [
+              (0, { target := .object endpointId, rights := [.read, .write], badge := none }),
+              (3, { target := .object endpointId, rights := [.read], badge := none })
+            ]
+          })
+        else
+          baseState.objects oid
+      lifecycle := {
+        baseState.lifecycle with
+        capabilityRefs := fun ref =>
+          if ref = slot0 then some (.object endpointId)
+          else if ref = strictGoodDesc then some (.object endpointId)
+          else baseState.lifecycle.capabilityRefs ref
+      }
+      cdt := {
+        edges := [{ parent := strictRootNode, child := strictChildNode, op := .mint }]
+      }
+      cdtSlotNode := fun ref =>
+        if ref = slot0 then some strictRootNode
+        else if ref = strictGoodDesc then some strictChildNode
+        else baseState.cdtSlotNode ref
+      cdtNodeSlot := fun node =>
+        if node = strictRootNode then some slot0
+        else if node = strictChildNode then some strictGoodDesc
+        else baseState.cdtNodeSlot node
+      cdtNextNode := 12
+    }
+
+  let (_, strictSuccessState) ← expectOkState "cspaceRevokeCdtStrict deletes descendants"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict slot0 strictSuccessSeed)
+  if SystemState.lookupSlotCap strictSuccessState strictGoodDesc = none then
+    IO.println "positive check passed [cspaceRevokeCdtStrict removes descendant slot capability]"
+  else
+    throw <| IO.userError "cspaceRevokeCdtStrict should delete descendant slot capability"
+
+  let strictFailureSeed : SystemState :=
+    { strictSuccessSeed with
+      cdtSlotNode := fun ref =>
+        if ref = slot0 then some strictRootNode
+        else if ref = strictBadDesc then some strictChildNode
+        else strictSuccessSeed.cdtSlotNode ref
+      cdtNodeSlot := fun node =>
+        if node = strictRootNode then some slot0
+        else if node = strictChildNode then some strictBadDesc
+        else strictSuccessSeed.cdtNodeSlot node
+    }
+
+  expectError "cspaceRevokeCdtStrict surfaces first descendant deletion failure"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict slot0 strictFailureSeed)
+    (.descendantDeleteFailed wrongTypeId 9 .objectNotFound)
+
+  let _ ← expectOkState "cspaceRevokeCdt tolerates descendant deletion failure"
+    (SeLe4n.Kernel.cspaceRevokeCdt slot0 strictFailureSeed)
+
   expectError "endpoint receive idle-state mismatch"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)
     .endpointStateMismatch
