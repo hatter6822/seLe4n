@@ -53,6 +53,18 @@ structure SchedulerState where
   domainScheduleIndex : Nat := 0
   deriving Repr, DecidableEq
 
+/-- WS-E7: canonical scheduler update helper for runnable-queue mutations.
+Keeps list payload and cached queue endpoints synchronized. -/
+def SchedulerState.withRunnableQueue
+    (sched : SchedulerState)
+    (queue : List SeLe4n.ThreadId) : SchedulerState :=
+  {
+    sched with
+      runnable := queue
+      runnableHead := queue.head?
+      runnableTail := queue.getLast?
+  }
+
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
   cnode : SeLe4n.ObjId

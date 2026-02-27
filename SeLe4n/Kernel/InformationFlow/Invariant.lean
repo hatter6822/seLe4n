@@ -182,22 +182,15 @@ private theorem ensureRunnable_preserves_projection
               List.filter (threadObservable ctx observer) st.scheduler.runnable :=
             list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
           have hObj : projectObjects ctx observer
-              { st with scheduler := {
-                  st.scheduler with
-                  runnable := st.scheduler.runnable ++ [tid]
-                  runnableHead := some (st.scheduler.runnable.head?.getD tid)
-                  runnableTail := some tid
-                } } = projectObjects ctx observer st := rfl
+              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
+              projectObjects ctx observer st := rfl
           have hSvc : projectServiceStatus ctx observer
-              { st with scheduler := {
-                  st.scheduler with
-                  runnable := st.scheduler.runnable ++ [tid]
-                  runnableHead := some (st.scheduler.runnable.head?.getD tid)
-                  runnableTail := some tid
-                } } = projectServiceStatus ctx observer st := by
+              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
+              projectServiceStatus ctx observer st := by
             funext sid
             rfl
-          simp [projectState, projectCurrent, projectRunnable, hRun, hObj, hSvc]
+          simpa [projectState, projectCurrent, projectRunnable,
+            SchedulerState.withRunnableQueue, hRun] using And.intro hObj hSvc
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 private theorem storeTcbIpcState_preserves_projection
