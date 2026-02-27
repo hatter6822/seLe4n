@@ -188,6 +188,48 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
     .invalidCapability
 
+  -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
+  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := 2 }
+  let moveSrcNode : CdtNodeId := 0
+  let moveParentNode : CdtNodeId := 1
+  let moveChildNode : CdtNodeId := 2
+  let moveSeed : SystemState :=
+    { baseState with
+      cdt := {
+        edges := [
+          { parent := moveParentNode, child := moveSrcNode, op := .copy },
+          { parent := moveSrcNode, child := moveChildNode, op := .mint }
+        ]
+      }
+      cdtSlotNode := fun ref =>
+        if ref = slot0 then some moveSrcNode else baseState.cdtSlotNode ref
+      cdtNodeSlot := fun node =>
+        if node = moveSrcNode then some slot0
+        else if node = moveParentNode then some { cnode := cnodeId, slot := 7 }
+        else if node = moveChildNode then some { cnode := cnodeId, slot := 8 }
+        else baseState.cdtNodeSlot node
+      cdtNextNode := 3
+    }
+  let (_, moveState) ← expectOkState "cspaceMove remaps slot-node pointer"
+    (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
+  if SystemState.lookupCdtNodeOfSlot moveState slot0 = none ∧
+      SystemState.lookupCdtNodeOfSlot moveState moveDst = some moveSrcNode ∧
+      SystemState.lookupCdtSlotOfNode moveState moveSrcNode = some moveDst then
+    IO.println "positive check passed [cspaceMove updates CDT slot-node/backpointer mappings]"
+  else
+    throw <| IO.userError "cspaceMove should clear src mapping and rebind node to dst"
+  if moveState.cdt.edges = moveSeed.cdt.edges then
+    IO.println "positive check passed [cspaceMove keeps node-level CDT edges unchanged]"
+  else
+    throw <| IO.userError "cspaceMove unexpectedly rewrote node-level CDT edges"
+
+  let (_, deletedMoveDst) ← expectOkState "cspaceDeleteSlot clears stale CDT slot mapping"
+    (SeLe4n.Kernel.cspaceDeleteSlot moveDst moveState)
+  if SystemState.lookupCdtNodeOfSlot deletedMoveDst moveDst = none ∧
+      SystemState.lookupCdtSlotOfNode deletedMoveDst moveSrcNode = none then
+    IO.println "positive check passed [cspaceDeleteSlot detaches slot-node/backpointer mapping]"
+  else
+    throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
 
   expectError "endpoint receive idle-state mismatch"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)
