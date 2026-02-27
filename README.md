@@ -23,6 +23,7 @@
 - **Current package version:** `0.12.1` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
 
 ## Specifications
 
@@ -78,7 +79,7 @@ Additional resources:
 | `SeLe4n/Model/Object.lean`, `Model/State.lean` | Core model entities and kernel/system state |
 | `SeLe4n/Kernel/Scheduler/*` | Scheduler transitions and invariants |
 | `SeLe4n/Kernel/Capability/*` | CSpace/capability transitions and invariants |
-| `SeLe4n/Kernel/IPC/*` | Endpoint IPC transitions and invariants |
+| `SeLe4n/Kernel/IPC/*` | Endpoint IPC transitions and invariants (dual intrusive queues use O(1) arbitrary unlink via `queuePPrev`) |
 | `SeLe4n/Kernel/Lifecycle/*` | Lifecycle/retype transitions and invariants |
 | `SeLe4n/Kernel/Service/*` | Service orchestration, policy checks, composed invariants |
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
