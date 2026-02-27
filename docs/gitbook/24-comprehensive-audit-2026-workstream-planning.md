@@ -57,7 +57,7 @@ See the workstream plan for WS-E1..WS-E6 details and phase sequencing. WS-E1 thr
 
 ### WS-E6 completed summary
 
-**WS-E6 — Model completeness and documentation** has been completed (v0.12.0). All 10 findings resolved:
+**WS-E6 — Model completeness and documentation** has been completed (v0.12.1). All 10 findings resolved:
 
 - **M-03:** Three-level EDF scheduling (`isBetterCandidate`: priority > deadline > FIFO) with `isBetterCandidate_irrefl`/`_asymm` algebraic theorems. `Deadline` typed identifier. `TCB.deadline` field.
 - **M-04:** Time-slice preemption via `timerTick` operation (decrement/reset+reschedule). `TCB.timeSlice` field. `defaultTimeSlice` constant. `timeSlicePositive` invariant.
