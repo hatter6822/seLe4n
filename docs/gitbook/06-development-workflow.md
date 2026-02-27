@@ -3,7 +3,7 @@
 ## Daily contributor loop
 
 1. Pick one coherent WS-E target (prioritize next planned workstream in current phase).
-2. Implement minimal code/proof changes.
+2. Implement minimal code/proof changes (including import hygiene in `SeLe4n.lean`: no duplicate/redundant top-level subsystem imports).
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
 5. Re-run validations before merge.
