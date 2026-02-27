@@ -24,9 +24,10 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
 - `SeLe4n/Model/Object.lean`
-  - object-level representations.
+  - object-level representations (including TCB intrusive queue link fields).
 - `SeLe4n/Model/State.lean`
-  - global system-state composition and update helpers.
+  - global system-state composition and update helpers (including runnable
+    queue endpoint synchronization via `SchedulerState.withRunnableQueue`).
 
 ### Kernel transition/invariant families
 

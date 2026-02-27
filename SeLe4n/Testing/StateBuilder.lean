@@ -70,10 +70,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objects := listLookup builder.objects
     objectIndex := builder.objects.map Prod.fst
     services := listLookup builder.services
-    scheduler := {
-      runnable := builder.runnable
-      current := builder.current
-    }
+    scheduler := { (default : SchedulerState).withRunnableQueue builder.runnable with current := builder.current }
     irqHandlers := listLookup builder.irqHandlers
     lifecycle := {
       objectTypes := listLookup builder.lifecycleObjectTypes
