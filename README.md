@@ -23,6 +23,8 @@
 - **Current package version:** `0.12.1` (`lakefile.toml`)
 - **Current active portfolio:** In-Planning
 - **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
+- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
+- **Intrusive endpoint queues:** dual-queue wait lists now track `queuePrev`/`queuePPrev`/`queueNext` per waiting TCB to support O(1) arbitrary removal (`endpointQueueRemoveDual`).
 
 ## Specifications
 

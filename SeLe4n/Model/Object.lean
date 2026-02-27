@@ -86,6 +86,11 @@ inductive ThreadIpcState where
 
 M-03/WS-E6: `deadline` field for EDF tie-breaking. Default 0 = no deadline.
 M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum. -/
+inductive QueuePPrev where
+  | endpointHead
+  | tcbNext (tid : SeLe4n.ThreadId)
+  deriving Repr, DecidableEq
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -105,6 +110,11 @@ structure TCB where
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
+  /-- WS-E8: pointer-to-previous-link metadata.
+      `endpointHead` means this node is currently referenced by queue head;
+      `tcbNext prevTid` means it is referenced by `prevTid.queueNext`.
+      Cleared when detached from intrusive endpoint wait queues. -/
+  queuePPrev : Option QueuePPrev := none
   queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
