@@ -451,6 +451,157 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  let crossDomainState : SystemState :=
+    { schedPriorityState with
+      objects := fun oid =>
+        if oid = (SeLe4n.ThreadId.ofNat 7).toObjId then
+          some (.tcb {
+            tid := 7
+            priority := 80
+            domain := 1
+            cspaceRoot := cnodeId
+            vspaceRoot := 20
+            ipcBuffer := 4096
+            ipcState := .ready
+          })
+        else
+          schedPriorityState.objects oid
+      scheduler := { schedPriorityState.scheduler with activeDomain := 0, current := none } }
+  let (_, stCrossDomainScheduled) ← expectOkState "schedule filters runnable set to active domain"
+    (SeLe4n.Kernel.schedule crossDomainState)
+  if stCrossDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+    IO.println "positive check passed [schedule domain filter]: active domain thread selected"
+  else
+    throw <| IO.userError "schedule domain filter expected current = tid 8"
+
+  let noActiveDomainRunnableState : SystemState :=
+    { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := 2 } }
+  let (_, stNoActiveDomainRunnable) ← expectOkState "schedule returns idle when no active-domain runnable threads"
+    (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
+  if stNoActiveDomainRunnable.scheduler.current = none then
+    IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
+  else
+    throw <| IO.userError "schedule domain isolation expected current = none"
+
+  let mixedDomainFifoState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 10 (.tcb {
+        tid := 10
+        priority := 20
+        deadline := 2
+        domain := 1
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 12288
+        ipcState := .ready
+      })
+      |>.withObject 11 (.tcb {
+        tid := 11
+        priority := 20
+        deadline := 4
+        domain := 1
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 16384
+        ipcState := .ready
+      })
+      |>.withObject 12 (.tcb {
+        tid := 12
+        priority := 80
+        deadline := 1
+        domain := 0
+        cspaceRoot := cnodeId
+        vspaceRoot := 20
+        ipcBuffer := 20480
+        ipcState := .ready
+      })
+      |>.withRunnable [12, 10, 11]
+      |>.withCurrent none
+      |>.build)
+      |> fun st => { st with scheduler := { st.scheduler with activeDomain := 1 } }
+  let (_, stMixedDomainScheduled) ← expectOkState "schedule ignores higher-priority cross-domain runnable"
+    (SeLe4n.Kernel.schedule mixedDomainFifoState)
+  if stMixedDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+    IO.println "positive check passed [schedule mixed domain priority]: active-domain runnable wins"
+  else
+    throw <| IO.userError "schedule mixed domain priority expected current = tid 10"
+
+  let (_, stMixedDomainScheduledFifo) ← expectOkState "schedule keeps FIFO stability for equal prio/deadline in active domain"
+    (SeLe4n.Kernel.schedule {
+      mixedDomainFifoState with
+      objects := fun oid =>
+        if oid = (SeLe4n.ThreadId.ofNat 10).toObjId then
+          some (.tcb {
+            tid := 10
+            priority := 20
+            deadline := 4
+            domain := 1
+            cspaceRoot := cnodeId
+            vspaceRoot := 20
+            ipcBuffer := 12288
+            ipcState := .ready
+          })
+        else
+          mixedDomainFifoState.objects oid })
+  if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+    IO.println "positive check passed [schedule mixed domain FIFO]: earlier queue element retained"
+  else
+    throw <| IO.userError "schedule mixed domain FIFO expected current = tid 10"
+
+  let scheduleDomainSwitchState : SystemState :=
+    { mixedDomainFifoState with
+      scheduler := { mixedDomainFifoState.scheduler with
+        activeDomain := 0
+        current := some (SeLe4n.ThreadId.ofNat 12)
+        domainTimeRemaining := 1
+        domainSchedule := [
+          { domain := 0, length := 3 },
+          { domain := 1, length := 2 }
+        ]
+        domainScheduleIndex := 0
+      } }
+  let (_, stScheduleDomainSwitched) ← expectOkState "scheduleDomain switches domain and reschedules"
+    (SeLe4n.Kernel.scheduleDomain scheduleDomainSwitchState)
+  if stScheduleDomainSwitched.scheduler.activeDomain = 1 then
+    IO.println "positive check passed [scheduleDomain active domain advance]: activeDomain = 1"
+  else
+    throw <| IO.userError "scheduleDomain active domain advance expected activeDomain = 1"
+  if stScheduleDomainSwitched.scheduler.domainScheduleIndex = 1 then
+    IO.println "positive check passed [scheduleDomain index advance]: index = 1"
+  else
+    throw <| IO.userError "scheduleDomain index advance expected index = 1"
+  if stScheduleDomainSwitched.scheduler.domainTimeRemaining = 2 then
+    IO.println "positive check passed [scheduleDomain refresh domain budget]: remaining = 2"
+  else
+    throw <| IO.userError "scheduleDomain refresh domain budget expected remaining = 2"
+  if stScheduleDomainSwitched.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+    IO.println "positive check passed [scheduleDomain reschedule respects new active domain]: current = tid 10"
+  else
+    throw <| IO.userError "scheduleDomain reschedule expected current = tid 10"
+
+  let scheduleDomainTickOnlyState : SystemState :=
+    { scheduleDomainSwitchState with
+      scheduler := { scheduleDomainSwitchState.scheduler with
+        activeDomain := 1
+        current := some (SeLe4n.ThreadId.ofNat 10)
+        domainTimeRemaining := 3
+        domainScheduleIndex := 1
+      } }
+  let (_, stScheduleDomainTickOnly) ← expectOkState "scheduleDomain decrements budget without switching"
+    (SeLe4n.Kernel.scheduleDomain scheduleDomainTickOnlyState)
+  if stScheduleDomainTickOnly.scheduler.activeDomain = 1 ∧ stScheduleDomainTickOnly.scheduler.domainScheduleIndex = 1 then
+    IO.println "positive check passed [scheduleDomain no switch]: domain/index unchanged"
+  else
+    throw <| IO.userError "scheduleDomain no switch expected domain/index unchanged"
+  if stScheduleDomainTickOnly.scheduler.domainTimeRemaining = 2 then
+    IO.println "positive check passed [scheduleDomain no switch budget decrement]: remaining = 2"
+  else
+    throw <| IO.userError "scheduleDomain no switch budget expected remaining = 2"
+  if stScheduleDomainTickOnly.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+    IO.println "positive check passed [scheduleDomain no switch current consistency]: current preserved"
+  else
+    throw <| IO.userError "scheduleDomain no switch current consistency expected current = tid 10"
+
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
@@ -472,6 +623,12 @@ private def runNegativeChecks : IO Unit := do
       |>.build)
   expectError "schedule malformed runnable target"
     (SeLe4n.Kernel.schedule malformedSched)
+    .schedulerInvariantViolation
+
+  let malformedOffDomain : SystemState :=
+    { malformedSched with scheduler := { malformedSched.scheduler with activeDomain := 1 } }
+  expectError "schedule malformed runnable target in non-active domain still rejected"
+    (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation
 
   -- ==========================================================================

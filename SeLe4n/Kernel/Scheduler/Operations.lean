@@ -79,8 +79,9 @@ theorem isBetterCandidate_asymm
 Folds over the runnable list accumulating the best candidate using the
 three-level `isBetterCandidate` predicate. The accumulator carries
 `(ThreadId × Priority × Deadline)` to avoid re-reading the object store. -/
-private def chooseBestRunnable
+private def chooseBestRunnableBy
     (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
     Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
@@ -90,14 +91,26 @@ private def chooseBestRunnable
       match objects tid.toObjId with
       | some (.tcb tcb) =>
           let best' :=
-            match best with
-            | none => some (tid, tcb.priority, tcb.deadline)
-            | some (_, bestPrio, bestDl) =>
-                if isBetterCandidate bestPrio bestDl tcb.priority tcb.deadline then
-                  some (tid, tcb.priority, tcb.deadline)
-                else best
-          chooseBestRunnable objects rest best'
+            if eligible tcb then
+              match best with
+              | none => some (tid, tcb.priority, tcb.deadline)
+              | some (_, bestPrio, bestDl) =>
+                  if isBetterCandidate bestPrio bestDl tcb.priority tcb.deadline then
+                    some (tid, tcb.priority, tcb.deadline)
+                  else
+                    best
+            else
+              best
+          chooseBestRunnableBy objects eligible rest best'
       | _ => .error .schedulerInvariantViolation
+
+private def chooseBestRunnableInDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (activeDomain : SeLe4n.DomainId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  chooseBestRunnableBy objects (fun tcb => tcb.domain == activeDomain) runnable best
 
 private def rotateCurrentToBack
     (current : Option SeLe4n.ThreadId)
@@ -110,13 +123,24 @@ private def rotateCurrentToBack
       else
         .error .schedulerInvariantViolation
 
-/-- M-03/WS-E6: Choose the highest-priority runnable thread using three-level
-deterministic selection: priority > EDF deadline > FIFO queue order.
+/-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
+def filterByDomain
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (runnable : List SeLe4n.ThreadId)
+    (domain : SeLe4n.DomainId) : List SeLe4n.ThreadId :=
+  runnable.filter fun tid =>
+    match objects tid.toObjId with
+    | some (.tcb tcb) => tcb.domain == domain
+    | _ => false
 
-This is a pure read operation — the system state is returned unchanged. -/
+/-- M-03/M-05 WS-E6: Choose the highest-priority runnable thread from the
+active domain using deterministic selection: priority > EDF deadline > FIFO.
+
+This is a pure read operation — the system state is returned unchanged.
+If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestRunnable st.objects st.scheduler.runnable none with
+    match chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -133,8 +157,8 @@ def schedule : Kernel Unit :=
     | .ok (none, st') => setCurrentThread none st'
     | .ok (some tid, st') =>
         match st'.objects tid.toObjId with
-        | some (.tcb _) =>
-            if tid ∈ st'.scheduler.runnable then
+        | some (.tcb tcb) =>
+            if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
               setCurrentThread (some tid) st'
             else
               .error .schedulerInvariantViolation
@@ -201,28 +225,12 @@ def timerTick : Kernel Unit :=
 -- M-05/WS-E6: Domain scheduling
 -- ============================================================================
 
-/-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
-def filterByDomain
-    (objects : SeLe4n.ObjId → Option KernelObject)
-    (runnable : List SeLe4n.ThreadId)
-    (domain : SeLe4n.DomainId) : List SeLe4n.ThreadId :=
-  runnable.filter fun tid =>
-    match objects tid.toObjId with
-    | some (.tcb tcb) => tcb.domain == domain
-    | _ => false
+/-- M-05/WS-E6: Compatibility alias for domain-aware scheduling selection.
 
-/-- M-05/WS-E6: Choose the best thread in the active domain using three-level
-selection. If no threads exist in the active domain, falls back to unrestricted
-selection to avoid starvation. -/
+`chooseThread` is now domain-aware; this entry point remains for call sites that
+expect explicit domain-oriented naming. -/
 def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
-  fun st =>
-    let domainThreads := filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain
-    match chooseBestRunnable st.objects domainThreads none with
-    | .error e => .error e
-    | .ok none =>
-        -- No threads in active domain: fall back to unrestricted selection
-        chooseThread st
-    | .ok (some (tid, _, _)) => .ok (some tid, st)
+  chooseThread
 
 /-- M-05/WS-E6: Advance the domain schedule to the next entry.
 
@@ -240,6 +248,7 @@ def switchDomain : Kernel Unit :=
         | none => .ok ((), st)  -- safety: should not happen with valid modular index
         | some entry =>
             let sched' := { st.scheduler with
+              current := none
               activeDomain := DomainScheduleEntry.domain entry
               domainTimeRemaining := DomainScheduleEntry.length entry
               domainScheduleIndex := nextIdx
@@ -273,8 +282,8 @@ theorem schedule_eq_chooseThread_then_setCurrent :
           | none => setCurrentThread none st'
           | some tid =>
               match st'.objects tid.toObjId with
-              | some (.tcb _) =>
-                  if tid ∈ st'.scheduler.runnable then
+              | some (.tcb tcb) =>
+                  if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
                     setCurrentThread (some tid) st'
                   else
                     .error .schedulerInvariantViolation
@@ -341,7 +350,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread at hStep
-  cases hPick : chooseBestRunnable st.objects st.scheduler.runnable none with
+  cases hPick : chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -353,7 +362,8 @@ theorem chooseThread_preserves_state
           rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
           simpa using hSt.symm
 
- theorem schedule_preserves_wellFormed
+
+theorem schedule_preserves_wellFormed
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
@@ -376,12 +386,12 @@ theorem chooseThread_preserves_state
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
-                      · simp [hChoose, hObj, hMem] at hStep
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      · simp [hChoose, hObj, hSchedOk] at hStep
                         have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
-                          simpa [hChoose, hObj, hMem] using hStep
-                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hMem hSet
-                      · simp [hChoose, hObj, hMem] at hStep
+                          simpa [hChoose, hObj, hSchedOk] using hStep
+                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hSchedOk.1 hSet
+                      · simp [hChoose, hObj, hSchedOk] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -420,6 +430,15 @@ theorem chooseThread_preserves_currentThreadValid
   rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hValid
 
+theorem chooseThread_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : currentThreadInActiveDomain st)
+    (hStep : chooseThread st = .ok (next, st')) :
+    currentThreadInActiveDomain st' := by
+  rcases chooseThread_preserves_state st st' next hStep with rfl
+  simpa using hInv
+
 theorem schedule_preserves_runQueueUnique
     (st st' : SystemState)
     (hUnique : runQueueUnique st.scheduler)
@@ -445,10 +464,10 @@ theorem schedule_preserves_runQueueUnique
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · exact setCurrentThread_preserves_runQueueUnique stChoose st' (some tid) hUniqueChoose (by
-                          simpa [hChoose, hObj, hMem] using hStep)
-                      · simp [hChoose, hObj, hMem] at hStep
+                          simpa [hChoose, hObj, hSchedOk] using hStep)
+                      · simp [hChoose, hObj, hSchedOk] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -476,11 +495,11 @@ theorem schedule_preserves_currentThreadValid
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hMem : tid ∈ stChoose.scheduler.runnable
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · exact setCurrentThread_some_preserves_currentThreadValid stChoose st' tid
                           ⟨tcb, hObj⟩
-                          (by simpa [hChoose, hObj, hMem] using hStep)
-                      · simp [hChoose, hObj, hMem] at hStep
+                          (by simpa [hChoose, hObj, hSchedOk] using hStep)
+                      · simp [hChoose, hObj, hSchedOk] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -542,6 +561,39 @@ theorem handleYield_preserves_runQueueUnique
       have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
       exact schedule_preserves_runQueueUnique stMoved st' hMovedUnique hSched
 
+theorem schedule_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hStep : schedule st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          cases next with
+          | none =>
+              have hSet : setCurrentThread none stChoose = .ok ((), st') := by
+                simpa [hChoose] using hStep
+              cases hSet
+              simp [currentThreadInActiveDomain]
+          | some tid =>
+              cases hObj : stChoose.objects tid.toObjId with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      · have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
+                          simpa [hChoose, hObj, hSchedOk] using hStep
+                        cases hSet
+                        simp [currentThreadInActiveDomain, hObj, hSchedOk.2]
+                      · simp [hChoose, hObj, hSchedOk] at hStep
+                  | endpoint ep => simp [hChoose, hObj] at hStep
+                  | notification ntfn => simp [hChoose, hObj] at hStep
+                  | cnode cn => simp [hChoose, hObj] at hStep
+                  | vspaceRoot root => simp [hChoose, hObj] at hStep
+
 theorem handleYield_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
@@ -554,6 +606,18 @@ theorem handleYield_preserves_currentThreadValid
       have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
       exact schedule_preserves_currentThreadValid stMoved st' hSched
 
+theorem handleYield_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold handleYield at hStep
+  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
+  | error e => simp [hRotate] at hStep
+  | ok runnable' =>
+      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
+      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
+      exact schedule_preserves_currentThreadInActiveDomain stMoved st' hSched
+
 theorem chooseThread_preserves_kernelInvariant
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
@@ -563,7 +627,8 @@ theorem chooseThread_preserves_kernelInvariant
   exact ⟨
     chooseThread_preserves_queueCurrentConsistent st st' next hInv.1 hStep,
     chooseThread_preserves_runQueueUnique st st' next hInv.2.1 hStep,
-    chooseThread_preserves_currentThreadValid st st' next hInv.2.2 hStep
+    chooseThread_preserves_currentThreadValid st st' next hInv.2.2.1 hStep,
+    chooseThread_preserves_currentThreadInActiveDomain st st' next hInv.2.2.2 hStep
   ⟩
 
 theorem schedule_preserves_kernelInvariant
@@ -573,7 +638,8 @@ theorem schedule_preserves_kernelInvariant
     kernelInvariant st' := by
   exact ⟨schedule_preserves_queueCurrentConsistent st st' hStep,
     schedule_preserves_runQueueUnique st st' hInv.2.1 hStep,
-    schedule_preserves_currentThreadValid st st' hStep⟩
+    schedule_preserves_currentThreadValid st st' hStep,
+    schedule_preserves_currentThreadInActiveDomain st st' hStep⟩
 
 theorem handleYield_preserves_kernelInvariant
     (st st' : SystemState)
@@ -582,7 +648,8 @@ theorem handleYield_preserves_kernelInvariant
     kernelInvariant st' := by
   exact ⟨handleYield_preserves_queueCurrentConsistent st st' hStep,
     handleYield_preserves_runQueueUnique st st' hInv.2.1 hStep,
-    handleYield_preserves_currentThreadValid st st' hStep⟩
+    handleYield_preserves_currentThreadValid st st' hStep,
+    handleYield_preserves_currentThreadInActiveDomain st st' hStep⟩
 
 theorem chooseThread_preserves_schedulerInvariantBundle
     (st st' : SystemState)
@@ -590,21 +657,33 @@ theorem chooseThread_preserves_schedulerInvariantBundle
     (hInv : schedulerInvariantBundle st)
     (hStep : chooseThread st = .ok (next, st')) :
     schedulerInvariantBundle st' := by
-  exact chooseThread_preserves_kernelInvariant st st' next hInv hStep
+  exact ⟨
+    chooseThread_preserves_queueCurrentConsistent st st' next hInv.1 hStep,
+    chooseThread_preserves_runQueueUnique st st' next hInv.2.1 hStep,
+    chooseThread_preserves_currentThreadValid st st' next hInv.2.2 hStep
+  ⟩
 
 theorem schedule_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (hInv : schedulerInvariantBundle st)
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  exact schedule_preserves_kernelInvariant st st' hInv hStep
+  exact ⟨
+    schedule_preserves_queueCurrentConsistent st st' hStep,
+    schedule_preserves_runQueueUnique st st' hInv.2.1 hStep,
+    schedule_preserves_currentThreadValid st st' hStep
+  ⟩
 
 theorem handleYield_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (hInv : schedulerInvariantBundle st)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
-  exact handleYield_preserves_kernelInvariant st st' hInv hStep
+  exact ⟨
+    handleYield_preserves_queueCurrentConsistent st st' hStep,
+    handleYield_preserves_runQueueUnique st st' hInv.2.1 hStep,
+    handleYield_preserves_currentThreadValid st st' hStep
+  ⟩
 
 -- ============================================================================
 -- M-05/WS-E6: switchDomain preserves scheduler invariant bundle
@@ -613,7 +692,8 @@ theorem handleYield_preserves_schedulerInvariantBundle
 /-- M-05/WS-E6: `switchDomain` preserves the scheduler invariant bundle.
 This is substantive: it must show that changing `activeDomain`, `domainTimeRemaining`,
 and `domainScheduleIndex` does not break `queueCurrentConsistent`, `runQueueUnique`,
-or `currentThreadValid`, since none of those depend on domain-related fields. -/
+`currentThreadValid`, or `currentThreadInActiveDomain`. `switchDomain` now clears
+`current` to maintain domain soundness across domain boundaries. -/
 theorem switchDomain_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (hInv : schedulerInvariantBundle st)
@@ -632,12 +712,55 @@ theorem switchDomain_preserves_schedulerInvariantBundle
         simp at hStep
         cases hStep
         refine ⟨?_, ?_, ?_⟩
-        · -- queueCurrentConsistent: runnable and current unchanged
-          exact hInv.1
+        · -- queueCurrentConsistent: current is cleared
+          simp [queueCurrentConsistent]
         · -- runQueueUnique: runnable unchanged
           exact hInv.2.1
-        · -- currentThreadValid: objects and scheduler.current unchanged
-          exact hInv.2.2
+        · -- currentThreadValid: current is none
+          simp [currentThreadValid]
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the active-domain current-thread
+obligation when it holds in the pre-state. -/
+theorem scheduleDomain_preserves_currentThreadInActiveDomain
+    (st st' : SystemState)
+    (hInv : currentThreadInActiveDomain st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    currentThreadInActiveDomain st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSw =>
+            have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
+            exact schedule_preserves_currentThreadInActiveDomain stSw st' hSched
+  · simp [hExpire] at hStep
+    cases hStep
+    simpa [currentThreadInActiveDomain] using hInv
+
+/-- M-05/WS-E6: `scheduleDomain` preserves the scheduler invariant bundle. -/
+theorem scheduleDomain_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSw =>
+            have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
+            have hSwInv : schedulerInvariantBundle stSw :=
+              switchDomain_preserves_schedulerInvariantBundle st stSw hInv (by simp [hSw])
+            exact schedule_preserves_schedulerInvariantBundle stSw st' hSwInv hSched
+  · simp [hExpire] at hStep
+    cases hStep
+    exact hInv
 
 /-- M-05/WS-E6: `chooseThreadInDomain` is a pure read — it does not modify state. -/
 theorem chooseThreadInDomain_preserves_state
@@ -646,16 +769,6 @@ theorem chooseThreadInDomain_preserves_state
     (hStep : chooseThreadInDomain st = .ok (next, st')) :
     st' = st := by
   unfold chooseThreadInDomain at hStep
-  cases hPick : chooseBestRunnable st.objects (filterByDomain st.objects st.scheduler.runnable st.scheduler.activeDomain) none with
-  | error e => simp [hPick] at hStep
-  | ok best =>
-      cases best with
-      | none =>
-          -- Falls back to chooseThread which preserves state
-          exact chooseThread_preserves_state st st' next (by simpa [hPick] using hStep)
-      | some triple =>
-          obtain ⟨tid, prio, dl⟩ := triple
-          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
-          simpa using hSt.symm
+  exact chooseThread_preserves_state st st' next hStep
 
 end SeLe4n.Kernel
