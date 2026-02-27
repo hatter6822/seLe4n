@@ -23,7 +23,7 @@ private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option 
 private partial def intrusiveQueueReachable
     (st : SystemState)
     (tail : SeLe4n.ThreadId)
-    (expectedPrev : Option SeLe4n.ThreadId)
+    (expectedPPrev : Option QueueBackPtr)
     (cursor : Option SeLe4n.ThreadId)
     (visited : List SeLe4n.ThreadId)
     (fuel : Nat) : Bool :=
@@ -39,7 +39,7 @@ private partial def intrusiveQueueReachable
             match lookupQueueTcbB st tid with
             | none => false
             | some tcb =>
-                if tcb.queuePrev != expectedPrev then
+                if tcb.queuePPrev != expectedPPrev || tcb.queuePrev != (match expectedPPrev with | some (.prevNode prev) => some prev | _ => none) then
                   false
                 else if tid == tail then
                   tcb.queueNext.isNone
@@ -47,7 +47,7 @@ private partial def intrusiveQueueReachable
                   match tcb.queueNext with
                   | none => false
                   | some nextTid =>
-                      intrusiveQueueReachable st tail (some tid) (some nextTid) (tid :: visited) fuel
+                      intrusiveQueueReachable st tail (some (.prevNode tid)) (some nextTid) (tid :: visited) fuel
 
 private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : Bool :=
   match q.head, q.tail with
@@ -56,8 +56,9 @@ private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : 
       match lookupQueueTcbB st head, lookupQueueTcbB st tail with
       | some headTcb, some tailTcb =>
           headTcb.queuePrev.isNone
+            && headTcb.queuePPrev = some .queueHead
             && tailTcb.queueNext.isNone
-            && intrusiveQueueReachable st tail none (some head) [] (st.objectIndex.length + 1)
+            && intrusiveQueueReachable st tail (some .queueHead) (some head) [] (st.objectIndex.length + 1)
       | _, _ => false
   | _, _ => false
 

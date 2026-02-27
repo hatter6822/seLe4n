@@ -82,6 +82,12 @@ inductive ThreadIpcState where
   | blockedOnReply (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- WS-E4/M-13 pointer-to-previous-link descriptor for intrusive queues. -/
+inductive QueueBackPtr where
+  | queueHead
+  | prevNode (tid : SeLe4n.ThreadId)
+  deriving Repr, DecidableEq
+
 /-- Thread Control Block.
 
 M-03/WS-E6: `deadline` field for EDF tie-breaking. Default 0 = no deadline.
@@ -105,6 +111,11 @@ structure TCB where
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
+  /-- WS-E4/M-13 intrusive back-pointer metadata (`pprev`) for O(1)
+      removal of an arbitrary queued thread.
+      `queueHead` means this thread is linked from queue.head; `prevNode p`
+      means this thread is linked from `p.queueNext`. -/
+  queuePPrev : Option QueueBackPtr := none
   queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
@@ -116,7 +127,7 @@ inductive EndpointState where
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
-Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
+Queue membership links are stored in the waiting TCBs (`queuePPrev`/`queueNext`, with `queuePrev` mirrored for compatibility).
 The endpoint stores only queue boundaries. -/
 structure IntrusiveQueue where
   head : Option SeLe4n.ThreadId := none
