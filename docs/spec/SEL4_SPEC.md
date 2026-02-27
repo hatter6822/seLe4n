@@ -139,7 +139,9 @@ relationships between capabilities. Relationships are established by:
   source.
 
 `seL4_CNode_Revoke` traverses the CDT to remove all descendants. This mechanism is
-central to safe memory reclamation and authority revocation.
+central to safe memory reclamation and authority revocation. In seLe4n, the
+strict model helper `cspaceRevokeCdtStrict` additionally reports the first
+descendant deletion failure with offending slot context for auditability.
 
 ### 3.6 Badges
 

@@ -390,4 +390,69 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
             ) (.ok ((), stLocal))
             result
 
+/-- Structured failure context for strict CDT descendant deletion.
+
+`offendingSlot` is the slot projected from the failing CDT node (when a slot
+mapping exists). `error` is the concrete deletion error surfaced by
+`cspaceDeleteSlot`. -/
+structure RevokeCdtStrictFailure where
+  offendingNode : CdtNodeId
+  offendingSlot : Option CSpaceAddr
+  error : KernelError
+  deriving Repr, DecidableEq
+
+/-- Return payload for strict CDT revocation.
+
+The strict variant stops at the first descendant deletion failure and returns
+its context in `firstFailure` instead of swallowing the error. -/
+structure RevokeCdtStrictReport where
+  deletedSlots : List CSpaceAddr
+  firstFailure : Option RevokeCdtStrictFailure
+  deriving Repr, DecidableEq
+
+/-- Strict WS-E4/C-04 revocation variant.
+
+Compared to `cspaceRevokeCdt`, this variant is strict over descendant deletion:
+it surfaces the first `cspaceDeleteSlot` failure and records the offending CDT
+node + slot context in the returned report. Traversal halts at the first
+failure; successfully deleted descendants before that point remain recorded in
+`deletedSlots`.
+
+Local (`same-CNode`) revoke failures are still reported via `.error`, matching
+the base operation contract. -/
+def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
+  fun st =>
+    match cspaceRevoke addr st with
+    | .error e => .error e
+    | .ok ((), stLocal) =>
+        match SystemState.lookupCdtNodeOfSlot stLocal addr with
+        | none => .ok ({ deletedSlots := [], firstFailure := none }, stLocal)
+        | some rootNode =>
+            let descendants := stLocal.cdt.descendantsOf rootNode
+            let step := fun (acc : RevokeCdtStrictReport × SystemState) (node : CdtNodeId) =>
+              let (report, stAcc) := acc
+              match report.firstFailure with
+              | some _ => (report, stAcc)
+              | none =>
+                  match SystemState.lookupCdtSlotOfNode stAcc node with
+                  | none =>
+                      let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
+                      (report, stRemoved)
+                  | some descAddr =>
+                      match cspaceDeleteSlot descAddr stAcc with
+                      | .error err =>
+                          let failure : RevokeCdtStrictFailure := {
+                            offendingNode := node
+                            offendingSlot := some descAddr
+                            error := err
+                          }
+                          let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
+                          ({ report with firstFailure := some failure }, stRemoved)
+                      | .ok ((), stDel) =>
+                          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                          let stRemoved := { stDetached with cdt := stDetached.cdt.removeNode node }
+                          ({ report with deletedSlots := descAddr :: report.deletedSlots }, stRemoved)
+            let (report, stFinal) := descendants.foldl step ({ deletedSlots := [], firstFailure := none }, stLocal)
+            .ok ({ report with deletedSlots := report.deletedSlots.reverse }, stFinal)
+
 end SeLe4n.Kernel
