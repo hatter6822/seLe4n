@@ -65,21 +65,6 @@ Additional resources:
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 
-## Security hardening defaults
-
-- IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
-- Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
-- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, and dual-queue double-wait rejection (`alreadyWaiting`).
-
-## Stable naming updates (trace + invariant surface)
-
-- `runCapabilityIpcTrace` (formerly WS-labeled trace helper) now names the capability/IPC scenario group by function.
-- `runSchedulerTimingDomainTrace` (formerly WS-labeled trace helper) now names the EDF/time-slice/domain scheduler scenario group by function.
-- `coreIpcInvariantBundle` names the composed scheduler+capability+IPC invariant bundle.
-- `ipcSchedulerCouplingInvariantBundle` names the bundle that extends `coreIpcInvariantBundle` with runnable/blocked IPC-scheduler coherence obligations.
-- `lifecycleCompositionInvariantBundle` names the composed IPC-scheduler+lifecycle metadata bundle (previously stage-labeled as M4-A).
-
 ## Active workstreams (WS-E)
 
 Quick index. Full contracts and dependencies are in the v0.11.6 planning backbone.
