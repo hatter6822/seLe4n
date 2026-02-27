@@ -88,6 +88,7 @@ Additional resources:
 | `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
 | `SeLe4n/Kernel/InformationFlow/*` | Information-flow policy, projection, and low-equivalence |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface, invariant bundle alias, stability table |
+| `SeLe4n.lean` | Top-level import barrel; keep imports minimal/non-duplicated and defer subsystem coverage to `Kernel/API.lean` |
 | `Main.lean` | Executable trace/demo harness |
 | `tests/fixtures/main_trace_smoke.expected` | Stable trace expectation anchors |
 | `scripts/test_tier*.sh` | Tiered quality gates used by CI and local workflows |

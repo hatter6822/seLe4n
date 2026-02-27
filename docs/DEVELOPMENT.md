@@ -25,7 +25,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 4. domain-aware scheduling semantics (`schedule` only chooses from `activeDomain`; `scheduleDomain` switch/tick behavior is regression-tested),
 5. theorem discoverability through stable naming,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
-7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`).
+7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
+8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface.
 
 ---
 
