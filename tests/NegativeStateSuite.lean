@@ -272,10 +272,10 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
   match stDualSend1.objects endpointId with
   | some (.endpoint ep) =>
-      if ep.sendQueue = [SeLe4n.ThreadId.ofNat 7] then
+      if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
         IO.println "positive check passed [dual queue sender enqueued]"
       else
-        throw <| IO.userError s!"dual queue sender enqueued expected [7], got {reprStr ep.sendQueue}"
+        throw <| IO.userError s!"dual queue sender enqueued expected head=tail=7, got {reprStr ep.sendQ}"
   | _ => throw <| IO.userError "dual queue sender enqueued expected endpoint object"
 
   let (firstSender, _) ← expectOkState "dual queue receive dequeues sender"
@@ -302,10 +302,10 @@ private def runNegativeChecks : IO Unit := do
 
   match stDualFifo4.objects endpointId with
   | some (.endpoint ep) =>
-      if ep.sendQueue.isEmpty then
+      if ep.sendQ.head = none ∧ ep.sendQ.tail = none then
         IO.println "positive check passed [dual queue fifo drains send queue]"
       else
-        throw <| IO.userError s!"dual queue fifo expected empty sendQueue, got {reprStr ep.sendQueue}"
+        throw <| IO.userError s!"dual queue fifo expected empty intrusive sendQ, got {reprStr ep.sendQ}"
   | _ => throw <| IO.userError "dual queue fifo expected endpoint object"
 
   let schedPriorityState : SystemState :=

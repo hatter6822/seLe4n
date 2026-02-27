@@ -697,62 +697,145 @@ theorem storeTcbIpcState_tcb_exists_at_target
 -- WS-E4/M-01: Dual-queue endpoint operations (send/receive queue separation)
 -- ============================================================================
 
-/-- WS-E4/M-01: Send to endpoint using the dual-queue model.
+private def tcbWithQueueLinks
+    (tcb : TCB)
+    (prev next : Option SeLe4n.ThreadId) : TCB :=
+  { tcb with queuePrev := prev, queueNext := next }
 
-Sender checks receiveQueue first. If a receiver is waiting, rendezvous
-(unblock receiver). Otherwise, enqueue sender on sendQueue and block. -/
+private def storeTcbQueueLinks
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (prev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev next)) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
+private def endpointQueuePopHead
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (st : SystemState) : Except KernelError (SeLe4n.ThreadId × SystemState) :=
+  match st.objects endpointId with
+  | some (.endpoint ep) =>
+      let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+      match q.head with
+      | none => .error .endpointQueueEmpty
+      | some tid =>
+          match lookupTcb st tid with
+          | none => .error .objectNotFound
+          | some headTcb =>
+              let next := headTcb.queueNext
+              let q' : IntrusiveQueue :=
+                match next with
+                | some nextTid => { head := some nextTid, tail := q.tail }
+                | none => {}
+              let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+              match storeObject endpointId (.endpoint ep') st with
+              | .error e => .error e
+              | .ok ((), st1) =>
+                  let st2Result :=
+                    match next with
+                    | none => Except.ok st1
+                    | some nextTid =>
+                        match lookupTcb st1 nextTid with
+                        | none => Except.error KernelError.objectNotFound
+                        | some nextTcb => storeTcbQueueLinks st1 nextTid none nextTcb.queueNext
+                  match st2Result with
+                  | .error e => .error e
+                  | .ok st2 =>
+                      match storeTcbQueueLinks st2 tid none none with
+                      | .error e => .error e
+                      | .ok st3 => .ok (tid, st3)
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+private def endpointQueueEnqueue
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.objects endpointId with
+  | some (.endpoint ep) =>
+      match lookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
+          if tcb.queuePrev.isSome || tcb.queueNext.isSome then
+            .error .illegalState
+          else
+            let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+            match q.tail with
+            | none =>
+                let q' : IntrusiveQueue := { head := some tid, tail := some tid }
+                let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                match storeObject endpointId (.endpoint ep') st with
+                | .error e => .error e
+                | .ok ((), st1) => storeTcbQueueLinks st1 tid none none
+            | some tailTid =>
+                match lookupTcb st tailTid with
+                | none => .error .objectNotFound
+                | some tailTcb =>
+                    let q' : IntrusiveQueue := { head := q.head, tail := some tid }
+                    let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                    match storeObject endpointId (.endpoint ep') st with
+                    | .error e => .error e
+                    | .ok ((), st1) =>
+                        match storeTcbQueueLinks st1 tailTid tailTcb.queuePrev (some tid) with
+                        | .error e => .error e
+                        | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) none
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+/-- WS-E4/M-01: Send to endpoint using intrusive dual-queue semantics.
+
+Sender checks the intrusive receive queue first. If a receiver is waiting,
+rendezvous (unblock receiver). Otherwise, enqueue sender in intrusive sendQ
+and block. -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
-            -- Rendezvous: match sender with first waiting receiver
-            let ep' : Endpoint := { ep with receiveQueue := restRecv }
-            match storeObject endpointId (.endpoint ep') st with
+        match ep.receiveQ.head with
+        | some _ =>
+            match endpointQueuePopHead endpointId true st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok (receiver, st') =>
                 match storeTcbIpcState st' receiver .ready with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
-        | [] =>
-            -- No receiver waiting: enqueue sender and block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [sender] }
-            match storeObject endpointId (.endpoint ep') st with
+        | none =>
+            match endpointQueueEnqueue endpointId false sender st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok st' =>
                 match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' sender)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- WS-E4/M-01: Receive from endpoint using the dual-queue model.
+/-- WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics.
 
-Checks sendQueue first. If a sender is waiting, dequeue and unblock it.
-Otherwise, enqueue receiver on receiveQueue and block. -/
+Checks intrusive sendQ first. If a sender is waiting, dequeue and unblock it.
+Otherwise, enqueue receiver in intrusive receiveQ and block. -/
 def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.sendQueue with
-        | sender :: restSend =>
-            -- Rendezvous: dequeue first waiting sender
-            let ep' : Endpoint := { ep with sendQueue := restSend }
-            match storeObject endpointId (.endpoint ep') st with
+        match ep.sendQ.head with
+        | some _ =>
+            match endpointQueuePopHead endpointId false st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok (sender, st') =>
                 match storeTcbIpcState st' sender .ready with
                 | .error e => .error e
                 | .ok st'' => .ok (sender, ensureRunnable st'' sender)
-        | [] =>
-            -- No sender waiting: enqueue receiver and block
-            let ep' : Endpoint := { ep with receiveQueue := ep.receiveQueue ++ [receiver] }
-            match storeObject endpointId (.endpoint ep') st with
+        | none =>
+            match endpointQueueEnqueue endpointId true receiver st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok st' =>
                 match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
                 | .error e => .error e
                 | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
@@ -773,13 +856,11 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
-        match ep.receiveQueue with
-        | receiver :: restRecv =>
-            -- Rendezvous with receiver, then block caller for reply
-            let ep' : Endpoint := { ep with receiveQueue := restRecv }
-            match storeObject endpointId (.endpoint ep') st with
+        match ep.receiveQ.head with
+        | some _ =>
+            match endpointQueuePopHead endpointId true st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok (receiver, st') =>
                 match storeTcbIpcState st' receiver .ready with
                 | .error e => .error e
                 | .ok st'' =>
@@ -787,12 +868,10 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
-        | [] =>
-            -- No receiver: enqueue as sender, block
-            let ep' : Endpoint := { ep with sendQueue := ep.sendQueue ++ [caller] }
-            match storeObject endpointId (.endpoint ep') st with
+        | none =>
+            match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
-            | .ok ((), st') =>
+            | .ok st' =>
                 match storeTcbIpcState st' caller (.blockedOnSend endpointId) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' caller)

@@ -14,7 +14,7 @@ collections:
 | Object index | `List ObjId` | `SystemState.objectIndex` |
 | CNode slots | `List (Slot × Capability)` | `CNode.slots` |
 | VSpace mappings | `List PageTableEntry` | `VSpaceRoot.mappings` |
-| Endpoint queues | `List ThreadId` | `Endpoint.queue/sendQueue/receiveQueue` |
+| Endpoint queues | intrusive queue boundaries + TCB links | `Endpoint.queue/sendQ/receiveQ` + `TCB.queuePrev/queueNext` |
 | Service dependencies | `List ServiceId` | `ServiceGraphEntry.dependencies` |
 | Domain schedule | `List DomainScheduleEntry` | `SchedulerState.domainSchedule` |
 

@@ -54,7 +54,7 @@ IPC-08    | high     | notification wait #2 result: some { val := 123 }
 CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
 E4-H02    | critical | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
 E4-C02    | high     | cspaceCopy target matches: true
-E4-M01    | high     | dual-queue sender blocked on sendQueue: true
+E4-M01    | high     | dual-queue sender blocked on sendQ non-empty: true
 E4-M12    | high     | endpointReply unblocked target: true
 E6-M03    | high     | EDF tie-break chosen thread: some 12
 E6-M04a   | high     | timer tick remaining slice: 1
