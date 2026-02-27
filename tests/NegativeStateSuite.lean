@@ -231,6 +231,77 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
 
+  -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
+  let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := 5 }
+  let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := 6 }
+  let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := 777, slot := 0 }
+  let strictRootNode : CdtNodeId := 30
+  let strictChildNodeOk : CdtNodeId := 31
+  let strictChildNodeBad : CdtNodeId := 32
+  let strictSeed : SystemState :=
+    { baseState with
+      objects := fun oid =>
+        if oid = cnodeId then
+          some (.cnode {
+            guard := 0
+            radix := 0
+            slots := [
+              (strictRootSlot.slot, {
+                target := .object endpointId
+                rights := [.read, .write]
+                badge := none
+              }),
+              (strictChildSlotOk.slot, {
+                target := .object endpointId
+                rights := [.read]
+                badge := none
+              })
+            ]
+          })
+        else
+          baseState.objects oid
+      cdt := {
+        edges := [
+          { parent := strictRootNode, child := strictChildNodeOk, op := .copy },
+          { parent := strictRootNode, child := strictChildNodeBad, op := .mint }
+        ]
+      }
+      cdtSlotNode := fun ref =>
+        if ref = strictRootSlot then some strictRootNode
+        else if ref = strictChildSlotOk then some strictChildNodeOk
+        else if ref = strictChildSlotBad then some strictChildNodeBad
+        else baseState.cdtSlotNode ref
+      cdtNodeSlot := fun node =>
+        if node = strictRootNode then some strictRootSlot
+        else if node = strictChildNodeOk then some strictChildSlotOk
+        else if node = strictChildNodeBad then some strictChildSlotBad
+        else baseState.cdtNodeSlot node
+      cdtNextNode := 33
+    }
+
+  let (strictReport, strictState) ← expectOkState "cspaceRevokeCdtStrict returns report"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed)
+  if strictReport.deletedSlots = [strictChildSlotOk] then
+    IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
+  else
+    throw <| IO.userError s!"cspaceRevokeCdtStrict deleted slot trace mismatch: {reprStr strictReport.deletedSlots}"
+
+  match strictReport.firstFailure with
+  | some failure =>
+      if failure.offendingNode = strictChildNodeBad ∧
+          failure.offendingSlot = some strictChildSlotBad ∧
+          failure.error = .objectNotFound then
+        IO.println "positive check passed [cspaceRevokeCdtStrict captures offending slot context]"
+      else
+        throw <| IO.userError s!"cspaceRevokeCdtStrict failure context mismatch: {reprStr failure}"
+  | none =>
+      throw <| IO.userError "cspaceRevokeCdtStrict must surface first descendant deletion failure"
+
+  if SystemState.lookupCdtNodeOfSlot strictState strictChildSlotOk = none then
+    IO.println "positive check passed [cspaceRevokeCdtStrict detaches successfully deleted descendant mapping]"
+  else
+    throw <| IO.userError "cspaceRevokeCdtStrict should detach successful descendant slot mapping"
+
   expectError "endpoint receive idle-state mismatch"
     (SeLe4n.Kernel.endpointReceive endpointId baseState)
     .endpointStateMismatch
