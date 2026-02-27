@@ -70,6 +70,7 @@ Additional resources:
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
 - Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
+- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) are currently **List-backed FIFO queues** (`sendQueue`/`receiveQueue`) with explicit negative/positive coverage in `negative_state_suite`; intrusive-list storage is not yet implemented in the executable model.
 
 ## Stable naming updates (trace + invariant surface)
 

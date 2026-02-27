@@ -66,6 +66,15 @@ private def baseState : SystemState :=
       ipcBuffer := 8192
       ipcState := .ready
     })
+    |>.withObject 9 (.tcb {
+      tid := 9
+      priority := 40
+      domain := 0
+      cspaceRoot := cnodeId
+      vspaceRoot := 20
+      ipcBuffer := 12288
+      ipcState := .ready
+    })
     |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := [] })
     |>.withLifecycleObjectType endpointId .endpoint
@@ -74,14 +83,15 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType guardedCnodeId .cnode
     |>.withLifecycleObjectType 7 .tcb
     |>.withLifecycleObjectType 8 .tcb
+    |>.withLifecycleObjectType 9 .tcb
     |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
-    |>.withRunnable [7, 8]
+    |>.withRunnable [7, 8, 9]
     |>.build)
 
 private def invariantObjectIds : List SeLe4n.ObjId :=
-  [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 7, 8]
+  [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 7, 8, 9]
 
 private def sendEmptyEndpointState : SystemState :=
   { baseState with
@@ -253,6 +263,50 @@ private def runNegativeChecks : IO Unit := do
   expectError "await receive second waiter mismatch"
     (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
     .endpointStateMismatch
+
+  -- ==========================================================================
+  -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage
+  -- ==========================================================================
+
+  let (_, stDualSend1) ← expectOkState "dual queue send blocks sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  match stDualSend1.objects endpointId with
+  | some (.endpoint ep) =>
+      if ep.sendQueue = [SeLe4n.ThreadId.ofNat 7] then
+        IO.println "positive check passed [dual queue sender enqueued]"
+      else
+        throw <| IO.userError s!"dual queue sender enqueued expected [7], got {reprStr ep.sendQueue}"
+  | _ => throw <| IO.userError "dual queue sender enqueued expected endpoint object"
+
+  let (firstSender, _) ← expectOkState "dual queue receive dequeues sender"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualSend1)
+  if firstSender = SeLe4n.ThreadId.ofNat 7 then
+    IO.println "positive check passed [dual queue first sender delivered]"
+  else
+    throw <| IO.userError s!"dual queue first sender expected tid 7, got {reprStr firstSender}"
+
+  -- FIFO check across two blocked senders and one receiver consuming twice.
+  let (_, stDualFifo1) ← expectOkState "dual queue fifo enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  let (_, stDualFifo2) ← expectOkState "dual queue fifo enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualFifo1)
+  let (fifoFirst, stDualFifo3) ← expectOkState "dual queue fifo receive #1"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo2)
+  let (fifoSecond, stDualFifo4) ← expectOkState "dual queue fifo receive #2"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo3)
+
+  if fifoFirst = SeLe4n.ThreadId.ofNat 7 ∧ fifoSecond = SeLe4n.ThreadId.ofNat 8 then
+    IO.println "positive check passed [dual queue fifo ordering preserved]"
+  else
+    throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{reprStr fifoFirst},{reprStr fifoSecond}]"
+
+  match stDualFifo4.objects endpointId with
+  | some (.endpoint ep) =>
+      if ep.sendQueue.isEmpty then
+        IO.println "positive check passed [dual queue fifo drains send queue]"
+      else
+        throw <| IO.userError s!"dual queue fifo expected empty sendQueue, got {reprStr ep.sendQueue}"
+  | _ => throw <| IO.userError "dual queue fifo expected endpoint object"
 
   let schedPriorityState : SystemState :=
     (BootstrapBuilder.empty
