@@ -224,7 +224,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   let largeRunnable : List SeLe4n.ThreadId :=
     [1, 12]
   let stLargeQueue : SystemState :=
-    { st1 with scheduler := { st1.scheduler with runnable := largeRunnable, current := none } }
+    { st1 with scheduler := { st1.scheduler.withRunnableQueue largeRunnable with current := none } }
   IO.println s!"large runnable queue length: {reprStr stLargeQueue.scheduler.runnable.length}"
   match SeLe4n.Kernel.schedule stLargeQueue with
   | .error err => IO.println s!"large queue schedule error: {reprStr err}"
@@ -497,7 +497,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     else st1.objects oid
   let stEdf : SystemState := { st1 with
     objects := edfObjects,
-    scheduler := { st1.scheduler with runnable := [1, 12], current := none } }
+    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := none } }
   match SeLe4n.Kernel.chooseThread stEdf with
   | .error err => IO.println s!"EDF choose error: {reprStr err}"
   | .ok (chosen, _) =>
@@ -512,7 +512,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     if oid = 1 then some tickTcb else st1.objects oid
   let stTick : SystemState := { st1 with
     objects := tickObjects,
-    scheduler := { st1.scheduler with runnable := [1, 12], current := some 1 } }
+    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
   match SeLe4n.Kernel.timerTick stTick with
   | .error err => IO.println s!"timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
@@ -530,7 +530,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     if oid = 1 then some expiryTcb else st1.objects oid
   let stExpiry : SystemState := { st1 with
     objects := expiryObjects,
-    scheduler := { st1.scheduler with runnable := [1, 12], current := some 1 } }
+    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
   match SeLe4n.Kernel.timerTick stExpiry with
   | .error err => IO.println s!"timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
@@ -545,7 +545,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     [{ domain := 0, length := 3 }, { domain := 1, length := 5 }]
   let stDom : SystemState := { st1 with
     scheduler := { st1.scheduler with
-      runnable := [1, 12], current := some 1,
+      runnable := [1, 12], runnableHead := some 1, runnableTail := some 12, current := some 1,
       activeDomain := 0, domainTimeRemaining := 1,
       domainSchedule := domSchedule, domainScheduleIndex := 0 } }
   match SeLe4n.Kernel.switchDomain stDom with

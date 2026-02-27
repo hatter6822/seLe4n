@@ -102,6 +102,12 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := 0
+  /-- WS-E7: Intrusive doubly-linked queue hooks embedded in each TCB.
+      Queue owners (scheduler/IPC objects) maintain head/tail thread IDs,
+      while TCB-local links represent membership without allocating list-node
+      wrapper objects. `none` means no predecessor/successor in the queue. -/
+  queuePrev : Option SeLe4n.ThreadId := none
+  queueNext : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
 inductive EndpointState where

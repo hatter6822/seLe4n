@@ -35,6 +35,11 @@ structure DomainScheduleEntry where
 
 structure SchedulerState where
   runnable : List SeLe4n.ThreadId
+  /-- WS-E7 intrusive runnable queue head pointer. Mirrors the first runnable
+      thread and allows O(1) insertion/removal bookkeeping in queue owners. -/
+  runnableHead : Option SeLe4n.ThreadId := none
+  /-- WS-E7 intrusive runnable queue tail pointer. -/
+  runnableTail : Option SeLe4n.ThreadId := none
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -47,6 +52,18 @@ structure SchedulerState where
   /-- M-05/WS-E6: Current index into `domainSchedule`. -/
   domainScheduleIndex : Nat := 0
   deriving Repr, DecidableEq
+
+/-- WS-E7: canonical scheduler update helper for runnable-queue mutations.
+Keeps list payload and cached queue endpoints synchronized. -/
+def SchedulerState.withRunnableQueue
+    (sched : SchedulerState)
+    (queue : List SeLe4n.ThreadId) : SchedulerState :=
+  {
+    sched with
+      runnable := queue
+      runnableHead := queue.head?
+      runnableTail := queue.getLast?
+  }
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
