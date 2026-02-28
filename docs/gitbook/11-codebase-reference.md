@@ -36,6 +36,7 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Kernel/Capability/Operations.lean`
 - `SeLe4n/Kernel/Capability/Invariant.lean`
 - `SeLe4n/Kernel/IPC/Operations.lean`
+- `SeLe4n/Kernel/IPC/DualQueue.lean`
 - `SeLe4n/Kernel/IPC/Invariant.lean`
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`

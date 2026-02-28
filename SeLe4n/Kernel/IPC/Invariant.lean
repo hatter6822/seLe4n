@@ -1,5 +1,5 @@
 import SeLe4n.Kernel.Scheduler.Invariant
-import SeLe4n.Kernel.IPC.Operations
+import SeLe4n.Kernel.IPC.DualQueue
 
 /-!
 # IPC Invariant Preservation Proofs
@@ -1698,41 +1698,41 @@ private theorem endpointQueuePopHead_preserves_ipcInvariant
           have hInvEp := hEpInv endpointId ep hObj
           revert hStep
           cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
-          | none => simp [hHead]
+          | none => simp
           | some headTid =>
-            simp only [hHead]
+            simp only []
             cases hLookup : lookupTcb st headTid with
-            | none => simp [hLookup]
+            | none => simp
             | some headTcb =>
-              simp only [hLookup]
+              simp only []
               cases hStore : storeObject endpointId _ st with
-              | error e => simp [hStore]
-              | ok pair => simp only [hStore]; cases hNext : headTcb.queueNext with
+              | error e => simp
+              | ok pair => simp only []; cases hNext : headTcb.queueNext with
                 | none =>
-                  simp only [hNext]
+                  simp only []
                   cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
-                  | error e => simp [hFinal]
+                  | error e => simp
                   | ok st3 =>
-                    simp only [hFinal, Except.ok.injEq, Prod.mk.injEq]
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, hEq⟩; subst hEq
                     rw [hNe] at hObjPost
                     have h1 := storeTcbQueueLinks_endpoint_backward _ _ headTid none none none endpointId ep' hFinal hObjPost
                     rw [storeObject_objects_eq st pair.2 endpointId _ hStore] at h1
                     simp at h1; subst h1; cases isReceiveQ <;> exact hInvEp
                 | some nextTid =>
-                  simp only [hNext]
+                  simp only []
                   cases hLookupNext : lookupTcb pair.2 nextTid with
-                  | none => simp [hLookupNext]
+                  | none => simp
                   | some nextTcb =>
-                    simp only [hLookupNext]
+                    simp only []
                     cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
-                    | error e => simp [hLink]
+                    | error e => simp
                     | ok st2 =>
                       simp only []
                       cases hFinal : storeTcbQueueLinks st2 headTid none none none with
-                      | error e => simp [hFinal]
+                      | error e => simp
                       | ok st3 =>
-                        simp only [hFinal, Except.ok.injEq, Prod.mk.injEq]
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
                         rw [hNe] at hObjPost
                         have h3 := storeTcbQueueLinks_endpoint_backward _ _ headTid none none none endpointId ep' hFinal hObjPost
@@ -1775,9 +1775,9 @@ private theorem endpointQueueEnqueue_preserves_ipcInvariant
                 cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
                 | none =>
                   cases hStore : storeObject endpointId _ st with
-                  | error e => simp [hStore]
+                  | error e => simp
                   | ok pair =>
-                    simp only [hStore]
+                    simp only []
                     intro hStep
                     rw [hNe] at hObjPost
                     have h1 := storeTcbQueueLinks_endpoint_backward _ _ enqueueTid _ _ _ endpointId ep' hStep hObjPost
@@ -1789,13 +1789,13 @@ private theorem endpointQueueEnqueue_preserves_ipcInvariant
                   | some tailTcb =>
                     simp only [hLookupTail]
                     cases hStore : storeObject endpointId _ st with
-                    | error e => simp [hStore]
+                    | error e => simp
                     | ok pair =>
-                      simp only [hStore]
+                      simp only []
                       cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some enqueueTid) with
-                      | error e => simp [hLink1]
+                      | error e => simp
                       | ok st2 =>
-                        simp only [hLink1]
+                        simp only []
                         intro hStep
                         rw [hNe] at hObjPost
                         have h3 := storeTcbQueueLinks_endpoint_backward _ _ enqueueTid _ _ _ endpointId ep' hStep hObjPost
@@ -2146,11 +2146,11 @@ theorem endpointReceiveDual_preserves_ipcInvariant
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               exact storeTcbPendingMessage_preserves_ipcInvariant _ _ receiver _ hInv3 hPend
             | error _ =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               exact hInv3
       | none =>
@@ -2231,7 +2231,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               rcases hInvER with ⟨hQCC', hRQU', hCTV'⟩
               have hSchedPend := storeTcbPendingMessage_scheduler_eq _ _ receiver _ hPend
@@ -2250,7 +2250,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     simp [currentThreadValid, hCurr] at hCTV'; exact hCTV'
                   exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcbX hPend hTcbX
             | error _ =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               exact hInvER
       | none =>
@@ -2369,14 +2369,14 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               have hSchedPend := storeTcbPendingMessage_scheduler_eq _ st4 receiver _ hPend
               exact contracts_of_same_scheduler_ipcState _ st4 hSchedPend
                 (fun tid tcb'' hTcb'' => storeTcbPendingMessage_tcb_ipcState_backward _ st4 receiver _ tid tcb'' hPend hTcb'')
                 hContractER
             | error _ =>
-              simp only [hPend, Except.ok.injEq, Prod.mk.injEq]
+              simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               exact hContractER
       | none =>
@@ -2451,13 +2451,13 @@ theorem endpointQueueRemoveDual_preserves_ipcInvariant
           have hInvEp := hEpInv endpointId epOrig hObj
           simp only [hObj] at hStep; revert hStep
           cases hLookup : lookupTcb st tid with
-          | none => simp [hLookup]
+          | none => simp
           | some tcbTid =>
-            simp only [hLookup]
+            simp only []
             cases hPPrev : tcbTid.queuePPrev with
-            | none => simp [hPPrev]
+            | none => simp
             | some pprev =>
-              simp only [hPPrev]
+              simp only []
               generalize (if isSendQ then epOrig.receiveQ else epOrig.sendQ) = q
               split
               · simp
@@ -2469,36 +2469,36 @@ theorem endpointQueueRemoveDual_preserves_ipcInvariant
                   · cases hStore1 : storeObject endpointId _ st with
                     | error e => simp
                     | ok pair1 =>
-                    simp only [hStore1]; cases hNext : tcbTid.queueNext with
+                    simp only []; cases hNext : tcbTid.queueNext with
                     | none =>
-                      simp only [hNext]
+                      simp only []
                       cases hStore2 : storeObject endpointId _ pair1.2 with
                       | error e => simp
                       | ok pair2 =>
-                      simp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                      simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
                       | error e => simp
                       | ok st4 =>
-                        simp only [hFinal, Except.ok.injEq, Prod.mk.injEq]
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
                         rw [hNe] at hObjPost
                         have h := storeTcbQueueLinks_endpoint_backward _ _ tid none none none endpointId ep' hFinal hObjPost
                         rw [storeObject_objects_eq _ _ endpointId _ hStore2] at h
                         simp at h; subst h; cases isSendQ <;> exact hInvEp
                     | some nextTid =>
-                      simp only [hNext]
+                      simp only []
                       cases hLookupN : lookupTcb pair1.2 nextTid with
                       | none => simp
                       | some nextTcb =>
-                      simp only [hLookupN]; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
+                      simp only []; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
                       | error e => simp
                       | ok st2 =>
-                      simp only [hLink]; cases hStore2 : storeObject endpointId _ st2 with
+                      simp only []; cases hStore2 : storeObject endpointId _ st2 with
                       | error e => simp
                       | ok pair2 =>
-                      simp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                      simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
                       | error e => simp
                       | ok st4 =>
-                        simp only [hFinal, Except.ok.injEq, Prod.mk.injEq]
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
                         rw [hNe] at hObjPost
                         have h := storeTcbQueueLinks_endpoint_backward _ _ tid none none none endpointId ep' hFinal hObjPost

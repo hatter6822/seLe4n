@@ -41,7 +41,9 @@ SeLe4n/Model/Object.lean         Kernel objects and data structures
 SeLe4n/Model/State.lean          Kernel/system state representation
 SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
 SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
-SeLe4n/Kernel/IPC/*              Endpoint/notification IPC + invariants
+SeLe4n/Kernel/IPC/Operations.lean Core endpoint/notification legacy ops
+SeLe4n/Kernel/IPC/DualQueue.lean Intrusive dual-queue IPC operations
+SeLe4n/Kernel/IPC/Invariant.lean IPC invariant preservation proofs
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
 SeLe4n/Kernel/Service/*          Service orchestration + policy
 SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace
@@ -64,17 +66,18 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~1576 lines)
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~1562 lines)
-- `SeLe4n/Kernel/IPC/Operations.lean` (~1009 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~3078 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~1594 lines)
+- `SeLe4n/Kernel/IPC/DualQueue.lean` (~1537 lines)
+- `SeLe4n/Kernel/IPC/Operations.lean` (~1025 lines)
 - `SeLe4n/Kernel/Service/Invariant.lean` (~974 lines)
 - `tests/NegativeStateSuite.lean` (~809 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~782 lines)
 - `SeLe4n/Kernel/Scheduler/Operations.lean` (~774 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~773 lines)
 - `SeLe4n/Model/State.lean` (~756 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
-- `SeLe4n/Model/Object.lean` (~707 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~666 lines)
+- `SeLe4n/Model/Object.lean` (~711 lines)
 - `CHANGELOG.md` (~649 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
 - `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)

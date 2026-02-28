@@ -43,7 +43,7 @@ improving on specific architectural aspects:
 |-----------|-------|
 | **Version** | `0.12.3` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 14,708 across 33 files |
+| **Production Lean LoC** | 16,485 across 34 files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
@@ -54,7 +54,7 @@ improving on specific architectural aspects:
 
 ```bash
 ./scripts/setup_lean_env.sh   # install Lean toolchain
-lake build                     # compile all 33 modules (62 jobs)
+lake build                     # compile all 34 modules (64 jobs)
 lake exe sele4n                # run trace harness
 ./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state)
 ```
@@ -116,7 +116,9 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 | `SeLe4n/Model/State.lean` | `SystemState` with functional maps, lifecycle metadata, CDT slot↔node |
 | `SeLe4n/Kernel/Scheduler/*` | Priority + EDF scheduling, domain partitioning, timer tick |
 | `SeLe4n/Kernel/Capability/*` | CSpace lookup/mint/copy/move/delete/revoke with CDT tracking |
-| `SeLe4n/Kernel/IPC/*` | Endpoint send/receive/call/reply, notification signal/wait, dual-queue |
+| `SeLe4n/Kernel/IPC/Operations.lean` | Core endpoint send/receive, notification signal/wait |
+| `SeLe4n/Kernel/IPC/DualQueue.lean` | Intrusive dual-queue IPC: send/receive/call/reply with queue links |
+| `SeLe4n/Kernel/IPC/Invariant.lean` | IPC invariant preservation proofs |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation |
 | `SeLe4n/Kernel/Service/*` | Service graph, dependency tracking, policy enforcement *(extension)* |
 | `SeLe4n/Kernel/Architecture/*` | VSpace map/unmap/lookup, adapter contracts, boundary assumptions |

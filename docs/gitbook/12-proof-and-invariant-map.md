@@ -60,6 +60,12 @@ Badge routing chain (H-03):
 
 ## 4. IPC invariants (M3)
 
+Module structure:
+
+- `IPC/Operations.lean` — core legacy endpoint/notification operations and transport lemmas,
+- `IPC/DualQueue.lean` — intrusive dual-queue infrastructure (queue links, PopHead/Enqueue/RemoveDual) and compound IPC operations (SendDual, ReceiveDual, Call, Reply, ReplyRecv),
+- `IPC/Invariant.lean` — preservation proofs for both legacy and dual-queue operations.
+
 Component level:
 
 - endpoint queue/object validity,
