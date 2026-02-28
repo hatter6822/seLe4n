@@ -357,6 +357,19 @@ run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' S
 run_check "INVARIANT" rg -n '^def uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_uniqueWaiters' SeLe4n/Kernel/IPC/Invariant.lean
 
+# WS-E4/WS-F1 dual-queue IPC definition and theorem anchors must remain present.
+run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDual' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointCall' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointReply' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointReplyRecv' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointQueuePopHead' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointQueueEnqueue' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointQueueRemoveDual' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue.lean
+
 # WS-D3 F-16 module docstring classification anchors must remain present.
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean

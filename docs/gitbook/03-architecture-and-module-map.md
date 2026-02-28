@@ -76,11 +76,15 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### IPC subsystem
 
 - `SeLe4n/Kernel/IPC/Operations.lean`
-  - endpoint transitions (`send`, `awaitReceive`, `receive`).
+  - core endpoint transitions (`send`, `awaitReceive`, `receive`), notification operations.
+- `SeLe4n/Kernel/IPC/DualQueue.lean`
+  - intrusive dual-queue operations (`sendDual`, `receiveDual`, `call`, `reply`, `replyRecv`),
+  - queue link infrastructure (`PopHead`, `Enqueue`, `RemoveDual`),
+  - transport/preservation theorems for dual-queue operations.
 - `SeLe4n/Kernel/IPC/Invariant.lean`
   - endpoint + IPC invariants,
   - scheduler-coherence contract predicates,
-  - preservation theorem entrypoints.
+  - preservation theorem entrypoints for both legacy and dual-queue operations.
 
 ### Lifecycle subsystem
 
