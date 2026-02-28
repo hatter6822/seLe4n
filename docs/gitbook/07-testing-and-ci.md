@@ -6,7 +6,10 @@ Current stage context: **WS-E portfolio (v0.11.6 audit remediation) with WS-E1..
 
 - **Tier 0 (hygiene)**
   - marker scan for forbidden placeholders (`axiom|sorry|TODO`) in tracked proof surface,
-  - documentation synchronization automation (`scripts/test_docs_sync.sh`: navigation generation + markdown-link checks + best-effort Lean setup for doc-gen4 probe when `lake` is missing (strict mode via `DOCS_SYNC_REQUIRE_LEAN_SETUP=1`)),
+  - fixture-isolation guard (test-only contracts must not leak into production kernel modules),
+  - wrapper-structure regression guard (scalar wrappers must remain structure-based),
+  - theorem-body spot-check (L-08: no `sorry`, no trivial `rfl`-only preservation theorems),
+  - SHA-pinning regression guard (F-14: all GitHub Actions must be SHA-pinned),
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.
@@ -16,11 +19,11 @@ Current stage context: **WS-E portfolio (v0.11.6 audit remediation) with WS-E1..
   - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.
-- **Tier 3 (invariant and documentation anchor surface)**
-  - validates critical theorem/bundle/doc anchors expected for active milestone slices,
+- **Tier 3 (invariant surface anchors)**
+  - validates critical theorem/bundle/trace anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
 - **Tier 4 (nightly staged extension candidates)**
-  - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + full-suite replay candidates,
+  - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + seeded sequence-diversity candidates,
   - `./scripts/test_nightly.sh` uses mode-aware status messaging (default extension-point guidance vs explicit executed signal when `NIGHTLY_ENABLE_EXPERIMENTAL=1`),
   - includes seeded `trace_sequence_probe` sequence-diversity checks in experimental mode,
   - default remains explicit extension-point behavior unless `NIGHTLY_ENABLE_EXPERIMENTAL=1` is set.
@@ -38,7 +41,9 @@ Current stage context: **WS-E portfolio (v0.11.6 audit remediation) with WS-E1..
 
 CI should execute these repository scripts directly to avoid local/CI drift.
 
-Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md), including the `Docs Automation / Navigation + Links + DocGen Probe` required lane.
+Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md). CI jobs run each tier incrementally (earlier tiers gated by job dependencies) to eliminate redundant re-execution.
+
+Documentation sync (`scripts/test_docs_sync.sh`) is available as a standalone local tool but is not part of CI gates.
 
 WS-A8 baseline maturity automation is implemented in `.github/workflows/platform_security_baseline.yml`, adding an ARM64 fast-gate CI signal and automated baseline security scanning controls.
 
@@ -83,5 +88,5 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **Tier 0 fails:** remove placeholder markers or fix script-level lint/hygiene issues.
 - **Tier 1 fails:** resolve first Lean compile/proof failure before chasing downstream errors.
 - **Tier 2 fails:** if `test_tier2_trace.sh` fails, inspect missing fixture lines; if `test_tier2_negative.sh` fails, inspect malformed-state or IF-M1 runtime assertions (`negative_state_suite` / `information_flow_suite`) and expected branch behavior.
-- **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/doc anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
-- **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture/doc updates.
+- **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/trace anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
+- **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture updates.

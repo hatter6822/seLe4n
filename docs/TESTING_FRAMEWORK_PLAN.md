@@ -8,12 +8,14 @@ Current stage context: **v0.11.6 codebase audit (WS-E portfolio) is active. Test
 
 ## 2. Current enforced tiers
 
-- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, including docs-sync automation via `scripts/test_docs_sync.sh` with best-effort Lean setup for doc-gen4 probe when `lake` is missing (strict mode via `DOCS_SYNC_REQUIRE_LEAN_SETUP=1`))
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`: forbidden-marker scan, fixture-isolation guard, wrapper-structure regression, theorem-body spot-check, SHA-pinning regression, optional shellcheck)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
 - **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`)
-- **Tier 3** invariant/doc-surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
-  including M4-A executable-anchor checks for lifecycle unauthorized/illegal-state/success trace fragments.
+- **Tier 3** invariant surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
+  including code/theorem/trace anchor verification for all milestone surfaces.
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)
+
+Documentation sync (`scripts/test_docs_sync.sh`) is available as a standalone local tool for verifying GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is not part of the CI gate pipeline.
 
 ## 3. Required entrypoints and CI contract
 
@@ -33,7 +35,7 @@ Recommended audit entrypoint for release/closeout confidence:
 
 PR CI must call repository scripts directly and keep workflow logic thin.
 
-Branch-protection and required-check policy is documented in `docs/CI_POLICY.md` (including the docs-automation CI lane).
+Branch-protection and required-check policy is documented in `docs/CI_POLICY.md`.
 
 WS-A8 platform/security baseline automation is provided by `.github/workflows/platform_security_baseline.yml` (ARM64 fast gate + baseline security scanning controls).
 
@@ -96,11 +98,11 @@ Primary risks protected:
 - executable semantic drift in integration scenarios,
 - stale milestone claims not reflected in runtime evidence.
 
-### Tier 3 (invariant/doc-surface anchors)
+### Tier 3 (invariant surface anchors)
 
 Primary risks protected:
 
-- silent loss of required theorem/bundle/doc symbols used as milestone acceptance anchors.
+- silent loss of required theorem/bundle/trace symbols used as milestone acceptance anchors.
 
 ### Tier 4 (nightly extension)
 

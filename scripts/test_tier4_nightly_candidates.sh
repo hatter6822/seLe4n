@@ -33,6 +33,5 @@ run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/artifacts/n
 run_check "TRACE" bash -lc 'while read -r seed; do [[ -z "${seed}" ]] && continue; lake exe trace_sequence_probe "${seed}" 320 | tee "tests/artifacts/nightly/trace_sequence_probe_seed_${seed}.log"; done < tests/artifacts/nightly/scenario_seeds.txt'
 # shellcheck disable=SC2016
 run_check "TRACE" bash -lc 'printf "seed,steps\n" > tests/artifacts/nightly/trace_sequence_probe_manifest.csv; while read -r seed; do [[ -z "${seed}" ]] && continue; printf "%s,320\n" "${seed}" >> tests/artifacts/nightly/trace_sequence_probe_manifest.csv; done < tests/artifacts/nightly/scenario_seeds.txt'
-run_check "META" "${SCRIPT_DIR}/test_full.sh"
 
 finalize_report

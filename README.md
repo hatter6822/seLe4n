@@ -60,7 +60,7 @@ Additional resources:
 ```bash
 ./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build)
 ./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state checks)
-./scripts/test_full.sh      # + Tier 3 (invariant/doc anchor surface)
+./scripts/test_full.sh      # + Tier 3 (invariant surface anchors)
 ./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
 ```
 

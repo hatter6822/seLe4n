@@ -16,7 +16,7 @@ Full handbook: [`docs/gitbook/README.md`](docs/gitbook/README.md)
 
 ```bash
 ./scripts/test_smoke.sh     # minimum gate (Tier 0-2)
-./scripts/test_full.sh      # required for theorem/invariant/doc changes (Tier 0-3)
+./scripts/test_full.sh      # required for theorem/invariant changes (Tier 0-3)
 ```
 
 ## PR requirements

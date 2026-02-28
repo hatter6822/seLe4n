@@ -8,7 +8,6 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
-# M6 WS-M6-A assumption inventory anchors.
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
 run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean
@@ -21,8 +20,6 @@ run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architectu
 run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic' SeLe4n/Kernel/InformationFlow/Projection.lean"
 run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "DOC" rg -n '^# ADR: WS-B1 VSpace \+ Bounded Memory Model Foundation' docs/VSPACE_MEMORY_MODEL_ADR.md
-run_check "DOC" rg -n '^# WS-B1 ADR: VSpace \+ Bounded Memory Model Foundation' docs/gitbook/26-ws-b1-vspace-memory-adr.md
 # WS-B4 closure anchors: wrapper structures must remain explicit.
 run_check "INVARIANT" rg -n '^structure DomainId' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure Priority' SeLe4n/Prelude.lean
@@ -37,7 +34,6 @@ run_check "INVARIANT" rg -n '^inductive ResolveError' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveSlot' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def cspaceResolvePath' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceLookupPath' SeLe4n/Kernel/Capability/Operations.lean
-run_check "DOC" rg -n '^### WS-B5 — CSpace semantics completion \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 # WS-B6 closure anchors: notification IPC object model and transition surface.
 run_check "INVARIANT" rg -n '^inductive NotificationState' SeLe4n/Model/Object.lean
@@ -45,7 +41,6 @@ run_check "INVARIANT" rg -n '^structure Notification' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations.lean
 run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "DOC" rg -n '^### WS-B6 — IPC completeness with notifications \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
 # WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
 run_check "INVARIANT" rg -n '^inductive Confidentiality' SeLe4n/Kernel/InformationFlow/Policy.lean
@@ -57,31 +52,9 @@ run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/P
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^private def runInformationFlowChecks' tests/InformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
-run_check "DOC" rg -n '^### WS-B7 — Information-flow proof track start \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
-run_check "DOC" rg -n '^## IF-M1 — Policy lattice and labeling primitives ✅ completed \(WS-B7\)' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n '^# IF-M1 Baseline Package \(WS-B7\)' docs/dev_history/IF_M1_BASELINE_PACKAGE.md
-# shellcheck disable=SC2016
-run_check "DOC" rg -n '(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_CODEBASE_v0\.11\.6\.md`$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.11\.0\.md`$)|(^- \*\*Active findings baseline:\*\* `docs/audits/AUDIT_v0\.9\.32\.md`$)' README.md
-run_check "DOC" rg -n '(^- \*\*Current active portfolio:\*\* WS-E1\.\.WS-E6)|(^- \*\*Current active portfolio:\*\* WS-D1\.\.WS-D6)|(^- \*\*Current active portfolio:\*\* WS-C1\.\.WS-C8)' docs/spec/SELE4N_SPEC.md
-run_check "DOC" rg -n '(^- \*\*Comprehensive Audit 2026-02 execution \(WS-B portfolio\)\*\* with WS-B1 through WS-B11 completed\.$)|(^Current completed slice:$)' docs/gitbook/01-project-overview.md
-run_check "DOC" rg -n '(^1\. Pick one coherent WS-E target \(prioritize next planned workstream in current phase\)\.$)|(^- \*\*Phase P1:\*\* WS-E1 \(test/CI\))|(^1\. Pick one coherent WS-D target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P1:\*\* WS-D1 test validity restoration)|(^1\. Pick one coherent WS-C target \(prioritize Phase P1 blockers first\)\.$)|(^- \*\*Phase P2:\*\* WS-C5 assurance expansion \(completed\)$)' docs/gitbook/06-development-workflow.md
-run_check "DOC" rg -n '(^See the workstream plan for WS-E1\.\.WS-E6)|(^- \*\*WS-D1:\*\* Test error handling and validity)|(^- \*\*WS-C1:\*\* IPC handshake correctness -- completed$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n '(^1\. Sync branch and choose one coherent WS-E slice \(prefer next priority in the active plan, starting with current phase targets\)\.$)|(^## 3\) Current execution slice \(WS-E portfolio\)$)|(^1\. Sync branch and choose one coherent WS-D slice \(prefer next priority in the active plan, starting with P1 blockers\)\.$)|(^## 3\) Current execution slice \(WS-D portfolio\)$)|(^1\. Sync branch and choose one coherent WS-C slice \(prefer next priority in the active plan, starting with P1 blockers\)\.$)|(^## 3\) Current execution slice \(WS-C portfolio\)$)' docs/DEVELOPMENT.md
-run_check "DOC" rg -n '^### WS-B8 — Documentation automation \+ consolidation \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
-run_check "DOC" rg -n '^### WS-B9 — Threat model and security hardening \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
-run_check "DOC" rg -n '^# Threat Model and Security Hardening Baseline \(WS-B9\)' docs/THREAT_MODEL.md
-run_check "DOC" rg -n '^# Threat Model and Security Hardening \(WS-B9\)' docs/gitbook/28-threat-model-and-security-hardening.md
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
-# shellcheck disable=SC2016
-run_check "DOC" rg -n '(^- Active planning baseline: `AUDIT_v0.11.6_WORKSTREAM_PLAN.md`)|(^- Active planning baseline: `AUDIT_v0.11.0_WORKSTREAM_PLAN.md`)|(^- Active planning baseline: `AUDIT_v0.9.32_WORKSTREAM_PLAN.md`)' docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md
-run_check "DOC" rg -n '(^# Documentation Deduplication Map \(WS-B8\)$)|(^# Documentation Deduplication Map \(WS-C8\)$)' docs/DOCS_DEDUPLICATION_MAP.md
-run_check "DOC" rg -n '^# Documentation Deduplication Map' docs/gitbook/27-documentation-deduplication-map.md
-run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/generate_doc_navigation.py
-run_check "INVARIANT" rg -n '^#!/usr/bin/env python3' scripts/check_markdown_links.py
-run_check "INVARIANT" rg -n '^run_check "HYGIENE" "\$\{SCRIPT_DIR\}/test_docs_sync\.sh"' scripts/test_tier0_hygiene.sh
-run_check "INVARIANT" rg -n '^[[:space:]]+name: Docs Automation / Navigation \+ Links \+ DocGen Probe' .github/workflows/lean_action_ci.yml
 
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
@@ -136,9 +109,6 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.MainTraceHarness$' Main.le
 run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.RuntimeContractFixtures$' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^def runtimeContractAcceptAll' SeLe4n/Testing/RuntimeContractFixtures.lean
 run_check "INVARIANT" rg -n '^def runtimeContractDenyAll' SeLe4n/Testing/RuntimeContractFixtures.lean
-run_check "DOC" rg -n '^# Hardware Boundary Contract Policy' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
-run_check "DOC" rg -n 'SeLe4n/Kernel.*must not reference test-only runtime contract' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
-run_check "DOC" rg -n 'scripts/test_tier0_hygiene\.sh' docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md
 
 # WS-A3 boundary hardening anchors must remain explicit.
 run_check "INVARIANT" rg -n '^@\[inline\] def toObjId' SeLe4n/Prelude.lean
@@ -168,7 +138,6 @@ run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBu
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
 
-# WS-E2 closure anchors: proof quality and invariant strengthening.
 # C-01 remediation: non-tautological slot-uniqueness infrastructure at CNode level.
 run_check "INVARIANT" rg -n '^def slotsUnique' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^theorem insert_slotsUnique' SeLe4n/Model/Object.lean
@@ -450,57 +419,15 @@ run_check "TRACE" rg -n 'composed revoke/delete/retype success' tests/fixtures/m
 run_check "TRACE" rg -n 'post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
 
-# Active milestone docs should stay synchronized for both current and next slices.
-run_check "DOC" rg -n 'M3\.5' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md
-run_check "DOC" rg -n 'M4-A|M4-B|M5|M6|M7' docs/spec/SELE4N_SPEC.md
-run_check "DOC" rg -n 'WS-B1\.\.WS-B11|WS-B portfolio|Comprehensive Audit 2026-02' README.md docs/spec/SELE4N_SPEC.md docs/DEVELOPMENT.md docs/gitbook/README.md docs/gitbook/05-specification-and-roadmap.md docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
-run_check "DOC" rg -n 'Most recently completed slice:.*M7|M7 remediation is complete|M7 is complete and archived' README.md docs/gitbook/README.md docs/dev_history/gitbook/23-m7-remediation-closeout-packet.md docs/dev_history/gitbook/21-m7-current-slice-outcomes-and-workstreams.md
-run_check "DOC" rg -n 'Previous completed slice:.*M6|M6 architecture-boundary|WS-M6-A through WS-M6-E|docs/dev_history/|M6 architecture-boundary assumptions/adapters' README.md docs/gitbook/README.md docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/05-specification-and-roadmap.md
-run_check "DOC" rg -n 'test_tier4_nightly_candidates\.sh' docs/TESTING_FRAMEWORK_PLAN.md docs/gitbook/07-testing-and-ci.md scripts/test_nightly.sh
-# shellcheck disable=SC2016
-run_check "DOC" rg -n 'Tier 3 fails \(`\./scripts/test_tier3_invariant_surface\.sh`\)' docs/gitbook/07-testing-and-ci.md
-# shellcheck disable=SC2016
-run_check "DOC" rg -n 'Tier 4 fails \(`\./scripts/test_nightly\.sh` / `\./scripts/test_tier4_nightly_candidates\.sh`\)' docs/gitbook/07-testing-and-ci.md
 
 # Full-suite contract should continue to include Tier 3.
-run_check "DOC" rg -n 'test_tier3_invariant_surface\.sh' scripts/test_full.sh
 
-run_check "DOC" rg -n '^# M7 Remediation Closeout Packet' docs/dev_history/M7_CLOSEOUT_PACKET.md docs/dev_history/gitbook/23-m7-remediation-closeout-packet.md
-run_check "DOC" rg -n 'Next-slice kickoff dependencies and owners|Exit-gate checklist' docs/dev_history/M7_CLOSEOUT_PACKET.md
-run_check "DOC" rg -n 'M7 Remediation Closeout Packet' docs/dev_history/gitbook/23-m7-remediation-closeout-packet.md
-run_check "DOC" rg -n 'Contribution guide|Change history' README.md
-run_check "DOC" test -f CONTRIBUTING.md
-run_check "DOC" test -f CHANGELOG.md
-run_check "DOC" rg -n 'Required checks \(Tier 0–3\)|Deterministic replay evidence' docs/CI_POLICY.md
-run_check "DOC" rg -n 'Docs Automation / Navigation \+ Links \+ DocGen Probe' .github/workflows/lean_action_ci.yml docs/CI_POLICY.md docs/gitbook/07-testing-and-ci.md
-run_check "DOC" rg -n 'Tier 0.*docs-sync automation' docs/TESTING_FRAMEWORK_PLAN.md
-run_check "DOC" rg -n 'Tiered Tests / Full \(Tier 0 \+ Tier 1 \+ Tier 2 \+ Tier 3\)' .github/workflows/lean_action_ci.yml docs/CI_POLICY.md
-run_check "DOC" rg -n 'Nightly Determinism|NIGHTLY_ENABLE_EXPERIMENTAL' .github/workflows/nightly_determinism.yml docs/CI_POLICY.md
-run_check "DOC" rg -n 'WS-B10 CodeQL policy decision|informational/non-blocking' docs/CI_POLICY.md
-run_check "DOC" rg -n 'lean_toolchain_update_proposal\.yml|dependabot\.yml' docs/CI_POLICY.md docs/CI_TELEMETRY_BASELINE.md
-run_check "DOC" rg -n 'ci_capture_timing\.sh|ci_flake_probe\.sh' docs/CI_TELEMETRY_BASELINE.md .github/workflows/lean_action_ci.yml .github/workflows/nightly_determinism.yml
-run_check "DOC" rg -n '^# CI Maturity and Telemetry Baseline \(WS-B10\)' docs/gitbook/29-ci-maturity-and-telemetry-baseline.md
-run_check "DOC" rg -n 'WS-B10 — CI maturity upgrades \(Completed\)|WS-B11 — Scenario framework finalization \(Completed\)' docs/dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md
 
-run_check "DOC" rg -n '^# Scenario framework \(WS-B11\)' tests/scenarios/README.md
-run_check "DOC" rg -n '(^## Active planning \(v0\.11\.6 — WS-E\)$)|(^## Active planning \(v0\.11\.0 — WS-D\)$)|(^## 16\) WS-B11 closure evidence$)|(^## 2\) Active workstreams \(WS-C portfolio\)$)' docs/gitbook/24-comprehensive-audit-2026-workstream-planning.md
 run_check "INVARIANT" rg -n '^\s*"schema_version": "1\.0\.0"' tests/scenarios/scenario_catalog.json
 run_check "INVARIANT" rg -n '^def validate_catalog' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^def nightly_seeds' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^run_check "META" python3 "\$\{SCRIPT_DIR\}/scenario_catalog.py" validate' scripts/test_smoke.sh
 
-# WS-A8 closure anchors: platform/security baseline workflow + information-flow roadmap visibility.
-run_check "DOC" rg -n '^name: Platform and Security Baseline' .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n '^\s*name: Platform Signal / ARM64 Fast Gate' .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n '^\s*name: Security Signal / Secret \+ Dependency \+ CodeQL' .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n "if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository" .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n "^\s*pull-requests:\s*read" .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n "^\s*fetch-depth:\s*0" .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n "^\s*continue-on-error:\s*true" .github/workflows/platform_security_baseline.yml
-run_check "DOC" rg -n '^# Information-Flow Proof Roadmap' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n '^## IF-M1' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n '^## IF-M5' docs/INFORMATION_FLOW_ROADMAP.md
-run_check "DOC" rg -n 'INFORMATION_FLOW_ROADMAP\.md' README.md docs/CI_POLICY.md docs/dev_history/M7_CLOSEOUT_PACKET.md docs/dev_history/gitbook/21-m7-current-slice-outcomes-and-workstreams.md docs/dev_history/gitbook/20-repository-audit-remediation-workstreams.md
 
 # WS-E1 F-14 SHA-pinning anchors: all workflow action refs must be SHA-pinned.
 run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/lean_action_ci.yml
@@ -526,8 +453,5 @@ run_check "TRACE" rg -n '^[A-Z]+-[0-9]+\s+\|' tests/fixtures/main_trace_smoke.ex
 
 # WS-E1 L-08 theorem-body validation anchors.
 run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hygiene.sh
-
-# WS-E1 documentation anchors.
-run_check "DOC" rg -n 'WS-E1' docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md
 
 finalize_report

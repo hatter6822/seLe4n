@@ -24,7 +24,7 @@ lake exe sele4n
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1: hygiene + build
 ./scripts/test_smoke.sh     # Tier 0-2: + trace + negative-state
-./scripts/test_full.sh      # Tier 0-3: + invariant/doc anchors
+./scripts/test_full.sh      # Tier 0-3: + invariant surface anchors
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 ```
 
