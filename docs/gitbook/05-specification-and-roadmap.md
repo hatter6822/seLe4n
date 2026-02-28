@@ -1,79 +1,56 @@
-# Specification and Roadmap
+# Specification & Roadmap
 
-This chapter is the GitBook-facing translation of the normative project spec in
-[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md). For the original seL4 microkernel
-specification, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
+This chapter summarizes the project specification. For the normative document:
+[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 
-## 1) Status snapshot
+## Project identity
 
-Current milestone state:
+seLe4n is a **production-oriented microkernel** written in Lean 4 with
+machine-checked proofs, improving on seL4 architecture. First hardware target:
+**Raspberry Pi 5** (ARM64).
 
-- M4-A complete
-- M4-B complete
-- M5 complete
-- M6 complete
-- M7 complete
-- WS-B portfolio (v0.9.0): all completed
-- WS-C portfolio (v0.9.32): all completed
-- WS-D portfolio (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E
-- **Active:** WS-E portfolio (v0.11.6 audit remediation) — WS-E1 through WS-E6 completed
+## Current state
 
-## 2) Stable contracts contributors must preserve
+| Attribute | Value |
+|-----------|-------|
+| Version | `0.12.2` |
+| Lean toolchain | `4.28.0` |
+| Production LoC | 14,708 across 33 files |
+| Proved theorems | 200+ (zero sorry/axiom) |
+| Active portfolio | WS-F (v0.12.2 audit remediation) |
 
-1. deterministic kernel transition behavior,
-2. layered invariants + preservation theorem continuity,
-3. architecture-boundary assumption/adapter interfaces from M6,
-4. domain-aware scheduler policy (`chooseThread`/`schedule` are active-domain only; no cross-domain fallback) with `currentThreadInActiveDomain` in the canonical scheduler bundle and `scheduleDomain` switch/tick consistency checks,
-5. fixture-backed executable evidence,
-6. tiered testing gates used in CI and local workflows,
-7. top-level import hygiene: keep `SeLe4n.lean` minimal and avoid duplicate/redundant subsystem imports; `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface,
-8. WS-E4 dual endpoint queues remain intrusive-list backed (`Endpoint.sendQ`/`receiveQ` + `TCB.queuePrev`/`queuePPrev`/`queueNext`) with runtime intrusive-queue invariant checks (head/tail coherence, cycle-free traversal, prev/pprev/next linkage), malformed-`queuePPrev` rejection (`illegalState`), and duplicate-wait rejection (`alreadyWaiting`).
+## Milestone history
 
-## 3) Active workstream portfolio (WS-E)
+Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
+(lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
+remediation) → WS-B..E (4 audit portfolios, all completed).
 
-The WS-E portfolio is based on the v0.11.6 audit baseline. Prior WS-D5/WS-D6 scope has been absorbed.
+## Active workstream: WS-F
 
-Canonical execution plan:
-[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+The WS-F portfolio addresses v0.12.2 audit findings (6 CRIT, 6 HIGH, 12 MED, 9 LOW).
 
-Security baseline reference:
-[Threat Model and Security Hardening](28-threat-model-and-security-hardening.md).
+Critical priorities:
+1. **WS-F1**: IPC message transfer + dual-queue verification
+2. **WS-F2**: Untyped memory model
+3. **WS-F3**: Information-flow completeness
+4. **WS-F4**: Proof gap closure
 
-### Completed WS-D portfolio (v0.11.0 — historical)
+See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
-- **WS-D1:** Test error handling and validity (critical/high; **completed** — F-01, F-03, F-04)
-- **WS-D2:** Information-flow enforcement and proof (high; **completed** — F-02, F-05)
-- **WS-D3:** Proof gap closure (medium; **completed** — F-06, F-08, F-16)
-- **WS-D4:** Kernel design hardening (medium; **completed** — F-07, F-11, F-12)
-- **WS-D5/WS-D6:** Absorbed into WS-E portfolio
+## Hardware roadmap
 
-## 4) Sequencing model (WS-E)
+H0 (neutral semantics, complete) → H1 (boundary interfaces, complete) →
+H2 (proof deepening, active) → H3 (Raspberry Pi 5 binding) → H4 (evidence convergence).
 
-- **Phase P0:** Baseline transition — publish v0.11.6 planning backbone, demote WS-D to historical — **completed**
-- **Phase P1:** WS-E1 + WS-E2 (test/CI hardening + proof quality) — **completed**
-- **Phase P2:** WS-E3 (kernel semantic hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
-- **Phase P4:** WS-E5 (information-flow maturity) — **completed**
+See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md).
 
-See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) for full WS-E phase sequencing.
+## Non-negotiable baseline contracts
 
-### Historical WS-D sequencing (completed)
-
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone, demote WS-C to historical — **completed**
-- **Phase P1:** WS-D1 test validity restoration (critical/high) — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof expansion (high) — **completed**
-- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening (medium) — **completed**
-- **Phase P4:** WS-D5/WS-D6 — absorbed into WS-E portfolio
-
-## 5) Historical context
-
-WS-C (v0.9.32), WS-B (v0.9.0), and earlier slice chapters remain valuable references
-for delivered patterns, but are archival in status. Use them for precedent, not active
-scope ownership.
-
-## 6) Completed audit portfolios (historical)
-
-- **WS-D portfolio** (v0.11.0): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E.
-- **WS-C portfolio** (v0.9.32): WS-C1..WS-C8 completed.
-- **WS-B portfolio** (v0.9.0): WS-B1..WS-B11 completed.
-- **M6 closeout:** WS-M6-D and WS-M6-E complete.
+1. Deterministic transition semantics (explicit success/failure).
+2. IPC-scheduler handshake coherence.
+3. Domain-aware scheduling (active-domain-only).
+4. Local + composed invariant layering.
+5. Stable theorem naming.
+6. Fixture-backed executable evidence.
+7. Tiered validation commands.
+8. Import hygiene (`API.lean` as canonical aggregate).

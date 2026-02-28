@@ -40,13 +40,14 @@ collection operations straightforward. Switching to balanced trees (e.g.,
 tree's internal balancing logic, substantially increasing proof burden without
 improving the semantic fidelity of the model.
 
-### 2. Executable specification, not production kernel
+### 2. Current stage: proof-first, optimize later
 
-seLe4n is an executable *specification model*, not a production kernel. Its
-primary purpose is to produce machine-checked proofs of invariant preservation.
-Performance characteristics of the model's data structures do not affect the
-real seL4 kernel. The O(n) cost is paid only in the test harness and trace
-execution, where n is typically < 20.
+seLe4n is evolving toward a production kernel targeting Raspberry Pi 5. In the
+current stage, the priority is closing proof gaps (WS-F) with machine-checked
+invariant preservation. The O(n) cost is paid only in the trace harness and
+test execution, where n is typically < 20. Once the proof surface is complete,
+the migration path below enables swapping to efficient backends without
+re-proving kernel invariants.
 
 ### 3. Semantic equivalence
 
@@ -65,12 +66,11 @@ and the proofs.
 
 ## Scope note
 
-This decision covers only the Lean formalization layer. It does **not** claim
-that O(n) data structures are appropriate for a production kernel. The seL4
-kernel itself uses O(log n) structures precisely because it must meet hard
-real-time deadlines. The seLe4n model deliberately abstracts away these
-implementation concerns to focus on *functional correctness* of the kernel's
-state-transition semantics.
+This decision covers the current proof-completion phase. O(n) data structures
+are **not** appropriate for the production kernel under hard real-time
+constraints. The migration path (below) is a planned part of the production
+roadmap — it will be executed after the WS-F proof gaps are closed and before
+Raspberry Pi 5 hardware binding (H3).
 
 ## Affected operations and their complexity
 

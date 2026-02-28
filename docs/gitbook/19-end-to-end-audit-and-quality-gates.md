@@ -1,68 +1,69 @@
 # End-to-End Audit and Quality Gates
 
-This chapter summarizes the current audit posture across implementation, testing framework behavior, and documentation fidelity.
+This chapter summarizes the current audit posture and quality gate framework.
 
-For the full audit narrative, see [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md) (active).
-Prior audits (v0.8.0–v0.11.0) are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
+## 1. Active audit baseline
 
-For implementation sequencing tied to v0.11.6 findings, see
-[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+Two independent audits of the v0.12.2 codebase serve as the active findings baseline:
 
-## 1. Current quality state
+- [Executive summary (v1)](../audits/AUDIT_CODEBASE_v0.12.2_v1.md) — high-level proof soundness, critical gaps, recommendations.
+- [Detailed audit (v2)](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) — subsystem-by-subsystem analysis, 28 classified findings.
 
-seLe4n is in the **WS-E portfolio execution phase** (v0.11.6 audit remediation), with WS-E1..WS-E6 active:
+For the execution plan: [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 
-- build graph compiles,
-- executable scenario traces pass fixture checks,
-- invariant/proof anchor surface remains discoverable,
-- tiered test entrypoints are operational,
-- information-flow enforcement wired into kernel operations (WS-D2),
-- non-interference proofs across scheduler, capability, lifecycle, and IPC (WS-D2),
-- badge-override safety and VSpace round-trip correctness fully proved (WS-D3),
-- kernel design hardening: cycle detection, double-wait prevention, partial-failure semantics (WS-D4),
-- root docs and handbook pages are aligned on stage and roadmap language.
+Prior audits (v0.8.0–v0.11.6) are archived in [`docs/dev_history/audits/`](../dev_history/audits/)
+and [`docs/audits/`](../audits/README.md).
 
-## 2. Quality gates used in practice
+## 2. Current quality state
 
-The project's active quality gates are:
+seLe4n v0.12.2 has:
 
-1. **Tier 0 (hygiene)**
-   - forbidden proof-placeholder marker check,
-   - shell script linting checks.
-2. **Tier 1 (build)**
-   - Lean build closure for entire module graph.
-3. **Tier 2 (trace fixtures)**
-   - executable scenario output compared to expected semantic lines.
-4. **Tier 3 (invariant/proof/trace anchors)**
-   - required symbol and trace anchor presence checks.
-5. **Tier 4 (nightly extension point)**
-   - staged deterministic replay and full-suite expansion checks.
+- **Zero sorry/axiom** in the production proof surface — fully machine-checked.
+- **200+ proved theorems** across 7 kernel subsystems.
+- **Tiered CI** with 4 validation tiers plus security scanning.
+- **Comprehensive negative-state testing** with per-mutation invariant checking.
 
-## 3. Coverage interpretation for this repository
+Key gaps identified by audits (addressed by WS-F):
 
-"Full coverage" in seLe4n means **full closure of required quality obligations**, not a single statement/branch metric.
+- IPC operations transfer scheduling state but not message data (CRIT-01).
+- No Untyped memory model (CRIT-04).
+- Information-flow covers 5 of 30+ operations (CRIT-03).
+- Dual-queue IPC model has zero formal proofs (CRIT-05/F-10).
 
-Coverage currently includes:
+## 3. Quality gates
 
-- theorem/invariant surface anchor coverage,
-- build/typing closure coverage,
-- executable semantic fixture coverage,
-- framework failure-path sensitivity,
-- deterministic replay extension checks.
+| Tier | Gate | What it validates |
+|------|------|-------------------|
+| **0** | Hygiene | No sorry/axiom, SHA-pinning, fixture isolation, shellcheck |
+| **1** | Build | Full `lake build` compilation (62 jobs) |
+| **2** | Trace + Negative | Fixture-diff trace (68 expectations) + corruption testing |
+| **3** | Invariant surface | 200+ symbol/doc anchor presence checks |
+| **4** | Nightly | Determinism replay + stochastic probe |
 
-## 4. Audit-backed confidence checks
+Commands:
+```bash
+./scripts/test_fast.sh      # Tier 0+1
+./scripts/test_smoke.sh     # Tier 0-2
+./scripts/test_full.sh      # Tier 0-3
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
+```
 
-The framework self-audit confirms both sides of correctness:
+## 4. Coverage interpretation
 
-- **pass-path confidence:** published tier entrypoints pass in normal mode,
-- **fail-path confidence:** injected impossible fixture expectation forces Tier 2 failure (as designed), proving mismatch detection is active.
+"Full coverage" means closure of quality obligations, not a single metric:
 
-## 5. Development path and quality evolution
+- Theorem/invariant surface anchor coverage (Tier 3).
+- Build/typing closure (Tier 1).
+- Executable semantic fixture coverage (Tier 2).
+- Negative/adversarial failure-path sensitivity (Tier 2).
+- Deterministic replay evidence (Tier 4).
 
-Current execution priorities (WS-E portfolio):
+## 5. Audit lineage
 
-1. WS-D portfolio completed — WS-D1..WS-D4 closed; WS-D5/WS-D6 absorbed into WS-E,
-2. WS-E1..WS-E6 are the active workstreams driving v0.11.6 audit remediation,
-3. architecture-boundary interfaces and proof-layer obligations remain synchronized from M6 closeout,
-4. documentation synchronization enforced in the same PR as any stage change,
-5. deterministic replay and anchor discoverability remain hard non-regression gates.
+| Version | Portfolio | Status |
+|---------|-----------|--------|
+| v0.12.2 | WS-F | **Active** — planning |
+| v0.11.6 | WS-E | Completed (WS-E1..E6) |
+| v0.11.0 | WS-D | Completed (WS-D1..D4) |
+| v0.9.32 | WS-C | Completed (WS-C1..C8) |
+| v0.9.0 | WS-B | Completed (WS-B1..B11) |

@@ -1,13 +1,17 @@
-# Information-Flow Proof Roadmap (Post-M7 Security Trajectory)
+# Information-Flow Proof Roadmap
 
-This document is the WS-A8 planning artifact for staged information-flow maturity.
+This document defines the staged path to complete information-flow proofs for the
+seLe4n production kernel. Originally created as a WS-A8 planning artifact, it now
+serves as the security trajectory for the Raspberry Pi 5 hardware target.
 
 ## 1. Purpose
 
-The current model already proves capability, scheduler, IPC, lifecycle, service, and architecture-boundary invariants.
-What is not yet formalized is a full noninterference-style information-flow argument.
+seLe4n already proves capability, scheduler, IPC, lifecycle, service, and
+architecture-boundary invariants. The v0.12.2 audits identified that information-flow
+coverage is at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
 
-This roadmap defines a reviewable, incremental path from current invariants to information-flow claims suitable for hardware-binding slices.
+WS-F3 addresses this gap. This roadmap defines the incremental path from current
+proofs (5 operations) to complete non-interference coverage (30+ operations).
 
 ## 2. Scope and assumptions
 

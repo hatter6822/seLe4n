@@ -2,9 +2,10 @@
 
 ## What this project is
 
-seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
-machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.28.0 toolchain, Lake build system, version 0.12.0.
+seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
+proofs, improving on seL4 architecture. Every kernel transition is an executable
+pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
+Lean 4.28.0 toolchain, Lake build system, version 0.12.2.
 
 ## Build and run
 
@@ -275,13 +276,11 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-E (v0.11.6 codebase audit remediation)
-- **Completed**: WS-E1 (test infrastructure/CI hardening),
-  WS-E2 (proof quality), WS-E3 (kernel hardening)
-- **Current phase**: P3 — WS-E4 (capability/IPC completion)
-- **Planned**: WS-E5 (info-flow maturity), WS-E6 (model completeness/docs)
-- **Completed predecessor**: WS-D1–D4; WS-D5/D6 absorbed into WS-E
-- **Planning backbone**: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
+- **Active portfolio**: WS-F (v0.12.2 audit remediation) — planning
+- **Active findings baseline**: `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`
+- **Planning backbone**: `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`
+- **Completed**: WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
 

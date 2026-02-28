@@ -1,20 +1,21 @@
 # Claim vs Evidence Index
 
-This index makes current semantic/proof/documentation claims auditable by linking each claim to executable or inspectable evidence.
+This index makes current semantic/proof/documentation claims auditable by linking
+each claim to executable or inspectable evidence.
 
 ## Active baseline claims
 
 | Claim | Canonical source | Evidence command(s) | Evidence artifact(s) |
 |---|---|---|---|
-| Active findings baseline is `AUDIT_CODEBASE_v0.11.6.md`. | `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
-| WS-E portfolio status (WS-E1 through WS-E6 completed). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Includes Tier-3 anchor validation + build + Tier-2 runtime checks. |
-| WS-D portfolio is complete (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E). | `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
-| WS-C portfolio status is complete (WS-C1..WS-C8). | `docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md` (status dashboard) | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
-| Root docs and GitBook mirrors stay synchronized via canonical-first rules. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `./scripts/test_docs_sync.sh` | Regenerated navigation + markdown link validation + doc-gen probe when available. |
-| IPC/scheduler/capability/info-flow invariants remain in active proof surface (including domain-partition invariant `currentThreadInActiveDomain` in the scheduler bundle). | Kernel modules and invariant suites listed in `scripts/test_tier3_invariant_surface.sh` plus scheduler domain regression checks in `tests/NegativeStateSuite.lean` | `./scripts/test_tier3_invariant_surface.sh`, `./scripts/test_smoke.sh` | Tier-3 symbol/doc anchor checks + runnable cross-domain regression coverage in the negative-state suite. |
+| Active findings baseline is v0.12.2 audits. | `README.md`, `docs/spec/SELE4N_SPEC.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
+| WS-F portfolio (v0.12.2 audit remediation) is the active workstream. | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `./scripts/test_full.sh` | Tier-3 anchor validation + build + Tier-2 runtime checks. |
+| All prior portfolios complete (WS-E, WS-D, WS-C, WS-B). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`, `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
+| Zero `sorry`/`axiom` in production proof surface. | All `SeLe4n/Kernel/*/Invariant.lean` files | `./scripts/test_tier0_hygiene.sh` | Tier-0 forbidden-marker scan. |
+| Root docs and GitBook mirrors stay synchronized. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` | `./scripts/test_docs_sync.sh` | Navigation regeneration + link validation. |
+| IPC/scheduler/capability/info-flow invariants remain in proof surface. | Kernel modules in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh`, `./scripts/test_smoke.sh` | Tier-3 symbol checks + negative-state coverage. |
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
-| Queue ownership metadata is now embedded in core kernel objects (`SchedulerState.runnableHead`/`runnableTail`, `TCB.queuePrev`/`queueNext`) with runtime intrusive-queue consistency checks over endpoint `sendQ`/`receiveQ`. | `SeLe4n/Model/State.lean`, `SeLe4n/Model/Object.lean`, `SeLe4n/Kernel/IPC/Operations.lean`, `SeLe4n/Testing/InvariantChecks.lean`, `tests/NegativeStateSuite.lean` | `source ~/.elan/env && lake build`, `./scripts/test_smoke.sh`, `./scripts/test_full.sh` | Build + smoke/full tiers validate intrusive queue link invariants and dual-queue runtime behavior. |
-| CDT edges are node-stable and slot-observed CDT is projection of node graph through slot mapping; `cspaceMove` performs pointer/backpointer updates instead of whole-edge rewrites, deletes detach slot↔node bindings to prevent stale aliasing, and strict revoke reports first descendant-delete failure with offending slot context. | `SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean`, `SeLe4n/Kernel/Capability/Operations.lean`, `SeLe4n/Kernel/Capability/Invariant.lean`, `tests/NegativeStateSuite.lean` | `source ~/.elan/env && lake build`, `./scripts/test_smoke.sh`, `./scripts/test_full.sh` | Build + smoke/full tiers validate node-based CDT operations, strict-failure reporting semantics, preservation proofs, and slot-reuse safety checks in negative-state coverage. |
+| Intrusive dual-queue IPC with runtime consistency checks. | `SeLe4n/Kernel/IPC/Operations.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | Intrusive queue link invariants and dual-queue runtime behavior. |
+| Node-stable CDT with strict revocation error reporting. | `SeLe4n/Kernel/Capability/Operations.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | CDT operations, strict-failure reporting, slot-reuse safety checks. |
 
 ## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
 

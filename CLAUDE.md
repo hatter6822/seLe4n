@@ -2,9 +2,10 @@
 
 ## What this project is
 
-seLe4n is a Lean 4 formalization of core seL4 microkernel semantics. It produces
-machine-checked proofs of invariant preservation over executable transition
-semantics. Lean 4.28.0 toolchain, Lake build system, version 0.12.0.
+seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
+proofs, improving on seL4 architecture. Every kernel transition is an executable
+pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
+Lean 4.28.0 toolchain, Lake build system, version 0.12.2.
 
 ## Build and run
 
@@ -63,16 +64,19 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~1467 lines)
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~1403 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~1576 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~1562 lines)
+- `SeLe4n/Kernel/IPC/Operations.lean` (~1009 lines)
 - `SeLe4n/Kernel/Service/Invariant.lean` (~974 lines)
-- `docs/spec/SEL4_SPEC.md` (~751 lines)
-- `SeLe4n/Kernel/IPC/Operations.lean` (~686 lines)
-- `SeLe4n/Model/State.lean` (~577 lines)
-- `scripts/test_tier3_invariant_surface.sh` (~533 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~532 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~531 lines)
-- `SeLe4n/Model/Object.lean` (~514 lines)
+- `tests/NegativeStateSuite.lean` (~809 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~782 lines)
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (~774 lines)
+- `SeLe4n/Model/State.lean` (~756 lines)
+- `docs/spec/SEL4_SPEC.md` (~753 lines)
+- `SeLe4n/Model/Object.lean` (~707 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~666 lines)
+- `CHANGELOG.md` (~649 lines)
+- `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
 - `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)
 
 When editing large files, read the specific region around the target lines
@@ -275,14 +279,11 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-E (v0.11.6 codebase audit remediation)
-- **Completed**: WS-E1 (test infrastructure/CI hardening),
-  WS-E2 (proof quality), WS-E3 (kernel hardening),
-  WS-E4 (capability/IPC completion)
-- **Current phase**: P4 — WS-E5 (info-flow maturity)
-- **Planned**: WS-E6 (model completeness/docs)
-- **Completed predecessor**: WS-D1–D4; WS-D5/D6 absorbed into WS-E
-- **Planning backbone**: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
+- **Active portfolio**: WS-F (v0.12.2 audit remediation) — planning
+- **Active findings baseline**: `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`
+- **Planning backbone**: `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`
+- **Completed**: WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
 
