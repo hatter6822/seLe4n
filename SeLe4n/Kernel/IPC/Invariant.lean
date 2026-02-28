@@ -2579,6 +2579,22 @@ theorem endpointQueueRemoveDual_preserves_schedulerInvariantBundle
     rcases hCTV' with ⟨tcbC, hTcbC⟩
     exact endpointQueueRemoveDual_tcb_forward st st' endpointId isSendQ tid ctid.toObjId tcbC hStep hTcbC
 
+/-- WS-F1/TPI-D08: endpointQueueRemoveDual preserves ipcSchedulerContractPredicates.
+endpointQueueRemoveDual only modifies queue link fields via storeObject (endpoint)
+and storeTcbQueueLinks. The scheduler is unchanged and all TCB ipcStates are
+preserved, so the contract predicates are maintained via
+contracts_of_same_scheduler_ipcState. -/
+theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isSendQ : Bool) (tid : SeLe4n.ThreadId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hStep : endpointQueueRemoveDual endpointId isSendQ tid st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' :=
+  contracts_of_same_scheduler_ipcState st st'
+    (endpointQueueRemoveDual_scheduler_eq st st' endpointId isSendQ tid hStep)
+    (fun anyTid tcb' h => endpointQueueRemoveDual_tcb_ipcState_backward st st' endpointId isSendQ tid anyTid tcb' hStep h)
+    hContract
+
 -- ============================================================================
 -- WS-F1: endpointCall / endpointReplyRecv invariant preservation (F-11 remediation)
 --
@@ -3009,6 +3025,78 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
           simp only [hAwait, Except.ok.injEq] at hStep
           obtain ⟨_, hEq⟩ := Prod.mk.inj hStep; subst hEq
           exact endpointAwaitReceive_preserves_schedulerInvariantBundle _ _ endpointId receiver hInvMid hAwait
+
+/-- WS-F1/TPI-D09: endpointReplyRecv preserves ipcSchedulerContractPredicates.
+Chains storeTcbIpcStateAndMessage(.ready) + ensureRunnable contract preservation
+(same argument as endpointReply) with
+endpointAwaitReceive_preserves_ipcSchedulerContractPredicates. -/
+theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' := by
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
+  unfold endpointReplyRecv at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ =>
+      simp [hIpc] at hStep
+    | blockedOnReply _ =>
+      simp only [hIpc] at hStep
+      cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+      | error e => simp [hMsg] at hStep
+      | ok st1 =>
+        simp only [hMsg] at hStep
+        -- storeTcbIpcStateAndMessage + ensureRunnable preserves contracts
+        -- (same argument as endpointReply_preserves_ipcSchedulerContractPredicates)
+        have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
+        have hContractMid : ipcSchedulerContractPredicates (ensureRunnable st1 replyTarget) := by
+          refine ⟨?_, ?_, ?_⟩
+          · -- runnableThreadIpcReady
+            intro tid tcb' hTcb' hRun'
+            rw [ensureRunnable_preserves_objects] at hTcb'
+            by_cases hNe : tid.toObjId = replyTarget.toObjId
+            · exact storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hMsg tcb' (hNe ▸ hTcb')
+            · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hMsg).symm.trans hTcb'
+              have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+              rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+              · exact hReady tid tcb' hTcbPre (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+              · exact absurd hEq hNeTid
+          · -- blockedOnSendNotRunnable
+            intro tid tcb' eid hTcb' hIpcState'
+            rw [ensureRunnable_preserves_objects] at hTcb'
+            by_cases hNe : tid.toObjId = replyTarget.toObjId
+            · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hMsg tcb' (hNe ▸ hTcb')
+              rw [this] at hIpcState'; cases hIpcState'
+            · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+              have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hMsg).symm.trans hTcb'
+              intro hRun'
+              rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+              · exact hBlockSend tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+              · exact absurd hEq hNeTid
+          · -- blockedOnReceiveNotRunnable
+            intro tid tcb' eid hTcb' hIpcState'
+            rw [ensureRunnable_preserves_objects] at hTcb'
+            by_cases hNe : tid.toObjId = replyTarget.toObjId
+            · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hMsg tcb' (hNe ▸ hTcb')
+              rw [this] at hIpcState'; cases hIpcState'
+            · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+              have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hMsg).symm.trans hTcb'
+              intro hRun'
+              rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+              · exact hBlockRecv tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+              · exact absurd hEq hNeTid
+        -- endpointAwaitReceive preserves ipcSchedulerContractPredicates
+        cases hAwait : endpointAwaitReceive endpointId receiver (ensureRunnable st1 replyTarget) with
+        | error e => simp [hAwait] at hStep
+        | ok result =>
+          simp only [hAwait, Except.ok.injEq] at hStep
+          obtain ⟨_, hEq⟩ := Prod.mk.inj hStep; subst hEq
+          exact endpointAwaitReceive_preserves_ipcSchedulerContractPredicates _ _ endpointId receiver hContractMid hAwait
 
 /-- WS-F1/TPI-D09: endpointReply preserves ipcSchedulerContractPredicates.
 endpointReply only stores a TCB and calls ensureRunnable; the contract

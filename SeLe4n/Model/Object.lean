@@ -349,6 +349,67 @@ theorem allocate_preserves_region (ut ut' : UntypedObject) (childId : SeLe4n.Obj
   have hU := (Prod.mk.inj hEq).1
   subst hU; exact ⟨rfl, rfl⟩
 
+/-- WS-F2: A successful allocation preserves childrenWithinWatermark.
+Existing children are within the old watermark (≤ new watermark), and the new
+child occupies [old_watermark, old_watermark + size] = [old_watermark, new_watermark]. -/
+theorem allocate_preserves_childrenWithinWatermark (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hBounds : ut.childrenWithinWatermark)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.childrenWithinWatermark := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_hCan, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  intro c hMem
+  simp at hMem ⊢
+  rcases hMem with rfl | hOld
+  · dsimp; omega
+  · have := hBounds c hOld; omega
+
+/-- WS-F2: A successful allocation preserves childrenNonOverlap, given that
+existing children are within the watermark. Since the new child starts at the
+old watermark and all existing children end at or before the old watermark,
+no overlap is possible. -/
+theorem allocate_preserves_childrenNonOverlap (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hNonOverlap : ut.childrenNonOverlap)
+    (hBounds : ut.childrenWithinWatermark)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.childrenNonOverlap := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_hCan, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  intro c₁ c₂ hMem₁ hMem₂ hNe
+  simp at hMem₁ hMem₂
+  rcases hMem₁ with rfl | hOld₁ <;> rcases hMem₂ with rfl | hOld₂
+  · exact absurd rfl hNe
+  · -- new child vs old child: old child ends ≤ watermark = new child offset
+    right; have := hBounds c₂ hOld₂; dsimp; omega
+  · -- old child vs new child: old child ends ≤ watermark = new child offset
+    left; have := hBounds c₁ hOld₁; dsimp; omega
+  · -- two old children: by pre-condition
+    exact hNonOverlap c₁ c₂ hOld₁ hOld₂ hNe
+
+/-- WS-F2: A successful allocation preserves childrenUniqueIds, given that
+the new child's ID does not collide with any existing child. -/
+theorem allocate_preserves_childrenUniqueIds (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hUnique : ut.childrenUniqueIds)
+    (hFresh : ∀ c ∈ ut.children, c.objId ≠ childId)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.childrenUniqueIds := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_hCan, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  intro c₁ c₂ hMem₁ hMem₂ hIdEq
+  simp at hMem₁ hMem₂
+  rcases hMem₁ with rfl | hOld₁ <;> rcases hMem₂ with rfl | hOld₂
+  · rfl
+  · -- new child has objId = childId, old child has objId ≠ childId
+    dsimp at hIdEq; exact absurd hIdEq.symm (hFresh c₂ hOld₂)
+  · dsimp at hIdEq; exact absurd hIdEq (hFresh c₁ hOld₁)
+  · exact hUnique c₁ c₂ hOld₁ hOld₂ hIdEq
+
 /-- `reset` restores watermark validity. -/
 theorem reset_watermarkValid (ut : UntypedObject) : ut.reset.watermarkValid := by
   simp [reset, watermarkValid]

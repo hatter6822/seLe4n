@@ -325,4 +325,86 @@ theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
       st st' authority untypedId childId newObj allocSize hMeta hStep
   exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
 
+/-- WS-F2: `retypeFromUntyped` preserves the untyped memory invariant.
+The source untyped's allocate operation preserves watermark validity,
+children-within-watermark, non-overlap, and unique IDs (given freshness of
+childId). Non-target untypeds are unchanged through both storeObject calls.
+If `newObj` is itself an untyped, it must be well-formed. -/
+theorem retypeFromUntyped_preserves_untypedMemoryInvariant
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hInv : untypedMemoryInvariant st)
+    (_hNe : childId ≠ untypedId)
+    (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
+    (hFresh : ∀ ut, st.objects untypedId = some (.untyped ut) →
+        ∀ c ∈ ut.children, c.objId ≠ childId)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    untypedMemoryInvariant st' := by
+  rcases hInv with ⟨hWM, hCB, hNO, hUI⟩
+  rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
+    ⟨ut, ut', _cap, stLookup, stUt, offset, hObj, _hNotDev,
+     hLookup, _hAuth, hAlloc, hStoreUt, hStoreChild⟩
+  have hLookupSt : stLookup = st :=
+    cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
+  rw [hLookupSt] at hStoreUt
+  -- Source untyped properties for ut
+  have hUtWM : ut.watermarkValid := hWM untypedId ut hObj
+  have hUtCB : ut.childrenWithinWatermark := hCB untypedId ut hObj
+  have hUtNO : ut.childrenNonOverlap := hNO untypedId ut hObj
+  have hUtUI : ut.childrenUniqueIds := hUI untypedId ut hObj
+  -- After allocate, ut' is well-formed
+  have hUt'WM := UntypedObject.allocate_preserves_watermarkValid ut ut' childId allocSize offset hUtWM hAlloc
+  have hUt'CB := UntypedObject.allocate_preserves_childrenWithinWatermark ut ut' childId allocSize offset hUtCB hAlloc
+  have hUt'NO := UntypedObject.allocate_preserves_childrenNonOverlap ut ut' childId allocSize offset hUtNO hUtCB hAlloc
+  have hUt'UI := UntypedObject.allocate_preserves_childrenUniqueIds ut ut' childId allocSize offset hUtUI (hFresh ut hObj) hAlloc
+  -- Helper: resolve post-state object at any oid through the two storeObject calls
+  have resolve : ∀ oid utPost,
+      st'.objects oid = some (.untyped utPost) →
+      (oid = childId ∧ newObj = .untyped utPost) ∨
+      (oid ≠ childId ∧ oid = untypedId ∧ ut' = utPost) ∨
+      (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects oid = some (.untyped utPost)) := by
+    intro oid utPost hObjPost
+    by_cases hEqChild : oid = childId
+    · left; constructor; exact hEqChild
+      rw [hEqChild] at hObjPost
+      have := storeObject_objects_eq stUt st' childId newObj hStoreChild
+      rw [this] at hObjPost; cases hObjPost; rfl
+    · right
+      rw [storeObject_objects_ne stUt st' childId oid newObj hEqChild hStoreChild] at hObjPost
+      by_cases hEqUt : oid = untypedId
+      · left; refine ⟨hEqChild, hEqUt, ?_⟩
+        rw [hEqUt] at hObjPost
+        have := storeObject_objects_eq st stUt untypedId (.untyped ut') hStoreUt
+        rw [this] at hObjPost; cases hObjPost; rfl
+      · right; exact ⟨hEqChild, hEqUt,
+          (storeObject_objects_ne st stUt untypedId oid (.untyped ut') hEqUt hStoreUt) ▸ hObjPost⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · -- untypedWatermarkInvariant
+    intro oid utPost hObjPost
+    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF utPost hNewEq).1
+    · exact hUtEq ▸ hUt'WM
+    · exact hWM oid utPost hPre
+  · -- untypedChildrenBoundsInvariant
+    intro oid utPost hObjPost
+    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF utPost hNewEq).2.1
+    · exact hUtEq ▸ hUt'CB
+    · exact hCB oid utPost hPre
+  · -- untypedChildrenNonOverlapInvariant
+    intro oid utPost hObjPost
+    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF utPost hNewEq).2.2.1
+    · exact hUtEq ▸ hUt'NO
+    · exact hNO oid utPost hPre
+  · -- untypedChildrenUniqueIdsInvariant
+    intro oid utPost hObjPost
+    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF utPost hNewEq).2.2.2
+    · exact hUtEq ▸ hUt'UI
+    · exact hUI oid utPost hPre
+
 end SeLe4n.Kernel
