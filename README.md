@@ -47,7 +47,7 @@ improving on specific architectural aspects:
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active workstream** | WS-F (v0.12.2 audit remediation) — planning |
+| **Active workstream** | WS-F (v0.12.2 audit remediation) — WS-F1 completed |
 | **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start

@@ -54,7 +54,7 @@ enforcement, and scheduling.
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active portfolio** | WS-F (v0.12.2 audit remediation) — planning |
+| **Active portfolio** | WS-F (v0.12.2 audit remediation) — WS-F1 completed |
 | **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
