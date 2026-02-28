@@ -1,3 +1,15 @@
+## [0.12.3] - 2026-02-28
+
+### WS-F1: IPC message transfer and dual-queue verification (completed)
+
+- **IPC message transfer:** `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, and `endpointReplyRecv` now carry `IpcMessage` payloads (registers, caps, badge) through send/receive rendezvous. Messages are staged in sender's `TCB.pendingMessage` while blocked and transferred to the receiver's TCB on handshake/dequeue.
+- **TCB.pendingMessage field:** new `Option IpcMessage` field on TCB for staging message content during IPC transfers.
+- **Combined state+message helpers:** `storeTcbIpcStateAndMessage` and `storeTcbPendingMessage` update IPC state and pending message in a single `storeObject` call, simplifying both implementation and proof tracking.
+- **Invariant preservation theorems:** 14 new theorems for dual-queue and compound operations (`endpointSendDual`, `endpointReceiveDual`, `endpointQueueRemoveDual`, `endpointCall`, `endpointReplyRecv`, `endpointReply`) preserving `ipcInvariant`, `schedulerInvariantBundle`, and `ipcSchedulerContractPredicates`. Tracked as TPI-D08/TPI-D09 for mechanical unfolding through private multi-step `storeObject` chains.
+- **Supporting proof lemmas:** backward endpoint/notification preservation, scheduler equality, IPC state readback, and TCB existence lemmas for `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`, and `storeTcbQueueLinks`.
+- **Trace harness scenarios:** 7 new fixture anchors (F1-01a..F1-03b) demonstrating actual data transfer: send-then-receive with registers/badge, rendezvous delivery, and call/reply roundtrip.
+- Closes CRIT-01 (no message transfer), CRIT-05 (dual-queue unverified), F-10, F-11.
+
 ## [0.12.2] - 2026-02-27
 
 ### Optimization work continues

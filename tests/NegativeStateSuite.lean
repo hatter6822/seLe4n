@@ -417,7 +417,7 @@ private def runNegativeChecks : IO Unit := do
   -- ==========================================================================
 
   let (_, stDualSend1) ← expectOkState "dual queue send blocks sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
   match stDualSend1.objects endpointId with
   | some (.endpoint ep) =>
       if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
@@ -437,9 +437,9 @@ private def runNegativeChecks : IO Unit := do
 
   -- FIFO check across two blocked senders and one receiver consuming twice.
   let (_, stDualFifo1) ← expectOkState "dual queue fifo enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
   let (_, stDualFifo2) ← expectOkState "dual queue fifo enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualFifo1)
   expectThreadQueueLinks "dual queue fifo sender 7 links to sender 8"
     stDualFifo2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 8))
   expectThreadQueueLinks "dual queue fifo sender 8 links from sender 7"
@@ -457,11 +457,11 @@ private def runNegativeChecks : IO Unit := do
 
   -- Arbitrary O(1) remove with queuePPrev metadata: remove middle waiter 8 from [7,8,9].
   let (_, stDualRm1) ← expectOkState "dual queue remove enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
   let (_, stDualRm2) ← expectOkState "dual queue remove enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualRm1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualRm1)
   let (_, stDualRm3) ← expectOkState "dual queue remove enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRm2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stDualRm2)
   let (_, stDualRm4) ← expectOkState "dual queue remove middle sender 8"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRm3)
   expectThreadQueueLinks "dual queue remove middle clears sender 8 links"
@@ -503,7 +503,7 @@ private def runNegativeChecks : IO Unit := do
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{reprStr fifoFirst},{reprStr fifoSecond}]"
 
   expectError "dual queue sender double-wait prevention"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty stDualFifo1)
     .alreadyWaiting
 
   let (_, stDualRecvWait1) ← expectOkState "dual queue receiver wait #1"
@@ -517,7 +517,7 @@ private def runNegativeChecks : IO Unit := do
   expectThreadQueueLinks "dual queue receiver fifo receiver 8 links from receiver 9"
     stDualRecvWait2 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 9)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 9))) none
   let (_, stDualRecvWake) ← expectOkState "dual queue sender wakes first waiting receiver"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) stDualRecvWait2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty stDualRecvWait2)
   expectThreadQueueLinks "dual queue sender wake clears first receiver links"
     stDualRecvWake (SeLe4n.ThreadId.ofNat 9) none none none
   expectThreadQueueLinks "dual queue sender wake keeps second receiver singleton head"

@@ -1063,35 +1063,53 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 
-/-- WS-E4/M-12: endpointReply preserves capabilityInvariantBundle.
-Reply stores a TCB (not a CNode), so CSpace invariants are preserved. -/
+/-- WS-F1/WS-E4/M-12: endpointReply preserves capabilityInvariantBundle.
+Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
+Updated for WS-F1 message transfer. -/
 theorem endpointReply_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (target : SeLe4n.ThreadId)
+    (msg : IpcMessage)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointReply target st = .ok ((), st')) :
+    (hStep : endpointReply target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
   unfold endpointReply at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
-      simp [hLookup] at hStep
+      simp only [hLookup] at hStep
       cases hIpc : tcb.ipcState with
       | ready => simp [hIpc] at hStep
       | blockedOnSend _ => simp [hIpc] at hStep
       | blockedOnReceive _ => simp [hIpc] at hStep
       | blockedOnNotification _ => simp [hIpc] at hStep
       | blockedOnReply epId =>
-          simp [hIpc] at hStep
-          cases hTcb : storeTcbIpcState st target .ready with
+          simp only [hIpc] at hStep
+          cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
           | error e => simp [hTcb] at hStep
           | ok st1 =>
-              simp [hTcb] at hStep; cases hStep
-              -- storeTcbIpcState only writes TCBs, so CNode objects are unchanged
-              have hU1 : cspaceSlotUnique st1 := by
+              simp only [hTcb, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+              -- storeTcbIpcStateAndMessage only writes TCBs, so CNode objects are unchanged
+              have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+                  st1.objects cnodeId = some (.cnode cn) → st.objects cnodeId = some (.cnode cn) := by
                 intro cnodeId cn hCn1
-                exact hUnique cnodeId cn (storeTcbIpcState_cnode_backward st st1 target .ready cnodeId cn hTcb hCn1)
+                by_cases hEq : cnodeId = target.toObjId
+                · -- At target.toObjId, storeTcbIpcStateAndMessage wrote a TCB, not a CNode
+                  subst hEq
+                  have hTargetTcb : ∃ tcb', st.objects target.toObjId = some (.tcb tcb') := by
+                    unfold lookupTcb at hLookup; cases hObj : st.objects target.toObjId with
+                    | none => simp [hObj] at hLookup
+                    | some obj => cases obj with
+                      | tcb t => exact ⟨t, rfl⟩
+                      | _ => simp [hObj] at hLookup
+                  have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
+                  rcases hTcbPost with ⟨tcb', hTcb'⟩
+                  rw [hTcb'] at hCn1; cases hCn1
+                · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) cnodeId hEq hTcb] at hCn1; exact hCn1
+              have hU1 : cspaceSlotUnique st1 := by
+                intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
               have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
                 hU1 (ensureRunnable_preserves_objects st1 target)
               exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,

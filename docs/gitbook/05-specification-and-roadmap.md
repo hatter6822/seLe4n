@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.2` |
+| Version | `0.12.3` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 14,708 across 33 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-F (v0.12.2 audit remediation) |
+| Active portfolio | WS-F (v0.12.2 audit remediation) — WS-F1 completed |
 
 ## Milestone history
 
@@ -30,7 +30,7 @@ remediation) → WS-B..E (4 audit portfolios, all completed).
 The WS-F portfolio addresses v0.12.2 audit findings (6 CRIT, 6 HIGH, 12 MED, 9 LOW).
 
 Critical priorities:
-1. **WS-F1**: IPC message transfer + dual-queue verification
+1. **WS-F1**: ~~IPC message transfer + dual-queue verification~~ **COMPLETED**
 2. **WS-F2**: Untyped memory model
 3. **WS-F3**: Information-flow completeness
 4. **WS-F4**: Proof gap closure

@@ -116,6 +116,10 @@ structure TCB where
       Cleared when detached from intrusive endpoint wait queues. -/
   queuePPrev : Option QueuePPrev := none
   queueNext : Option SeLe4n.ThreadId := none
+  /-- WS-F1: Pending IPC message for transfer during endpoint rendezvous.
+      Stored in the sender's TCB while blocked; transferred to the receiver
+      on handshake/dequeue. `none` = no pending message. -/
+  pendingMessage : Option IpcMessage := none
   deriving Repr, DecidableEq
 
 inductive EndpointState where

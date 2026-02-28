@@ -13,7 +13,7 @@ for the full plan.
 ### P1 — Critical IPC, memory, and proof gaps (WS-F1, WS-F2, WS-F4)
 
 Three workstreams run in parallel:
-- **WS-F1**: Wire `IpcMessage` into operations, verify dual-queue model.
+- **WS-F1**: ~~Wire `IpcMessage` into operations, verify dual-queue model.~~ **COMPLETED** — messages flow through all IPC operations with 14 preservation theorems and 7 trace anchors.
 - **WS-F2**: Add Untyped memory with watermark tracking.
 - **WS-F4**: Close timerTick, cspaceMutate, notification proof gaps.
 

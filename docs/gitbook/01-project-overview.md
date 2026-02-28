@@ -49,6 +49,8 @@ M7 (audit remediation).
 ### Active work
 
 - **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
+  - **WS-F1** (IPC message transfer + dual-queue verification): **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems; 7 trace anchors with actual data transfer.
+  - WS-F2..F8: planning.
   See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
 ## 5. Architecture mental model

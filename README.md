@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.12.2-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.12.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -41,13 +41,13 @@ improving on specific architectural aspects:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.12.2` |
+| **Version** | `0.12.3` |
 | **Lean toolchain** | `4.28.0` |
 | **Production Lean LoC** | 14,708 across 33 files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active workstream** | WS-F (v0.12.2 audit remediation) — planning |
+| **Active workstream** | WS-F (v0.12.2 audit remediation) — WS-F1 completed |
 | **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start
@@ -134,11 +134,10 @@ findings systematically. See the
 full execution plan.
 
 **Critical priorities:**
-1. Integrate `IpcMessage` into IPC operations (actual data transfer between threads)
-2. Prove invariant preservation for dual-queue IPC operations
-3. Extend `ObservableState` projection to cover all security-relevant fields
-4. Add Untyped memory model with watermark tracking
-5. Connect enforcement layer to non-interference proofs
+1. ~~Integrate `IpcMessage` into IPC operations~~ **(WS-F1 COMPLETED)** — messages now flow through all dual-queue and compound IPC operations with 14 preservation theorems and 7 trace anchors
+2. Extend `ObservableState` projection to cover all security-relevant fields
+3. Add Untyped memory model with watermark tracking
+4. Connect enforcement layer to non-interference proofs
 
 **Path to Raspberry Pi 5:**
 The hardware target is Raspberry Pi 5 (ARM64). Once audit remediation closes the

@@ -451,7 +451,7 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   let dualObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
     if oid = dualEpId then some dualEp else st1.objects oid
   let stDual : SystemState := { st1 with objects := dualObjects }
-  match SeLe4n.Kernel.endpointSendDual dualEpId 1 stDual with
+  match SeLe4n.Kernel.endpointSendDual dualEpId 1 .empty stDual with
   | .error err => IO.println s!"endpointSendDual error: {reprStr err}"
   | .ok (_, stSent) =>
       match (stSent.objects dualEpId) with
@@ -470,7 +470,7 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   let replySched := { st1.scheduler with
     runnable := st1.scheduler.runnable.filter (· != replyTarget) }
   let stReply : SystemState := { st1 with objects := replyObjects, scheduler := replySched }
-  match SeLe4n.Kernel.endpointReply replyTarget stReply with
+  match SeLe4n.Kernel.endpointReply replyTarget .empty stReply with
   | .error err => IO.println s!"endpointReply error: {reprStr err}"
   | .ok (_, stReplied) =>
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
@@ -554,6 +554,112 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
       IO.println s!"domain switch active domain: {stSwitched.scheduler.activeDomain.toNat}"
       IO.println s!"domain switch time remaining: {stSwitched.scheduler.domainTimeRemaining}"
 
+-- ============================================================================
+-- WS-F1: IPC message transfer verification trace scenarios
+-- ============================================================================
+
+/-- WS-F1 test: dual-queue message transfer, rendezvous, call/reply roundtrip. -/
+private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
+  -- F1-01: Send with payload → receiver dequeues → message in receiver TCB
+  let epId : SeLe4n.ObjId := demoEndpoint
+  let senderId : SeLe4n.ThreadId := 1
+  let receiverId : SeLe4n.ThreadId := 12
+  let testMsg : IpcMessage := { registers := [42, 7], caps := [], badge := some ⟨123⟩ }
+  -- Fresh endpoint for dual-queue test
+  let ep0 : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQ := {}, receiveQ := {} }
+  let obj0 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = epId then some ep0 else st1.objects oid
+  let st0 : SystemState := { st1 with objects := obj0 }
+  -- Sender sends (no receiver queued → sender blocks with message)
+  match SeLe4n.Kernel.endpointSendDual epId senderId testMsg st0 with
+  | .error err => IO.println s!"F1-01 send error: {reprStr err}"
+  | .ok (_, stSent) =>
+      -- Verify sender has pending message
+      let senderHasMsg := match SeLe4n.Kernel.lookupTcb stSent senderId with
+        | some tcb => tcb.pendingMessage.isSome
+        | none => false
+      IO.println s!"message sender has pending: {senderHasMsg}"
+      -- Receiver dequeues sender → message transferred to receiver
+      match SeLe4n.Kernel.endpointReceiveDual epId receiverId stSent with
+      | .error err => IO.println s!"F1-01 receive error: {reprStr err}"
+      | .ok (_, stRecv) =>
+          let recvMsg := match SeLe4n.Kernel.lookupTcb stRecv receiverId with
+            | some tcb => tcb.pendingMessage
+            | none => none
+          let msgRegs := match recvMsg with
+            | some m => m.registers
+            | none => []
+          IO.println s!"message transfer registers: {reprStr msgRegs}"
+          let msgBadge := match recvMsg with
+            | some m => m.badge
+            | none => none
+          IO.println s!"message transfer badge: {reprStr msgBadge}"
+          -- Verify sender's pending message was cleared
+          let senderCleared := match SeLe4n.Kernel.lookupTcb stRecv senderId with
+            | some tcb => tcb.pendingMessage.isNone
+            | none => false
+          IO.println s!"message sender cleared after transfer: {senderCleared}"
+  -- F1-02: Rendezvous path — receiver waits first, then send delivers directly
+  let ep1 : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQ := {}, receiveQ := {} }
+  let obj1 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = epId then some ep1 else st1.objects oid
+  let stR : SystemState := { st1 with objects := obj1 }
+  -- Receiver blocks first (no sender waiting → receiver enqueued)
+  match SeLe4n.Kernel.endpointReceiveDual epId receiverId stR with
+  | .error err => IO.println s!"F1-02 receive-first error: {reprStr err}"
+  | .ok (_, stWait) =>
+      -- Sender sends with message (receiver queued → rendezvous)
+      let rendezvousMsg : IpcMessage := { registers := [99], caps := [], badge := none }
+      match SeLe4n.Kernel.endpointSendDual epId senderId rendezvousMsg stWait with
+      | .error err => IO.println s!"F1-02 send error: {reprStr err}"
+      | .ok (_, stRend) =>
+          let rendMsg := match SeLe4n.Kernel.lookupTcb stRend receiverId with
+            | some tcb => tcb.pendingMessage
+            | none => none
+          let rendRegs := match rendMsg with
+            | some m => m.registers
+            | none => []
+          IO.println s!"rendezvous delivery registers: {reprStr rendRegs}"
+  -- F1-03: Call + Reply roundtrip with message payload
+  let ep2 : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQ := {}, receiveQ := {} }
+  let obj2 : SeLe4n.ObjId → Option KernelObject := fun oid =>
+    if oid = epId then some ep2 else st1.objects oid
+  let stC : SystemState := { st1 with objects := obj2 }
+  -- Receiver waits first
+  match SeLe4n.Kernel.endpointReceiveDual epId receiverId stC with
+  | .error err => IO.println s!"F1-03 receive error: {reprStr err}"
+  | .ok (_, stWait2) =>
+      -- Caller calls with message
+      let callMsg : IpcMessage := { registers := [10, 20, 30], caps := [], badge := some ⟨456⟩ }
+      match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
+      | .error err => IO.println s!"F1-03 call error: {reprStr err}"
+      | .ok (_, stCalled) =>
+          -- Verify caller is blocked on reply
+          let callerBlocked := match SeLe4n.Kernel.lookupTcb stCalled senderId with
+            | some tcb => match tcb.ipcState with
+              | .blockedOnReply _ => true
+              | _ => false
+            | none => false
+          IO.println s!"call/reply caller blocked: {callerBlocked}"
+          -- Reply with response message
+          let replyMsg : IpcMessage := { registers := [100, 200], caps := [], badge := none }
+          match SeLe4n.Kernel.endpointReply senderId replyMsg stCalled with
+          | .error err => IO.println s!"F1-03 reply error: {reprStr err}"
+          | .ok (_, stReplied) =>
+              let replyResult := match SeLe4n.Kernel.lookupTcb stReplied senderId with
+                | some tcb => tcb.pendingMessage
+                | none => none
+              let replyRegs := match replyResult with
+                | some m => m.registers
+                | none => []
+              IO.println s!"call/reply response registers: {reprStr replyRegs}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -571,6 +677,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runServiceAndStressTrace st1
   runLifecycleAndEndpointTrace st1
   runCapabilityIpcTrace st1
+  runIpcMessageTransferTrace st1
   runSchedulerTimingDomainTrace st1
 
 -- ============================================================================

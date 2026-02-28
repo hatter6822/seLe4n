@@ -239,7 +239,7 @@ matters for production.
 
 | Workstream | Priority | Status | Findings addressed |
 |------------|----------|--------|-------------------|
-| WS-F1 | Critical | Planning | CRIT-01, CRIT-05, F-10, F-11 |
+| WS-F1 | Critical | **Completed** | CRIT-01, CRIT-05, F-10, F-11 |
 | WS-F2 | Critical | Planning | CRIT-04 |
 | WS-F3 | High | Planning | CRIT-02, CRIT-03, F-20, F-21, F-22 |
 | WS-F4 | High | Planning | F-03, F-06, F-12 |

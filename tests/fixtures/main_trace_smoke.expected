@@ -56,6 +56,13 @@ E4-H02    | critical | H-02 occupied slot guard: SeLe4n.Model.KernelError.target
 E4-C02    | high     | cspaceCopy target matches: true
 E4-M01    | high     | dual-queue sender blocked on sendQ non-empty: true
 E4-M12    | high     | endpointReply unblocked target: true
+F1-01a    | critical | message sender has pending: true
+F1-01b    | critical | message transfer registers: [42, 7]
+F1-01c    | critical | message transfer badge: some { val := 123 }
+F1-01d    | high     | message sender cleared after transfer: true
+F1-02     | critical | rendezvous delivery registers: [99]
+F1-03a    | high     | call/reply caller blocked: true
+F1-03b    | critical | call/reply response registers: [100, 200]
 E6-M03    | high     | EDF tie-break chosen thread: some 12
 E6-M04a   | high     | timer tick remaining slice: 1
 E6-M04b   | high     | timer tick expiry rescheduled current: some 1
