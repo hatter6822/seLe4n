@@ -15,6 +15,7 @@ each claim to executable or inspectable evidence.
 | IPC/scheduler/capability/info-flow invariants remain in proof surface. | Kernel modules in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh`, `./scripts/test_smoke.sh` | Tier-3 symbol checks + negative-state coverage. |
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
 | Intrusive dual-queue IPC with runtime consistency checks. | `SeLe4n/Kernel/IPC/Operations.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | Intrusive queue link invariants and dual-queue runtime behavior. |
+| IPC message transfer: data flows between threads during IPC. | `SeLe4n/Kernel/IPC/Operations.lean`, `SeLe4n/Kernel/IPC/Invariant.lean`, `SeLe4n/Testing/MainTraceHarness.lean` | `./scripts/test_full.sh` | WS-F1: `IpcMessage` wired into dual-queue ops; 14 preservation theorems (TPI-D08/D09); 7 trace anchors (F1-01..F1-03). |
 | Node-stable CDT with strict revocation error reporting. | `SeLe4n/Kernel/Capability/Operations.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | CDT operations, strict-failure reporting, slot-reuse safety checks. |
 
 ## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)

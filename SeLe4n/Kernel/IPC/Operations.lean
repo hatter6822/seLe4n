@@ -39,6 +39,27 @@ def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : Thre
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
+/-- WS-F1: Store a pending IPC message in a thread's TCB.
+Used during IPC send to stage the message for transfer. -/
+def storeTcbPendingMessage (st : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
+/-- WS-F1: Combined store of IPC state and pending message in a single TCB update.
+Avoids two separate storeObject calls and simplifies proof tracking. -/
+def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
 /-- Add a sender to an endpoint wait queue with explicit state transition.
 
 WS-E3/H-09: Thread IPC state transitions are now enforced:
@@ -696,6 +717,253 @@ theorem storeTcbIpcState_tcb_exists_at_target
       exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
 
 -- ============================================================================
+-- WS-F1: Supporting lemmas for storeTcbIpcStateAndMessage / storeTcbPendingMessage
+-- ============================================================================
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` preserves objects at IDs other than `tid.toObjId`. -/
+theorem storeTcbIpcStateAndMessage_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hStore
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` does not modify the scheduler. -/
+theorem storeTcbIpcStateAndMessage_scheduler_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` preserves endpoint objects. -/
+theorem storeTcbIpcStateAndMessage_preserves_endpoint
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.objects epId = some (.endpoint ep))
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objects epId = some (.endpoint ep) := by
+  by_cases hEq : epId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcStateAndMessage at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    simp [hLookup] at hStep
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg epId hEq hStep]; exact hEp
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` preserves notification objects. -/
+theorem storeTcbIpcStateAndMessage_preserves_notification
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (notifId : SeLe4n.ObjId) (ntfn : Notification)
+    (hNtfn : st.objects notifId = some (.notification ntfn))
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objects notifId = some (.notification ntfn) := by
+  by_cases hEq : notifId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcStateAndMessage at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hNtfn]
+    simp [hLookup] at hStep
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hStep]; exact hNtfn
+
+/-- WS-F1: Backward endpoint preservation for `storeTcbIpcStateAndMessage`. -/
+theorem storeTcbIpcStateAndMessage_endpoint_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hEp : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcStateAndMessage at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg oid hEq hStep] at hEp; exact hEp
+
+/-- WS-F1: Backward notification preservation for `storeTcbIpcStateAndMessage`. -/
+theorem storeTcbIpcStateAndMessage_notification_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hNtfn : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcStateAndMessage at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg oid hEq hStep] at hNtfn; exact hNtfn
+
+/-- WS-F1: IPC state read-back for `storeTcbIpcStateAndMessage`. -/
+theorem storeTcbIpcStateAndMessage_ipcState_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (tcb : TCB) (hTcb : st'.objects tid.toObjId = some (.tcb tcb)) :
+    tcb.ipcState = ipc := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb' =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hAt := storeObject_objects_eq st pair.2 tid.toObjId _ hStore
+      rw [hAt] at hTcb; cases hTcb; rfl
+
+/-- WS-F1: TCB existence at target after `storeTcbIpcStateAndMessage`. -/
+theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (_hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
+    ∃ tcb', st'.objects tid.toObjId = some (.tcb tcb') := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have := Except.ok.inj hStep; subst this
+      exact ⟨_, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
+
+/-- WS-F1: `storeTcbPendingMessage` preserves objects at IDs other than `tid.toObjId`. -/
+theorem storeTcbPendingMessage_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold storeTcbPendingMessage at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hStore
+
+/-- WS-F1: `storeTcbPendingMessage` does not modify the scheduler. -/
+theorem storeTcbPendingMessage_scheduler_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbPendingMessage at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+
+/-- WS-F1: `storeTcbPendingMessage` preserves endpoint objects. -/
+theorem storeTcbPendingMessage_preserves_endpoint
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage) (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.objects epId = some (.endpoint ep))
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    st'.objects epId = some (.endpoint ep) := by
+  by_cases hEq : epId = tid.toObjId
+  · subst hEq; unfold storeTcbPendingMessage at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    simp [hLookup] at hStep
+  · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg epId hEq hStep]; exact hEp
+
+/-- WS-F1: Backward endpoint preservation for `storeTcbPendingMessage`. -/
+theorem storeTcbPendingMessage_endpoint_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st')
+    (hEp : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbPendingMessage at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
+  · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg oid hEq hStep] at hEp; exact hEp
+
+/-- WS-F1: Backward notification preservation for `storeTcbPendingMessage`. -/
+theorem storeTcbPendingMessage_notification_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st')
+    (hNtfn : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbPendingMessage at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg oid hEq hStep] at hNtfn; exact hNtfn
+
+-- ============================================================================
 -- WS-E4/M-01: Dual-queue endpoint operations (send/receive queue separation)
 -- ============================================================================
 
@@ -718,6 +986,87 @@ private def storeTcbQueueLinks
       match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
+
+/-- WS-F1: storeTcbQueueLinks preserves objects at IDs other than tid.toObjId. -/
+theorem storeTcbQueueLinks_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.objects oid = st.objects oid := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hStore
+
+/-- WS-F1: storeTcbQueueLinks does not modify the scheduler. -/
+theorem storeTcbQueueLinks_scheduler_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+
+/-- WS-F1: storeTcbQueueLinks backward endpoint preservation. -/
+theorem storeTcbQueueLinks_endpoint_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hEp : st'.objects oid = some (.endpoint ep)) :
+    st.objects oid = some (.endpoint ep) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep] at hEp; exact hEp
+
+/-- WS-F1: storeTcbQueueLinks backward notification preservation. -/
+theorem storeTcbQueueLinks_notification_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hNtfn : st'.objects oid = some (.notification ntfn)) :
+    st.objects oid = some (.notification ntfn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep] at hNtfn; exact hNtfn
 
 private def endpointQueuePopHead
     (endpointId : SeLe4n.ObjId)
@@ -876,13 +1225,18 @@ def endpointQueueRemoveDual
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- WS-E4/M-01: Send to endpoint using intrusive dual-queue semantics.
+/-- WS-F1/WS-E4/M-01: Send to endpoint using intrusive dual-queue semantics
+with IPC message transfer.
 
 Sender checks the intrusive receive queue first. If a receiver is waiting,
-rendezvous (unblock receiver). Otherwise, enqueue sender in intrusive sendQ
-and block. -/
+rendezvous: transfer `msg` to receiver's TCB and unblock receiver.
+Otherwise, enqueue sender in intrusive sendQ, store `msg` in sender's
+TCB for later retrieval, and block.
+
+Badge propagation: if `msg.badge` is set, it is carried through to the
+receiver, modeling seL4 badge delivery through endpoint capabilities. -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    : Kernel Unit :=
+    (msg : IpcMessage) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
@@ -891,23 +1245,32 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
             | .ok (receiver, st') =>
-                match storeTcbIpcState st' receiver .ready with
+                -- WS-F1: Transfer message to receiver and unblock
+                match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
         | none =>
             match endpointQueueEnqueue endpointId false sender st with
             | .error e => .error e
             | .ok st' =>
-                match storeTcbIpcState st' sender (.blockedOnSend endpointId) with
+                -- WS-F1: Store message in sender's TCB while blocked
+                match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) (some msg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' sender)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics.
+/-- WS-F1/WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics
+with IPC message transfer.
 
-Checks intrusive sendQ first. If a sender is waiting, dequeue and unblock it.
-Otherwise, enqueue receiver in intrusive receiveQ and block. -/
+Checks intrusive sendQ first. If a sender is waiting, dequeue it, extract
+the pending message from the sender's TCB, deliver it into the receiver's
+TCB (pendingMessage), clear the sender's pending message, and unblock sender.
+Otherwise, enqueue receiver in intrusive receiveQ and block.
+
+Returns the sender's ThreadId. The transferred message is available in the
+receiver's TCB.pendingMessage after the operation (matching seL4's model
+where the message lands in the receiver's IPC buffer). -/
 def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     : Kernel SeLe4n.ThreadId :=
   fun st =>
@@ -918,9 +1281,20 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, st') =>
-                match storeTcbIpcState st' sender .ready with
+                -- WS-F1: Extract message from sender's TCB
+                let senderMsg := match lookupTcb st' sender with
+                  | some tcb => tcb.pendingMessage
+                  | none => none
+                -- Unblock sender and clear its pending message
+                match storeTcbIpcStateAndMessage st' sender .ready none with
                 | .error e => .error e
-                | .ok st'' => .ok (sender, ensureRunnable st'' sender)
+                | .ok st'' =>
+                    let st''' := ensureRunnable st'' sender
+                    -- WS-F1: Deliver message to receiver's TCB (best-effort —
+                    -- receiver TCB existence is not a precondition for dequeue)
+                    match storeTcbPendingMessage st''' receiver senderMsg with
+                    | .ok st4 => .ok (sender, st4)
+                    | .error _ => .ok (sender, st''')
         | none =>
             match endpointQueueEnqueue endpointId true receiver st with
             | .error e => .error e
@@ -935,13 +1309,12 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
 -- WS-E4/M-12: Reply operations for bidirectional IPC
 -- ============================================================================
 
-/-- WS-E4/M-12: Call operation — send then block for reply.
+/-- WS-F1/WS-E4/M-12: Call operation — send then block for reply, with message transfer.
 
-If a receiver is queued: handshake with receiver, then block caller for reply.
-If no receiver queued: enqueue caller as sender (will transition to blockedOnReply
-when received). -/
+If a receiver is queued: handshake with receiver (transfer `msg`), then block caller for reply.
+If no receiver queued: enqueue caller as sender with message stored in TCB. -/
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    : Kernel Unit :=
+    (msg : IpcMessage) : Kernel Unit :=
   fun st =>
     match st.objects endpointId with
     | some (.endpoint ep) =>
@@ -950,10 +1323,12 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
             | .ok (receiver, st') =>
-                match storeTcbIpcState st' receiver .ready with
+                -- WS-F1: Transfer message to receiver and unblock
+                match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
                 | .error e => .error e
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' receiver
+                    -- Caller blocks waiting for reply
                     match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
@@ -961,43 +1336,49 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
             | .ok st' =>
-                match storeTcbIpcState st' caller (.blockedOnSend endpointId) with
+                -- WS-F1: Store message in caller's TCB while blocked
+                match storeTcbIpcStateAndMessage st' caller (.blockedOnSend endpointId) (some msg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' caller)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- WS-E4/M-12: Reply to a thread blocked on reply.
+/-- WS-F1/WS-E4/M-12: Reply to a thread blocked on reply, with message transfer.
 
-Unblocks the target thread by setting its IPC state to ready and adding it
-to the runnable queue. Fails if the target is not in blockedOnReply state. -/
-def endpointReply (target : SeLe4n.ThreadId) : Kernel Unit :=
+Unblocks the target thread by setting its IPC state to ready, delivers the reply
+`msg` into the target's TCB, and adds it to the runnable queue.
+Fails if the target is not in blockedOnReply state. -/
+def endpointReply (target : SeLe4n.ThreadId) (msg : IpcMessage) : Kernel Unit :=
   fun st =>
     match lookupTcb st target with
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnReply _ =>
-            match storeTcbIpcState st target .ready with
+            -- WS-F1: Deliver reply message and unblock
+            match storeTcbIpcStateAndMessage st target .ready (some msg) with
             | .error e => .error e
             | .ok st' => .ok ((), ensureRunnable st' target)
         | _ => .error .replyCapInvalid
 
-/-- WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
+/-- WS-F1/WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
 
 Combines reply + receive in a single atomic operation, matching seL4_ReplyRecv.
-The reply unblocks the target, then the receiver waits on the endpoint. -/
+The reply delivers `msg` to the target and unblocks it, then the receiver waits
+on the endpoint for incoming messages. -/
 def endpointReplyRecv
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
-    (replyTarget : SeLe4n.ThreadId) : Kernel Unit :=
+    (replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) : Kernel Unit :=
   fun st =>
     match lookupTcb st replyTarget with
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnReply _ =>
-            match storeTcbIpcState st replyTarget .ready with
+            -- WS-F1: Deliver reply message and unblock target
+            match storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
             | .error e => .error e
             | .ok st' =>
                 let st'' := ensureRunnable st' replyTarget

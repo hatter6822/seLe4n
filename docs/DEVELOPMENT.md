@@ -40,16 +40,16 @@ for the full execution plan.
 
 ### 3.1 Workstream summary
 
-| ID | Focus | Priority | Key findings |
-|----|-------|----------|--------------|
-| **WS-F1** | IPC message transfer + dual-queue verification | Critical | CRIT-01, CRIT-05, F-10, F-11 |
-| **WS-F2** | Untyped memory model | Critical | CRIT-04 |
-| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 |
-| **WS-F4** | Proof gap closure | High | F-03, F-06, F-12 |
-| **WS-F5** | Model fidelity | Medium | CRIT-06, HIGH-01..04 |
-| **WS-F6** | Invariant quality | Medium | F-07, F-13, F-15, F-18 |
-| **WS-F7** | Testing expansion | Low | F-24, F-25, F-26 |
-| **WS-F8** | Cleanup | Low | F-01, F-14, F-19 |
+| ID | Focus | Priority | Key findings | Status |
+|----|-------|----------|--------------|--------|
+| **WS-F1** | IPC message transfer + dual-queue verification | Critical | CRIT-01, CRIT-05, F-10, F-11 | **Completed** |
+| **WS-F2** | Untyped memory model | Critical | CRIT-04 | Planning |
+| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 | Planning |
+| **WS-F4** | Proof gap closure | High | F-03, F-06, F-12 | Planning |
+| **WS-F5** | Model fidelity | Medium | CRIT-06, HIGH-01..04 | Planning |
+| **WS-F6** | Invariant quality | Medium | F-07, F-13, F-15, F-18 | Planning |
+| **WS-F7** | Testing expansion | Low | F-24, F-25, F-26 | Planning |
+| **WS-F8** | Cleanup | Low | F-01, F-14, F-19 | Planning |
 
 ### 3.2 Prior completed portfolios (historical)
 

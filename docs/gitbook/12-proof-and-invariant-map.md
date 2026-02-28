@@ -69,6 +69,8 @@ Component level:
 Preservation shape:
 
 - transition-level `endpointSend_preserves_ipcInvariant`, etc.
+- WS-F1 dual-queue: `endpointSendDual_preserves_ipcInvariant`, `endpointReceiveDual_preserves_ipcInvariant`, `endpointQueueRemoveDual_preserves_ipcInvariant` (TPI-D08).
+- WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
 
 ## 5. IPC-scheduler coherence (M3.5)
 

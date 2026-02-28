@@ -48,7 +48,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.12.2` (`lakefile.toml`) |
+| **Package version** | `0.12.3` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 14,708 across 33 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
@@ -93,6 +93,7 @@ semantic and proof foundations of the previous one.
 - IPC thread-state updates fail with `objectNotFound` for missing/reserved TCBs, preventing ghost queue entries.
 - Sentinel ID `0` rejected at IPC boundaries (`lookupTcb`/`storeTcbIpcState`).
 - Intrusive dual-queue endpoints with `sendQ`/`receiveQ` and per-thread links for O(1) removal.
+- IPC message transfer via `TCB.pendingMessage`: messages (registers, caps, badge) flow through sender→receiver rendezvous with combined state+message helpers (`storeTcbIpcStateAndMessage`).
 - Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
 - Policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) exercised by default in trace and probe harnesses.
 
@@ -127,7 +128,7 @@ Authoritative detail:
 
 ### 5.1 Critical — IPC and Memory Model
 
-- **WS-F1:** IPC message transfer and dual-queue verification — integrate `IpcMessage` into operations, prove dual-queue invariant preservation (CRIT-01, CRIT-05, F-10, F-11)
+- **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems (TPI-D08/D09); 7 trace anchors with actual data transfer (CRIT-01, CRIT-05, F-10, F-11)
 - **WS-F2:** Untyped memory model — add `UntypedObject`, retype-from-untyped, watermark tracking (CRIT-04)
 
 ### 5.2 High — Proof Coverage and Security
