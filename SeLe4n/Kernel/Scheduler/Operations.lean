@@ -396,6 +396,7 @@ theorem schedule_preserves_wellFormed
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
+                  | untyped ut => simp [hChoose, hObj] at hStep
 
 theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -472,6 +473,7 @@ theorem schedule_preserves_runQueueUnique
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
+                  | untyped ut => simp [hChoose, hObj] at hStep
 
 theorem schedule_preserves_currentThreadValid
     (st st' : SystemState)
@@ -504,6 +506,7 @@ theorem schedule_preserves_currentThreadValid
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
+                  | untyped ut => simp [hChoose, hObj] at hStep
 
 theorem handleYield_preserves_wellFormed
     (st st' : SystemState)
@@ -593,6 +596,7 @@ theorem schedule_preserves_currentThreadInActiveDomain
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
+                  | untyped ut => simp [hChoose, hObj] at hStep
 
 theorem handleYield_preserves_currentThreadValid
     (st st' : SystemState)

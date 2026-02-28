@@ -16,6 +16,7 @@ each claim to executable or inspectable evidence.
 | Executable behavior remains fixture-backed and malformed-state safe. | `tests/fixtures/main_trace_smoke.expected`, negative/IF suites | `./scripts/test_tier2_trace.sh`, `./scripts/test_tier2_negative.sh` | Stable trace fragments + negative/IF runtime checks. |
 | Intrusive dual-queue IPC with runtime consistency checks. | `SeLe4n/Kernel/IPC/DualQueue.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | Intrusive queue link invariants and dual-queue runtime behavior. |
 | IPC message transfer: data flows between threads during IPC. | `SeLe4n/Kernel/IPC/DualQueue.lean`, `SeLe4n/Kernel/IPC/Invariant.lean`, `SeLe4n/Testing/MainTraceHarness.lean` | `./scripts/test_full.sh` | WS-F1: `IpcMessage` wired into dual-queue ops; 14 preservation theorems (TPI-D08/D09); 7 trace anchors (F1-01..F1-03). |
+| Untyped memory model: retype carves typed objects from untyped regions with watermark tracking. | `SeLe4n/Model/Object.lean`, `SeLe4n/Kernel/Lifecycle/Operations.lean`, `SeLe4n/Kernel/Lifecycle/Invariant.lean`, `SeLe4n/Testing/MainTraceHarness.lean` | `./scripts/test_full.sh` | WS-F2: `UntypedObject`, `retypeFromUntyped`, watermark/bounds invariants; 10+ theorems; 9 trace anchors (F2-01..F2-07); 5 negative tests. |
 | Node-stable CDT with strict revocation error reporting. | `SeLe4n/Kernel/Capability/Operations.lean`, `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | CDT operations, strict-failure reporting, slot-reuse safety checks. |
 
 ## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
@@ -50,6 +51,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D05 | VSpace successful-operation preservation + round-trip theorems | WS-D3 | CLOSED |
 | TPI-D06 | Waiting-list uniqueness invariant | WS-D4 | CLOSED |
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
+| TPI-D10 | Untyped memory model: `UntypedObject`, `retypeFromUntyped`, watermark/bounds invariants, device restriction enforcement, lifecycle preservation through retype. Closes CRIT-04. | WS-F2 | CLOSED |
 
 ## Update policy
 

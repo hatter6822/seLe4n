@@ -467,4 +467,29 @@ run_check "TRACE" rg -n '^[A-Z]+-[0-9]+\s+\|' tests/fixtures/main_trace_smoke.ex
 # WS-E1 L-08 theorem-body validation anchors.
 run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hygiene.sh
 
+# WS-F2 untyped memory model anchors must remain present.
+run_check "INVARIANT" rg -n '^structure UntypedChild' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^structure UntypedObject' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def retypeFromUntyped' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_decompose' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_typeMismatch' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_regionExhausted' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^def untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedDeviceRestriction' SeLe4n/Model/State.lean
+run_check "TRACE" rg -n 'retype-from-untyped success object kind' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'retype-from-untyped type-mismatch branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'retype-from-untyped region-exhausted branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'retype-from-untyped device-restriction branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'F2-01.*retype-from-untyped success' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'F2-03.*retype-from-untyped type-mismatch' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'F2-04.*retype-from-untyped region-exhausted' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'F2-06.*retype-from-untyped device-restriction' tests/fixtures/main_trace_smoke.expected
+run_check "INVARIANT" rg -n 'untypedWatermarkChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
+
 finalize_report

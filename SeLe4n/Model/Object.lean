@@ -172,6 +172,196 @@ structure CNode where
   slots : List (SeLe4n.Slot × Capability)
   deriving Repr, DecidableEq
 
+/-- WS-F2: Child allocation record within an untyped memory region.
+Each child records the object identity, its byte offset within the parent
+untyped region, and its allocation size. -/
+structure UntypedChild where
+  objId : SeLe4n.ObjId
+  offset : Nat
+  size : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-F2: Untyped memory object — the foundational seL4 memory safety mechanism.
+
+Models a contiguous region of physical memory `[regionBase, regionBase + regionSize)`
+from which typed kernel objects are carved via `retypeFromUntyped`. The `watermark`
+tracks the next free byte offset within the region (monotonically increasing).
+
+seL4 reference: `Untyped_D` in the abstract spec — tracks device/non-device flag,
+region bounds, and a free-area pointer. Our model uses an explicit child list for
+non-overlap proofs rather than relying on CSpace derivation tree ancestry. -/
+structure UntypedObject where
+  /-- Base physical address of the untyped region. -/
+  regionBase : SeLe4n.PAddr
+  /-- Total size of the region in bytes. -/
+  regionSize : Nat
+  /-- Next free byte offset within the region. Monotonically increasing.
+      Invariant: `watermark ≤ regionSize`. -/
+  watermark : Nat := 0
+  /-- List of typed objects carved from this region. Each child records
+      its ObjId, offset within the region, and size. -/
+  children : List UntypedChild := []
+  /-- Whether this untyped covers device memory (MMIO). Device untypeds
+      cannot back TCBs, CNodes, or other kernel objects. -/
+  isDevice : Bool := false
+  deriving Repr, DecidableEq
+
+namespace UntypedObject
+
+/-- Remaining free space in the untyped region. -/
+def freeSpace (ut : UntypedObject) : Nat :=
+  ut.regionSize - ut.watermark
+
+/-- Check whether an allocation of `size` bytes fits within the remaining region. -/
+def canAllocate (ut : UntypedObject) (size : Nat) : Bool :=
+  size > 0 && ut.watermark + size ≤ ut.regionSize
+
+/-- Allocate `size` bytes from the region, returning the updated untyped and
+    the byte offset of the new allocation. -/
+def allocate (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat) :
+    Option (UntypedObject × Nat) :=
+  if ut.canAllocate size then
+    let offset := ut.watermark
+    some ({ ut with
+      watermark := ut.watermark + size
+      children := { objId := childId, offset := offset, size := size } :: ut.children
+    }, offset)
+  else
+    none
+
+/-- Reset the untyped to its initial state (revoke all children). -/
+def reset (ut : UntypedObject) : UntypedObject :=
+  { ut with watermark := 0, children := [] }
+
+/-- Watermark is within region bounds. -/
+def watermarkValid (ut : UntypedObject) : Prop :=
+  ut.watermark ≤ ut.regionSize
+
+/-- All children fit within the watermark (and thus within the region). -/
+def childrenWithinWatermark (ut : UntypedObject) : Prop :=
+  ∀ c ∈ ut.children, c.offset + c.size ≤ ut.watermark
+
+/-- No two children overlap in the allocated region. -/
+def childrenNonOverlap (ut : UntypedObject) : Prop :=
+  ∀ c₁ c₂, c₁ ∈ ut.children → c₂ ∈ ut.children →
+    c₁ ≠ c₂ → c₁.offset + c₁.size ≤ c₂.offset ∨ c₂.offset + c₂.size ≤ c₁.offset
+
+/-- Children have distinct object identities. -/
+def childrenUniqueIds (ut : UntypedObject) : Prop :=
+  ∀ c₁ c₂, c₁ ∈ ut.children → c₂ ∈ ut.children →
+    c₁.objId = c₂.objId → c₁ = c₂
+
+/-- Combined well-formedness predicate for the untyped object. -/
+def wellFormed (ut : UntypedObject) : Prop :=
+  ut.watermarkValid ∧ ut.childrenWithinWatermark ∧
+  ut.childrenNonOverlap ∧ ut.childrenUniqueIds
+
+theorem empty_watermarkValid (base : SeLe4n.PAddr) (size : Nat) :
+    (UntypedObject.mk base size 0 [] false).watermarkValid := by
+  simp [watermarkValid]
+
+theorem empty_childrenWithinWatermark (base : SeLe4n.PAddr) (size : Nat) :
+    (UntypedObject.mk base size 0 [] false).childrenWithinWatermark := by
+  intro c hMem
+  simp at hMem
+
+theorem empty_childrenNonOverlap (base : SeLe4n.PAddr) (size : Nat) :
+    (UntypedObject.mk base size 0 [] false).childrenNonOverlap := by
+  intro c₁ c₂ hMem₁
+  simp at hMem₁
+
+theorem empty_childrenUniqueIds (base : SeLe4n.PAddr) (size : Nat) :
+    (UntypedObject.mk base size 0 [] false).childrenUniqueIds := by
+  intro c₁ c₂ hMem₁
+  simp at hMem₁
+
+theorem empty_wellFormed (base : SeLe4n.PAddr) (size : Nat) :
+    (UntypedObject.mk base size 0 [] false).wellFormed :=
+  ⟨empty_watermarkValid base size, empty_childrenWithinWatermark base size,
+   empty_childrenNonOverlap base size, empty_childrenUniqueIds base size⟩
+
+/-- `canAllocate` being true implies the allocation fits within region bounds. -/
+theorem canAllocate_implies_fits (ut : UntypedObject) (size : Nat)
+    (hCan : ut.canAllocate size = true) :
+    ut.watermark + size ≤ ut.regionSize := by
+  simp [canAllocate] at hCan
+  exact hCan.2
+
+/-- Decomposition lemma: a successful `allocate` produces a specific updated state. -/
+theorem allocate_some_iff (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat)
+    (result : UntypedObject × Nat) :
+    ut.allocate childId size = some result ↔
+      ut.canAllocate size = true ∧
+      result = ({ ut with
+        watermark := ut.watermark + size
+        children := { objId := childId, offset := ut.watermark, size := size } :: ut.children
+      }, ut.watermark) := by
+  constructor
+  · intro h
+    unfold allocate at h
+    by_cases hCan : ut.canAllocate size
+    · simp [hCan] at h; exact ⟨hCan, h.symm⟩
+    · simp [hCan] at h
+  · intro ⟨hCan, hEq⟩
+    unfold allocate
+    simp [hCan, hEq]
+
+/-- After a successful `allocate`, the watermark advances by exactly `size`. -/
+theorem allocate_watermark_advance (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.watermark = ut.watermark + size := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_, hEq⟩
+  have hU := (Prod.mk.inj hEq).1
+  subst hU; rfl
+
+/-- After a successful `allocate`, the returned offset equals the pre-allocation watermark. -/
+theorem allocate_offset_eq_watermark (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    offset = ut.watermark := by
+  rw [allocate_some_iff] at hAlloc
+  exact (Prod.mk.inj hAlloc.2).2
+
+/-- Watermark monotonicity: a successful allocation never decreases the watermark. -/
+theorem allocate_watermark_monotone (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut.watermark ≤ ut'.watermark := by
+  have hAdv := allocate_watermark_advance ut ut' childId size offset hAlloc
+  omega
+
+/-- A successful allocation preserves watermark validity when the pre-state is valid. -/
+theorem allocate_preserves_watermarkValid (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (_hWF : ut.watermarkValid)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.watermarkValid := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨hCan, hEq⟩
+  have hFits := canAllocate_implies_fits ut size hCan
+  have hU := (Prod.mk.inj hEq).1
+  subst hU; simp [watermarkValid]; omega
+
+/-- `allocate` does not change the region base or size. -/
+theorem allocate_preserves_region (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.regionBase = ut.regionBase ∧ ut'.regionSize = ut.regionSize := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_, hEq⟩
+  have hU := (Prod.mk.inj hEq).1
+  subst hU; exact ⟨rfl, rfl⟩
+
+/-- `reset` restores watermark validity. -/
+theorem reset_watermarkValid (ut : UntypedObject) : ut.reset.watermarkValid := by
+  simp [reset, watermarkValid]
+
+/-- `reset` restores full well-formedness. -/
+theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
+  refine ⟨reset_watermarkValid ut, ?_, ?_, ?_⟩
+  · intro c hMem; simp [reset] at hMem
+  · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
+  · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
+
+end UntypedObject
+
 /-- Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -683,6 +873,7 @@ inductive KernelObject where
   | notification (n : Notification)
   | cnode (c : CNode)
   | vspaceRoot (v : VSpaceRoot)
+  | untyped (u : UntypedObject)
   deriving Repr, DecidableEq
 
 inductive KernelObjectType where
@@ -691,6 +882,7 @@ inductive KernelObjectType where
   | notification
   | cnode
   | vspaceRoot
+  | untyped
   deriving Repr, DecidableEq
 
 namespace KernelObject
@@ -701,6 +893,7 @@ def objectType : KernelObject → KernelObjectType
   | .notification _ => .notification
   | .cnode _ => .cnode
   | .vspaceRoot _ => .vspaceRoot
+  | .untyped _ => .untyped
 
 end KernelObject
 

@@ -172,6 +172,65 @@ private def corruptThreadQueueLinks
       }
   | _ => .error .objectNotFound
 
+-- WS-F2 untyped memory test constants and states
+private def f2UntypedObjId : SeLe4n.ObjId := 80
+private def f2UntypedChildId : SeLe4n.ObjId := 81
+private def f2UntypedAuthCnode : SeLe4n.ObjId := 82
+private def f2UntypedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
+  { cnode := f2UntypedAuthCnode, slot := 0 }
+
+private def f2UntypedState : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject f2UntypedObjId (.untyped {
+      regionBase := 0x10000
+      regionSize := 256
+      watermark := 0
+      children := []
+      isDevice := false
+    })
+    |>.withObject f2UntypedAuthCnode (.cnode {
+      guard := 0
+      radix := 0
+      slots := [
+        (0, {
+          target := .object f2UntypedObjId
+          rights := [.read, .write, .grant]
+          badge := none
+        })
+      ]
+    })
+    |>.withLifecycleObjectType f2UntypedObjId .untyped
+    |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
+    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
+    |>.build)
+
+private def f2DeviceUntypedId : SeLe4n.ObjId := 83
+
+private def f2DeviceState : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject f2DeviceUntypedId (.untyped {
+      regionBase := 0x20000
+      regionSize := 4096
+      watermark := 0
+      children := []
+      isDevice := true
+    })
+    |>.withObject f2UntypedAuthCnode (.cnode {
+      guard := 0
+      radix := 0
+      slots := [
+        (0, {
+          target := .object f2DeviceUntypedId
+          rights := [.read, .write, .grant]
+          badge := none
+        })
+      ]
+    })
+    |>.withLifecycleObjectType f2DeviceUntypedId .untyped
+    |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
+    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
+    |>.build)
+
 private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectError "lookup wrong object type"
@@ -802,6 +861,39 @@ private def runNegativeChecks : IO Unit := do
       (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcStateAB)
   | .error err =>
     throw <| IO.userError s!"service dependency A→B registration failed: {reprStr err}"
+
+  -- ── WS-F2: Untyped memory negative tests ──────────────────────────
+  -- F2-NEG-01: retype from non-existent object
+  expectError "F2 retype from non-existent object"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot 999 f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+    .objectNotFound
+
+  -- F2-NEG-02: retype from non-untyped object (type mismatch)
+  expectError "F2 retype from cnode (type mismatch)"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedAuthCnode f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+    .untypedTypeMismatch
+
+  -- F2-NEG-03: retype exhausts region
+  expectError "F2 retype region exhausted (oversized)"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 512 f2UntypedState)
+    .untypedRegionExhausted
+
+  -- F2-NEG-04: device restriction (non-untyped child from device untyped)
+  expectError "F2 device untyped restricts non-untyped child"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2DeviceState)
+    .untypedDeviceRestriction
+
+  -- F2-NEG-05: wrong authority (lookup from bad slot)
+  expectError "F2 retype wrong authority"
+    (SeLe4n.Kernel.retypeFromUntyped { cnode := 999, slot := 0 } f2UntypedObjId f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+    .objectNotFound
+
+  IO.println "WS-F2 untyped memory negative checks passed"
 
 end SeLe4n.Testing
 

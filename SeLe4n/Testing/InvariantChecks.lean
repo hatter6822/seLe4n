@@ -144,6 +144,17 @@ private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : Sys
     let duplicates := roots.filter fun (oid', asid') => asid' == asid && oid' != oid
     (s!"vspace ASID unique: oid={oid} asid={asid.toNat}", duplicates.isEmpty)
 
+/-- WS-F2: Untyped watermark validity: watermark ≤ regionSize for every untyped object.
+Also checks children-within-watermark bounds. -/
+private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.objects oid with
+    | some (.untyped ut) =>
+        (s!"untyped watermark valid: oid={oid}", ut.watermark ≤ ut.regionSize) ::
+        (s!"untyped children within watermark: oid={oid}",
+          ut.children.all fun c => c.offset + c.size ≤ ut.watermark) :: acc
+    | _ => acc) []
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -177,6 +188,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ lifecycleMetadataChecks objectIds st
     ++ serviceGraphAcyclicityChecks serviceIds st fuel
     ++ vspaceAsidUniquenessChecks objectIds st
+    ++ untypedWatermarkChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

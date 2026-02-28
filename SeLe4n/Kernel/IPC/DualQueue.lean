@@ -251,7 +251,7 @@ theorem endpointQueuePopHead_scheduler_eq
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -305,7 +305,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint epOrig =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then epOrig.receiveQ else epOrig.sendQ).head with
@@ -358,7 +358,7 @@ theorem endpointQueuePopHead_notification_backward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -416,7 +416,7 @@ theorem endpointQueuePopHead_tcb_forward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       have hNe : oid ≠ endpointId := by intro h; subst h; rw [hTcb] at hObj; cases hObj
@@ -473,7 +473,7 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -537,7 +537,7 @@ theorem endpointQueueEnqueue_scheduler_eq
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -588,7 +588,7 @@ theorem endpointQueueEnqueue_endpoint_backward_ne
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint epOrig =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st enqueueTid with
@@ -639,7 +639,7 @@ theorem endpointQueueEnqueue_notification_backward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st enqueueTid with
@@ -694,7 +694,7 @@ theorem endpointQueueEnqueue_tcb_forward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       have hNe : oid ≠ endpointId := by intro h; subst h; rw [hTcb] at hObj; cases hObj
@@ -746,7 +746,7 @@ theorem endpointQueueEnqueue_tcb_ipcState_backward
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st enqueueTid with
@@ -882,7 +882,7 @@ theorem endpointQueueRemoveDual_scheduler_eq
   cases hObj : st.objects endpointId with
   | none => simp
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp
     | endpoint ep =>
       simp only []
       cases hLookup : lookupTcb st tid with
@@ -1006,7 +1006,7 @@ theorem endpointQueueRemoveDual_tcb_forward
   cases hObj : st.objects endpointId with
   | none => simp
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp
     | endpoint ep =>
       simp only []
       have hNe : oid ≠ endpointId := by intro h; subst h; rw [hTcb] at hObj; cases hObj
@@ -1137,7 +1137,7 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
   cases hObj : st.objects endpointId with
   | none => simp
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp
     | endpoint epOrig =>
       simp only []
       cases hLookup : lookupTcb st tid with
@@ -1256,7 +1256,7 @@ theorem endpointQueueRemoveDual_notification_backward
   cases hObj : st.objects endpointId with
   | none => simp
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp
     | endpoint epOrig =>
       simp only []
       cases hLookup : lookupTcb st tid with

@@ -96,7 +96,7 @@ theorem resolveAsidRoot_some_implies
                   rcases hResolve with ⟨rfl, rfl⟩
                   exact ⟨hObjA, hAsidEq, List.mem_cons_self⟩
                 · simp at hMatch
-            | tcb _ | cnode _ | endpoint _ | notification _ =>
+            | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ =>
                 simp [hObjA] at hMatch
       · next hNone =>
         rcases ih hResolve with ⟨hObj, hAsid, hMem⟩
@@ -142,7 +142,7 @@ theorem resolveAsidRoot_of_unique_root
                 intro hAsidR
                 -- r.asid = asid and root.asid = asid, so by uniqueness a = rootId
                 exact absurd (hUniq a rootId r root hObjA hObj (hAsidR.trans hAsid.symm)) hEq
-            | tcb _ | cnode _ | endpoint _ | notification _ => simp
+            | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ => simp
 
 -- ============================================================================
 -- storeObject preservation lemmas for VSpace operations

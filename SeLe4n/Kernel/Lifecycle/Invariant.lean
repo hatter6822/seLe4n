@@ -224,4 +224,105 @@ theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
     lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
   exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
 
+-- ============================================================================
+-- WS-F2: Untyped Memory Model Invariants
+-- ============================================================================
+
+/-- WS-F2: Untyped watermark invariant — for every untyped object in the store,
+its watermark does not exceed its region size. -/
+def untypedWatermarkInvariant (st : SystemState) : Prop :=
+  ∀ oid ut,
+    st.objects oid = some (.untyped ut) →
+    ut.watermarkValid
+
+/-- WS-F2: Untyped children-within-watermark invariant — all child allocations
+fit within the watermark (and thus within the region). -/
+def untypedChildrenBoundsInvariant (st : SystemState) : Prop :=
+  ∀ oid ut,
+    st.objects oid = some (.untyped ut) →
+    ut.childrenWithinWatermark
+
+/-- WS-F2: Untyped children non-overlap invariant — no two child allocations
+within the same untyped region overlap in their address ranges. -/
+def untypedChildrenNonOverlapInvariant (st : SystemState) : Prop :=
+  ∀ oid ut,
+    st.objects oid = some (.untyped ut) →
+    ut.childrenNonOverlap
+
+/-- WS-F2: Untyped children unique-id invariant — children within each untyped
+have distinct object identities. -/
+def untypedChildrenUniqueIdsInvariant (st : SystemState) : Prop :=
+  ∀ oid ut,
+    st.objects oid = some (.untyped ut) →
+    ut.childrenUniqueIds
+
+/-- WS-F2: Combined untyped memory well-formedness invariant. -/
+def untypedMemoryInvariant (st : SystemState) : Prop :=
+  untypedWatermarkInvariant st ∧
+  untypedChildrenBoundsInvariant st ∧
+  untypedChildrenNonOverlapInvariant st ∧
+  untypedChildrenUniqueIdsInvariant st
+
+/-- WS-F2: The default (empty) state satisfies the untyped memory invariant
+because no untyped objects exist. -/
+theorem default_systemState_untypedMemoryInvariant :
+    untypedMemoryInvariant (default : SystemState) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro oid ut hObj <;> simp at hObj
+
+/-- WS-F2: `storeObject` at a non-untyped slot preserves watermark invariant
+for all existing untyped objects at other ObjIds. -/
+theorem storeObject_preserves_untypedWatermarkInvariant_ne
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hInv : untypedWatermarkInvariant st)
+    (hStep : storeObject oid obj st = .ok ((), st'))
+    (uid : SeLe4n.ObjId)
+    (hNe : uid ≠ oid)
+    (ut : UntypedObject)
+    (hUt : st'.objects uid = some (.untyped ut)) :
+    ut.watermarkValid := by
+  have hPrev : st'.objects uid = st.objects uid :=
+    storeObject_objects_ne st st' oid uid obj hNe hStep
+  rw [hPrev] at hUt
+  exact hInv uid ut hUt
+
+/-- WS-F2: `retypeFromUntyped` preserves lifecycle metadata consistency.
+Both `storeObject` calls maintain metadata. -/
+theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hMeta : SystemState.lifecycleMetadataConsistent st)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    SystemState.lifecycleMetadataConsistent st' := by
+  rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
+    ⟨_ut, ut', _cap, stLookup, stUt, _offset, _hObj, _hNotDev,
+     hLookup, _hAuth, _hAlloc, hStoreUt, hStoreChild⟩
+  have hLookupSt : stLookup = st :=
+    cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
+  rw [hLookupSt] at hStoreUt
+  have hMetaUt : SystemState.lifecycleMetadataConsistent stUt :=
+    storeObject_preserves_lifecycleMetadataConsistent st stUt untypedId (.untyped ut') hMeta hStoreUt
+  exact storeObject_preserves_lifecycleMetadataConsistent stUt st' childId newObj hMetaUt hStoreChild
+
+/-- WS-F2: `retypeFromUntyped` preserves the full lifecycle invariant bundle. -/
+theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hInv : lifecycleInvariantBundle st)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    lifecycleInvariantBundle st' := by
+  have hMeta : SystemState.lifecycleMetadataConsistent st :=
+    lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
+  have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
+    retypeFromUntyped_preserves_lifecycleMetadataConsistent
+      st st' authority untypedId childId newObj allocSize hMeta hStep
+  exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
+
 end SeLe4n.Kernel

@@ -129,7 +129,7 @@ Authoritative detail:
 ### 5.1 Critical — IPC and Memory Model
 
 - **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems (TPI-D08/D09); 7 trace anchors with actual data transfer (CRIT-01, CRIT-05, F-10, F-11)
-- **WS-F2:** Untyped memory model — add `UntypedObject`, retype-from-untyped, watermark tracking (CRIT-04)
+- **WS-F2:** ~~Untyped memory model~~ **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors (CRIT-04)
 
 ### 5.2 High — Proof Coverage and Security
 
@@ -170,7 +170,7 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
 The critical prerequisite for H3 is closing the WS-F proof gaps — particularly
-Untyped memory (WS-F2) and complete information-flow coverage (WS-F3).
+complete information-flow coverage (WS-F3). Untyped memory (WS-F2) is now complete.
 
 ---
 
