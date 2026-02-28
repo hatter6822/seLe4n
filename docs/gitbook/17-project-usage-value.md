@@ -1,55 +1,61 @@
 # Project Usage and Value
 
-This chapter captures how teams can use seLe4n today and what concrete value it provides.
+## 1. What seLe4n provides today
 
-## 1. Practical use cases
+### A production kernel with proofs
 
-### A) Prototype kernel semantics with lower risk
+seLe4n is not a research prototype — it is a kernel being built for production
+deployment on Raspberry Pi 5. Every transition is an executable function, and
+every invariant is machine-checked.
 
-Teams can model transition changes, execute traces, and catch regressions before implementation
-lock-in.
+### Concrete artifacts
+
+- **14,708 lines** of production Lean code.
+- **400+ machine-checked theorems** with zero sorry/axiom.
+- **4-tier CI** with hygiene, build, trace, and invariant surface gates.
+- **Negative-state test suite** with corruption testing and per-mutation invariant checks.
+- **Executable trace harness** with 68 fixture expectations.
+
+## 2. Practical use cases
+
+### A) Build a verified kernel
+
+The primary use case: a microkernel where the implementation *is* the specification,
+with machine-checked proofs that security invariants are preserved across every
+transition.
 
 ### B) Evaluate authority and policy design
 
-Developers can encode policy assumptions as predicates and verify composition against lifecycle and
-capability behavior.
+Encode policy assumptions as predicates. Verify composition against lifecycle,
+capability, and information-flow behavior. Catch violations at type-check time.
 
-### C) Improve formal-methods onboarding
+### C) Formal-methods engineering practice
 
-The slice progression gives a practical learning path from state modeling to composed theorem
-surfaces.
+The milestone progression (Bootstrap → M7 → WS-B..F) provides a practical path
+from state modeling through composed theorem surfaces to production kernel.
 
-### D) Strengthen architecture and security review quality
+### D) Architecture and security review
 
-Reviews can reference concrete transition definitions, invariants, and theorem obligations rather
-than prose-only claims.
+Reviews reference concrete transition definitions, invariant theorems, and
+executable trace evidence — not prose-only claims.
 
-### E) Prepare for hardware-bound assurance planning
+### E) Hardware-bound assurance
 
-Architecture-neutral proofs and traces help teams identify what must become explicit once
-platform-specific interfaces are introduced.
+Architecture-neutral proofs and adapter contracts provide the foundation for
+platform-specific binding without invalidating core verification.
 
-## 2. Team-specific adoption paths
+## 3. Team adoption paths
 
-1. **Research/architecture teams**
-   - evaluate semantics alternatives and proof impact using chapters 11/12.
-2. **Platform teams**
-   - track semantic drift with executable traces + tiered tests.
-3. **Verification teams**
-   - extend invariants and theorem bundles for product-specific assurance goals.
-4. **Security teams**
-   - stress policy-denial and failure-path semantics as first-class outcomes.
+| Team | Entry point | Value |
+|------|-------------|-------|
+| **Kernel developers** | Codebase reference (Ch. 11), development workflow (Ch. 6) | Understand semantics, contribute transitions and proofs |
+| **Verification engineers** | Proof map (Ch. 12), invariant suites | Extend invariants, strengthen proof coverage |
+| **Security teams** | Threat model (Ch. 28), information-flow modules | Validate policy enforcement, stress failure paths |
+| **Platform teams** | Hardware path (Ch. 10), architecture modules | Plan Raspberry Pi 5 binding, track semantic drift |
 
-## 3. Recommended operating model
+## 4. Key links
 
-1. define semantics and explicit errors first,
-2. add narrow invariants second,
-3. land local then composed proofs,
-4. bind traces and fixtures to semantic intent,
-5. close docs/spec updates in the same PR sequence.
-
-## 4. Related chapters
-
-- active execution plan: [v0.11.0 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md)
-- specification and roadmap: [Specification & Roadmap](05-specification-and-roadmap.md)
-- next slice path: [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md)
+- Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
+- Active workstream: [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+- Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
+- Next steps: [Next Development Path](22-next-slice-development-path.md)

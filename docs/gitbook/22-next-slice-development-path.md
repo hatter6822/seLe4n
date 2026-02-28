@@ -1,95 +1,59 @@
-# Next Slice Development Path (Post-M7, Historical Candidate)
+# Next Development Path
 
-This chapter preserves the originally proposed post-M7 transition path for traceability.
+## Current priority: WS-F (v0.12.2 audit remediation)
 
-The active execution portfolio has since moved to Comprehensive Audit 2026-02 WS-B workstreams.
-Use this page as historical directional planning context, not as active status.
+The immediate development path is closing the findings from two independent v0.12.2
+codebase audits. This is the prerequisite for Raspberry Pi 5 hardware binding.
 
-## 1. Why this path exists
+See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+for the full plan.
 
-M1–M6 built a proof-bearing semantic model and architecture boundary contracts.
-M7 hardens repository operations so that expansion can happen with stronger safety rails.
-The next slice should convert that readiness into controlled hardware-facing progress.
+## Phase sequence
 
-## 2. Next-slice mission
+### P1 — Critical IPC, memory, and proof gaps (WS-F1, WS-F2, WS-F4)
 
-Build a first hardware-instantiation lane that demonstrates:
+Three workstreams run in parallel:
+- **WS-F1**: Wire `IpcMessage` into operations, verify dual-queue model.
+- **WS-F2**: Add Untyped memory with watermark tracking.
+- **WS-F4**: Close timerTick, cspaceMutate, notification proof gaps.
 
-1. architecture assumptions can be concretely bound without weakening theorem discipline,
-2. adapter boundaries support realistic platform interactions,
-3. trace/test/proof evidence remains reproducible during platform-specific growth.
+### P2 — Information-flow completeness (WS-F3)
 
-## 3. Proposed workstreams for the next slice
+After WS-F1 lands IPC message transfer:
+- Extend `ObservableState` projection to all security-relevant fields.
+- Prove non-interference for all 30+ API operations.
+- Connect enforcement layer to NI theorems.
 
-> Naming is provisional until ratified in `docs/spec/SELE4N_SPEC.md`.
+### P3 — Model fidelity and invariant quality (WS-F5, WS-F6)
 
-### WS-N1 — Assumption-to-platform binding package
+- Notification badge bitmask, per-thread registers, multi-level CSpace.
+- Reclassify tautological invariants, instantiate adapter proof hooks.
 
-- map architecture assumptions to Raspberry Pi 5-facing implementation notes,
-- define obligation tables (what is trusted, validated, or deferred),
-- add explicit mismatch handling for unsupported hardware states.
+### P4 — Testing and cleanup (WS-F7, WS-F8)
 
-### WS-N2 — Hardware adapter specialization and simulation-backed validation
+- Extend runtime oracle and trace probe coverage.
+- Resolve legacy/dual-queue divergence, remove dead code.
 
-- implement architecture-specialized adapter stubs behind stable interfaces,
-- maintain deterministic fallback paths for CI/non-hardware environments,
-- add simulation traces that approximate hardware interaction sequences.
+## After WS-F: Raspberry Pi 5 binding (H3)
 
-### WS-N3 — Architecture-targeted test and replay tracks
+Once WS-F closes critical proof gaps:
 
-- extend test tiers with architecture-focused traces,
-- add replay bundles that validate deterministic behavior under specialized adapters,
-- ensure failure-path diagnostics remain concise.
+1. Map `MachineState` to BCM2712 hardware.
+2. Bind `VSpaceRoot` to ARMv8 page tables.
+3. Implement GIC-400 interrupt routing.
+4. Verify boot sequence as initial state construction.
+5. Run proof-carrying executable on hardware.
 
-### WS-N4 — Security/information-flow pre-foundation
+## Long-horizon items
 
-- introduce first noninterference-oriented modeling scope,
-- align capability and scheduler assumptions with future information-flow statements,
-- publish acceptance criteria for security-proof slice successors.
+- MCS scheduling contexts (budget/period/replenishments).
+- Multi-core support (per-core kernel instances).
+- Device memory and IOMMU modeling.
+- Cryptographic attestation of kernel image.
+- Side-channel analysis at hardware binding layer.
 
-### WS-N5 — Developer operations for hardware-adjacent work
+## Related chapters
 
-- standardize local vs CI execution profiles,
-- publish contributor instructions for architecture-specific checks,
-- tighten changelog discipline around platform-facing semantics.
-
-## 4. Entry criteria from M7
-
-A future hardware-focused slice should not start until these conditions are true:
-
-1. M7 high-priority outcomes are fully closed,
-2. CI baseline includes reliable quality gates and deterministic replay,
-3. type-safety migration for core IDs/pointers is complete or explicitly risk-accepted,
-4. test-only permissive contracts are isolated from runtime surfaces,
-5. docs consistently represent M7 as complete and next-slice as active.
-
-## 5. Target outcomes for the next slice
-
-1. **N-O1:** first architecture binding package is reviewable and traceable.
-2. **N-O2:** adapter specialization path is executable in non-hardware CI mode.
-3. **N-O3:** architecture-focused trace suite is integrated into tiered testing.
-4. **N-O4:** information-flow trajectory is concretely staged (not just conceptual).
-5. **N-O5:** contributor UX for platform-facing changes remains predictable.
-
-## 6. Risks and mitigations
-
-1. **Overcoupling risk**
-   - mitigation: keep adapter interfaces stable, isolate platform-specific modules.
-2. **Evidence drift risk**
-   - mitigation: require trace/test/doc updates in the same PR range.
-3. **Security claim inflation risk**
-   - mitigation: stage claims explicitly and tie each to concrete proof obligations.
-4. **Hardware lock-in risk**
-   - mitigation: maintain simulation-backed abstractions and portability notes.
-
-## 7. Recommended kickoff package
-
-When opening the first next-slice PR set, include:
-
-1. updated spec status markers,
-2. next-slice workstream board with owners,
-3. architecture binding assumptions table,
-4. minimal adapter specialization prototype,
-5. CI/test evidence commands and expected outputs.
-
-This keeps the transition from “remediation” to “expansion” measurable and low-risk.
+- Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
+- Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
+- Audit findings: [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)

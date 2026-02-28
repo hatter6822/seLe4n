@@ -14,46 +14,62 @@
 </p>
 
 <p align="center">
-  A Lean 4 formalization project for an executable, machine-checked model of core
-  <a href="https://sel4.systems">seL4 microkernel</a> semantics.
+  A novel microkernel written in Lean 4 with machine-checked proofs, improving on
+  <a href="https://sel4.systems">seL4</a> architecture. First hardware target:
+  <strong>Raspberry Pi 5</strong>.
 </p>
 
-## Current state (authoritative snapshot)
+---
 
-- **Current package version:** `0.12.2` (`lakefile.toml`)
-- **Current active portfolio:** In-Planning
-- **Prior completed portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
-- **Active findings baseline:** `docs/audits/AUDIT_CODEBASE_v0.11.6.md`
+## What is seLe4n?
 
-## Specifications
+seLe4n is a **production-oriented microkernel** built from the ground up in
+Lean 4. Every kernel transition is an executable pure function. Every invariant
+is machine-checked by the Lean type-checker — zero `sorry`, zero `axiom`.
 
-The project maintains two specification documents:
+The project began as a formalization of seL4 semantics and is evolving into a
+novel kernel that preserves seL4's capability-based security model while
+improving on specific architectural aspects:
 
-- **seL4 microkernel reference:** [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) -- detailed summary of the original seL4 kernel semantics that seLe4n models.
-- **seLe4n project spec:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) -- normative scope, milestones, active workstreams, and acceptance criteria for the seLe4n formalization project.
+- **Service orchestration layer** for component lifecycle and dependency management
+- **Node-stable capability derivation tree** with O(1) slot transfer and revocation
+- **Intrusive dual-queue IPC** with per-thread queue links for O(1) removal
+- **Parameterized N-domain information-flow** framework (beyond seL4's binary partition)
+- **EDF + priority scheduling** with domain-aware partitioning
 
-## Quick setup
+## Current state
+
+| Attribute | Value |
+|-----------|-------|
+| **Version** | `0.12.2` |
+| **Lean toolchain** | `4.28.0` |
+| **Production Lean LoC** | 14,708 across 33 files |
+| **Proved theorems** | 400+ (zero sorry/axiom) |
+| **Target hardware** | Raspberry Pi 5 (ARM64) |
+| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| **Active workstream** | WS-F (v0.12.2 audit remediation) — planning |
+| **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+
+## Quick start
 
 ```bash
-./scripts/setup_lean_env.sh
-lake build
-lake exe sele4n
+./scripts/setup_lean_env.sh   # install Lean toolchain
+lake build                     # compile all 33 modules (62 jobs)
+lake exe sele4n                # run trace harness
+./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state)
 ```
 
-## Start here (new contributors)
+## Project documentation
 
-| Step | Document | What you learn |
-|------|----------|----------------|
-| 1 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Day-to-day workflow, validation loop, PR checklist |
-| 2 | [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md) | Tiered testing gates and CI contract |
-| 3 | [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project scope, milestones, active workstreams |
-| 4 | [`docs/gitbook/README.md`](docs/gitbook/README.md) | Full handbook navigation hub |
-| 5 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution mechanics and PR requirements |
-
-Additional resources:
-
-- Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Change history: [`CHANGELOG.md`](CHANGELOG.md)
+| Document | Purpose |
+|----------|---------|
+| [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project specification, milestones, and active workstreams |
+| [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) | seL4 reference semantics that seLe4n builds on |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Day-to-day workflow, validation loop, PR checklist |
+| [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md) | Tiered test gates and CI contract |
+| [`docs/gitbook/README.md`](docs/gitbook/README.md) | Full handbook (architecture, design, proofs, hardware path) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution mechanics and PR requirements |
+| [`CHANGELOG.md`](CHANGELOG.md) | Version history |
 
 ## Validation commands
 
@@ -61,35 +77,83 @@ Additional resources:
 ./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build)
 ./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state checks)
 ./scripts/test_full.sh      # + Tier 3 (invariant surface anchors)
-./scripts/test_nightly.sh   # + Tier 4 (staged nightly; opt-in via NIGHTLY_ENABLE_EXPERIMENTAL=1)
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly determinism)
 ```
 
-## Completed workstreams (WS-D, historical)
+Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
+theorems, invariants, or documentation anchors.
 
-- **WS-E1..WS-E6:** all completed. See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
-- **WS-D1..WS-D4:** all completed. WS-D5/D6 items absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
-- **WS-C1..WS-C8:** all completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+## Architecture
 
-## Codebase map
+seLe4n is organized as layered contracts, each with executable transitions and
+machine-checked invariant preservation proofs:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Kernel API  (SeLe4n/Kernel/API.lean)               │
+├────────┬────────┬──────┬───────────┬────────────────┤
+│Sched   │Capabil │ IPC  │ Lifecycle │ Service (ext)  │
+│ uler   │  ity   │      │           │                │
+├────────┴────────┴──────┴───────────┴────────────────┤
+│  Information Flow  (Policy, Projection, Enforcement) │
+├─────────────────────────────────────────────────────┤
+│  Architecture  (VSpace, Adapter, Assumptions)        │
+├─────────────────────────────────────────────────────┤
+│  Model  (Object, State, CDT)                         │
+├─────────────────────────────────────────────────────┤
+│  Foundations  (Prelude, Machine)                      │
+└─────────────────────────────────────────────────────┘
+```
+
+Each kernel subsystem follows the **Operations/Invariant split**: transitions in
+`Operations.lean`, proofs in `Invariant.lean`.
 
 | Module | Purpose |
 |--------|---------|
-| `SeLe4n/Prelude.lean` | Typed identifiers + monad foundations |
-| `SeLe4n/Machine.lean` | Machine state and primitive update helpers |
-| `SeLe4n/Model/Object.lean`, `Model/State.lean` | Core model entities and kernel/system state |
-| `SeLe4n/Kernel/Scheduler/*` | Scheduler transitions and invariants |
-| `SeLe4n/Kernel/Capability/*` | CSpace/capability transitions and invariants |
-| `SeLe4n/Kernel/IPC/*` | Endpoint IPC transitions and invariants |
-| `SeLe4n/Kernel/Lifecycle/*` | Lifecycle/retype transitions and invariants |
-| `SeLe4n/Kernel/Service/*` | Service orchestration, policy checks, composed invariants |
-| `SeLe4n/Kernel/Architecture/*` | Architecture assumptions, adapter semantics, boundary invariants |
-| `SeLe4n/Kernel/InformationFlow/*` | Information-flow policy, projection, and low-equivalence |
-| `SeLe4n/Kernel/API.lean` | Unified public API surface, invariant bundle alias, stability table |
-| `SeLe4n.lean` | Top-level import barrel; keep imports minimal/non-duplicated and defer subsystem coverage to `Kernel/API.lean` |
-| `Main.lean` | Executable trace/demo harness |
-| `tests/fixtures/main_trace_smoke.expected` | Stable trace expectation anchors |
-| `scripts/test_tier*.sh` | Tiered quality gates used by CI and local workflows |
+| `SeLe4n/Prelude.lean` | Typed identifiers (`ThreadId`, `ObjId`, `CPtr`, etc.) + `KernelM` monad |
+| `SeLe4n/Machine.lean` | Register file, memory, timer — abstract machine primitives |
+| `SeLe4n/Model/Object.lean` | `TCB`, `Endpoint`, `Notification`, `CNode`, `VSpaceRoot`, CDT |
+| `SeLe4n/Model/State.lean` | `SystemState` with functional maps, lifecycle metadata, CDT slot↔node |
+| `SeLe4n/Kernel/Scheduler/*` | Priority + EDF scheduling, domain partitioning, timer tick |
+| `SeLe4n/Kernel/Capability/*` | CSpace lookup/mint/copy/move/delete/revoke with CDT tracking |
+| `SeLe4n/Kernel/IPC/*` | Endpoint send/receive/call/reply, notification signal/wait, dual-queue |
+| `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation |
+| `SeLe4n/Kernel/Service/*` | Service graph, dependency tracking, policy enforcement *(extension)* |
+| `SeLe4n/Kernel/Architecture/*` | VSpace map/unmap/lookup, adapter contracts, boundary assumptions |
+| `SeLe4n/Kernel/InformationFlow/*` | N-domain labels, state projection, non-interference, enforcement |
+| `SeLe4n/Kernel/API.lean` | Unified public API surface and invariant bundle aliases |
+| `Main.lean` | Executable trace harness |
+| `tests/` | Negative-state suite, information-flow suite, trace sequence probe |
 
-## Historical note
+## What's next: v0.12.2 audit remediation (WS-F)
 
-Prior workstream plans (WS-C, WS-B), older audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters are archived in [`docs/dev_history/`](docs/dev_history/README.md) for traceability.
+Two independent audits identified the gaps between current proofs and
+production-kernel requirements. The immediate priority is resolving these
+findings systematically. See the
+[WS-F workstream plan](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for the
+full execution plan.
+
+**Critical priorities:**
+1. Integrate `IpcMessage` into IPC operations (actual data transfer between threads)
+2. Prove invariant preservation for dual-queue IPC operations
+3. Extend `ObservableState` projection to cover all security-relevant fields
+4. Add Untyped memory model with watermark tracking
+5. Connect enforcement layer to non-interference proofs
+
+**Path to Raspberry Pi 5:**
+The hardware target is Raspberry Pi 5 (ARM64). Once audit remediation closes the
+proof gaps, the next phase binds architecture-neutral semantics to platform-specific
+interfaces without invalidating core proofs. See
+[Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
+
+## Completed workstreams (historical)
+
+| Portfolio | Scope | Status |
+|-----------|-------|--------|
+| **WS-E** (v0.11.6) | Audit remediation: test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness | All 6 workstreams completed |
+| **WS-D** (v0.11.0) | Test validity, info-flow enforcement, proof gaps, kernel design | WS-D1..D4 completed; D5/D6 absorbed into WS-E |
+| **WS-C** (v0.9.32) | Model structure, documentation, maintainability | WS-C1..C8 completed |
+| **WS-B** (v0.9.0) | Comprehensive audit 2026-02 | WS-B1..B11 completed |
+
+Prior audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters
+are archived in [`docs/dev_history/`](docs/dev_history/README.md).

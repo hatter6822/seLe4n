@@ -1,10 +1,10 @@
 # seLe4n Project Specification
 
 This document defines the normative scope, milestone structure, active workstream
-portfolio, and acceptance criteria for the **seLe4n** project -- a Lean 4 formalization
-of core seL4 microkernel semantics.
+portfolio, and acceptance criteria for **seLe4n** — a production-oriented microkernel
+written in Lean 4 with machine-checked proofs, improving on seL4 architecture.
 
-For the reference specification of the original seL4 microkernel that seLe4n models,
+For the reference specification of the original seL4 microkernel that seLe4n builds on,
 see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 
 ---
@@ -14,49 +14,60 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 1. [Project Identity](#1-project-identity)
 2. [Current State Snapshot](#2-current-state-snapshot)
 3. [Milestone History](#3-milestone-history)
-4. [Active Workstream Portfolio (WS-D)](#4-active-workstream-portfolio-ws-d)
-5. [Execution Phases](#5-execution-phases)
-6. [Acceptance Expectations](#6-acceptance-expectations)
-7. [Non-Negotiable Baseline Contracts](#7-non-negotiable-baseline-contracts)
-8. [Audit Baselines](#8-audit-baselines)
-9. [Security and Threat Model](#9-security-and-threat-model)
+4. [Architectural Improvements over seL4](#4-architectural-improvements-over-sel4)
+5. [Active Workstream Portfolio (WS-F)](#5-active-workstream-portfolio-ws-f)
+6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
+7. [Acceptance Expectations](#7-acceptance-expectations)
+8. [Non-Negotiable Baseline Contracts](#8-non-negotiable-baseline-contracts)
+9. [Audit Baselines](#9-audit-baselines)
+10. [Security and Threat Model](#10-security-and-threat-model)
 
 ---
 
 ## 1. Project Identity
 
-**seLe4n** is a Lean 4 formalization project for an executable, machine-checked model of
-core [seL4 microkernel](https://sel4.systems) semantics. The project keeps three concerns
-in one engineering loop:
+**seLe4n** is a novel microkernel built from the ground up in Lean 4. Every kernel
+transition is an executable pure function. Every invariant is machine-checked — zero
+`sorry`, zero `axiom` across the entire production proof surface.
 
-1. deterministic transition semantics,
-2. machine-checked invariant preservation,
-3. milestone-oriented delivery with explicit acceptance criteria.
+The project keeps four concerns in one engineering loop:
 
-The project reduces a common systems-assurance failure mode: drift between code, proof
-claims, and planning artifacts.
+1. deterministic transition semantics (executable pure functions),
+2. machine-checked invariant preservation (400+ proved theorems),
+3. architectural improvements over seL4 where the proof framework enables them,
+4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
+
+The project began as a formalization of seL4 semantics and is now a production-oriented
+kernel that preserves seL4's capability-based security model while introducing novel
+improvements in service orchestration, capability management, IPC queuing, information-flow
+enforcement, and scheduling.
 
 ---
 
 ## 2. Current State Snapshot
 
-- **Current package version:** `0.12.2` (`lakefile.toml`)
-- **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md)
-- **Active execution baseline:** [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md)
-- **Current active portfolio:** WS-E1..WS-E6 (v0.11.6 codebase audit remediation)
-- **Prior completed portfolio:** WS-D1..WS-D4 (completed); WS-D5/D6 absorbed into WS-E
+| Attribute | Value |
+|-----------|-------|
+| **Package version** | `0.12.2` (`lakefile.toml`) |
+| **Lean toolchain** | `4.28.0` |
+| **Production LoC** | 14,708 across 33 Lean files |
+| **Proved theorems** | 400+ (zero sorry/axiom) |
+| **Target hardware** | Raspberry Pi 5 (ARM64) |
+| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| **Active portfolio** | WS-F (v0.12.2 audit remediation) — planning |
+| **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
 
 ## 3. Milestone History
 
-seLe4n has been developed through a series of incremental milestone slices, each building
-on the semantic and proof foundations of the previous one.
+seLe4n has been developed through incremental milestone slices, each building on the
+semantic and proof foundations of the previous one.
 
 ### 3.1 Completed Milestone Slices
 
 | Milestone | Scope | Status |
-|---|---|---|
+|-----------|-------|--------|
 | **Bootstrap** | Typed identifiers, monad foundations, machine state | Complete |
 | **M1** | Scheduler semantics and preservation theorems | Complete |
 | **M2** | Capability/CSpace operations + authority invariants | Complete |
@@ -70,85 +81,103 @@ on the semantic and proof foundations of the previous one.
 
 ### 3.2 Completed Audit Portfolios
 
-- **WS-B portfolio** (v0.9.0 workstream plan): WS-B1 through WS-B11 completed.
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1 through WS-C8 completed.
+| Portfolio | Scope | Workstreams |
+|-----------|-------|-------------|
+| **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness | WS-E1..E6 completed |
+| **WS-D** (v0.11.0) | Test validity, info-flow enforcement, proof gaps, kernel design | WS-D1..D4 completed; D5/D6 absorbed into WS-E |
+| **WS-C** (v0.9.32) | Model structure, documentation, maintainability | WS-C1..C8 completed |
+| **WS-B** (v0.9.0) | Comprehensive audit 2026-02 | WS-B1..B11 completed |
 
-### 3.3 Completed Audit Portfolio (WS-D)
+### 3.3 Security Hardening (implemented)
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1 through WS-D4 completed. WS-D5/D6 items absorbed into WS-E.
-
-### 3.4 Active Audit Portfolio (WS-E)
-
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 through WS-E6 completed.
-
----
-
-## 3.1 Security hardening defaults
-
-- IPC thread-state updates fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
-- Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace/probe harnesses exercise policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) by default; unchecked operations remain available for research experiments.
-- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`Endpoint.sendQ`/`Endpoint.receiveQ`) with per-thread links (`TCB.queuePrev`/`TCB.queuePPrev`/`TCB.queueNext`); `queuePPrev` models one pointer-to-previous-link per queue membership and enables O(1) arbitrary waiter removal via `endpointQueueRemoveDual`. Executable invariant checks enforce `intrusiveQueueWellFormed` over queue boundaries and links (head/tail coherence, cycle-free reachability, and prev/pprev/next consistency), while `negative_state_suite` covers send/receive block-rendezvous FIFO/drain paths, middle removal, malformed-`queuePPrev` rejection via `illegalState`, duplicate-wait rejection via `alreadyWaiting`, and explicit queue-link runtime assertions.
-- WS-E4 CDT representation is node-stable: `CapDerivationTree` edges are over stable node IDs, while CSpace slots map to nodes (`cdtSlotNode`) with node→slot backpointers (`cdtNodeSlot`). `cspaceMove` executes as a slot-pointer move plus backpointer fixup, `cspaceDeleteSlot` detaches slot↔node bindings to avoid stale reuse aliasing, the slot-observed CDT is formally defined as projection of the node graph through the slot mapping (`SystemState.observedCdtEdges`), and strict CDT revoke (`cspaceRevokeCdtStrict`) reports the first descendant deletion failure together with offending slot context.
-
-## 4. Active Workstream Portfolio (WS-E)
-
-The WS-E portfolio addresses 32 findings from the v0.11.6 codebase audit
-(4 CRITICAL, 9 HIGH, 11 MEDIUM, 8 LOW), plus carry-forward items from the
-WS-D portfolio (WS-D5/D6).
-
-### 4.1 Medium — Test Infrastructure and CI
-
-- **WS-E1:** Test infrastructure and CI hardening (medium; **completed** — M-10, M-11, F-14, L-07, L-08; F-09/F-10/F-15 resolved)
-
-### 4.2 High — Proof Quality and Kernel Hardening
-
-- **WS-E2:** Proof quality and invariant strengthening (high; **completed** — C-01, H-01, H-03)
-- **WS-E3:** Kernel semantic hardening (high; **completed** — H-06, H-07, H-08, H-09, M-09, L-06)
-
-### 4.3 Critical — Model Completion
-
-- **WS-E4:** Capability and IPC model completion (critical; **completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
-
-### 4.4 High — Security Assurance
-
-- **WS-E5:** Information-flow maturity (high; **completed** — H-04, H-05, M-07)
-
-### 4.5 Low — Model Completeness and Documentation
-
-- **WS-E6:** Model completeness and documentation (low; **completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
-
-Authoritative detail for per-workstream goals, dependencies, and evidence gates:
-[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+- IPC thread-state updates fail with `objectNotFound` for missing/reserved TCBs, preventing ghost queue entries.
+- Sentinel ID `0` rejected at IPC boundaries (`lookupTcb`/`storeTcbIpcState`).
+- Intrusive dual-queue endpoints with `sendQ`/`receiveQ` and per-thread links for O(1) removal.
+- Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
+- Policy-checked wrappers (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`) exercised by default in trace and probe harnesses.
 
 ---
 
-## 5. Execution Phases
+## 4. Architectural Improvements over seL4
 
-### 5.1 WS-D Phases (completed)
+seLe4n is not a 1:1 formalization of seL4. It preserves seL4's capability-based
+security model while introducing improvements that the Lean 4 proof framework enables:
 
-- **Phase P0:** Baseline transition — publish v0.11.0 planning backbone (completed)
-- **Phase P1:** WS-D1 test validity restoration — **completed**
-- **Phase P2:** WS-D2 information-flow enforcement and proof — **completed**
-- **Phase P3:** WS-D3 proof gap closure + WS-D4 kernel design hardening — **completed**
+| Area | seL4 | seLe4n Improvement |
+|------|------|-------------------|
+| **Service lifecycle** | No kernel-level service concept | Service orchestration layer with dependency graphs, acyclic policy enforcement |
+| **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
+| **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal |
+| **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
+| **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with domain-aware partitioning |
+| **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context |
 
-### 5.2 WS-E Phases (active)
-
-- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone, update docs (**completed**)
-- **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
-- **Phase P2:** WS-E3 (kernel hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
-- **Phase P4:** WS-E5 (information-flow maturity) — **completed**
-- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
+These are not abstract research extensions — they are design decisions that will be
+carried forward into the production kernel.
 
 ---
 
-## 6. Acceptance Expectations
+## 5. Active Workstream Portfolio (WS-F)
 
-### 6.1 Per-Workstream Acceptance Gates
+The WS-F portfolio addresses findings from two independent v0.12.2 codebase audits.
+Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 
-Each WS-D workstream has defined entry/exit criteria in the canonical workstream plan.
-Common acceptance patterns:
+Authoritative detail:
+[`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
+
+### 5.1 Critical — IPC and Memory Model
+
+- **WS-F1:** IPC message transfer and dual-queue verification — integrate `IpcMessage` into operations, prove dual-queue invariant preservation (CRIT-01, CRIT-05, F-10, F-11)
+- **WS-F2:** Untyped memory model — add `UntypedObject`, retype-from-untyped, watermark tracking (CRIT-04)
+
+### 5.2 High — Proof Coverage and Security
+
+- **WS-F3:** Information-flow completeness — extend `ObservableState` projection, prove NI for all API operations, connect enforcement to NI (CRIT-02, CRIT-03, F-20, F-21, F-22)
+- **WS-F4:** Proof gap closure — `timerTick`, `cspaceMutate`, notification full-system preservation, compound IPC ops (F-03, F-06, F-12)
+
+### 5.3 Medium — Architectural Quality
+
+- **WS-F5:** Model fidelity — notification badge bitmask, per-thread registers, multi-level CSpace, capability rights as sets (CRIT-06, HIGH-01, HIGH-02, HIGH-04)
+- **WS-F6:** Invariant quality — reclassify tautological invariants, extend scheduler contract, instantiate `AdapterProofHooks` (F-07, F-13, F-15, F-18)
+
+### 5.4 Low — Testing and Cleanup
+
+- **WS-F7:** Testing expansion — extend runtime oracle, expand TraceSequenceProbe, exercise unused fixtures (F-24, F-25, F-26)
+- **WS-F8:** Cleanup — remove dead `endpointInvariant`, resolve legacy/dual-queue divergence, stub cleanup (F-01, F-14, F-19)
+
+---
+
+## 6. Hardware Target: Raspberry Pi 5
+
+The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
+
+### 6.1 Why Raspberry Pi 5
+
+1. Practical ARM64 platform for repeated experiments and bring-up
+2. Realistic interrupt/memory/boot profile for architecture-bound modeling
+3. Broad tooling availability and community support
+4. Good tradeoff between accessibility and systems realism
+
+### 6.2 Path to Hardware
+
+| Stage | Description | Status |
+|-------|-------------|--------|
+| **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
+| **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
+| **H2** | Audit-driven proof deepening (close critical gaps) | Active (WS-F) |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | Planned |
+| **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
+
+The critical prerequisite for H3 is closing the WS-F proof gaps — particularly
+Untyped memory (WS-F2) and complete information-flow coverage (WS-F3).
+
+---
+
+## 7. Acceptance Expectations
+
+### 7.1 Per-Workstream Acceptance Gates
+
+Each workstream has defined entry/exit criteria. Common acceptance patterns:
 
 1. implementation compiles and passes tiered validation,
 2. new/modified theorems are non-tautological and non-trivial,
@@ -156,7 +185,7 @@ Common acceptance patterns:
 4. documentation is synchronized across all canonical surfaces,
 5. no regressions in previously-completed workstream contracts.
 
-### 6.2 Milestone-Moving PR Requirements
+### 7.2 Milestone-Moving PR Requirements
 
 Every milestone-moving PR should include:
 
@@ -168,50 +197,52 @@ Every milestone-moving PR should include:
 
 ---
 
-## 7. Non-Negotiable Baseline Contracts
+## 8. Non-Negotiable Baseline Contracts
 
 Unless a PR explicitly proposes spec-level change control, preserve:
 
 1. deterministic transition semantics (explicit success/failure branches),
 2. M3.5 IPC-scheduler handshake coherence semantics and trace anchors,
 3. domain-aware scheduling semantics (`schedule` is active-domain-only; no cross-domain fallback),
-4. local + composed invariant layering (including domain partitioning invariant `currentThreadInActiveDomain` in the canonical scheduler bundle, with `scheduleDomain` switch/tick preservation obligations),
+4. local + composed invariant layering (including `currentThreadInActiveDomain` in the canonical scheduler bundle),
 5. theorem discoverability through stable naming,
    - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`, `lifecycleCompositionInvariantBundle`,
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
-8. top-level import hygiene: keep `SeLe4n.lean` minimal and avoid duplicate/redundant subsystem imports; `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
+8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
 
 ---
 
-## 8. Audit Baselines
+## 9. Audit Baselines
 
-### 8.1 Active Baselines
-
-| Artifact | Path |
-|---|---|
-| Codebase audit (v0.11.6) | [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md) |
-| Execution baseline (WS-E) | [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
-
-### 8.2 Prior Active Baselines (WS-D, completed)
+### 9.1 Active Baselines
 
 | Artifact | Path |
-|---|---|
-| Findings baseline (v0.11.0) | [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) |
-| Execution baseline (WS-D) | [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
-| Tracked theorem obligations | [`docs/audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md`](../audits/AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md) |
+|----------|------|
+| Codebase audit v1 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md) |
+| Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
 
-### 8.3 Historical Baselines (Retained for Traceability)
+### 9.2 Prior Baselines (completed)
 
-Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/) for traceability. See [`docs/dev_history/README.md`](../dev_history/README.md) for a full index.
+| Artifact | Path |
+|----------|------|
+| Findings baseline (v0.11.6) | [`docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md`](../dev_history/audits/AUDIT_CODEBASE_v0.11.6.md) |
+| Execution baseline (WS-E) | [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
+| Findings baseline (v0.11.0) | [`docs/dev_history/audits/AUDIT_v0.11.0.md`](../dev_history/audits/AUDIT_v0.11.0.md) |
+| Execution baseline (WS-D) | [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
+
+### 9.3 Historical Baselines
+
+Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
 
 ---
 
-## 9. Security and Threat Model
+## 10. Security and Threat Model
 
-Security assumptions and trust boundaries for active and historical slices are documented
-in [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
+Security assumptions and trust boundaries are documented in
+[`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
 
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in

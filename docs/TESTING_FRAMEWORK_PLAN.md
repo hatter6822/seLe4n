@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **v0.11.6 codebase audit (WS-E portfolio) is active. Testing guards delivered WS-D workstream behavior without regressing M1–M7 contracts while WS-E1 addresses shallow input-space exploration (M-10), missing runtime invariant checks (M-11), and fixture brittleness (L-07).**
+Current stage context: **v0.12.2 codebase audit (WS-F portfolio) is active. WS-E1..E6 completed. Testing guards delivered WS-D/WS-E workstream behavior without regressing M1–M7 contracts. WS-E1 resolved shallow input-space exploration (M-10), missing runtime invariant checks (M-11), and fixture brittleness (L-07). WS-F7 targets further testing expansion.**
 
 ## 2. Current enforced tiers
 

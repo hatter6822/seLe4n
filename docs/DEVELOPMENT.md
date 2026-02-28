@@ -2,16 +2,18 @@
 
 ## 1) Purpose
 
-This guide is the day-to-day operating manual for contributors.
+This guide is the day-to-day operating manual for contributors to seLe4n — a
+production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- active: **v0.11.6 Codebase Audit Remediation WS-E portfolio (WS-E1 through WS-E6 completed)**,
-- completed predecessor: **WS-D portfolio (WS-D1..WS-D4 completed; WS-D5/D6 absorbed into WS-E)**,
-- completed predecessor before that: **WS-C portfolio (WS-C1..WS-C8)**.
+- **active:** WS-F portfolio (v0.12.2 audit remediation — planning),
+- **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
+- **completed predecessor:** WS-E portfolio (v0.11.6, WS-E1..E6 all completed),
+- **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning source:
-[`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 
 ---
 
@@ -30,36 +32,32 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Completed execution slice (WS-E portfolio)
+## 3) Active workstream (WS-F: v0.12.2 audit remediation)
 
-### 3.1 Workstreams and intent
+The WS-F portfolio addresses findings from two independent v0.12.2 codebase audits.
+See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+for the full execution plan.
 
-- **WS-E1** — Test infrastructure and CI hardening (**completed** — M-10, M-11, F-14, L-07, L-08)
-- **WS-E2** — Proof quality and invariant strengthening (**completed** — C-01, H-01, H-03)
-- **WS-E3** — Kernel semantic hardening (**completed** — H-06, H-07, H-08, H-09, M-09, L-06)
-- **WS-E4** — Capability and IPC model completion (**completed** — C-02, C-03, C-04, H-02, M-01, M-02, M-12)
-- **WS-E5** — Information-flow maturity (**completed** — H-04, H-05, M-07)
-- **WS-E6** — Model completeness and documentation (**completed** — M-03, M-04, M-05, M-08, F-17, L-01–L-05)
+### 3.1 Workstream summary
 
-Canonical detail: [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+| ID | Focus | Priority | Key findings |
+|----|-------|----------|--------------|
+| **WS-F1** | IPC message transfer + dual-queue verification | Critical | CRIT-01, CRIT-05, F-10, F-11 |
+| **WS-F2** | Untyped memory model | Critical | CRIT-04 |
+| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 |
+| **WS-F4** | Proof gap closure | High | F-03, F-06, F-12 |
+| **WS-F5** | Model fidelity | Medium | CRIT-06, HIGH-01..04 |
+| **WS-F6** | Invariant quality | Medium | F-07, F-13, F-15, F-18 |
+| **WS-F7** | Testing expansion | Low | F-24, F-25, F-26 |
+| **WS-F8** | Cleanup | Low | F-01, F-14, F-19 |
 
-### 3.2 Sequencing model
+### 3.2 Prior completed portfolios (historical)
 
-Use the planning phases from the workstream backbone:
+- **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+- **WS-D1..D4:** completed. See [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+- **WS-C1..C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
-- **Phase P0:** Baseline — close quick fixes, publish WS-E backbone (**completed**)
-- **Phase P1:** WS-E1 (test/CI — **completed**) + WS-E2 (proof quality — **completed**) — **completed**
-- **Phase P2:** WS-E3 (kernel hardening) — **completed**
-- **Phase P3:** WS-E4 (capability/IPC completion) — **completed**
-- **Phase P4:** WS-E5 (information-flow maturity) — **completed**
-- **Phase P5:** WS-E6 (model completeness/docs) — **completed**
-
-### 3.3 Prior completed portfolios (historical)
-
-- **WS-D1..WS-D4:** completed. WS-D5/D6 absorbed into WS-E. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
-- **WS-C1..WS-C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
-
-### 3.4 PR-to-workstream discipline
+### 3.3 PR-to-workstream discipline
 
 Every milestone-moving PR should include:
 
@@ -81,7 +79,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-E slice (prefer next priority in the active plan, starting with current phase targets).
+1. Sync branch and choose one coherent WS-F slice (prefer next priority in the active plan, starting with current phase targets).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.
@@ -124,8 +122,8 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core
    completeness theorem (CP1), its equational lemmas (EQ1-EQ5), and closure
    lemmas (CB1-CB4) are all proved. The prerequisite lemma hierarchy in
-   [`M2_BFS_SOUNDNESS.md §6`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
-   and its sub-documents ([M2A](audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
+   [`M2_BFS_SOUNDNESS.md §6`](dev_history/audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
+   and its sub-documents ([M2A](dev_history/audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](dev_history/audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
    is fully discharged. No further work is required for this tracking item.
 
 ---

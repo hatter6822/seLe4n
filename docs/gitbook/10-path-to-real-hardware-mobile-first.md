@@ -1,85 +1,67 @@
-# Path to Real Hardware (Raspberry Pi 5 First)
+# Path to Real Hardware (Raspberry Pi 5)
 
-## Why this chapter changed
+## 1. Hardware target
 
-The project hardware direction is now explicitly **Raspberry Pi 5 first**.
+The first production hardware target for seLe4n is **Raspberry Pi 5** (ARM64,
+Broadcom BCM2712). This is not aspirational — the kernel architecture is being
+developed with this target in mind.
 
-Earlier documentation described a broad mobile-first direction. That remains useful context, but
-execution planning now prioritizes a concrete first architecture target to reduce ambiguity and
-improve milestone accountability.
+## 2. Why Raspberry Pi 5
 
-## 1. Hardware reality check
+1. **Practical ARM64 platform** for repeated experiments and bring-up.
+2. **Realistic system profile** — interrupts, memory regions, boot sequence, DMA.
+3. **Broad tooling availability** — GCC/LLVM cross-compilers, JTAG, UART debug.
+4. **Accessibility** — low cost, widely available, strong community.
+5. **Production-relevant** — the BCM2712 is a capable quad-core Cortex-A76.
 
-seLe4n is currently a formal and executable model project, not a direct deployable kernel image.
-The path to real hardware is staged and contract-driven:
+## 3. Path stages
 
-1. architecture-neutral semantics and invariants,
-2. explicit architecture-binding interfaces,
-3. platform-specific binding of those interfaces,
-4. traceable evidence from model behavior to platform assumptions.
+| Stage | Description | Status | Prerequisites |
+|-------|-------------|--------|---------------|
+| **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
+| **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
+| **H2** | Audit-driven proof deepening | **Active** (WS-F) | Close CRIT/HIGH findings |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | WS-F2 (Untyped memory), WS-F3 (info-flow) |
+| **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
-## 2. Why Raspberry Pi 5 first
+### H2 — Active: closing proof gaps (WS-F)
 
-1. practical ARM64 platform for repeated experiments,
-2. realistic enough interrupt/memory/boot profile for architecture-bound modeling,
-3. broad tooling availability for incremental bring-up,
-4. good tradeoff between accessibility and systems realism.
+The v0.12.2 audits identified critical gaps that must be closed before hardware
+binding is meaningful:
 
-## 3. Stage model toward Raspberry Pi 5 relevance
+- **IPC message transfer** (CRIT-01): operations must actually move data.
+- **Untyped memory** (CRIT-04): memory safety is fundamental to hardware binding.
+- **Information flow** (CRIT-02/03): complete projection and NI coverage.
+- **Dual-queue verification** (CRIT-05): the production IPC model needs proofs.
 
-### Stage H0 — Completed baseline hardening (M1–M5)
+### H3 — Planned: Raspberry Pi 5 binding
 
-- scheduler/capability/IPC/lifecycle/service semantics and proof bundles,
-- deterministic success/failure semantics and executable evidence,
-- testing tiers and CI contracts.
+Once WS-F closes the critical proof gaps:
 
-### Stage H1 — Completed architecture-boundary baseline (M6)
+1. Map `MachineState` to BCM2712 register set and memory map.
+2. Bind `VSpaceRoot` to ARMv8 page table structures.
+3. Implement interrupt routing for GIC-400.
+4. Bind timer adapter to ARM Generic Timer.
+5. Define boot sequence as a verified initial state construction.
 
-- extract architecture assumptions as explicit interfaces,
-- define proof-carrying adapters from architecture-neutral semantics,
-- harden boot/runtime boundary obligations as concrete contracts.
+### H4 — Planned: evidence convergence
 
-### Stage H2 — Active audit-driven model deepening (WS-B portfolio)
+1. Connect executable trace scenarios to hardware test fixtures.
+2. Extend Tier-3 anchors to cover platform-specific claims.
+3. Run proof-carrying executable on actual Raspberry Pi 5 hardware.
 
-- close comprehensive-audit execution workstreams (currently WS-B5 onward),
-- preserve typed domain separation and deterministic traces while expanding semantics,
-- maintain theorem and documentation synchronization for hardware-readiness progression.
+## 4. Risks and mitigations
 
-### Stage H3 — Minimal platform-oriented trust partition
+| Risk | Mitigation |
+|------|------------|
+| Premature platform lock-in | Architecture-neutral proofs are preserved; H3 is additive |
+| Proof complexity at binding boundary | Narrow adapter contracts, local-first layering |
+| Lean 4 code generation gaps | Monitor Lean compiler improvements; fallback to FFI where needed |
+| Hardware-specific timing channels | Document as residual risk; address in post-H4 work |
 
-- define first constrained deployment partition,
-- map service graph boundaries to capability distribution constraints,
-- validate expected failure semantics for restart/isolation paths.
+## 5. What contributors can do now
 
-### Stage H4 — Evidence convergence
-
-- connect executable scenarios to platform-facing assumptions,
-- extend symbol/fixture coverage to architecture-bound claims,
-- package evidence for iterative integration decisions.
-
-## 4. Raspberry Pi 5 target outcomes (long horizon)
-
-1. explicit platform-assumption contract inventory,
-2. architecture-binding interfaces that do not invalidate core proofs,
-3. predictable failure semantics for boundary violations,
-4. reusable traceability from theorem claims to validation artifacts,
-5. incremental integration path from model-level confidence to platform-level confidence.
-
-## 5. Risks and mitigations
-
-1. **Premature platform lock-in**
-   - mitigation: complete M6 contract surfaces before broad platform encoding.
-2. **Proof complexity growth at binding boundary**
-   - mitigation: maintain local-first theorem layering and narrow adapter contracts.
-3. **Evidence mismatch between model and platform assumptions**
-   - mitigation: enforce synchronized updates across traces, tests, and docs.
-4. **Roadmap ambiguity**
-   - mitigation: keep README/spec/GitBook synchronized on Raspberry Pi 5-first direction.
-
-## 6. What contributors can do now (active WS-B context)
-
-- align milestone PRs to M6 workstreams,
-- document architecture assumptions explicitly,
-- add executable evidence for boundary success/failure behavior,
-- avoid implicit platform assumptions in architecture-neutral modules,
-- keep handoff notes explicit for the Raspberry Pi 5 slice.
+- Focus on WS-F workstreams (especially WS-F1, WS-F2, WS-F4).
+- Keep transitions architecture-neutral unless explicitly marked otherwise.
+- Document hardware assumptions explicitly in adapter interfaces.
+- Add executable evidence for boundary success/failure behavior.

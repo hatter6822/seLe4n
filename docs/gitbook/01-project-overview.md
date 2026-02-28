@@ -1,89 +1,94 @@
 # Project Overview
 
-## 1. Motivation
+## 1. What is seLe4n?
 
-seLe4n is a Lean 4 formalization effort for an executable, machine-checked model of core
-seL4-style microkernel behavior. The project keeps three concerns in one engineering loop:
+seLe4n is a **production-oriented microkernel** built from the ground up in Lean 4.
+Every kernel transition is an executable pure function. Every invariant is
+machine-checked — zero `sorry`, zero `axiom` across the entire production proof surface.
 
-1. deterministic transition semantics,
-2. machine-checked invariant preservation,
-3. milestone-oriented delivery with explicit acceptance criteria.
+The project began as a formalization of seL4 semantics and is now a novel kernel
+that preserves seL4's capability-based security model while introducing improvements
+that the Lean 4 proof framework enables.
+
+**First hardware target: Raspberry Pi 5 (ARM64).**
 
 ## 2. Why this project matters
 
-seLe4n reduces a common systems-assurance failure mode: drift between code, proof claims, and
-planning artifacts. The repository structure and test/documentation workflow are designed to keep
-these artifacts synchronized.
+Most kernel verification efforts work backward — write C, then verify it. seLe4n
+works forward: executable semantics and proofs are developed together, and the
+kernel *is* the specification. This eliminates the verification gap between
+specification and implementation.
 
-## 3. What is implemented today
+Current state: 14,708 lines of Lean, 400+ machine-checked theorems, zero unsound
+constructs, comprehensive tiered CI with security scanning.
 
-Closed baseline slices:
+## 3. Architectural improvements over seL4
 
-- Bootstrap,
-- M1 scheduler semantics and preservation,
-- M2 capability/CSpace operations + authority invariants,
-- M3 IPC seed semantics,
-- M3.5 waiting handshake + scheduler coherence,
-- M4-A lifecycle/retype foundations,
-- M4-B lifecycle-capability composition hardening,
-- M5 service-graph and policy-surface completion,
-- M6 architecture-boundary assumptions/adapters/invariant hooks,
-- M7 audit remediation (WS-A1..WS-A8).
+| Area | seL4 | seLe4n |
+|------|------|--------|
+| **Service lifecycle** | No kernel-level concept | Dependency graphs with acyclic enforcement |
+| **CDT** | Mutable doubly-linked list | Node-stable with O(1) slot transfer |
+| **IPC queuing** | Intrusive linked list | Dual-queue with O(1) arbitrary removal |
+| **Information flow** | Binary partition | Parameterized N-domain labels |
+| **Scheduling** | Priority round-robin | Priority + EDF with domain partitioning |
+| **Revocation** | Silent error handling | Strict variant with failure context reporting |
 
-Completed audit portfolios:
+## 4. What is implemented today
 
-- **Comprehensive Audit 2026-02 execution (WS-B portfolio)** with WS-B1 through WS-B11 completed.
-- **WS-C portfolio** (v0.9.32 workstream plan): WS-C1..WS-C8 completed.
+### Completed milestone slices
 
-Completed audit portfolios (continued):
+Bootstrap, M1 (scheduler), M2 (capability), M3/M3.5 (IPC + coherence),
+M4-A/M4-B (lifecycle), M5 (service graph), M6 (architecture boundary),
+M7 (audit remediation).
 
-- **WS-D portfolio** (v0.11.0 workstream plan): WS-D1..WS-D4 completed; WS-D5/WS-D6 absorbed into WS-E.
+### Completed audit portfolios
 
-Current active portfolio:
+- **WS-E** (v0.11.6): test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness — all 6 workstreams completed.
+- **WS-D** (v0.11.0), **WS-C** (v0.9.32), **WS-B** (v0.9.0): all completed.
 
-- **WS-E portfolio** (v0.11.6 workstream plan): WS-E1 through WS-E6 completed.
+### Active work
 
-## 4. Architecture mental model
+- **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
+  See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
-The codebase is organized as layered contracts:
+## 5. Architecture mental model
 
-- **Model layer** (`SeLe4n/Model/*`): object/state representation and update helpers.
-- **Subsystem transitions** (`SeLe4n/Kernel/*/Operations.lean`): executable behavior with
-  explicit error paths.
-- **Invariant layer** (`SeLe4n/Kernel/*/Invariant.lean`): named predicates and composed bundles.
-- **Executable evidence** (`Main.lean`): scenario traces used by fixture checks.
-- **Validation scripts** (`scripts/test_*.sh`): tiered CI contract from hygiene to nightly lanes.
+```
+┌─────────────────────────────────────────────────────┐
+│  Kernel API  (SeLe4n/Kernel/API.lean)               │
+├────────┬────────┬──────┬───────────┬────────────────┤
+│Sched   │Capabil │ IPC  │ Lifecycle │ Service (ext)  │
+│ uler   │  ity   │      │           │                │
+├────────┴────────┴──────┴───────────┴────────────────┤
+│  Information Flow  (Policy, Projection, Enforcement) │
+├─────────────────────────────────────────────────────┤
+│  Architecture  (VSpace, Adapter, Assumptions)        │
+├─────────────────────────────────────────────────────┤
+│  Model  (Object, State, CDT)                         │
+├─────────────────────────────────────────────────────┤
+│  Foundations  (Prelude, Machine)                      │
+└─────────────────────────────────────────────────────┘
+```
 
-## 5. Current-slice outcomes (WS-E portfolio)
+Each subsystem follows the **Operations/Invariant split**: executable transitions
+in `Operations.lean`, machine-checked proofs in `Invariant.lean`.
 
-The active slice is successful when contributors deliver all of the following:
-
-1. closure of v0.11.6 audit findings via WS-E workstreams (WS-E1..WS-E6),
-2. deterministic CI + trace reproducibility preserved through every workstream increment,
-3. theorem/invariant surfaces remain discoverable and preservation-focused,
-4. synchronized updates across README/spec/development guide/GitBook + audit planning artifacts.
-
-For full project scope and milestone details, see [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
-For the seL4 microkernel reference, see [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md).
-
-See dedicated execution chapters: [v0.11.6 Audit Workstream Planning](32-v0.11.0-audit-workstream-planning.md) and [Specification & Roadmap](05-specification-and-roadmap.md).
-
-## 6. Hardware trajectory update
-
-The first real hardware architecture focus for seLe4n remains **Raspberry Pi 5**. This direction
-now follows completion of the active audit-remediation workstreams and emphasizes incremental
-binding without invalidating architecture-neutral proof investment.
-
-See [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md).
-
-## 7. Contributor definition-of-done loop
+## 6. Contributor definition-of-done loop
 
 For milestone-moving changes:
 
-1. update transition semantics,
-2. add/refine narrow invariant components,
+1. implement transition semantics,
+2. add/refine invariant components,
 3. prove local preservation,
 4. prove composed preservation,
 5. expose behavior in executable traces,
 6. add symbol/fixture anchors in tests,
 7. synchronize spec, README, and GitBook docs.
+
+## 7. Key links
+
+- Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
+- seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
+- Active audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
+- Workstream plan: [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+- Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

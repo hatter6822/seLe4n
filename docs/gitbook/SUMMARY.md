@@ -19,24 +19,24 @@
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
-## Active workstreams
+## Audit and quality
 
-- [v0.11.0 Audit Workstream Planning (WS-D)](32-v0.11.0-audit-workstream-planning.md)
-- [Comprehensive Audit 2026 Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+- [v0.12.2 Audit Workstream Planning (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
 - [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
 
 ## Architecture and policy
 
-- [VSpace + Bounded Memory Model (ADR, WS-B1)](26-ws-b1-vspace-memory-adr.md)
-- [Model Structure and Maintainability (ADR, WS-C7)](30-ws-c7-model-structure-and-maintainability.md)
+- [VSpace + Bounded Memory Model (ADR)](26-ws-b1-vspace-memory-adr.md)
+- [Model Structure and Maintainability (ADR)](30-ws-c7-model-structure-and-maintainability.md)
 - [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
 - [CI Maturity and Telemetry Baseline](29-ci-maturity-and-telemetry-baseline.md)
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)
 
-## Transition and long-horizon path
+## Production path
 
-- [Next Slice Development Path (Post-M7)](22-next-slice-development-path.md)
-- [Path to Real Hardware (Raspberry Pi 5 First)](10-path-to-real-hardware-mobile-first.md)
+- [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
 - [Project Usage and Value](17-project-usage-value.md)
+- [Next Development Path](22-next-slice-development-path.md)
+

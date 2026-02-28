@@ -283,29 +283,29 @@ is complete enough to detect all nontrivial paths between distinct services. No
 
 The formal proof eliminating the `bfs_complete_for_nontrivialPath` sorry has been
 completed following the M2 milestone roadmap
-([`M2_BFS_SOUNDNESS.md`](../audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md))
+([`M2_BFS_SOUNDNESS.md`](../dev_history/audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md))
 and four sub-documents (M2A–M2D).
 
 **Proof decomposition:**
 
-1. **Equational theory ([M2A](../audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)):**
+1. **Equational theory ([M2A](../dev_history/audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)):**
    A `lookupDeps` helper bridges the executable BFS dependency lookup to the
    declarative `serviceEdge` relation (`serviceEdge_iff_lookupDeps`). Five BFS
    unfolding lemmas (EQ1-EQ5) provide rewrite rules for each branch of the `go`
    function.
 
-2. **Completeness invariant ([M2B](../audits/execution_plans/milestones/M2B_COMPLETENESS_INVARIANT.md)):**
+2. **Completeness invariant ([M2B](../dev_history/audits/execution_plans/milestones/M2B_COMPLETENESS_INVARIANT.md)):**
    A named `bfsClosed` definition captures the visited-set closure property. Four
    lemmas (CB1-CB4) establish the invariant initially, preserve it across skip and
    expansion steps, and prove the critical boundary lemma: if a visited node reaches
    target and target is not visited, some frontier node also reaches target.
 
-3. **Fuel adequacy ([M2C](../audits/execution_plans/milestones/M2C_FUEL_ADEQUACY.md)):**
+3. **Fuel adequacy ([M2C](../dev_history/audits/execution_plans/milestones/M2C_FUEL_ADEQUACY.md)):**
    A `serviceCountBounded` precondition bounds the BFS universe by `serviceBfsFuel st`
    (Approach A). `serviceCountBounded_preserved_by_registerDependency` proves the
    precondition is maintained across dependency registration.
 
-4. **Core completeness ([M2D](../audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)):**
+4. **Core completeness ([M2D](../dev_history/audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)):**
    `go_complete` (CP1) carries the four-part invariant (I1: target not visited,
    I2: closure, I3: frontier witness, I4: fuel adequate) through strong induction
    on fuel with structural induction on the frontier list. The sorry is eliminated.
@@ -321,7 +321,7 @@ Frozen operational files (M0 semantics freeze):
 | `Object.lean` | `db228ed6...14594f32` |
 | `Prelude.lean` | `bffc93fe...d47b30fe` |
 
-Full execution plan: [`docs/audits/execution_plans/00_INDEX.md`](../audits/execution_plans/00_INDEX.md)
+Full execution plan: [`docs/dev_history/audits/execution_plans/00_INDEX.md`](../dev_history/audits/execution_plans/00_INDEX.md)
 
 ## 15. Information-flow layering (WS-B7 baseline + WS-D2 enforcement and non-interference)
 

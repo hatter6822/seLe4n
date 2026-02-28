@@ -1,9 +1,11 @@
 {
-  "description": "This GitBook is the long-form guide for architecture, workflow, and milestone context.",
+  "description": "This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Active findings baseline:** AUDIT v0.11.6 (codebase audit).",
-    "**Active execution baseline:** WS-E portfolio (v0.11.6 workstream plan). WS-E1 through WS-E6 completed.",
-    "**Historical records:** Milestone closeouts, prior audits, and completed workstream plans are in [`docs/dev_history/`](../dev_history/README.md)."
+    "**Active findings baseline:** v0.12.2 audits ([v1](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [v2](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)).",
+    "**Active portfolio:** WS-F (v0.12.2 audit remediation — planning).",
+    "**Prior completed:** WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).",
+    "**Hardware target:** Raspberry Pi 5 (ARM64).",
+    "**Historical records:** Milestone closeouts and prior audits in [`docs/dev_history/`](../dev_history/README.md)."
   ],
   "recommended_reading": [
     {
@@ -31,8 +33,8 @@
       "path": "07-testing-and-ci.md"
     },
     {
-      "title": "v0.11.0 Audit Workstream Planning",
-      "path": "32-v0.11.0-audit-workstream-planning.md"
+      "title": "v0.12.2 Audit Workstream Planning (WS-F)",
+      "path": "24-comprehensive-audit-2026-workstream-planning.md"
     },
     {
       "title": "Codebase Reference",
@@ -87,14 +89,10 @@
       ]
     },
     {
-      "section": "Active workstreams",
+      "section": "Audit and quality",
       "pages": [
         {
-          "title": "v0.11.0 Audit Workstream Planning (WS-D)",
-          "path": "32-v0.11.0-audit-workstream-planning.md"
-        },
-        {
-          "title": "Comprehensive Audit 2026 Workstream Planning",
+          "title": "v0.12.2 Audit Workstream Planning (WS-F)",
           "path": "24-comprehensive-audit-2026-workstream-planning.md"
         },
         {
@@ -111,11 +109,11 @@
       "section": "Architecture and policy",
       "pages": [
         {
-          "title": "VSpace + Bounded Memory Model (ADR, WS-B1)",
+          "title": "VSpace + Bounded Memory Model (ADR)",
           "path": "26-ws-b1-vspace-memory-adr.md"
         },
         {
-          "title": "Model Structure and Maintainability (ADR, WS-C7)",
+          "title": "Model Structure and Maintainability (ADR)",
           "path": "30-ws-c7-model-structure-and-maintainability.md"
         },
         {
@@ -137,29 +135,29 @@
       ]
     },
     {
-      "section": "Transition and long-horizon path",
+      "section": "Production path",
       "pages": [
         {
-          "title": "Next Slice Development Path (Post-M7)",
-          "path": "22-next-slice-development-path.md"
-        },
-        {
-          "title": "Path to Real Hardware (Raspberry Pi 5 First)",
+          "title": "Path to Real Hardware (Raspberry Pi 5)",
           "path": "10-path-to-real-hardware-mobile-first.md"
         },
         {
           "title": "Project Usage and Value",
           "path": "17-project-usage-value.md"
+        },
+        {
+          "title": "Next Development Path",
+          "path": "22-next-slice-development-path.md"
         }
       ]
     }
   ],
   "current_workstream_doc": {
-    "label": "docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md",
-    "path": "../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md"
+    "label": "docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md",
+    "path": "../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md"
   },
   "current_workstream_chapter": {
-    "title": "Comprehensive Audit 2026 Workstream Planning (WS-E)",
+    "title": "v0.12.2 Audit Workstream Planning (WS-F)",
     "path": "24-comprehensive-audit-2026-workstream-planning.md"
   }
 }
