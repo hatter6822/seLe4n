@@ -7,7 +7,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- **active:** WS-F portfolio (v0.12.2 audit remediation — WS-F1, WS-F2 completed),
+- **active:** WS-F portfolio (v0.12.2 audit remediation — WS-F1, WS-F2, WS-F3 completed),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **completed predecessor:** WS-E portfolio (v0.11.6, WS-E1..E6 all completed),
 - **hardware target:** Raspberry Pi 5 (ARM64).
@@ -44,7 +44,7 @@ for the full execution plan.
 |----|-------|----------|--------------|--------|
 | **WS-F1** | IPC message transfer + dual-queue verification | Critical | CRIT-01, CRIT-05, F-10, F-11 | **Completed** |
 | **WS-F2** | Untyped memory model | Critical | CRIT-04 | **Completed** |
-| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 | Planning |
+| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 | **Completed** |
 | **WS-F4** | Proof gap closure | High | F-03, F-06, F-12 | Planning |
 | **WS-F5** | Model fidelity | Medium | CRIT-06, HIGH-01..04 | Planning |
 | **WS-F6** | Invariant quality | Medium | F-07, F-13, F-15, F-18 | Planning |

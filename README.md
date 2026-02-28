@@ -47,7 +47,7 @@ improving on specific architectural aspects:
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active workstream** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2 completed |
+| **Active workstream** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3 completed |
 | **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start
@@ -138,8 +138,8 @@ full execution plan.
 **Critical priorities:**
 1. ~~Integrate `IpcMessage` into IPC operations~~ **(WS-F1 COMPLETED)** — messages now flow through all dual-queue and compound IPC operations with 14 preservation theorems and 7 trace anchors
 2. ~~Add Untyped memory model with watermark tracking~~ **(WS-F2 COMPLETED)** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation, 10+ theorems, 5 negative tests, 9 trace anchors
-3. Extend `ObservableState` projection to cover all security-relevant fields
-4. Connect enforcement layer to non-interference proofs
+3. ~~Extend `ObservableState` projection to cover all security-relevant fields~~ **(WS-F3 COMPLETED)** — 3 new fields (activeDomain, irqHandlers, objectIndex), CNode slot filtering via `projectKernelObject`, 7+ NI theorems, enforcement-NI bridge for `serviceRestartChecked`
+4. Close proof gaps for `timerTick`, `cspaceMutate`, notification ops (WS-F4)
 
 **Path to Raspberry Pi 5:**
 The hardware target is Raspberry Pi 5 (ARM64). Once audit remediation closes the

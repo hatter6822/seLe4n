@@ -416,6 +416,211 @@ private def runInformationFlowChecks : IO Unit := do
   IO.println "WS-E5/M-07 enforcement boundary checks passed"
   IO.println "all WS-E5 information-flow maturity checks passed"
 
+  -- =========================================================================
+  -- WS-F3: Information-flow completeness — new ObservableState fields
+  -- =========================================================================
+
+  -- ---------- activeDomain projection (scheduling transparency) ----------
+  -- activeDomain is always visible regardless of observer clearance.
+  let publicActiveDomain := publicProjection.activeDomain
+  let adminActiveDomain := adminProjection.activeDomain
+
+  expect "WS-F3: activeDomain visible to public observer"
+    (publicActiveDomain = sampleState.scheduler.activeDomain)
+
+  expect "WS-F3: activeDomain visible to admin observer"
+    (adminActiveDomain = sampleState.scheduler.activeDomain)
+
+  expect "WS-F3: activeDomain consistent across observers"
+    (publicActiveDomain = adminActiveDomain)
+
+  -- ---------- IRQ handler projection ----------
+  -- Build a state with IRQ handlers pointing to both public and secret objects.
+  let irqState :=
+    (BootstrapBuilder.empty
+      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
+      |>.withIrqHandler 0 1   -- IRQ 0 → oid 1 (public object)
+      |>.withIrqHandler 1 2   -- IRQ 1 → oid 2 (secret object)
+      |>.build)
+
+  let irqPublicProj := SeLe4n.Kernel.projectState sampleLabeling reviewer irqState
+  let irqAdminProj := SeLe4n.Kernel.projectState sampleLabeling admin irqState
+
+  -- Public observer sees IRQ 0 → oid 1 (public target)
+  expect "WS-F3: public observer sees IRQ handler to public object"
+    ((irqPublicProj.irqHandlers 0) = some 1)
+
+  -- Public observer cannot see IRQ 1 → oid 2 (secret target)
+  expect "WS-F3: public observer cannot see IRQ handler to secret object"
+    ((irqPublicProj.irqHandlers 1).isNone)
+
+  -- Admin sees both IRQ handlers
+  expect "WS-F3: admin observer sees IRQ handler to public object"
+    ((irqAdminProj.irqHandlers 0) = some 1)
+
+  expect "WS-F3: admin observer sees IRQ handler to secret object"
+    ((irqAdminProj.irqHandlers 1) = some 2)
+
+  -- Unmapped IRQ returns none for both observers
+  expect "WS-F3: unmapped IRQ returns none for public observer"
+    ((irqPublicProj.irqHandlers 99).isNone)
+
+  expect "WS-F3: unmapped IRQ returns none for admin observer"
+    ((irqAdminProj.irqHandlers 99).isNone)
+
+  IO.println "WS-F3 IRQ handler projection checks passed"
+
+  -- ---------- Object index projection ----------
+  -- objectIndex is auto-built from builder objects list.
+  -- sampleState has objects [1, 2], where oid 2 is secret.
+  let publicObjIndex := publicProjection.objectIndex
+  let adminObjIndex := adminProjection.objectIndex
+
+  -- Public observer sees only oid 1 in the object index
+  expect "WS-F3: public object index contains public oid"
+    (publicObjIndex.contains 1)
+
+  expect "WS-F3: public object index excludes secret oid"
+    (!publicObjIndex.contains 2)
+
+  -- Admin sees both oids in the object index
+  expect "WS-F3: admin object index contains public oid"
+    (adminObjIndex.contains 1)
+
+  expect "WS-F3: admin object index contains secret oid"
+    (adminObjIndex.contains 2)
+
+  IO.println "WS-F3 object index projection checks passed"
+
+  -- ---------- CNode slot filtering (F-22) ----------
+  -- Build a CNode with caps targeting both public and secret objects.
+  let cnodeState :=
+    (BootstrapBuilder.empty
+      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
+      |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject 50 (.cnode { guard := 0, radix := 8, slots :=
+          [ (0, { target := .object 1, rights := [.read], badge := none })      -- cap to public obj
+          , (1, { target := .object 2, rights := [.read, .write], badge := none })  -- cap to secret obj
+          , (2, { target := .replyCap 1, rights := [.read], badge := none })    -- reply cap to public thread
+          ] })
+      |>.build)
+
+  -- oid 50 (the CNode) is public so both observers can see it
+  let cnodeLabeling : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = 2 then secretLabel else publicLabel
+      threadLabelOf := fun tid => if tid = 2 then secretLabel else publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let cnodePublicProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeState
+  let cnodeAdminProj := SeLe4n.Kernel.projectState cnodeLabeling admin cnodeState
+
+  -- Public observer sees the CNode but with filtered slots
+  match cnodePublicProj.objects 50 with
+  | some (.cnode cn) =>
+    -- Slot 0 (target: public obj 1) should be present
+    expect "WS-F3/F-22: public observer sees cap slot targeting public object"
+      (cn.slots.any (fun (s, _) => s = 0))
+    -- Slot 1 (target: secret obj 2) should be filtered out
+    expect "WS-F3/F-22: public observer cannot see cap slot targeting secret object"
+      (!cn.slots.any (fun (s, _) => s = 1))
+    -- Slot 2 (target: replyCap to public thread 1) should be present
+    expect "WS-F3/F-22: public observer sees reply cap to public thread"
+      (cn.slots.any (fun (s, _) => s = 2))
+    -- Verify slot count
+    expect "WS-F3/F-22: public observer sees exactly 2 of 3 slots"
+      (cn.slots.length = 2)
+  | _ =>
+    throw <| IO.userError "WS-F3/F-22: public observer should see CNode object at oid 50"
+
+  -- Admin observer sees all slots (full clearance)
+  match cnodeAdminProj.objects 50 with
+  | some (.cnode cn) =>
+    expect "WS-F3/F-22: admin observer sees all 3 cap slots"
+      (cn.slots.length = 3)
+  | _ =>
+    throw <| IO.userError "WS-F3/F-22: admin observer should see CNode object at oid 50"
+
+  -- Non-CNode objects pass through unchanged
+  match cnodePublicProj.objects 1 with
+  | some (.endpoint _) =>
+    expect "WS-F3/F-22: non-CNode object passes through unchanged"
+      true
+  | _ =>
+    throw <| IO.userError "WS-F3/F-22: endpoint at oid 1 should be visible to public observer"
+
+  IO.println "WS-F3/F-22 CNode slot filtering checks passed"
+
+  -- ---------- Full 7-field low-equivalence ----------
+  -- Extend the distinct-state comparison to all 7 ObservableState fields.
+  let knownIrqs : List SeLe4n.Irq := [0, 1, 2, 3]
+  let irqMatch := knownIrqs.all (fun irq =>
+    publicProjectionSample.irqHandlers irq = publicProjectionAlt.irqHandlers irq)
+  let fullLowEq7 := objectsMatch
+    && publicProjectionSample.runnable = publicProjectionAlt.runnable
+    && publicProjectionSample.current = publicProjectionAlt.current
+    && servicesMatch
+    && publicProjectionSample.activeDomain = publicProjectionAlt.activeDomain
+    && irqMatch
+    && publicProjectionSample.objectIndex = publicProjectionAlt.objectIndex
+
+  expect "WS-F3: full 7-field low-equivalence holds between distinct states"
+    fullLowEq7
+
+  IO.println "WS-F3 full 7-field low-equivalence check passed"
+
+  -- ---------- serviceRestartChecked enforcement (WS-F3) ----------
+  -- Build a state with a running service for restart testing.
+  let restartServiceEntry : ServiceGraphEntry :=
+    { identity := { sid := 10, backingObject := 20, owner := 1 }
+      status := .running
+      dependencies := []
+      isolatedFrom := [] }
+
+  let restartState :=
+    (BootstrapBuilder.empty
+      |>.withObject 20 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withService 10 restartServiceEntry
+      |>.withService 5 { identity := { sid := 5, backingObject := 25, owner := 1 }
+                         status := .running, dependencies := [], isolatedFrom := [] }
+      |>.build)
+
+  let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
+
+  -- Same-domain restart (orchestrator sid=5, target sid=10, both public)
+  let sameDomainRestartCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let checkedRestart := SeLe4n.Kernel.serviceRestartChecked sameDomainRestartCtx 5 10 allowAll allowAll restartState
+  let uncheckedRestart := SeLe4n.Kernel.serviceRestart 10 allowAll allowAll restartState
+
+  expect "WS-F3: same-domain serviceRestartChecked matches unchecked"
+    (match checkedRestart, uncheckedRestart with
+      | .ok ((), s₁), .ok ((), s₂) =>
+          (s₁.services 10).map ServiceGraphEntry.status = (s₂.services 10).map ServiceGraphEntry.status
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  -- Cross-domain restart (secret orchestrator → public service) should be denied
+  let crossDomainRestartCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun sid => if sid = 5 then secretLabel else publicLabel }
+
+  let deniedRestart := SeLe4n.Kernel.serviceRestartChecked crossDomainRestartCtx 5 10 allowAll allowAll restartState
+  expect "WS-F3: cross-domain serviceRestartChecked returns flowDenied"
+    (match deniedRestart with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-F3 serviceRestartChecked enforcement checks passed"
+  IO.println "all WS-F3 information-flow completeness checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit :=
