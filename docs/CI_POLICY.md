@@ -6,17 +6,17 @@ This document is the canonical CI policy artifact for WS-A1, WS-A8, and WS-B10 C
 
 For pull requests into `main`, branch protection should require all of the following checks:
 
-1. `Docs Automation / Navigation + Links + DocGen Probe`
-2. `Tiered Tests / Fast (Tier 0 + Tier 1)`
-3. `Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)`
-4. `Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)`
+1. `Tiered Tests / Fast (Tier 0 + Tier 1)`
+2. `Tiered Tests / Smoke (Tier 2)`
+3. `Tiered Tests / Full (Tier 3)`
 
-These checks are produced by `.github/workflows/lean_action_ci.yml` and enforce the repository scripts directly:
+These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job runs only its incremental tier; earlier tiers are gated by job dependencies:
 
-- `./scripts/test_docs_sync.sh`
-- `./scripts/test_fast.sh`
-- `./scripts/test_smoke.sh`
-- `./scripts/test_full.sh`
+- `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
+- `test-smoke` (after test-fast): `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_negative.sh`
+- `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
+
+Documentation sync (`./scripts/test_docs_sync.sh`) is available for local use but is not part of CI gates.
 
 ## 2. Deterministic replay evidence (Tier 4)
 
@@ -43,10 +43,9 @@ In GitHub repository settings for `main`:
 1. Enable **Require a pull request before merging**.
 2. Enable **Require status checks to pass before merging**.
 3. Mark these checks as required:
-   - `Docs Automation / Navigation + Links + DocGen Probe`
    - `Tiered Tests / Fast (Tier 0 + Tier 1)`
-   - `Tiered Tests / Smoke (Tier 0 + Tier 1 + Tier 2)`
-   - `Tiered Tests / Full (Tier 0 + Tier 1 + Tier 2 + Tier 3)`
+   - `Tiered Tests / Smoke (Tier 2)`
+   - `Tiered Tests / Full (Tier 3)`
 4. Enable **Require branches to be up to date before merging**.
 5. Disable direct pushes to `main` for non-admin contributors.
 

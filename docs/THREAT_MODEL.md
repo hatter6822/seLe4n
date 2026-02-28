@@ -93,8 +93,7 @@ Hardening changes are validated by the standard gates:
 - `./scripts/test_fast.sh`
 - `./scripts/test_full.sh`
 
-Tier 3 invariant/document anchors additionally check for:
+Tier 3 invariant surface anchors additionally check for:
 
-- threat-model publication,
 - setup-script checksum verification symbols,
-- synchronized active-slice status language across canonical docs.
+- SHA-pinning of all GitHub Actions workflow references.

@@ -33,8 +33,8 @@ The project's active quality gates are:
    - Lean build closure for entire module graph.
 3. **Tier 2 (trace fixtures)**
    - executable scenario output compared to expected semantic lines.
-4. **Tier 3 (invariant/proof/doc anchors)**
-   - required symbol and documentation anchor presence checks.
+4. **Tier 3 (invariant/proof/trace anchors)**
+   - required symbol and trace anchor presence checks.
 5. **Tier 4 (nightly extension point)**
    - staged deterministic replay and full-suite expansion checks.
 

@@ -29,8 +29,7 @@ WS-C8 automation is intentionally simple and reproducible:
 
 1. `scripts/generate_doc_navigation.py` generates `docs/gitbook/README.md` and `docs/gitbook/SUMMARY.md` from `docs/gitbook/navigation_manifest.json`.
 2. `scripts/check_markdown_links.py` validates local markdown links across tracked `*.md` files.
-3. `scripts/test_docs_sync.sh` runs navigation generation, verifies generated files are committed, runs markdown-link validation, and opportunistically invokes `doc-gen4` when available.
-4. `scripts/test_tier0_hygiene.sh` includes `test_docs_sync.sh` so doc-sync checks run in fast/smoke/full gates and CI.
+3. `scripts/test_docs_sync.sh` runs navigation generation, verifies generated files are committed, runs markdown-link validation, and opportunistically invokes `doc-gen4` when available. It is available as a standalone local tool and is not part of CI gates.
 
 ## 4) PR checklist additions (planning/doc changes)
 

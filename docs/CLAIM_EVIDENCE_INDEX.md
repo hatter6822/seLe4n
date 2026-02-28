@@ -56,4 +56,4 @@ When a claim changes:
 1. update canonical root source first,
 2. update GitBook mirror(s) in the same PR,
 3. refresh this table row(s) for changed claims,
-4. run `./scripts/test_docs_sync.sh` and at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).
+4. run at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).

@@ -31,12 +31,12 @@ Use this file during planning and PR review to keep documentation status aligned
 
 | Validation area | Command | What it verifies |
 |---|---|---|
-| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules. |
-| Documentation sync automation | `./scripts/test_docs_sync.sh` | GitBook navigation generation is reproducible/committed and local markdown links resolve. |
+| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard. |
 | Lean build soundness | `./scripts/test_tier1_build.sh` | Project compiles successfully via `lake build`. |
 | End-to-end executable trace fixture | `./scripts/test_tier2_trace.sh` | Runtime trace still satisfies fixture expectations and scenario/risk-tagged entries. |
 | Negative/adversarial malformed-state suite | `./scripts/test_tier2_negative.sh` | Malformed capability/object/IPC/VSpace/scheduler states fail safely with explicit modeled errors. |
-| Invariant/doc anchor surface | `./scripts/test_tier3_invariant_surface.sh` | Critical theorem/definition/document anchors still exist after refactors. |
+| Invariant surface anchors | `./scripts/test_tier3_invariant_surface.sh` | Critical theorem/definition/trace anchors still exist after refactors. |
+| Documentation sync (local tool) | `./scripts/test_docs_sync.sh` | GitBook navigation generation is reproducible and local markdown links resolve. Not part of CI gates. |
 | Nightly candidates / determinism replay | `./scripts/test_tier4_nightly_candidates.sh` and `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | Multi-run determinism, nightly artifacts, and seeded stochastic probe replay. |
 | Fast lane | `./scripts/test_fast.sh` | Tier 0 + Tier 1 quick validation. |
 | Smoke lane | `./scripts/test_smoke.sh` | Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state validation. |
