@@ -89,20 +89,20 @@ seLe4n is organized as layered contracts, each with executable transitions and
 machine-checked invariant preservation proofs:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Kernel API  (SeLe4n/Kernel/API.lean)               │
-├────────┬────────┬──────┬───────────┬────────────────┤
-│Sched   │Capabil │ IPC  │ Lifecycle │ Service (ext)  │
-│ uler   │  ity   │      │           │                │
-├────────┴────────┴──────┴───────────┴────────────────┤
-│  Information Flow  (Policy, Projection, Enforcement) │
-├─────────────────────────────────────────────────────┤
-│  Architecture  (VSpace, Adapter, Assumptions)        │
-├─────────────────────────────────────────────────────┤
-│  Model  (Object, State, CDT)                         │
-├─────────────────────────────────────────────────────┤
-│  Foundations  (Prelude, Machine)                      │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
+├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
+│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│              │             │            │           │                │
+├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
+│          Information Flow  (Policy, Projection, Enforcement)         │
+├──────────────────────────────────────────────────────────────────────┤
+│          Architecture  (VSpace, Adapter, Assumptions)                │
+├──────────────────────────────────────────────────────────────────────┤
+│                  Model  (Object, State, CDT)                         │
+├──────────────────────────────────────────────────────────────────────┤
+│                 Foundations  (Prelude, Machine)                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 Each kernel subsystem follows the **Operations/Invariant split**: transitions in
