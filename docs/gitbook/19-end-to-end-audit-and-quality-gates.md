@@ -25,10 +25,10 @@ seLe4n v0.12.2 has:
 
 Key gaps identified by audits (addressed by WS-F):
 
-- IPC operations transfer scheduling state but not message data (CRIT-01).
-- No Untyped memory model (CRIT-04).
+- ~~IPC operations transfer scheduling state but not message data (CRIT-01).~~ **RESOLVED** (WS-F1)
+- ~~No Untyped memory model (CRIT-04).~~ **RESOLVED** (WS-F2)
 - Information-flow covers 5 of 30+ operations (CRIT-03).
-- Dual-queue IPC model has zero formal proofs (CRIT-05/F-10).
+- ~~Dual-queue IPC model has zero formal proofs (CRIT-05/F-10).~~ **RESOLVED** (WS-F1)
 
 ## 3. Quality gates
 

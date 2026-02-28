@@ -161,6 +161,7 @@ theorem cspaceDeleteSlot_authority_reduction
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
       | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
+      | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
 
           simp [cspaceDeleteSlot, hObj] at hStep
@@ -190,6 +191,7 @@ theorem cspaceRevoke_local_target_reduction
       | endpoint ep => simp [hObj] at hStep
       | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
+      | untyped _ => simp [hObj] at hStep
       | cnode cn =>
 
           let revokedRefs : List SlotRef :=
@@ -291,6 +293,7 @@ theorem cspaceInsertSlot_lookup_eq
       | endpoint ep => simp [cspaceInsertSlot, hObj] at hStep
       | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
+      | untyped _ => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
           simp [cspaceInsertSlot, hObj] at hStep
           cases hLookupGuard : cn.lookup slot with
@@ -324,6 +327,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
       | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
       | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
+      | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
 
           simp [cspaceDeleteSlot, hObj] at hStep
@@ -351,6 +355,7 @@ theorem cspaceRevoke_preserves_source
           | endpoint ep => simp [hLookup, hObj] at hStep
           | notification ntfn => simp [hLookup, hObj] at hStep
           | vspaceRoot root => simp [hLookup, hObj] at hStep
+          | untyped _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
 
               let revokedRefs : List SlotRef :=
@@ -614,7 +619,7 @@ theorem notificationWait_recovers_pending_badge
                       simp only [Except.ok.injEq, Prod.mk.injEq]
                       intro ⟨hBadgeEq, _⟩
                       exact hBadgeEq
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ => simp [hObj] at hWait
+      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hWait
 
 /-- (H-03) End-to-end badge routing consistency.
 
@@ -787,7 +792,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       | none => simp [hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
         | cnode preCn =>
           simp [hPre] at hStep
           -- WS-E4/H-02: case split on occupied-slot guard
@@ -853,7 +858,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
       | cnode preCn =>
         simp [hPre] at hStep
         cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -911,7 +916,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
       | none => simp [hLookup, hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hLookup, hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hLookup, hPre] at hStep
         | cnode preCn =>
           simp [hLookup, hPre] at hStep
           cases hStore : storeObject addr.cnode
@@ -1191,7 +1196,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       rw [hObjAtTarget] at hObj
       cases newObj with
       | cnode _ => cases hObj; exact hNewObjCNodeUniq cn rfl
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ => cases hObj
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
     · have hPreserved := lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target
         cnodeId newObj hEq hStep
       rw [hPreserved] at hObj

@@ -15,6 +15,8 @@ def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 11, slot := 4 }
 def demoEndpoint : SeLe4n.ObjId := 30
 def demoNotification : SeLe4n.ObjId := 31
+def demoUntyped : SeLe4n.ObjId := 40
+def untypedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 6 }
 
 def svcDb : ServiceId := 100
 def svcApi : ServiceId := 101
@@ -24,7 +26,7 @@ def svcRestart : ServiceId := 104
 def svcRestartBroken : ServiceId := 105
 
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
-  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, 200]
+  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, demoUntyped, 200]
 
 def bootstrapServiceIds : List ServiceId :=
   [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken]
@@ -53,6 +55,11 @@ def bootstrapState : SystemState :=
             target := .object 12
             rights := [.read, .write]
             badge := none
+          }),
+          (6, {
+            target := .object demoUntyped
+            rights := [.read, .write]
+            badge := none
           }) ]
     })
     |>.withObject 12 (.tcb {
@@ -68,6 +75,13 @@ def bootstrapState : SystemState :=
     |>.withObject 20 (.vspaceRoot { asid := 1, mappings := [] })
     |>.withObject demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject demoUntyped (.untyped {
+      regionBase := 0x100000
+      regionSize := 16384
+      watermark := 0
+      children := []
+      isDevice := false
+    })
     |>.withService svcDb {
       identity := { sid := svcDb, backingObject := 12, owner := 10 }
       status := .running
@@ -112,8 +126,10 @@ def bootstrapState : SystemState :=
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleObjectType demoEndpoint .endpoint
     |>.withLifecycleObjectType demoNotification .notification
+    |>.withLifecycleObjectType demoUntyped .untyped
     |>.withLifecycleCapabilityRef rootSlot (.object 1)
     |>.withLifecycleCapabilityRef lifecycleAuthSlot (.object 12)
+    |>.withLifecycleCapabilityRef untypedAuthSlot (.object demoUntyped)
   ).build
 
 private def runCapabilityAndArchitectureTrace (st1 : SystemState) : IO Unit := do
@@ -660,6 +676,83 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
                 | none => []
               IO.println s!"call/reply response registers: {reprStr replyRegs}"
 
+-- ============================================================================
+-- WS-F2: Untyped memory model trace scenarios
+-- ============================================================================
+
+/-- WS-F2 test: retypeFromUntyped success, watermark advance, region-exhausted error,
+type-mismatch error, device restriction error. -/
+private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
+  -- F2-01: Successful retype from untyped — carve a new endpoint from the untyped region
+  let childEp : SeLe4n.ObjId := 50
+  let newEp : KernelObject := .endpoint { state := .idle, queue := [], waitingReceiver := none }
+  let epAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped success path error: {reprStr err}"
+  | .ok (_, stRetyped) =>
+      IO.println s!"retype-from-untyped success object kind: {reprStr <| (stRetyped.objects childEp).map KernelObject.objectType}"
+      -- Check watermark advanced
+      match stRetyped.objects demoUntyped with
+      | some (.untyped ut) =>
+          IO.println s!"untyped watermark after retype: {ut.watermark}"
+          IO.println s!"untyped children count: {ut.children.length}"
+      | _ => IO.println "untyped object missing after retype"
+      -- F2-02: Retype a second object (TCB) from the same untyped
+      let childTcb : SeLe4n.ObjId := 51
+      let newTcb : KernelObject := .tcb {
+        tid := 51, priority := 50, domain := 0,
+        cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 12288,
+        ipcState := .ready }
+      let tcbAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .tcb
+      match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
+      | .error err => IO.println s!"retype-from-untyped second alloc error: {reprStr err}"
+      | .ok (_, stRetyped2) =>
+          match stRetyped2.objects demoUntyped with
+          | some (.untyped ut2) =>
+              IO.println s!"untyped watermark after second retype: {ut2.watermark}"
+          | _ => IO.println "untyped object missing after second retype"
+  -- F2-03: Type mismatch — try retypeFromUntyped on a TCB (not an untyped)
+  match SeLe4n.Kernel.retypeFromUntyped lifecycleAuthSlot 12 50 newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped type-mismatch branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success on non-untyped object"
+  -- F2-04: Region exhausted — try to allocate more than available
+  let hugeAllocSize : Nat := 999999
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped 52 newEp hugeAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped region-exhausted branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success with oversized allocation"
+  -- F2-05: Object not found — try retypeFromUntyped on nonexistent ObjId
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot 999 50 newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped not-found branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success on missing object"
+  -- F2-06: Device restriction — create a device untyped and try to retype a TCB from it
+  let deviceUntypedId : SeLe4n.ObjId := 41
+  let stDevice : SystemState :=
+    { st1 with
+      objects := fun oid =>
+        if oid = deviceUntypedId then some (.untyped {
+          regionBase := 0x200000, regionSize := 8192,
+          watermark := 0, children := [], isDevice := true })
+        else if oid = 10 then some (.cnode {
+          guard := 0, radix := 0,
+          slots := [
+            (0, { target := .object 1, rights := [.read, .write, .grant], badge := none }),
+            (5, { target := .object 12, rights := [.read, .write], badge := none }),
+            (6, { target := .object demoUntyped, rights := [.read, .write], badge := none }),
+            (7, { target := .object deviceUntypedId, rights := [.read, .write], badge := none }) ] })
+        else st1.objects oid }
+  let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 7 }
+  let devTcb : KernelObject := .tcb {
+    tid := 53, priority := 50, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 16384,
+    ipcState := .ready }
+  match SeLe4n.Kernel.retypeFromUntyped devAuthSlot deviceUntypedId 53 devTcb 1024 stDevice with
+  | .error err => IO.println s!"retype-from-untyped device-restriction branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success on device untyped"
+  -- F2-07: Wrong authority — use a cap that targets the wrong object
+  match SeLe4n.Kernel.retypeFromUntyped rootSlot demoUntyped 54 newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped wrong-authority branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success with wrong authority"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -679,6 +772,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityIpcTrace st1
   runIpcMessageTransferTrace st1
   runSchedulerTimingDomainTrace st1
+  runUntypedMemoryTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

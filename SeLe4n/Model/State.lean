@@ -23,6 +23,9 @@ inductive KernelError where
   | notImplemented
   | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
+  | untypedRegionExhausted   -- WS-F2: not enough space in untyped region
+  | untypedTypeMismatch      -- WS-F2: source object is not an UntypedObject
+  | untypedDeviceRestriction -- WS-F2: device untyped cannot back kernel objects
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.

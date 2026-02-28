@@ -14,7 +14,7 @@ Two independent audits of the v0.12.2 codebase:
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
 | **WS-F1** | IPC message transfer + dual-queue verification | Critical | **Completed** |
-| **WS-F2** | Untyped memory model | Critical | Planning |
+| **WS-F2** | Untyped memory model | Critical | **Completed** |
 | **WS-F3** | Information-flow completeness | High | Planning |
 | **WS-F4** | Proof gap closure (timerTick, cspaceMutate, notifications) | High | Planning |
 | **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Planning |

@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Active** (WS-F) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | WS-F2 (Untyped memory), WS-F3 (info-flow) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | ~~WS-F2~~ (done), WS-F3 (info-flow) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Active: closing proof gaps (WS-F)
@@ -30,7 +30,7 @@ The v0.12.2 audits identified critical gaps that must be closed before hardware
 binding is meaningful:
 
 - **IPC message transfer** (CRIT-01): operations must actually move data.
-- **Untyped memory** (CRIT-04): memory safety is fundamental to hardware binding.
+- ~~**Untyped memory** (CRIT-04)~~: **RESOLVED** (WS-F2) — `UntypedObject` with watermark, `retypeFromUntyped`, device restriction.
 - **Information flow** (CRIT-02/03): complete projection and NI coverage.
 - **Dual-queue verification** (CRIT-05): the production IPC model needs proofs.
 
@@ -61,7 +61,7 @@ Once WS-F closes the critical proof gaps:
 
 ## 5. What contributors can do now
 
-- Focus on WS-F workstreams (especially WS-F1, WS-F2, WS-F4).
+- Focus on WS-F workstreams (especially WS-F3, WS-F4 — WS-F1, WS-F2 complete).
 - Keep transitions architecture-neutral unless explicitly marked otherwise.
 - Document hardware assumptions explicitly in adapter interfaces.
 - Add executable evidence for boundary success/failure behavior.

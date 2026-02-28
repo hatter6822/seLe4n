@@ -14,7 +14,7 @@ for the full plan.
 
 Three workstreams run in parallel:
 - **WS-F1**: ~~Wire `IpcMessage` into operations, verify dual-queue model.~~ **COMPLETED** — messages flow through all IPC operations with 14 preservation theorems and 7 trace anchors.
-- **WS-F2**: Add Untyped memory with watermark tracking.
+- **WS-F2**: ~~Add Untyped memory with watermark tracking.~~ **COMPLETED** — `UntypedObject`, `retypeFromUntyped`, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors.
 - **WS-F4**: Close timerTick, cspaceMutate, notification proof gaps.
 
 ### P2 — Information-flow completeness (WS-F3)

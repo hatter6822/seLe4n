@@ -391,3 +391,32 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 - `enforcementBoundary` — exhaustive 17-entry classification table,
 - `denied_preserves_state_*` — denial preservation for all 3 checked operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs.
+
+## 12. Untyped memory invariants (WS-F2)
+
+Component level:
+
+- `untypedWatermarkInvariant` — watermark does not exceed region size,
+- `untypedChildrenBoundsInvariant` — all children lie within the watermark,
+- `untypedChildrenNonOverlapInvariant` — children do not overlap,
+- `untypedChildrenUniqueIdsInvariant` — children have unique object IDs.
+
+Bundle level:
+
+- `untypedMemoryInvariant` (conjunction of all four components)
+
+Object-level theorems:
+
+- `allocate_some_iff` — decomposition biconditional for successful allocation,
+- `allocate_watermark_advance` / `allocate_watermark_monotone` — watermark progression,
+- `allocate_preserves_watermarkValid` / `allocate_preserves_region` — structural preservation,
+- `reset_wellFormed`, `empty_wellFormed`, `canAllocate_implies_fits`.
+
+Operation-level theorems:
+
+- `retypeFromUntyped_ok_decompose` — success decomposition into existential witnesses,
+- `retypeFromUntyped_error_typeMismatch` — non-untyped source returns type mismatch,
+- `retypeFromUntyped_error_regionExhausted` — oversized allocation fails,
+- `retypeFromUntyped_preserves_lifecycleMetadataConsistent` — metadata preservation,
+- `retypeFromUntyped_preserves_lifecycleInvariantBundle` — full bundle preservation,
+- `default_systemState_untypedMemoryInvariant` — default state satisfies invariant.

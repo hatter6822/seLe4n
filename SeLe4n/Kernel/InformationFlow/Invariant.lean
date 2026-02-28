@@ -177,6 +177,7 @@ private theorem ensureRunnable_preserves_projection
       | notification ntfn => simp
       | cnode cn => simp
       | vspaceRoot root => simp
+      | untyped _ => simp
       | tcb tcb =>
           have hRun : List.filter (threadObservable ctx observer) (st.scheduler.runnable ++ [tid]) =
               List.filter (threadObservable ctx observer) st.scheduler.runnable :=
@@ -484,13 +485,13 @@ theorem cspaceRevoke_preserves_lowEquivalent
       | none => simp [hL₁, hC₁] at hStep₁
       | some o₁ =>
         cases o₁ with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL₁, hC₁] at hStep₁
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL₁, hC₁] at hStep₁
         | cnode cn₁ =>
           cases hC₂ : s₂.objects addr.cnode with
           | none => simp [hL₂, hC₂] at hStep₂
           | some o₂ =>
             cases o₂ with
-            | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL₂, hC₂] at hStep₂
+            | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL₂, hC₂] at hStep₂
             | cnode cn₂ =>
               -- Both sides reduce to storeObject + clearCapabilityRefs
               simp [hL₁, hC₁, storeObject] at hStep₁
@@ -664,7 +665,7 @@ theorem step_preserves_projection
       | none => simp [hL, hC] at hOp
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ => simp [hL, hC] at hOp
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL, hC] at hOp
         | cnode cn =>
           simp [hL, hC, storeObject] at hOp; cases hOp
           rw [clearCapabilityRefsState_preserves_projectState]

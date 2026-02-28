@@ -133,7 +133,7 @@ theorem endpointSend_ok_implies_endpoint_object
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
     | endpoint ep => exact ⟨ep, rfl⟩
 
 theorem endpointAwaitReceive_ok_implies_endpoint_object
@@ -144,7 +144,7 @@ theorem endpointAwaitReceive_ok_implies_endpoint_object
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
     | endpoint ep => exact ⟨ep, rfl⟩
 
 theorem endpointReceive_ok_implies_endpoint_object
@@ -155,7 +155,7 @@ theorem endpointReceive_ok_implies_endpoint_object
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
     | endpoint ep => exact ⟨ep, rfl⟩
 
 -- ============================================================================
@@ -1374,7 +1374,7 @@ theorem notificationWait_preserves_uniqueWaiters
     | none => simp [hLookup] at hStep
     | some obj =>
       cases obj with
-      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ => simp [hLookup] at hStep
+      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hLookup] at hStep
       | notification ntfnOrig =>
         simp only [hLookup] at hStep
         cases hPend : ntfnOrig.pendingBadge with
@@ -1692,7 +1692,7 @@ private theorem endpointQueuePopHead_preserves_ipcInvariant
       cases hObj : st.objects endpointId with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
         | endpoint ep =>
           simp only [hObj] at hStep
           have hInvEp := hEpInv endpointId ep hObj
@@ -1759,7 +1759,7 @@ private theorem endpointQueueEnqueue_preserves_ipcInvariant
       cases hObj : st.objects endpointId with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
         | endpoint ep =>
           simp only [hObj] at hStep
           have hInvEp := hEpInv endpointId ep hObj
@@ -1853,7 +1853,7 @@ theorem endpointSendDual_preserves_ipcInvariant
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -1902,7 +1902,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2004,7 +2004,7 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2121,7 +2121,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -2182,7 +2182,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -2311,7 +2311,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -2446,7 +2446,7 @@ theorem endpointQueueRemoveDual_preserves_ipcInvariant
       cases hObj : st.objects endpointId with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
         | endpoint epOrig =>
           have hInvEp := hEpInv endpointId epOrig hObj
           simp only [hObj] at hStep; revert hStep
@@ -2603,7 +2603,7 @@ theorem endpointCall_preserves_ipcInvariant
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2661,7 +2661,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2788,7 +2788,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects endpointId with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
