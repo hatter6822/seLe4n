@@ -9,7 +9,7 @@ each claim to executable or inspectable evidence.
 |---|---|---|---|
 | Active findings baseline is v0.12.2 audits. | `README.md`, `docs/spec/SELE4N_SPEC.md` | `./scripts/test_tier3_invariant_surface.sh` | Tier-3 doc-anchor checks over README/spec/planning references. |
 | WS-F portfolio (v0.12.2 audit remediation) is the active workstream. | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `./scripts/test_full.sh` | Tier-3 anchor validation + build + Tier-2 runtime checks. |
-| All prior portfolios complete (WS-E, WS-D, WS-C, WS-B). | `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`, `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
+| All prior portfolios complete (WS-E, WS-D, WS-C, WS-B). | `docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`, `docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | `./scripts/test_full.sh` | Historical; evidence preserved in prior tier runs. |
 | Zero `sorry`/`axiom` in production proof surface. | All `SeLe4n/Kernel/*/Invariant.lean` files | `./scripts/test_tier0_hygiene.sh` | Tier-0 forbidden-marker scan. |
 | Root docs and GitBook mirrors stay synchronized. | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` | `./scripts/test_docs_sync.sh` | Navigation regeneration + link validation. |
 | IPC/scheduler/capability/info-flow invariants remain in proof surface. | Kernel modules in `scripts/test_tier3_invariant_surface.sh` | `./scripts/test_tier3_invariant_surface.sh`, `./scripts/test_smoke.sh` | Tier-3 symbol checks + negative-state coverage. |

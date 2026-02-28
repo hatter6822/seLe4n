@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked â€
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (200+ proved theorems),
+2. machine-checked invariant preservation (400+ proved theorems),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -51,7 +51,7 @@ enforcement, and scheduling.
 | **Package version** | `0.12.2` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 14,708 across 33 Lean files |
-| **Proved theorems** | 200+ (zero sorry/axiom) |
+| **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active portfolio** | WS-F (v0.12.2 audit remediation) â€” planning |
@@ -228,10 +228,10 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 | Artifact | Path |
 |----------|------|
-| Findings baseline (v0.11.6) | [`docs/audits/AUDIT_CODEBASE_v0.11.6.md`](../audits/AUDIT_CODEBASE_v0.11.6.md) |
-| Execution baseline (WS-E) | [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
-| Findings baseline (v0.11.0) | [`docs/audits/AUDIT_v0.11.0.md`](../audits/AUDIT_v0.11.0.md) |
-| Execution baseline (WS-D) | [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
+| Findings baseline (v0.11.6) | [`docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md`](../dev_history/audits/AUDIT_CODEBASE_v0.11.6.md) |
+| Execution baseline (WS-E) | [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
+| Findings baseline (v0.11.0) | [`docs/dev_history/audits/AUDIT_v0.11.0.md`](../dev_history/audits/AUDIT_v0.11.0.md) |
+| Execution baseline (WS-D) | [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
 
 ### 9.3 Historical Baselines
 

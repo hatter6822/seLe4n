@@ -40,6 +40,3 @@
 - [Project Usage and Value](17-project-usage-value.md)
 - [Next Development Path](22-next-slice-development-path.md)
 
-## Historical
-
-- [v0.11.0 Audit Workstream Planning (WS-D, completed)](32-v0.11.0-audit-workstream-planning.md)

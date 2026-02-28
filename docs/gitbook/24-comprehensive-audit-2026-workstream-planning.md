@@ -35,6 +35,6 @@ Two independent audits of the v0.12.2 codebase:
 ## Prior completed portfolios
 
 - **WS-E** (v0.11.6): WS-E1..E6 all completed.
-  See [`AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+  See [`AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 - **WS-D** (v0.11.0): WS-D1..D4 completed.
-  See [`AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+  See [`AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).

@@ -150,15 +150,6 @@
           "path": "22-next-slice-development-path.md"
         }
       ]
-    },
-    {
-      "section": "Historical",
-      "pages": [
-        {
-          "title": "v0.11.0 Audit Workstream Planning (WS-D, completed)",
-          "path": "32-v0.11.0-audit-workstream-planning.md"
-        }
-      ]
     }
   ],
   "current_workstream_doc": {

@@ -16,8 +16,8 @@ Use this file during planning and PR review to keep documentation status aligned
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
 | Active audit findings baseline | `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
 | Active workstream execution portfolio | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
-| Prior audit findings (WS-E, completed) | `docs/audits/AUDIT_CODEBASE_v0.11.6.md` | `19-end-to-end-audit-and-quality-gates.md` | Retained for traceability; WS-E1..E6 all completed. |
-| Prior audit findings (WS-D, completed) | `docs/audits/AUDIT_v0.11.0.md` | `19-end-to-end-audit-and-quality-gates.md` | Retained for traceability; WS-D1..D4 completed. |
+| Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
+| Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
 | Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |
 | Historical execution portfolios | `docs/dev_history/audits/` | Archived to `docs/dev_history/gitbook/` | Historical-only; see `docs/dev_history/README.md`. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |

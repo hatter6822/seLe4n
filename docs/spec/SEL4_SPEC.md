@@ -5,8 +5,8 @@ This document provides a detailed summary of the seL4 microkernel specification.
 in the L4 family. It is the world's first operating-system kernel with a machine-checked
 proof of functional correctness.
 
-This document is a reference for contributors working on the seLe4n formalization project.
-It describes the original seL4 kernel semantics that seLe4n models and formalizes in Lean 4.
+This document is a reference for contributors working on seLe4n.
+It describes the original seL4 kernel semantics that seLe4n models and improves upon in Lean 4.
 For the seLe4n project's own specification, milestones, and workstream status, see
 [`docs/spec/SELE4N_SPEC.md`](./SELE4N_SPEC.md).
 

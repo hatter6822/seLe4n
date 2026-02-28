@@ -103,6 +103,6 @@ seL4's own abstract/concrete refinement layers).
 
 ## References
 
-- F-17 finding: `docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
+- F-17 finding: `docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`
 - Finite object store ADR: `docs/FINITE_OBJECT_STORE_ADR.md` (related: WS-C7)
 - seL4 kernel data structures: `docs/spec/SEL4_SPEC.md` §5 (scheduling)

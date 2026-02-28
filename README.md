@@ -44,7 +44,7 @@ improving on specific architectural aspects:
 | **Version** | `0.12.2` |
 | **Lean toolchain** | `4.28.0` |
 | **Production Lean LoC** | 14,708 across 33 files |
-| **Proved theorems** | 200+ (zero sorry/axiom) |
+| **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active workstream** | WS-F (v0.12.2 audit remediation) — planning |

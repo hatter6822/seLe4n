@@ -53,8 +53,8 @@ for the full execution plan.
 
 ### 3.2 Prior completed portfolios (historical)
 
-- **WS-E1..E6:** all completed. See [`docs/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
-- **WS-D1..D4:** completed. See [`docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
+- **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
+- **WS-D1..D4:** completed. See [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 - **WS-C1..C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
 
 ### 3.3 PR-to-workstream discipline
@@ -79,7 +79,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-E slice (prefer next priority in the active plan, starting with current phase targets).
+1. Sync branch and choose one coherent WS-F slice (prefer next priority in the active plan, starting with current phase targets).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.
@@ -122,8 +122,8 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core
    completeness theorem (CP1), its equational lemmas (EQ1-EQ5), and closure
    lemmas (CB1-CB4) are all proved. The prerequisite lemma hierarchy in
-   [`M2_BFS_SOUNDNESS.md §6`](audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
-   and its sub-documents ([M2A](audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
+   [`M2_BFS_SOUNDNESS.md §6`](dev_history/audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
+   and its sub-documents ([M2A](dev_history/audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](dev_history/audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
    is fully discharged. No further work is required for this tracking item.
 
 ---

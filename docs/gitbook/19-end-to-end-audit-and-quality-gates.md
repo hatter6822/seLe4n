@@ -19,7 +19,7 @@ and [`docs/audits/`](../audits/README.md).
 seLe4n v0.12.2 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **200+ proved theorems** across 7 kernel subsystems.
+- **400+ proved theorems** across 7 kernel subsystems.
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
 
@@ -37,7 +37,7 @@ Key gaps identified by audits (addressed by WS-F):
 | **0** | Hygiene | No sorry/axiom, SHA-pinning, fixture isolation, shellcheck |
 | **1** | Build | Full `lake build` compilation (62 jobs) |
 | **2** | Trace + Negative | Fixture-diff trace (68 expectations) + corruption testing |
-| **3** | Invariant surface | 200+ symbol/doc anchor presence checks |
+| **3** | Invariant surface | 300+ symbol/doc anchor presence checks |
 | **4** | Nightly | Determinism replay + stochastic probe |
 
 Commands:

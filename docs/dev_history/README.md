@@ -16,6 +16,13 @@ Nothing here drives active development, planning, or execution.
 
 | File | Description |
 |---|---|
+| `AUDIT_CODEBASE_v0.11.6.md` | v0.11.6 codebase audit (WS-E, completed) |
+| `AUDIT_v0.11.6_WORKSTREAM_PLAN.md` | WS-E execution portfolio (completed) |
+| `AUDIT_v0.11.0.md` | v0.11.0 repository audit (WS-D, completed) |
+| `AUDIT_v0.11.0_WORKSTREAM_PLAN.md` | WS-D execution portfolio (completed) |
+| `AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md` | WS-D tracked proof obligations (all closed) |
+| `AUDIT_PR179_M2_BFS_SOUNDNESS.md` | BFS soundness audit (completed) |
+| `execution_plans/` | TPI-D07 BFS soundness proof execution plan (completed) |
 | `AUDIT_v0.8.0.md` | Initial repository audit baseline |
 | `AUDIT_v0.9.0.md` | Comprehensive audit (WS-B scope) |
 | `AUDIT_v0.9.0_WORKSTREAM_PLAN.md` | WS-B execution portfolio (completed) |
@@ -37,6 +44,7 @@ Nothing here drives active development, planning, or execution.
 | `20-repository-audit-remediation-workstreams.md` | WS-A remediation portfolio |
 | `21-m7-current-slice-outcomes-and-workstreams.md` | M7 outcomes and workstreams |
 | `23-m7-remediation-closeout-packet.md` | M7 remediation closeout mirror |
+| `32-v0.11.0-audit-workstream-planning.md` | WS-D/WS-E audit workstream planning |
 
 ### Licensing research (`licensing_research/`)
 
@@ -47,6 +55,6 @@ Nothing here drives active development, planning, or execution.
 
 ## Audit lineage
 
-For the **active** audit baseline, see `docs/audits/AUDIT_v0.11.0.md` and
-its companion workstream plan and tracked proof issues. The files here
-provide the predecessor audit chain for traceability only.
+For the **active** audit baseline, see `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`,
+`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`, and `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`.
+The files here provide the predecessor audit chain for traceability only.

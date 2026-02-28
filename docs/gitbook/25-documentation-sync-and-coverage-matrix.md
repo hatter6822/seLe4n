@@ -10,14 +10,14 @@ This chapter is a concise navigation entry. Keep normative synchronization rules
 
 Use this chapter during doc/planning reviews to ensure:
 
-- active planning references point to the `AUDIT_v0.11.0` baseline,
+- active planning references point to the `AUDIT_v0.12.2` baseline,
 - root docs and GitBook remain synchronized,
-- historical WS-B/WS-C content is clearly separated from active WS-D planning,
+- historical content (WS-E and earlier) is archived in `docs/dev_history/`,
 - testing evidence expectations are applied consistently.
 
 ## 2) What to update together
 
-- planning docs (`docs/audits/AUDIT_v0.11.0*.md`, including tracked proof issues + chapter 32 + chapter 24),
+- planning docs (`docs/audits/AUDIT_v0.12.2*.md` + chapter 24),
 - workflow/test policy docs (`docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md`, chapter 07),
 - roadmap/spec docs (`docs/spec/SELE4N_SPEC.md`, `docs/spec/SEL4_SPEC.md`, chapter 05, chapter 22),
 - dedup ownership docs (`docs/DOCS_DEDUPLICATION_MAP.md`, chapter 27),
