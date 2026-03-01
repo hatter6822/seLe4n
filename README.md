@@ -23,9 +23,9 @@
 
 ## What is seLe4n?
 
-seLe4n is a **production-oriented microkernel** built from the ground up in
-Lean 4. Every kernel transition is an executable pure function. Every invariant
-is machine-checked by the Lean type-checker — zero `sorry`, zero `axiom`.
+seLe4n is a microkernel** built from the ground up inLean 4. Every kernel 
+transition is an executable pure function. Every invariantis machine-checked 
+by the Lean type-checker — zero `sorry`, zero `axiom`.
 
 The project began as a formalization of seL4 semantics and is evolving into a
 novel kernel that preserves seL4's capability-based security model while
