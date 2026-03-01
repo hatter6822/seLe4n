@@ -35,7 +35,7 @@ Completed:
 2. **WS-G2**: ~~Object store & ObjectIndex HashMap~~ **COMPLETED** (v0.12.7)
 3. **WS-G3**: ~~ASID Resolution Table~~ **COMPLETED** (v0.12.8)
 4. **WS-G4**: ~~Run queue restructure~~ **COMPLETED** (v0.12.9)
-5. **WS-G5**: ~~CNode slot HashMap~~ **COMPLETED** (v0.12.10)
+5. **WS-G5**: ~~CNode slot HashMap~~ **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability`; `HashMap.fold` for `cspaceRevoke` `revokedRefs`
 
 Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
 
