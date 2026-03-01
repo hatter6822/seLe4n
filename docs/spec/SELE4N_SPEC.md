@@ -48,13 +48,13 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.12.7` (`lakefile.toml`) |
+| **Package version** | `0.12.8` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 16,485 across 34 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md), [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G2 completed |
+| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G3 completed |
 | **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
@@ -131,11 +131,12 @@ Authoritative detail:
 
 - **WS-G1:** ~~Typed identifier Hashable instances~~ **COMPLETED** — `Hashable` + `LawfulHashable` for all 13 typed identifiers; `Std.HashMap`/`Std.HashSet` imports; zero-overhead foundation for O(1) lookups (v0.12.6)
 - **WS-G2:** ~~Object store & ObjectIndex HashMap~~ **COMPLETED** — `objects : Std.HashMap ObjId KernelObject` replacing closure-chain accumulation; `objectIndexSet : Std.HashSet ObjId` shadow set for O(1) membership; `objectTypes : Std.HashMap ObjId KernelObjectType` lifecycle metadata; 9 bridge lemmas; full proof migration (599 theorems verified); closes F-P01, F-P10, F-P13 (v0.12.7)
+- **WS-G3:** ~~ASID Resolution Table~~ **COMPLETED** — `asidTable : Std.HashMap ASID ObjId` in `SystemState`; `resolveAsidRoot` rewritten from O(n) `objectIndex.findSome?` to O(1) HashMap lookup with object-store validation; bidirectional `asidTableConsistent` invariant (soundness + completeness); `vspaceInvariantBundle` extended to 3-conjunct; erase-before-insert maintenance in `storeObject`; 3 bridge lemmas; round-trip theorems simplified; closes F-P06 (v0.12.8)
 
 ### 5.2 Planned — Further Optimization
 
-- **WS-G3:** Scheduler lookup optimization — HashMap-backed runnable queue index (F-P02, F-P03)
-- **WS-G4:** CSpace lookup optimization — HashMap-backed capability slot index (F-P04, F-P05)
+- **WS-G4:** Run queue restructure (F-P02, F-P07, F-P12)
+- **WS-G5:** CNode slot HashMap (F-P03)
 
 ### 5.3 Prior Portfolio: WS-F (completed, v0.12.2)
 

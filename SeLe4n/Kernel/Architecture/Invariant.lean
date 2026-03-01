@@ -165,22 +165,22 @@ theorem adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariant
   hInv
 
 /-- WS-E3/H-07: Timer advancement preserves VSpace invariant bundle.
-Timer-only state changes do not affect the object store. -/
+Timer-only state changes do not affect the object store or ASID table. -/
 private theorem advanceTimerState_preserves_vspaceInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (advanceTimerState ticks st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist⟩
 
 /-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
-Register-only state changes do not affect the object store. -/
+Register-only state changes do not affect the object store or ASID table. -/
 private theorem writeRegisterState_preserves_vspaceInvariantBundle
     (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (writeRegisterState reg value st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proofs
@@ -255,10 +255,13 @@ theorem default_system_state_proofLayerInvariantBundle :
            by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
            by exact lifecycleAuthorityMonotonicity_holds _⟩
-  -- 7. vspaceInvariantBundle
-  · constructor
+  -- 7. vspaceInvariantBundle (3-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent)
+  · refine ⟨?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)
     · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+    · constructor
+      · intro asid oid hLookup; have h : (default : SystemState).asidTable[asid]? = none := HashMap_getElem?_empty; rw [h] at hLookup; exact absurd hLookup (by simp)
+      · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

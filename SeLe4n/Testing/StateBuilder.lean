@@ -77,6 +77,11 @@ def build (builder : BootstrapBuilder) : SystemState :=
       objectTypes := Std.HashMap.ofList builder.lifecycleObjectTypes
       capabilityRefs := listLookup builder.lifecycleCapabilityRefs
     }
+    -- WS-G3/F-P06: Populate ASID table from VSpaceRoot objects
+    asidTable := Std.HashMap.ofList (builder.objects.filterMap fun (oid, obj) =>
+      match obj with
+      | .vspaceRoot root => some (root.asid, oid)
+      | _ => none)
   }
 
 end BootstrapBuilder

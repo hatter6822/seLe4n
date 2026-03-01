@@ -144,6 +144,29 @@ private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : Sys
     let duplicates := roots.filter fun (oid', asid') => asid' == asid && oid' != oid
     (s!"vspace ASID unique: oid={oid} asid={asid.toNat}", duplicates.isEmpty)
 
+/-- WS-G3/F-P06: ASID table consistency: for every VSpaceRoot, the asidTable maps its ASID
+to the correct ObjId, and every asidTable entry points to a valid VSpaceRoot. -/
+private def asidTableConsistencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  -- Completeness: every VSpaceRoot has its ASID in the table
+  let completenessChecks := objectIds.filterMap fun oid =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.vspaceRoot root) =>
+        let ok := st.asidTable[root.asid]? == some oid
+        some (s!"asidTable completeness: oid={oid} asid={root.asid.toNat}", ok)
+    | _ => none
+  -- Soundness: every asidTable entry points to a valid VSpaceRoot with matching ASID
+  let soundnessChecks := objectIds.filterMap fun oid =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.vspaceRoot root) =>
+        match st.asidTable[root.asid]? with
+        | some tableOid =>
+            let ok := tableOid == oid
+            some (s!"asidTable soundness: asid={root.asid.toNat} → oid={oid}", ok)
+        | none =>
+            some (s!"asidTable soundness: asid={root.asid.toNat} missing", false)
+    | _ => none
+  completenessChecks ++ soundnessChecks
+
 /-- WS-F2: Untyped watermark validity: watermark ≤ regionSize for every untyped object.
 Also checks children-within-watermark bounds. -/
 private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
@@ -188,6 +211,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ lifecycleMetadataChecks objectIds st
     ++ serviceGraphAcyclicityChecks serviceIds st fuel
     ++ vspaceAsidUniquenessChecks objectIds st
+    ++ asidTableConsistencyChecks objectIds st
     ++ untypedWatermarkChecks objectIds st
 
 /--

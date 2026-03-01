@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.7` |
+| Version | `0.12.8` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 16,485 across 34 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G2 completed |
+| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G3 completed |
 
 ## Milestone history
 
@@ -33,10 +33,11 @@ The WS-G portfolio addresses kernel performance optimization findings from the
 Completed:
 1. **WS-G1**: ~~Typed identifier Hashable instances~~ **COMPLETED** (v0.12.6)
 2. **WS-G2**: ~~Object store & ObjectIndex HashMap~~ **COMPLETED** (v0.12.7)
+3. **WS-G3**: ~~ASID Resolution Table~~ **COMPLETED** (v0.12.8)
 
 Planned:
-3. **WS-G3**: Scheduler lookup optimization
-4. **WS-G4**: CSpace lookup optimization
+4. **WS-G4**: Run queue restructure
+5. **WS-G5**: CNode slot HashMap
 
 Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
 
