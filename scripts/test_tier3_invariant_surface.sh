@@ -490,6 +490,10 @@ run_check "INVARIANT" rg -n 'vspaceAsidUniquenessChecks' SeLe4n/Testing/Invarian
 # WS-G3/F-P06: ASID table consistency runtime checks must remain present.
 run_check "INVARIANT" rg -n 'asidTableConsistencyChecks' SeLe4n/Testing/InvariantChecks.lean
 
+# WS-G7/F-P11: notification waiter consistency runtime checks must remain present.
+run_check "INVARIANT" rg -n 'notificationWaiterConsistentChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'default_notificationWaiterConsistent' SeLe4n/Kernel/IPC/Invariant.lean
+
 # WS-E1 M-10 parameterized topology anchors must remain present.
 run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n 'runParameterizedTopologies' SeLe4n/Testing/MainTraceHarness.lean

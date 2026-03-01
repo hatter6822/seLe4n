@@ -1463,6 +1463,54 @@ theorem notificationWait_preserves_uniqueWaiters
                   exact hInv oid ntfn hPre
 
 -- ============================================================================
+-- WS-G7: notificationWaiterConsistent — base case + documentation
+-- ============================================================================
+
+/-- WS-G7: The default (empty) state trivially satisfies `notificationWaiterConsistent`
+because the object store is empty, so no notification objects exist. -/
+theorem default_notificationWaiterConsistent :
+    notificationWaiterConsistent (default : SystemState) := by
+  intro oid ntfn _ hObj _
+  have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty
+  rw [h] at hObj; exact absurd hObj (by simp)
+
+/-! ### WS-G7: Preservation path for `notificationWaiterConsistent`
+
+`notificationWaiterConsistent` is a bridging invariant that enables the O(1)
+duplicate-wait check in `notificationWait`. Its preservation through the kernel
+transition surface is sketched here for documentation:
+
+1. **`notificationWait`** (wait path): Prepends `waiter` to the notification's
+   waiting list and sets `waiter.ipcState = .blockedOnNotification oid`.
+   Pre-condition: `runnableThreadIpcReady` ensures the calling thread has
+   `ipcState = .ready`, so it is not in any notification's waiting list.
+   Preservation holds because the new waiter gets the correct ipcState and
+   existing TCBs are unchanged.
+
+2. **`notificationWait`** (badge path): Empties the target notification's
+   waiting list. Preservation holds vacuously for the target; other
+   notifications are unchanged.
+
+3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
+   ipcState to `.ready`. Requires `uniqueWaiters` to ensure the woken thread
+   does not appear elsewhere in the remaining list. Remaining threads' TCBs
+   are unchanged, so their ipcState is preserved.
+
+4. **`notificationSignal`** (merge path): No TCB modification; only the
+   notification badge is updated. All waiting lists are unchanged.
+
+5. **Other kernel operations** (endpoint, scheduler, lifecycle, capability):
+   These do not modify notification waiting lists. They may change a thread's
+   ipcState, but only for threads that are `.ready` or blocked on
+   non-notification objects, so `notificationWaiterConsistent` is preserved.
+
+The formal preservation theorems for the full transition surface are deferred
+to a future workstream (WS-G7+). The base case (`default_notificationWaiterConsistent`)
+and the runtime check (`notificationWaiterConsistentCheck`) provide confidence
+that the invariant holds in reachable states.
+-/
+
+-- ============================================================================
 -- Notification operation ipcInvariant preservation (WS-E4 preparation)
 -- ============================================================================
 
