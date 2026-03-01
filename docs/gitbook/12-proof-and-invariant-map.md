@@ -68,6 +68,14 @@ Badge routing chain (H-03):
 - End-to-end: `badge_notification_routing_consistent`
 - Merge property: `badge_merge_idempotent`
 
+CDT structural invariants (WS-G8):
+
+- `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,
+- `empty_childMapConsistent` — empty CDT satisfies `childMapConsistent`,
+- `addEdge_childMapConsistent` — `addEdge` preserves `childMapConsistent`,
+- `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
+- `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
+
 ## 4. IPC invariants (M3)
 
 Module structure:
@@ -233,10 +241,10 @@ every theorem into one of these categories:
 
 ### F-07: Service dependency cycle detection
 
-Service dependency registration now includes BFS-based cycle detection:
+Service dependency registration now includes DFS-based cycle detection (WS-G8: migrated from BFS with `List` visited to DFS with `Std.HashSet` visited for O(n+e) complexity):
 
-- `serviceBfsFuel` — fuel computation for bounded BFS (objectIndex.length + 256)
-- `serviceHasPathTo` — bounded BFS reachability check in the dependency graph
+- `serviceBfsFuel` — fuel computation for bounded DFS (objectIndex.length + 256)
+- `serviceHasPathTo` — bounded DFS reachability check in the dependency graph (WS-G8: `Std.HashSet ServiceId` visited set)
 - `serviceRegisterDependency` — deterministic registration with self-loop, idempotency, and cycle checks
 - `serviceRegisterDependency_error_self_loop` — self-dependency rejection theorem (no `sorry`)
 - `serviceDependencyAcyclic` — acyclicity invariant definition

@@ -258,12 +258,9 @@ private def runNegativeChecks : IO Unit := do
   let moveChildNode : CdtNodeId := 2
   let moveSeed : SystemState :=
     { baseState with
-      cdt := {
-        edges := [
-          { parent := moveParentNode, child := moveSrcNode, op := .copy },
-          { parent := moveSrcNode, child := moveChildNode, op := .mint }
-        ]
-      }
+      cdt := CapDerivationTree.empty
+        |>.addEdge moveSrcNode moveChildNode .mint
+        |>.addEdge moveParentNode moveSrcNode .copy
       cdtSlotNode := fun ref =>
         if ref = slot0 then some moveSrcNode else baseState.cdtSlotNode ref
       cdtNodeSlot := fun node =>
@@ -319,12 +316,9 @@ private def runNegativeChecks : IO Unit := do
               })
             ]
           })
-      cdt := {
-        edges := [
-          { parent := strictRootNode, child := strictChildNodeOk, op := .copy },
-          { parent := strictRootNode, child := strictChildNodeBad, op := .mint }
-        ]
-      }
+      cdt := CapDerivationTree.empty
+        |>.addEdge strictRootNode strictChildNodeBad .mint
+        |>.addEdge strictRootNode strictChildNodeOk .copy
       cdtSlotNode := fun ref =>
         if ref = strictRootSlot then some strictRootNode
         else if ref = strictChildSlotOk then some strictChildNodeOk

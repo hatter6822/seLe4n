@@ -373,11 +373,11 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 - `serviceEdge_storeServiceState_ne` — edge at non-updated service
 - `serviceEdge_post_insert` — edge characterization after insertion
 
-### BFS soundness (Layer 2)
-- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
-- `serviceHasPathTo_go_invariant` — BFS loop invariant
+### Graph traversal soundness (Layer 2)
+- `serviceHasPathTo_true_implies_reachable` — traversal true → declarative path
+- `serviceHasPathTo_go_invariant` — traversal loop invariant
 - `serviceBfsFuel_sufficient` — fuel adequacy
-- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
+- `serviceHasPathTo_false_implies_not_reachable` — traversal false → no path
 
 ### Edge insertion (Layer 3)
 - `serviceEdge_post_cases` — post-state edge decomposition
@@ -386,8 +386,8 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 - `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
 
 ### Final closure (Layer 4)
-- `serviceDependencyAcyclic_implies_acyclicDecl` — BFS → declarative equivalence
-- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
+- `serviceDependencyAcyclic_implies_acyclicDecl` — traversal → declarative equivalence
+- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → traversal equivalence
 -/
 
 -- ============================================================================
@@ -518,7 +518,7 @@ theorem serviceEdge_post_insert {st : SystemState} {svcId depId : ServiceId}
       · exact h
 
 -- ============================================================================
--- Layer 2: BFS completeness bridge (TPI-D07-BRIDGE)
+-- Layer 2: Graph traversal completeness bridge (TPI-D07-BRIDGE)
 -- ============================================================================
 
 -- ---- M2A: Dependency-list helper and edge bridge ----
@@ -537,21 +537,22 @@ private theorem serviceEdge_iff_lookupDeps {st : SystemState} {a b : ServiceId} 
     | none => simp [hL] at h
     | some svc => simp only [hL] at h; exact ⟨svc, rfl, h⟩
 
--- ---- M2B: BFS closure invariant ----
+-- ---- M2B: Graph traversal closure invariant (WS-G8: HashSet-based) ----
 
-/-- BFS closure: every visited node's successors are either visited or in the frontier. -/
-private def bfsClosed (st : SystemState) (fr vis : List ServiceId) : Prop :=
-  ∀ v ∈ vis, ∀ dep : ServiceId, serviceEdge st v dep → dep ∈ vis ∨ dep ∈ fr
+/-- Traversal closure: every visited node's successors are either visited or in the frontier.
+WS-G8: Visited set is `Std.HashSet ServiceId` for O(1) membership. -/
+private def bfsClosed (st : SystemState) (fr : List ServiceId) (vis : Std.HashSet ServiceId) : Prop :=
+  ∀ v : ServiceId, vis.contains v = true → ∀ dep : ServiceId, serviceEdge st v dep → vis.contains dep = true ∨ dep ∈ fr
 
 /-- CB2: Initial closure (empty visited set). -/
 private theorem bfsClosed_init (st : SystemState) (fr : List ServiceId) :
-    bfsClosed st fr [] := by
-  intro v hv; exact absurd hv List.not_mem_nil
+    bfsClosed st fr {} := by
+  intro v hv; rw [HashSet_contains_empty] at hv; exact absurd hv (by decide)
 
 /-- CB3: Skip preserves closure. -/
 private theorem bfsClosed_skip {st : SystemState} {nd : ServiceId}
-    {rest vis : List ServiceId}
-    (hCl : bfsClosed st (nd :: rest) vis) (hVis : nd ∈ vis) :
+    {rest : List ServiceId} {vis : Std.HashSet ServiceId}
+    (hCl : bfsClosed st (nd :: rest) vis) (hVis : vis.contains nd = true) :
     bfsClosed st rest vis := by
   intro v hv dep he
   rcases hCl v hv dep he with h | h
@@ -560,33 +561,41 @@ private theorem bfsClosed_skip {st : SystemState} {nd : ServiceId}
     · subst heq; exact Or.inl hVis
     · exact Or.inr hr
 
-/-- CB4: Expansion preserves closure. -/
+/-- CB4: Expansion preserves closure.
+WS-G8: Frontier is now DFS-ordered (deps ++ rest) and visited uses HashSet.insert. -/
 private theorem bfsClosed_expand {st : SystemState} {nd : ServiceId}
-    {rest vis : List ServiceId}
-    (hCl : bfsClosed st (nd :: rest) vis) (_hNV : nd ∉ vis) :
-    bfsClosed st (rest ++ (lookupDeps st nd).filter (· ∉ vis)) (nd :: vis) := by
+    {rest : List ServiceId} {vis : Std.HashSet ServiceId}
+    (hCl : bfsClosed st (nd :: rest) vis) (_hNV : vis.contains nd = false) :
+    bfsClosed st ((lookupDeps st nd).filter (fun d => !(vis.contains d)) ++ rest) (vis.insert nd) := by
   intro v hv dep he
-  rcases List.mem_cons.mp hv with heq | hOV
-  · subst heq
-    by_cases hDV : dep ∈ vis
-    · exact Or.inl (List.mem_cons.mpr (Or.inr hDV))
-    · exact Or.inr (List.mem_append.mpr (Or.inr
-        (List.mem_filter.mpr ⟨serviceEdge_iff_lookupDeps.mp he, by simp [hDV]⟩)))
-  · rcases hCl v hOV dep he with h | h
-    · exact Or.inl (List.mem_cons.mpr (Or.inr h))
+  rcases (HashSet_contains_insert_iff vis nd v).mp hv with rfl | hOV
+  · -- v = nd: newly expanded node
+    by_cases hDV : vis.contains dep = true
+    · exact Or.inl ((HashSet_contains_insert_iff vis v dep).mpr (Or.inr hDV))
+    · have hDVF : vis.contains dep = false := by
+        cases h : vis.contains dep with
+        | false => rfl
+        | true => exact absurd h hDV
+      exact Or.inr (List.mem_append.mpr (Or.inl
+        (List.mem_filter.mpr ⟨serviceEdge_iff_lookupDeps.mp he, by simp [hDVF]⟩)))
+  · -- v ∈ old visited: successors in old vis or old frontier
+    rcases hCl v hOV dep he with h | h
+    · exact Or.inl ((HashSet_contains_insert_iff vis nd dep).mpr (Or.inr h))
     · rcases List.mem_cons.mp h with heq | hr
-      · subst heq; exact Or.inl (List.mem_cons.mpr (Or.inl rfl))
-      · exact Or.inr (List.mem_append.mpr (Or.inl hr))
+      · subst heq; exact Or.inl (HashSet_contains_insert_self vis dep)
+      · exact Or.inr (List.mem_append.mpr (Or.inr hr))
 
 /-- CB1: Boundary lemma — if a visited node reaches the target (not visited),
-    some frontier node also reaches the target. -/
+    some frontier node also reaches the target.
+WS-G8: Visited set is HashSet. -/
 private theorem bfs_boundary_lemma {st : SystemState} {tgt : ServiceId}
-    {fr vis : List ServiceId} {v : ServiceId}
+    {fr : List ServiceId} {vis : Std.HashSet ServiceId} {v : ServiceId}
     (hR : serviceReachable st v tgt) :
-    v ∈ vis → tgt ∉ vis → bfsClosed st fr vis →
+    vis.contains v = true → vis.contains tgt = false → bfsClosed st fr vis →
     ∃ f ∈ fr, serviceReachable st f tgt := by
   induction hR with
-  | refl => intro hV hTNV _; exact absurd hV hTNV
+  | refl =>
+    intro hV hTNV _; rw [hV] at hTNV; exact absurd hTNV (by decide)
   | step he _hr ih =>
     intro hV hTNV hCl
     rcases hCl _ hV _ he with h | h
@@ -595,8 +604,8 @@ private theorem bfs_boundary_lemma {st : SystemState} {tgt : ServiceId}
 
 -- ---- Helpers: Universe, filter length, reachability ----
 
-/-- A "BFS universe" is a Nodup node set that contains all registered services
-    and is closed under dependencies. -/
+/-- A "traversal universe" is a Nodup node set that contains all registered
+    services and is closed under dependencies. -/
 private def bfsUniverse (st : SystemState) (ns : List ServiceId) : Prop :=
   ns.Nodup ∧
   (∀ sid, lookupService st sid ≠ none → sid ∈ ns) ∧
@@ -650,13 +659,18 @@ private theorem filter_strict {α : Type} [DecidableEq α]
         · rw [if_pos hp1x]; simp only [List.length_cons]; omega
         · rw [if_neg hp1x]; exact ih'
 
-/-- Adding nd to visited strictly decreases the unvisited-universe count. -/
+/-- Adding nd to visited strictly decreases the unvisited-universe count.
+WS-G8: Updated for `Std.HashSet` visited set. -/
 private theorem filter_vis_decrease (ns : List ServiceId) (nd : ServiceId)
-    (vis : List ServiceId) (hMem : nd ∈ ns) (hNV : nd ∉ vis) (hNod : ns.Nodup) :
-    (ns.filter (· ∉ (nd :: vis))).length < (ns.filter (· ∉ vis)).length :=
-  filter_strict (fun x => decide (x ∉ vis)) (fun x => decide (x ∉ (nd :: vis))) ns
-    (by intro x hx; simp [List.mem_cons] at hx ⊢; exact hx.2)
-    nd hMem (by simp [hNV]) (by simp) hNod
+    (vis : Std.HashSet ServiceId) (hMem : nd ∈ ns) (hNV : vis.contains nd = false) (hNod : ns.Nodup) :
+    (ns.filter (fun x => !((vis.insert nd).contains x))).length <
+    (ns.filter (fun x => !(vis.contains x))).length :=
+  filter_strict (fun x => !(vis.contains x)) (fun x => !((vis.insert nd).contains x)) ns
+    (by intro x hx
+        simp only [Bool.not_eq_true'] at hx ⊢
+        exact ((HashSet_not_contains_insert vis nd x).mp hx).2)
+    nd hMem (by simp only [hNV]; decide)
+    (by simp only [HashSet_contains_insert_self vis nd]; decide) hNod
 
 /-- If a ≠ b and a reaches b, there exists an intermediate step. -/
 private theorem step_of_reachable_ne {st : SystemState} {a b : ServiceId}
@@ -667,38 +681,45 @@ private theorem step_of_reachable_ne {st : SystemState} {a b : ServiceId}
   | step hedge htail => exact ⟨_, hedge, htail⟩
 
 -- ---- EQ lemmas: Equational unfolding of serviceHasPathTo.go ----
+-- WS-G8: Updated for HashSet visited set and DFS frontier ordering.
 
 private theorem go_tgt_eq {st : SystemState} {tgt : ServiceId}
-    {rest vis : List ServiceId} {f : Nat} :
+    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat} :
     serviceHasPathTo.go st tgt (tgt :: rest) vis (f + 1) = true := by
   simp [serviceHasPathTo.go]
 
 private theorem go_skip_eq {st : SystemState} {tgt nd : ServiceId}
-    {rest vis : List ServiceId} {f : Nat} (hNeq : nd ≠ tgt) (hVis : nd ∈ vis) :
+    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat}
+    (hNeq : nd ≠ tgt) (hVis : vis.contains nd = true) :
     serviceHasPathTo.go st tgt (nd :: rest) vis (f + 1) =
     serviceHasPathTo.go st tgt rest vis (f + 1) := by
   simp [serviceHasPathTo.go, hNeq, hVis]
 
 private theorem go_expand_eq {st : SystemState} {tgt nd : ServiceId}
-    {rest vis : List ServiceId} {f : Nat} (hNeq : nd ≠ tgt) (hNV : nd ∉ vis) :
+    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat}
+    (hNeq : nd ≠ tgt) (hNV : vis.contains nd = false) :
     serviceHasPathTo.go st tgt (nd :: rest) vis (f + 1) =
-    serviceHasPathTo.go st tgt (rest ++ (lookupDeps st nd).filter (· ∉ vis))
-      (nd :: vis) f := by
-  simp only [serviceHasPathTo.go, hNeq, ite_false, hNV]; unfold lookupDeps; rfl
+    serviceHasPathTo.go st tgt
+      ((lookupDeps st nd).filter (fun d => !(vis.contains d)) ++ rest)
+      (vis.insert nd) f := by
+  simp only [serviceHasPathTo.go, hNeq, ite_false, hNV]
+  unfold lookupDeps; rfl
 
--- ---- CP1: Core BFS completeness ----
+-- ---- CP1: Core graph traversal completeness ----
+-- WS-G8: Updated for HashSet visited set and DFS frontier ordering.
 
 set_option maxHeartbeats 800000 in
 /-- Core completeness: if the frontier contains a node that can reach the target,
-    and we have enough fuel, the BFS returns true. -/
+    and we have enough fuel, the traversal returns true.
+WS-G8: Visited set is `Std.HashSet ServiceId`. Frontier is DFS-ordered. -/
 private theorem go_complete
     (st : SystemState) (tgt : ServiceId)
-    (fr vis : List ServiceId) (fuel : Nat)
+    (fr : List ServiceId) (vis : Std.HashSet ServiceId) (fuel : Nat)
     (ns : List ServiceId)
-    (hU : bfsUniverse st ns) (hTV : tgt ∉ vis) (hCl : bfsClosed st fr vis)
+    (hU : bfsUniverse st ns) (hTV : vis.contains tgt = false) (hCl : bfsClosed st fr vis)
     (hR : ∃ w ∈ fr, serviceReachable st w tgt)
     (hFB : ∀ x ∈ fr, x ∈ ns)
-    (hFuel : (ns.filter (· ∉ vis)).length ≤ fuel) :
+    (hFuel : (ns.filter (fun x => !(vis.contains x))).length ≤ fuel) :
     serviceHasPathTo.go st tgt fr vis fuel = true := by
   induction fuel using Nat.strongRecOn generalizing fr vis with
   | _ fuel ih_fuel =>
@@ -707,13 +728,13 @@ private theorem go_complete
     | cons nd rest ih_fr =>
       obtain ⟨w, hwM, hwR⟩ := hR
       have htNs := reach_in_universe hU (hFB w hwM) hwR
-      have htFilt : tgt ∈ ns.filter (· ∉ vis) := by
+      have htFilt : tgt ∈ ns.filter (fun x => !(vis.contains x)) := by
         rw [List.mem_filter]; exact ⟨htNs, by simp [hTV]⟩
-      have hFP : 0 < (ns.filter (· ∉ vis)).length := List.length_pos_of_mem htFilt
+      have hFP : 0 < (ns.filter (fun x => !(vis.contains x))).length := List.length_pos_of_mem htFilt
       obtain ⟨fuel', rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : fuel ≠ 0)
       by_cases hEq : nd = tgt
       · subst hEq; exact go_tgt_eq
-      · by_cases hVis : nd ∈ vis
+      · by_cases hVis : vis.contains nd = true
         · -- Skip case
           rw [go_skip_eq hEq hVis]
           have hClR := bfsClosed_skip hCl hVis
@@ -724,41 +745,50 @@ private theorem go_complete
           exact ih_fr vis hTV hClR hRR
             (fun x hx => hFB x (List.mem_cons_of_mem nd hx)) hFuel
         · -- Expand case
-          rw [go_expand_eq hEq hVis]
+          have hVisBool : vis.contains nd = false := by
+            cases h : vis.contains nd with
+            | false => rfl
+            | true => exact absurd h hVis
+          rw [go_expand_eq hEq hVisBool]
           have hNdNs := hFB nd List.mem_cons_self
-          have hFuelDec := filter_vis_decrease ns nd vis hNdNs hVis hU.1
+          have hFuelDec := filter_vis_decrease ns nd vis hNdNs hVisBool hU.1
           apply ih_fuel fuel' (by omega)
-          · intro hM; rcases List.mem_cons.mp hM with heq | hO
-            · exact hEq (heq.symm)
-            · exact hTV hO
-          · exact bfsClosed_expand hCl hVis
+          · -- tgt ∉ vis.insert nd
+            rw [Std.HashSet.contains_insert]
+            simp only [Bool.or_eq_false_iff]
+            exact ⟨by cases h : (nd == tgt) <;> simp_all, hTV⟩
+          · exact bfsClosed_expand hCl hVisBool
           · rcases List.mem_cons.mp hwM with heq | hw
             · rw [heq] at hwR
               obtain ⟨mid, hedge, htail⟩ := step_of_reachable_ne hwR hEq
               have hMidDeps : mid ∈ lookupDeps st nd :=
                 serviceEdge_iff_lookupDeps.mp hedge
-              by_cases hMidVis : mid ∈ vis
-              · have hClE := bfsClosed_expand hCl hVis
-                have hMidNewVis : mid ∈ (nd :: vis) :=
-                  List.mem_cons_of_mem nd hMidVis
-                have hTgtNewVis : tgt ∉ (nd :: vis) := by
-                  intro hM; rcases List.mem_cons.mp hM with heq' | hO
-                  · exact hEq (heq'.symm)
-                  · exact hTV hO
+              by_cases hMidVis : vis.contains mid = true
+              · have hClE := bfsClosed_expand hCl hVisBool
+                have hMidNewVis : (vis.insert nd).contains mid = true :=
+                  (HashSet_contains_insert_iff vis nd mid).mpr (Or.inr hMidVis)
+                have hTgtNewVis : (vis.insert nd).contains tgt = false := by
+                  rw [Std.HashSet.contains_insert]
+                  simp only [Bool.or_eq_false_iff]
+                  exact ⟨by cases h : (nd == tgt) <;> simp_all, hTV⟩
                 exact bfs_boundary_lemma htail hMidNewVis hTgtNewVis hClE
-              · exact ⟨mid,
-                  List.mem_append.mpr (Or.inr
-                    (List.mem_filter.mpr ⟨hMidDeps, by simp [hMidVis]⟩)),
+              · have hMidVisBool : vis.contains mid = false := by
+                  cases h : vis.contains mid with
+                  | false => rfl
+                  | true => exact absurd h hMidVis
+                exact ⟨mid,
+                  List.mem_append.mpr (Or.inl
+                    (List.mem_filter.mpr ⟨hMidDeps, by simp [hMidVisBool]⟩)),
                   htail⟩
-            · exact ⟨w, List.mem_append.mpr (Or.inl hw), hwR⟩
+            · exact ⟨w, List.mem_append.mpr (Or.inr hw), hwR⟩
           · intro x hx
-            rcases List.mem_append.mp hx with hxr | hxd
-            · exact hFB x (List.mem_cons_of_mem nd hxr)
+            rcases List.mem_append.mp hx with hxd | hxr
             · exact hU.2.2 nd hNdNs x (List.mem_filter.mp hxd).1
+            · exact hFB x (List.mem_cons_of_mem nd hxr)
           · omega
 
-/-- State-level bound: a BFS universe exists within the fuel budget.
-    This is a precondition for the BFS completeness bridge. -/
+/-- State-level bound: a traversal universe exists within the fuel budget.
+    This is a precondition for the completeness bridge. -/
 def serviceCountBounded (st : SystemState) : Prop :=
   ∃ ns : List ServiceId,
     bfsUniverse st ns ∧ ns.length ≤ serviceBfsFuel st
@@ -770,17 +800,21 @@ private theorem registered_of_nontrivialPath_src {st : SystemState} {a b : Servi
   | single hedge => obtain ⟨svc, hL, _⟩ := hedge; simp [hL]
   | cons hedge _ => obtain ⟨svc, hL, _⟩ := hedge; simp [hL]
 
-/-- BFS completeness bridge: a nontrivial path between distinct services is
-detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
+/-- Graph traversal completeness bridge: a nontrivial path between distinct services
+is detected by `serviceHasPathTo` with `serviceBfsFuel` fuel.
 
-This connects the declarative path relation to the executable BFS check
-used in `serviceRegisterDependency`. The BFS completeness is established
-by a formal loop-invariant argument (M2/TPI-D07-BRIDGE): the BFS maintains
-a closure invariant on the visited set, and a decreasing measure on the
-unvisited universe nodes ensures termination with the correct result.
+This connects the declarative path relation to the executable graph traversal check
+used in `serviceRegisterDependency`. Completeness is established by a formal
+loop-invariant argument (M2/TPI-D07-BRIDGE): the traversal maintains a closure
+invariant on the visited set, and a decreasing measure on the unvisited universe
+nodes ensures termination with the correct result.
+
+WS-G8: Visited set is `Std.HashSet ServiceId` (O(1) membership). Traversal
+order is DFS (prepend) instead of BFS (append). Cycle detection correctness is
+order-independent.
 
 The `serviceCountBounded` hypothesis ensures that the set of reachable service
-nodes fits within the BFS fuel budget. -/
+nodes fits within the fuel budget. -/
 theorem bfs_complete_for_nontrivialPath
     {st : SystemState} {a b : ServiceId}
     (hPath : serviceNontrivialPath st a b)
@@ -790,17 +824,19 @@ theorem bfs_complete_for_nontrivialPath
   obtain ⟨ns, hU, hLen⟩ := hBound
   have haSrc := registered_of_nontrivialPath_src hPath
   have haInNs := hU.2.1 a haSrc
-  apply go_complete st b [a] [] (serviceBfsFuel st) ns hU
-  · simp
+  apply go_complete st b [a] {} (serviceBfsFuel st) ns hU
+  · exact HashSet_contains_empty
   · exact bfsClosed_init st [a]
   · exact ⟨a, List.mem_cons_self, serviceReachable_of_nontrivialPath hPath⟩
   · intro x hx; rcases List.mem_cons.mp hx with heq | h
     · subst heq; exact haInNs
     · exact absurd h List.not_mem_nil
-  · -- fuel: ns.filter (· ∉ []).length ≤ serviceBfsFuel st
-    -- Since (· ∉ []) is trivially true, filter is identity
-    have hFiltId : ns.filter (· ∉ ([] : List ServiceId)) = ns := by
-      simp [List.filter_eq_self]
+  · -- fuel: ns.filter (fun x => !(({} : HashSet).contains x)).length ≤ serviceBfsFuel st
+    -- Since empty.contains is always false, filter keeps all elements
+    have hFiltId : ns.filter (fun x => !(({} : Std.HashSet ServiceId).contains x)) = ns := by
+      rw [List.filter_eq_self]
+      intro x _
+      simp only [HashSet_contains_empty, Bool.not_false]
     rw [hFiltId]; exact hLen
 
 -- ============================================================================
@@ -947,18 +983,18 @@ theorem serviceRestart_error_from_start_phase
   exact ⟨stStopped, hStop, hErr⟩
 
 -- ============================================================================
--- H-08/WS-E3: BFS soundness in Service/Invariant context
+-- H-08/WS-E3: Graph traversal soundness in Service/Invariant context
 -- ============================================================================
 
-/-- H-08/WS-E3: BFS conservatively reports a path when fuel is exhausted.
-Under the zero-fuel base case the BFS returns `true`, preventing any
+/-- H-08/WS-E3: Traversal conservatively reports a path when fuel is exhausted.
+Under the zero-fuel base case the traversal returns `true`, preventing any
 dependency registration when the fuel budget is insufficient. -/
 theorem serviceHasPathTo_fuel_zero (st : SystemState) (src target : ServiceId) :
     serviceHasPathTo st src target 0 = true := by
   simp [serviceHasPathTo, serviceHasPathTo.go]
 
-/-- H-08/WS-E3 adequacy: when BFS returns `false`, there genuinely is no
-nontrivial path from `a` to `b`. This is the soundness direction —
+/-- H-08/WS-E3 adequacy: when the traversal returns `false`, there genuinely is
+no nontrivial path from `a` to `b`. This is the soundness direction —
 the contrapositive of `bfs_complete_for_nontrivialPath`. -/
 theorem bfs_false_implies_no_nontrivialPath
     {st : SystemState} {a b : ServiceId}

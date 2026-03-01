@@ -124,7 +124,7 @@ private def lifecycleMetadataChecks (objectIds : List SeLe4n.ObjId) (st : System
     | _, _ => acc) []
 
 /-- M-11 Service graph acyclicity: no service has a dependency path back to itself.
-Uses bounded BFS from each direct dependency back to the service under test. -/
+Uses bounded DFS (WS-G8) from each direct dependency back to the service under test. -/
 private def serviceGraphAcyclicityChecks (serviceIds : List ServiceId) (st : SystemState) (fuel : Nat) : List (String × Bool) :=
   serviceIds.map fun sid =>
     let deps := match lookupService st sid with

@@ -1,3 +1,15 @@
+## [0.12.13] - 2026-03-01
+
+### WS-G8: Graph Traversal Optimization (completed)
+
+- **Service dependency DFS with HashSet (Phase A / F-P08):** `serviceHasPathTo` rewritten from O(n²) BFS with `List ServiceId` visited set to O(n+e) DFS with `Std.HashSet ServiceId`. Visited-set membership checks now O(1) amortized. Frontier ordering changed from BFS (`rest ++ newDeps`) to DFS (`newDeps ++ rest`) for stack-friendly traversal. Three HashSet bridge lemmas added to `Prelude.lean`: `HashSet_contains_insert_iff`, `HashSet_not_contains_insert`, `HashSet_contains_insert_self`.
+- **CDT childMap index (Phase B / F-P14):** `CapDerivationTree` extended with `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed edge index. `childrenOf` rewritten from O(E) edge-list scan to O(1) HashMap lookup. `descendantsOf` BFS complexity reduced from O(N×E) to O(N+E). `addEdge`, `removeAsChild`, `removeAsParent`, `removeNode` all maintain `childMap` alongside `edges`.
+- **Consistency invariant:** `childMapConsistent` defines bidirectional correspondence between `childMap` and `edges`. `empty_childMapConsistent` and `addEdge_childMapConsistent` proved; `edges` remains the proof anchor.
+- **Invariant proofs re-proved:** `bfsClosed`, `bfsClosed_init`, `bfsClosed_skip`, `bfsClosed_expand`, `bfs_boundary_lemma`, `filter_vis_decrease`, `go_tgt_eq`, `go_skip_eq`, `go_expand_eq`, `go_complete`, `bfs_complete_for_nontrivialPath` all migrated to HashSet-based visited set in `Service/Invariant.lean`.
+- **Test infrastructure updated:** `NegativeStateSuite.lean` CDT construction migrated from raw struct literals to `addEdge` API calls, ensuring `childMap` consistency.
+- **Full proof migration:** zero sorry/axiom across all 5 modified files. `test_full.sh` passes (Tier 0-3).
+- Closes findings F-P08 (service dependency BFS O(n²)) and F-P14 (CDT descendantsOf BFS O(N×E)).
+
 ## [0.12.12] - 2026-03-01
 
 ### WS-G7: IPC Queue Completion & Notification (completed)
