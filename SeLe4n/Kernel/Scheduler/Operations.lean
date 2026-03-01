@@ -112,16 +112,26 @@ private def chooseBestRunnableInDomain
     Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
   chooseBestRunnableBy objects (fun tcb => tcb.domain == activeDomain) runnable best
 
-private def rotateCurrentToBack
-    (current : Option SeLe4n.ThreadId)
-    (runnable : List SeLe4n.ThreadId) : Except KernelError (List SeLe4n.ThreadId) :=
-  match current with
-  | none => .ok runnable
-  | some tid =>
-      if tid ∈ runnable then
-        .ok (runnable.erase tid ++ [tid])
-      else
-        .error .schedulerInvariantViolation
+/-- WS-G4/F-P07: Bucket-first scheduling selection.
+
+Scans only the max-priority bucket for domain-eligible threads, reducing
+best-candidate selection from O(t) to O(k) where k is the bucket size
+(typically 1-3 in real systems). Falls back to full-list scan if the
+max-priority bucket contains no eligible thread (e.g., all max-priority
+threads are in a different domain). -/
+private def chooseBestInBucket
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  let maxBucket := rq.maxPriorityBucket
+  match chooseBestRunnableInDomain objects maxBucket activeDomain none with
+  | .error e => .error e
+  | .ok (some result) => .ok (some result)
+  | .ok none =>
+    -- Max-priority bucket had no eligible thread in this domain;
+    -- fall back to full-list scan.
+    chooseBestRunnableInDomain objects rq.toList activeDomain none
 
 /-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
 def filterByDomain
@@ -133,14 +143,18 @@ def filterByDomain
     | some (.tcb tcb) => tcb.domain == domain
     | _ => false
 
-/-- M-03/M-05 WS-E6: Choose the highest-priority runnable thread from the
+/-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
+
+WS-G4/F-P07: Uses bucket-first strategy — scans only the max-priority bucket
+first (O(k) where k is bucket size), falling back to full-list scan only if
+the max-priority bucket has no eligible thread in the active domain.
 
 This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
+    match chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -352,7 +366,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread at hStep
-  cases hPick : chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
+  cases hPick : chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with

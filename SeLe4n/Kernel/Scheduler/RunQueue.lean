@@ -121,6 +121,17 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat
 def filterToList (rq : RunQueue) (p : ThreadId → Bool) : List ThreadId := rq.flat.filter p
 def atPriority (rq : RunQueue) (prio : Priority) : List ThreadId := (rq.byPriority[prio]?).getD []
+
+/-- WS-G4/F-P07: Return the max-priority bucket contents, or `[]` if the queue is empty.
+    This enables O(k) best-candidate selection where k is the bucket size (typically 1-3). -/
+@[inline] def maxPriorityBucket (rq : RunQueue) : List ThreadId :=
+  match rq.maxPriority with
+  | none => []
+  | some prio => rq.atPriority prio
+
+/-- WS-G4/F-P07: Return the max-priority value, or 0 as a fallback. -/
+@[inline] def maxPriorityValue (rq : RunQueue) : Priority :=
+  rq.maxPriority.getD ⟨0⟩
 def ofList (entries : List (ThreadId × Priority)) : RunQueue :=
   entries.foldl (fun rq (tid, prio) => rq.insert tid prio) empty
 

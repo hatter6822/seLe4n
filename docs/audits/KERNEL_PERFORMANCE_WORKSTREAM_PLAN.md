@@ -332,9 +332,11 @@ subsystem rewrites, significant theorem re-proof).
 - `removeRunnable`/`ensureRunnable` rewritten against `RunQueue.remove`/`RunQueue.insert`. `rotateCurrentToBack` uses `RunQueue.rotateToBack`.
 - No `List.filter (· ≠ tid)` patterns remain in scheduler/IPC operations. No `getLast?` calls remain.
 - 13 `RunQueue` bridge lemmas (`mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`, etc.).
+- `chooseBestInBucket` bucket-first scheduling: scans max-priority bucket first (O(k)) with full-list fallback. Addresses F-P07 deliverable #7.
+- Dead `rotateCurrentToBack` private function removed (subsumed by `RunQueue.rotateToBack`).
 - IPC/Invariant.lean: 30+ proofs migrated to flat-list variants (`removeRunnable_runnable_mem`, `ensureRunnable_runnable_mem_old`).
 - InformationFlow/Invariant.lean: `ensureRunnable_preserves_projection` re-proved via `congr 1` + `toList_filter_insert_neg`.
-- Full proof migration: zero sorry/axiom across all 7 modified files.
+- Full proof migration: zero sorry/axiom across all modified files.
 
 ---
 
