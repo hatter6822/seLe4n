@@ -7,6 +7,10 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
+/-- WS-G4: Helper to build a RunQueue from a list of ThreadIds with default priority 0. -/
+private def mkRunQueue (tids : List SeLe4n.ThreadId) : SeLe4n.Kernel.RunQueue :=
+  SeLe4n.Kernel.RunQueue.ofList (tids.map (fun tid => (tid, ⟨0⟩)))
+
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 0 }
 def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := 10, cptr := 0, depth := 0 }
 def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := 10, cptr := 1, depth := 0 }
@@ -239,7 +243,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   let largeRunnable : List SeLe4n.ThreadId :=
     [1, 12]
   let stLargeQueue : SystemState :=
-    { st1 with scheduler := { st1.scheduler.withRunnableQueue largeRunnable with current := none } }
+    { st1 with scheduler := { st1.scheduler with runQueue := mkRunQueue largeRunnable, current := none } }
   IO.println s!"large runnable queue length: {reprStr stLargeQueue.scheduler.runnable.length}"
   match SeLe4n.Kernel.schedule stLargeQueue with
   | .error err => IO.println s!"large queue schedule error: {reprStr err}"
@@ -476,7 +480,7 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
     cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
     ipcState := .blockedOnReply demoEndpoint }
   let replySched := { st1.scheduler with
-    runnable := st1.scheduler.runnable.filter (· != replyTarget) }
+    runQueue := st1.scheduler.runQueue.remove replyTarget }
   let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
   match SeLe4n.Kernel.endpointReply replyTarget .empty stReply with
   | .error err => IO.println s!"endpointReply error: {reprStr err}"
@@ -501,7 +505,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     ipcState := .ready, deadline := 30 }
   let stEdf : SystemState := { st1 with
     objects := st1.objects.insert 1 edfTcbA |>.insert 12 edfTcbB,
-    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := none } }
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1, 12], current := none } }
   match SeLe4n.Kernel.chooseThread stEdf with
   | .error err => IO.println s!"EDF choose error: {reprStr err}"
   | .ok (chosen, _) =>
@@ -514,7 +518,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     ipcState := .ready, timeSlice := 2 }
   let stTick : SystemState := { st1 with
     objects := st1.objects.insert 1 tickTcb,
-    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1, 12], current := some 1 } }
   match SeLe4n.Kernel.timerTick stTick with
   | .error err => IO.println s!"timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
@@ -530,7 +534,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     ipcState := .ready, timeSlice := 1 }
   let stExpiry : SystemState := { st1 with
     objects := st1.objects.insert 1 expiryTcb,
-    scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1, 12], current := some 1 } }
   match SeLe4n.Kernel.timerTick stExpiry with
   | .error err => IO.println s!"timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
@@ -545,7 +549,7 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     [{ domain := 0, length := 3 }, { domain := 1, length := 5 }]
   let stDom : SystemState := { st1 with
     scheduler := { st1.scheduler with
-      runnable := [1, 12], runnableHead := some 1, runnableTail := some 12, current := some 1,
+      runQueue := mkRunQueue [1, 12], current := some 1,
       activeDomain := 0, domainTimeRemaining := 1,
       domainSchedule := domSchedule, domainScheduleIndex := 0 } }
   match SeLe4n.Kernel.switchDomain stDom with

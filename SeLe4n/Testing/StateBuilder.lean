@@ -71,7 +71,10 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndex := builder.objects.map Prod.fst
     objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
     services := listLookup builder.services
-    scheduler := { (default : SchedulerState).withRunnableQueue builder.runnable with current := builder.current }
+    scheduler := {
+      runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid => (tid, ⟨0⟩)))
+      current := builder.current
+    }
     irqHandlers := listLookup builder.irqHandlers
     lifecycle := {
       objectTypes := Std.HashMap.ofList builder.lifecycleObjectTypes

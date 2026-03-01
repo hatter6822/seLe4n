@@ -1,3 +1,19 @@
+## [0.12.9] - 2026-03-01
+
+### WS-G4: Run Queue Restructure (completed)
+
+- **Priority-bucketed RunQueue:** New `RunQueue` structure in `Scheduler/RunQueue.lean` replaces flat `List ThreadId` runnable queue. Backed by `Std.HashMap Priority (List ThreadId)` for priority bucketing, `Std.HashSet ThreadId` for O(1) membership, and `Std.HashMap ThreadId Priority` for O(1) priority lookup. `flat : List ThreadId` maintained for proof/projection compatibility.
+- **O(1) scheduler hot-path operations:** `insert`, `remove`, `contains`, `rotateHead`, `rotateToBack` all O(1) amortized. `maxPriority` cached and maintained incrementally (recomputed only on bucket exhaustion).
+- **Bucket-first scheduling (F-P07):** `chooseBestInBucket` scans only the max-priority bucket for domain-eligible threads, reducing best-candidate selection from O(t) to O(k) where k is the bucket size (typically 1-3). Falls back to full-list scan when max-priority bucket has no eligible thread in the active domain.
+- **Structural invariant `flat_wf`:** `∀ tid, tid ∈ flat → membership.contains tid = true` — Prop field that formally bridges HashSet and flat list membership. Maintained by inline proofs in every RunQueue mutation.
+- **SchedulerState restructured:** `runQueue : RunQueue` replaces `runnable : List ThreadId`. Eliminated `runnableHead`, `runnableTail` cache fields. Eliminated `withRunnableQueue` helper (subsumed by RunQueue structure). Dead `rotateCurrentToBack` private function removed.
+- **IPC operations rewritten:** `removeRunnable` uses `RunQueue.remove`; `ensureRunnable` uses `RunQueue.contains` + `RunQueue.insert`. `handleYield`/`timerTick` use `RunQueue.rotateToBack` directly.
+- **13 RunQueue bridge lemmas:** `mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `not_mem_empty`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`.
+- **IPC invariant migration:** 30+ proofs in `IPC/Invariant.lean` migrated to flat-list variants (`removeRunnable_runnable_mem`, `ensureRunnable_runnable_mem_old`). `ensureRunnable_nodup` simplified (no longer needs `hWF` parameter).
+- **Information-flow preservation:** `ensureRunnable_preserves_projection` re-proved via `congr 1` + `RunQueue.toList_filter_insert_neg`.
+- **Full proof migration:** zero sorry/axiom across all 7 modified files. `test_full.sh` passes (Tier 0-3).
+- Closes findings F-P02 (runnable queue O(n) ops), F-P07 (scheduler best-candidate O(t) scan), F-P12 (`withRunnableQueue` tail recomputation).
+
 ## [0.12.8] - 2026-03-01
 
 ### WS-G3: ASID Resolution Table (completed)

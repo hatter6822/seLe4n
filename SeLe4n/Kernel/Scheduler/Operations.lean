@@ -112,16 +112,26 @@ private def chooseBestRunnableInDomain
     Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
   chooseBestRunnableBy objects (fun tcb => tcb.domain == activeDomain) runnable best
 
-private def rotateCurrentToBack
-    (current : Option SeLe4n.ThreadId)
-    (runnable : List SeLe4n.ThreadId) : Except KernelError (List SeLe4n.ThreadId) :=
-  match current with
-  | none => .ok runnable
-  | some tid =>
-      if tid ∈ runnable then
-        .ok (runnable.erase tid ++ [tid])
-      else
-        .error .schedulerInvariantViolation
+/-- WS-G4/F-P07: Bucket-first scheduling selection.
+
+Scans only the max-priority bucket for domain-eligible threads, reducing
+best-candidate selection from O(t) to O(k) where k is the bucket size
+(typically 1-3 in real systems). Falls back to full-list scan if the
+max-priority bucket contains no eligible thread (e.g., all max-priority
+threads are in a different domain). -/
+private def chooseBestInBucket
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  let maxBucket := rq.maxPriorityBucket
+  match chooseBestRunnableInDomain objects maxBucket activeDomain none with
+  | .error e => .error e
+  | .ok (some result) => .ok (some result)
+  | .ok none =>
+    -- Max-priority bucket had no eligible thread in this domain;
+    -- fall back to full-list scan.
+    chooseBestRunnableInDomain objects rq.toList activeDomain none
 
 /-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
 def filterByDomain
@@ -133,14 +143,18 @@ def filterByDomain
     | some (.tcb tcb) => tcb.domain == domain
     | _ => false
 
-/-- M-03/M-05 WS-E6: Choose the highest-priority runnable thread from the
+/-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
+
+WS-G4/F-P07: Uses bucket-first strategy — scans only the max-priority bucket
+first (O(k) where k is bucket size), falling back to full-list scan only if
+the max-priority bucket has no eligible thread in the active domain.
 
 This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
+    match chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -164,14 +178,19 @@ def schedule : Kernel Unit :=
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation
 
-/-- Yield semantics: move the current thread to the end of the runnable queue, then schedule. -/
+/-- WS-G4: Yield semantics: move the current thread to the end of its priority bucket
+and the flat list using `RunQueue.rotateToBack`, then schedule. -/
 def handleYield : Kernel Unit :=
   fun st =>
-    match rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
-    | .error e => .error e
-    | .ok runnable' =>
-        let st' := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
-        schedule st'
+    match st.scheduler.current with
+    | none => schedule st
+    | some tid =>
+        if tid ∈ st.scheduler.runQueue then
+          let st' := { st with scheduler := { st.scheduler with
+              runQueue := st.scheduler.runQueue.rotateToBack tid } }
+          schedule st'
+        else
+          .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- M-04/WS-E6: Time-slice preemption
@@ -206,11 +225,12 @@ def timerTick : Kernel Unit :=
               -- Time-slice expired: reset, rotate, reschedule
               let tcb' := { tcb with timeSlice := defaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
-              match rotateCurrentToBack (some tid) st'.scheduler.runnable with
-              | .error e => .error e
-              | .ok runnable' =>
-                  let st'' := { st' with scheduler := st'.scheduler.withRunnableQueue runnable' }
-                  schedule st''
+              if tid ∈ st'.scheduler.runQueue then
+                let st'' := { st' with scheduler := { st'.scheduler with
+                    runQueue := st'.scheduler.runQueue.rotateToBack tid } }
+                schedule st''
+              else
+                .error .schedulerInvariantViolation
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
@@ -346,7 +366,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread at hStep
-  cases hPick : chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
+  cases hPick : chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -509,12 +529,15 @@ theorem handleYield_preserves_wellFormed
     (hStep : handleYield st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
   unfold handleYield at hStep
-  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
-  | error e => simp [hRotate] at hStep
-  | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
-      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
-      exact schedule_preserves_wellFormed stMoved st' hSched
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur] at hStep
+    exact schedule_preserves_wellFormed st st' hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    split at hStep
+    · exact schedule_preserves_wellFormed _ st' hStep
+    · simp at hStep
 
 theorem handleYield_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -528,37 +551,20 @@ theorem handleYield_preserves_runQueueUnique
     (hStep : handleYield st = .ok ((), st')) :
     runQueueUnique st'.scheduler := by
   unfold handleYield at hStep
-  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
-  | error e => simp [hRotate] at hStep
-  | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
-      have hMovedUnique : runQueueUnique stMoved.scheduler := by
-        by_cases hCur : st.scheduler.current = none
-        · have hRunEq : runnable' = st.scheduler.runnable := by
-            simpa [rotateCurrentToBack, hCur] using hRotate.symm
-          subst runnable'
-          simpa [stMoved, runQueueUnique] using hUnique
-        · rcases Option.ne_none_iff_exists'.mp hCur with ⟨tid, hTid⟩
-          simp [rotateCurrentToBack, hTid] at hRotate
-          split at hRotate
-          · rename_i hMem
-            cases hRotate
-            have hErase : (st.scheduler.runnable.erase tid).Nodup := hUnique.erase tid
-            have hNotMemErase : tid ∉ st.scheduler.runnable.erase tid := by
-              exact List.Nodup.not_mem_erase (a := tid) hUnique
-            have hApp : (st.scheduler.runnable.erase tid ++ [tid]).Nodup := by
-              refine List.nodup_append.2 ?_
-              refine ⟨hErase, by simp, ?_⟩
-              intro x hx y hy
-              have hyTid : y = tid := by simpa using hy
-              subst hyTid
-              intro hEq
-              subst hEq
-              exact hNotMemErase hx
-            simpa [stMoved, runQueueUnique, hTid, hMem] using hApp
-          · simp at hRotate
-      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
-      exact schedule_preserves_runQueueUnique stMoved st' hMovedUnique hSched
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur] at hStep
+    exact schedule_preserves_runQueueUnique st st' hUnique hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    split at hStep
+    · rename_i hMem
+      have hMovedUnique : runQueueUnique { st.scheduler with
+          runQueue := st.scheduler.runQueue.rotateToBack tid } := by
+        simp only [runQueueUnique, SchedulerState.runnable]
+        exact RunQueue.toList_rotateToBack_nodup st.scheduler.runQueue tid hUnique hMem
+      exact schedule_preserves_runQueueUnique _ st' hMovedUnique hStep
+    · simp at hStep
 
 theorem schedule_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
@@ -599,24 +605,30 @@ theorem handleYield_preserves_currentThreadValid
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadValid st' := by
   unfold handleYield at hStep
-  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
-  | error e => simp [hRotate] at hStep
-  | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
-      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
-      exact schedule_preserves_currentThreadValid stMoved st' hSched
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur] at hStep
+    exact schedule_preserves_currentThreadValid st st' hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    split at hStep
+    · exact schedule_preserves_currentThreadValid _ st' hStep
+    · simp at hStep
 
 theorem handleYield_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadInActiveDomain st' := by
   unfold handleYield at hStep
-  cases hRotate : rotateCurrentToBack st.scheduler.current st.scheduler.runnable with
-  | error e => simp [hRotate] at hStep
-  | ok runnable' =>
-      let stMoved : SystemState := { st with scheduler := st.scheduler.withRunnableQueue runnable' }
-      have hSched : schedule stMoved = .ok ((), st') := by simpa [stMoved, hRotate] using hStep
-      exact schedule_preserves_currentThreadInActiveDomain stMoved st' hSched
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur] at hStep
+    exact schedule_preserves_currentThreadInActiveDomain st st' hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    split at hStep
+    · exact schedule_preserves_currentThreadInActiveDomain _ st' hStep
+    · simp at hStep
 
 theorem chooseThread_preserves_kernelInvariant
     (st st' : SystemState)
@@ -801,43 +813,22 @@ theorem timerTick_preserves_schedulerInvariantBundle
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
       | tcb tcb =>
         simp only [hObj] at hStep
-        -- Split on time-slice expiry
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time-slice expired: rotate + reschedule
           rw [if_pos hExpire] at hStep
-          cases hRotate : rotateCurrentToBack (some tid) st.scheduler.runnable with
-          | error e => simp [hRotate] at hStep
-          | ok runnable' =>
-            simp only [hRotate] at hStep
-            -- Delegate to schedule_preserves via apply
-            have hTidMem : tid ∈ st.scheduler.runnable := by
-              simp [queueCurrentConsistent, hCur] at hQCC; exact hQCC
-            have hRotEq : runnable' = st.scheduler.runnable.erase tid ++ [tid] := by
-              simp [rotateCurrentToBack, hTidMem] at hRotate; exact hRotate.symm
-            apply schedule_preserves_schedulerInvariantBundle _ st' _ hStep
-            refine ⟨?_, ?_, ?_⟩
-            · -- queueCurrentConsistent: current = some tid ∈ rotated queue
-              unfold queueCurrentConsistent
-              simp [SchedulerState.withRunnableQueue, hCur, hRotEq]
-            · -- runQueueUnique: rotated queue is Nodup
-              unfold runQueueUnique
-              dsimp [SchedulerState.withRunnableQueue]
-              rw [hRotEq]
-              have hErase : (st.scheduler.runnable.erase tid).Nodup := hRQU.erase tid
-              have hNotMemErase : tid ∉ st.scheduler.runnable.erase tid :=
-                List.Nodup.not_mem_erase (a := tid) hRQU
-              refine List.nodup_append.2 ?_
-              refine ⟨hErase, by simp, ?_⟩
-              intro x hx y hy
-              have hyTid : y = tid := by simpa using hy
-              subst hyTid
-              intro hEq
-              subst hEq
-              exact hNotMemErase hx
-            · -- currentThreadValid: TCB exists (with reset timeSlice)
-              unfold currentThreadValid
-              simp [SchedulerState.withRunnableQueue, hCur]
-        · -- Time-slice not expired: scheduler unchanged, only TCB timeSlice decremented
+          split at hStep
+          · rename_i hMemRQ
+            have hTidMem : tid ∈ st.scheduler.runQueue := hMemRQ
+            exact schedule_preserves_schedulerInvariantBundle _ st' ⟨
+              by simp only [queueCurrentConsistent, SchedulerState.runnable]
+                 exact RunQueue.mem_toList_rotateToBack_self st.scheduler.runQueue tid hTidMem,
+              by simp only [runQueueUnique, SchedulerState.runnable]
+                 exact RunQueue.toList_rotateToBack_nodup st.scheduler.runQueue tid hRQU hTidMem,
+              by unfold currentThreadValid; simp only []
+                 exact ⟨{ tcb with timeSlice := defaultTimeSlice },
+                        by simp⟩⟩ hStep
+          · simp at hStep
+        · -- Time-slice not expired: scheduler unchanged
           rw [if_neg hExpire] at hStep
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
@@ -875,11 +866,9 @@ theorem timerTick_preserves_kernelInvariant
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Expired: schedule sets current → delegates to schedule
           rw [if_pos hExpire] at hStep
-          cases hRotate : rotateCurrentToBack (some tid) st.scheduler.runnable with
-          | error e => simp [hRotate] at hStep
-          | ok runnable' =>
-            simp only [hRotate] at hStep
-            exact schedule_preserves_currentThreadInActiveDomain _ st' hStep
+          split at hStep
+          · exact schedule_preserves_currentThreadInActiveDomain _ st' hStep
+          · simp at hStep
         · -- Not expired: domain unchanged, TCB domain unchanged
           rw [if_neg hExpire] at hStep
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
