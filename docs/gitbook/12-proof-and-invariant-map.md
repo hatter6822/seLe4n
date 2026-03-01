@@ -29,6 +29,8 @@ Preservation shape:
 - `chooseThread_preserves_*`
 - `schedule_preserves_*`
 - `handleYield_preserves_*`
+- `timerTick_preserves_schedulerInvariantBundle` (WS-F4 / F-03)
+- `timerTick_preserves_kernelInvariant` (WS-F4 / F-03)
 
 ## 3. Capability invariants (M2)
 
@@ -49,6 +51,9 @@ Bundle level:
 Preservation shape:
 
 - operation-level `*_preserves_capabilityInvariantBundle` for insert/delete/revoke (compositional: pre-state → post-state),
+- `cspaceMutate_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
+- `cspaceRevokeCdt_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
+- `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
 - IPC-level preservation for endpoint send/receive/await-receive (compositional),
 - lifecycle preservation with `hNewObjCNodeUniq` hypothesis.
 
@@ -77,6 +82,8 @@ Preservation shape:
 - transition-level `endpointSend_preserves_ipcInvariant`, etc.
 - WS-F1 dual-queue: `endpointSendDual_preserves_ipcInvariant`, `endpointReceiveDual_preserves_ipcInvariant`, `endpointQueueRemoveDual_preserves_ipcInvariant` (TPI-D08).
 - WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
+- WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
+- WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
 
 ## 5. IPC-scheduler coherence (M3.5)
 
@@ -477,3 +484,39 @@ backward-preservation and frame lemmas.
 - `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
 - `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+
+## 18. WS-F4 proof gap closure
+
+### F-03: timerTick preservation (`Scheduler/Operations.lean`)
+
+`timerTick` now preserves the complete scheduler invariant bundle and kernel invariant:
+
+- `timerTick_preserves_schedulerInvariantBundle` — covers `queueCurrentConsistent`, `runQueueUnique`, `currentThreadValid`
+- `timerTick_preserves_kernelInvariant` — extends to include `currentThreadInActiveDomain`
+
+Proof strategy: case split on `scheduler.current` (none/some), object lookup (none/tcb/other), and time-slice expiry (`tcb.timeSlice ≤ 1`). Expired path delegates to existing `schedule_preserves_*` infrastructure; non-expired path proves scheduler unchanged directly.
+
+### F-06: cspaceMutate, cspaceRevokeCdt, cspaceRevokeCdtStrict preservation (`Capability/Invariant.lean`)
+
+- `cspaceMutate_preserves_capabilityInvariantBundle` — uses `revert/unfold` decomposition pattern; case-splits on capability lookup, rights check, and storeObject
+- `cspaceRevokeCdt_preserves_capabilityInvariantBundle` — fold induction via extracted `revokeCdtFoldBody` with error propagation lemmas (`revokeCdtFoldBody_foldl_error`). CDT-only state updates handled by `capabilityInvariantBundle_of_cdt_update`
+- `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` — `suffices` with inline fold induction over total function; case-splits on `firstFailure`, `lookupCdtSlotOfNode`, `cspaceDeleteSlot`
+
+Supporting infrastructure:
+- `capabilityInvariantBundle_of_cdt_update` — CDT-only state changes preserve capability invariants
+- `revokeCdtFoldBody` — extracted fold body for named step preservation
+- `revokeCdtFoldBody_preserves` — single-step preservation through fold body
+- `revokeCdtFoldBody_error` / `revokeCdtFoldBody_foldl_error` — error propagation through fold
+
+### F-12: Notification ipcInvariant + schedulerInvariantBundle preservation (`IPC/Invariant.lean`)
+
+- `notificationSignal_preserves_ipcInvariant` — wake path (storeObject → storeTcbIpcState → ensureRunnable) and merge path (storeObject only)
+- `notificationSignal_preserves_schedulerInvariantBundle` — compositional through `scheduler_unchanged_through_store_tcb` + ensureRunnable helpers
+- `notificationWait_preserves_ipcInvariant` — badge-consume path (storeObject → storeTcbIpcState) and wait path (storeObject → storeTcbIpcState → removeRunnable)
+- `notificationWait_preserves_schedulerInvariantBundle` — badge-consume scheduler unchanged; wait path through removeRunnable with currentThread safety
+- `notificationSignal_preserves_ipcSchedulerContractPredicates` — M3.5 contract predicate closure: wake path follows endpointReply pattern (storeTcbIpcState → ensureRunnable); merge path via `contracts_of_same_scheduler_ipcState` (no TCB/scheduler change)
+- `notificationWait_preserves_ipcSchedulerContractPredicates` — M3.5 contract predicate closure: badge-consume path (scheduler unchanged, waiter set to .ready); wait path (.blockedOnNotification not covered by blockedOnSend/blockedOnReceive predicates, waiter removed from runnable)
+
+Supporting infrastructure:
+- `storeObject_notification_preserves_ipcInvariant` — dual of `storeObject_endpoint_preserves_ipcInvariant`; new helper for notification-storing operations
+- Existing well-formedness lemmas: `notificationSignal_result_wellFormed_wake/merge`, `notificationWait_result_wellFormed_badge/wait`

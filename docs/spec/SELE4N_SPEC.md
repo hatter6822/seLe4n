@@ -48,13 +48,13 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.12.4` (`lakefile.toml`) |
+| **Package version** | `0.12.5` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 16,485 across 34 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active portfolio** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3 completed |
+| **Active portfolio** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3, WS-F4 completed |
 | **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
@@ -134,7 +134,7 @@ Authoritative detail:
 ### 5.2 High — Proof Coverage and Security
 
 - **WS-F3:** ~~Information-flow completeness~~ **COMPLETED** — extended `ObservableState` with 3 new fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering via `projectKernelObject` (F-22); 15 NI theorems (12 standalone + 3 enforcement-NI bridges); enforcement-NI bridge for `serviceRestartChecked`; test suite extended with WS-F3 coverage (CRIT-02, CRIT-03, F-20, F-21, F-22)
-- **WS-F4:** Proof gap closure — `timerTick`, `cspaceMutate`, notification full-system preservation, compound IPC ops (F-03, F-06, F-12)
+- **WS-F4:** ~~Proof gap closure~~ **COMPLETED** — `timerTick_preserves_schedulerInvariantBundle/kernelInvariant`; `cspaceMutate_preserves_capabilityInvariantBundle`; `cspaceRevokeCdt/cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle`; `notificationSignal/notificationWait` dual ipcInvariant + schedulerInvariantBundle + ipcSchedulerContractPredicates preservation; 11 Tier-3 surface anchors (F-03, F-06, F-12, M3.5)
 
 ### 5.3 Medium — Architectural Quality
 
