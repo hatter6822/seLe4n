@@ -19,13 +19,13 @@
   <strong>Raspberry Pi 5</strong>.
 </p>
 <p align="center">
-  <div>
+  <div align="center">
     Created thoughtfully with the help of:
   </div>
-  <div>
+  <div align="center">
     claude :robot: :heart: :robot: codex  
   </div>
-  <div>
+  <div align="center">
     <strong>TREAT THIS KERNEL ACCORDINGLY</strong>
   </div>
 </p>
