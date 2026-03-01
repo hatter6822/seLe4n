@@ -192,7 +192,7 @@ VSpace invariant bundle preservation is now proven for both success and error pa
 
 Data structure (WS-G6 / F-P05):
 
-- `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` — O(1) amortized lookup/insert/erase replacing O(m) list scan. HashMap key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` instance for entry-wise comparison. `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
+- `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` — O(1) amortized lookup/insert/erase replacing O(m) list scan. HashMap key uniqueness makes `noVirtualOverlap` trivially true via the universal `noVirtualOverlap_trivial` theorem (subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`). `BEq VSpaceRoot` instance for entry-wise comparison. `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
 
 VSpace invariant bundle structure (3-conjunct, WS-G3):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID

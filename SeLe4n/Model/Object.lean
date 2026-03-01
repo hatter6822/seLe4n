@@ -470,11 +470,19 @@ def noVirtualOverlap (root : VSpaceRoot) : Prop :=
     root.lookup v = some p₂ →
     p₁ = p₂
 
-/-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap. -/
+/-- WS-G6: With HashMap-backed mappings, `noVirtualOverlap` is trivially true
+for *every* `VSpaceRoot` — key uniqueness in the HashMap guarantees that a
+single `lookup` can return at most one value, so `p₁ = p₂` follows by
+injection. This subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`,
+and `unmapPage_noVirtualOverlap`, which are retained for API compatibility. -/
+theorem noVirtualOverlap_trivial (root : VSpaceRoot) : noVirtualOverlap root := by
+  intro v p₁ p₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
+
+/-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap.
+Follows directly from `noVirtualOverlap_trivial` but retained for API compatibility. -/
 theorem noVirtualOverlap_empty (asid : SeLe4n.ASID) :
-    noVirtualOverlap { asid := asid, mappings := {} } := by
-  intro v p₁ p₂ h₁ _
-  simp [lookup] at h₁
+    noVirtualOverlap { asid := asid, mappings := {} } :=
+  noVirtualOverlap_trivial _
 
 /-- WS-G6: After unmapping vaddr, lookup returns none. Maps to `HashMap.getElem?_erase`. -/
 theorem lookup_unmapPage_eq_none
@@ -551,7 +559,7 @@ theorem mapPage_noVirtualOverlap
   | some _ => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap; cases hMap
-      intro v p₁ p₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
+      exact noVirtualOverlap_trivial _
 
 /-- WS-G6: A successful `unmapPage` preserves the no-virtual-overlap invariant.
 With HashMap-backed mappings, `noVirtualOverlap` is trivially true by key uniqueness. -/
@@ -566,7 +574,7 @@ theorem unmapPage_noVirtualOverlap
   | none => simp [hLookup] at hUnmap
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap
-      intro v p₁ p₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
+      exact noVirtualOverlap_trivial _
 
 /-- TPI-001 helper: mapping vaddr does not affect lookup of a different vaddr'.
 Maps to `HashMap.getElem?_insert` with the inequality hypothesis. -/

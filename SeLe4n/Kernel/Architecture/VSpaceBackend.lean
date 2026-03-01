@@ -34,7 +34,7 @@ System-level invariants (e.g., cross-root ASID uniqueness, within-root
 no-virtual-overlap) are enforced by `SeLe4n/Kernel/Architecture/VSpace.lean`
 and `VSpaceInvariant.lean`, not by the backend itself.
 
-The current `ListVSpaceBackend` instance inherits all obligations from
+The current `hashMapVSpaceBackend` instance inherits all obligations from
 the existing `VSpaceRoot` lemmas in `SeLe4n/Model/Object.lean`.
 
 ## Status
@@ -56,7 +56,7 @@ open SeLe4n
     functions; the backend determines the internal data structure.
 
     **Type parameter `Root`:** The backing representation for a single
-    address space (e.g., `VSpaceRoot` for the current flat-list model,
+    address space (e.g., `VSpaceRoot` for the current HashMap-based model,
     or a hierarchical page table for ARM64). -/
 class VSpaceBackend (Root : Type) where
   /-- Insert a virtual-to-physical mapping into the root.

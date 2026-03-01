@@ -3,7 +3,7 @@
 ### WS-G6: VSpace Mapping HashMap (completed)
 
 - **VSpace mapping HashMap migration:** `VSpaceRoot.mappings` changed from `List (VAddr × PAddr)` to `Std.HashMap VAddr PAddr`. All page lookups (`VSpaceRoot.lookup`), inserts (`VSpaceRoot.mapPage`), and erasures (`VSpaceRoot.unmapPage`) now O(1) amortized instead of O(m) linear scan.
-- **`noVirtualOverlap` trivially true:** HashMap enforces key uniqueness by construction. `noVirtualOverlap` reformulated from list membership to `lookup`-based semantics; `mapPage_noVirtualOverlap` and `unmapPage_noVirtualOverlap` proofs reduced to single-line `Option.some.inj`.
+- **`noVirtualOverlap` trivially true:** HashMap enforces key uniqueness by construction. `noVirtualOverlap` reformulated from list membership to `lookup`-based semantics. Universal `noVirtualOverlap_trivial` theorem proves the property for *all* VSpaceRoots; `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`, and `unmapPage_noVirtualOverlap` delegate to it.
 - **Round-trip theorems re-proved:** `lookup_mapPage_eq`, `lookup_unmapPage_eq_none`, `lookup_mapPage_ne`, `lookup_unmapPage_ne` all re-proved using `HashMap_getElem?_insert`/`HashMap_getElem?_erase` bridge lemmas. `lookup_eq_none_iff` replaces `lookup_eq_none_not_mem` with bidirectional HashMap membership characterization.
 - **BEq instance:** Manual `BEq VSpaceRoot` (entry-wise HashMap comparison) replaces lost `DecidableEq VSpaceRoot` derivation, matching the `BEq CNode` pattern from WS-G5.
 - **VSpaceBackend updated:** `listVSpaceBackend` renamed to `hashMapVSpaceBackend`; docstring updated to reflect HashMap backing.
