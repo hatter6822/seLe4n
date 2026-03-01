@@ -95,15 +95,15 @@ machine-checked invariant preservation proofs:
 │   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
 │              │             │            │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
-│          Information Flow  (Policy, Projection, Enforcement)         │
+│         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions) │
+│     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
 ├──────────────────────────────────────────────────────────────────────┤
-│                  Model  (Object, State, CDT)                         │
+│                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│                 Foundations  (Prelude, Machine, MachineConfig)        │
+│             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings        │
+│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
