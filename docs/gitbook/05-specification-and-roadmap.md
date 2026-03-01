@@ -25,17 +25,20 @@ Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
 remediation) → WS-B..E (4 audit portfolios, all completed).
 
-## Active workstream: WS-F
+## Active workstream: WS-G
 
-The WS-F portfolio addresses v0.12.2 audit findings (6 CRIT, 6 HIGH, 12 MED, 9 LOW).
+The WS-G portfolio addresses kernel performance optimization findings from the
+[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
 
-Critical priorities:
-1. **WS-F1**: ~~IPC message transfer + dual-queue verification~~ **COMPLETED**
-2. **WS-F2**: ~~Untyped memory model~~ **COMPLETED**
-3. **WS-F3**: ~~Information-flow completeness~~ **COMPLETED**
-4. **WS-F4**: Proof gap closure
+Completed:
+1. **WS-G1**: ~~Typed identifier Hashable instances~~ **COMPLETED** (v0.12.6)
+2. **WS-G2**: ~~Object store & ObjectIndex HashMap~~ **COMPLETED** (v0.12.7)
 
-See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
+Planned:
+3. **WS-G3**: Scheduler lookup optimization
+4. **WS-G4**: CSpace lookup optimization
+
+Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
 
 ## Hardware roadmap
 
