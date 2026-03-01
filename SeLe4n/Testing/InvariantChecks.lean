@@ -16,7 +16,7 @@ private def endpointObjectValidB (ep : Endpoint) : Bool :=
   | some _ => ep.state == .receive
 
 private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
-  match st.objects tid.toObjId with
+  match st.objects[tid.toObjId]? with
   | some (.tcb tcb) => some tcb
   | _ => none
 
@@ -81,7 +81,7 @@ private def currentThreadValidB (st : SystemState) : Bool :=
   match st.scheduler.current with
   | none => true
   | some tid =>
-      match st.objects tid.toObjId with
+      match st.objects[tid.toObjId]? with
       | some (.tcb _) => true
       | _ => false
 
@@ -89,13 +89,13 @@ private def currentThreadValidB (st : SystemState) : Bool :=
 object present in the object store. -/
 private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.objects oid with
+    match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
         cn.slots.foldr (fun (slot, cap) inner =>
           let ok := match cap.target with
-            | .object targetId => (st.objects targetId).isSome
-            | .cnodeSlot cnId _ => (st.objects cnId).isSome
-            | .replyCap tid => (st.objects tid.toObjId).isSome
+            | .object targetId => (st.objects[targetId]?).isSome
+            | .cnodeSlot cnId _ => (st.objects[cnId]?).isSome
+            | .replyCap tid => (st.objects[tid.toObjId]?).isSome
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner) acc
     | _ => acc) []
 
@@ -105,7 +105,7 @@ tracked at runtime, we validate that badge-carrying caps have non-empty rights a
 rights belong to the canonical set. This is a conservative structural check. -/
 private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.objects oid with
+    match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
         cn.slots.foldr (fun (slot, cap) inner =>
           let ok := match cap.badge with
@@ -118,7 +118,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
 for a materialized object, it must agree with the actual object type. -/
 private def lifecycleMetadataChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.objects oid, st.lifecycle.objectTypes oid with
+    match st.objects[oid]?, st.lifecycle.objectTypes[oid]? with
     | some obj, some metaTy =>
         (s!"lifecycle objectType metadata consistent: oid={oid}", metaTy == obj.objectType) :: acc
     | _, _ => acc) []
@@ -137,7 +137,7 @@ private def serviceGraphAcyclicityChecks (serviceIds : List ServiceId) (st : Sys
 /-- M-11 VSpace ASID uniqueness: no two VSpace root objects share the same ASID. -/
 private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   let roots : List (SeLe4n.ObjId × SeLe4n.ASID) := objectIds.filterMap fun oid =>
-    match st.objects oid with
+    match (st.objects[oid]? : Option KernelObject) with
     | some (.vspaceRoot root) => some (oid, root.asid)
     | _ => none
   roots.map fun (oid, asid) =>
@@ -148,7 +148,7 @@ private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : Sys
 Also checks children-within-watermark bounds. -/
 private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.objects oid with
+    match (st.objects[oid]? : Option KernelObject) with
     | some (.untyped ut) =>
         (s!"untyped watermark valid: oid={oid}", ut.watermark ≤ ut.regionSize) ::
         (s!"untyped children within watermark: oid={oid}",
@@ -166,13 +166,13 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     st.scheduler.runnable.map fun tid =>
       let label := s!"runnable thread resolves to ready TCB: tid={tid.toNat}"
       let ok :=
-        match st.objects tid.toObjId with
+        match st.objects[tid.toObjId]? with
         | some (.tcb tcb) => tcb.ipcState == .ready
         | _ => false
       (label, ok)
   let endpointAndNotificationChecks : List (String × Bool) :=
     objectIds.foldr (fun oid acc =>
-      match st.objects oid with
+      match (st.objects[oid]? : Option KernelObject) with
       | some (.endpoint ep) =>
           (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) ::
           (s!"endpoint intrusive sendQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.sendQ) ::

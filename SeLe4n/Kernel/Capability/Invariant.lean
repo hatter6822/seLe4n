@@ -82,8 +82,8 @@ This invariant is maintained by `CNode.insert` (which removes the old entry befo
 prepending), `CNode.remove` (which only filters), and `CNode.revokeTargetLocal`
 (which only filters). -/
 def cspaceSlotUnique (st : SystemState) : Prop :=
-  ∀ cnodeId cn,
-    st.objects cnodeId = some (.cnode cn) →
+  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+    st.objects[cnodeId]? = some (KernelObject.cnode cn) →
     cn.slotsUnique
 
 /-- Lookup completeness: every capability entry in a CNode's slot list is retrievable
@@ -94,8 +94,8 @@ WS-E2 / C-01 reformulation: this is non-trivial because `CNode.lookup` uses
 slot indices existed (violating `cspaceSlotUnique`), later entries would be
 unretrievable. This property holds if and only if `cspaceSlotUnique` holds. -/
 def cspaceLookupSound (st : SystemState) : Prop :=
-  ∀ cnodeId cn slot cap,
-    st.objects cnodeId = some (.cnode cn) →
+  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability),
+    st.objects[cnodeId]? = some (KernelObject.cnode cn) →
     (slot, cap) ∈ cn.slots →
     SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap
 
@@ -153,7 +153,7 @@ theorem cspaceDeleteSlot_authority_reduction
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects cnodeId with
+  cases hObj : st.objects[cnodeId]? with
   | none => simp [cspaceDeleteSlot, hObj] at hStep
   | some obj =>
       cases obj with
@@ -183,7 +183,7 @@ theorem cspaceRevoke_local_target_reduction
     slot = addr.slot := by
   unfold cspaceRevoke at hStep
   rw [hParent] at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -197,25 +197,17 @@ theorem cspaceRevoke_local_target_reduction
           let revokedRefs : List SlotRef :=
             (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
               (fun entry => { cnode := addr.cnode, slot := entry.fst })
+          let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
             { st with
-              objects :=
-                fun oid =>
-                  if oid = addr.cnode then
-                    some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
-                  else
-                    st.objects oid,
+              objects := st.objects.insert addr.cnode revokedObj,
               objectIndex :=
-                if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
+                if st.objectIndexSet.contains addr.cnode then st.objectIndex else addr.cnode :: st.objectIndex,
+              objectIndexSet := st.objectIndexSet.insert addr.cnode,
               lifecycle :=
                 {
                   st.lifecycle with
-                    objectTypes :=
-                      fun oid =>
-                        if oid = addr.cnode then
-                          some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
-                        else
-                          st.lifecycle.objectTypes oid
+                    objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
                     capabilityRefs := fun ref =>
                       if ref.cnode = addr.cnode then
                         ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
@@ -232,7 +224,7 @@ theorem cspaceRevoke_local_target_reduction
             have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
               { cnode := addr.cnode, slot := slot } hObjEq
             simpa [hEq] using hLookup
-          simp [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
+          simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
             CNode.lookup, CNode.revokeTargetLocal] at hLookupStored
           rcases hLookupStored with ⟨slot', hFind⟩
           have hPred :
@@ -270,7 +262,7 @@ theorem cspaceLookupSlot_preserves_state
   unfold cspaceLookupSlot at hStep
   cases hLookup : SystemState.lookupSlotCap st addr with
   | none =>
-      cases hObj : st.objects addr.cnode with
+      cases hObj : st.objects[addr.cnode]? with
       | none => simp [hLookup, hObj] at hStep
       | some obj =>
           cases obj <;> simp [hLookup, hObj] at hStep
@@ -285,7 +277,7 @@ theorem cspaceInsertSlot_lookup_eq
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects cnodeId with
+  cases hObj : st.objects[cnodeId]? with
   | none => simp [cspaceInsertSlot, hObj] at hStep
   | some obj =>
       cases obj with
@@ -319,7 +311,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects cnodeId with
+  cases hObj : st.objects[cnodeId]? with
   | none => simp [cspaceDeleteSlot, hObj] at hStep
   | some obj =>
       cases obj with
@@ -347,7 +339,7 @@ theorem cspaceRevoke_preserves_source
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
       subst st1
-      cases hObj : st.objects addr.cnode with
+      cases hObj : st.objects[addr.cnode]? with
       | none => simp [hLookup, hObj] at hStep
       | some obj =>
           cases obj with
@@ -361,25 +353,17 @@ theorem cspaceRevoke_preserves_source
               let revokedRefs : List SlotRef :=
                 (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
                   (fun entry => { cnode := addr.cnode, slot := entry.fst })
+              let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
-                  objects :=
-                    fun oid =>
-                      if oid = addr.cnode then
-                        some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target))
-                      else
-                        st.objects oid,
+                  objects := st.objects.insert addr.cnode revokedObj,
                   objectIndex :=
-                    if addr.cnode ∈ st.objectIndex then st.objectIndex else addr.cnode :: st.objectIndex,
+                    if st.objectIndexSet.contains addr.cnode then st.objectIndex else addr.cnode :: st.objectIndex,
+                  objectIndexSet := st.objectIndexSet.insert addr.cnode,
                   lifecycle :=
                     {
                       st.lifecycle with
-                        objectTypes :=
-                          fun oid =>
-                            if oid = addr.cnode then
-                              some (KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)).objectType
-                            else
-                              st.lifecycle.objectTypes oid
+                        objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
                         capabilityRefs := fun ref =>
                           if ref.cnode = addr.cnode then
                             ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
@@ -394,8 +378,8 @@ theorem cspaceRevoke_preserves_source
               have hCap : SystemState.lookupSlotCap st addr = some parent :=
                 (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
               have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
-                simpa [storedState, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                  CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+                simpa [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                  Std.HashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
               have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
                 have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
                 simpa [hEq] using hCapStored
@@ -553,12 +537,12 @@ theorem notificationSignal_badge_stored_fresh
     (notifId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge)
     (ntfn : Notification)
-    (hObj : st.objects notifId = some (.notification ntfn))
+    (hObj : st.objects[notifId]? = some (.notification ntfn))
     (hNoWaiters : ntfn.waitingThreads = [])
     (hNoPending : ntfn.pendingBadge = none)
     (hSignal : notificationSignal notifId badge st = .ok ((), st')) :
     ∃ ntfn',
-      st'.objects notifId = some (.notification ntfn') ∧
+      st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.pendingBadge = some badge := by
   unfold notificationSignal at hSignal
   simp [hObj, hNoWaiters, hNoPending] at hSignal
@@ -574,10 +558,10 @@ theorem notificationWait_recovers_pending_badge
     (badge : SeLe4n.Badge)
     (hWait : notificationWait notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn,
-      st.objects notifId = some (.notification ntfn) ∧
+      st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = some badge := by
   unfold notificationWait at hWait
-  cases hObj : st.objects notifId with
+  cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hWait
   | some obj =>
       cases obj with
@@ -636,7 +620,7 @@ theorem badge_notification_routing_consistent
     (waiter : SeLe4n.ThreadId)
     (ntfn : Notification)
     (_hMint : cspaceMint src dst rights (some badge) st₁ = .ok ((), st₂))
-    (hNtfnObj : st₂.objects notifId = some (.notification ntfn))
+    (hNtfnObj : st₂.objects[notifId]? = some (.notification ntfn))
     (hNoWaiters : ntfn.waitingThreads = [])
     (hNoPending : ntfn.pendingBadge = none)
     (hSignal : notificationSignal notifId badge st₂ = .ok ((), st₃))
@@ -788,7 +772,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     · -- Modified CNode: derive uniqueness via CNode.insert_slotsUnique
       unfold cspaceInsertSlot at hStep
       rw [hEq] at hObj
-      cases hPre : st.objects addr.cnode with
+      cases hPre : st.objects[addr.cnode]? with
       | none => simp [hPre] at hStep
       | some preObj =>
         cases preObj with
@@ -808,8 +792,8 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
               have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
               have hObjMid := storeObject_objects_eq st stMid addr.cnode
                 (.cnode (preCn.insert addr.slot cap)) hStore
-              have hFinal : st'.objects addr.cnode = some (.cnode (preCn.insert addr.slot cap)) := by
-                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+              have hFinal : st'.objects[addr.cnode]? = some (.cnode (preCn.insert addr.slot cap)) := by
+                rw [← hObjMid]; exact congrArg (·[addr.cnode]?) hObjRef
               rw [hFinal] at hObj; cases hObj
               exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
     · -- Unmodified CNodes: transfer directly from pre-state
@@ -854,7 +838,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceDeleteSlot at hStep
-    cases hPre : st.objects addr.cnode with
+    cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
@@ -879,14 +863,14 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
             · rw [hEq] at hObj
               have hObjMid := storeObject_objects_eq st stMid addr.cnode
                 (.cnode (preCn.remove addr.slot)) hStore
-              have : (SystemState.detachSlotFromCdt stRef addr).objects addr.cnode =
+              have : (SystemState.detachSlotFromCdt stRef addr).objects[addr.cnode]? =
                   some (.cnode (preCn.remove addr.slot)) := by
                 rw [hObjDetach, hObjRef, ← hObjMid]
               rw [this] at hObj; cases hObj
               exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
             · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
                 (.cnode (preCn.remove addr.slot)) hEq hStore
-              have : (SystemState.detachSlotFromCdt stRef addr).objects cnodeId = st.objects cnodeId := by
+              have : (SystemState.detachSlotFromCdt stRef addr).objects[cnodeId]? = st.objects[cnodeId]? := by
                 rw [hObjDetach, hObjRef, ← hObjMid]
               rw [this] at hObj
               exact hUnique cnodeId cn hObj
@@ -912,7 +896,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
       subst st1
-      cases hPre : st.objects addr.cnode with
+      cases hPre : st.objects[addr.cnode]? with
       | none => simp [hLookup, hPre] at hStep
       | some preObj =>
         cases preObj with
@@ -930,16 +914,16 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
             · rw [hEq] at hObj
               have hObjMid := storeObject_objects_eq st stMid addr.cnode
                 (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) hStore
-              have : st'.objects addr.cnode =
+              have : st'.objects[addr.cnode]? =
                   some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) := by
-                rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+                rw [← hObjMid]; exact congrArg (·[addr.cnode]?) hObjRef
               rw [this] at hObj; cases hObj
               exact CNode.revokeTargetLocal_slotsUnique preCn addr.slot parent.target
                 (hUnique addr.cnode preCn hPre)
             · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
                 (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) hEq hStore
-              have : st'.objects cnodeId = st.objects cnodeId := by
-                rw [← hObjMid]; exact congrFun hObjRef cnodeId
+              have : st'.objects[cnodeId]? = st.objects[cnodeId]? := by
+                rw [← hObjMid]; exact congrArg (·[cnodeId]?) hObjRef
               rw [this] at hObj
               exact hUnique cnodeId cn hObj
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
@@ -1092,7 +1076,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       subst st1
       by_cases hRights : rightsSubset rights cap.rights
       · simp only [hRights, ite_true]
-        cases hPre : st.objects addr.cnode with
+        cases hPre : st.objects[addr.cnode]? with
         | none => simp
         | some preObj =>
           cases preObj with
@@ -1114,10 +1098,10 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 have hObjMid := storeObject_objects_eq st stMid addr.cnode
                   (.cnode (preCn.insert addr.slot
                     { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) hStore
-                have hFinal : st'.objects addr.cnode =
+                have hFinal : st'.objects[addr.cnode]? =
                     some (.cnode (preCn.insert addr.slot
                       { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) := by
-                  rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+                  rw [← hObjMid]; exact congrArg (·[addr.cnode]?) hObjRef
                 rw [hFinal] at hObj; cases hObj
                 exact CNode.insert_slotsUnique preCn addr.slot _
                   (hUnique addr.cnode preCn hPre)
@@ -1126,8 +1110,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                     { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) hEq hStore
                 have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr
                   (some cap.target) hStep
-                have hFinal : st'.objects cnodeId = st.objects cnodeId := by
-                  rw [← hObjMid]; exact congrFun hObjRef cnodeId
+                have hFinal : st'.objects[cnodeId]? = st.objects[cnodeId]? := by
+                  rw [← hObjMid]; exact congrArg (·[cnodeId]?) hObjRef
                 rw [hFinal] at hObj
                 exact hUnique cnodeId cn hObj
       · simp [hRights]
@@ -1368,13 +1352,13 @@ theorem endpointReply_preserves_capabilityInvariantBundle
               obtain ⟨_, hStEq⟩ := hStep; subst hStEq
               -- storeTcbIpcStateAndMessage only writes TCBs, so CNode objects are unchanged
               have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-                  st1.objects cnodeId = some (.cnode cn) → st.objects cnodeId = some (.cnode cn) := by
+                  st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
                 intro cnodeId cn hCn1
                 by_cases hEq : cnodeId = target.toObjId
                 · -- At target.toObjId, storeTcbIpcStateAndMessage wrote a TCB, not a CNode
                   subst hEq
-                  have hTargetTcb : ∃ tcb', st.objects target.toObjId = some (.tcb tcb') := by
-                    unfold lookupTcb at hLookup; cases hObj : st.objects target.toObjId with
+                  have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
+                    unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
                     | none => simp [hObj] at hLookup
                     | some obj => cases obj with
                       | tcb t => exact ⟨t, rfl⟩
@@ -1489,7 +1473,7 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
   · intro oid ep hEndpoint
     by_cases hEq : oid = target
     · subst hEq
-      have hObjAtTarget : st'.objects oid = some newObj := by
+      have hObjAtTarget : st'.objects[oid]? = some newObj := by
         rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
           ⟨_, _, _, _, _, _, hStore⟩
         exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
@@ -1498,14 +1482,14 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
       have hNewObjEq : newObj = .endpoint ep := by
         injection hSomeEq
       exact hNewObjEndpointInv ep hNewObjEq
-    · have hPreserved : st'.objects oid = st.objects oid :=
+    · have hPreserved : st'.objects[oid]? = st.objects[oid]? :=
         lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
-      have hEndpointSt : st.objects oid = some (.endpoint ep) := by simpa [hPreserved] using hEndpoint
+      have hEndpointSt : st.objects[oid]? = some (.endpoint ep) := by simpa [hPreserved] using hEndpoint
       exact hEndpointInv oid ep hEndpointSt
   · intro oid ntfn hNtfn
     by_cases hEq : oid = target
     · subst hEq
-      have hObjAtTarget : st'.objects oid = some newObj := by
+      have hObjAtTarget : st'.objects[oid]? = some newObj := by
         rcases lifecycleRetypeObject_ok_as_storeObject st st' authority oid newObj hStep with
           ⟨_, _, _, _, _, _, hStore⟩
         exact lifecycle_storeObject_objects_eq st st' oid newObj hStore
@@ -1514,9 +1498,9 @@ theorem lifecycleRetypeObject_preserves_ipcInvariant
       have hNewObjEq : newObj = .notification ntfn := by
         injection hSomeEq
       exact hNewObjNotificationInv ntfn hNewObjEq
-    · have hPreserved : st'.objects oid = st.objects oid :=
+    · have hPreserved : st'.objects[oid]? = st.objects[oid]? :=
         lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target oid newObj hEq hStep
-      have hNtfnSt : st.objects oid = some (.notification ntfn) := by simpa [hPreserved] using hNtfn
+      have hNtfnSt : st.objects[oid]? = some (.notification ntfn) := by simpa [hPreserved] using hNtfn
       exact hNotificationInv oid ntfn hNtfnSt
 
 theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle

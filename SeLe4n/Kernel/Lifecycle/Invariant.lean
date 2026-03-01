@@ -73,7 +73,7 @@ object-type metadata whenever that object identity is present. -/
 def lifecycleCapabilityRefObjectTargetTypeAligned (st : SystemState) : Prop :=
   ∀ ref oid obj,
     SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
-    st.objects oid = some obj →
+    st.objects[oid]? = some obj →
     SystemState.lookupObjectTypeMeta st oid = some obj.objectType
 
 /-- M4-B stale-reference exclusion component: capability-object references inherit the same
@@ -105,7 +105,7 @@ theorem lifecycleIdentityNoTypeAliasConflict_of_exact
     (hExact : lifecycleIdentityTypeExact st) :
     lifecycleIdentityNoTypeAliasConflict st := by
   intro oid ty₁ ty₂ hTy₁ hTy₂
-  cases hObj : st.objects oid with
+  cases hObj : st.objects[oid]? with
   | none =>
       have hNone : SystemState.lookupObjectTypeMeta st oid = none := by
         simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
@@ -231,29 +231,29 @@ theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
 /-- WS-F2: Untyped watermark invariant — for every untyped object in the store,
 its watermark does not exceed its region size. -/
 def untypedWatermarkInvariant (st : SystemState) : Prop :=
-  ∀ oid ut,
-    st.objects oid = some (.untyped ut) →
+  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.objects[oid]? = some (KernelObject.untyped ut) →
     ut.watermarkValid
 
 /-- WS-F2: Untyped children-within-watermark invariant — all child allocations
 fit within the watermark (and thus within the region). -/
 def untypedChildrenBoundsInvariant (st : SystemState) : Prop :=
-  ∀ oid ut,
-    st.objects oid = some (.untyped ut) →
+  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.objects[oid]? = some (KernelObject.untyped ut) →
     ut.childrenWithinWatermark
 
 /-- WS-F2: Untyped children non-overlap invariant — no two child allocations
 within the same untyped region overlap in their address ranges. -/
 def untypedChildrenNonOverlapInvariant (st : SystemState) : Prop :=
-  ∀ oid ut,
-    st.objects oid = some (.untyped ut) →
+  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.objects[oid]? = some (KernelObject.untyped ut) →
     ut.childrenNonOverlap
 
 /-- WS-F2: Untyped children unique-id invariant — children within each untyped
 have distinct object identities. -/
 def untypedChildrenUniqueIdsInvariant (st : SystemState) : Prop :=
-  ∀ oid ut,
-    st.objects oid = some (.untyped ut) →
+  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.objects[oid]? = some (KernelObject.untyped ut) →
     ut.childrenUniqueIds
 
 /-- WS-F2: Combined untyped memory well-formedness invariant. -/
@@ -267,7 +267,7 @@ def untypedMemoryInvariant (st : SystemState) : Prop :=
 because no untyped objects exist. -/
 theorem default_systemState_untypedMemoryInvariant :
     untypedMemoryInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro oid ut hObj <;> simp at hObj
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro oid ut hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp))
 
 /-- WS-F2: `storeObject` at a non-untyped slot preserves watermark invariant
 for all existing untyped objects at other ObjIds. -/
@@ -280,9 +280,9 @@ theorem storeObject_preserves_untypedWatermarkInvariant_ne
     (uid : SeLe4n.ObjId)
     (hNe : uid ≠ oid)
     (ut : UntypedObject)
-    (hUt : st'.objects uid = some (.untyped ut)) :
+    (hUt : st'.objects[uid]? = some (.untyped ut)) :
     ut.watermarkValid := by
-  have hPrev : st'.objects uid = st.objects uid :=
+  have hPrev : st'.objects[uid]? = st.objects[uid]? :=
     storeObject_objects_ne st st' oid uid obj hNe hStep
   rw [hPrev] at hUt
   exact hInv uid ut hUt
@@ -339,7 +339,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     (hInv : untypedMemoryInvariant st)
     (_hNe : childId ≠ untypedId)
     (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
-    (hFresh : ∀ ut, st.objects untypedId = some (.untyped ut) →
+    (hFresh : ∀ ut, st.objects[untypedId]? = some (.untyped ut) →
         ∀ c ∈ ut.children, c.objId ≠ childId)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     untypedMemoryInvariant st' := by
@@ -362,10 +362,10 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
   have hUt'UI := UntypedObject.allocate_preserves_childrenUniqueIds ut ut' childId allocSize offset hUtUI (hFresh ut hObj) hAlloc
   -- Helper: resolve post-state object at any oid through the two storeObject calls
   have resolve : ∀ oid utPost,
-      st'.objects oid = some (.untyped utPost) →
+      st'.objects[oid]? = some (.untyped utPost) →
       (oid = childId ∧ newObj = .untyped utPost) ∨
       (oid ≠ childId ∧ oid = untypedId ∧ ut' = utPost) ∨
-      (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects oid = some (.untyped utPost)) := by
+      (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects[oid]? = some (.untyped utPost)) := by
     intro oid utPost hObjPost
     by_cases hEqChild : oid = childId
     · left; constructor; exact hEqChild

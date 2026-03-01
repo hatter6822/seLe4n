@@ -92,7 +92,7 @@ theorem policyBackingObjectTyped_of_lifecycleInvariant
     (svc : ServiceGraphEntry)
     (obj : KernelObject)
     (hLifecycle : lifecycleInvariantBundle st)
-    (hObj : st.objects svc.identity.backingObject = some obj) :
+    (hObj : st.objects[svc.identity.backingObject]? = some obj) :
     policyBackingObjectTyped st svc := by
   rcases hLifecycle with ⟨hIdAlias, _⟩
   rcases hIdAlias with ⟨hTypeExact, _⟩
@@ -138,7 +138,7 @@ theorem servicePolicySurfaceInvariant_of_lifecycleInvariant
     (hLifecycle : lifecycleInvariantBundle st)
     (hBackingObjects :
       ∀ sid svc, lookupService st sid = some svc →
-        ∃ obj, st.objects svc.identity.backingObject = some obj) :
+        ∃ obj, st.objects[svc.identity.backingObject]? = some obj) :
     servicePolicySurfaceInvariant st := by
   intro sid svc hSvc
   rcases hBackingObjects sid svc hSvc with ⟨obj, hObj⟩

@@ -23,10 +23,10 @@ def lifecycleRetypeObject
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    match st.objects target with
+    match st.objects[target]? with
     | none => .error .objectNotFound
     | some currentObj =>
-        if st.lifecycle.objectTypes target = some currentObj.objectType then
+        if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
           match cspaceLookupSlot authority st with
           | .error e => .error e
           | .ok (authCap, st') =>
@@ -107,7 +107,7 @@ def retypeFromUntyped
     (newObj : KernelObject)
     (allocSize : Nat) : Kernel Unit :=
   fun st =>
-    match st.objects untypedId with
+    match st.objects[untypedId]? with
     | none => .error .objectNotFound
     | some (.untyped ut) =>
         -- Device untypeds cannot back typed kernel objects (except other untypeds)
@@ -136,7 +136,7 @@ def retypeFromUntyped
 
 /-- WS-F2: Helper to look up an UntypedObject by ObjId. -/
 def lookupUntyped (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
-  match st.objects id with
+  match st.objects[id]? with
   | some (.untyped ut) => some ut
   | _ => none
 
@@ -149,7 +149,7 @@ theorem retypeFromUntyped_ok_decompose
     (allocSize : Nat)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     ∃ ut ut' cap stLookup stUt offset,
-      st.objects untypedId = some (.untyped ut) ∧
+      st.objects[untypedId]? = some (.untyped ut) ∧
       (ut.isDevice = false ∨ newObj.objectType = .untyped) ∧
       ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, stLookup) ∧
@@ -158,7 +158,7 @@ theorem retypeFromUntyped_ok_decompose
       storeObject untypedId (.untyped ut') stLookup = .ok ((), stUt) ∧
       storeObject childId newObj stUt = .ok ((), st') := by
   unfold retypeFromUntyped at hStep
-  cases hObj : st.objects untypedId with
+  cases hObj : st.objects[untypedId]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -233,7 +233,7 @@ theorem retypeFromUntyped_error_typeMismatch
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (obj : KernelObject)
-    (hObj : st.objects untypedId = some obj)
+    (hObj : st.objects[untypedId]? = some obj)
     (hNotUntyped : ∀ u, obj ≠ .untyped u) :
     retypeFromUntyped authority untypedId childId newObj allocSize st = .error .untypedTypeMismatch := by
   unfold retypeFromUntyped
@@ -250,7 +250,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject)
-    (hObj : st.objects untypedId = some (.untyped ut))
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
@@ -270,7 +270,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject) (cap : Capability)
-    (hObj : st.objects untypedId = some (.untyped ut))
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
@@ -297,7 +297,7 @@ theorem lifecycle_storeObject_objects_eq
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects id = some obj :=
+    st'.objects[id]? = some obj :=
   SeLe4n.Model.storeObject_objects_eq st st' id obj hStore
 
 theorem lifecycle_storeObject_objects_ne
@@ -306,7 +306,7 @@ theorem lifecycle_storeObject_objects_ne
     (obj : KernelObject)
     (hNe : oid ≠ id)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects oid = st.objects oid :=
+    st'.objects[oid]? = st.objects[oid]? :=
   SeLe4n.Model.storeObject_objects_ne st st' id oid obj hNe hStore
 
 theorem lifecycle_storeObject_scheduler_eq
@@ -327,7 +327,7 @@ theorem cspaceLookupSlot_ok_state_eq
   unfold cspaceLookupSlot at hLookup
   cases hCap : SystemState.lookupSlotCap st addr with
   | none =>
-      cases hObj : st.objects addr.cnode with
+      cases hObj : st.objects[addr.cnode]? with
       | none => simp [hCap, hObj] at hLookup
       | some obj =>
           cases obj <;> simp [hCap, hObj] at hLookup
@@ -342,16 +342,16 @@ theorem lifecycleRetypeObject_ok_as_storeObject
     (newObj : KernelObject)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     ∃ currentObj cap,
-      st.objects target = some currentObj ∧
-      st.lifecycle.objectTypes target = some currentObj.objectType ∧
+      st.objects[target]? = some currentObj ∧
+      st.lifecycle.objectTypes[target]? = some currentObj.objectType ∧
       cspaceLookupSlot authority st = .ok (cap, st) ∧
       lifecycleRetypeAuthority cap target = true ∧
       storeObject target newObj st = .ok ((), st') := by
   unfold lifecycleRetypeObject at hStep
-  cases hObj : st.objects target with
+  cases hObj : st.objects[target]? with
   | none => simp [hObj] at hStep
   | some currentObj =>
-      by_cases hMeta : st.lifecycle.objectTypes target = some currentObj.objectType
+      by_cases hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType
       · cases hLookup : cspaceLookupSlot authority st with
         | error e => simp [hObj, hMeta, hLookup] at hStep
         | ok pair =>
@@ -373,7 +373,7 @@ theorem lifecycleRetypeObject_ok_lookup_preserved_ne
     (newObj : KernelObject)
     (hNe : oid ≠ target)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
     ⟨_, _, _, _, _, _, hStore⟩
   exact lifecycle_storeObject_objects_ne st st' target oid newObj hNe hStore
@@ -413,8 +413,8 @@ theorem lifecycleRetypeObject_error_illegalState
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj currentObj : KernelObject)
-    (hObj : st.objects target = some currentObj)
-    (hMetaMismatch : st.lifecycle.objectTypes target ≠ some currentObj.objectType) :
+    (hObj : st.objects[target]? = some currentObj)
+    (hMetaMismatch : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
     lifecycleRetypeObject authority target newObj st = .error .illegalState := by
   unfold lifecycleRetypeObject
   simp [hObj, hMetaMismatch]
@@ -425,8 +425,8 @@ theorem lifecycleRetypeObject_error_illegalAuthority
     (target : SeLe4n.ObjId)
     (newObj currentObj : KernelObject)
     (cap : Capability)
-    (hObj : st.objects target = some currentObj)
-    (hMeta : st.lifecycle.objectTypes target = some currentObj.objectType)
+    (hObj : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuthFail : lifecycleRetypeAuthority cap target = false) :
     lifecycleRetypeObject authority target newObj st = .error .illegalAuthority := by
@@ -439,13 +439,13 @@ theorem lifecycleRetypeObject_success_updates_object
     (target : SeLe4n.ObjId)
     (newObj currentObj : KernelObject)
     (cap : Capability)
-    (hObj : st.objects target = some currentObj)
-    (hMeta : st.lifecycle.objectTypes target = some currentObj.objectType)
+    (hObj : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuth : lifecycleRetypeAuthority cap target = true)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    st'.objects target = some newObj := by
-  have _ : st.lifecycle.objectTypes target = some currentObj.objectType := hMeta
+    st'.objects[target]? = some newObj := by
+  have _ : st.lifecycle.objectTypes[target]? = some currentObj.objectType := hMeta
   have _ : lifecycleRetypeAuthority cap target = true := hAuth
   rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
     ⟨currentObj', cap', hObj', _, hLookup', _, hStore⟩

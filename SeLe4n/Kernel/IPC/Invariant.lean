@@ -23,14 +23,17 @@ open SeLe4n.Model
 theorem storeObject_objects_eq
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects id = some obj := by
+    st'.objects[id]? = some obj := by
   unfold storeObject at hStore; cases hStore; simp
 
 theorem storeObject_objects_ne
     (st st' : SystemState) (id oid : SeLe4n.ObjId) (obj : KernelObject)
     (hNe : oid ≠ id) (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
-  unfold storeObject at hStore; cases hStore; simp [hNe]
+    st'.objects[oid]? = st.objects[oid]? := by
+  unfold storeObject at hStore; cases hStore
+  rw [HashMap_getElem?_insert]
+  have : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
+  simp [this]
 
 theorem storeObject_scheduler_eq
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
@@ -41,8 +44,8 @@ theorem storeObject_scheduler_eq
 theorem tcb_lookup_of_endpoint_store
     (st st' : SystemState) (endpointId tid : SeLe4n.ObjId) (tcb : TCB) (ep' : Endpoint)
     (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
-    (hObj : st'.objects tid = some (.tcb tcb)) :
-    st.objects tid = some (.tcb tcb) := by
+    (hObj : st'.objects[tid]? = some (.tcb tcb)) :
+    st.objects[tid]? = some (.tcb tcb) := by
   by_cases hEq : tid = endpointId
   · rw [hEq, storeObject_objects_eq st st' endpointId (.endpoint ep') hStore] at hObj; cases hObj
   · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj; exact hObj
@@ -89,8 +92,8 @@ def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
 
 def ipcInvariant (st : SystemState) : Prop :=
-  (∀ oid ep, st.objects oid = some (.endpoint ep) → endpointInvariant ep) ∧
-  (∀ oid ntfn, st.objects oid = some (.notification ntfn) → notificationInvariant ntfn)
+  (∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st.objects[oid]? = some (KernelObject.endpoint ep) → endpointInvariant ep) ∧
+  (∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → notificationInvariant ntfn)
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
@@ -98,16 +101,16 @@ def ipcInvariant (st : SystemState) : Prop :=
 
 def runnableThreadIpcReady (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) tcb,
-    st.objects tid.toObjId = some (.tcb tcb) → tid ∈ st.scheduler.runnable → tcb.ipcState = .ready
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tid ∈ st.scheduler.runnable → tcb.ipcState = .ready
 
 def blockedOnSendNotRunnable (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
-    st.objects tid.toObjId = some (.tcb tcb) → tcb.ipcState = .blockedOnSend endpointId →
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .blockedOnSend endpointId →
     tid ∉ st.scheduler.runnable
 
 def blockedOnReceiveNotRunnable (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) tcb endpointId,
-    st.objects tid.toObjId = some (.tcb tcb) → tcb.ipcState = .blockedOnReceive endpointId →
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .blockedOnReceive endpointId →
     tid ∉ st.scheduler.runnable
 
 def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
@@ -128,9 +131,9 @@ theorem endpointObjectValid_of_queueWellFormed
 theorem endpointSend_ok_implies_endpoint_object
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    ∃ ep, st.objects endpointId = some (.endpoint ep) := by
+    ∃ ep, st.objects[endpointId]? = some (.endpoint ep) := by
   unfold endpointSend at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
@@ -139,9 +142,9 @@ theorem endpointSend_ok_implies_endpoint_object
 theorem endpointAwaitReceive_ok_implies_endpoint_object
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    ∃ ep, st.objects endpointId = some (.endpoint ep) := by
+    ∃ ep, st.objects[endpointId]? = some (.endpoint ep) := by
   unfold endpointAwaitReceive at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
@@ -150,9 +153,9 @@ theorem endpointAwaitReceive_ok_implies_endpoint_object
 theorem endpointReceive_ok_implies_endpoint_object
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    ∃ ep, st.objects endpointId = some (.endpoint ep) := by
+    ∃ ep, st.objects[endpointId]? = some (.endpoint ep) := by
   unfold endpointReceive at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ => simp [hObj] at hStep
@@ -166,7 +169,7 @@ theorem endpointReceive_ok_implies_endpoint_object
 theorem endpointSend_result_wellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    ∃ ep', st'.objects endpointId = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
   obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : ep.state with
   | idle =>
@@ -221,7 +224,7 @@ theorem endpointSend_result_wellFormed
 theorem endpointAwaitReceive_result_wellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st')) :
-    ∃ ep', st'.objects endpointId = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
   obtain ⟨ep, hObj⟩ := endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep
   -- endpointAwaitReceive only succeeds on idle/[]/none
   simp [endpointAwaitReceive, hObj] at hStep
@@ -248,7 +251,7 @@ theorem endpointAwaitReceive_result_wellFormed
 theorem endpointReceive_result_wellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceive endpointId st = .ok (sender, st')) :
-    ∃ ep', st'.objects endpointId = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧ endpointQueueWellFormed ep' := by
   obtain ⟨ep, hObj⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : ep.state with
   | idle => simp [endpointReceive, hObj, hState] at hStep
@@ -290,8 +293,8 @@ theorem endpointReceive_result_wellFormed
 private theorem endpointSend_preserves_cnode
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointSend endpointId sender st = .ok ((), st'))
-    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects oid = some (.cnode cn)) :
-    st.objects oid = some (.cnode cn) := by
+    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects[oid]? = some (.cnode cn)) :
+    st.objects[oid]? = some (.cnode cn) := by
   obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : ep.state with
   | idle =>
@@ -304,8 +307,8 @@ private theorem endpointSend_preserves_cnode
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hCn2 : st2.objects oid = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
-        have hCn1 : pair.2.objects oid = some (.cnode cn) :=
+        have hCn2 : st2.objects[oid]? = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
+        have hCn1 : pair.2.objects[oid]? = some (.cnode cn) :=
           storeTcbIpcState_cnode_backward pair.2 st2 sender _ oid cn hTcb hCn2
         by_cases hEq : oid = endpointId
         · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
@@ -320,8 +323,8 @@ private theorem endpointSend_preserves_cnode
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hCn2 : st2.objects oid = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
-        have hCn1 : pair.2.objects oid = some (.cnode cn) :=
+        have hCn2 : st2.objects[oid]? = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
+        have hCn1 : pair.2.objects[oid]? = some (.cnode cn) :=
           storeTcbIpcState_cnode_backward pair.2 st2 sender _ oid cn hTcb hCn2
         by_cases hEq : oid = endpointId
         · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
@@ -339,9 +342,9 @@ private theorem endpointSend_preserves_cnode
         | error e => simp
         | ok st2 =>
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          have hCn2 : st2.objects oid = some (.cnode cn) := by
+          have hCn2 : st2.objects[oid]? = some (.cnode cn) := by
             rwa [ensureRunnable_preserves_objects] at hCn
-          have hCn1 : pair.2.objects oid = some (.cnode cn) :=
+          have hCn1 : pair.2.objects[oid]? = some (.cnode cn) :=
             storeTcbIpcState_cnode_backward pair.2 st2 receiver _ oid cn hTcb hCn2
           by_cases hEq : oid = endpointId
           · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
@@ -350,8 +353,8 @@ private theorem endpointSend_preserves_cnode
 private theorem endpointAwaitReceive_preserves_cnode
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (hStep : endpointAwaitReceive endpointId receiver st = .ok ((), st'))
-    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects oid = some (.cnode cn)) :
-    st.objects oid = some (.cnode cn) := by
+    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects[oid]? = some (.cnode cn)) :
+    st.objects[oid]? = some (.cnode cn) := by
   obtain ⟨ep, hObj⟩ := endpointAwaitReceive_ok_implies_endpoint_object st st' endpointId receiver hStep
   simp [endpointAwaitReceive, hObj] at hStep
   cases hState : ep.state <;> simp [hState] at hStep
@@ -369,8 +372,8 @@ private theorem endpointAwaitReceive_preserves_cnode
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-            have hCn2 : st2.objects oid = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
-            have hCn1 : pair.2.objects oid = some (.cnode cn) :=
+            have hCn2 : st2.objects[oid]? = some (.cnode cn) := by rwa [removeRunnable_preserves_objects] at hCn
+            have hCn1 : pair.2.objects[oid]? = some (.cnode cn) :=
               storeTcbIpcState_cnode_backward pair.2 st2 receiver _ oid cn hTcb hCn2
             by_cases hEq : oid = endpointId
             · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
@@ -379,8 +382,8 @@ private theorem endpointAwaitReceive_preserves_cnode
 private theorem endpointReceive_preserves_cnode
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceive endpointId st = .ok (sender, st'))
-    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects oid = some (.cnode cn)) :
-    st.objects oid = some (.cnode cn) := by
+    (oid : SeLe4n.ObjId) (cn : CNode) (hCn : st'.objects[oid]? = some (.cnode cn)) :
+    st.objects[oid]? = some (.cnode cn) := by
   obtain ⟨ep, hObj⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : ep.state with
   | idle => simp [endpointReceive, hObj, hState] at hStep
@@ -405,9 +408,9 @@ private theorem endpointReceive_preserves_cnode
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨hSenderEq, hStEq⟩
             subst hStEq; subst hSenderEq
-            have hCn2 : st2.objects oid = some (.cnode cn) := by
+            have hCn2 : st2.objects[oid]? = some (.cnode cn) := by
               rwa [ensureRunnable_preserves_objects] at hCn
-            have hCn1 : pair.2.objects oid = some (.cnode cn) :=
+            have hCn1 : pair.2.objects[oid]? = some (.cnode cn) :=
               storeTcbIpcState_cnode_backward pair.2 st2 hd _ oid cn hTcb hCn2
             by_cases hEq : oid = endpointId
             · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at hCn1; cases hCn1
@@ -421,9 +424,9 @@ private theorem endpointReceive_preserves_cnode
 private theorem endpointSend_preserves_other_endpoint
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointSend endpointId sender st = .ok ((), st'))
-    (oid : SeLe4n.ObjId) (ep : Endpoint) (hEp : st'.objects oid = some (.endpoint ep))
+    (oid : SeLe4n.ObjId) (ep : Endpoint) (hEp : st'.objects[oid]? = some (.endpoint ep))
     (hNe : oid ≠ endpointId) :
-    st.objects oid = some (.endpoint ep) := by
+    st.objects[oid]? = some (.endpoint ep) := by
   obtain ⟨epOrig, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : epOrig.state with
   | idle =>
@@ -436,7 +439,7 @@ private theorem endpointSend_preserves_other_endpoint
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hEp2 : st2.objects oid = some (.endpoint ep) := by rwa [removeRunnable_preserves_objects] at hEp
+        have hEp2 : st2.objects[oid]? = some (.endpoint ep) := by rwa [removeRunnable_preserves_objects] at hEp
         have hEp1 := storeTcbIpcState_endpoint_backward pair.2 st2 sender _ oid ep hTcb hEp2
         rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at hEp1
   | send =>
@@ -449,7 +452,7 @@ private theorem endpointSend_preserves_other_endpoint
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have hEp2 : st2.objects oid = some (.endpoint ep) := by rwa [removeRunnable_preserves_objects] at hEp
+        have hEp2 : st2.objects[oid]? = some (.endpoint ep) := by rwa [removeRunnable_preserves_objects] at hEp
         have hEp1 := storeTcbIpcState_endpoint_backward pair.2 st2 sender _ oid ep hTcb hEp2
         rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at hEp1
   | receive =>
@@ -465,7 +468,7 @@ private theorem endpointSend_preserves_other_endpoint
         | error e => simp
         | ok st2 =>
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          have hEp2 : st2.objects oid = some (.endpoint ep) := by rwa [ensureRunnable_preserves_objects] at hEp
+          have hEp2 : st2.objects[oid]? = some (.endpoint ep) := by rwa [ensureRunnable_preserves_objects] at hEp
           have hEp1 := storeTcbIpcState_endpoint_backward pair.2 st2 receiver _ oid ep hTcb hEp2
           rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at hEp1
 
@@ -477,8 +480,8 @@ private theorem endpointSend_preserves_notification
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointSend endpointId sender st = .ok ((), st'))
     (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hNtfn : st'.objects oid = some (.notification ntfn)) :
-    st.objects oid = some (.notification ntfn) := by
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
   obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : ep.state with
   | idle =>
@@ -491,7 +494,7 @@ private theorem endpointSend_preserves_notification
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have h2 : st2.objects oid = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hNtfn
+        have h2 : st2.objects[oid]? = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hNtfn
         have h1 := storeTcbIpcState_notification_backward pair.2 st2 sender _ oid ntfn hTcb h2
         by_cases hEq : oid = endpointId
         · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -506,7 +509,7 @@ private theorem endpointSend_preserves_notification
       | error e => simp
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        have h2 : st2.objects oid = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hNtfn
+        have h2 : st2.objects[oid]? = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hNtfn
         have h1 := storeTcbIpcState_notification_backward pair.2 st2 sender _ oid ntfn hTcb h2
         by_cases hEq : oid = endpointId
         · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -524,7 +527,7 @@ private theorem endpointSend_preserves_notification
         | error e => simp
         | ok st2 =>
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          have h2 : st2.objects oid = some (.notification ntfn) := by rwa [ensureRunnable_preserves_objects] at hNtfn
+          have h2 : st2.objects[oid]? = some (.notification ntfn) := by rwa [ensureRunnable_preserves_objects] at hNtfn
           have h1 := storeTcbIpcState_notification_backward pair.2 st2 receiver _ oid ntfn hTcb h2
           by_cases hEq : oid = endpointId
           · subst hEq; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -564,7 +567,7 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
       rw [hEq] at hObjPost; rw [hObjPost] at hObj'; cases hObj'
       exact ⟨hWf, endpointObjectValid_of_queueWellFormed _ hWf⟩
     · -- Other endpoints preserved backward
-      have hBackward : st.objects oid = some (.endpoint ep') := by
+      have hBackward : st.objects[oid]? = some (.endpoint ep') := by
         simp [endpointAwaitReceive, hObj] at hStep
         cases hState : ep.state <;> simp [hState] at hStep
         case idle =>
@@ -581,7 +584,7 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
                 | error e => simp
                 | ok st2 =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-                  have h2 : st2.objects oid = some (.endpoint ep') := by rwa [removeRunnable_preserves_objects] at hObjPost
+                  have h2 : st2.objects[oid]? = some (.endpoint ep') := by rwa [removeRunnable_preserves_objects] at hObjPost
                   have h1 := storeTcbIpcState_endpoint_backward pair.2 st2 receiver _ oid ep' hTcb h2
                   rwa [storeObject_objects_ne st pair.2 endpointId oid _ hEq hStore] at h1
       exact hEp oid ep' hBackward
@@ -602,7 +605,7 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
             | error e => simp
             | ok st2 =>
               simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-              have h2 : st2.objects oid = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hObjPost
+              have h2 : st2.objects[oid]? = some (.notification ntfn) := by rwa [removeRunnable_preserves_objects] at hObjPost
               have h1 := storeTcbIpcState_notification_backward pair.2 st2 receiver _ oid ntfn hTcb h2
               by_cases hEqId : oid = endpointId
               · subst hEqId; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -612,9 +615,9 @@ theorem endpointAwaitReceive_preserves_ipcInvariant
 private theorem endpointReceive_preserves_other_endpoint
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceive endpointId st = .ok (sender, st'))
-    (oid : SeLe4n.ObjId) (ep' : Endpoint) (hObjPost : st'.objects oid = some (.endpoint ep'))
+    (oid : SeLe4n.ObjId) (ep' : Endpoint) (hObjPost : st'.objects[oid]? = some (.endpoint ep'))
     (hNe : oid ≠ endpointId) :
-    st.objects oid = some (.endpoint ep') := by
+    st.objects[oid]? = some (.endpoint ep') := by
   obtain ⟨epOrig, hObjEq⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : epOrig.state with
   | idle => simp [endpointReceive, hObjEq, hState] at hStep
@@ -638,15 +641,15 @@ private theorem endpointReceive_preserves_other_endpoint
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-            have h2 : st2.objects oid = some (.endpoint ep') := by rwa [ensureRunnable_preserves_objects] at hObjPost
+            have h2 : st2.objects[oid]? = some (.endpoint ep') := by rwa [ensureRunnable_preserves_objects] at hObjPost
             have h1 := storeTcbIpcState_endpoint_backward pair.2 st2 hd _ oid ep' hTcb h2
             rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h1
 
 private theorem endpointReceive_preserves_notification
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceive endpointId st = .ok (sender, st'))
-    (oid : SeLe4n.ObjId) (ntfn : Notification) (hObjPost : st'.objects oid = some (.notification ntfn)) :
-    st.objects oid = some (.notification ntfn) := by
+    (oid : SeLe4n.ObjId) (ntfn : Notification) (hObjPost : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
   obtain ⟨epOrig, hObjEq⟩ := endpointReceive_ok_implies_endpoint_object st st' endpointId sender hStep
   cases hState : epOrig.state with
   | idle => simp [endpointReceive, hObjEq, hState] at hStep
@@ -670,7 +673,7 @@ private theorem endpointReceive_preserves_notification
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-            have h2 : st2.objects oid = some (.notification ntfn) := by rwa [ensureRunnable_preserves_objects] at hObjPost
+            have h2 : st2.objects[oid]? = some (.notification ntfn) := by rwa [ensureRunnable_preserves_objects] at hObjPost
             have h1 := storeTcbIpcState_notification_backward pair.2 st2 hd _ oid ntfn hTcb h2
             by_cases hEqId : oid = endpointId
             · subst hEqId; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -710,10 +713,10 @@ private theorem scheduler_unchanged_through_store_tcb
 /-- Helper: TCB at tid.toObjId is preserved through storeObject (endpoint) if tid's TCB exists. -/
 private theorem tcb_preserved_through_endpoint_store
     (st st1 : SystemState) (endpointId : SeLe4n.ObjId) (obj : KernelObject) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcbExists : st.objects tid.toObjId = some (.tcb tcb))
-    (hEndpoint : ∃ ep, st.objects endpointId = some (.endpoint ep))
+    (hTcbExists : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hEndpoint : ∃ ep, st.objects[endpointId]? = some (.endpoint ep))
     (hStore : storeObject endpointId obj st = .ok ((), st1)) :
-    st1.objects tid.toObjId = some (.tcb tcb) := by
+    st1.objects[tid.toObjId]? = some (.tcb tcb) := by
   have hNe : tid.toObjId ≠ endpointId := by
     rcases hEndpoint with ⟨ep, hObj⟩; intro h; rw [h] at hTcbExists; simp_all
   rwa [storeObject_objects_ne st st1 endpointId tid.toObjId obj hNe hStore]
@@ -764,8 +767,8 @@ theorem endpointSend_preserves_schedulerInvariantBundle
             by_cases hEq : x = sender
             · subst hEq; simp
             · rw [if_neg (show ¬(some x = some sender) from fun h => hEq (Option.some.inj h))]
-              show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-              have hCTV' : ∃ tcb, st.objects x.toObjId = some (.tcb tcb) := by
+              show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+              have hCTV' : ∃ tcb, st.objects[x.toObjId]? = some (.tcb tcb) := by
                 simp [currentThreadValid, hCurr] at hCTV; exact hCTV
               rcases hCTV' with ⟨tcb, hTcbObj⟩
               have hNe1 : x.toObjId ≠ endpointId := by intro h; rw [h] at hTcbObj; simp_all
@@ -812,8 +815,8 @@ theorem endpointSend_preserves_schedulerInvariantBundle
             by_cases hEq : x = sender
             · subst hEq; simp
             · rw [if_neg (show ¬(some x = some sender) from fun h => hEq (Option.some.inj h))]
-              show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-              have hCTV' : ∃ tcb, st.objects x.toObjId = some (.tcb tcb) := by
+              show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+              have hCTV' : ∃ tcb, st.objects[x.toObjId]? = some (.tcb tcb) := by
                 simp [currentThreadValid, hCurr] at hCTV; exact hCTV
               rcases hCTV' with ⟨tcb, hTcbObj⟩
               have hNe1 : x.toObjId ≠ endpointId := by intro h; rw [h] at hTcbObj; simp_all
@@ -855,13 +858,13 @@ theorem endpointSend_preserves_schedulerInvariantBundle
             | none => simp
             | some x =>
               simp only []
-              have hCTV' : ∃ tcb, st.objects x.toObjId = some (.tcb tcb) := by
+              have hCTV' : ∃ tcb, st.objects[x.toObjId]? = some (.tcb tcb) := by
                 simp [currentThreadValid, hCurr] at hCTV; exact hCTV
               rcases hCTV' with ⟨tcb, hTcbObj⟩
               have hNe1 : x.toObjId ≠ endpointId := by intro h; rw [h] at hTcbObj; simp_all
               by_cases hNeTid : x.toObjId = receiver.toObjId
               · -- Current thread IS the receiver: storeTcbIpcState stores a (possibly updated) TCB
-                have h1 : pair.2.objects receiver.toObjId = some (.tcb tcb) := by
+                have h1 : pair.2.objects[receiver.toObjId]? = some (.tcb tcb) := by
                   have := tcb_preserved_through_endpoint_store st pair.2 endpointId _ x tcb hTcbObj ⟨ep, hObj⟩ hStore
                   rwa [hNeTid] at this
                 have h2 := storeTcbIpcState_tcb_exists_at_target pair.2 st2 receiver _ hTcb ⟨tcb, h1⟩
@@ -921,8 +924,8 @@ theorem endpointAwaitReceive_preserves_schedulerInvariantBundle
                 by_cases hEq : x = receiver
                 · subst hEq; simp
                 · rw [if_neg (show ¬(some x = some receiver) from fun h => hEq (Option.some.inj h))]
-                  show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-                  have hCTV' : ∃ tcb, st.objects x.toObjId = some (.tcb tcb) := by
+                  show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+                  have hCTV' : ∃ tcb, st.objects[x.toObjId]? = some (.tcb tcb) := by
                     simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                   rcases hCTV' with ⟨tcb, hTcbObj⟩
                   have hNe1 : x.toObjId ≠ endpointId := by intro h; rw [h] at hTcbObj; simp_all
@@ -981,12 +984,12 @@ theorem endpointReceive_preserves_schedulerInvariantBundle
               | none => simp
               | some x =>
                 simp only []
-                have hCTV' : ∃ tcb, st.objects x.toObjId = some (.tcb tcb) := by
+                have hCTV' : ∃ tcb, st.objects[x.toObjId]? = some (.tcb tcb) := by
                   simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                 rcases hCTV' with ⟨tcb, hTcbObj⟩
                 have hNe1 : x.toObjId ≠ endpointId := by intro h; rw [h] at hTcbObj; simp_all
                 by_cases hNeTid : x.toObjId = hd.toObjId
-                · have h1 : pair.2.objects hd.toObjId = some (.tcb tcb) := by
+                · have h1 : pair.2.objects[hd.toObjId]? = some (.tcb tcb) := by
                     have := tcb_preserved_through_endpoint_store st pair.2 endpointId _ x tcb hTcbObj ⟨ep, hObj⟩ hStore
                     rwa [hNeTid] at this
                   have h2 := storeTcbIpcState_tcb_exists_at_target pair.2 st2 hd _ hTcb ⟨tcb, h1⟩
@@ -1011,8 +1014,8 @@ private theorem tcb_transport_backward
     (hTcb : storeTcbIpcState st1 target ipc = .ok st2)
     (hNeObjId : tid.toObjId ≠ target.toObjId)
     (hNeEp : tid.toObjId ≠ endpointId)
-    (hTcbSt2 : st2.objects tid.toObjId = some (.tcb tcb)) :
-    st.objects tid.toObjId = some (.tcb tcb) := by
+    (hTcbSt2 : st2.objects[tid.toObjId]? = some (.tcb tcb)) :
+    st.objects[tid.toObjId]? = some (.tcb tcb) := by
   have hTcbSt1 := (storeTcbIpcState_preserves_objects_ne st1 st2 target ipc tid.toObjId hNeObjId hTcb).symm.trans hTcbSt2
   exact (storeObject_objects_ne st st1 endpointId tid.toObjId obj hNeEp hStore).symm.trans hTcbSt1
 
@@ -1032,7 +1035,7 @@ private theorem blocking_path_preserves_contracts
   have hRunnableEq := congrArg SchedulerState.runnable hSchedEq
   -- Helper: derive hNeEp from the post-storeObject state (endpoint ≠ tcb at same slot)
   have deriveNeEp : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-      st1.objects tid.toObjId = some (.tcb tcb) → tid.toObjId ≠ endpointId := by
+      st1.objects[tid.toObjId]? = some (.tcb tcb) → tid.toObjId ≠ endpointId := by
     intro tid tcb hTcbSt1 h; rw [h] at hTcbSt1
     have := storeObject_objects_eq st st1 endpointId (.endpoint epNew) hStore
     rw [this] at hTcbSt1; exact absurd hTcbSt1 (by simp)
@@ -1083,7 +1086,7 @@ private theorem handshake_path_preserves_contracts
     ipcSchedulerContractPredicates (ensureRunnable st2 target) := by
   have hRunnableEq := congrArg SchedulerState.runnable hSchedEq
   have deriveNeEp : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-      st1.objects tid.toObjId = some (.tcb tcb) → tid.toObjId ≠ endpointId := by
+      st1.objects[tid.toObjId]? = some (.tcb tcb) → tid.toObjId ≠ endpointId := by
     intro tid tcb hTcbSt1 h; rw [h] at hTcbSt1
     have := storeObject_objects_eq st st1 endpointId (.endpoint epNew) hStore
     rw [this] at hTcbSt1; exact absurd hTcbSt1 (by simp)
@@ -1331,7 +1334,7 @@ theorem endpointReceive_preserves_blockedOnReceiveNotRunnable
 -- ============================================================================
 
 def uniqueWaiters (st : SystemState) : Prop :=
-  ∀ oid ntfn, st.objects oid = some (.notification ntfn) → ntfn.waitingThreads.Nodup
+  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → ntfn.waitingThreads.Nodup
 
 private theorem list_nodup_append_singleton
     {α : Type} [DecidableEq α]
@@ -1370,7 +1373,7 @@ theorem notificationWait_preserves_uniqueWaiters
       exact list_nodup_append_singleton ntfnOld.waitingThreads waiter (hInv notificationId ntfnOld hObjOld) hNotMem
   · -- At other IDs, the notification is preserved backward to pre-state
     unfold notificationWait at hStep
-    cases hLookup : st.objects notificationId with
+    cases hLookup : st.objects[notificationId]? with
     | none => simp [hLookup] at hStep
     | some obj =>
       cases obj with
@@ -1389,7 +1392,7 @@ theorem notificationWait_preserves_uniqueWaiters
             | error e => simp
             | ok st2 =>
               simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-              have hPre : st.objects oid = some (.notification ntfn) := by
+              have hPre : st.objects[oid]? = some (.notification ntfn) := by
                 have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
                 by_cases hEq2 : oid = notificationId
                 · exact absurd hEq2 hEq
@@ -1409,7 +1412,7 @@ theorem notificationWait_preserves_uniqueWaiters
               | error e => simp
               | ok st2 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩
-                have hPre : st.objects oid = some (.notification ntfn) := by
+                have hPre : st.objects[oid]? = some (.notification ntfn) := by
                   have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
                   rw [← hStEq, hRemObj] at hObj
                   have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
@@ -1517,10 +1520,10 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                 | none => simp
                 | some x =>
                   simp only []
-                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCurrent; exact hCurrent
                   by_cases hNeTid : x.toObjId = target.toObjId
-                  · have hTargetTcb : ∃ tcb', st.objects target.toObjId = some (.tcb tcb') :=
+                  · have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') :=
                       hNeTid ▸ hCTV'
                     have h := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
                     rwa [← hNeTid] at h
@@ -1557,11 +1560,11 @@ theorem endpointReply_preserves_ipcInvariant
               rcases hInv with ⟨hEpInv, hNtfnInv⟩
               constructor
               · intro oid ep hObj
-                have hObjSt1 : st1.objects oid = some (.endpoint ep) := by
+                have hObjSt1 : st1.objects[oid]? = some (.endpoint ep) := by
                   rwa [ensureRunnable_preserves_objects st1 target] at hObj
                 exact hEpInv oid ep (storeTcbIpcStateAndMessage_endpoint_backward st st1 target .ready (some msg) oid ep hTcb hObjSt1)
               · intro oid ntfn hObj
-                have hObjSt1 : st1.objects oid = some (.notification ntfn) := by
+                have hObjSt1 : st1.objects[oid]? = some (.notification ntfn) := by
                   rwa [ensureRunnable_preserves_objects st1 target] at hObj
                 exact hNtfnInv oid ntfn (storeTcbIpcStateAndMessage_notification_backward st st1 target .ready (some msg) oid ntfn hTcb hObjSt1)
 
@@ -1689,7 +1692,7 @@ private theorem endpointQueuePopHead_preserves_ipcInvariant
     · -- Target endpoint: was modified but only in sendQ/receiveQ
       -- Backward transport through storeTcbQueueLinks to reach storeObject result
       unfold endpointQueuePopHead at hStep
-      cases hObj : st.objects endpointId with
+      cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
         | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -1756,7 +1759,7 @@ private theorem endpointQueueEnqueue_preserves_ipcInvariant
   · intro oid ep' hObjPost
     by_cases hNe : oid = endpointId
     · unfold endpointQueueEnqueue at hStep
-      cases hObj : st.objects endpointId with
+      cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
         | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -1818,8 +1821,8 @@ private theorem contracts_of_same_scheduler_ipcState
     (st st' : SystemState)
     (hSched : st'.scheduler = st.scheduler)
     (hIpc : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-        st'.objects tid.toObjId = some (.tcb tcb') →
-        ∃ tcb, st.objects tid.toObjId = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
+        st'.objects[tid.toObjId]? = some (.tcb tcb') →
+        ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
     (hContract : ipcSchedulerContractPredicates st) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
@@ -1850,7 +1853,7 @@ theorem endpointSendDual_preserves_ipcInvariant
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointSendDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -1899,7 +1902,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointSendDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -1937,12 +1940,12 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
               | none => simp
               | some x =>
                 simp only []
-                have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                   simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                 rcases hCTV' with ⟨tcbX, hTcbX⟩
                 obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId true st pair.2 pair.1 x.toObjId tcbX hPop hTcbX
                 by_cases hNeTid : x.toObjId = pair.1.toObjId
-                · have hTargetTcb : ∃ t, pair.2.objects pair.1.toObjId = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
+                · have hTargetTcb : ∃ t, pair.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
                   have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st2 pair.1 .ready (some msg) hMsg hTargetTcb
                   rwa [← hNeTid] at h
                 · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st2 pair.1 .ready (some msg) x.toObjId hNeTid hMsg) ▸ hTcb1⟩
@@ -1984,8 +1987,8 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = sender
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some sender) from fun h => hEq' (Option.some.inj h))]
-                  show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                  show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                   rcases hCTV' with ⟨tcbX, hTcbX⟩
                   obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId false sender st st1 x.toObjId tcbX hEnq hTcbX
@@ -2001,7 +2004,7 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
   unfold endpointSendDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2118,7 +2121,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
     (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
     ipcInvariant st' := by
   unfold endpointReceiveDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2176,7 +2179,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointReceiveDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2215,12 +2218,12 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 | none => simp
                 | some x =>
                   simp only []
-                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                   rcases hCTV' with ⟨tcbX, hTcbX⟩
                   obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId false st pair.2 pair.1 x.toObjId tcbX hPop hTcbX
                   by_cases hNeTid : x.toObjId = pair.1.toObjId
-                  · have hTargetTcb : ∃ t, pair.2.objects pair.1.toObjId = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
+                  · have hTargetTcb : ∃ t, pair.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
                     have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st2 pair.1 .ready none hMsg hTargetTcb
                     rwa [← hNeTid] at h
                   · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st2 pair.1 .ready none x.toObjId hNeTid hMsg) ▸ hTcb1⟩
@@ -2243,7 +2246,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 | none => simp
                 | some x =>
                   simp only []
-                  have ⟨tcbX, hTcbX⟩ : ∃ tcb', (ensureRunnable st2 pair.1).objects x.toObjId = some (.tcb tcb') := by
+                  have ⟨tcbX, hTcbX⟩ : ∃ tcb', (ensureRunnable st2 pair.1).objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV'; exact hCTV'
                   exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcbX hPend hTcbX
             | error _ => simp
@@ -2285,8 +2288,8 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = receiver
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some receiver) from fun h => hEq' (Option.some.inj h))]
-                  show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                  show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                   rcases hCTV' with ⟨tcbX, hTcbX⟩
                   obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId true receiver st st1 x.toObjId tcbX hEnq hTcbX
@@ -2302,7 +2305,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
   unfold endpointReceiveDual at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2434,7 +2437,7 @@ theorem endpointQueueRemoveDual_preserves_ipcInvariant
     by_cases hNe : oid = endpointId
     · -- Target endpoint: only sendQ/receiveQ changed, endpointInvariant unaffected
       unfold endpointQueueRemoveDual at hStep
-      cases hObj : st.objects endpointId with
+      cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
         | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2565,7 +2568,7 @@ theorem endpointQueueRemoveDual_preserves_schedulerInvariantBundle
   cases hCurr : st.scheduler.current with
   | none => trivial
   | some ctid =>
-    have hCTV' : ∃ tcb', st.objects ctid.toObjId = some (.tcb tcb') := by
+    have hCTV' : ∃ tcb', st.objects[ctid.toObjId]? = some (.tcb tcb') := by
       simp [currentThreadValid, hCurr] at hCTV; exact hCTV
     rcases hCTV' with ⟨tcbC, hTcbC⟩
     exact endpointQueueRemoveDual_tcb_forward st st' endpointId isSendQ tid ctid.toObjId tcbC hStep hTcbC
@@ -2607,7 +2610,7 @@ theorem endpointCall_preserves_ipcInvariant
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointCall at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2665,7 +2668,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointCall at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -2723,15 +2726,15 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                   by_cases hEq' : x = caller
                   · subst hEq'; simp
                   · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
-                    show ∃ tcb, st4.objects x.toObjId = some (.tcb tcb)
-                    have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                    show ∃ tcb, st4.objects[x.toObjId]? = some (.tcb tcb)
+                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                       simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                     rcases hCTV' with ⟨tcbX, hTcbX⟩
                     obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId true st pair.2 pair.1 x.toObjId tcbX hPop hTcbX
                     have hNeCaller : x.toObjId ≠ caller.toObjId := fun h => hEq' (threadId_toObjId_injective h)
-                    have hTcb2 : ∃ tcb2, st2.objects x.toObjId = some (.tcb tcb2) := by
+                    have hTcb2 : ∃ tcb2, st2.objects[x.toObjId]? = some (.tcb tcb2) := by
                       by_cases hNeTid : x.toObjId = pair.1.toObjId
-                      · have hTargetTcb : ∃ t, pair.2.objects pair.1.toObjId = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
+                      · have hTargetTcb : ∃ t, pair.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
                         have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st2 pair.1 .ready (some msg) hMsg hTargetTcb
                         rwa [← hNeTid] at h
                       · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st2 pair.1 .ready (some msg) x.toObjId hNeTid hMsg) ▸ hTcb1⟩
@@ -2775,8 +2778,8 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = caller
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
-                  show ∃ tcb, st2.objects x.toObjId = some (.tcb tcb)
-                  have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                  show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                   rcases hCTV' with ⟨tcbX, hTcbX⟩
                   obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId false caller st st1 x.toObjId tcbX hEnq hTcbX
@@ -2792,7 +2795,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
   unfold endpointCall at hStep
-  cases hObj : st.objects endpointId with
+  cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3001,10 +3004,10 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
             | none => simp
             | some x =>
               simp only []
-              have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+              have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                 simp [currentThreadValid, hCurr] at hCTV; exact hCTV
               by_cases hNeTid : x.toObjId = replyTarget.toObjId
-              · have hTargetTcb : ∃ t, st.objects replyTarget.toObjId = some (.tcb t) := hNeTid ▸ hCTV'
+              · have hTargetTcb : ∃ t, st.objects[replyTarget.toObjId]? = some (.tcb t) := hNeTid ▸ hCTV'
                 have h := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hMsg hTargetTcb
                 rwa [← hNeTid] at h
               · rcases hCTV' with ⟨tcb', hTcbObj⟩
@@ -3190,7 +3193,7 @@ theorem notificationSignal_preserves_ipcInvariant
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold notificationSignal at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3235,7 +3238,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold notificationSignal at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3276,15 +3279,15 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
               | none => simp
               | some x =>
                 simp only []
-                have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                   simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                 rcases hCTV' with ⟨tcbX, hTcbX⟩
                 have hNeNotif : x.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbX; rw [hObj] at hTcbX; cases hTcbX
-                have hTcb1 : pair.2.objects x.toObjId = some (.tcb tcbX) := by
+                have hTcb1 : pair.2.objects[x.toObjId]? = some (.tcb tcbX) := by
                   rw [storeObject_objects_ne st pair.2 notificationId x.toObjId _ hNeNotif hStore]; exact hTcbX
                 by_cases hNeTid : x.toObjId = waiter.toObjId
-                · have hTargetTcb : ∃ t, pair.2.objects waiter.toObjId = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
+                · have hTargetTcb : ∃ t, pair.2.objects[waiter.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
                   have h := storeTcbIpcState_tcb_exists_at_target pair.2 st'' waiter .ready hTcb hTargetTcb
                   rwa [← hNeTid] at h
                 · exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter .ready x.toObjId hNeTid hTcb) ▸ hTcb1⟩
@@ -3307,7 +3310,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
           | none => simp
           | some x =>
             simp only []
-            have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+            have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
               simp [currentThreadValid, hCurr] at hCTV; exact hCTV
             rcases hCTV' with ⟨tcbX, hTcbX⟩
             have hNeNotif : x.toObjId ≠ notificationId := by
@@ -3325,7 +3328,7 @@ theorem notificationWait_preserves_ipcInvariant
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariant st' := by
   unfold notificationWait at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3387,7 +3390,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold notificationWait at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3424,15 +3427,15 @@ theorem notificationWait_preserves_schedulerInvariantBundle
               | none => simp
               | some x =>
                 simp only []
-                have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                   simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                 rcases hCTV' with ⟨tcbX, hTcbX⟩
                 have hNeNotif : x.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbX; rw [hObj] at hTcbX; cases hTcbX
-                have hTcb1 : pair.2.objects x.toObjId = some (.tcb tcbX) := by
+                have hTcb1 : pair.2.objects[x.toObjId]? = some (.tcb tcbX) := by
                   rw [storeObject_objects_ne st pair.2 notificationId x.toObjId _ hNeNotif hStore]; exact hTcbX
                 by_cases hNeTid : x.toObjId = waiter.toObjId
-                · have hTargetTcb : ∃ t, pair.2.objects waiter.toObjId = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
+                · have hTargetTcb : ∃ t, pair.2.objects[waiter.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
                   have h := storeTcbIpcState_tcb_exists_at_target pair.2 st'' waiter .ready hTcb hTargetTcb
                   rwa [← hNeTid] at h
                 · exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter .ready x.toObjId hNeTid hTcb) ▸ hTcb1⟩
@@ -3479,13 +3482,13 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                   by_cases hEq' : x = waiter
                   · subst hEq'; simp
                   · rw [if_neg (show ¬(some x = some waiter) from fun h => hEq' (Option.some.inj h))]
-                    show ∃ tcb, st''.objects x.toObjId = some (.tcb tcb)
-                    have hCTV' : ∃ tcb', st.objects x.toObjId = some (.tcb tcb') := by
+                    show ∃ tcb, st''.objects[x.toObjId]? = some (.tcb tcb)
+                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                       simp [currentThreadValid, hCurr] at hCTV; exact hCTV
                     rcases hCTV' with ⟨tcbX, hTcbX⟩
                     have hNeNotif : x.toObjId ≠ notificationId := by
                       intro h; rw [h] at hTcbX; rw [hObj] at hTcbX; cases hTcbX
-                    have hTcb1 : pair.2.objects x.toObjId = some (.tcb tcbX) := by
+                    have hTcb1 : pair.2.objects[x.toObjId]? = some (.tcb tcbX) := by
                       rw [storeObject_objects_ne st pair.2 notificationId x.toObjId _ hNeNotif hStore]; exact hTcbX
                     have hNeTid : x.toObjId ≠ waiter.toObjId := fun h => hEq' (threadId_toObjId_injective h)
                     exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter (.blockedOnNotification notificationId) x.toObjId hNeTid hTcb) ▸ hTcb1⟩
@@ -3503,7 +3506,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
   unfold notificationSignal at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
@@ -3607,7 +3610,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv⟩
   unfold notificationWait at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep

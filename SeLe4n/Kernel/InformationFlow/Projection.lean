@@ -108,7 +108,7 @@ def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemS
     SeLe4n.ObjId → Option KernelObject :=
   fun oid =>
     if objectObservable ctx observer oid then
-      (st.objects oid).map (projectKernelObject ctx observer)
+      (st.objects[oid]?).map (projectKernelObject ctx observer)
     else
       none
 

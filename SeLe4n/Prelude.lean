@@ -499,6 +499,103 @@ theorem throw_errors {σ ε α : Type} (err : ε) (s : σ) :
 end KernelM
 
 -- ============================================================================
+-- WS-G2: LawfulHashable instances for HashMap/HashSet proof support
+-- ============================================================================
+
+instance : LawfulHashable ObjId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable ThreadId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable DomainId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable Priority where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable Deadline where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable Irq where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable ServiceId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable CPtr where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable Slot where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable Badge where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable ASID where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable VAddr where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable PAddr where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+-- ============================================================================
+-- WS-G2: HashMap/HashSet bridge lemmas for proof ergonomics
+-- ============================================================================
+
+/-- WS-G2: Bridge lemma for `HashMap.get?` after `insert`. Maps to the underlying
+    `DHashMap.Const.get?_insert` for types with `EquivBEq` and `LawfulHashable`. -/
+theorem HashMap_get?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    {m : Std.HashMap α β} {k a : α} {v : β} :
+    (m.insert k v).get? a = if k == a then some v else m.get? a :=
+  Std.DHashMap.Const.get?_insert
+
+/-- WS-G2: Bridge lemma for `HashMap.get?` on empty. -/
+theorem HashMap_get?_empty {α β : Type} [BEq α] [Hashable α]
+    {a : α} : (∅ : Std.HashMap α β).get? a = none :=
+  Std.DHashMap.Const.get?_empty
+
+/-- WS-G2: Bridge lemma for `HashMap.get?` after `erase`. -/
+theorem HashMap_get?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    {m : Std.HashMap α β} {k a : α} :
+    (m.erase k).get? a = if k == a then none else m.get? a :=
+  Std.DHashMap.Const.get?_erase
+
+/-- WS-G2: Bridge lemma for `HashMap[k]?` after `insert` (getElem? notation).
+    Matches goals where `simp` has normalized `.get?` to `[k]?`. -/
+theorem HashMap_getElem?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    {m : Std.HashMap α β} {k a : α} {v : β} :
+    (m.insert k v)[a]? = if k == a then some v else m[a]? :=
+  Std.HashMap.getElem?_insert
+
+/-- WS-G2: Bridge lemma for `HashMap[k]?` on empty (getElem? notation). -/
+theorem HashMap_getElem?_empty {α β : Type} [BEq α] [Hashable α]
+    {a : α} : (∅ : Std.HashMap α β)[a]? = none :=
+  Std.HashMap.getElem?_empty
+
+/-- WS-G2: Bridge lemma for `HashMap[k]?` after `erase` (getElem? notation). -/
+theorem HashMap_getElem?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    {m : Std.HashMap α β} {k a : α} :
+    (m.erase k)[a]? = if k == a then none else m[a]? :=
+  Std.HashMap.getElem?_erase
+
+/-- WS-G2: Equate `HashMap[k]?` (getElem?) and `.get?` — use explicitly, not
+    as `@[simp]` (conflicts with `Std.HashMap.get?_eq_getElem?`). -/
+theorem HashMap_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
+    (m : Std.HashMap α β) (k : α) : m[k]? = m.get? k := rfl
+
+/-- WS-G2: Equate `.get?` and `HashMap[k]?` — use explicitly in rewrites. -/
+theorem HashMap_get?_eq_getElem? {α β : Type} [BEq α] [Hashable α]
+    (m : Std.HashMap α β) (k : α) : m.get? k = m[k]? := rfl
+
+/-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/
+theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
+    {a : α} : (∅ : Std.HashSet α).contains a = false :=
+  Std.DHashMap.contains_empty
+
+-- ============================================================================
 -- H-06/WS-E3: Sentinel identity theorems
 -- ============================================================================
 

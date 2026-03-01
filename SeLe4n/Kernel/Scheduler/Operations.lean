@@ -140,7 +140,7 @@ This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
+    match chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -156,7 +156,7 @@ def schedule : Kernel Unit :=
     | .error e => .error e
     | .ok (none, st') => setCurrentThread none st'
     | .ok (some tid, st') =>
-        match st'.objects tid.toObjId with
+        match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
               setCurrentThread (some tid) st'
@@ -200,14 +200,12 @@ def timerTick : Kernel Unit :=
         -- No current thread: just advance the timer
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects tid.toObjId with
+        match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, rotate, reschedule
               let tcb' := { tcb with timeSlice := defaultTimeSlice }
-              let objects' : SeLe4n.ObjId → Option KernelObject :=
-                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
-              let st' := { st with objects := objects', machine := tick st.machine }
+              let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               match rotateCurrentToBack (some tid) st'.scheduler.runnable with
               | .error e => .error e
               | .ok runnable' =>
@@ -216,9 +214,7 @@ def timerTick : Kernel Unit :=
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-              let objects' : SeLe4n.ObjId → Option KernelObject :=
-                fun oid => if oid = tid.toObjId then some (.tcb tcb') else st.objects oid
-              .ok ((), { st with objects := objects', machine := tick st.machine })
+              .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
         | _ => .error .schedulerInvariantViolation
 
 -- ============================================================================
@@ -281,7 +277,7 @@ theorem schedule_eq_chooseThread_then_setCurrent :
           match next with
           | none => setCurrentThread none st'
           | some tid =>
-              match st'.objects tid.toObjId with
+              match st'.objects[tid.toObjId]? with
               | some (.tcb tcb) =>
                   if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
                     setCurrentThread (some tid) st'
@@ -337,7 +333,7 @@ theorem setCurrentThread_none_preserves_currentThreadValid
 theorem setCurrentThread_some_preserves_currentThreadValid
     (st st' : SystemState)
     (tid : SeLe4n.ThreadId)
-    (hObj : ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb))
+    (hObj : ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb))
     (hStep : setCurrentThread (some tid) st = .ok ((), st')) :
     currentThreadValid st' := by
   simp [setCurrentThread] at hStep
@@ -350,7 +346,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread at hStep
-  cases hPick : chooseBestRunnableInDomain st.objects st.scheduler.runnable st.scheduler.activeDomain none with
+  cases hPick : chooseBestRunnableInDomain st.objects.get? st.scheduler.runnable st.scheduler.activeDomain none with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -381,7 +377,7 @@ theorem schedule_preserves_wellFormed
               cases hSet
               simp [schedulerWellFormed, queueCurrentConsistent]
           | some tid =>
-              cases hObj : stChoose.objects tid.toObjId with
+              cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
               | some obj =>
                   cases obj with
@@ -460,7 +456,7 @@ theorem schedule_preserves_runQueueUnique
               exact setCurrentThread_preserves_runQueueUnique stChoose st' none hUniqueChoose (by
                 simpa [hChoose] using hStep)
           | some tid =>
-              cases hObj : stChoose.objects tid.toObjId with
+              cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
               | some obj =>
                   cases obj with
@@ -492,7 +488,7 @@ theorem schedule_preserves_currentThreadValid
               exact setCurrentThread_none_preserves_currentThreadValid stChoose st' (by
                 simpa [hChoose] using hStep)
           | some tid =>
-              cases hObj : stChoose.objects tid.toObjId with
+              cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
               | some obj =>
                   cases obj with
@@ -581,7 +577,7 @@ theorem schedule_preserves_currentThreadInActiveDomain
               cases hSet
               simp [currentThreadInActiveDomain]
           | some tid =>
-              cases hObj : stChoose.objects tid.toObjId with
+              cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
               | some obj =>
                   cases obj with
@@ -798,7 +794,7 @@ theorem timerTick_preserves_schedulerInvariantBundle
     simp [hCur] at hStep; cases hStep; exact ⟨hQCC, hRQU, hCTV⟩
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects tid.toObjId with
+    cases hObj : st.objects[tid.toObjId]? with
     | none => simp [hObj] at hStep
     | some obj =>
       cases obj with
@@ -869,7 +865,7 @@ theorem timerTick_preserves_kernelInvariant
     exact hDom
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects tid.toObjId with
+    cases hObj : st.objects[tid.toObjId]? with
     | none => simp [hObj] at hStep
     | some obj =>
       cases obj with

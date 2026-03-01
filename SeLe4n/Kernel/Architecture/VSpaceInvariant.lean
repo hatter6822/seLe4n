@@ -36,8 +36,8 @@ open SeLe4n.Model
 
 /-- Every modeled VSpace root preserves deterministic non-overlap for virtual mappings. -/
 def vspaceRootNonOverlap (st : SystemState) : Prop :=
-  ∀ oid root,
-    st.objects oid = some (.vspaceRoot root) →
+  ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+    st.objects[oid]? = some (KernelObject.vspaceRoot root) →
     VSpaceRoot.noVirtualOverlap root
 
 /-- Bounded translation surface: all translated physical addresses are in the finite machine window.
@@ -45,8 +45,8 @@ def vspaceRootNonOverlap (st : SystemState) : Prop :=
 **Status:** Forward declaration for WS-E6 (model completeness). Not yet integrated into
 `vspaceInvariantBundle` or consumed by any preservation theorem. -/
 def boundedAddressTranslation (st : SystemState) (bound : Nat) : Prop :=
-  ∀ oid root v p,
-    st.objects oid = some (.vspaceRoot root) →
+  ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot) (v : SeLe4n.VAddr) (p : SeLe4n.PAddr),
+    st.objects[oid]? = some (KernelObject.vspaceRoot root) →
     (v, p) ∈ root.mappings →
     p.toNat < bound
 
@@ -104,9 +104,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
           have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
             simpa [hResolve, hMapRoot] using hStep
           rcases resolveAsidRoot_some_implies st asid rootId root hResolve with ⟨hObjRoot, hAsidRoot, _⟩
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
-          have hObjNe : ∀ oid, oid ≠ rootId → st'.objects oid = st.objects oid :=
+          have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
             fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hStore
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.mapPage_asid_eq root root' vaddr paddr hMapRoot
@@ -168,9 +168,9 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
             simpa [hResolve, hUnmapRoot] using hStep
           rcases resolveAsidRoot_some_implies st asid rootId root hResolve with ⟨hObjRoot, hAsidRoot, _⟩
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
-          have hObjNe : ∀ oid, oid ≠ rootId → st'.objects oid = st.objects oid :=
+          have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
             fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hStore
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
@@ -219,6 +219,7 @@ theorem vspaceLookup_after_map
     (st st' : SystemState)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (hInv : vspaceInvariantBundle st)
+    (hSync : objectIndexSetSync st)
     (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
     vspaceLookup asid vaddr st' = .ok (paddr, st') := by
   unfold vspaceMapPage at hStep
@@ -235,10 +236,10 @@ theorem vspaceLookup_after_map
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.mapPage_asid_eq root root' vaddr paddr hMapRoot
           -- Build post-state resolveAsidRoot result
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
           have hIdxEq : st'.objectIndex = st.objectIndex :=
-            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx hStore
+            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx (objectIndexSetSync_contains_of_mem st rootId hSync hMemIdx) hStore
           -- Prove post-state ASID uniqueness for resolveAsidRoot characterization
           have hInv' : vspaceInvariantBundle st' :=
             vspaceMapPage_success_preserves_vspaceInvariantBundle st st' asid vaddr paddr hInv
@@ -257,6 +258,7 @@ theorem vspaceLookup_map_other
     (asid : SeLe4n.ASID) (vaddr vaddr' : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (hNe : vaddr ≠ vaddr')
     (hInv : vspaceInvariantBundle st)
+    (hSync : objectIndexSetSync st)
     (hStep : vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
     (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceMapPage at hStep
@@ -272,10 +274,10 @@ theorem vspaceLookup_map_other
           rcases resolveAsidRoot_some_implies st asid rootId root hResolve with ⟨hObjRoot, hAsidRoot, hMemIdx⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.mapPage_asid_eq root root' vaddr paddr hMapRoot
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
           have hIdxEq : st'.objectIndex = st.objectIndex :=
-            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx hStore
+            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx (objectIndexSetSync_contains_of_mem st rootId hSync hMemIdx) hStore
           have hInv' : vspaceInvariantBundle st' :=
             vspaceMapPage_success_preserves_vspaceInvariantBundle st st' asid vaddr paddr hInv
               (by simp [vspaceMapPage, hResolve, hMapRoot, hStore])
@@ -293,6 +295,7 @@ theorem vspaceLookup_after_unmap
     (st st' : SystemState)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (hInv : vspaceInvariantBundle st)
+    (hSync : objectIndexSetSync st)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     vspaceLookup asid vaddr st' = .error .translationFault := by
   unfold vspaceUnmapPage at hStep
@@ -308,10 +311,10 @@ theorem vspaceLookup_after_unmap
           rcases resolveAsidRoot_some_implies st asid rootId root hResolve with ⟨hObjRoot, hAsidRoot, hMemIdx⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
           have hIdxEq : st'.objectIndex = st.objectIndex :=
-            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx hStore
+            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx (objectIndexSetSync_contains_of_mem st rootId hSync hMemIdx) hStore
           have hInv' : vspaceInvariantBundle st' :=
             vspaceUnmapPage_success_preserves_vspaceInvariantBundle st st' asid vaddr hInv
               (by simp [vspaceUnmapPage, hResolve, hUnmapRoot, hStore])
@@ -329,6 +332,7 @@ theorem vspaceLookup_unmap_other
     (asid : SeLe4n.ASID) (vaddr vaddr' : SeLe4n.VAddr)
     (hNe : vaddr ≠ vaddr')
     (hInv : vspaceInvariantBundle st)
+    (hSync : objectIndexSetSync st)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceUnmapPage at hStep
@@ -344,10 +348,10 @@ theorem vspaceLookup_unmap_other
           rcases resolveAsidRoot_some_implies st asid rootId root hResolve with ⟨hObjRoot, hAsidRoot, hMemIdx⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
-          have hObjEq : st'.objects rootId = some (.vspaceRoot root') :=
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
             storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
           have hIdxEq : st'.objectIndex = st.objectIndex :=
-            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx hStore
+            storeObject_objectIndex_eq_of_mem st st' rootId (.vspaceRoot root') hMemIdx (objectIndexSetSync_contains_of_mem st rootId hSync hMemIdx) hStore
           have hInv' : vspaceInvariantBundle st' :=
             vspaceUnmapPage_success_preserves_vspaceInvariantBundle st st' asid vaddr hInv
               (by simp [vspaceUnmapPage, hResolve, hUnmapRoot, hStore])

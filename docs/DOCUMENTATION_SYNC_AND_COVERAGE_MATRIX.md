@@ -15,7 +15,7 @@ Use this file during planning and PR review to keep documentation status aligned
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
 | Active audit findings baseline | `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
-| Active workstream execution portfolio | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
+| Active workstream execution portfolio | `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
 | Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
 | Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |
@@ -54,9 +54,9 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F portfolio — WS-F1, WS-F2, WS-F3 completed).
-- Active findings baseline: `AUDIT_CODEBASE_v0.12.2_v1.md`, `AUDIT_CODEBASE_v0.12.2_v2.md`.
-- Prior completed portfolios: WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
+- Active planning baseline: `KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (WS-G portfolio — WS-G1, WS-G2 completed).
+- Active findings baseline: `KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`, `AUDIT_CODEBASE_v0.12.2_v1.md`, `AUDIT_CODEBASE_v0.12.2_v2.md`.
+- Prior completed portfolios: WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 - Hardware target: Raspberry Pi 5 (ARM64).

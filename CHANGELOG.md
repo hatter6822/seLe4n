@@ -1,3 +1,15 @@
+## [0.12.7] - 2026-03-01
+
+### WS-G2: Object Store & ObjectIndex HashMap (completed)
+
+- **Object store HashMap migration:** `SystemState.objects` changed from closure-chain `ObjId → Option KernelObject` to `Std.HashMap ObjId KernelObject`. All object lookups now O(1) amortized instead of O(k) chain-walking. `storeObject` uses `HashMap.insert` directly.
+- **ObjectIndex shadow HashSet:** new `objectIndexSet : Std.HashSet ObjId` field enables O(1) membership checks for `storeObject`'s index-deduplication guard. New `objectIndexSetSync` invariant ensures consistency between `objectIndex` and `objectIndexSet`.
+- **Lifecycle metadata HashMap:** `LifecycleMetadata.objectTypes` migrated to `Std.HashMap ObjId KernelObjectType` for O(1) type metadata lookups.
+- **Bridge lemmas:** `HashMap_getElem?_insert`, `HashMap_getElem?_empty`, `HashMap_getElem?_eq_get?`, `HashMap_get?_eq_getElem?` in `Prelude.lean`. `LawfulHashable` and `EquivBEq` instances for all key types.
+- **Full proof migration:** all 400+ theorems re-verified. Zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
+- **Closure elimination:** all `fun oid => if oid = X then ... else st.objects[oid]?` patterns replaced with `st.objects.insert`.
+- Closes findings F-P01 (object store closure chain), F-P10 (objectIndex linear scan), F-P13 (lifecycle metadata linear scan).
+
 ## [0.12.6] - 2026-03-01
 
 ### WS-G1: Hashable/BEq Infrastructure (completed)

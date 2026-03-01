@@ -17,20 +17,18 @@ def probeThreadIds (threadCount : Nat) : List SeLe4n.ObjId :=
   List.range threadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
 
 def probeBaseState (threadCount : Nat) : SystemState :=
+  let threadEntries := (List.range threadCount).map fun n =>
+    let tid := n + 1
+    (SeLe4n.ObjId.ofNat tid, KernelObject.tcb {
+      tid := SeLe4n.ThreadId.ofNat tid, priority := 0, domain := default,
+      cspaceRoot := default, vspaceRoot := default, ipcBuffer := default,
+      ipcState := .ready })
+  let allEntries := (probeEndpointId, KernelObject.endpoint {
+    state := .idle, queue := [], waitingReceiver := none }) :: threadEntries
   { (default : SystemState) with
-    objects := fun oid =>
-      if oid = probeEndpointId then
-        some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-      else if oid.toNat ≥ 1 ∧ oid.toNat ≤ threadCount then
-        some (.tcb { tid := SeLe4n.ThreadId.ofNat oid.toNat
-                   , priority := 0
-                   , domain := default
-                   , cspaceRoot := default
-                   , vspaceRoot := default
-                   , ipcBuffer := default
-                   , ipcState := .ready })
-      else
-        none
+    objects := Std.HashMap.ofList allEntries
+    objectIndex := allEntries.map Prod.fst
+    objectIndexSet := Std.HashSet.ofList (allEntries.map Prod.fst)
   }
 
 def nextRand (x : Nat) : Nat :=
@@ -63,7 +61,7 @@ def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String 
     .error s!"state invariant mismatch: {reprStr failures}"
 
 def checkEndpointConsistency (st : SystemState) : Except String Unit :=
-  match st.objects probeEndpointId with
+  match st.objects[probeEndpointId]? with
   | some (.endpoint ep) =>
       if endpointConsistencyHolds ep then
         .ok ()

@@ -105,11 +105,8 @@ private def invariantObjectIds : List SeLe4n.ObjId :=
 
 private def sendEmptyEndpointState : SystemState :=
   { baseState with
-    objects := fun oid =>
-      if oid = sendEmptyEndpointId then
-        some (.endpoint { state := .send, queue := [], waitingReceiver := none })
-      else
-        baseState.objects oid
+    objects := baseState.objects.insert sendEmptyEndpointId
+      (.endpoint { state := .send, queue := [], waitingReceiver := none })
   }
 
 private def expectError
@@ -154,7 +151,7 @@ private def expectThreadQueueLinks
     (expectedPrev : Option SeLe4n.ThreadId)
     (expectedPPrev : Option QueuePPrev)
     (expectedNext : Option SeLe4n.ThreadId) : IO Unit :=
-  match st.objects tid.toObjId with
+  match (st.objects[tid.toObjId]? : Option KernelObject) with
   | some (.tcb tcb) =>
       if tcb.queuePrev = expectedPrev ∧ tcb.queuePPrev = expectedPPrev ∧ tcb.queueNext = expectedNext then
         IO.println s!"positive check passed [{label}]"
@@ -170,15 +167,12 @@ private def corruptThreadQueueLinks
     (prev : Option SeLe4n.ThreadId)
     (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
-  match st.objects tid.toObjId with
+  match (st.objects[tid.toObjId]? : Option KernelObject) with
   | some (.tcb tcb) =>
       .ok {
         st with
-        objects := fun oid =>
-          if oid = tid.toObjId then
-            some (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next })
-          else
-            st.objects oid
+        objects := st.objects.insert tid.toObjId
+          (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next })
       }
   | _ => .error .objectNotFound
 
@@ -309,9 +303,7 @@ private def runNegativeChecks : IO Unit := do
   let strictChildNodeBad : CdtNodeId := 32
   let strictSeed : SystemState :=
     { baseState with
-      objects := fun oid =>
-        if oid = cnodeId then
-          some (.cnode {
+      objects := baseState.objects.insert cnodeId (.cnode {
             guard := 0
             radix := 0
             slots := [
@@ -327,8 +319,6 @@ private def runNegativeChecks : IO Unit := do
               })
             ]
           })
-        else
-          baseState.objects oid
       cdt := {
         edges := [
           { parent := strictRootNode, child := strictChildNodeOk, op := .copy },
@@ -412,8 +402,8 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "notification wait #1 expected none"
 
-  match stN1.objects (SeLe4n.ThreadId.ofNat 7).toObjId with
-  | some (.tcb tcb) =>
+  match (stN1.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
+  | some (KernelObject.tcb tcb) =>
       if tcb.ipcState = .blockedOnNotification notificationId then
         IO.println "positive check passed [notification wait #1 blocks thread ipcState]"
       else
@@ -424,8 +414,8 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 55) stN1)
 
 
-  match stN2.objects (SeLe4n.ThreadId.ofNat 7).toObjId with
-  | some (.tcb tcb) =>
+  match (stN2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
+  | some (KernelObject.tcb tcb) =>
       if tcb.ipcState = .ready then
         IO.println "positive check passed [notification signal wake sets waiter ipcState ready]"
       else
@@ -436,7 +426,7 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
 
   -- F-03 fix: Badge accumulation — assert badge value BEFORE final signal
-  match stN3.objects notificationId with
+  match (stN3.objects[notificationId]? : Option KernelObject) with
   | some (.notification ntfn) =>
       if ntfn.pendingBadge = some (SeLe4n.Badge.ofNat 66) then
         IO.println "positive check passed [notification badge precondition: badge=66 before accumulation]"
@@ -447,7 +437,7 @@ private def runNegativeChecks : IO Unit := do
   let (_, stN4) ← expectOkState "notification signal accumulates active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 5) stN3)
 
-  match stN4.objects notificationId with
+  match (stN4.objects[notificationId]? : Option KernelObject) with
   | some (.notification ntfn) =>
       let expected := SeLe4n.Badge.ofNat (66 ||| 5)
       if ntfn.pendingBadge = some expected then
@@ -465,8 +455,8 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [notification wait #2 delivered badge]"
 
   -- Verify waiter TCB ipcState is ready after consuming badge (not blocked)
-  match stN5.objects (SeLe4n.ThreadId.ofNat 8).toObjId with
-  | some (.tcb tcb) =>
+  match (stN5.objects[(SeLe4n.ThreadId.ofNat 8).toObjId]? : Option KernelObject) with
+  | some (KernelObject.tcb tcb) =>
       if tcb.ipcState = .ready then
         IO.println "positive check passed [notification wait #2 consumer ipcState ready]"
       else
@@ -487,7 +477,7 @@ private def runNegativeChecks : IO Unit := do
 
   let (_, stDualSend1) ← expectOkState "dual queue send blocks sender"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
-  match stDualSend1.objects endpointId with
+  match (stDualSend1.objects[endpointId]? : Option KernelObject) with
   | some (.endpoint ep) =>
       if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
         IO.println "positive check passed [dual queue sender enqueued]"
@@ -595,7 +585,7 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvWait1)
     .alreadyWaiting
 
-  match stDualFifo4.objects endpointId with
+  match (stDualFifo4.objects[endpointId]? : Option KernelObject) with
   | some (.endpoint ep) =>
       if ep.sendQ.head = none ∧ ep.sendQ.tail = none then
         IO.println "positive check passed [dual queue fifo drains send queue]"
@@ -635,9 +625,7 @@ private def runNegativeChecks : IO Unit := do
 
   let crossDomainState : SystemState :=
     { schedPriorityState with
-      objects := fun oid =>
-        if oid = (SeLe4n.ThreadId.ofNat 7).toObjId then
-          some (.tcb {
+      objects := schedPriorityState.objects.insert (SeLe4n.ThreadId.ofNat 7).toObjId (.tcb {
             tid := 7
             priority := 80
             domain := 1
@@ -646,8 +634,6 @@ private def runNegativeChecks : IO Unit := do
             ipcBuffer := 4096
             ipcState := .ready
           })
-        else
-          schedPriorityState.objects oid
       scheduler := { schedPriorityState.scheduler with activeDomain := 0, current := none } }
   let (_, stCrossDomainScheduled) ← expectOkState "schedule filters runnable set to active domain"
     (SeLe4n.Kernel.schedule crossDomainState)
@@ -711,9 +697,7 @@ private def runNegativeChecks : IO Unit := do
   let (_, stMixedDomainScheduledFifo) ← expectOkState "schedule keeps FIFO stability for equal prio/deadline in active domain"
     (SeLe4n.Kernel.schedule {
       mixedDomainFifoState with
-      objects := fun oid =>
-        if oid = (SeLe4n.ThreadId.ofNat 10).toObjId then
-          some (.tcb {
+      objects := mixedDomainFifoState.objects.insert (SeLe4n.ThreadId.ofNat 10).toObjId (.tcb {
             tid := 10
             priority := 20
             deadline := 4
@@ -722,9 +706,7 @@ private def runNegativeChecks : IO Unit := do
             vspaceRoot := 20
             ipcBuffer := 12288
             ipcState := .ready
-          })
-        else
-          mixedDomainFifoState.objects oid })
+          }) })
   if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain FIFO]: earlier queue element retained"
   else

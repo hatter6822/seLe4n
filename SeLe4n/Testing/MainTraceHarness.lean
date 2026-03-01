@@ -223,10 +223,9 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   }
   let stDeepCNode : SystemState :=
     { st1 with
-      objects := fun oid =>
-        if oid = 200 then some (.cnode deepRadixCNode) else st1.objects oid
+      objects := st1.objects.insert 200 (.cnode deepRadixCNode)
     }
-  IO.println s!"deep cnode radix fixture: {reprStr <| (stDeepCNode.objects 200).map (fun obj => match obj with | .cnode cn => cn.radix | _ => 0)}"
+  IO.println s!"deep cnode radix fixture: {reprStr <| (stDeepCNode.objects[(200 : SeLe4n.ObjId)]?).map (fun obj => match obj with | KernelObject.cnode cn => cn.radix | _ => 0)}"
   match SeLe4n.Kernel.cspaceLookupPath { cnode := 200, cptr := 13312, depth := 14 } stDeepCNode with
   | .error err => IO.println s!"deep cnode path lookup error: {reprStr err}"
   | .ok (cap, _) => IO.println s!"deep cnode path lookup rights: {reprStr cap.rights}"
@@ -249,10 +248,8 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
 
   let stMultiEndpoint : SystemState :=
     { st1 with
-      objects := fun oid =>
-        if oid = demoEndpoint then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-        else if oid = 31 then some (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-        else st1.objects oid
+      objects := st1.objects.insert demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+        |>.insert 31 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
     }
   match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 stMultiEndpoint with
   | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
@@ -345,8 +342,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
     { st1 with
       lifecycle := {
         st1.lifecycle with
-          objectTypes := fun oid =>
-            if oid = 12 then some .endpoint else st1.lifecycle.objectTypes oid
+          objectTypes := st1.lifecycle.objectTypes.insert 12 .endpoint
       }
     }
   match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
@@ -358,7 +354,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
   | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
-      IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects 12).map KernelObject.objectType}"
+      IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects[(12 : SeLe4n.ObjId)]?).map KernelObject.objectType}"
   match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot [.read] none st1 with
   | .error err => IO.println s!"cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
@@ -464,13 +460,11 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   let dualEp : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
-  let dualObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = dualEpId then some dualEp else st1.objects oid
-  let stDual : SystemState := { st1 with objects := dualObjects }
+  let stDual : SystemState := { st1 with objects := st1.objects.insert dualEpId dualEp }
   match SeLe4n.Kernel.endpointSendDual dualEpId 1 .empty stDual with
   | .error err => IO.println s!"endpointSendDual error: {reprStr err}"
   | .ok (_, stSent) =>
-      match (stSent.objects dualEpId) with
+      match (stSent.objects[dualEpId]?) with
       | some (.endpoint ep) =>
           IO.println s!"dual-queue sender blocked on sendQ non-empty: {ep.sendQ.head.isSome}"
       | _ => IO.println "dual-queue endpoint missing after send"
@@ -481,11 +475,9 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
     tid := replyTarget, priority := 100, domain := 0,
     cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
     ipcState := .blockedOnReply demoEndpoint }
-  let replyObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = replyTarget.toObjId then some replyTcb else st1.objects oid
   let replySched := { st1.scheduler with
     runnable := st1.scheduler.runnable.filter (· != replyTarget) }
-  let stReply : SystemState := { st1 with objects := replyObjects, scheduler := replySched }
+  let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
   match SeLe4n.Kernel.endpointReply replyTarget .empty stReply with
   | .error err => IO.println s!"endpointReply error: {reprStr err}"
   | .ok (_, stReplied) =>
@@ -507,12 +499,8 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     tid := 12, priority := 100, domain := 0,
     cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 8192,
     ipcState := .ready, deadline := 30 }
-  let edfObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = 1 then some edfTcbA
-    else if oid = 12 then some edfTcbB
-    else st1.objects oid
   let stEdf : SystemState := { st1 with
-    objects := edfObjects,
+    objects := st1.objects.insert 1 edfTcbA |>.insert 12 edfTcbB,
     scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := none } }
   match SeLe4n.Kernel.chooseThread stEdf with
   | .error err => IO.println s!"EDF choose error: {reprStr err}"
@@ -524,17 +512,15 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     tid := 1, priority := 100, domain := 0,
     cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
     ipcState := .ready, timeSlice := 2 }
-  let tickObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = 1 then some tickTcb else st1.objects oid
   let stTick : SystemState := { st1 with
-    objects := tickObjects,
+    objects := st1.objects.insert 1 tickTcb,
     scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
   match SeLe4n.Kernel.timerTick stTick with
   | .error err => IO.println s!"timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
       -- After one tick with timeSlice=2, slice becomes 1 (decrement path)
-      match stTicked.objects (SeLe4n.ThreadId.toObjId 1) with
-      | some (.tcb tcb) =>
+      match (stTicked.objects[SeLe4n.ThreadId.toObjId 1]? : Option KernelObject) with
+      | some (KernelObject.tcb tcb) =>
           IO.println s!"timer tick remaining slice: {tcb.timeSlice}"
       | _ => IO.println "timer tick: thread not found after tick"
   -- Now tick again — this should trigger expiry and reschedule
@@ -542,17 +528,15 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
     tid := 1, priority := 100, domain := 0,
     cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
     ipcState := .ready, timeSlice := 1 }
-  let expiryObjects : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = 1 then some expiryTcb else st1.objects oid
   let stExpiry : SystemState := { st1 with
-    objects := expiryObjects,
+    objects := st1.objects.insert 1 expiryTcb,
     scheduler := { st1.scheduler.withRunnableQueue [1, 12] with current := some 1 } }
   match SeLe4n.Kernel.timerTick stExpiry with
   | .error err => IO.println s!"timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
       IO.println s!"timer tick expiry rescheduled current: {reprStr (stExpired.scheduler.current.map SeLe4n.ThreadId.toNat)}"
-      match stExpired.objects (SeLe4n.ThreadId.toObjId 1) with
-      | some (.tcb tcb) =>
+      match (stExpired.objects[SeLe4n.ThreadId.toObjId 1]? : Option KernelObject) with
+      | some (KernelObject.tcb tcb) =>
           IO.println s!"timer tick expiry reset slice: {tcb.timeSlice}"
       | _ => IO.println "timer tick expiry: thread not found"
 
@@ -585,9 +569,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let ep0 : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
-  let obj0 : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = epId then some ep0 else st1.objects oid
-  let st0 : SystemState := { st1 with objects := obj0 }
+  let st0 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   -- Sender sends (no receiver queued → sender blocks with message)
   match SeLe4n.Kernel.endpointSendDual epId senderId testMsg st0 with
   | .error err => IO.println s!"F1-01 send error: {reprStr err}"
@@ -621,9 +603,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let ep1 : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
-  let obj1 : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = epId then some ep1 else st1.objects oid
-  let stR : SystemState := { st1 with objects := obj1 }
+  let stR : SystemState := { st1 with objects := st1.objects.insert epId ep1 }
   -- Receiver blocks first (no sender waiting → receiver enqueued)
   match SeLe4n.Kernel.endpointReceiveDual epId receiverId stR with
   | .error err => IO.println s!"F1-02 receive-first error: {reprStr err}"
@@ -644,9 +624,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let ep2 : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
-  let obj2 : SeLe4n.ObjId → Option KernelObject := fun oid =>
-    if oid = epId then some ep2 else st1.objects oid
-  let stC : SystemState := { st1 with objects := obj2 }
+  let stC : SystemState := { st1 with objects := st1.objects.insert epId ep2 }
   -- Receiver waits first
   match SeLe4n.Kernel.endpointReceiveDual epId receiverId stC with
   | .error err => IO.println s!"F1-03 receive error: {reprStr err}"
@@ -690,9 +668,9 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp newEp epAllocSize st1 with
   | .error err => IO.println s!"retype-from-untyped success path error: {reprStr err}"
   | .ok (_, stRetyped) =>
-      IO.println s!"retype-from-untyped success object kind: {reprStr <| (stRetyped.objects childEp).map KernelObject.objectType}"
+      IO.println s!"retype-from-untyped success object kind: {reprStr <| (stRetyped.objects[childEp]?).map KernelObject.objectType}"
       -- Check watermark advanced
-      match stRetyped.objects demoUntyped with
+      match stRetyped.objects[demoUntyped]? with
       | some (.untyped ut) =>
           IO.println s!"untyped watermark after retype: {ut.watermark}"
           IO.println s!"untyped children count: {ut.children.length}"
@@ -707,7 +685,7 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
       match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
       | .error err => IO.println s!"retype-from-untyped second alloc error: {reprStr err}"
       | .ok (_, stRetyped2) =>
-          match stRetyped2.objects demoUntyped with
+          match stRetyped2.objects[demoUntyped]? with
           | some (.untyped ut2) =>
               IO.println s!"untyped watermark after second retype: {ut2.watermark}"
           | _ => IO.println "untyped object missing after second retype"
@@ -728,18 +706,16 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   let deviceUntypedId : SeLe4n.ObjId := 41
   let stDevice : SystemState :=
     { st1 with
-      objects := fun oid =>
-        if oid = deviceUntypedId then some (.untyped {
+      objects := st1.objects.insert deviceUntypedId (.untyped {
           regionBase := 0x200000, regionSize := 8192,
           watermark := 0, children := [], isDevice := true })
-        else if oid = 10 then some (.cnode {
+        |>.insert 10 (.cnode {
           guard := 0, radix := 0,
           slots := [
             (0, { target := .object 1, rights := [.read, .write, .grant], badge := none }),
             (5, { target := .object 12, rights := [.read, .write], badge := none }),
             (6, { target := .object demoUntyped, rights := [.read, .write], badge := none }),
-            (7, { target := .object deviceUntypedId, rights := [.read, .write], badge := none }) ] })
-        else st1.objects oid }
+            (7, { target := .object deviceUntypedId, rights := [.read, .write], badge := none }) ] }) }
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := 10, slot := 7 }
   let devTcb : KernelObject := .tcb {
     tid := 53, priority := 50, domain := 0,

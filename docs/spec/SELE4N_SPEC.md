@@ -15,7 +15,7 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 2. [Current State Snapshot](#2-current-state-snapshot)
 3. [Milestone History](#3-milestone-history)
 4. [Architectural Improvements over seL4](#4-architectural-improvements-over-sel4)
-5. [Active Workstream Portfolio (WS-F)](#5-active-workstream-portfolio-ws-f)
+5. [Active Workstream Portfolio (WS-G)](#5-active-workstream-portfolio-ws-g)
 6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
 7. [Acceptance Expectations](#7-acceptance-expectations)
 8. [Non-Negotiable Baseline Contracts](#8-non-negotiable-baseline-contracts)
@@ -48,13 +48,13 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.12.6` (`lakefile.toml`) |
+| **Package version** | `0.12.7` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 16,485 across 34 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md), [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1 completed |
+| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G2 completed |
 | **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
@@ -119,33 +119,34 @@ carried forward into the production kernel.
 
 ---
 
-## 5. Active Workstream Portfolio (WS-F)
+## 5. Active Workstream Portfolio (WS-G)
 
-The WS-F portfolio addresses findings from two independent v0.12.2 codebase audits.
-Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
+The WS-G portfolio addresses kernel performance optimization findings from the
+[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
 
 Authoritative detail:
-[`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
+[`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 
-### 5.1 Critical — IPC and Memory Model
+### 5.1 Completed — Data Structure Optimization
 
-- **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems (TPI-D08/D09); 7 trace anchors with actual data transfer (CRIT-01, CRIT-05, F-10, F-11)
-- **WS-F2:** ~~Untyped memory model~~ **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation with allocSize validation, device restriction, 10+ theorems, 6 negative tests, 8 trace anchors (CRIT-04)
+- **WS-G1:** ~~Typed identifier Hashable instances~~ **COMPLETED** — `Hashable` + `LawfulHashable` for all 13 typed identifiers; `Std.HashMap`/`Std.HashSet` imports; zero-overhead foundation for O(1) lookups (v0.12.6)
+- **WS-G2:** ~~Object store & ObjectIndex HashMap~~ **COMPLETED** — `objects : Std.HashMap ObjId KernelObject` replacing closure-chain accumulation; `objectIndexSet : Std.HashSet ObjId` shadow set for O(1) membership; `objectTypes : Std.HashMap ObjId KernelObjectType` lifecycle metadata; 9 bridge lemmas; full proof migration (599 theorems verified); closes F-P01, F-P10, F-P13 (v0.12.7)
 
-### 5.2 High — Proof Coverage and Security
+### 5.2 Planned — Further Optimization
 
-- **WS-F3:** ~~Information-flow completeness~~ **COMPLETED** — extended `ObservableState` with 3 new fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering via `projectKernelObject` (F-22); 15 NI theorems (12 standalone + 3 enforcement-NI bridges); enforcement-NI bridge for `serviceRestartChecked`; test suite extended with WS-F3 coverage (CRIT-02, CRIT-03, F-20, F-21, F-22)
-- **WS-F4:** ~~Proof gap closure~~ **COMPLETED** — `timerTick_preserves_schedulerInvariantBundle/kernelInvariant`; `cspaceMutate_preserves_capabilityInvariantBundle`; `cspaceRevokeCdt/cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle`; `notificationSignal/notificationWait` dual ipcInvariant + schedulerInvariantBundle + ipcSchedulerContractPredicates preservation; 11 Tier-3 surface anchors (F-03, F-06, F-12, M3.5)
+- **WS-G3:** Scheduler lookup optimization — HashMap-backed runnable queue index (F-P02, F-P03)
+- **WS-G4:** CSpace lookup optimization — HashMap-backed capability slot index (F-P04, F-P05)
 
-### 5.3 Medium — Architectural Quality
+### 5.3 Prior Portfolio: WS-F (completed, v0.12.2)
 
-- **WS-F5:** Model fidelity — notification badge bitmask, per-thread registers, multi-level CSpace, capability rights as sets (CRIT-06, HIGH-01, HIGH-02, HIGH-04)
-- **WS-F6:** Invariant quality — reclassify tautological invariants, extend scheduler contract, instantiate `AdapterProofHooks` (F-07, F-13, F-15, F-18)
+The WS-F portfolio addressed findings from two independent v0.12.2 codebase audits.
+Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 
-### 5.4 Low — Testing and Cleanup
-
-- **WS-F7:** Testing expansion — extend runtime oracle, expand TraceSequenceProbe, exercise unused fixtures (F-24, F-25, F-26)
-- **WS-F8:** Cleanup — remove dead `endpointInvariant`, resolve legacy/dual-queue divergence, stub cleanup (F-01, F-14, F-19)
+- **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED**
+- **WS-F2:** ~~Untyped memory model~~ **COMPLETED**
+- **WS-F3:** ~~Information-flow completeness~~ **COMPLETED**
+- **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
+- **WS-F5–F8:** Medium/Low priority — deferred to future portfolios
 
 ---
 

@@ -15,12 +15,12 @@ open SeLe4n.Model
 
 /-- Logical relation: object `rootId` is a VSpace root bound to `asid`. -/
 def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
-  ∃ root, st.objects rootId = some (.vspaceRoot root) ∧ root.asid = asid
+  ∃ root, st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid
 
 /-- Locate one root object id carrying `asid` in the bounded discovery window. -/
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   st.objectIndex.findSome? (fun oid =>
-    match st.objects oid with
+    match (st.objects[oid]? : Option KernelObject) with
     | some (.vspaceRoot root) => if root.asid = asid then some (oid, root) else none
     | _ => none)
 
@@ -62,9 +62,9 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
 
 /-- ASID roots in the bounded discovery window are unique. -/
 def vspaceAsidRootsUnique (st : SystemState) : Prop :=
-  ∀ oid₁ oid₂ root₁ root₂,
-    st.objects oid₁ = some (.vspaceRoot root₁) →
-    st.objects oid₂ = some (.vspaceRoot root₂) →
+  ∀ (oid₁ oid₂ : SeLe4n.ObjId) (root₁ root₂ : VSpaceRoot),
+    st.objects[oid₁]? = some (KernelObject.vspaceRoot root₁) →
+    st.objects[oid₂]? = some (KernelObject.vspaceRoot root₂) →
     root₁.asid = root₂.asid →
     oid₁ = oid₂
 
@@ -73,7 +73,7 @@ theorem resolveAsidRoot_some_implies
     (st : SystemState) (asid : SeLe4n.ASID)
     (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
     (hResolve : resolveAsidRoot st asid = some (rootId, root)) :
-    st.objects rootId = some (.vspaceRoot root) ∧ root.asid = asid ∧ rootId ∈ st.objectIndex := by
+    st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid ∧ rootId ∈ st.objectIndex := by
   unfold resolveAsidRoot at hResolve
   generalize st.objectIndex = idx at hResolve ⊢
   induction idx with
@@ -82,7 +82,7 @@ theorem resolveAsidRoot_some_implies
       simp only [List.findSome?_cons] at hResolve
       split at hResolve
       · next hMatch =>
-        cases hObjA : st.objects a with
+        cases hObjA : st.objects[a]? with
         | none => simp [hObjA] at hMatch
         | some obj =>
             cases obj with
@@ -109,7 +109,7 @@ theorem resolveAsidRoot_some_implies
 theorem resolveAsidRoot_of_unique_root
     (st : SystemState) (asid : SeLe4n.ASID)
     (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
-    (hObj : st.objects rootId = some (.vspaceRoot root))
+    (hObj : st.objects[rootId]? = some (KernelObject.vspaceRoot root))
     (hAsid : root.asid = asid)
     (hMem : rootId ∈ st.objectIndex)
     (hUniq : vspaceAsidRootsUnique st) :
@@ -128,12 +128,12 @@ theorem resolveAsidRoot_of_unique_root
           cases hMem with
           | head => exact absurd rfl hEq
           | tail _ h => exact h
-        suffices hNone : (match st.objects a with
+        suffices hNone : (match (st.objects[a]? : Option KernelObject) with
             | some (.vspaceRoot r) => if r.asid = asid then some (a, r) else none
             | _ => none) = none by
           simp [hNone]
           exact ih hMemRest
-        cases hObjA : st.objects a with
+        cases hObjA : st.objects[a]? with
         | none => simp
         | some obj =>
             cases obj with
@@ -148,14 +148,16 @@ theorem resolveAsidRoot_of_unique_root
 -- storeObject preservation lemmas for VSpace operations
 -- ============================================================================
 
-/-- After `storeObject` at a rootId that was already in objectIndex, the objectIndex is unchanged. -/
+/-- After `storeObject` at a rootId that was already in objectIndex, the objectIndex is unchanged.
+    Requires objectIndexSet to be consistent (contains id ↔ id ∈ objectIndex). -/
 theorem storeObject_objectIndex_eq_of_mem
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hMem : id ∈ st.objectIndex)
+    (_hMem : id ∈ st.objectIndex)
+    (hSync : st.objectIndexSet.contains id = true)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndex = st.objectIndex := by
   unfold storeObject at hStore
   cases hStore
-  simp [hMem]
+  simp [hSync]
 
 end SeLe4n.Kernel.Architecture
