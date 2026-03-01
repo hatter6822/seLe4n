@@ -48,13 +48,13 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.12.9` (`lakefile.toml`) |
+| **Package version** | `0.12.11` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
 | **Production LoC** | 16,485 across 34 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md), [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G5 completed |
+| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G6 completed |
 | **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
@@ -141,11 +141,15 @@ Authoritative detail:
 
 - **WS-G5:** ~~CNode slot HashMap~~ **COMPLETED** — `CNode.slots : Std.HashMap Slot Capability` replacing `List (Slot × Capability)`; `lookup`/`insert`/`remove` all O(1) amortized; `slotsUnique` trivially true (HashMap key uniqueness); 2 bridge lemmas (`HashMap_filter_preserves_key`, `HashMap_filter_filter_getElem?`); `projectKernelObject_idempotent` reformulated to slot-level lookup equality; `cspaceRevoke` `revokedRefs` via `HashMap.fold` (single O(m) pass); manual `BEq CNode`/`BEq KernelObject` instances; 10 files modified; closes F-P03 (v0.12.10)
 
-### 5.4 Planned — Further Optimization
+### 5.4 Completed — VSpace Optimization
 
-(No further data-structure workstreams are in active development. WS-G6..G9 remain planned.)
+- **WS-G6:** ~~VSpace mapping HashMap~~ **COMPLETED** — `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` replacing `List (VAddr × PAddr)`; `lookup`/`mapPage`/`unmapPage` all O(1) amortized; universal `noVirtualOverlap_trivial` theorem proves the property for all VSpaceRoots (HashMap key uniqueness); round-trip theorems re-proved with HashMap bridge lemmas; manual `BEq VSpaceRoot` instance; `boundedAddressTranslation` reformulated for HashMap; `hashMapVSpaceBackend` replaces `listVSpaceBackend`; 7 files modified; closes F-P05 (v0.12.11)
 
-### 5.5 Prior Portfolio: WS-F (completed, v0.12.2)
+### 5.5 Planned — Further Optimization
+
+(No further data-structure workstreams are in active development. WS-G7..G9 remain planned.)
+
+### 5.6 Prior Portfolio: WS-F (completed, v0.12.2)
 
 The WS-F portfolio addressed findings from two independent v0.12.2 codebase audits.
 Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
@@ -184,7 +188,7 @@ organizational foundation for hardware binding:
 
 - `PlatformBinding` typeclass (`SeLe4n/Platform/Contract.lean`)
 - `MachineConfig` and `MemoryRegion` types (`SeLe4n/Machine.lean`)
-- `VSpaceBackend` abstraction with `listVSpaceBackend` instance
+- `VSpaceBackend` abstraction with `hashMapVSpaceBackend` instance (WS-G6)
 - `ExtendedBootBoundaryContract` with platform boot fields
 - Simulation platform (`Platform/Sim/`) for testing
 - RPi5 stubs (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,

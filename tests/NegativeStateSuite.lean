@@ -85,7 +85,7 @@ private def baseState : SystemState :=
       ipcState := .ready
     })
     |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-    |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := [] })
+    |>.withObject 20 (.vspaceRoot { asid := asidPrimary, mappings := {} })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType wrongTypeId .endpoint

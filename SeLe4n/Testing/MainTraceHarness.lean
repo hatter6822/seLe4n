@@ -76,7 +76,7 @@ def bootstrapState : SystemState :=
       ipcState := .ready
     })
     |>.withObject 11 (.cnode CNode.empty)
-    |>.withObject 20 (.vspaceRoot { asid := 1, mappings := [] })
+    |>.withObject 20 (.vspaceRoot { asid := 1, mappings := {} })
     |>.withObject demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject demoUntyped (.untyped {
@@ -787,7 +787,7 @@ private def buildParameterizedTopology
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
-      (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := [] })
+      (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := {} })
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
     [ (⟨4000⟩, .endpoint { state := .idle, queue := [], waitingReceiver := none })

@@ -174,7 +174,7 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06 updated)
+## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:
 
@@ -184,15 +184,19 @@ VSpace invariant bundle preservation is now proven for both success and error pa
 - **Success-path preservation** (substantive — prove invariant preservation over changed state):
   - `vspaceMapPage_success_preserves_vspaceInvariantBundle`
   - `vspaceUnmapPage_success_preserves_vspaceInvariantBundle`
-- **Round-trip / functional-correctness theorems** (TPI-001 closure):
+- **Round-trip / functional-correctness theorems** (TPI-001 closure; WS-G6: re-proved with HashMap bridge lemmas):
   - `vspaceLookup_after_map`: map then lookup yields mapped address
   - `vspaceLookup_map_other`: map at vaddr doesn't affect lookup at different vaddr'
   - `vspaceLookup_after_unmap`: after unmap, lookup fails with translationFault
   - `vspaceLookup_unmap_other`: unmap at vaddr doesn't affect lookup at different vaddr'
 
+Data structure (WS-G6 / F-P05):
+
+- `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` — O(1) amortized lookup/insert/erase replacing O(m) list scan. HashMap key uniqueness makes `noVirtualOverlap` trivially true via the universal `noVirtualOverlap_trivial` theorem (subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`). `BEq VSpaceRoot` instance for entry-wise comparison. `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
+
 VSpace invariant bundle structure (3-conjunct, WS-G3):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID
-- `vspaceRootNonOverlap` — VSpaceRoot mapping ranges do not overlap
+- `vspaceRootNonOverlap` — VSpaceRoot mapping ranges do not overlap (trivially true with HashMap, WS-G6)
 - `asidTableConsistent` — bidirectional soundness + completeness between `asidTable` HashMap and VSpaceRoot objects
 
 Supporting infrastructure in `VSpace.lean`:

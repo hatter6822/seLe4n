@@ -428,43 +428,63 @@ theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
 
 end UntypedObject
 
-/-- Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
+/-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
-Hierarchical page-table levels are deferred behind this stable executable surface. -/
+Hierarchical page-table levels are deferred behind this stable executable surface.
+
+`mappings` is backed by `Std.HashMap VAddr PAddr` for O(1) amortized lookup,
+insert, and erase — replacing the O(m) list-based representation. HashMap key
+uniqueness is structural, making `noVirtualOverlap` trivially true. -/
 structure VSpaceRoot where
   asid : SeLe4n.ASID
-  mappings : List (SeLe4n.VAddr × SeLe4n.PAddr)
-  deriving Repr, DecidableEq
+  mappings : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr
+  deriving Repr
 
 namespace VSpaceRoot
 
+/-- WS-G6/F-P05: O(1) amortized page lookup via `HashMap[vaddr]?`. -/
 def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
-  (root.mappings.find? (fun entry => entry.fst = vaddr)).map Prod.snd
+  root.mappings[vaddr]?
 
+/-- WS-G6/F-P05: O(1) amortized page mapping via `HashMap.insert`.
+Returns `none` if a mapping for `vaddr` already exists (conflict). -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Option VSpaceRoot :=
   match lookup root vaddr with
   | some _ => none
-  | none => some { root with mappings := (vaddr, paddr) :: root.mappings }
+  | none => some { root with mappings := root.mappings.insert vaddr paddr }
 
+/-- WS-G6/F-P05: O(1) amortized page unmapping via `HashMap.erase`.
+Returns `none` if no mapping exists for `vaddr`. -/
 def unmapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option VSpaceRoot :=
   match lookup root vaddr with
   | none => none
-  | some _ =>
-      let mappings' := root.mappings.filter (fun entry => entry.fst ≠ vaddr)
-      some { root with mappings := mappings' }
+  | some _ => some { root with mappings := root.mappings.erase vaddr }
 
+/-- WS-G6: No-virtual-overlap property. With HashMap-backed mappings, this is
+trivially true by key uniqueness: each VAddr maps to at most one PAddr.
+Uses `lookup` (which delegates to `HashMap[vaddr]?`) for type resolution. -/
 def noVirtualOverlap (root : VSpaceRoot) : Prop :=
   ∀ v p₁ p₂,
-    (v, p₁) ∈ root.mappings →
-    (v, p₂) ∈ root.mappings →
+    root.lookup v = some p₁ →
+    root.lookup v = some p₂ →
     p₁ = p₂
 
-theorem noVirtualOverlap_empty (asid : SeLe4n.ASID) :
-    noVirtualOverlap { asid := asid, mappings := [] } := by
-  intro v p₁ p₂ hIn₁
-  simp at hIn₁
+/-- WS-G6: With HashMap-backed mappings, `noVirtualOverlap` is trivially true
+for *every* `VSpaceRoot` — key uniqueness in the HashMap guarantees that a
+single `lookup` can return at most one value, so `p₁ = p₂` follows by
+injection. This subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`,
+and `unmapPage_noVirtualOverlap`, which are retained for API compatibility. -/
+theorem noVirtualOverlap_trivial (root : VSpaceRoot) : noVirtualOverlap root := by
+  intro v p₁ p₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
 
+/-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap.
+Follows directly from `noVirtualOverlap_trivial` but retained for API compatibility. -/
+theorem noVirtualOverlap_empty (asid : SeLe4n.ASID) :
+    noVirtualOverlap { asid := asid, mappings := {} } :=
+  noVirtualOverlap_trivial _
+
+/-- WS-G6: After unmapping vaddr, lookup returns none. Maps to `HashMap.getElem?_erase`. -/
 theorem lookup_unmapPage_eq_none
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
@@ -476,9 +496,9 @@ theorem lookup_unmapPage_eq_none
   | some p =>
       simp [hLookup] at hUnmap
       cases hUnmap
-      unfold lookup
-      simp
+      simp [lookup]
 
+/-- WS-G6: After mapping vaddr→paddr, lookup returns paddr. Maps to `HashMap.getElem?_insert`. -/
 theorem lookup_mapPage_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
@@ -491,8 +511,7 @@ theorem lookup_mapPage_eq
   | none =>
       simp [hLookup] at hMap
       cases hMap
-      unfold lookup
-      simp
+      simp [lookup]
 
 /-- F-08 helper: `mapPage` preserves the VSpace root ASID. -/
 theorem mapPage_asid_eq
@@ -504,7 +523,8 @@ theorem mapPage_asid_eq
   unfold mapPage at hMap
   cases hLookup : lookup root vaddr with
   | some _ => simp [hLookup] at hMap
-  | none => simp [hLookup] at hMap; cases hMap; rfl
+  | none =>
+      simp [hLookup] at hMap; cases hMap; rfl
 
 /-- F-08 helper: `unmapPage` preserves the VSpace root ASID. -/
 theorem unmapPage_asid_eq
@@ -515,74 +535,49 @@ theorem unmapPage_asid_eq
   unfold unmapPage at hUnmap
   cases hLookup : lookup root vaddr with
   | none => simp [hLookup] at hUnmap
-  | some _ => simp [hLookup] at hUnmap; cases hUnmap; rfl
+  | some _ =>
+      simp [hLookup] at hUnmap; cases hUnmap; rfl
 
-/-- F-08 helper: if `lookup` returns `none`, then no mapping entry for that vaddr
-    exists in the mappings list. -/
-theorem lookup_eq_none_not_mem
+/-- WS-G6: If `lookup` returns `none`, the vaddr has no mapping in the HashMap. -/
+theorem lookup_eq_none_iff
     (root : VSpaceRoot)
-    (vaddr : SeLe4n.VAddr)
-    (paddr : SeLe4n.PAddr)
-    (hNone : lookup root vaddr = none) :
-    (vaddr, paddr) ∉ root.mappings := by
-  unfold lookup at hNone
-  rw [Option.map_eq_none_iff] at hNone
-  rw [List.find?_eq_none] at hNone
-  intro hMem
-  have := hNone ⟨vaddr, paddr⟩ hMem
-  simp at this
+    (vaddr : SeLe4n.VAddr) :
+    lookup root vaddr = none ↔ vaddr ∉ root.mappings := by
+  simp [lookup]
 
-/-- F-08 helper: a successful `mapPage` preserves the no-virtual-overlap invariant.
-    Since `mapPage` only succeeds when `lookup root vaddr = none` (no existing mapping
-    for the target vaddr), adding the new `(vaddr, paddr)` entry cannot create duplicates. -/
+/-- WS-G6: A successful `mapPage` preserves the no-virtual-overlap invariant.
+With HashMap-backed mappings, `noVirtualOverlap` is trivially true by key uniqueness. -/
 theorem mapPage_noVirtualOverlap
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
-    (hOverlap : noVirtualOverlap root)
+    (_hOverlap : noVirtualOverlap root)
     (hMap : root.mapPage vaddr paddr = some root') :
     noVirtualOverlap root' := by
   unfold mapPage at hMap
   cases hLookup : lookup root vaddr with
   | some _ => simp [hLookup] at hMap
   | none =>
-      simp [hLookup] at hMap
-      cases hMap
-      intro v p₁ p₂ hIn₁ hIn₂
-      simp [List.mem_cons] at hIn₁ hIn₂
-      cases hIn₁ with
-      | inl h₁ =>
-        cases hIn₂ with
-        | inl h₂ => rw [h₁.2, h₂.2]
-        | inr h₂ =>
-          exfalso
-          exact lookup_eq_none_not_mem root _ p₂ hLookup (h₁.1 ▸ h₂)
-      | inr h₁ =>
-        cases hIn₂ with
-        | inl h₂ =>
-          exfalso
-          exact lookup_eq_none_not_mem root _ p₁ hLookup (h₂.1 ▸ h₁)
-        | inr h₂ => exact hOverlap v p₁ p₂ h₁ h₂
+      simp [hLookup] at hMap; cases hMap
+      exact noVirtualOverlap_trivial _
 
-/-- F-08 helper: a successful `unmapPage` preserves the no-virtual-overlap invariant.
-    Since `unmapPage` only removes entries, it cannot create new overlap. -/
+/-- WS-G6: A successful `unmapPage` preserves the no-virtual-overlap invariant.
+With HashMap-backed mappings, `noVirtualOverlap` is trivially true by key uniqueness. -/
 theorem unmapPage_noVirtualOverlap
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
-    (hOverlap : noVirtualOverlap root)
+    (_hOverlap : noVirtualOverlap root)
     (hUnmap : root.unmapPage vaddr = some root') :
     noVirtualOverlap root' := by
   unfold unmapPage at hUnmap
   cases hLookup : lookup root vaddr with
   | none => simp [hLookup] at hUnmap
   | some _ =>
-      simp [hLookup] at hUnmap
-      cases hUnmap
-      intro v p₁ p₂ hIn₁ hIn₂
-      simp [List.mem_filter] at hIn₁ hIn₂
-      exact hOverlap v p₁ p₂ hIn₁.1 hIn₂.1
+      simp [hLookup] at hUnmap; cases hUnmap
+      exact noVirtualOverlap_trivial _
 
-/-- TPI-001 helper: mapping vaddr does not affect lookup of a different vaddr'. -/
+/-- TPI-001 helper: mapping vaddr does not affect lookup of a different vaddr'.
+Maps to `HashMap.getElem?_insert` with the inequality hypothesis. -/
 theorem lookup_mapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
@@ -594,12 +589,14 @@ theorem lookup_mapPage_ne
   cases hLookup : lookup root vaddr with
   | some _ => simp [hLookup] at hMap
   | none =>
-      simp [hLookup] at hMap
-      cases hMap
-      unfold lookup
-      simp [hNe]
+      simp [hLookup] at hMap; cases hMap
+      simp only [lookup, HashMap_getElem?_insert]
+      have : ¬((vaddr == vaddr') = true) := by
+        intro h; exact hNe (eq_of_beq h)
+      simp [this]
 
-/-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'. -/
+/-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'.
+Maps to `HashMap.getElem?_erase` with the inequality hypothesis. -/
 theorem lookup_unmapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
@@ -610,19 +607,22 @@ theorem lookup_unmapPage_ne
   cases hLookup : lookup root vaddr with
   | none => simp [hLookup] at hUnmap
   | some _ =>
-      simp [hLookup] at hUnmap
-      cases hUnmap
-      unfold lookup
-      simp only
-      congr 1
-      rw [List.find?_filter]
-      congr 1
-      funext x
-      by_cases hx : x.fst = vaddr'
-      · simp [hx, Ne.symm hNe]
-      · simp [hx]
+      simp [hLookup] at hUnmap; cases hUnmap
+      simp only [lookup, HashMap_getElem?_erase]
+      have : ¬((vaddr == vaddr') = true) := by
+        intro h; exact hNe (eq_of_beq h)
+      simp [this]
 
 end VSpaceRoot
+
+/-- WS-G6: `BEq` instance for `VSpaceRoot` using entry-wise comparison on the
+HashMap-backed mappings. Two VSpaceRoots are equal iff their ASID and all
+mapping entries agree (same size + every key maps to the same value). -/
+instance : BEq VSpaceRoot where
+  beq a b :=
+    a.asid == b.asid &&
+    a.mappings.size == b.mappings.size &&
+    a.mappings.toList.all (fun (k, v) => b.mappings[k]? == some v)
 
 namespace CNode
 
