@@ -1065,6 +1065,276 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
                 lifecycleAuthorityMonotonicity_holds _⟩
 
 -- ============================================================================
+-- WS-F4/F-03: cspaceMutate preservation
+-- ============================================================================
+
+/-- WS-F4/F-03: cspaceMutate preserves capabilityInvariantBundle.
+Mutate composes cspaceLookupSlot (read-only) + cn.insert (which preserves
+slotsUnique) + storeObject + storeCapabilityRef. -/
+theorem cspaceMutate_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (rights : List AccessRight)
+    (badge : Option SeLe4n.Badge)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
+  have hUnique' : cspaceSlotUnique st' := by
+    intro cnodeId cn hObj
+    -- Revert hStep to decompose the definition via goal-level case splits
+    revert hStep; unfold cspaceMutate
+    cases hLookup : cspaceLookupSlot addr st with
+    | error e => simp
+    | ok pair =>
+      rcases pair with ⟨cap, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup
+      subst st1
+      by_cases hRights : rightsSubset rights cap.rights
+      · simp only [hRights, ite_true]
+        cases hPre : st.objects addr.cnode with
+        | none => simp
+        | some preObj =>
+          cases preObj with
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp
+          | cnode preCn =>
+            simp only []
+            cases hStore : storeObject addr.cnode
+              (.cnode (preCn.insert addr.slot
+                { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
+            | error e => simp
+            | ok pair =>
+              obtain ⟨_, stMid⟩ := pair
+              simp only []
+              intro hStep
+              by_cases hEq : cnodeId = addr.cnode
+              · rw [hEq] at hObj
+                have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr
+                  (some cap.target) hStep
+                have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                  (.cnode (preCn.insert addr.slot
+                    { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) hStore
+                have hFinal : st'.objects addr.cnode =
+                    some (.cnode (preCn.insert addr.slot
+                      { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) := by
+                  rw [← hObjMid]; exact congrFun hObjRef addr.cnode
+                rw [hFinal] at hObj; cases hObj
+                exact CNode.insert_slotsUnique preCn addr.slot _
+                  (hUnique addr.cnode preCn hPre)
+              · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
+                  (.cnode (preCn.insert addr.slot
+                    { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) hEq hStore
+                have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr
+                  (some cap.target) hStep
+                have hFinal : st'.objects cnodeId = st.objects cnodeId := by
+                  rw [← hObjMid]; exact congrFun hObjRef cnodeId
+                rw [hFinal] at hObj
+                exact hUnique cnodeId cn hObj
+      · simp [hRights]
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
+    lifecycleAuthorityMonotonicity_holds st'⟩
+
+-- ============================================================================
+-- WS-F4/F-03: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
+-- ============================================================================
+
+/-- Helper: CDT-only state updates preserve capabilityInvariantBundle. -/
+private theorem capabilityInvariantBundle_of_cdt_update
+    (st : SystemState) (cdt' : CapDerivationTree)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle { st with cdt := cdt' } := by
+  rcases hInv with ⟨hU, _, hA, _⟩
+  have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
+  exact ⟨cspaceSlotUnique_of_objects_eq st _ hU hObjEq,
+    cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq st _ hU hObjEq),
+    hA, lifecycleAuthorityMonotonicity_holds _⟩
+
+/-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node. -/
+private def revokeCdtFoldBody
+    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
+    Except KernelError (Unit × SystemState) :=
+  match acc with
+  | .error e => .error e
+  | .ok ((), stAcc) =>
+      match SystemState.lookupCdtSlotOfNode stAcc node with
+      | none => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
+      | some descAddr =>
+          match cspaceDeleteSlot descAddr stAcc with
+          | .error _ => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
+          | .ok ((), stDel) =>
+              let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+              .ok ((), { stDetached with cdt := stDetached.cdt.removeNode node })
+
+/-- Single fold step preserves capabilityInvariantBundle. -/
+private theorem revokeCdtFoldBody_preserves
+    (stAcc stNext : SystemState) (node : CdtNodeId)
+    (hInv : capabilityInvariantBundle stAcc)
+    (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
+    capabilityInvariantBundle stNext := by
+  unfold revokeCdtFoldBody at hStep
+  cases hSlot : SystemState.lookupCdtSlotOfNode stAcc node with
+  | none =>
+    simp [hSlot] at hStep; cases hStep
+    exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
+  | some descAddr =>
+    simp [hSlot] at hStep
+    cases hDel : cspaceDeleteSlot descAddr stAcc with
+    | error _ =>
+      simp [hDel] at hStep; cases hStep
+      exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
+    | ok pair =>
+      obtain ⟨_, stDel⟩ := pair
+      simp [hDel] at hStep; cases hStep
+      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel descAddr hInv hDel
+      have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
+      rcases hDelInv with ⟨hU2, _, hA2, _⟩
+      have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
+        ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
+         cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
+         hA2, lifecycleAuthorityMonotonicity_holds _⟩
+      exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
+
+/-- Error propagation: revokeCdtFoldBody propagates errors unchanged. -/
+private theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
+    revokeCdtFoldBody (.error e) node = .error e := by
+  unfold revokeCdtFoldBody; rfl
+
+/-- Fold error propagation: foldl revokeCdtFoldBody starting from error stays error. -/
+private theorem revokeCdtFoldBody_foldl_error
+    (nodes : List CdtNodeId) (e : KernelError) :
+    nodes.foldl revokeCdtFoldBody (.error e) = .error e := by
+  induction nodes with
+  | nil => rfl
+  | cons node rest ih => simp [List.foldl, revokeCdtFoldBody_error, ih]
+
+/-- Fold induction: cspaceRevokeCdt fold preserves capabilityInvariantBundle. -/
+private theorem revokeCdtFold_preserves
+    (nodes : List CdtNodeId)
+    (stInit stFinal : SystemState)
+    (hInv : capabilityInvariantBundle stInit)
+    (hFold : nodes.foldl revokeCdtFoldBody (.ok ((), stInit)) = .ok ((), stFinal)) :
+    capabilityInvariantBundle stFinal := by
+  induction nodes generalizing stInit stFinal with
+  | nil =>
+    simp [List.foldl] at hFold; cases hFold; exact hInv
+  | cons node rest ih =>
+    simp only [List.foldl] at hFold
+    -- Case split on whether the step succeeds or errors
+    cases hStep : revokeCdtFoldBody (.ok ((), stInit)) node with
+    | error e =>
+      rw [hStep, revokeCdtFoldBody_foldl_error] at hFold; simp at hFold
+    | ok val =>
+      obtain ⟨_, stMid⟩ := val
+      rw [hStep] at hFold
+      exact ih stMid stFinal (revokeCdtFoldBody_preserves stInit stMid node hInv hStep) hFold
+
+/-- WS-F4/F-03: cspaceRevokeCdt preserves capabilityInvariantBundle.
+Composes cspaceRevoke (proven) + fold over CDT descendants. -/
+theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceRevokeCdt addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceRevokeCdt at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i stLocal hRevoke
+    have hLocalInv := cspaceRevoke_preserves_capabilityInvariantBundle st stLocal addr hInv hRevoke
+    split at hStep
+    · simp at hStep; cases hStep; exact hLocalInv
+    · rename_i rootNode hLookup
+      -- hStep has the fold result; the inline lambda is definitionally equal to revokeCdtFoldBody
+      change (stLocal.cdt.descendantsOf rootNode).foldl revokeCdtFoldBody
+          (.ok ((), stLocal)) = .ok ((), st') at hStep
+      exact revokeCdtFold_preserves _ stLocal st' hLocalInv hStep
+
+/-- WS-F4/F-03: cspaceRevokeCdtStrict preserves capabilityInvariantBundle.
+The strict variant composes cspaceRevoke + a fold that only does cspaceDeleteSlot
+and CDT operations, same as the non-strict variant. -/
+theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (report : RevokeCdtStrictReport)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceRevokeCdtStrict addr st = .ok (report, st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceRevokeCdtStrict at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i stLocal hRevoke
+    have hLocalInv := cspaceRevoke_preserves_capabilityInvariantBundle st stLocal addr hInv hRevoke
+    split at hStep
+    · -- No CDT root: stLocal is the final state
+      simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hLocalInv
+    · -- CDT root found: fold processes descendants
+      rename_i rootNode _hLookup
+      -- The fold produces (report, stFinal) from a pure total step function,
+      -- so we need to show the fold preserves the invariant through each step.
+      -- Each step either: (a) does nothing (firstFailure already set),
+      -- (b) removes a CDT node (objects unchanged), (c) deletes a slot + detaches CDT,
+      -- or (d) records a failure + removes CDT node.
+      -- In all cases, CNode objects are either unchanged or go through cspaceDeleteSlot.
+      suffices h : ∀ (nodes : List CdtNodeId) (rep : RevokeCdtStrictReport) (stAcc : SystemState),
+          capabilityInvariantBundle stAcc →
+          capabilityInvariantBundle (nodes.foldl (fun acc node =>
+            let (report, stCur) := acc
+            match report.firstFailure with
+            | some _ => (report, stCur)
+            | none =>
+                match SystemState.lookupCdtSlotOfNode stCur node with
+                | none => (report, { stCur with cdt := stCur.cdt.removeNode node })
+                | some descAddr =>
+                    match cspaceDeleteSlot descAddr stCur with
+                    | .error err =>
+                        ({ report with firstFailure := some {
+                            offendingNode := node, offendingSlot := some descAddr, error := err } },
+                         { stCur with cdt := stCur.cdt.removeNode node })
+                    | .ok ((), stDel) =>
+                        let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                        ({ report with deletedSlots := descAddr :: report.deletedSlots },
+                         { stDetached with cdt := stDetached.cdt.removeNode node })
+          ) (rep, stAcc)).2 by
+        simp at hStep
+        have hInvFold := h (stLocal.cdt.descendantsOf rootNode)
+          { deletedSlots := [], firstFailure := none } stLocal hLocalInv
+        obtain ⟨_, hStEq⟩ := hStep
+        rw [← hStEq]; exact hInvFold
+      intro nodes
+      induction nodes with
+      | nil => intro rep stAcc hI; simpa [List.foldl] using hI
+      | cons node rest ih =>
+        intro rep stAcc hI
+        simp only [List.foldl]
+        cases rep.firstFailure with
+        | some _ => exact ih rep stAcc hI
+        | none =>
+          cases hSlot : SystemState.lookupCdtSlotOfNode stAcc node with
+          | none =>
+            simp
+            exact ih rep { stAcc with cdt := stAcc.cdt.removeNode node }
+              (capabilityInvariantBundle_of_cdt_update stAcc _ hI)
+          | some descAddr =>
+            simp
+            cases hDel : cspaceDeleteSlot descAddr stAcc with
+            | error err =>
+              simp
+              exact ih _ { stAcc with cdt := stAcc.cdt.removeNode node }
+                (capabilityInvariantBundle_of_cdt_update stAcc _ hI)
+            | ok pair =>
+              obtain ⟨_, stDel⟩ := pair
+              simp
+              have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel
+                descAddr hI hDel
+              have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
+              rcases hDelInv with ⟨hU2, _, hA2, _⟩
+              have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
+                ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
+                 cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
+                 hA2, lifecycleAuthorityMonotonicity_holds _⟩
+              exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDetachInv)
+
+-- ============================================================================
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 

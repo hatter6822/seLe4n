@@ -775,4 +775,122 @@ theorem chooseThreadInDomain_preserves_state
   unfold chooseThreadInDomain at hStep
   exact chooseThread_preserves_state st st' next hStep
 
+-- ============================================================================
+-- WS-F4/F-03: timerTick preservation theorems
+-- ============================================================================
+
+/-- WS-F4/F-03: `timerTick` preserves `schedulerInvariantBundle`.
+
+Cases:
+1. No current thread → only machine state changes, scheduler unchanged.
+2. Time-slice expired → TCB time-slice reset, rotate queue, reschedule.
+   Delegates to `schedule_preserves_schedulerInvariantBundle`.
+3. Time-slice not expired → TCB time-slice decremented, scheduler unchanged. -/
+theorem timerTick_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundle st)
+    (hStep : timerTick st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQCC, hRQU, hCTV⟩
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; cases hStep; exact ⟨hQCC, hRQU, hCTV⟩
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects tid.toObjId with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        -- Split on time-slice expiry
+        by_cases hExpire : tcb.timeSlice ≤ 1
+        · -- Time-slice expired: rotate + reschedule
+          rw [if_pos hExpire] at hStep
+          cases hRotate : rotateCurrentToBack (some tid) st.scheduler.runnable with
+          | error e => simp [hRotate] at hStep
+          | ok runnable' =>
+            simp only [hRotate] at hStep
+            -- Delegate to schedule_preserves via apply
+            have hTidMem : tid ∈ st.scheduler.runnable := by
+              simp [queueCurrentConsistent, hCur] at hQCC; exact hQCC
+            have hRotEq : runnable' = st.scheduler.runnable.erase tid ++ [tid] := by
+              simp [rotateCurrentToBack, hTidMem] at hRotate; exact hRotate.symm
+            apply schedule_preserves_schedulerInvariantBundle _ st' _ hStep
+            refine ⟨?_, ?_, ?_⟩
+            · -- queueCurrentConsistent: current = some tid ∈ rotated queue
+              unfold queueCurrentConsistent
+              simp [SchedulerState.withRunnableQueue, hCur, hRotEq]
+            · -- runQueueUnique: rotated queue is Nodup
+              unfold runQueueUnique
+              dsimp [SchedulerState.withRunnableQueue]
+              rw [hRotEq]
+              have hErase : (st.scheduler.runnable.erase tid).Nodup := hRQU.erase tid
+              have hNotMemErase : tid ∉ st.scheduler.runnable.erase tid :=
+                List.Nodup.not_mem_erase (a := tid) hRQU
+              refine List.nodup_append.2 ?_
+              refine ⟨hErase, by simp, ?_⟩
+              intro x hx y hy
+              have hyTid : y = tid := by simpa using hy
+              subst hyTid
+              intro hEq
+              subst hEq
+              exact hNotMemErase hx
+            · -- currentThreadValid: TCB exists (with reset timeSlice)
+              unfold currentThreadValid
+              simp [SchedulerState.withRunnableQueue, hCur]
+        · -- Time-slice not expired: scheduler unchanged, only TCB timeSlice decremented
+          rw [if_neg hExpire] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          refine ⟨hQCC, hRQU, ?_⟩
+          unfold currentThreadValid
+          simp [hCur]
+
+/-- WS-F4/F-03: `timerTick` preserves `kernelInvariant` (including
+`currentThreadInActiveDomain`). -/
+theorem timerTick_preserves_kernelInvariant
+    (st st' : SystemState)
+    (hInv : kernelInvariant st)
+    (hStep : timerTick st = .ok ((), st')) :
+    kernelInvariant st' := by
+  rcases hInv with ⟨hQCC, hRQU, hCTV, hDom⟩
+  have hBundle := timerTick_preserves_schedulerInvariantBundle st st'
+    ⟨hQCC, hRQU, hCTV⟩ hStep
+  rcases hBundle with ⟨hQCC', hRQU', hCTV'⟩
+  refine ⟨hQCC', hRQU', hCTV', ?_⟩
+  -- Prove currentThreadInActiveDomain for st'
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; cases hStep
+    exact hDom
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects tid.toObjId with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        by_cases hExpire : tcb.timeSlice ≤ 1
+        · -- Expired: schedule sets current → delegates to schedule
+          rw [if_pos hExpire] at hStep
+          cases hRotate : rotateCurrentToBack (some tid) st.scheduler.runnable with
+          | error e => simp [hRotate] at hStep
+          | ok runnable' =>
+            simp only [hRotate] at hStep
+            exact schedule_preserves_currentThreadInActiveDomain _ st' hStep
+        · -- Not expired: domain unchanged, TCB domain unchanged
+          rw [if_neg hExpire] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          simp only [currentThreadInActiveDomain, hCur]
+          have hDomOrig : tcb.domain = st.scheduler.activeDomain := by
+            simp [currentThreadInActiveDomain, hCur, hObj] at hDom; exact hDom
+          simp [hDomOrig]
+
 end SeLe4n.Kernel

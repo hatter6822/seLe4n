@@ -1,3 +1,14 @@
+## [0.12.5] - 2026-03-01
+
+### WS-F4: Proof Gap Closure (completed)
+
+- **timerTick preservation (F-03):** `timerTick_preserves_schedulerInvariantBundle` and `timerTick_preserves_kernelInvariant` — covers `queueCurrentConsistent`, `runQueueUnique`, `currentThreadValid`, `currentThreadInActiveDomain`. Expired-timeslice path delegates to `schedule_preserves_*`; non-expired path proves scheduler unchanged directly.
+- **cspaceMutate preservation (F-06):** `cspaceMutate_preserves_capabilityInvariantBundle` — uses `revert/unfold` decomposition through capability lookup, rights check, and storeObject.
+- **cspaceRevokeCdt/cspaceRevokeCdtStrict preservation (F-06):** Fold induction via extracted `revokeCdtFoldBody` with error propagation lemmas (`revokeCdtFoldBody_foldl_error`). CDT-only state updates handled by `capabilityInvariantBundle_of_cdt_update`.
+- **Notification preservation (F-12):** `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle`. Compositional through new `storeObject_notification_preserves_ipcInvariant` helper. Wake/merge/badge-consume/wait paths fully covered with existing well-formedness lemmas.
+- **Testing:** 9 new Tier-3 surface anchors. `test_full.sh` passes (Tier 0-3). Zero sorry/axiom.
+- Closes F-03 (timerTick no proofs), F-06 (cspaceMutate etc.), F-12 (notification preservation).
+
 ## [0.12.4] - 2026-03-01
 
 ### Audit hardening: F1-A silent data loss fix and O-3 allocSize validation

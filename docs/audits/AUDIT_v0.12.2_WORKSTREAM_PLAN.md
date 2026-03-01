@@ -131,22 +131,22 @@ and connect the enforcement layer to non-interference theorems.
 
 **Dependencies:** WS-F1 (IPC message transfer affects NI proofs for IPC operations).
 
-### WS-F4: Proof Gap Closure (HIGH)
+### WS-F4: Proof Gap Closure (HIGH) — **COMPLETED**
 
 **Objective:** Close high-value proof gaps for defined operations that lack theorems.
 
-**Deliverables:**
-1. Prove `timerTick` preserves `queueCurrentConsistent`, `runQueueUnique`, `currentThreadValid`, `currentThreadInActiveDomain`.
-2. Prove `cspaceMutate` preserves `capabilityInvariantBundle`.
-3. Prove `notificationSignal` and `notificationWait` preserve full `ipcInvariant` + `schedulerInvariantBundle`.
-4. Prove `cspaceRevokeCdt` and `cspaceRevokeCdtStrict` preserve `capabilityInvariantBundle`.
+**Deliverables (completed):**
+1. `timerTick_preserves_schedulerInvariantBundle` and `timerTick_preserves_kernelInvariant` — covers `queueCurrentConsistent`, `runQueueUnique`, `currentThreadValid`, `currentThreadInActiveDomain`. Expired-timeslice path delegates to `schedule_preserves_*`; non-expired path proves scheduler unchanged directly.
+2. `cspaceMutate_preserves_capabilityInvariantBundle` — uses `revert/unfold` decomposition pattern; case-splits on capability lookup, rights check, and storeObject.
+3. `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` — compositional through `storeObject_notification_preserves_ipcInvariant` helper; wake/merge/badge-consume/wait paths fully covered.
+4. `cspaceRevokeCdt_preserves_capabilityInvariantBundle` and `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` — fold induction via extracted `revokeCdtFoldBody` with error propagation lemmas; CDT-only state updates handled by `capabilityInvariantBundle_of_cdt_update`.
 
-**Exit evidence:**
-- `lake build` passes.
-- `test_full.sh` passes with new Tier-3 anchors.
-- No new sorry/axiom.
+**Exit evidence (met):**
+- `lake build` passes with zero errors/warnings.
+- `test_full.sh` passes (Tier 0-3) with 9 new Tier-3 surface anchors.
+- Zero `sorry`/`axiom` in production proof surface.
 
-**Dependencies:** None (can start immediately, parallel with WS-F1/F2).
+**Dependencies:** None.
 
 ### WS-F5: Model Fidelity (MEDIUM)
 
@@ -242,7 +242,7 @@ matters for production.
 | WS-F1 | Critical | **Completed** | CRIT-01, CRIT-05, F-10, F-11 |
 | WS-F2 | Critical | **Completed** | CRIT-04 |
 | WS-F3 | High | **Completed** | CRIT-02, CRIT-03, F-20, F-21, F-22 |
-| WS-F4 | High | Planning | F-03, F-06, F-12 |
+| WS-F4 | High | **Completed** | F-03, F-06, F-12 |
 | WS-F5 | Medium | Planning | CRIT-06, HIGH-01..04, MED-03 |
 | WS-F6 | Medium | Planning | HIGH-03..08, MED-01..02, MED-05..07, F-07, F-13, F-15, F-18 |
 | WS-F7 | Low | Planning | MED-08, F-24, F-25, F-26 |
