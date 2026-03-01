@@ -95,7 +95,7 @@ workstream (WS-G2 through WS-G9) depends on these instances.
 
 ---
 
-### WS-G2: Object Store & ObjectIndex HashMap (F-P01, F-P10, F-P13) — CRITICAL
+### WS-G2: Object Store & ObjectIndex HashMap (F-P01, F-P10, F-P13) — COMPLETED
 
 **Objective:** Replace the closure-chain object store with `Std.HashMap` and add
 a shadow `HashSet` for `objectIndex` membership, eliminating O(k) lookup
@@ -171,8 +171,11 @@ degradation and O(n) membership scans.
 
 **Dependencies:** WS-G1 (Hashable instances).
 
-**Estimated effort:** Medium-High (broadest cross-cutting change; touches every
-subsystem's call sites and most invariant files).
+**Completion notes (v0.12.7):**
+- All exit evidence met: `lake build` zero errors/warnings/sorry, `test_full.sh` Tier 0-3 pass.
+- `capabilityRefs` retained as closure-based function (not HashMap) — intentional, as it serves as a computed projection rather than a primary data store.
+- `ObservableState.objects` and `chooseBestRunnable*` retain function type `ObjId → Option KernelObject` by design.
+- Proof migration required: type annotations for `[k]?` notation, `congrArg` replacing `congrFun`, explicit `default.objects` → `∅` bridges, `objectIndexSetSync` invariant for `storeObject`.
 
 ---
 

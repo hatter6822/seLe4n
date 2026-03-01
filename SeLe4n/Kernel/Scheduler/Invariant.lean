@@ -48,7 +48,7 @@ resolves to a TCB in the object store. -/
 def currentThreadValid (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
-  | some tid => ∃ tcb : TCB, st.objects tid.toObjId = some (.tcb tcb)
+  | some tid => ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)
 
 /-- M-05/WS-E6: The currently scheduled thread (if any) belongs to the
 active scheduling domain. This is the basic temporal partitioning guarantee:
@@ -57,7 +57,7 @@ def currentThreadInActiveDomain (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
   | some tid =>
-      match st.objects tid.toObjId with
+      match st.objects[tid.toObjId]? with
       | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
       | _ => True
 
@@ -105,7 +105,7 @@ This ensures `timerTick` can always decrement without underflow, and that
 preemption only occurs when a thread has exhausted its quantum. -/
 def timeSlicePositive (st : SystemState) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runnable →
-    match st.objects tid.toObjId with
+    match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.timeSlice > 0
     | _ => True
 
@@ -121,10 +121,10 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
   | some curTid =>
-      match st.objects curTid.toObjId with
+      match st.objects[curTid.toObjId]? with
       | some (.tcb curTcb) =>
           ∀ tid, tid ∈ st.scheduler.runnable →
-            match st.objects tid.toObjId with
+            match st.objects[tid.toObjId]? with
             | some (.tcb tcb) =>
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨

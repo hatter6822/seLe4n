@@ -17,7 +17,7 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runnable then
     st
   else
-    match st.objects tid.toObjId with
+    match st.objects[tid.toObjId]? with
     | some (.tcb _) =>
         let runnable' := st.scheduler.runnable ++ [tid]
         { st with scheduler := st.scheduler.withRunnableQueue runnable' }
@@ -27,7 +27,7 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
     none
   else
-    match st.objects tid.toObjId with
+    match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => some tcb
     | _ => none
 
@@ -35,12 +35,12 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
 theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : lookupTcb st tid = some tcb) :
-    st.objects tid.toObjId = some (.tcb tcb) := by
+    st.objects[tid.toObjId]? = some (.tcb tcb) := by
   unfold lookupTcb at h
   cases hRes : tid.isReserved
   · -- false
     simp [hRes] at h; revert h
-    cases hObj : st.objects tid.toObjId with
+    cases hObj : st.objects[tid.toObjId]? with
     | none => simp
     | some obj => cases obj <;> simp
   · -- true: contradiction
@@ -84,7 +84,7 @@ WS-E3/H-09: Thread IPC state transitions are now enforced:
   set to `.ready` and added to the runnable queue. The sender does not block. -/
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
-    match st.objects endpointId with
+    match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.state with
         | .idle =>
@@ -124,7 +124,7 @@ WS-E3/H-09: After registration, the receiver's IPC state is set to
 This makes the `blockedOnReceiveNotRunnable` contract predicate non-vacuous. -/
 def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
-    match st.objects endpointId with
+    match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.state, ep.queue, ep.waitingReceiver with
         | .idle, [], none =>
@@ -148,7 +148,7 @@ and the sender is added to the runnable queue. This unblocks the sender that was
 previously blocked by `endpointSend`. -/
 def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
   fun st =>
-    match st.objects endpointId with
+    match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.state, ep.queue, ep.waitingReceiver with
         | .send, sender :: rest, none =>
@@ -170,7 +170,7 @@ def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
 /-- Signal a notification: wake one waiter or mark one pending badge. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
-    match st.objects notificationId with
+    match st.objects[notificationId]? with
     | some (.notification ntfn) =>
         match ntfn.waitingThreads with
         | waiter :: rest =>
@@ -209,7 +209,7 @@ def notificationWait
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
   fun st =>
-    match st.objects notificationId with
+    match st.objects[notificationId]? with
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
@@ -251,7 +251,7 @@ theorem storeTcbIpcState_preserves_objects_ne
     (oid : SeLe4n.ObjId)
     (hNe : oid ≠ tid.toObjId)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   unfold storeTcbIpcState at hStep
   cases hTcb : lookupTcb st tid with
   | none =>
@@ -274,9 +274,9 @@ theorem storeTcbIpcState_preserves_notification
     (ipc : ThreadIpcState)
     (notifId : SeLe4n.ObjId)
     (ntfn : Notification)
-    (hNtfn : st.objects notifId = some (.notification ntfn))
+    (hNtfn : st.objects[notifId]? = some (.notification ntfn))
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects notifId = some (.notification ntfn) := by
+    st'.objects[notifId]? = some (.notification ntfn) := by
   by_cases hEq : notifId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -331,9 +331,9 @@ theorem storeTcbIpcState_preserves_endpoint
     (ipc : ThreadIpcState)
     (epId : SeLe4n.ObjId)
     (ep : Endpoint)
-    (hEp : st.objects epId = some (.endpoint ep))
+    (hEp : st.objects[epId]? = some (.endpoint ep))
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects epId = some (.endpoint ep) := by
+    st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -350,9 +350,9 @@ theorem storeTcbIpcState_preserves_cnode
     (ipc : ThreadIpcState)
     (cnodeId : SeLe4n.ObjId)
     (cn : CNode)
-    (hCn : st.objects cnodeId = some (.cnode cn))
+    (hCn : st.objects[cnodeId]? = some (.cnode cn))
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects cnodeId = some (.cnode cn) := by
+    st'.objects[cnodeId]? = some (.cnode cn) := by
   by_cases hEq : cnodeId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -369,9 +369,9 @@ theorem storeTcbIpcState_preserves_vspaceRoot
     (ipc : ThreadIpcState)
     (oid : SeLe4n.ObjId)
     (vs : VSpaceRoot)
-    (hVs : st.objects oid = some (.vspaceRoot vs))
+    (hVs : st.objects[oid]? = some (.vspaceRoot vs))
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects oid = some (.vspaceRoot vs) := by
+    st'.objects[oid]? = some (.vspaceRoot vs) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -390,8 +390,8 @@ theorem storeTcbIpcState_cnode_backward
     (oid : SeLe4n.ObjId)
     (cn : CNode)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
-    (hCn : st'.objects oid = some (.cnode cn)) :
-    st.objects oid = some (.cnode cn) := by
+    (hCn : st'.objects[oid]? = some (.cnode cn)) :
+    st.objects[oid]? = some (.cnode cn) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -416,8 +416,8 @@ theorem storeTcbIpcState_endpoint_backward
     (oid : SeLe4n.ObjId)
     (ep : Endpoint)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
-    (hEp : st'.objects oid = some (.endpoint ep)) :
-    st.objects oid = some (.endpoint ep) := by
+    (hEp : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -442,8 +442,8 @@ theorem storeTcbIpcState_notification_backward
     (oid : SeLe4n.ObjId)
     (ntfn : Notification)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
-    (hNtfn : st'.objects oid = some (.notification ntfn)) :
-    st.objects oid = some (.notification ntfn) := by
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcState at hStep
@@ -467,7 +467,7 @@ theorem notificationWait_error_alreadyWaiting
     (notifId : SeLe4n.ObjId)
     (st : SystemState)
     (ntfn : Notification)
-    (hObj : st.objects notifId = some (.notification ntfn))
+    (hObj : st.objects[notifId]? = some (.notification ntfn))
     (hNoBadge : ntfn.pendingBadge = none)
     (hMem : waiter ∈ ntfn.waitingThreads) :
     notificationWait notifId waiter st = .error .alreadyWaiting := by
@@ -482,9 +482,9 @@ theorem notificationWait_badge_path_notification
     (waiter : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge)
     (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
-    ∃ ntfn', st'.objects notifId = some (.notification ntfn') ∧ ntfn'.waitingThreads = [] := by
+    ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧ ntfn'.waitingThreads = [] := by
   unfold notificationWait at hStep
-  cases hObj : st.objects notifId with
+  cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
@@ -525,9 +525,9 @@ theorem notificationWait_badge_path_notification
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hStEq⟩
             subst hStEq
-            have hNtfnStored : pair.2.objects notifId = some (.notification newNtfn) :=
+            have hNtfnStored : pair.2.objects[notifId]? = some (.notification newNtfn) :=
               storeObject_objects_eq st pair.2 notifId (.notification newNtfn) hStore
-            have hNtfnPreserved : st2.objects notifId = some (.notification newNtfn) :=
+            have hNtfnPreserved : st2.objects[notifId]? = some (.notification newNtfn) :=
               storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hTcb
             exact ⟨newNtfn, hNtfnPreserved, rfl⟩
 
@@ -539,13 +539,13 @@ theorem notificationWait_wait_path_notification
     (waiter : SeLe4n.ThreadId)
     (hStep : notificationWait notifId waiter st = .ok (none, st')) :
     ∃ ntfn ntfn',
-      st.objects notifId = some (.notification ntfn) ∧
+      st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = none ∧
       waiter ∉ ntfn.waitingThreads ∧
-      st'.objects notifId = some (.notification ntfn') ∧
+      st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads = ntfn.waitingThreads ++ [waiter] := by
   unfold notificationWait at hStep
-  cases hObj : st.objects notifId with
+  cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
@@ -587,9 +587,9 @@ theorem notificationWait_wait_path_notification
               simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hStEq⟩
               have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-              have hNtfnStored : pair.2.objects notifId = some (.notification ntfn') :=
+              have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
                 storeObject_objects_eq st pair.2 notifId (.notification ntfn') hStore
-              have hNtfnPreserved : st2.objects notifId = some (.notification ntfn') :=
+              have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
                 storeTcbIpcState_preserves_notification pair.2 st2 waiter
                   (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hTcb
               refine ⟨ntfn, ntfn', rfl, hBadge, hMem, ?_, rfl⟩
@@ -627,7 +627,7 @@ theorem ensureRunnable_scheduler_current
 
 theorem ensureRunnable_mem_self
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
+    (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
     tid ∈ (ensureRunnable st tid).scheduler.runnable := by
   obtain ⟨tcb, hTcb⟩ := hTcb
   unfold ensureRunnable
@@ -676,7 +676,7 @@ theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
 theorem storeTcbIpcState_ipcState_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
-    (tcb : TCB) (hTcb : st'.objects tid.toObjId = some (.tcb tcb)) :
+    (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
     tcb.ipcState = ipc := by
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
@@ -716,8 +716,8 @@ theorem removeRunnable_not_mem_self
 theorem storeTcbIpcState_tcb_exists_at_target
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
-    (_hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
-    ∃ tcb', st'.objects tid.toObjId = some (.tcb tcb') := by
+    (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
@@ -741,7 +741,7 @@ theorem storeTcbIpcStateAndMessage_preserves_objects_ne
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   unfold storeTcbIpcStateAndMessage at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
@@ -777,9 +777,9 @@ theorem storeTcbIpcStateAndMessage_preserves_endpoint
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (epId : SeLe4n.ObjId) (ep : Endpoint)
-    (hEp : st.objects epId = some (.endpoint ep))
+    (hEp : st.objects[epId]? = some (.endpoint ep))
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects epId = some (.endpoint ep) := by
+    st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
@@ -792,9 +792,9 @@ theorem storeTcbIpcStateAndMessage_preserves_notification
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (notifId : SeLe4n.ObjId) (ntfn : Notification)
-    (hNtfn : st.objects notifId = some (.notification ntfn))
+    (hNtfn : st.objects[notifId]? = some (.notification ntfn))
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects notifId = some (.notification ntfn) := by
+    st'.objects[notifId]? = some (.notification ntfn) := by
   by_cases hEq : notifId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
@@ -808,8 +808,8 @@ theorem storeTcbIpcStateAndMessage_endpoint_backward
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (ep : Endpoint)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (hEp : st'.objects oid = some (.endpoint ep)) :
-    st.objects oid = some (.endpoint ep) := by
+    (hEp : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
@@ -831,8 +831,8 @@ theorem storeTcbIpcStateAndMessage_notification_backward
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (ntfn : Notification)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (hNtfn : st'.objects oid = some (.notification ntfn)) :
-    st.objects oid = some (.notification ntfn) := by
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
@@ -853,7 +853,7 @@ theorem storeTcbIpcStateAndMessage_ipcState_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (tcb : TCB) (hTcb : st'.objects tid.toObjId = some (.tcb tcb)) :
+    (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
     tcb.ipcState = ipc := by
   unfold storeTcbIpcStateAndMessage at hStep
   cases hLookup : lookupTcb st tid with
@@ -873,8 +873,8 @@ theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (_hTcb : ∃ tcb, st.objects tid.toObjId = some (.tcb tcb)) :
-    ∃ tcb', st'.objects tid.toObjId = some (.tcb tcb') := by
+    (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
   unfold storeTcbIpcStateAndMessage at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -892,7 +892,7 @@ theorem storeTcbPendingMessage_preserves_objects_ne
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   unfold storeTcbPendingMessage at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
@@ -927,9 +927,9 @@ theorem storeTcbPendingMessage_scheduler_eq
 theorem storeTcbPendingMessage_preserves_endpoint
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) (epId : SeLe4n.ObjId) (ep : Endpoint)
-    (hEp : st.objects epId = some (.endpoint ep))
+    (hEp : st.objects[epId]? = some (.endpoint ep))
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
-    st'.objects epId = some (.endpoint ep) := by
+    st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq; unfold storeTcbPendingMessage at hStep
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
@@ -941,8 +941,8 @@ theorem storeTcbPendingMessage_endpoint_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (ep : Endpoint)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
-    (hEp : st'.objects oid = some (.endpoint ep)) :
-    st.objects oid = some (.endpoint ep) := by
+    (hEp : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq; unfold storeTcbPendingMessage at hStep
     cases hLookup : lookupTcb st tid with
@@ -962,8 +962,8 @@ theorem storeTcbPendingMessage_notification_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (ntfn : Notification)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
-    (hNtfn : st'.objects oid = some (.notification ntfn)) :
-    st.objects oid = some (.notification ntfn) := by
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq; unfold storeTcbPendingMessage at hStep
     cases hLookup : lookupTcb st tid with
@@ -983,8 +983,8 @@ theorem storeTcbPendingMessage_tcb_forward
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (oid : SeLe4n.ObjId) (tcb : TCB)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
-    (hTcb : st.objects oid = some (.tcb tcb)) :
-    ∃ tcb', st'.objects oid = some (.tcb tcb') := by
+    (hTcb : st.objects[oid]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq; unfold storeTcbPendingMessage at hStep
     cases hLookup : lookupTcb st tid with
@@ -1003,8 +1003,8 @@ theorem storeTcbPendingMessage_tcb_ipcState_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
-    (hTcb' : st'.objects anyTid.toObjId = some (.tcb tcb')) :
-    ∃ tcb, st.objects anyTid.toObjId = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · unfold storeTcbPendingMessage at hStep
     cases hLookup : lookupTcb st tid with

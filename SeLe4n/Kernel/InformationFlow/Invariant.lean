@@ -71,9 +71,9 @@ private theorem storeObject_preserves_projectObjectIndex
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
   unfold storeObject at hStore; cases hStore
   simp only [projectObjectIndex]
-  by_cases hMem : oid ∈ st.objectIndex
-  · simp [hMem]
-  · simp only [hMem, ite_false]; rw [List.filter_cons]; simp [hOidHigh]
+  split
+  · rfl
+  · rw [List.filter_cons]; simp [hOidHigh]
 
 /-- WS-F3: cspaceInsertSlot at a non-observable CNode preserves the projected object index.
 Follows from storeObject + storeCapabilityRef frame lemmas. -/
@@ -83,7 +83,7 @@ private theorem cspaceInsertSlot_preserves_projectObjectIndex
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
   unfold cspaceInsertSlot at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -141,12 +141,12 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     by_cases hObs : objectObservable ctx observer oid
     · by_cases hEq : oid = targetId
       · subst hEq; simp [hTargetHigh] at hObs
-      · have hObj₁ : s₁'.objects oid = s₁.objects oid :=
+      · have hObj₁ : s₁'.objects[oid]? = s₁.objects[oid]? :=
           storeObject_objects_ne s₁ s₁' targetId oid obj₁ hEq hStore₁
-        have hObj₂ : s₂'.objects oid = s₂.objects oid :=
+        have hObj₂ : s₂'.objects[oid]? = s₂.objects[oid]? :=
           storeObject_objects_ne s₂ s₂' targetId oid obj₂ hEq hStore₂
-        have hObjBase : (s₁.objects oid).map (projectKernelObject ctx observer) =
-            (s₂.objects oid).map (projectKernelObject ctx observer) := by
+        have hObjBase : (s₁.objects[oid]?).map (projectKernelObject ctx observer) =
+            (s₂.objects[oid]?).map (projectKernelObject ctx observer) := by
           have hBase := congrFun hObjLow oid
           simp only [projectObjects, hObs, ite_true] at hBase
           exact hBase
@@ -272,7 +272,7 @@ private theorem ensureRunnable_preserves_projection
   by_cases hMem : tid ∈ st.scheduler.runnable
   · simp [hMem]
   · simp [hMem]
-    cases hObjTcb : st.objects tid.toObjId with
+    cases hObjTcb : st.objects[tid.toObjId]? with
     | none => simp
     | some obj =>
       cases obj with
@@ -381,7 +381,7 @@ private theorem endpointSend_projection_preserved
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain : ∀ ep tid, st.objects endpointId = some (.endpoint ep) →
+    (hRecvDomain : ∀ ep tid, st.objects[endpointId]? = some (.endpoint ep) →
         ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
     (hStep : endpointSend endpointId sender st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -451,9 +451,9 @@ theorem endpointSend_preserves_lowEquivalent
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain₁ : ∀ ep tid, s₁.objects endpointId = some (.endpoint ep) →
+    (hRecvDomain₁ : ∀ ep tid, s₁.objects[endpointId]? = some (.endpoint ep) →
         ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hRecvDomain₂ : ∀ ep tid, s₂.objects endpointId = some (.endpoint ep) →
+    (hRecvDomain₂ : ∀ ep tid, s₂.objects[endpointId]? = some (.endpoint ep) →
         ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
     (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
     (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
@@ -589,13 +589,13 @@ theorem cspaceRevoke_preserves_lowEquivalent
       rcases p₂ with ⟨par₂, stL₂⟩
       have hEq₂ : stL₂ = s₂ := cspaceLookupSlot_preserves_state s₂ stL₂ addr par₂ hL₂
       subst stL₂
-      cases hC₁ : s₁.objects addr.cnode with
+      cases hC₁ : s₁.objects[addr.cnode]? with
       | none => simp [hL₁, hC₁] at hStep₁
       | some o₁ =>
         cases o₁ with
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL₁, hC₁] at hStep₁
         | cnode cn₁ =>
-          cases hC₂ : s₂.objects addr.cnode with
+          cases hC₂ : s₂.objects[addr.cnode]? with
           | none => simp [hL₂, hC₂] at hStep₂
           | some o₂ =>
             cases o₂ with
@@ -614,7 +614,7 @@ theorem cspaceRevoke_preserves_lowEquivalent
                     congrFun hObjLow oid
                   simp [projectObjects, hObs] at hBase ⊢
                   rw [clearCapabilityRefsState_preserves_objects, clearCapabilityRefsState_preserves_objects]
-                  simp [hNe]
+                  simp [HashMap_getElem?_insert, Ne.symm hNe]
                   exact hBase
                 · simp [projectObjects, hObs]
               · simp only [projectRunnable]
@@ -640,19 +640,14 @@ theorem cspaceRevoke_preserves_lowEquivalent
               · -- objectIndex
                 simp only [projectObjectIndex]
                 rw [clearCapabilityRefsState_preserves_objectIndex, clearCapabilityRefsState_preserves_objectIndex]
-                by_cases hMem₁ : addr.cnode ∈ s₁.objectIndex
-                · simp [hMem₁]
-                  by_cases hMem₂ : addr.cnode ∈ s₂.objectIndex
-                  · simp [hMem₂]
-                    exact congrArg ObservableState.objectIndex hLow
-                  · simp [hMem₂]; rw [List.filter_cons]; simp [hCNodeHigh]
-                    exact congrArg ObservableState.objectIndex hLow
-                · simp [hMem₁]; rw [List.filter_cons]; simp [hCNodeHigh]
-                  by_cases hMem₂ : addr.cnode ∈ s₂.objectIndex
-                  · simp [hMem₂]
-                    exact congrArg ObservableState.objectIndex hLow
-                  · simp [hMem₂]; rw [List.filter_cons]; simp [hCNodeHigh]
-                    exact congrArg ObservableState.objectIndex hLow
+                have hIdx := congrArg ObservableState.objectIndex hLow
+                -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
+                -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
+                split <;> split
+                · exact hIdx
+                · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+                · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+                · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)
@@ -691,12 +686,12 @@ private theorem notificationSignal_projection_preserved
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hWaiterDomain : ∀ ntfn tid, st.objects notificationId = some (.notification ntfn) →
+    (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold notificationSignal at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
@@ -736,9 +731,9 @@ theorem notificationSignal_preserves_lowEquivalent
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects notificationId = some (.notification ntfn) →
+    (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
-    (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects notificationId = some (.notification ntfn) →
+    (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
     (hStep₁ : notificationSignal notificationId badge s₁ = .ok ((), s₁'))
     (hStep₂ : notificationSignal notificationId badge s₂ = .ok ((), s₂')) :
@@ -767,7 +762,7 @@ private theorem notificationWait_projection_preserved
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold notificationWait at hStep
-  cases hObj : st.objects notificationId with
+  cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
@@ -1038,9 +1033,9 @@ theorem endpointSendChecked_NI
     (hCoherent : ∀ tid : SeLe4n.ThreadId,
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain₁ : ∀ ep tid, s₁.objects endpointId = some (.endpoint ep) →
+    (hRecvDomain₁ : ∀ ep tid, s₁.objects[endpointId]? = some (.endpoint ep) →
         ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hRecvDomain₂ : ∀ ep tid, s₂.objects endpointId = some (.endpoint ep) →
+    (hRecvDomain₂ : ∀ ep tid, s₂.objects[endpointId]? = some (.endpoint ep) →
         ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
     (hStep₁ : endpointSendChecked ctx endpointId sender s₁ = .ok ((), s₁'))
     (hStep₂ : endpointSendChecked ctx endpointId sender s₂ = .ok ((), s₂')) :
@@ -1142,7 +1137,7 @@ inductive NonInterferenceStep
       (hCoherent : ∀ tid : SeLe4n.ThreadId,
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
-      (hRecvDomain : ∀ ep tid, st.objects eid = some (.endpoint ep) →
+      (hRecvDomain : ∀ ep tid, st.objects[eid]? = some (.endpoint ep) →
           ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
       (hStep : endpointSend eid sender st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
@@ -1168,7 +1163,7 @@ inductive NonInterferenceStep
       (hCoherent : ∀ tid : SeLe4n.ThreadId,
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
-      (hWaiterDomain : ∀ ntfn tid, st.objects notificationId = some (.notification ntfn) →
+      (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
           tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
       (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
@@ -1247,7 +1242,7 @@ theorem step_preserves_projection
       rcases p with ⟨par, stL⟩
       have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr par hL
       subst stL
-      cases hC : st.objects addr.cnode with
+      cases hC : st.objects[addr.cnode]? with
       | none => simp [hL, hC] at hOp
       | some obj =>
         cases obj with
@@ -1260,12 +1255,12 @@ theorem step_preserves_projection
             · simp [projectObjects, hObs]
               have hNe : oid ≠ addr.cnode := by
                 intro hEq; subst hEq; simp [hAddrH] at hObs
-              simp [hNe]
+              simp [HashMap_getElem?_insert, Ne.symm hNe]
             · simp [projectObjects, hObs]
           · simp only [projectObjectIndex]
-            by_cases hMem : addr.cnode ∈ st.objectIndex
-            · simp [hMem]
-            · simp [hMem, hAddrH]
+            split
+            · rfl
+            · rw [List.filter_cons]; simp [hAddrH]
   | lifecycleRetype authority target newObj hTH hOp =>
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hOp with
       ⟨_, _, _, _, _, _, hStore⟩

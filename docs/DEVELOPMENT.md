@@ -7,7 +7,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- **active:** WS-G portfolio (kernel performance optimization — WS-G1 completed),
+- **active:** WS-G portfolio (kernel performance optimization — WS-G1..G2 completed),
 - **findings baseline:** [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
 - **completed predecessor:** WS-F portfolio (v0.12.2 audit remediation — WS-F1..F4 completed), WS-E (v0.11.6),
 - **hardware target:** Raspberry Pi 5 (ARM64).
@@ -43,7 +43,7 @@ for the full execution plan.
 | ID | Focus | Priority | Key findings | Status |
 |----|-------|----------|--------------|--------|
 | **WS-G1** | Hashable/BEq infrastructure | Prerequisite | (infrastructure) | **Completed** |
-| **WS-G2** | Object store HashMap | Critical | F-P01, F-P10, F-P13 | Planning |
+| **WS-G2** | Object store HashMap | Critical | F-P01, F-P10, F-P13 | **Completed** |
 | **WS-G3** | ASID resolution table | Critical | F-P06 | Planning |
 | **WS-G4** | Run queue restructure | Critical | F-P02, F-P07, F-P12 | Planning |
 | **WS-G5** | CNode slot HashMap | High | F-P03 | Planning |

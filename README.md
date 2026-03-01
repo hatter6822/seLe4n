@@ -47,7 +47,7 @@ improving on specific architectural aspects:
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active workstream** | WS-G (kernel performance optimization) — WS-G1 completed |
+| **Active workstream** | WS-G (kernel performance optimization) — WS-G1..G2 completed |
 | **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start

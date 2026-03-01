@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.4` |
+| Version | `0.12.7` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 16,485 across 34 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3 completed |
+| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G2 completed |
 
 ## Milestone history
 

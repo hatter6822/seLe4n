@@ -27,14 +27,14 @@ def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
     match SystemState.lookupSlotCap st addr with
     | some cap => .ok (cap, st)
     | none =>
-        match st.objects addr.cnode with
+        match st.objects[addr.cnode]? with
         | some (.cnode _) => .error .invalidCapability
         | _ => .error .objectNotFound
 
 /-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics. -/
 def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
   fun st =>
-    match st.objects addr.cnode with
+    match st.objects[addr.cnode]? with
     | some (.cnode cn) =>
         match cn.resolveSlot addr.cptr addr.depth with
         | .ok slot => .ok ({ cnode := addr.cnode, slot := slot }, st)
@@ -56,7 +56,7 @@ already contains a capability, returns `targetSlotOccupied`. The caller must
 explicitly delete or revoke the existing capability before inserting. -/
 def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
   fun st =>
-    match st.objects addr.cnode with
+    match st.objects[addr.cnode]? with
     | some (.cnode cn) =>
         match cn.lookup addr.slot with
         | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
@@ -74,7 +74,7 @@ theorem cspaceInsertSlot_preserves_scheduler
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
   unfold cspaceInsertSlot at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -103,7 +103,7 @@ theorem cspaceInsertSlot_preserves_services
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.services = st.services := by
   unfold cspaceInsertSlot at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -130,9 +130,9 @@ theorem cspaceInsertSlot_preserves_objects_ne
     (oid : SeLe4n.ObjId)
     (hNe : oid ≠ addr.cnode)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   unfold cspaceInsertSlot at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -150,7 +150,7 @@ theorem cspaceInsertSlot_preserves_objects_ne
                   simp [hStore] at hStep
                   have hObjMid := storeObject_objects_ne st stMid addr.cnode oid (.cnode (cn.insert addr.slot cap)) hNe hStore
                   have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-                  rw [← hObjMid]; exact congrFun hObjRef oid
+                  rw [← hObjMid, show st'.objects[oid]? = stMid.objects[oid]? from congrArg (·.get? oid) hObjRef]
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
 theorem cspaceInsertSlot_preserves_irqHandlers
@@ -158,7 +158,7 @@ theorem cspaceInsertSlot_preserves_irqHandlers
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
   unfold cspaceInsertSlot at hStep
-  cases hObj : st.objects addr.cnode with
+  cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
@@ -182,7 +182,7 @@ theorem cspaceInsertSlot_preserves_irqHandlers
 theorem cspaceInsertSlot_rejects_occupied_slot
     (st : SystemState) (addr : CSpaceAddr) (cap existingCap : Capability)
     (cn : CNode)
-    (hObj : st.objects addr.cnode = some (.cnode cn))
+    (hObj : st.objects[addr.cnode]? = some (.cnode cn))
     (hOccupied : cn.lookup addr.slot = some existingCap) :
     cspaceInsertSlot addr cap st = .error .targetSlotOccupied := by
   unfold cspaceInsertSlot
@@ -199,7 +199,7 @@ theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     unfold cspaceLookupSlot at hOk
     cases hLookup : SystemState.lookupSlotCap st addr with
     | none =>
-        cases hObj : st.objects addr.cnode with
+        cases hObj : st.objects[addr.cnode]? with
         | none => simp [hLookup, hObj] at hOk
         | some obj =>
             cases obj <;> simp [hLookup, hObj] at hOk
@@ -259,7 +259,7 @@ def cspaceMint
 /-- Delete the capability currently stored in `addr`. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    match st.objects addr.cnode with
+    match st.objects[addr.cnode]? with
     | some (.cnode cn) =>
         let cn' := cn.remove addr.slot
         match storeObject addr.cnode (.cnode cn') st with
@@ -282,7 +282,7 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot addr st with
     | .error e => .error e
     | .ok (parent, st') =>
-        match st'.objects addr.cnode with
+        match st'.objects[addr.cnode]? with
         | some (.cnode cn) =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
             let revokedRefs : List SlotRef :=
@@ -353,7 +353,7 @@ def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight)
           let mutatedCap : Capability :=
             { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
           -- Direct overwrite: bypass H-02 guard since we are replacing in-place
-          match st'.objects addr.cnode with
+          match st'.objects[addr.cnode]? with
           | some (.cnode cn) =>
               let cn' := cn.insert addr.slot mutatedCap
               match storeObject addr.cnode (.cnode cn') st' with

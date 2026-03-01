@@ -67,13 +67,14 @@ def withMachine (builder : BootstrapBuilder) (machine : SeLe4n.MachineState) : B
 def build (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
-    objects := listLookup builder.objects
+    objects := Std.HashMap.ofList builder.objects
     objectIndex := builder.objects.map Prod.fst
+    objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
     services := listLookup builder.services
     scheduler := { (default : SchedulerState).withRunnableQueue builder.runnable with current := builder.current }
     irqHandlers := listLookup builder.irqHandlers
     lifecycle := {
-      objectTypes := listLookup builder.lifecycleObjectTypes
+      objectTypes := Std.HashMap.ofList builder.lifecycleObjectTypes
       capabilityRefs := listLookup builder.lifecycleCapabilityRefs
     }
   }

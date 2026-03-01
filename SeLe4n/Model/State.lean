@@ -84,14 +84,21 @@ structure SlotRef where
 /-- Lifecycle metadata required by the first M4-A transition story.
 
 `objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
-named by each populated capability slot reference. -/
+named by each populated capability slot reference.
+
+WS-G2: `objectTypes` migrated from closure-based function to `Std.HashMap` for O(1) lookup,
+matching the object-store migration. `capabilityRefs` remains function-typed pending
+grouped-key HashMap migration (see WS-G2 implementation notes). -/
 structure LifecycleMetadata where
-  objectTypes : SeLe4n.ObjId → Option KernelObjectType
+  objectTypes : Std.HashMap SeLe4n.ObjId KernelObjectType
   capabilityRefs : SlotRef → Option CapTarget
 
 structure SystemState where
   machine : SeLe4n.MachineState
-  objects : SeLe4n.ObjId → Option KernelObject
+  /-- WS-G2/F-P01: Object store backed by `Std.HashMap` for O(1) amortized lookup.
+      Replaces the closure-chain `ObjId → Option KernelObject` that accumulated
+      nested closures on every `storeObject` call (O(k) per lookup after k stores). -/
+  objects : Std.HashMap SeLe4n.ObjId KernelObject
   /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
       stored. This list is intentionally never pruned — `storeObject` prepends
       new IDs and never removes old ones.
@@ -101,14 +108,19 @@ structure SystemState where
       states. This simplifies invariant proofs: once an ID appears in the index,
       it persists, so cross-transition carryover is trivially established. The
       tradeoff is that the index may contain IDs for objects that have since been
-      overwritten or logically deleted; consumers must check `st.objects id` for
-      `some _` to confirm the object still exists.
+      overwritten or logically deleted; consumers must check `st.objects[id]?`
+      for `some _` to confirm the object still exists.
 
       **Migration path:** If bounded-memory semantics or garbage collection are
       added in a future workstream, `objectIndex` can be replaced by a data
       structure supporting removal while preserving the monotonicity invariant
       for the live-object subset. -/
   objectIndex : List SeLe4n.ObjId
+  /-- WS-G2/F-P10: Shadow hash set for O(1) objectIndex membership checks.
+      Maintained in parallel with `objectIndex` — `storeObject` inserts into
+      both. The list remains the proof anchor (monotonic, append-only);
+      this set is the runtime fast path. -/
+  objectIndexSet : Std.HashSet SeLe4n.ObjId := {}
   services : ServiceId → Option ServiceGraphEntry
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
@@ -127,13 +139,14 @@ instance : Inhabited SchedulerState where
 instance : Inhabited SystemState where
   default := {
     machine := default
-    objects := fun _ => none
+    objects := {}
     objectIndex := []
+    objectIndexSet := {}
     services := fun _ => none
     scheduler := default
     irqHandlers := fun _ => none
     lifecycle := {
-      objectTypes := fun _ => none
+      objectTypes := {}
       capabilityRefs := fun _ => none
     }
     cdt := .empty
@@ -146,27 +159,34 @@ abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
   fun st =>
-    match st.objects id with
+    match st.objects[id]? with
     | none => .error .objectNotFound
     | some obj => .ok (obj, st)
 
 /-- Read a typed VSpace-root object from the global object store. -/
 def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
   fun st =>
-    match st.objects id with
+    match st.objects[id]? with
     | some (.vspaceRoot root) => .ok (root, st)
     | some _ => .error .vspaceRootInvalid
     | none => .error .objectNotFound
 
-/-- Replace the object stored at `id` with `obj`. -/
+/-- Replace the object stored at `id` with `obj`.
+
+WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
+the O(k) closure-chain accumulation on every lookup.
+WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
+of O(n) list membership scan. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
-    let objects' : SeLe4n.ObjId → Option KernelObject :=
-      fun oid => if oid = id then some obj else st.objects oid
-    let lifecycle' : LifecycleMetadata :=
-      {
-        st.lifecycle with
-          objectTypes := fun oid => if oid = id then some obj.objectType else st.lifecycle.objectTypes oid
+    .ok ((), {
+      st with
+        objects := st.objects.insert id obj
+        objectIndex := if st.objectIndexSet.contains id then st.objectIndex
+                       else id :: st.objectIndex
+        objectIndexSet := st.objectIndexSet.insert id
+        lifecycle := {
+          objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
           capabilityRefs := fun ref =>
             if ref.cnode = id then
               match obj with
@@ -174,9 +194,8 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
               | _ => none
             else
               st.lifecycle.capabilityRefs ref
-      }
-    let objectIndex' := if id ∈ st.objectIndex then st.objectIndex else id :: st.objectIndex
-    .ok ((), { st with objects := objects', objectIndex := objectIndex', lifecycle := lifecycle' })
+        }
+    })
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
@@ -297,9 +316,7 @@ theorem storeCapabilityRef_preserves_scheduler
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
   unfold storeCapabilityRef at hStep
-  simp at hStep
-  cases hStep
-  rfl
+  simp at hStep; cases hStep; rfl
 
 theorem storeCapabilityRef_preserves_services
     (st st' : SystemState)
@@ -308,9 +325,7 @@ theorem storeCapabilityRef_preserves_services
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.services = st.services := by
   unfold storeCapabilityRef at hStep
-  simp at hStep
-  cases hStep
-  rfl
+  simp at hStep; cases hStep; rfl
 
 theorem storeCapabilityRef_preserves_objects
     (st st' : SystemState)
@@ -319,9 +334,7 @@ theorem storeCapabilityRef_preserves_objects
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.objects = st.objects := by
   unfold storeCapabilityRef at hStep
-  simp at hStep
-  cases hStep
-  rfl
+  simp at hStep; cases hStep; rfl
 
 /-- WS-F3: storeCapabilityRef preserves IRQ handler mappings. -/
 theorem storeCapabilityRef_preserves_irqHandlers
@@ -351,13 +364,8 @@ theorem clearCapabilityRefsState_preserves_objects
   | nil => rfl
   | cons ref refs ih =>
       simpa [clearCapabilityRefsState] using
-        ih {
-          st with
-            lifecycle := {
-              st.lifecycle with
-                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
-            }
-        }
+        ih { st with lifecycle := { st.lifecycle with
+          capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref' } }
 
 theorem clearCapabilityRefs_preserves_objects
     (st st' : SystemState)
@@ -375,14 +383,8 @@ theorem clearCapabilityRefsState_preserves_scheduler
   induction refs generalizing st with
   | nil => rfl
   | cons ref refs ih =>
-      simpa [clearCapabilityRefsState] using
-        ih {
-          st with
-            lifecycle := {
-              st.lifecycle with
-                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
-            }
-        }
+      simp only [clearCapabilityRefsState]
+      exact ih _
 
 theorem clearCapabilityRefsState_preserves_services
     (refs : List SlotRef)
@@ -391,14 +393,8 @@ theorem clearCapabilityRefsState_preserves_services
   induction refs generalizing st with
   | nil => rfl
   | cons ref refs ih =>
-      simpa [clearCapabilityRefsState] using
-        ih {
-          st with
-            lifecycle := {
-              st.lifecycle with
-                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
-            }
-        }
+      simp only [clearCapabilityRefsState]
+      exact ih _
 
 theorem clearCapabilityRefsState_lookupService
     (refs : List SlotRef)
@@ -415,14 +411,8 @@ theorem clearCapabilityRefsState_preserves_irqHandlers
   induction refs generalizing st with
   | nil => rfl
   | cons ref refs ih =>
-      simpa [clearCapabilityRefsState] using
-        ih {
-          st with
-            lifecycle := {
-              st.lifecycle with
-                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
-            }
-        }
+      simp only [clearCapabilityRefsState]
+      exact ih _
 
 /-- WS-F3: clearCapabilityRefsState preserves the object index. -/
 theorem clearCapabilityRefsState_preserves_objectIndex
@@ -432,14 +422,8 @@ theorem clearCapabilityRefsState_preserves_objectIndex
   induction refs generalizing st with
   | nil => rfl
   | cons ref refs ih =>
-      simpa [clearCapabilityRefsState] using
-        ih {
-          st with
-            lifecycle := {
-              st.lifecycle with
-                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
-            }
-        }
+      simp only [clearCapabilityRefsState]
+      exact ih _
 
 theorem storeCapabilityRef_lookup_eq
     (st st' : SystemState)
@@ -448,9 +432,7 @@ theorem storeCapabilityRef_lookup_eq
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.lifecycle.capabilityRefs ref = target := by
   unfold storeCapabilityRef at hStep
-  simp at hStep
-  cases hStep
-  simp
+  simp at hStep; cases hStep; simp
 
 
 theorem storeObject_objects_eq
@@ -458,10 +440,10 @@ theorem storeObject_objects_eq
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects id = some obj := by
+    st'.objects[id]? = some obj := by
   unfold storeObject at hStore
   cases hStore
-  simp
+  rw [HashMap_getElem?_insert]; simp
 
 theorem storeObject_objects_ne
     (st st' : SystemState)
@@ -469,10 +451,12 @@ theorem storeObject_objects_ne
     (obj : KernelObject)
     (hNe : oid ≠ id)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects oid = st.objects oid := by
+    st'.objects[oid]? = st.objects[oid]? := by
   unfold storeObject at hStore
   cases hStore
-  simp [hNe]
+  rw [HashMap_getElem?_insert]
+  have : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
+  simp [this]
 
 theorem storeObject_scheduler_eq
     (st st' : SystemState)
@@ -515,22 +499,32 @@ theorem storeObject_cdt_eq
   cases hStore
   rfl
 
+/-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
+def objectIndexSetSync (st : SystemState) : Prop :=
+  ∀ (id : SeLe4n.ObjId), st.objectIndexSet.contains id = true ↔ id ∈ st.objectIndex
+
+/-- WS-G2: objectIndexSetSync implies contains from objectIndex membership. -/
+theorem objectIndexSetSync_contains_of_mem
+    (st : SystemState) (id : SeLe4n.ObjId)
+    (hSync : objectIndexSetSync st) (hMem : id ∈ st.objectIndex) :
+    st.objectIndexSet.contains id = true :=
+  (hSync id).mpr hMem
+
 theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStep : storeObject oid obj st = .ok ((), st')) :
-    st'.lifecycle.objectTypes oid = some obj.objectType := by
+    st'.lifecycle.objectTypes[oid]? = some obj.objectType := by
   unfold storeObject at hStep
-  simp at hStep
   cases hStep
-  simp
+  rw [HashMap_getElem?_insert]; simp
 
 namespace SystemState
 
 /-- Read a CNode object from the global object store. -/
 def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
-  match st.objects id with
+  match st.objects[id]? with
   | some (.cnode cn) => some cn
   | _ => none
 
@@ -556,7 +550,7 @@ def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × C
 
 /-- Lifecycle metadata view of object identity typing. -/
 def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
-  st.lifecycle.objectTypes id
+  st.lifecycle.objectTypes[id]?
 
 /-- Lifecycle metadata view of capability slot reference mapping. -/
 def lookupCapabilityRefMeta (st : SystemState) (ref : SlotRef) : Option CapTarget :=
@@ -656,7 +650,7 @@ theorem lookupSlotCap_eq_of_objects_eq
 
 /-- Object-type lifecycle metadata is exact for every object-store id. -/
 def objectTypeMetadataConsistent (st : SystemState) : Prop :=
-  ∀ oid, lookupObjectTypeMeta st oid = (st.objects oid).map KernelObject.objectType
+  ∀ oid, lookupObjectTypeMeta st oid = (st.objects[oid]?).map KernelObject.objectType
 
 /-- Capability-reference lifecycle metadata is exact for every slot reference. -/
 def capabilityRefMetadataConsistent (st : SystemState) : Prop :=
@@ -700,10 +694,13 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
   intro oid'
   unfold storeObject at hStep
   cases hStep
+  simp only [SystemState.lookupObjectTypeMeta] at *
   by_cases hEq : oid' = oid
   · subst hEq
-    simp [SystemState.lookupObjectTypeMeta]
-  · simpa [SystemState.lookupObjectTypeMeta, hEq] using hConsistent oid'
+    rw [HashMap_getElem?_insert, HashMap_getElem?_insert]; simp
+  · rw [HashMap_getElem?_insert, HashMap_getElem?_insert]
+    have h1 : ¬((oid == oid') = true) := by intro heq; exact hEq (eq_of_beq heq).symm
+    simp [h1]; exact hConsistent oid'
 
 theorem storeObject_preserves_capabilityRefMetadataConsistent
     (st st' : SystemState)
@@ -715,12 +712,22 @@ theorem storeObject_preserves_capabilityRefMetadataConsistent
   intro ref
   unfold storeObject at hStep
   cases hStep
+  simp only [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+    SystemState.lookupCNode]
   by_cases hEq : ref.cnode = oid
-  · subst hEq
-    cases obj <;> simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
-      SystemState.lookupCNode]
-  · simpa [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
-      SystemState.lookupCNode, hEq] using hConsistent ref
+  · -- ref.cnode = oid: capabilityRefs returns match on obj, objects returns obj
+    subst hEq; simp only [ite_true]
+    rw [HashMap_getElem?_insert]; simp
+    cases obj <;> simp
+  · -- ref.cnode ≠ oid: capabilityRefs returns old value, objects returns old value
+    simp only [hEq, ite_false]
+    rw [HashMap_getElem?_insert]
+    have h1 : ¬((oid == ref.cnode) = true) := by intro heq; exact hEq (eq_of_beq heq).symm
+    simp only [h1]
+    have := hConsistent ref
+    simp only [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+      SystemState.lookupCNode] at this
+    exact this
 
 theorem storeObject_preserves_lifecycleMetadataConsistent
     (st st' : SystemState)
@@ -744,15 +751,21 @@ base case for invariant induction — the system starts in a valid state. -/
 theorem default_systemState_lifecycleConsistent :
     SystemState.lifecycleMetadataConsistent (default : SystemState) := by
   constructor
-  · intro oid
-    show (default : SystemState).lifecycle.objectTypes oid =
-      Option.map KernelObject.objectType ((default : SystemState).objects oid)
-    rfl
-  · intro ref
-    show (default : SystemState).lifecycle.capabilityRefs ref =
-      ((SystemState.lookupSlotCap (default : SystemState) ref).map Capability.target)
-    simp only [SystemState.lookupSlotCap, SystemState.lookupCNode]
-    rfl
+  · -- objectTypeMetadataConsistent: both HashMaps are empty → both get? return none
+    intro oid
+    simp only [SystemState.lookupObjectTypeMeta]
+    have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
+      HashMap_getElem?_empty
+    have h₂ : (default : SystemState).objects[oid]? = none :=
+      HashMap_getElem?_empty
+    rw [h₁, h₂]; rfl
+  · -- capabilityRefMetadataConsistent: capabilityRefs is fun _ => none, objects map is empty
+    intro ref
+    simp only [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
+      SystemState.lookupCNode]
+    have h : (default : SystemState).objects[ref.cnode]? = none :=
+      HashMap_getElem?_empty
+    rw [h]; rfl
 
 -- ============================================================================
 -- M-09/WS-E3: storeObject metadata sync correctness for type-changing stores
@@ -766,10 +779,8 @@ theorem storeObject_metadata_sync_type_change
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStep : storeObject oid obj st = .ok ((), st')) :
-    st'.lifecycle.objectTypes oid = some obj.objectType := by
-  unfold storeObject at hStep
-  cases hStep
-  simp
+    st'.lifecycle.objectTypes[oid]? = some obj.objectType :=
+  storeObject_updates_objectTypeMeta st st' oid obj hStep
 
 /-- M-09/WS-E3: `storeObject` correctly synchronizes capability-reference metadata
 when the stored object changes from a CNode to a non-CNode (or vice versa).
@@ -792,7 +803,8 @@ theorem storeObject_metadata_sync_capref_at_stored
       | _ => none := by
   unfold storeObject at hStep
   cases hStep
-  cases obj <;> simp [SystemState.lookupCapabilityRefMeta]
+  simp [SystemState.lookupCapabilityRefMeta]
+  cases obj <;> rfl
 
 -- ============================================================================
 -- L-05/WS-E6: objectIndex monotonicity
@@ -811,10 +823,9 @@ theorem storeObject_objectIndex_monotone
     id ∈ st'.objectIndex := by
   unfold storeObject at hStep
   cases hStep
-  simp only
-  by_cases hIn : oid ∈ st.objectIndex
-  · simp [hIn, hMem]
-  · simp [hIn]
-    exact Or.inr hMem
+  simp only []
+  cases h : st.objectIndexSet.contains oid
+  · simp; exact Or.inr hMem
+  · simp; exact hMem
 
 end SeLe4n.Model
