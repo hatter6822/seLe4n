@@ -269,42 +269,28 @@ private theorem ensureRunnable_preserves_projection
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (ensureRunnable st tid) = projectState ctx observer st := by
   unfold ensureRunnable
-  by_cases hMem : tid ∈ st.scheduler.runnable
-  · simp [hMem]
-  · simp [hMem]
+  split
+  · rfl
+  · rename_i hNotMem
     cases hObjTcb : st.objects[tid.toObjId]? with
-    | none => simp
+    | none => rfl
     | some obj =>
       cases obj with
-      | endpoint ep => simp
-      | notification ntfn => simp
-      | cnode cn => simp
-      | vspaceRoot root => simp
-      | untyped _ => simp
+      | endpoint ep => rfl
+      | notification ntfn => rfl
+      | cnode cn => rfl
+      | vspaceRoot root => rfl
+      | untyped _ => rfl
       | tcb tcb =>
-          have hRun : List.filter (threadObservable ctx observer) (st.scheduler.runnable ++ [tid]) =
-              List.filter (threadObservable ctx observer) st.scheduler.runnable :=
-            list_filter_append_singleton_unobs st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
-          have hObj : projectObjects ctx observer
-              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
-              projectObjects ctx observer st := rfl
-          have hSvc : projectServiceStatus ctx observer
-              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
-              projectServiceStatus ctx observer st := by
-            funext sid
-            rfl
-          have hDom : projectActiveDomain ctx observer
-              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
-              projectActiveDomain ctx observer st := by
-            simp [projectActiveDomain, SchedulerState.withRunnableQueue]
-          have hIrq : projectIrqHandlers ctx observer
-              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
-              projectIrqHandlers ctx observer st := rfl
-          have hIdx : projectObjectIndex ctx observer
-              { st with scheduler := st.scheduler.withRunnableQueue (st.scheduler.runnable ++ [tid]) } =
-              projectObjectIndex ctx observer st := rfl
-          simpa [projectState, projectCurrent, projectRunnable,
-            SchedulerState.withRunnableQueue, hRun] using And.intro hObj (And.intro hSvc (And.intro hDom (And.intro hIrq hIdx)))
+          show projectState ctx observer
+              { st with scheduler := { st.scheduler with
+                  runQueue := st.scheduler.runQueue.insert tid tcb.priority } } =
+              projectState ctx observer st
+          unfold projectState
+          congr 1
+          · -- projectRunnable
+            simp only [projectRunnable, SchedulerState.runnable]
+            exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 private theorem storeTcbIpcState_preserves_projection

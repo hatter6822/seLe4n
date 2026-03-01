@@ -1,5 +1,6 @@
 import SeLe4n.Machine
 import SeLe4n.Model.Object
+import SeLe4n.Kernel.Scheduler.RunQueue
 
 namespace SeLe4n.Model
 
@@ -38,12 +39,11 @@ structure DomainScheduleEntry where
   deriving Repr, DecidableEq
 
 structure SchedulerState where
-  runnable : List SeLe4n.ThreadId
-  /-- WS-E7 intrusive runnable queue head pointer. Mirrors the first runnable
-      thread and allows O(1) insertion/removal bookkeeping in queue owners. -/
-  runnableHead : Option SeLe4n.ThreadId := none
-  /-- WS-E7 intrusive runnable queue tail pointer. -/
-  runnableTail : Option SeLe4n.ThreadId := none
+  /-- WS-G4/F-P02: Priority-bucketed run queue replacing the flat list.
+      Provides O(1) amortized membership, insert, remove; O(1) best-candidate
+      via cached maxPriority. The `toList` projection maintains proof/projection
+      compatibility with information-flow subsystem. -/
+  runQueue : SeLe4n.Kernel.RunQueue := SeLe4n.Kernel.RunQueue.empty
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
@@ -55,19 +55,12 @@ structure SchedulerState where
   domainSchedule : List DomainScheduleEntry := []
   /-- M-05/WS-E6: Current index into `domainSchedule`. -/
   domainScheduleIndex : Nat := 0
-  deriving Repr, DecidableEq
+  deriving Repr
 
-/-- WS-E7: canonical scheduler update helper for runnable-queue mutations.
-Keeps list payload and cached queue endpoints synchronized. -/
-def SchedulerState.withRunnableQueue
-    (sched : SchedulerState)
-    (queue : List SeLe4n.ThreadId) : SchedulerState :=
-  {
-    sched with
-      runnable := queue
-      runnableHead := queue.head?
-      runnableTail := queue.getLast?
-  }
+/-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
+    inside `RunQueue` for proof/projection compatibility. -/
+abbrev SchedulerState.runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
+  s.runQueue.toList
 
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
@@ -139,7 +132,7 @@ structure SystemState where
 abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
-  default := { runnable := [], current := none }
+  default := { runQueue := SeLe4n.Kernel.RunQueue.empty, current := none }
 
 instance : Inhabited SystemState where
   default := {

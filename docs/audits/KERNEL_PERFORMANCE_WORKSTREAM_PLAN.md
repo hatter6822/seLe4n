@@ -179,7 +179,7 @@ degradation and O(n) membership scans.
 
 ---
 
-### WS-G3: ASID Resolution Table (F-P06) — CRITICAL
+### WS-G3: ASID Resolution Table (F-P06) — COMPLETED
 
 **Objective:** Add an `ASID → ObjId` index to `SystemState`, reducing ASID
 resolution from O(n) linear scan to O(1) hash lookup on every VSpace operation.
@@ -226,9 +226,16 @@ the ASID table is an independent addition to `SystemState`.
 
 **Estimated effort:** Low (localized change, single new field, clear invariant).
 
+**Completion notes (v0.12.8):**
+- All exit evidence met: `lake build` zero errors/warnings/sorry, `test_full.sh` Tier 0-3 pass.
+- `resolveAsidRoot` uses `st.asidTable[asid]?` O(1) lookup; `objectIndex.findSome?` eliminated from VSpace.lean.
+- Bidirectional `asidTableConsistent` invariant; `vspaceInvariantBundle` extended to 3-conjunct.
+- `storeObject` erase-before-insert maintenance with 3 bridge lemmas.
+- StateBuilder auto-populates `asidTable` from VSpaceRoot objects.
+
 ---
 
-### WS-G4: Run Queue Restructure (F-P02, F-P07, F-P12) — CRITICAL
+### WS-G4: Run Queue Restructure (F-P02, F-P07, F-P12) — COMPLETED
 
 **Objective:** Replace the flat `List ThreadId` runnable queue with a
 priority-bucketed run queue backed by `Std.HashMap` and `Std.HashSet`,
@@ -316,6 +323,18 @@ simplifies TCB lookups in scheduler), but not strictly required.
 
 **Estimated effort:** High (largest single change; new data structure, multiple
 subsystem rewrites, significant theorem re-proof).
+
+**Completion notes (v0.12.9):**
+- All exit evidence met: `lake build` zero errors/warnings/sorry, `test_full.sh` Tier 0-3 pass.
+- `RunQueue` structure in `Scheduler/RunQueue.lean` with `byPriority : Std.HashMap Priority (List ThreadId)`, `membership : Std.HashSet ThreadId`, `threadPriority : Std.HashMap ThreadId Priority`, `flat : List ThreadId` for proof compatibility, and `flat_wf` structural invariant bridging flat list ↔ HashSet membership.
+- O(1) operations: `insert`, `remove`, `contains`, `rotateHead`, `rotateToBack`. `maxPriority` cached and maintained incrementally.
+- `SchedulerState.runQueue : RunQueue` replaces flat `runnable : List ThreadId`. `runnableHead`/`runnableTail` and `withRunnableQueue` helper eliminated.
+- `removeRunnable`/`ensureRunnable` rewritten against `RunQueue.remove`/`RunQueue.insert`. `rotateCurrentToBack` uses `RunQueue.rotateToBack`.
+- No `List.filter (· ≠ tid)` patterns remain in scheduler/IPC operations. No `getLast?` calls remain.
+- 13 `RunQueue` bridge lemmas (`mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`, etc.).
+- IPC/Invariant.lean: 30+ proofs migrated to flat-list variants (`removeRunnable_runnable_mem`, `ensureRunnable_runnable_mem_old`).
+- InformationFlow/Invariant.lean: `ensureRunnable_preserves_projection` re-proved via `congr 1` + `toList_filter_insert_neg`.
+- Full proof migration: zero sorry/axiom across all 7 modified files.
 
 ---
 

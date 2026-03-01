@@ -20,6 +20,11 @@ Component level:
 - `currentThreadValid`
 - `queueCurrentConsistent`
 
+Data structure:
+
+- `RunQueue` (`Scheduler/RunQueue.lean`, WS-G4) — priority-bucketed run queue with `flat_wf` structural invariant bridging `Std.HashSet` membership and `flat : List ThreadId`.
+- 13 bridge lemmas: `mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `not_mem_empty`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`.
+
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)

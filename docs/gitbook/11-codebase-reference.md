@@ -26,11 +26,13 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Model/Object.lean`
   - object-level representations (including TCB intrusive queue link fields).
 - `SeLe4n/Model/State.lean`
-  - global system-state composition and update helpers (including runnable
-    queue endpoint synchronization via `SchedulerState.withRunnableQueue`).
+  - global system-state composition and update helpers (including
+    `SchedulerState.runQueue : RunQueue` priority-bucketed run queue, WS-G4).
 
 ### Kernel transition/invariant families
 
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean`
+  - `RunQueue` priority-bucketed structure + O(1) operations + 13 bridge lemmas (WS-G4).
 - `SeLe4n/Kernel/Scheduler/Operations.lean`
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
 - `SeLe4n/Kernel/Capability/Operations.lean`
