@@ -575,21 +575,26 @@ theorem notificationWait_recovers_pending_badge
           cases hPending : ntfn.pendingBadge with
           | none =>
               exfalso; simp only [hPending] at hWait
-              split at hWait
-              · simp at hWait
-              · revert hWait
-                cases hStore : storeObject notifId _ st with
-                | error e => simp
-                | ok pair =>
-                    simp only []
-                    intro hWait
-                    revert hWait
-                    cases storeTcbIpcState pair.2 waiter _ with
-                    | error e => simp
-                    | ok st2 =>
-                        simp only [Except.ok.injEq, Prod.mk.injEq]
-                        intro ⟨h, _⟩
-                        exact absurd h (by simp)
+              -- WS-G7: match on lookupTcb
+              cases hLk : lookupTcb st waiter with
+              | none => simp [hLk] at hWait
+              | some tcb =>
+                simp only [hLk] at hWait
+                split at hWait
+                · simp at hWait
+                · revert hWait
+                  cases hStore : storeObject notifId _ st with
+                  | error e => simp
+                  | ok pair =>
+                      simp only []
+                      intro hWait
+                      revert hWait
+                      cases storeTcbIpcState pair.2 waiter _ with
+                      | error e => simp
+                      | ok st2 =>
+                          simp only [Except.ok.injEq, Prod.mk.injEq]
+                          intro ⟨h, _⟩
+                          exact absurd h (by simp)
           | some b =>
               simp only [hPending] at hWait
               let newNtfn : Notification :=

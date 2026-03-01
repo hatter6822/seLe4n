@@ -178,6 +178,20 @@ private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemS
           ut.children.all fun c => c.offset + c.size ≤ ut.watermark) :: acc
     | _ => acc) []
 
+/-- WS-G7: Runtime check for `notificationWaiterConsistent`: for each notification
+object, every thread in the waiting list must have a TCB with
+`ipcState = .blockedOnNotification oid`. -/
+private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.notification ntfn) =>
+        ntfn.waitingThreads.foldr (fun tid inner =>
+          let ok := match st.objects[tid.toObjId]? with
+            | some (.tcb tcb) => tcb.ipcState == .blockedOnNotification oid
+            | _ => false
+          (s!"notification waiter consistent: oid={oid} tid={tid.toNat}", ok) :: inner) acc
+    | _ => acc) []
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -213,6 +227,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ vspaceAsidUniquenessChecks objectIds st
     ++ asidTableConsistencyChecks objectIds st
     ++ untypedWatermarkChecks objectIds st
+    ++ notificationWaiterConsistentChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

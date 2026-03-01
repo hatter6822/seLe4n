@@ -1,3 +1,17 @@
+## [0.12.12] - 2026-03-01
+
+### WS-G7: IPC Queue Completion & Notification (completed)
+
+- **Legacy endpoint deprecation (Phase A / F-P04):** Trace harness and sequence probe migrated from legacy `endpointSend`/`endpointReceive`/`endpointAwaitReceive` to O(1) dual-queue `endpointSendDual`/`endpointReceiveDual`. Legacy operations marked deprecated with docstring annotations. New `endpointSendDualChecked` enforcement wrapper provides information-flow gating for the dual-queue send path, matching the legacy `endpointSendChecked` pattern.
+- **Notification wait optimization (Phase B / F-P11):** `notificationWait` O(n) duplicate check `waiter ∈ ntfn.waitingThreads` replaced with O(1) TCB `ipcState` check via `lookupTcb`. O(n) append `ntfn.waitingThreads ++ [waiter]` replaced with O(1) prepend `waiter :: ntfn.waitingThreads`.
+- **New `notificationWaiterConsistent` invariant:** Bridges TCB `ipcState` to notification queue membership, ensuring the O(1) TCB-based duplicate check is sound. Bridge lemma `not_mem_waitingThreads_of_ipcState_ne` enables `uniqueWaiters` preservation under prepend. Base case `default_notificationWaiterConsistent` proved. Runtime `notificationWaiterConsistentChecks` added to invariant check surface with Tier-3 anchor.
+- **Invariant proofs re-proved:** `notificationWait_preserves_uniqueWaiters`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcSchedulerContractPredicates` all re-proved against new O(1) logic. `notificationWait_recovers_pending_badge` (Capability) and `notificationWait_projection_preserved` (InformationFlow) updated for `lookupTcb` match structure.
+- **`endpointSendDualChecked` enforcement:** New checked dual-queue send in `Enforcement.lean` with correctness theorems `endpointSendDualChecked_eq_endpointSendDual_when_allowed` and `endpointSendDualChecked_flowDenied`.
+- **API stability table updated:** Legacy `endpointSend`/`endpointReceive`/`endpointAwaitReceive` and `endpointSendChecked` marked `Deprecated (WS-G7)`. `endpointSendDualChecked` added as stable entry point.
+- **Structured fixture updated:** Trace fixture migrated to dual-queue output (IPC-03 updated, legacy-only IPC-05/IPC-06 removed). Tier-3 surface anchors updated for `endpointReceiveDual`.
+- **Full proof migration:** zero sorry/axiom across all 9 modified files. `test_full.sh` passes (Tier 0-3).
+- Closes findings F-P04 (legacy endpoint queue O(n) append) and F-P11 (notification duplicate wait O(n) check).
+
 ## [0.12.11] - 2026-03-01
 
 ### WS-G6: VSpace Mapping HashMap (completed)

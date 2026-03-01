@@ -770,22 +770,27 @@ private theorem notificationWait_projection_preserved
             rw [storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
       | none =>
-        -- Block path: check membership, storeObject + storeTcbIpcState + removeRunnable
+        -- WS-G7: Block path: lookupTcb → ipcState check → storeObject + storeTcbIpcState + removeRunnable
         simp [hBadge] at hStep
-        by_cases hMem : waiter ∈ ntfn.waitingThreads
-        · simp [hMem] at hStep
-        · simp [hMem] at hStep; revert hStep
-          cases hStore : storeObject notificationId _ st with
-          | error e => simp
-          | ok pair =>
-            simp only []
-            cases hTcb : storeTcbIpcState pair.2 waiter _ with
+        -- WS-G7: match on lookupTcb
+        cases hLk : lookupTcb st waiter with
+        | none => simp [hLk] at hStep
+        | some tcb =>
+          simp only [hLk] at hStep
+          by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
+          · simp [hBlocked] at hStep
+          · simp [hBlocked] at hStep; revert hStep
+            cases hStore : storeObject notificationId _ st with
             | error e => simp
-            | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-              rw [removeRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
-                  storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
-                  storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
+            | ok pair =>
+              simp only []
+              cases hTcb : storeTcbIpcState pair.2 waiter _ with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+                rw [removeRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
+                    storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
+                    storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
 
 /-- WS-F3/F-21: notificationWait preserves low-equivalence. -/
 theorem notificationWait_preserves_lowEquivalent

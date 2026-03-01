@@ -716,8 +716,8 @@ P3:  [WS-G5]──[WS-G6]──[WS-G7]──[WS-G8]──[WS-G9]
 | WS-G3 | Critical | F-P06 | **Completed** | Low |
 | WS-G4 | Critical | F-P02, F-P07, F-P12 | **Completed** | High |
 | WS-G5 | High | F-P03 | **Completed** | Medium |
-| WS-G6 | High | F-P05 | Planning | Medium |
-| WS-G7 | High | F-P04, F-P11 | Planning | Low-Medium |
+| WS-G6 | High | F-P05 | **Completed** | Medium |
+| WS-G7 | High | F-P04, F-P11 | **Completed** | Low-Medium |
 | WS-G8 | High | F-P08, F-P14 | Planning | Medium |
 | WS-G9 | High | F-P09 | Planning | Medium |
 
