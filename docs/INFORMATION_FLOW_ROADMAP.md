@@ -140,7 +140,7 @@ Delivered anchors (WS-E5 closeout):
 
 **H-05 — Composed bundle non-interference** (`Invariant.lean`):
 
-- `NonInterferenceStep` — inductive covering 12 operation families (extended from 5 by WS-F3),
+- `NonInterferenceStep` — inductive covering 11 operation families (extended from 5 by WS-F3; storeObject is standalone infrastructure, not a constructor),
 - `composedNonInterference_step` — single-step bundle non-interference (IF-M4),
 - `NonInterferenceTrace` — multi-step trace inductive,
 - `composedNonInterference_trace` — trace-level bundle non-interference (IF-M4),
@@ -183,7 +183,7 @@ Delivered (WS-F3 closeout):
   `cspaceMint`, `cspaceRevoke`, `lifecycleRetypeObject`, `notificationSignal`,
   `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`,
   `serviceRestart`, `storeObject`.
-- `NonInterferenceStep` inductive extended to 12 constructors.
+- `NonInterferenceStep` inductive extended to 11 constructors (storeObject is standalone infrastructure).
 - Remaining operations (`schedule`, `handleYield`, `timerTick`, IPC receive/reply,
   `cspaceDeleteSlot`, `cspaceCopy`, `cspaceMove`, VSpace, adapter) deferred to WS-F4.
 

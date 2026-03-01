@@ -54,7 +54,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F portfolio — planning).
+- Active planning baseline: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F portfolio — WS-F1, WS-F2, WS-F3 completed).
 - Active findings baseline: `AUDIT_CODEBASE_v0.12.2_v1.md`, `AUDIT_CODEBASE_v0.12.2_v2.md`.
 - Prior completed portfolios: WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
