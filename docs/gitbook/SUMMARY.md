@@ -37,5 +37,6 @@
 ## Production path
 
 - [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
+- [Platform Binding Architecture (ADR)](../PLATFORM_BINDING_ADR.md)
 - [Project Usage and Value](17-project-usage-value.md)
 - [Next Development Path](22-next-slice-development-path.md)

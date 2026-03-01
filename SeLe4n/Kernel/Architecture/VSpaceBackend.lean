@@ -1,0 +1,128 @@
+import SeLe4n.Model.State
+
+/-!
+# VSpace Backend Abstraction (H3 preparation)
+
+This module defines the `VSpaceBackend` typeclass — a forward-looking
+abstraction over VSpace implementations. The current flat-list model
+(`VSpaceRoot.mappings : List (VAddr × PAddr)`) satisfies this interface
+naturally. When H3 introduces ARMv8 hierarchical page tables, a new
+backend can be instantiated without changing the abstract kernel proofs.
+
+## Design
+
+The typeclass mirrors the existing VSpace operations in
+`SeLe4n.Kernel.Architecture.VSpace` but makes the implementation
+strategy abstract:
+
+- `mapPage`: Insert a virtual-to-physical mapping.
+- `unmapPage`: Remove a virtual-to-physical mapping.
+- `lookupPage`: Translate a virtual address to a physical address.
+
+Each operation returns an `Option` to signal failure (conflict, not-found).
+The backend is responsible for maintaining its internal consistency.
+
+## Invariant obligations
+
+A backend must satisfy:
+1. **ASID uniqueness**: Two roots with the same ASID must be identical.
+2. **Non-overlap**: No two mappings within a root share the same virtual address.
+3. **Round-trip correctness**: `lookupPage` after `mapPage` returns the mapped
+   physical address. `lookupPage` after `unmapPage` returns `none`.
+
+These obligations are expressed as propositions that a backend instantiation
+must prove. The current `ListVSpaceBackend` instance inherits these from
+the existing `VSpaceInvariant.lean` theorems.
+
+## Status
+
+H3-prep forward declaration. The existing VSpace operations continue to
+work as before. This interface will be consumed during H3 when the RPi5
+platform provides an ARMv8 page-table backend.
+-/
+
+namespace SeLe4n.Kernel.Architecture
+
+open SeLe4n
+
+/-- Abstract VSpace backend interface.
+
+    A backend provides page-level map/unmap/lookup operations over an
+    opaque root representation. The abstract kernel calls these through
+    the existing `vspaceMapPage`/`vspaceUnmapPage`/`vspaceLookup`
+    functions; the backend determines the internal data structure.
+
+    **Type parameter `Root`:** The backing representation for a single
+    address space (e.g., `VSpaceRoot` for the current flat-list model,
+    or a hierarchical page table for ARM64). -/
+class VSpaceBackend (Root : Type) where
+  /-- Insert a virtual-to-physical mapping into the root.
+      Returns `none` if the mapping conflicts with an existing entry. -/
+  mapPage : Root → VAddr → PAddr → Option Root
+  /-- Remove the mapping for a virtual address from the root.
+      Returns `none` if no mapping exists for the given vaddr. -/
+  unmapPage : Root → VAddr → Option Root
+  /-- Translate a virtual address to a physical address.
+      Returns `none` if the vaddr is not mapped. -/
+  lookupPage : Root → VAddr → Option PAddr
+  /-- The ASID bound to this root. -/
+  rootAsid : Root → ASID
+  /-- Mapping a page preserves the root's ASID. -/
+  mapPage_preserves_asid :
+    ∀ root root' vaddr paddr,
+      mapPage root vaddr paddr = some root' → rootAsid root' = rootAsid root
+  /-- Unmapping a page preserves the root's ASID. -/
+  unmapPage_preserves_asid :
+    ∀ root root' vaddr,
+      unmapPage root vaddr = some root' → rootAsid root' = rootAsid root
+  /-- Round-trip: lookup after successful map returns the mapped address. -/
+  lookup_after_map :
+    ∀ root root' vaddr paddr,
+      mapPage root vaddr paddr = some root' →
+      lookupPage root' vaddr = some paddr
+  /-- Non-interference: map at one vaddr does not affect lookup at another. -/
+  lookup_map_other :
+    ∀ root root' vaddr vaddr' paddr,
+      vaddr ≠ vaddr' →
+      mapPage root vaddr paddr = some root' →
+      lookupPage root' vaddr' = lookupPage root vaddr'
+  /-- Round-trip: lookup after successful unmap returns none. -/
+  lookup_after_unmap :
+    ∀ root root' vaddr,
+      unmapPage root vaddr = some root' →
+      lookupPage root' vaddr = none
+  /-- Non-interference: unmap at one vaddr does not affect lookup at another. -/
+  lookup_unmap_other :
+    ∀ root root' vaddr vaddr',
+      vaddr ≠ vaddr' →
+      unmapPage root vaddr = some root' →
+      lookupPage root' vaddr' = lookupPage root vaddr'
+
+-- ============================================================================
+-- List-based VSpaceBackend instance (current model)
+-- ============================================================================
+
+open SeLe4n.Model in
+/-- The existing flat-list `VSpaceRoot` satisfies the `VSpaceBackend` interface.
+
+    This instance delegates to the operations and lemmas already defined in
+    `SeLe4n.Model.Object` (`VSpaceRoot.mapPage`, `.unmapPage`, `.lookup`)
+    and proved in `VSpaceRoot.mapPage_asid_eq`, `lookup_mapPage_eq`, etc.
+
+    No new proofs are required — all obligations are discharged by existing
+    theorems. -/
+instance listVSpaceBackend : VSpaceBackend VSpaceRoot where
+  mapPage root vaddr paddr := root.mapPage vaddr paddr
+  unmapPage root vaddr := root.unmapPage vaddr
+  lookupPage root vaddr := root.lookup vaddr
+  rootAsid root := root.asid
+  mapPage_preserves_asid := VSpaceRoot.mapPage_asid_eq
+  unmapPage_preserves_asid := VSpaceRoot.unmapPage_asid_eq
+  lookup_after_map := VSpaceRoot.lookup_mapPage_eq
+  lookup_map_other := fun root root' vaddr vaddr' paddr hNe hMap =>
+    VSpaceRoot.lookup_mapPage_ne root root' vaddr vaddr' paddr hNe hMap
+  lookup_after_unmap := VSpaceRoot.lookup_unmapPage_eq_none
+  lookup_unmap_other := fun root root' vaddr vaddr' hNe hUnmap =>
+    VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hUnmap
+
+end SeLe4n.Kernel.Architecture

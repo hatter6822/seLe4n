@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Active** (WS-F) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | ~~WS-F2~~ (done), ~~WS-F3~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **H3-prep complete** | ~~WS-F2~~ (done), ~~WS-F3~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Active: closing proof gaps (WS-F)
@@ -34,14 +34,35 @@ binding is meaningful:
 - **Information flow** (CRIT-02/03): complete projection and NI coverage.
 - **Dual-queue verification** (CRIT-05): the production IPC model needs proofs.
 
-### H3 — Planned: Raspberry Pi 5 binding
+### H3 — In progress: Raspberry Pi 5 binding
 
-Once WS-F closes the critical proof gaps:
+**H3-prep (structural foundation) is complete.** The `Platform/` directory
+provides the organizational infrastructure for hardware binding:
 
-1. Map `MachineState` to BCM2712 register set and memory map.
-2. Bind `VSpaceRoot` to ARMv8 page table structures.
-3. Implement interrupt routing for GIC-400.
-4. Bind timer adapter to ARM Generic Timer.
+- **`PlatformBinding` typeclass** (`SeLe4n/Platform/Contract.lean`) — formal
+  interface bundling `MachineConfig`, `RuntimeBoundaryContract`,
+  `BootBoundaryContract`, and `InterruptBoundaryContract`.
+- **`MachineConfig` and `MemoryRegion`** (`SeLe4n/Machine.lean`) — platform-
+  declared register width, address width, page size, ASID limits, and physical
+  memory map with RAM/device/reserved regions.
+- **`VSpaceBackend` class** (`SeLe4n/Kernel/Architecture/VSpaceBackend.lean`) —
+  abstract page map/unmap/lookup with round-trip correctness obligations.
+  The existing flat-list `VSpaceRoot` satisfies this via `listVSpaceBackend`.
+- **`ExtendedBootBoundaryContract`** — adds entry exception level, MMU state,
+  device tree location, entry point, and stack pointer to the base boot contract.
+- **Simulation platform** (`Platform/Sim/`) — `SimPlatform` with permissive
+  contracts for trace harness and test execution.
+- **RPi5 platform stubs** (`Platform/RPi5/`) — BCM2712 memory map, GIC-400
+  base addresses, ARM Generic Timer frequency, PL011 UART address, ARM64
+  machine config (64-bit registers, 48-bit VA, 44-bit PA, 4 KiB pages,
+  16-bit ASID), and a RAM-only memory access contract.
+
+**Remaining H3 work** (once WS-F closes critical proof gaps):
+
+1. Populate RPi5 runtime contract with hardware-validated predicates.
+2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.
+3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
+4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
 5. Define boot sequence as a verified initial state construction.
 
 ### H4 — Planned: evidence convergence
@@ -61,7 +82,11 @@ Once WS-F closes the critical proof gaps:
 
 ## 5. What contributors can do now
 
-- Focus on WS-F workstreams (especially WS-F4 — WS-F1, WS-F2, WS-F3 complete).
-- Keep transitions architecture-neutral unless explicitly marked otherwise.
+- Focus on remaining WS-F workstreams (WS-F5..F8 — WS-F1..F4 complete).
+- Review the `Platform/RPi5/` stubs and contribute hardware-specific knowledge.
+- Keep kernel transitions architecture-neutral — hardware assumptions belong in
+  `PlatformBinding` instances, not in `Kernel/` modules.
 - Document hardware assumptions explicitly in adapter interfaces.
 - Add executable evidence for boundary success/failure behavior.
+- When working on platform-specific code, instantiate the `PlatformBinding`
+  typeclass rather than hard-coding contracts.

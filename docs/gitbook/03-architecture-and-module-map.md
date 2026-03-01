@@ -40,7 +40,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Prelude.lean`
   - object/thread IDs and kernel monad contract used globally.
 - `SeLe4n/Machine.lean`
-  - machine registers, memory abstraction, and pure update/read helpers.
+  - machine registers, memory abstraction, and pure update/read helpers,
+  - `MachineConfig` (register/address width, page size, ASID limit) and
+    `MemoryRegion`/`MemoryKind` for platform memory map declaration.
 
 ### Model
 
@@ -109,19 +111,39 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### Architecture subsystem
 
 - `SeLe4n/Kernel/Architecture/Assumptions.lean`
-  - named architecture-facing assumption interfaces and contract references.
+  - named architecture-facing assumption interfaces and contract references,
+  - `ExtendedBootBoundaryContract` with platform boot fields (entry level, MMU state, DTB location).
 - `SeLe4n/Kernel/Architecture/Adapter.lean`
   - deterministic adapter entrypoints (`adapterAdvanceTimer`, `adapterReadMemory`, `adapterWriteMemory`)
     with bounded failure mapping for invalid/unsupported contexts.
 - `SeLe4n/Kernel/Architecture/VSpace.lean`
   - VSpace address-space operations (`vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`),
     ASID root resolution, and page-table management.
+- `SeLe4n/Kernel/Architecture/VSpaceBackend.lean` *(H3-prep)*
+  - `VSpaceBackend` typeclass abstracting page map/unmap/lookup with round-trip obligations,
+  - `listVSpaceBackend` instance: the current flat-list `VSpaceRoot` satisfying the interface.
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
   - VSpace invariant bundle, success-path and error-path preservation theorems,
     round-trip correctness theorems (`vspaceLookup_after_map`, etc.).
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.
+
+### Platform layer (H3-prep)
+
+- `SeLe4n/Platform/Contract.lean`
+  - `PlatformBinding` typeclass: formal interface for hardware targets bundling
+    `MachineConfig`, `RuntimeBoundaryContract`, `BootBoundaryContract`, and
+    `InterruptBoundaryContract`.
+- `SeLe4n/Platform/Sim/{RuntimeContract,BootContract,Contract}.lean`
+  - Simulation platform binding (`SimPlatform`) with permissive/restrictive
+    runtime contracts, trivially-true boot and interrupt contracts, and an
+    idealized 64-bit machine config. Used by trace harnesses and test suites.
+- `SeLe4n/Platform/RPi5/{Board,RuntimeContract,BootContract,Contract}.lean`
+  - Raspberry Pi 5 platform binding (`RPi5Platform`) with BCM2712 memory map,
+    GIC-400/ARM Generic Timer constants, ARM64 machine config (64-bit, 48-bit
+    VA, 44-bit PA, 4 KiB pages, 16-bit ASID), and RAM-only memory access
+    contract. Boot and interrupt contracts are H3-prep stubs.
 
 ### Information-flow subsystem
 
@@ -176,15 +198,18 @@ SeLe4n.lean
     ├── Kernel/IPC/{Operations,Invariant}.lean
     ├── Kernel/Lifecycle/{Operations,Invariant}.lean
     ├── Kernel/Service/{Operations,Invariant}.lean
-    ├── Kernel/Architecture/{Assumptions,Adapter,VSpace,VSpaceInvariant,Invariant}.lean
+    ├── Kernel/Architecture/{Assumptions,Adapter,VSpace,VSpaceBackend,VSpaceInvariant,Invariant}.lean
     └── Kernel/InformationFlow/{Policy,Projection,Enforcement,Invariant}.lean
+├── Platform/Contract.lean
+├── Platform/Sim/{RuntimeContract,BootContract,Contract}.lean
+└── Platform/RPi5/{Board,RuntimeContract,BootContract,Contract}.lean
 ```
 
 ### 3.2 Mermaid graph (documentation source of truth)
 
 ```mermaid
 graph TD
-  P[Prelude + Machine] --> M[Model Object/State]
+  P[Prelude + Machine + MachineConfig] --> M[Model Object/State]
   M --> S[Scheduler]
   M --> C[Capability]
   M --> I[IPC]
@@ -193,12 +218,14 @@ graph TD
   I --> B
   B --> L[Lifecycle]
   L --> V[Service]
-  V --> A[Architecture Assumptions/Adapter/VSpace]
+  V --> A[Architecture Assumptions/Adapter/VSpace/VSpaceBackend]
   M --> IF[InformationFlow Policy/Projection/Enforcement]
   IF --> IFI[InformationFlow Invariant]
   A --> AI[Architecture Invariant]
   AI --> X[API + Main executable traces]
   IFI --> X
+  A --> PL[Platform Contract/Sim/RPi5]
+  PL --> X
 ```
 
 This direction should be preserved to prevent proof cycles and maintain module readability.

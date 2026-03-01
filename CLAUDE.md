@@ -46,9 +46,12 @@ SeLe4n/Kernel/IPC/DualQueue.lean Intrusive dual-queue IPC operations
 SeLe4n/Kernel/IPC/Invariant.lean IPC invariant preservation proofs
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
 SeLe4n/Kernel/Service/*          Service orchestration + policy
-SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace
+SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend
 SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
 SeLe4n/Kernel/API.lean           Public kernel interface
+SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
+SeLe4n/Platform/Sim/*            Simulation platform contracts
+SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures

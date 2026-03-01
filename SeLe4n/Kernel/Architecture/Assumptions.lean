@@ -142,4 +142,42 @@ chain works as follows:
 This four-step chain ensures every declared assumption has a concrete proof-level
 consumer, closing the gap identified in finding M-08. -/
 
+-- ============================================================================
+-- H3 preparation: Extended boot boundary contract
+-- ============================================================================
+
+/-- H3-prep: Exception level at which the kernel receives control from the
+    bootloader. Relevant for ARM64 platforms where EL1 vs EL2 entry
+    determines available system registers and MMU configuration. -/
+inductive ExceptionLevel where
+  | el1
+  | el2
+  deriving Repr, DecidableEq
+
+/-- H3-prep: Extended boot boundary contract with platform-specific fields.
+
+    The base `BootBoundaryContract` declares abstract consistency propositions.
+    `ExtendedBootBoundaryContract` adds platform-visible boot parameters that
+    the H3 workstream needs:
+
+    - **Entry exception level**: EL1 or EL2 (determines available system regs).
+    - **Initial page table state**: Whether the MMU is identity-mapped at entry.
+    - **Device tree location**: Physical address of the DTB.
+    - **Kernel entry point**: Physical address of the kernel's `_start` symbol.
+    - **Initial stack pointer**: Physical address of the initial kernel stack.
+
+    The base `BootBoundaryContract` is embedded, so all existing proofs that
+    depend on it continue to work through the `.base` projection. -/
+structure ExtendedBootBoundaryContract extends BootBoundaryContract where
+  /-- Exception level at kernel entry. -/
+  entryLevel : ExceptionLevel
+  /-- Whether the MMU is identity-mapped at kernel entry. -/
+  mmuIdentityMapped : Bool
+  /-- Physical address of the device tree blob. -/
+  deviceTreeBase : SeLe4n.PAddr
+  /-- Physical address of the kernel entry point (`_start`). -/
+  kernelEntryPoint : SeLe4n.PAddr
+  /-- Physical address of the initial kernel stack top. -/
+  initialStackPointer : SeLe4n.PAddr
+
 end SeLe4n.Kernel.Architecture

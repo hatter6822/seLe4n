@@ -135,4 +135,94 @@ theorem default_registerFile_sp_zero :
 theorem default_timer_zero :
     (default : MachineState).timer = 0 := rfl
 
+-- ============================================================================
+-- H3 preparation: MachineConfig and MemoryRegion (platform-binding readiness)
+-- ============================================================================
+
+/-- H3-prep: Classification of physical memory region kinds.
+
+Used by platform bindings to declare the hardware memory map. Kernel-level
+proofs remain total over `Memory = PAddr → UInt8`; the `MemoryKind` annotation
+enables platform-specific access checks and MMU permission assignments. -/
+inductive MemoryKind where
+  | ram
+  | device
+  | reserved
+  deriving Repr, DecidableEq
+
+/-- H3-prep: A contiguous physical memory region with a declared kind.
+
+Platforms declare their memory map as a list of `MemoryRegion` entries. The
+abstract kernel does not enforce these bounds directly — enforcement happens
+at the `RuntimeBoundaryContract.memoryAccessAllowed` predicate. This type
+provides the vocabulary for platform bindings to express address constraints
+that the contract can reference. -/
+structure MemoryRegion where
+  base : PAddr
+  size : Nat
+  kind : MemoryKind
+  deriving Repr, DecidableEq
+
+namespace MemoryRegion
+
+/-- The end address (exclusive) of a memory region. -/
+@[inline] def endAddr (r : MemoryRegion) : Nat := r.base.toNat + r.size
+
+/-- Check whether a physical address falls within this region. -/
+@[inline] def contains (r : MemoryRegion) (addr : PAddr) : Bool :=
+  r.base.toNat ≤ addr.toNat && addr.toNat < r.endAddr
+
+/-- Two regions overlap if their address ranges intersect. -/
+def overlaps (r₁ r₂ : MemoryRegion) : Bool :=
+  r₁.base.toNat < r₂.endAddr && r₂.base.toNat < r₁.endAddr
+
+theorem contains_iff (r : MemoryRegion) (addr : PAddr) :
+    r.contains addr = true ↔ r.base.toNat ≤ addr.toNat ∧ addr.toNat < r.endAddr := by
+  simp [contains, endAddr]
+
+end MemoryRegion
+
+/-- H3-prep: Platform-declared machine configuration parameters.
+
+Each platform binding provides a `MachineConfig` that declares the hardware's
+architectural constants. These are used by platform-specific contracts and
+adapters, not by the abstract kernel transitions (which remain `Nat`-based
+for proof convenience).
+
+**Register/address widths:** Expressed in bits. The abstract model uses
+unbounded `Nat` for all values; widths are advisory constraints that platform
+contracts can check against.
+
+**Page size:** Standard memory management unit page size in bytes.
+
+**Max ASID:** Upper bound on the number of address-space identifiers. The
+abstract model places no bound; this enables platform contracts to validate
+ASID allocation stays within hardware limits. -/
+structure MachineConfig where
+  /-- Register width in bits (e.g., 64 for ARM64). -/
+  registerWidth : Nat
+  /-- Virtual address width in bits (e.g., 48 for ARMv8). -/
+  virtualAddressWidth : Nat
+  /-- Physical address width in bits (e.g., 52 for ARMv8). -/
+  physicalAddressWidth : Nat
+  /-- Standard page size in bytes (e.g., 4096). -/
+  pageSize : Nat
+  /-- Maximum number of address-space identifiers (e.g., 65536 for 16-bit ASID). -/
+  maxASID : Nat
+  /-- Platform memory map: declared physical memory regions. -/
+  memoryMap : List MemoryRegion
+  deriving Repr
+
+namespace MachineConfig
+
+/-- Total RAM capacity: sum of sizes of all RAM-kind regions. -/
+def totalRAM (cfg : MachineConfig) : Nat :=
+  cfg.memoryMap.filter (·.kind == .ram) |>.map (·.size) |>.foldl (· + ·) 0
+
+/-- Check whether a physical address falls within any declared region. -/
+def addressInMap (cfg : MachineConfig) (addr : PAddr) : Bool :=
+  cfg.memoryMap.any (·.contains addr)
+
+end MachineConfig
+
 end SeLe4n
