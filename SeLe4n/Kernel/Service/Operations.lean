@@ -96,18 +96,23 @@ only constrains the number of distinct nodes visited. -/
 def serviceBfsFuel (st : SystemState) : Nat :=
   st.objectIndex.length + 256
 
-/-- Bounded BFS reachability check in the service dependency graph.
+/-- Bounded graph traversal reachability check in the service dependency graph.
 
 Returns `true` if there exists a path of dependency edges from `src` to
 `target`. Uses `fuel` as a bound on the number of distinct nodes expanded
 (set via `serviceBfsFuel`).
 
-H-08 (WS-E3): On fuel exhaustion the BFS returns `true` (conservatively
+H-08 (WS-E3): On fuel exhaustion the traversal returns `true` (conservatively
 assumes a path may exist). This is sound for cycle-detection callers: a
 false positive rejects a valid edge registration, while a false negative
 would silently allow a cycle — the safe default is to assume reachability.
 
-The BFS correctly handles:
+WS-G8/F-P08: Visited set migrated from `List ServiceId` (O(n) membership)
+to `Std.HashSet ServiceId` (O(1) membership). Frontier ordering changed
+from BFS (append) to DFS (prepend) — cycle detection is order-independent.
+Total complexity reduced from O(n²) to O(n+e).
+
+The traversal correctly handles:
 - empty graphs (no services → no path),
 - self-reachability (src = target → true immediately),
 - disconnected components (frontier exhaustion → false),
@@ -115,22 +120,25 @@ The BFS correctly handles:
 - fuel exhaustion → true (conservative soundness). -/
 def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
-  go [src] [] fuel
+  go [src] {} fuel
 where
-  go (frontier visited : List ServiceId) : Nat → Bool
+  go (frontier : List ServiceId) (visited : Std.HashSet ServiceId) : Nat → Bool
   | 0 => true  -- H-08/WS-E3: fuel exhausted — conservatively assume path exists
   | fuel + 1 =>
       match frontier with
       | [] => false  -- frontier empty: no path exists
       | node :: rest =>
           if node = target then true
-          else if node ∈ visited then go rest visited (fuel + 1)
+          else if visited.contains node then go rest visited (fuel + 1)
           else
             let deps := match lookupService st node with
               | some svc => svc.dependencies
               | none => []
-            let newFrontier := rest ++ deps.filter (· ∉ visited)
-            go newFrontier (node :: visited) fuel
+            -- WS-G8: DFS ordering (prepend) instead of BFS (append);
+            -- cycle detection is order-independent, and prepend is O(|deps|)
+            -- instead of O(|rest|) for append.
+            let newFrontier := deps.filter (fun d => !visited.contains d) ++ rest
+            go newFrontier (visited.insert node) fuel
 
 /-- Register a dependency edge from service `svcId` to service `depId`.
 

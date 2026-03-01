@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.12` |
+| Version | `0.12.13` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 16,485 across 34 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G7 completed |
+| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G8 completed |
 
 ## Milestone history
 
@@ -38,6 +38,7 @@ Completed:
 5. **WS-G5**: ~~CNode slot HashMap~~ **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability`; `HashMap.fold` for `cspaceRevoke` `revokedRefs`
 6. **WS-G6**: ~~VSpace mapping HashMap~~ **COMPLETED** (v0.12.11) — `Std.HashMap VAddr PAddr`; `noVirtualOverlap` trivially true; closes F-P05
 7. **WS-G7**: ~~IPC Queue Completion & Notification~~ **COMPLETED** (v0.12.12) — Legacy endpoint ops deprecated; `notificationWait` O(1) TCB check + O(1) prepend; `endpointSendDualChecked` enforcement; closes F-P04, F-P11
+8. **WS-G8**: ~~Graph Traversal Optimization~~ **COMPLETED** (v0.12.13) — `serviceHasPathTo` O(n+e) DFS with `Std.HashSet`; CDT `childMap` O(1) HashMap index; `descendantsOf` O(N+E); closes F-P08, F-P14
 
 Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
 

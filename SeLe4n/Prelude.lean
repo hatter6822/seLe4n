@@ -651,6 +651,42 @@ theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
     {a : α} : (∅ : Std.HashSet α).contains a = false :=
   Std.DHashMap.contains_empty
 
+/-- WS-G8: Bridge lemma — `HashSet.contains` after `insert` characterization.
+`Std.HashSet.contains_insert` gives `(s.insert a).contains b = (a == b || s.contains b)`. -/
+theorem HashSet_contains_insert_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (s : Std.HashSet α) (a b : α) :
+    (s.insert a).contains b = true ↔ b = a ∨ s.contains b = true := by
+  rw [Std.HashSet.contains_insert]
+  simp only [Bool.or_eq_true]
+  constructor
+  · rintro (h | h)
+    · left; exact (eq_of_beq h).symm
+    · right; exact h
+  · rintro (rfl | h)
+    · left; simp
+    · right; exact h
+
+/-- WS-G8: Bridge lemma — negative `HashSet.contains` after `insert`. -/
+theorem HashSet_not_contains_insert {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (s : Std.HashSet α) (a b : α) :
+    (s.insert a).contains b = false ↔ b ≠ a ∧ s.contains b = false := by
+  rw [Std.HashSet.contains_insert]
+  simp only [Bool.or_eq_false_iff]
+  constructor
+  · rintro ⟨hab, hc⟩
+    exact ⟨fun heq => by subst heq; simp at hab, hc⟩
+  · rintro ⟨hne, hc⟩
+    refine ⟨?_, hc⟩
+    cases h : (a == b)
+    · rfl
+    · exact absurd ((eq_of_beq h).symm) hne
+
+/-- WS-G8: `HashSet.insert` self-membership. -/
+theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (s : Std.HashSet α) (a : α) :
+    (s.insert a).contains a = true := by
+  rw [Std.HashSet.contains_insert]; simp
+
 -- ============================================================================
 -- H-06/WS-E3: Sentinel identity theorems
 -- ============================================================================
