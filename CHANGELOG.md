@@ -1,3 +1,12 @@
+## [0.12.4] - 2026-03-01
+
+### Audit hardening: F1-A silent data loss fix and O-3 allocSize validation
+
+- **F1-A fix (IPC):** `endpointReceiveDual` now propagates `storeTcbPendingMessage` errors instead of silently succeeding when the receiver TCB doesn't exist, preventing a data loss path where the sender's message is cleared but never delivered.
+- **O-3 fix (Untyped memory):** `retypeFromUntyped` validates `allocSize >= objectTypeAllocSize` for the target object type before attempting allocation. New error variant `untypedAllocSizeTooSmall`, error theorem `retypeFromUntyped_error_allocSizeTooSmall`, negative test F2-NEG-06, trace anchor F2-08.
+- **Proof updates:** 3 IPC invariant proofs simplified (error branch now contradiction). Decomposition theorem `retypeFromUntyped_ok_decompose` extended with allocSize bound conjunct. Downstream invariant proofs updated.
+- **Testing:** 80 trace expectations (was 68), 6 WS-F2 negative tests (was 5), 4 new Tier-3 surface anchors.
+
 ## [0.12.3] - 2026-02-28
 
 ### WS-F2: Untyped Memory Model (completed)
