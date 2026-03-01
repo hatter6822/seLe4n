@@ -20,7 +20,11 @@
 </p>
 <p align="center">
   Created thoughtfully with the help of:
+</p>
+<p align="center">
   claude :robot: :heart: :robot: codex  
+</p>
+<p align="center">
   <strong>TREAT THIS KERNEL ACCORDINGLY</strong>
 </p>
 
