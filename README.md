@@ -19,7 +19,8 @@
   <strong>Raspberry Pi 5</strong>.
   Created thoughtfully with the help of:
   claude :robot: :heart: :robot: codex
-  **TREAT THIS KERNEL ACCORDINGLY**
+  
+  <h4>TREAT THIS KERNEL ACCORDINGLY</h4>
 </p>
 
 ---
