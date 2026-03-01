@@ -68,6 +68,14 @@ Badge routing chain (H-03):
 - End-to-end: `badge_notification_routing_consistent`
 - Merge property: `badge_merge_idempotent`
 
+CDT structural invariants (WS-G8):
+
+- `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,
+- `empty_childMapConsistent` — empty CDT satisfies `childMapConsistent`,
+- `addEdge_childMapConsistent` — `addEdge` preserves `childMapConsistent`,
+- `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
+- `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
+
 ## 4. IPC invariants (M3)
 
 Module structure:

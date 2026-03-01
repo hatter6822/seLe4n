@@ -373,11 +373,11 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 - `serviceEdge_storeServiceState_ne` — edge at non-updated service
 - `serviceEdge_post_insert` — edge characterization after insertion
 
-### BFS soundness (Layer 2)
-- `serviceHasPathTo_true_implies_reachable` — BFS true → declarative path
-- `serviceHasPathTo_go_invariant` — BFS loop invariant
+### Graph traversal soundness (Layer 2)
+- `serviceHasPathTo_true_implies_reachable` — traversal true → declarative path
+- `serviceHasPathTo_go_invariant` — traversal loop invariant
 - `serviceBfsFuel_sufficient` — fuel adequacy
-- `serviceHasPathTo_false_implies_not_reachable` — BFS false → no path
+- `serviceHasPathTo_false_implies_not_reachable` — traversal false → no path
 
 ### Edge insertion (Layer 3)
 - `serviceEdge_post_cases` — post-state edge decomposition
@@ -386,8 +386,8 @@ theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvaria
 - `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
 
 ### Final closure (Layer 4)
-- `serviceDependencyAcyclic_implies_acyclicDecl` — BFS → declarative equivalence
-- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → BFS equivalence
+- `serviceDependencyAcyclic_implies_acyclicDecl` — traversal → declarative equivalence
+- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → traversal equivalence
 -/
 
 -- ============================================================================
@@ -518,7 +518,7 @@ theorem serviceEdge_post_insert {st : SystemState} {svcId depId : ServiceId}
       · exact h
 
 -- ============================================================================
--- Layer 2: BFS completeness bridge (TPI-D07-BRIDGE)
+-- Layer 2: Graph traversal completeness bridge (TPI-D07-BRIDGE)
 -- ============================================================================
 
 -- ---- M2A: Dependency-list helper and edge bridge ----
@@ -604,8 +604,8 @@ private theorem bfs_boundary_lemma {st : SystemState} {tgt : ServiceId}
 
 -- ---- Helpers: Universe, filter length, reachability ----
 
-/-- A "BFS universe" is a Nodup node set that contains all registered services
-    and is closed under dependencies. -/
+/-- A "traversal universe" is a Nodup node set that contains all registered
+    services and is closed under dependencies. -/
 private def bfsUniverse (st : SystemState) (ns : List ServiceId) : Prop :=
   ns.Nodup ∧
   (∀ sid, lookupService st sid ≠ none → sid ∈ ns) ∧
@@ -702,9 +702,7 @@ private theorem go_expand_eq {st : SystemState} {tgt nd : ServiceId}
     serviceHasPathTo.go st tgt
       ((lookupDeps st nd).filter (fun d => !(vis.contains d)) ++ rest)
       (vis.insert nd) f := by
-  simp only [serviceHasPathTo.go, hNeq, ite_false]
-  simp only [Bool.eq_false_iff] at hNV
-  simp only [hNV]
+  simp only [serviceHasPathTo.go, hNeq, ite_false, hNV]
   unfold lookupDeps; rfl
 
 -- ---- CP1: Core graph traversal completeness ----
@@ -985,18 +983,18 @@ theorem serviceRestart_error_from_start_phase
   exact ⟨stStopped, hStop, hErr⟩
 
 -- ============================================================================
--- H-08/WS-E3: BFS soundness in Service/Invariant context
+-- H-08/WS-E3: Graph traversal soundness in Service/Invariant context
 -- ============================================================================
 
-/-- H-08/WS-E3: BFS conservatively reports a path when fuel is exhausted.
-Under the zero-fuel base case the BFS returns `true`, preventing any
+/-- H-08/WS-E3: Traversal conservatively reports a path when fuel is exhausted.
+Under the zero-fuel base case the traversal returns `true`, preventing any
 dependency registration when the fuel budget is insufficient. -/
 theorem serviceHasPathTo_fuel_zero (st : SystemState) (src target : ServiceId) :
     serviceHasPathTo st src target 0 = true := by
   simp [serviceHasPathTo, serviceHasPathTo.go]
 
-/-- H-08/WS-E3 adequacy: when BFS returns `false`, there genuinely is no
-nontrivial path from `a` to `b`. This is the soundness direction —
+/-- H-08/WS-E3 adequacy: when the traversal returns `false`, there genuinely is
+no nontrivial path from `a` to `b`. This is the soundness direction —
 the contrapositive of `bfs_complete_for_nontrivialPath`. -/
 theorem bfs_false_implies_no_nontrivialPath
     {st : SystemState} {a b : ServiceId}

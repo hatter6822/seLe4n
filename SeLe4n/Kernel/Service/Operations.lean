@@ -86,13 +86,16 @@ def serviceRestart
 -- F-07: Service dependency registration with cycle detection (WS-D4)
 -- ============================================================================
 
-/-- Fuel bound for bounded BFS reachability in the service dependency graph.
+/-- Fuel bound for bounded graph reachability in the service dependency graph.
 
 The `objectIndex` provides a finite list of known object IDs, which gives
 a lower bound on meaningful graph nodes. We add a generous constant to
 account for service IDs that may not have corresponding kernel objects.
-The BFS does not consume fuel for already-visited nodes, so this bound
-only constrains the number of distinct nodes visited. -/
+The traversal does not consume fuel for already-visited nodes, so this bound
+only constrains the number of distinct nodes visited.
+
+Note: the function retains its `Bfs` name for API stability; the underlying
+algorithm was migrated to DFS with HashSet visited set in WS-G8. -/
 def serviceBfsFuel (st : SystemState) : Nat :=
   st.objectIndex.length + 256
 
@@ -276,7 +279,7 @@ theorem serviceRestart_ok_implies_staged_steps
       · simpa [hStop] using hStep
 
 -- ============================================================================
--- H-08/WS-E3: BFS fuel adequacy and soundness
+-- H-08/WS-E3: Graph traversal fuel adequacy and soundness
 -- ============================================================================
 
 /-- H-08/WS-E3: Fuel exhaustion always returns `true` (conservative safe answer).
@@ -289,7 +292,7 @@ theorem serviceHasPathTo_fuel_zero_is_true
   simp [serviceHasPathTo, serviceHasPathTo.go]
 
 /-- H-08/WS-E3: When `serviceHasPathTo` returns `false`, it was NOT due to fuel
-exhaustion. Since fuel=0 returns `true`, a `false` result means the BFS
+exhaustion. Since fuel=0 returns `true`, a `false` result means the traversal
 completed exploration and genuinely found no path — the frontier was fully
 depleted. This provides the soundness bridge: `false` is reliable evidence
 of unreachability within the explored frontier. -/
@@ -301,8 +304,8 @@ theorem serviceHasPathTo_false_implies_not_fuel_exhaustion
   subst hFuel
   simp [serviceHasPathTo, serviceHasPathTo.go] at hFalse
 
-/-- H-08/WS-E3: The BFS fuel bound is always at least as large as the number
-of known kernel objects. Since the BFS only expands unvisited nodes and skips
+/-- H-08/WS-E3: The traversal fuel bound is always at least as large as the number
+of known kernel objects. Since the DFS only expands unvisited nodes and skips
 already-visited ones without consuming fuel, this ensures that any path
 traversing only registered object-backed services is fully explored before
 fuel runs out. -/
