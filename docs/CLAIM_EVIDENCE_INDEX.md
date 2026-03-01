@@ -34,7 +34,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | **Substantive preservation** | Proves that a *successful* operation preserves an invariant over *changed* state. | High |
 | **Error-case preservation** | Proves that a *failed* operation preserves an invariant by returning unchanged state. Trivially true. | Low (technically correct but not security evidence) |
 | **Compositional preservation** | Derives post-state invariant from pre-state through operation-specific transfer lemmas (`cspaceSlotUnique_of_storeObject_*`, `CNode.insert_slotsUnique`, etc.). (WS-E2 H-01 resolved: all preservation proofs refactored to this pattern.) | High |
-| **Structural invariant** | Proves a genuine structural property requiring a witness (e.g., `capabilityInvariantBundle_of_slotUnique` requires `CNode.slotsUnique` evidence). (WS-E2 C-01 resolved: former tautological proofs reformulated.) | High |
+| **Structural invariant** | Proves a genuine structural property requiring a witness (e.g., `capabilityInvariantBundle_of_slotUnique` requires `CNode.slotsUnique` evidence). (WS-E2 C-01 resolved: former tautological proofs reformulated. WS-G5: `slotsUnique` now trivially true — HashMap key uniqueness is structural.) | High |
 | **End-to-end chain** | Proves a multi-step semantic property across subsystem boundaries (e.g., `badge_notification_routing_consistent` — badge propagation from mint through notification signal/wait). (WS-E2 H-03 resolved.) | High |
 | **Non-interference** | Proves that a high-domain operation preserves low-equivalence for unrelated observers. | Critical for security assurance |
 
@@ -42,7 +42,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 
 | Finding | Prior category | Resolution |
 |---|---|---|
-| C-01 (Tautological proofs) | Tautological (assurance: None) | Reformulated to **Structural invariant**: `cspaceSlotUnique` now encodes CNode slot-index uniqueness via `CNode.slotsUnique`; `cspaceLookupSound` proves lookup completeness; bridge theorem `cspaceLookupSound_of_cspaceSlotUnique` connects them; `capabilityInvariantBundle_of_slotUnique` replaces tautological `capabilityInvariantBundle_holds`. |
+| C-01 (Tautological proofs) | Tautological (assurance: None) | Reformulated to **Structural invariant**: `cspaceSlotUnique` now encodes CNode slot-index uniqueness via `CNode.slotsUnique`; `cspaceLookupSound` proves lookup completeness; bridge theorem `cspaceLookupSound_of_cspaceSlotUnique` connects them; `capabilityInvariantBundle_of_slotUnique` replaces tautological `capabilityInvariantBundle_holds`. (WS-G5: `slotsUnique` trivially true with `Std.HashMap` key uniqueness.) |
 | H-01 (Non-compositional proofs) | Non-compositional preservation (assurance: Medium) | Refactored to **Compositional preservation**: all preservation proofs derive post-state from pre-state via transfer lemmas. CNode operations use `CNode.insert_slotsUnique`, `CNode.remove_slotsUnique`, `CNode.revokeTargetLocal_slotsUnique`. |
 | H-03 (Badge safety gap) | Gap (no theorem) | Closed with **End-to-end chain**: `mintDerivedCap_badge_propagated` -> `cspaceMint_child_badge_preserved` -> `notificationSignal_badge_stored_fresh` -> `notificationWait_recovers_pending_badge` -> `badge_notification_routing_consistent`; plus `badge_merge_idempotent`. |
 

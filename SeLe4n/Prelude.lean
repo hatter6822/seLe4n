@@ -590,6 +590,62 @@ theorem HashMap_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
 theorem HashMap_get?_eq_getElem? {α β : Type} [BEq α] [Hashable α]
     (m : Std.HashMap α β) (k : α) : m.get? k = m[k]? := rfl
 
+/-- WS-G5: Bridge lemma for `HashMap.filter` key preservation.
+When the filter predicate `f` is guaranteed to return `true` for key `k`
+(and any BEq-equivalent key), `filter` does not remove `k`'s entry.
+
+This bridges over the dependent `Option.pfilter` that `Std.HashMap.getElem?_filter`
+produces, which is difficult to work with directly due to the membership proof
+in `getKey`. -/
+theorem HashMap_filter_preserves_key
+    {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    (m : Std.HashMap α β) (f : α → β → Bool) (k : α)
+    (hTrue : ∀ (k' : α) (v : β), (k' == k) = true → f k' v = true) :
+    (m.filter f)[k]? = m[k]? := by
+  simp only [Std.HashMap.getElem?_filter]
+  suffices h : ∀ (o : Option β) (p : (a : β) → o = some a → Bool),
+      (∀ a (h : o = some a), p a h = true) → o.pfilter p = o by
+    apply h
+    intro a ha
+    have hMem : k ∈ m := Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [ha])
+    exact hTrue _ _ (Std.HashMap.getKey_beq hMem)
+  intro o p hp
+  cases o with
+  | none => rfl
+  | some v => simp [hp]
+
+/-- WS-G5: Lookup-level filter idempotency for HashMap.
+For a predicate that ignores the key (depends only on the value),
+double-filtering is lookup-equivalent to single-filtering.
+
+This avoids the need for structural `HashMap.filter_filter` (which is
+unavailable in Lean 4.28.0's Std library due to `AssocList.filter`
+internal bucket-ordering differences). -/
+theorem HashMap_filter_filter_getElem?
+    {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    (m : Std.HashMap α β) (f : α → β → Bool) (k : α) :
+    ((m.filter f).filter f)[k]? = (m.filter f)[k]? := by
+  by_cases hMem : k ∈ m.filter f
+  · -- k is in m.filter f; the value there already satisfies f,
+    -- so the second filter preserves the same entry.
+    have ⟨_, hF⟩ := Std.HashMap.mem_filter.mp hMem
+    have hMemFF : k ∈ (m.filter f).filter f := by
+      rw [Std.HashMap.mem_filter]
+      refine ⟨hMem, ?_⟩
+      rw [Std.HashMap.getKey_filter]
+      rw [Std.HashMap.getElem_filter]
+      exact hF
+    have h1 := Std.HashMap.getElem?_eq_some_getElem hMemFF
+    have h2 := Std.HashMap.getElem?_eq_some_getElem hMem
+    have h3 : ((m.filter f).filter f)[k] = (m.filter f)[k] :=
+      Std.HashMap.getElem_filter
+    rw [h1, h2, h3]
+  · -- k ∉ m.filter f ⇒ k ∉ (m.filter f).filter f ⇒ both sides are none
+    have hNotMemFF : k ∉ (m.filter f).filter f :=
+      fun h => hMem (Std.HashMap.mem_of_mem_filter h)
+    rw [Std.HashMap.getElem?_eq_none hNotMemFF,
+        Std.HashMap.getElem?_eq_none hMem]
+
 /-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/
 theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
     {a : α} : (∅ : Std.HashSet α).contains a = false :=

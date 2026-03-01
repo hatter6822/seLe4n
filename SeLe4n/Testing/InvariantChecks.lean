@@ -91,7 +91,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.foldr (fun (slot, cap) inner =>
+        cn.slots.toList.foldr (fun (slot, cap) inner =>
           let ok := match cap.target with
             | .object targetId => (st.objects[targetId]?).isSome
             | .cnodeSlot cnId _ => (st.objects[cnId]?).isSome
@@ -107,7 +107,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.foldr (fun (slot, cap) inner =>
+        cn.slots.toList.foldr (fun (slot, cap) inner =>
           let ok := match cap.badge with
             | some _ => !cap.rights.isEmpty
             | none => true

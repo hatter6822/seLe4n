@@ -52,7 +52,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - capability rights/targets,
   - TCB structure + IPC state + intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`),
   - endpoint protocol fields,
-  - CNode slot store and local revoke helper,
+  - CNode `Std.HashMap Slot Capability` slot store and local revoke helper (WS-G5),
   - `KernelObject` discriminated union.
 
 - `SeLe4n/Model/State.lean`

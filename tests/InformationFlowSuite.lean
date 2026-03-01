@@ -115,14 +115,14 @@ private def runInformationFlowChecks : IO Unit := do
 
   -- Verify the two states ARE actually different (so this isn't a tautological comparison)
   expect "altState differs from sampleState (secret object changed)"
-    (sampleState.objects[(2 : SeLe4n.ObjId)]? ≠ altState.objects[(2 : SeLe4n.ObjId)]?)
+    (!(sampleState.objects[(2 : SeLe4n.ObjId)]? == altState.objects[(2 : SeLe4n.ObjId)]?))
 
   expect "altState differs from sampleState (current thread changed)"
     (sampleState.scheduler.current ≠ altState.scheduler.current)
 
   -- Verify public projections of distinct states are equal (non-trivial low-equivalence)
   expect "distinct states: public object projection matches for public observer"
-    (publicProjectionSample.objects 1 = publicProjectionAlt.objects 1)
+    (publicProjectionSample.objects 1 == publicProjectionAlt.objects 1)
 
   expect "distinct states: secret objects both hidden for public observer"
     ((publicProjectionSample.objects 2).isNone && (publicProjectionAlt.objects 2).isNone)
@@ -141,7 +141,7 @@ private def runInformationFlowChecks : IO Unit := do
   let knownOids : List SeLe4n.ObjId := [1, 2]
   let knownSids : List ServiceId := [1, 2]
   let objectsMatch := knownOids.all (fun oid =>
-    publicProjectionSample.objects oid = publicProjectionAlt.objects oid)
+    publicProjectionSample.objects oid == publicProjectionAlt.objects oid)
   let servicesMatch := knownSids.all (fun sid =>
     publicProjectionSample.services sid = publicProjectionAlt.services sid)
   let fullLowEq := objectsMatch
@@ -258,8 +258,8 @@ private def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject 100 (.cnode { guard := 0, radix := 8, slots := [(0, { target := .object 200, rights := [.read, .write], badge := none })] })
-      |>.withObject 101 (.cnode { guard := 0, radix := 8, slots := [] })
+      |>.withObject 100 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList [(0, { target := .object 200, rights := [.read, .write], badge := none })]) })
+      |>.withObject 101 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList []) })
       |>.build)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -499,11 +499,11 @@ private def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
       |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject 50 (.cnode { guard := 0, radix := 8, slots :=
-          [ (0, { target := .object 1, rights := [.read], badge := none })      -- cap to public obj
-          , (1, { target := .object 2, rights := [.read, .write], badge := none })  -- cap to secret obj
-          , (2, { target := .replyCap 1, rights := [.read], badge := none })    -- reply cap to public thread
-          ] })
+      |>.withObject 50 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList
+          [ (0, { target := .object 1, rights := [.read], badge := none })
+          , (1, { target := .object 2, rights := [.read, .write], badge := none })
+          , (2, { target := .replyCap 1, rights := [.read], badge := none })
+          ]) })
       |>.build)
 
   -- oid 50 (the CNode) is public so both observers can see it
@@ -521,16 +521,16 @@ private def runInformationFlowChecks : IO Unit := do
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
     expect "WS-F3/F-22: public observer sees cap slot targeting public object"
-      (cn.slots.any (fun (s, _) => s = 0))
+      (cn.slots.contains 0)
     -- Slot 1 (target: secret obj 2) should be filtered out
     expect "WS-F3/F-22: public observer cannot see cap slot targeting secret object"
-      (!cn.slots.any (fun (s, _) => s = 1))
+      (!cn.slots.contains 1)
     -- Slot 2 (target: replyCap to public thread 1) should be present
     expect "WS-F3/F-22: public observer sees reply cap to public thread"
-      (cn.slots.any (fun (s, _) => s = 2))
+      (cn.slots.contains 2)
     -- Verify slot count
     expect "WS-F3/F-22: public observer sees exactly 2 of 3 slots"
-      (cn.slots.length = 2)
+      (cn.slots.size = 2)
   | _ =>
     throw <| IO.userError "WS-F3/F-22: public observer should see CNode object at oid 50"
 
@@ -538,7 +538,7 @@ private def runInformationFlowChecks : IO Unit := do
   match cnodeAdminProj.objects 50 with
   | some (.cnode cn) =>
     expect "WS-F3/F-22: admin observer sees all 3 cap slots"
-      (cn.slots.length = 3)
+      (cn.slots.size = 3)
   | _ =>
     throw <| IO.userError "WS-F3/F-22: admin observer should see CNode object at oid 50"
 
@@ -555,21 +555,21 @@ private def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
       |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject 60 (.cnode { guard := 0, radix := 8, slots :=
-          [ (0, { target := .cnodeSlot 1 0, rights := [.read], badge := none })    -- cnodeSlot to public CNode
-          , (1, { target := .cnodeSlot 2 0, rights := [.read], badge := none })    -- cnodeSlot to secret CNode
-          ] })
+      |>.withObject 60 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList
+          [ (0, { target := .cnodeSlot 1 0, rights := [.read], badge := none })
+          , (1, { target := .cnodeSlot 2 0, rights := [.read], badge := none })
+          ]) })
       |>.build)
 
   let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
   match cnodeSlotProj.objects 60 with
   | some (.cnode cn) =>
     expect "WS-F3/F-22: cnodeSlot target to public CNode is visible"
-      (cn.slots.any (fun (s, _) => s = 0))
+      (cn.slots.contains 0)
     expect "WS-F3/F-22: cnodeSlot target to secret CNode is filtered"
-      (!cn.slots.any (fun (s, _) => s = 1))
+      (!cn.slots.contains 1)
     expect "WS-F3/F-22: cnodeSlot variant: exactly 1 of 2 slots visible"
-      (cn.slots.length = 1)
+      (cn.slots.size = 1)
   | _ =>
     throw <| IO.userError "WS-F3/F-22: CNode at oid 60 should be visible for cnodeSlot test"
 

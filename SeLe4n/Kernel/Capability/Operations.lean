@@ -285,9 +285,12 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         match st'.objects[addr.cnode]? with
         | some (.cnode cn) =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
+            -- WS-G5: HashMap.fold collects revoked SlotRefs in a single O(m) pass.
             let revokedRefs : List SlotRef :=
-              (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
-                (fun entry => { cnode := addr.cnode, slot := entry.fst })
+              cn.slots.fold (fun acc s c =>
+                if s != addr.slot && c.target == parent.target then
+                  { cnode := addr.cnode, slot := s } :: acc
+                else acc) []
             match storeObject addr.cnode (.cnode cn') st' with
             | .error e => .error e
             | .ok (_, st'') => clearCapabilityRefs revokedRefs st''

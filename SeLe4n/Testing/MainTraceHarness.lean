@@ -49,7 +49,7 @@ def bootstrapState : SystemState :=
     |>.withObject 10 (.cnode {
       guard := 0
       radix := 0
-      slots :=
+      slots := Std.HashMap.ofList
         [ (0, {
             target := .object 1
             rights := [.read, .write, .grant]
@@ -220,7 +220,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   let deepRadixCNode : CNode := {
     guard := 3
     radix := 12
-    slots := [
+    slots := Std.HashMap.ofList [
       (1, { target := .object 1, rights := [.read], badge := none }),
       (1024, { target := .object 12, rights := [.read, .write], badge := none })
     ]
@@ -715,7 +715,7 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
           watermark := 0, children := [], isDevice := true })
         |>.insert 10 (.cnode {
           guard := 0, radix := 0,
-          slots := [
+          slots := Std.HashMap.ofList [
             (0, { target := .object 1, rights := [.read, .write, .grant], badge := none }),
             (5, { target := .object 12, rights := [.read, .write], badge := none }),
             (6, { target := .object demoUntyped, rights := [.read, .write], badge := none }),
@@ -783,7 +783,7 @@ private def buildParameterizedTopology
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
       (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := [.read, .write], badge := none })
-  let cnodeObj : KernelObject := .cnode { guard := 0, radix := radix, slots := cnodeSlots }
+  let cnodeObj : KernelObject := .cnode { guard := 0, radix := radix, slots := Std.HashMap.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩

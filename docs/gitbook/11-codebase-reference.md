@@ -24,7 +24,8 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
 - `SeLe4n/Model/Object.lean`
-  - object-level representations (including TCB intrusive queue link fields).
+  - object-level representations (including TCB intrusive queue link fields);
+    CNode `Std.HashMap Slot Capability` slot store with O(1) operations (WS-G5).
 - `SeLe4n/Model/State.lean`
   - global system-state composition and update helpers (including
     `SchedulerState.runQueue : RunQueue` priority-bucketed run queue, WS-G4).

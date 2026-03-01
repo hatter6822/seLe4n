@@ -166,11 +166,16 @@ structure Notification where
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
+/-- WS-G5/F-P03: CNode capability space node.
+`slots` is backed by `Std.HashMap Slot Capability` for O(1) amortized
+lookup, insert, and delete — replacing the O(m) list-based representation.
+HashMap key uniqueness is structural, eliminating the need for an explicit
+`slotsUnique` invariant. -/
 structure CNode where
   guard : Nat
   radix : Nat
-  slots : List (SeLe4n.Slot × Capability)
-  deriving Repr, DecidableEq
+  slots : Std.HashMap SeLe4n.Slot Capability
+  deriving Repr
 
 /-- WS-F2: Child allocation record within an untyped memory region.
 Each child records the object identity, its byte offset within the parent
@@ -627,7 +632,7 @@ inductive ResolveError where
   deriving Repr, DecidableEq
 
 def empty : CNode :=
-  { guard := 0, radix := 0, slots := [] }
+  { guard := 0, radix := 0, slots := {} }
 
 /-- Number of addressable slots represented by this CNode radix width. -/
 def slotCount (node : CNode) : Nat :=
@@ -652,31 +657,44 @@ def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (depth : Nat) : Except Resol
     else
       .error .guardMismatch
 
+/-- WS-G5/F-P03: O(1) amortized slot lookup via `HashMap.find?`. -/
 def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
-  (node.slots.find? (fun entry => entry.fst = slot)).map Prod.snd
+  node.slots[slot]?
 
+/-- WS-G5/F-P03: O(1) amortized slot insert via `HashMap.insert`.
+HashMap key uniqueness ensures the old entry for `slot` is replaced. -/
 def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
-  let slots := (slot, cap) :: node.slots.filter (fun entry => entry.fst ≠ slot)
-  { node with slots }
+  { node with slots := node.slots.insert slot cap }
 
+/-- WS-G5/F-P03: O(1) amortized slot removal via `HashMap.erase`. -/
 def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
-  { node with slots := node.slots.filter (fun entry => entry.fst ≠ slot) }
+  { node with slots := node.slots.erase slot }
 
 /-- Local revoke helper for the current modeled slice.
 
 This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that
 name the same capability target. Full cross-CNode revoke requires an explicit derivation graph and
-is intentionally deferred. -/
+is intentionally deferred.
+
+WS-G5/F-P03: Inherently O(m) (filter-by-target), uses `HashMap.filter`. -/
 def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=
   {
     node with
-      slots := node.slots.filter (fun entry => entry.fst = sourceSlot ∨ entry.snd.target ≠ target)
+      slots := node.slots.filter fun s c => s == sourceSlot || !(c.target == target)
   }
 
+/-- WS-G5: After removing a slot, lookup returns `none`.
+Maps directly to `HashMap.getElem?_erase_self`. -/
 theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot) :
     (node.remove slot).lookup slot = none := by
-  unfold remove lookup
-  simp
+  simp [remove, lookup]
+
+/-- WS-G5: If `lookup` returns `some`, the slot key is present in the HashMap.
+Replaces the list-era membership theorem with HashMap semantics. -/
+theorem lookup_mem_of_some (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : node.lookup slot = some cap) : slot ∈ node.slots := by
+  simp [lookup] at h
+  exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [h])
 
 theorem resolveSlot_depthMismatch
     (node : CNode)
@@ -687,116 +705,104 @@ theorem resolveSlot_depthMismatch
   unfold resolveSlot
   simp [hDepth]
 
+/-- WS-G5: Source slot is preserved by `revokeTargetLocal` because the filter
+predicate always includes entries where `s = sourceSlot`. -/
 theorem lookup_revokeTargetLocal_source_eq_lookup
     (node : CNode)
     (sourceSlot : SeLe4n.Slot)
     (target : CapTarget) :
     (node.revokeTargetLocal sourceSlot target).lookup sourceSlot = node.lookup sourceSlot := by
-  unfold revokeTargetLocal lookup
-  have hPred :
-      (fun entry : SeLe4n.Slot × Capability =>
-        (decide (entry.fst = sourceSlot) || !decide (entry.snd.target = target)) &&
-          decide (entry.fst = sourceSlot)) =
-      (fun entry : SeLe4n.Slot × Capability => decide (entry.fst = sourceSlot)) := by
-    funext entry
-    by_cases hEq : entry.fst = sourceSlot <;> simp [hEq]
-  simp [hPred]
+  simp only [revokeTargetLocal, lookup]
+  exact SeLe4n.HashMap_filter_preserves_key node.slots _ sourceSlot
+    (fun k' _ hBeq => by simp [eq_of_beq hBeq])
 
 -- ============================================================================
--- WS-E2 / C-01: Non-trivial CNode slot-index uniqueness infrastructure
+-- WS-G5/WS-E2/C-01: CNode slot-index uniqueness infrastructure
 -- ============================================================================
 
-/-- CNode slot-index uniqueness: each slot index maps to at most one capability
-in the slot list. This is a non-trivial structural invariant maintained by CNode
-operations (insert removes duplicates before prepending, remove/revoke only filter).
+/-- CNode slot-index uniqueness: each slot index maps to at most one capability.
 
-WS-E2 / C-01 remediation: replaces the prior tautological definition that merely
-proved a pure function returns the same output for the same input. -/
-def slotsUnique (cn : CNode) : Prop :=
-  ∀ slot cap₁ cap₂,
-    (slot, cap₁) ∈ cn.slots →
-    (slot, cap₂) ∈ cn.slots →
-    cap₁ = cap₂
+WS-G5: With HashMap-backed slots, key uniqueness is structural — HashMap enforces
+that each key maps to exactly one value. This invariant is trivially satisfied
+for all CNodes by construction. The definition is retained for backward
+compatibility with the invariant surface (Capability/Invariant.lean). -/
+def slotsUnique (_cn : CNode) : Prop :=
+  True
 
-theorem empty_slotsUnique : CNode.empty.slotsUnique := by
-  intro slot cap₁ cap₂ h₁
-  simp [CNode.empty] at h₁
+/-- WS-G5: Trivially true — HashMap enforces key uniqueness by construction. -/
+theorem empty_slotsUnique : CNode.empty.slotsUnique :=
+  trivial
 
-/-- `insert` preserves slot-key uniqueness: the old entry for `slot` is filtered out
-before prepending the new one, so no duplicate keys are introduced. -/
+/-- WS-G5: Trivially true — HashMap.insert enforces key uniqueness by construction. -/
 theorem insert_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (hUniq : cn.slotsUnique) :
-    (cn.insert slot cap).slotsUnique := by
-  intro s c₁ c₂ h₁ h₂
-  simp only [insert, List.mem_cons, List.mem_filter] at h₁ h₂
-  rcases h₁ with h₁eq | ⟨h₁m, h₁p⟩
-  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h₁eq
-    rcases h₂ with h₂eq | ⟨h₂m, h₂p⟩
-    · exact (Prod.mk.inj h₂eq).2.symm
-    · exfalso; simp at h₂p
-  · rcases h₂ with h₂eq | ⟨h₂m, h₂p⟩
-    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h₂eq
-      exfalso; simp at h₁p
-    · exact hUniq s c₁ c₂ h₁m h₂m
+    (_hUniq : cn.slotsUnique) :
+    (cn.insert slot cap).slotsUnique :=
+  trivial
 
-/-- `remove` preserves slot-key uniqueness: filtering can only reduce the slot list. -/
+/-- WS-G5: Trivially true — HashMap.erase preserves key uniqueness. -/
 theorem remove_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot)
-    (hUniq : cn.slotsUnique) :
-    (cn.remove slot).slotsUnique := by
-  intro s c₁ c₂ h₁ h₂
-  simp only [remove, List.mem_filter] at h₁ h₂
-  exact hUniq s c₁ c₂ h₁.1 h₂.1
+    (_hUniq : cn.slotsUnique) :
+    (cn.remove slot).slotsUnique :=
+  trivial
 
-/-- `revokeTargetLocal` preserves slot-key uniqueness: it is a filter operation
-that can only reduce the slot list. -/
+/-- WS-G5: Trivially true — HashMap.filter preserves key uniqueness. -/
 theorem revokeTargetLocal_slotsUnique
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (hUniq : cn.slotsUnique) :
-    (cn.revokeTargetLocal sourceSlot target).slotsUnique := by
-  intro s c₁ c₂ h₁ h₂
-  simp only [revokeTargetLocal, List.mem_filter] at h₁ h₂
-  exact hUniq s c₁ c₂ h₁.1 h₂.1
+    (_hUniq : cn.slotsUnique) :
+    (cn.revokeTargetLocal sourceSlot target).slotsUnique :=
+  trivial
 
-/-- Soundness of `lookup`: a successful lookup witnesses membership in the slot list. -/
-theorem lookup_mem_of_some
-    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (hLookup : cn.lookup slot = some cap) :
-    (slot, cap) ∈ cn.slots := by
-  unfold lookup at hLookup
-  cases hFind : cn.slots.find? (fun entry => decide (entry.fst = slot)) with
-  | none => simp [hFind] at hLookup
-  | some entry =>
-    simp [hFind] at hLookup
-    have hSlot : entry.fst = slot := by simpa using List.find?_some hFind
-    have hMem := List.mem_of_find?_eq_some hFind
-    rw [← hLookup, ← hSlot]
-    exact (Prod.eta entry) ▸ hMem
+/-- WS-G5: If a slot is present in the HashMap, lookup returns its value.
+With HashMap-backed slots, `slotsUnique` is trivially satisfied (structural
+invariant of HashMap), so the uniqueness hypothesis is unused. -/
+theorem mem_lookup_of_slotsUnique (node : CNode) (_hUniq : node.slotsUnique)
+    (slot : SeLe4n.Slot) (hMem : slot ∈ node.slots) :
+    node.lookup slot = some node.slots[slot] :=
+  Std.HashMap.getElem?_eq_some_getElem hMem
 
-/-- Completeness of `lookup` under slot-index uniqueness: every slot list member is
-retrievable. This is non-trivial — it fails when duplicate slot indices exist,
-because `find?` returns only the first match. (WS-E2 / C-01) -/
-theorem mem_lookup_of_slotsUnique
-    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (hUniq : cn.slotsUnique)
-    (hMem : (slot, cap) ∈ cn.slots) :
-    cn.lookup slot = some cap := by
-  unfold lookup
-  cases hFind : cn.slots.find? (fun entry => decide (entry.fst = slot)) with
-  | none =>
-    exfalso
-    have := (List.find?_eq_none.mp hFind) ⟨slot, cap⟩ hMem
-    simp at this
-  | some entry =>
-    simp
-    have hSlot : entry.fst = slot := by simpa using List.find?_some hFind
-    have hEntryMem := List.mem_of_find?_eq_some hFind
-    have hRewrite : (slot, entry.snd) ∈ cn.slots := by
-      rw [← hSlot]; exact (Prod.eta entry) ▸ hEntryMem
-    exact hUniq slot entry.snd cap hRewrite hMem
+/-- WS-G5: Lookup roundtrip after insert — inserting at `slot` makes lookup
+return the inserted capability. Maps directly to `HashMap.getElem?_insert_self`. -/
+theorem lookup_insert_eq
+    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).lookup slot = some cap := by
+  simp [insert, lookup]
+
+/-- WS-G5: Insert at a different slot does not affect lookup.
+Maps directly to `HashMap.getElem?_insert`. -/
+theorem lookup_insert_ne
+    (cn : CNode) (slot slot' : SeLe4n.Slot) (cap : Capability)
+    (hNe : slot ≠ slot') :
+    (cn.insert slot cap).lookup slot' = cn.lookup slot' := by
+  simp only [insert, lookup]
+  rw [Std.HashMap.getElem?_insert]
+  have : ¬((slot == slot') = true) := by
+    intro h; exact hNe (eq_of_beq h)
+  simp [this]
+
+/-- WS-G5: Remove at a different slot does not affect lookup.
+Maps directly to `HashMap.getElem?_erase`. -/
+theorem lookup_remove_ne
+    (cn : CNode) (slot slot' : SeLe4n.Slot)
+    (hNe : slot ≠ slot') :
+    (cn.remove slot).lookup slot' = cn.lookup slot' := by
+  simp only [remove, lookup]
+  rw [Std.HashMap.getElem?_erase]
+  have : ¬((slot == slot') = true) := by
+    intro h; exact hNe (eq_of_beq h)
+  simp [this]
 
 end CNode
+
+/-- WS-G5: `BEq` instance for `CNode` using entry-wise comparison on the
+HashMap-backed slots. Two CNodes are equal iff their guard, radix, and all
+slot entries agree (same size + every key maps to the same value). -/
+instance : BEq CNode where
+  beq a b :=
+    a.guard == b.guard && a.radix == b.radix &&
+    a.slots.size == b.slots.size &&
+    a.slots.toList.all (fun (k, v) => b.slots[k]? == some v)
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model
@@ -928,6 +934,10 @@ def projectObservedEdges
 
 end CapDerivationTree
 
+/-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is now
+`Std.HashMap Slot Capability` which does not have a `DecidableEq` instance.
+`Repr` is retained for trace output. `BEq` is provided manually via entry-wise
+HashMap comparison for runtime test assertions. -/
 inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)
@@ -935,7 +945,19 @@ inductive KernelObject where
   | cnode (c : CNode)
   | vspaceRoot (v : VSpaceRoot)
   | untyped (u : UntypedObject)
-  deriving Repr, DecidableEq
+  deriving Repr
+
+/-- WS-G5: Manual `BEq` for `KernelObject` dispatching to constituent `BEq`
+instances. CNode comparison uses the entry-wise `BEq CNode` instance above. -/
+instance : BEq KernelObject where
+  beq
+    | .tcb a, .tcb b => a == b
+    | .endpoint a, .endpoint b => a == b
+    | .notification a, .notification b => a == b
+    | .cnode a, .cnode b => a == b
+    | .vspaceRoot a, .vspaceRoot b => a == b
+    | .untyped a, .untyped b => a == b
+    | _, _ => false
 
 inductive KernelObjectType where
   | tcb
