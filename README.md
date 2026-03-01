@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  A novel microkernel written in Lean 4 with machine-checked proofs, improving on
+  A microkernel written in Lean 4 with machine-checked proofs, inspired by the
   <a href="https://sel4.systems">seL4</a> architecture. First hardware target:
   <strong>Raspberry Pi 5</strong>.
 </p>
