@@ -432,6 +432,7 @@ Operation-level theorems:
 
 - `retypeFromUntyped_ok_decompose` — success decomposition into existential witnesses,
 - `retypeFromUntyped_error_typeMismatch` — non-untyped source returns type mismatch,
+- `retypeFromUntyped_error_allocSizeTooSmall` — undersized allocation rejected,
 - `retypeFromUntyped_error_regionExhausted` — oversized allocation fails,
 - `retypeFromUntyped_preserves_lifecycleMetadataConsistent` — metadata preservation,
 - `retypeFromUntyped_preserves_lifecycleInvariantBundle` — full bundle preservation,
@@ -441,7 +442,7 @@ Operation-level theorems:
 
 IPC operations now carry `IpcMessage` payloads (registers, caps, badge):
 
-- `endpointSendDual` / `endpointReceiveDual` — dual-queue IPC with message staging in `TCB.pendingMessage`,
+- `endpointSendDual` / `endpointReceiveDual` — dual-queue IPC with message staging in `TCB.pendingMessage` (errors propagated, never silently swallowed),
 - `endpointCall` — send + block-for-reply compound with message,
 - `endpointReply` / `endpointReplyRecv` — reply + receive compound with message.
 

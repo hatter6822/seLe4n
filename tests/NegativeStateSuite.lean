@@ -48,6 +48,15 @@ private def baseState : SystemState :=
         })
       ]
     })
+    |>.withObject 6 (.tcb {
+      tid := 6
+      priority := 43
+      domain := 0
+      cspaceRoot := cnodeId
+      vspaceRoot := 20
+      ipcBuffer := 2048
+      ipcState := .ready
+    })
     |>.withObject 7 (.tcb {
       tid := 7
       priority := 42
@@ -81,17 +90,18 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType wrongTypeId .endpoint
     |>.withLifecycleObjectType guardedCnodeId .cnode
+    |>.withLifecycleObjectType 6 .tcb
     |>.withLifecycleObjectType 7 .tcb
     |>.withLifecycleObjectType 8 .tcb
     |>.withLifecycleObjectType 9 .tcb
     |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType 20 .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
-    |>.withRunnable [7, 8, 9]
+    |>.withRunnable [6, 7, 8, 9]
     |>.build)
 
 private def invariantObjectIds : List SeLe4n.ObjId :=
-  [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 7, 8, 9]
+  [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, 20, 6, 7, 8, 9]
 
 private def sendEmptyEndpointState : SystemState :=
   { baseState with
@@ -892,6 +902,12 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped { cnode := 999, slot := 0 } f2UntypedObjId f2UntypedChildId
       (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
     .objectNotFound
+
+  -- F2-NEG-06: allocSize too small for object type (endpoint needs 64, giving 1)
+  expectError "F2 retype allocSize too small"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 1 f2UntypedState)
+    .untypedAllocSizeTooSmall
 
   IO.println "WS-F2 untyped memory negative checks passed"
 

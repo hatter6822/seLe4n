@@ -36,7 +36,7 @@ Key gaps identified by audits (addressed by WS-F):
 |------|------|-------------------|
 | **0** | Hygiene | No sorry/axiom, SHA-pinning, fixture isolation, shellcheck |
 | **1** | Build | Full `lake build` compilation (64 jobs) |
-| **2** | Trace + Negative | Fixture-diff trace (68 expectations) + corruption testing |
+| **2** | Trace + Negative | Fixture-diff trace (80 expectations) + corruption testing |
 | **3** | Invariant surface | 300+ symbol/doc anchor presence checks |
 | **4** | Nightly | Determinism replay + stochastic probe |
 

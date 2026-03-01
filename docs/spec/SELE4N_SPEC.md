@@ -129,7 +129,7 @@ Authoritative detail:
 ### 5.1 Critical — IPC and Memory Model
 
 - **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems (TPI-D08/D09); 7 trace anchors with actual data transfer (CRIT-01, CRIT-05, F-10, F-11)
-- **WS-F2:** ~~Untyped memory model~~ **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors (CRIT-04)
+- **WS-F2:** ~~Untyped memory model~~ **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation with allocSize validation, device restriction, 10+ theorems, 6 negative tests, 8 trace anchors (CRIT-04)
 
 ### 5.2 High — Proof Coverage and Security
 

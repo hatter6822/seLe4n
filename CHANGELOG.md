@@ -4,10 +4,10 @@
 
 - **UntypedObject data model:** `UntypedObject` structure with `regionBase`, `regionSize`, `watermark`, `children`, and `isDevice` fields. `UntypedChild` tracks carved child objects with `objId`, `offset`, and `size`. Added `.untyped` variant to `KernelObject` and `KernelObjectType`.
 - **retypeFromUntyped operation:** carves a typed kernel object from an untyped memory region, advancing the watermark. Enforces authority via `cspaceLookupSlot`, region bounds via `canAllocate`, and device restrictions (device untypeds can only produce more untypeds).
-- **Error variants:** `untypedRegionExhausted`, `untypedTypeMismatch`, `untypedDeviceRestriction` added to `KernelError`.
+- **Error variants:** `untypedRegionExhausted`, `untypedTypeMismatch`, `untypedDeviceRestriction`, `untypedAllocSizeTooSmall` added to `KernelError`.
 - **Proof surface:** `allocate_some_iff` decomposition lemma, `allocate_watermark_advance/monotone`, `allocate_preserves_watermarkValid/region`, `reset_wellFormed`, `empty_wellFormed`, `canAllocate_implies_fits`. Decomposition theorem `retypeFromUntyped_ok_decompose` and error characterization theorems.
 - **Invariants:** `untypedWatermarkInvariant`, `untypedChildrenBoundsInvariant`, `untypedChildrenNonOverlapInvariant`, `untypedChildrenUniqueIdsInvariant`, `untypedMemoryInvariant`. Default-state theorem. Preservation through `retypeFromUntyped` for both `lifecycleMetadataConsistent` and `lifecycleInvariantBundle`.
-- **Testing:** 7 trace scenarios (F2-01..F2-07), 5 negative-state tests, runtime watermark invariant checks, 23 Tier-3 surface anchors.
+- **Testing:** 8 trace scenarios (F2-01..F2-08), 6 negative-state tests, runtime watermark invariant checks, 27 Tier-3 surface anchors.
 - Closes CRIT-04 (No Untyped memory).
 
 ### WS-F3: Information-Flow Completeness (completed)
@@ -22,7 +22,7 @@
 
 ### WS-F1: IPC message transfer and dual-queue verification (completed)
 
-- **IPC message transfer:** `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, and `endpointReplyRecv` now carry `IpcMessage` payloads (registers, caps, badge) through send/receive rendezvous. Messages are staged in sender's `TCB.pendingMessage` while blocked and transferred to the receiver's TCB on handshake/dequeue.
+- **IPC message transfer:** `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, and `endpointReplyRecv` now carry `IpcMessage` payloads (registers, caps, badge) through send/receive rendezvous. Messages are staged in sender's `TCB.pendingMessage` while blocked and transferred to the receiver's TCB on handshake/dequeue. `endpointReceiveDual` propagates message delivery errors (receiver TCB not found) instead of silently swallowing them, preventing silent data loss.
 - **TCB.pendingMessage field:** new `Option IpcMessage` field on TCB for staging message content during IPC transfers.
 - **Combined state+message helpers:** `storeTcbIpcStateAndMessage` and `storeTcbPendingMessage` update IPC state and pending message in a single `storeObject` call, simplifying both implementation and proof tracking.
 - **Invariant preservation theorems:** 14 new theorems for dual-queue and compound operations (`endpointSendDual`, `endpointReceiveDual`, `endpointQueueRemoveDual`, `endpointCall`, `endpointReplyRecv`, `endpointReply`) preserving `ipcInvariant`, `schedulerInvariantBundle`, and `ipcSchedulerContractPredicates`. Tracked as TPI-D08/TPI-D09 for mechanical unfolding through private multi-step `storeObject` chains.

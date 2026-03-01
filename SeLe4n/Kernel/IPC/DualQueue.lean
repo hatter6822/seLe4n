@@ -1574,11 +1574,12 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' sender
-                    -- WS-F1: Deliver message to receiver's TCB (best-effort —
-                    -- receiver TCB existence is not a precondition for dequeue)
+                    -- WS-F1: Deliver message to receiver's TCB.
+                    -- Error propagation: if the receiver TCB cannot be found,
+                    -- the operation fails rather than silently dropping the message.
                     match storeTcbPendingMessage st''' receiver senderMsg with
                     | .ok st4 => .ok (sender, st4)
-                    | .error _ => .ok (sender, st''')
+                    | .error e => .error e
         | none =>
             match endpointQueueEnqueue endpointId true receiver st with
             | .error e => .error e

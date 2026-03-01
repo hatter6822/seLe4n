@@ -2142,17 +2142,14 @@ theorem endpointReceiveDual_preserves_ipcInvariant
               rcases hInv2 with ⟨hEp, hNtfn⟩
               exact ⟨fun oid ep' h => hEp oid ep' (by rwa [ensureRunnable_preserves_objects] at h),
                      fun oid ntfn h => hNtfn oid ntfn (by rwa [ensureRunnable_preserves_objects] at h)⟩
-            -- storeTcbPendingMessage preserves or errors (error path = ensureRunnable)
+            -- storeTcbPendingMessage: error propagated, success preserves invariant
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
               simp only [Except.ok.injEq, Prod.mk.injEq]
               intro ⟨_, hEq⟩; subst hEq
               exact storeTcbPendingMessage_preserves_ipcInvariant _ _ receiver _ hInv3 hPend
-            | error _ =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact hInv3
+            | error _ => simp
       | none =>
         -- Blocking: Enqueue → storeTcbIpcState → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId true receiver st with
@@ -2227,7 +2224,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st2 pair.1 .ready none hMsg hTargetTcb
                     rwa [← hNeTid] at h
                   · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st2 pair.1 .ready none x.toObjId hNeTid hMsg) ▸ hTcb1⟩
-            -- storeTcbPendingMessage preserves scheduler invariant (scheduler unchanged, TCBs preserved)
+            -- storeTcbPendingMessage: error propagated, success preserves scheduler invariant
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
@@ -2249,10 +2246,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                   have ⟨tcbX, hTcbX⟩ : ∃ tcb', (ensureRunnable st2 pair.1).objects x.toObjId = some (.tcb tcb') := by
                     simp [currentThreadValid, hCurr] at hCTV'; exact hCTV'
                   exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcbX hPend hTcbX
-            | error _ =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact hInvER
+            | error _ => simp
       | none =>
         -- Blocking: Enqueue → storeTcbIpcState → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId true receiver st with
@@ -2365,7 +2359,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                   rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                   · exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.scheduler.runnable by rwa [← hSchedMsg])
                   · exact absurd hEq hNeTid
-            -- storeTcbPendingMessage preserves contracts (scheduler and ipcStates unchanged)
+            -- storeTcbPendingMessage: error propagated, success preserves contracts
             revert hStep
             cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
             | ok st4 =>
@@ -2375,10 +2369,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
               exact contracts_of_same_scheduler_ipcState _ st4 hSchedPend
                 (fun tid tcb'' hTcb'' => storeTcbPendingMessage_tcb_ipcState_backward _ st4 receiver _ tid tcb'' hPend hTcb'')
                 hContractER
-            | error _ =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact hContractER
+            | error _ => simp
       | none =>
         -- Blocking: Enqueue → storeTcbIpcState(.blockedOnReceive) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId true receiver st with

@@ -137,7 +137,7 @@ full execution plan.
 
 **Critical priorities:**
 1. ~~Integrate `IpcMessage` into IPC operations~~ **(WS-F1 COMPLETED)** — messages now flow through all dual-queue and compound IPC operations with 14 preservation theorems and 7 trace anchors
-2. ~~Add Untyped memory model with watermark tracking~~ **(WS-F2 COMPLETED)** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation, 10+ theorems, 5 negative tests, 9 trace anchors
+2. ~~Add Untyped memory model with watermark tracking~~ **(WS-F2 COMPLETED)** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation with allocSize validation, 10+ theorems, 6 negative tests, 8 trace anchors
 3. ~~Extend `ObservableState` projection to cover all security-relevant fields~~ **(WS-F3 COMPLETED)** — 3 new fields (activeDomain, irqHandlers, objectIndex), CNode slot filtering via `projectKernelObject`, 15 NI theorems (12 standalone + 3 enforcement-NI bridges), enforcement-NI bridge for `serviceRestartChecked`
 4. Close proof gaps for `timerTick`, `cspaceMutate`, notification ops (WS-F4)
 
