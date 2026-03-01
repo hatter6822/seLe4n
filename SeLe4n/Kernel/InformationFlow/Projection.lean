@@ -18,12 +18,24 @@ structure IfObserver where
   clearance : SecurityLabel
   deriving Repr, DecidableEq
 
-/-- Projection result used by IF-M1 low-equivalence statements. -/
+/-- Projection result used by IF-M1 low-equivalence statements.
+
+WS-F3/CRIT-02: Extended with `activeDomain`, `irqHandlers`, and `objectIndex`
+to cover all security-relevant scheduler, interrupt, and identity fields. -/
 structure ObservableState where
   objects : SeLe4n.ObjId → Option KernelObject
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
   services : ServiceId → Option ServiceStatus
+  /-- WS-F3: Active scheduling domain — visible to all observers (scheduling
+      transparency: all threads need to know which domain is active). -/
+  activeDomain : SeLe4n.DomainId
+  /-- WS-F3: IRQ handler mappings filtered to only those targeting observable
+      notification objects. Prevents leaking high-domain IRQ routing. -/
+  irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
+  /-- WS-F3: Object index filtered to observable IDs. Prevents leaking the
+      existence of high-domain objects through the identity registry. -/
+  objectIndex : List SeLe4n.ObjId
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -46,12 +58,57 @@ def projectServiceStatus (ctx : LabelingContext) (observer : IfObserver) (st : S
     else
       none
 
-/-- Project object store to observer-visible subset. -/
+-- ============================================================================
+-- WS-F3/F-22: CNode slot filtering to prevent capability target leakage
+-- ============================================================================
+
+/-- WS-F3/F-22: Observability gate for capability targets. A capability target
+is observable iff the referenced entity is within the observer's clearance.
+This prevents CNode projections from leaking the identity of high-domain
+objects through capability slot contents. -/
+def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target : CapTarget) : Bool :=
+  match target with
+  | .object oid => objectObservable ctx observer oid
+  | .cnodeSlot cnode _ => objectObservable ctx observer cnode
+  | .replyCap tid => threadObservable ctx observer tid
+
+/-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
+For CNode objects, removes capability slots whose targets are not observable
+by the given observer. All other object types pass through unchanged. -/
+def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) : KernelObject :=
+  match obj with
+  | .cnode cn =>
+      .cnode { cn with slots := cn.slots.filter (fun (_, cap) =>
+        capTargetObservable ctx observer cap.target) }
+  | other => other
+
+/-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields the
+same result as filtering once. -/
+theorem projectKernelObject_idempotent
+    (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) :
+    projectKernelObject ctx observer (projectKernelObject ctx observer obj) =
+      projectKernelObject ctx observer obj := by
+  cases obj with
+  | cnode cn =>
+    simp only [projectKernelObject]
+    simp only [List.filter_filter, Bool.and_self]
+  | _ => rfl
+
+/-- WS-F3/F-22: `projectKernelObject` preserves object type. -/
+theorem projectKernelObject_objectType
+    (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) :
+    (projectKernelObject ctx observer obj).objectType = obj.objectType := by
+  cases obj <;> rfl
+
+/-- Project object store to observer-visible subset.
+
+WS-F3/F-22: Objects are now filtered through `projectKernelObject` to redact
+CNode slot contents that reference high-domain targets. -/
 def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     SeLe4n.ObjId → Option KernelObject :=
   fun oid =>
     if objectObservable ctx observer oid then
-      st.objects oid
+      (st.objects oid).map (projectKernelObject ctx observer)
     else
       none
 
@@ -67,13 +124,38 @@ def projectCurrent (ctx : LabelingContext) (observer : IfObserver) (st : SystemS
   | some tid => if threadObservable ctx observer tid then some tid else none
   | none => none
 
-/-- Canonical IF-M1 state projection helper used by theorem targets. -/
+/-- WS-F3: Project active scheduling domain (always visible — scheduling transparency). -/
+def projectActiveDomain (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
+    SeLe4n.DomainId :=
+  st.scheduler.activeDomain
+
+/-- WS-F3: Project IRQ handler mappings, filtering to only those whose target
+notification object is observable by the observer. -/
+def projectIrqHandlers (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    SeLe4n.Irq → Option SeLe4n.ObjId :=
+  fun irq =>
+    match st.irqHandlers irq with
+    | some oid => if objectObservable ctx observer oid then some oid else none
+    | none => none
+
+/-- WS-F3: Project object index, filtering to only observable object IDs. -/
+def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    List SeLe4n.ObjId :=
+  st.objectIndex.filter (objectObservable ctx observer)
+
+/-- Canonical IF-M1 state projection helper used by theorem targets.
+
+WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
+projections for complete security-relevant state coverage. -/
 def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   {
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
     services := projectServiceStatus ctx observer st
+    activeDomain := projectActiveDomain ctx observer st
+    irqHandlers := projectIrqHandlers ctx observer st
+    objectIndex := projectObjectIndex ctx observer st
   }
 
 /-- Two states are low-equivalent when their observer projections are equal. -/

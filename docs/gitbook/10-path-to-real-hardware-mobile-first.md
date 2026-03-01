@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Active** (WS-F) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | ~~WS-F2~~ (done), WS-F3 (info-flow) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | Planned | ~~WS-F2~~ (done), ~~WS-F3~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Active: closing proof gaps (WS-F)
@@ -61,7 +61,7 @@ Once WS-F closes the critical proof gaps:
 
 ## 5. What contributors can do now
 
-- Focus on WS-F workstreams (especially WS-F3, WS-F4 — WS-F1, WS-F2 complete).
+- Focus on WS-F workstreams (especially WS-F4 — WS-F1, WS-F2, WS-F3 complete).
 - Keep transitions architecture-neutral unless explicitly marked otherwise.
 - Document hardware assumptions explicitly in adapter interfaces.
 - Add executable evidence for boundary success/failure behavior.

@@ -519,4 +519,34 @@ run_check "TRACE" rg -n 'F2-06.*retype-from-untyped device-restriction' tests/fi
 run_check "INVARIANT" rg -n 'untypedWatermarkChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
 
+# WS-F3 information-flow completeness anchors must remain present.
+# Projection extensions (CRIT-02):
+run_check "INVARIANT" rg -n '^def projectKernelObject' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def capTargetObservable' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectActiveDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectIrqHandlers' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectObjectIndex' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
+# CNode slot filtering safety theorems (F-22):
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType' SeLe4n/Kernel/InformationFlow/Projection.lean
+# NI theorems (CRIT-03/F-21):
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
+# Enforcement-NI bridge (F-20):
+run_check "INVARIANT" rg -n '^theorem endpointSendChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem serviceRestartChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
+# Composed NI framework (H-05):
+run_check "INVARIANT" rg -n '^inductive NonInterferenceStep' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kernel/InformationFlow/Invariant.lean
+# WS-F3 test suite coverage:
+run_check "TRACE" rg -n 'WS-F3.*activeDomain' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'WS-F3.*IRQ handler' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'WS-F3/F-22.*CNode' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'WS-F3.*serviceRestartChecked' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'WS-F3.*7-field low-equivalence' tests/InformationFlowSuite.lean
+
 finalize_report

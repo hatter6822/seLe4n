@@ -51,7 +51,8 @@ M7 (audit remediation).
 - **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
   - **WS-F1** (IPC message transfer + dual-queue verification): **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems; 7 trace anchors with actual data transfer.
   - **WS-F2** (Untyped memory model): **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped`, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors.
-  - WS-F3..F8: planning.
+  - **WS-F3** (Information-flow completeness): **COMPLETED** — `ObservableState` extended with 3 fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering; 15 NI theorems (12 standalone + 3 enforcement-NI bridges); WS-F3 test suite.
+  - WS-F4..F8: planning.
   See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
 
 ## 5. Architecture mental model

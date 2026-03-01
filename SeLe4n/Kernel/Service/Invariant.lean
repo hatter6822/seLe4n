@@ -971,4 +971,173 @@ theorem bfs_false_implies_no_nontrivialPath
   rw [hTrue] at hBfs
   cases hBfs
 
+-- ============================================================================
+-- WS-F3: Service operation frame lemmas for information-flow proofs
+-- ============================================================================
+
+/-- WS-F3: serviceStart preserves the object store. -/
+theorem serviceStart_preserves_objects
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    st'.objects = st.objects := by
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStart preserves the scheduler. -/
+theorem serviceStart_preserves_scheduler
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStart preserves IRQ handler mappings. -/
+theorem serviceStart_preserves_irqHandlers
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStart preserves the object index. -/
+theorem serviceStart_preserves_objectIndex
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    st'.objectIndex = st.objectIndex := by
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStart preserves lookup for other services. -/
+theorem serviceStart_preserves_lookupService_ne
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (s : ServiceId) (hNe : s ≠ sid)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    lookupService st' s = lookupService st s := by
+  unfold serviceStart at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep
+      simp [lookupService, hNe]
+
+/-- WS-F3: serviceStop preserves the object store. -/
+theorem serviceStop_preserves_objects
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    st'.objects = st.objects := by
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStop preserves the scheduler. -/
+theorem serviceStop_preserves_scheduler
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStop preserves IRQ handler mappings. -/
+theorem serviceStop_preserves_irqHandlers
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStop preserves the object index. -/
+theorem serviceStop_preserves_objectIndex
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    st'.objectIndex = st.objectIndex := by
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep; rfl
+
+/-- WS-F3: serviceStop preserves lookup for other services. -/
+theorem serviceStop_preserves_lookupService_ne
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (s : ServiceId) (hNe : s ≠ sid)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    lookupService st' s = lookupService st s := by
+  unfold serviceStop at hStep
+  cases hLookup : lookupService st sid with
+  | none => simp [hLookup] at hStep
+  | some svc =>
+      simp [hLookup] at hStep
+      split at hStep <;> try (simp at hStep)
+      split at hStep <;> try (simp at hStep)
+      unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep
+      simp [lookupService, hNe]
+
+/-- WS-F3: serviceRestart decomposes into stop + start. -/
+theorem serviceRestart_decompose
+    (st st' : SystemState) (sid : ServiceId)
+    (policyStop policyStart : ServicePolicy)
+    (hStep : serviceRestart sid policyStop policyStart st = .ok ((), st')) :
+    ∃ mid, serviceStop sid policyStop st = .ok ((), mid) ∧
+           serviceStart sid policyStart mid = .ok ((), st') := by
+  unfold serviceRestart at hStep
+  cases hStop : serviceStop sid policyStop st with
+  | error e => simp [hStop] at hStep
+  | ok pair =>
+      simp only [hStop] at hStep
+      refine ⟨pair.2, ?_, hStep⟩
+      have : pair = ((), pair.2) := Prod.ext (Subsingleton.elim _ _) rfl
+      rw [this] at hStop
+
 end SeLe4n.Kernel

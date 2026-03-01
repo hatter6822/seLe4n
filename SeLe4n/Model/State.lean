@@ -316,6 +316,26 @@ theorem storeCapabilityRef_preserves_objects
   cases hStep
   rfl
 
+/-- WS-F3: storeCapabilityRef preserves IRQ handler mappings. -/
+theorem storeCapabilityRef_preserves_irqHandlers
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep; cases hStep; rfl
+
+/-- WS-F3: storeCapabilityRef preserves the object index. -/
+theorem storeCapabilityRef_preserves_objectIndex
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.objectIndex = st.objectIndex := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep; cases hStep; rfl
+
 theorem clearCapabilityRefsState_preserves_objects
     (refs : List SlotRef)
     (st : SystemState) :
@@ -379,6 +399,40 @@ theorem clearCapabilityRefsState_lookupService
     (sid : ServiceId) :
     lookupService (clearCapabilityRefsState refs st) sid = lookupService st sid := by
   simp [lookupService, clearCapabilityRefsState_preserves_services]
+
+/-- WS-F3: clearCapabilityRefsState preserves IRQ handler mappings. -/
+theorem clearCapabilityRefsState_preserves_irqHandlers
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).irqHandlers = st.irqHandlers := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simpa [clearCapabilityRefsState] using
+        ih {
+          st with
+            lifecycle := {
+              st.lifecycle with
+                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+            }
+        }
+
+/-- WS-F3: clearCapabilityRefsState preserves the object index. -/
+theorem clearCapabilityRefsState_preserves_objectIndex
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).objectIndex = st.objectIndex := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simpa [clearCapabilityRefsState] using
+        ih {
+          st with
+            lifecycle := {
+              st.lifecycle with
+                capabilityRefs := fun ref' => if ref' = ref then none else st.lifecycle.capabilityRefs ref'
+            }
+        }
 
 theorem storeCapabilityRef_lookup_eq
     (st st' : SystemState)

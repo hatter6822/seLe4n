@@ -282,10 +282,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-F (v0.12.2 audit remediation) — planning
+- **Active portfolio**: WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3 completed
 - **Active findings baseline**: `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`
 - **Planning backbone**: `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`
-- **Completed**: WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Completed**: WS-F1..F3 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

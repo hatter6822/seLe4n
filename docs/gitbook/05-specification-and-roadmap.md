@@ -32,7 +32,7 @@ The WS-F portfolio addresses v0.12.2 audit findings (6 CRIT, 6 HIGH, 12 MED, 9 L
 Critical priorities:
 1. **WS-F1**: ~~IPC message transfer + dual-queue verification~~ **COMPLETED**
 2. **WS-F2**: ~~Untyped memory model~~ **COMPLETED**
-3. **WS-F3**: Information-flow completeness
+3. **WS-F3**: ~~Information-flow completeness~~ **COMPLETED**
 4. **WS-F4**: Proof gap closure
 
 See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).

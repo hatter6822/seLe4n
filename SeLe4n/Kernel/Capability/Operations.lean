@@ -152,6 +152,32 @@ theorem cspaceInsertSlot_preserves_objects_ne
                   have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
                   rw [← hObjMid]; exact congrFun hObjRef oid
 
+/-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
+theorem cspaceInsertSlot_preserves_irqHandlers
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects addr.cnode with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | cnode cn =>
+          simp [hObj] at hStep
+          cases hLookup : cn.lookup addr.slot with
+          | some _ => simp [hLookup] at hStep
+          | none =>
+              simp [hLookup] at hStep
+              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+              | error e => simp [hStore] at hStep
+              | ok pair =>
+                  obtain ⟨_, stMid⟩ := pair
+                  simp [hStore] at hStep
+                  have hIrqMid := storeObject_irqHandlers_eq st stMid addr.cnode _ hStore
+                  have hIrqRef := storeCapabilityRef_preserves_irqHandlers stMid st' addr (some cap.target) hStep
+                  rw [hIrqRef, hIrqMid]
+
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
     (st : SystemState) (addr : CSpaceAddr) (cap existingCap : Capability)

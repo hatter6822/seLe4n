@@ -10,8 +10,9 @@ seLe4n already proves capability, scheduler, IPC, lifecycle, service, and
 architecture-boundary invariants. The v0.12.2 audits identified that information-flow
 coverage is at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
 
-WS-F3 addresses this gap. This roadmap defines the incremental path from current
-proofs (5 operations) to complete non-interference coverage (30+ operations).
+WS-F3 addresses this gap. This roadmap defined the incremental path from 5
+proofs to broader coverage. With WS-F3 completed, NI coverage now stands at
+12 standalone theorems + 3 enforcement-NI bridges = 15 total NI proofs.
 
 ## 2. Scope and assumptions
 
@@ -139,7 +140,7 @@ Delivered anchors (WS-E5 closeout):
 
 **H-05 — Composed bundle non-interference** (`Invariant.lean`):
 
-- `NonInterferenceStep` — inductive covering 5 operation families,
+- `NonInterferenceStep` — inductive covering 12 operation families (extended from 5 by WS-F3),
 - `composedNonInterference_step` — single-step bundle non-interference (IF-M4),
 - `NonInterferenceTrace` — multi-step trace inductive,
 - `composedNonInterference_trace` — trace-level bundle non-interference (IF-M4),
@@ -153,6 +154,46 @@ Delivered anchors (WS-E5 closeout):
 - `enforcementBoundary` — 17-entry canonical operation classification table,
 - denial-preserves-state theorems for all 3 checked operations,
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
+
+## WS-F3 closeout — Information-flow completeness ✅ completed
+
+**v0.12.2 audit context:** CRIT-02 (incomplete projection), CRIT-03 (NI covers
+5 of 30+), F-20 (enforcement-NI gap), F-21 (notificationSignal NI), F-22
+(CNode projection leak).
+
+Delivered (WS-F3 closeout):
+
+**CRIT-02 — ObservableState extension** (`Projection.lean`):
+
+- `activeDomain` — scheduling transparency, always visible to all observers,
+- `irqHandlers` — filtered by target notification object observability,
+- `objectIndex` — filtered by object observability,
+- all NI theorems extended to preserve the full 7-field projection.
+
+**F-22 — CNode slot filtering** (`Projection.lean`):
+
+- `capTargetObservable` — observability gate for `.object`, `.cnodeSlot`, `.replyCap` targets,
+- `projectKernelObject` — redacts high-domain capability slot contents from CNodes,
+- `projectKernelObject_idempotent` — safety: double-filtering is idempotent,
+- `projectKernelObject_objectType` — safety: filtering preserves object type.
+
+**CRIT-03 / F-21 — NI theorem expansion** (`Invariant.lean`):
+
+- 12 standalone `_preserves_lowEquivalent` theorems: `endpointSend`, `chooseThread`,
+  `cspaceMint`, `cspaceRevoke`, `lifecycleRetypeObject`, `notificationSignal`,
+  `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`,
+  `serviceRestart`, `storeObject`.
+- `NonInterferenceStep` inductive extended to 12 constructors.
+- Remaining operations (`schedule`, `handleYield`, `timerTick`, IPC receive/reply,
+  `cspaceDeleteSlot`, `cspaceCopy`, `cspaceMove`, VSpace, adapter) deferred to WS-F4.
+
+**F-20 — Enforcement-NI bridge** (`Invariant.lean`):
+
+- `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
+- `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
+- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+
+**Testing:** 39 WS-F3 tests in `InformationFlowSuite.lean`, 22 Tier-3 anchors.
 
 ## IF-M5 — Platform-facing integration readiness
 

@@ -40,7 +40,7 @@ For milestone-moving PRs:
 |-------|-------------|-------------|
 | **P0** | — | Publish WS-F backbone, update docs |
 | **P1** | WS-F1, WS-F2, WS-F4 | Critical IPC/memory + proof gaps |
-| **P2** | WS-F3 | Information-flow completeness |
+| **P2** | WS-F3 | Information-flow completeness (**Completed**) |
 | **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality |
 | **P4** | WS-F7, WS-F8 | Testing + cleanup |
 
