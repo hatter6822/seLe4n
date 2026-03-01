@@ -166,11 +166,23 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 | **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
 | **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
 | **H2** | Audit-driven proof deepening (close critical gaps) | Active (WS-F) |
-| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | Planned |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **H3-prep complete** |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
-The critical prerequisite for H3 is closing the WS-F proof gaps — particularly
-complete information-flow coverage (WS-F3). Untyped memory (WS-F2) and information-flow completeness (WS-F3) are now complete.
+**H3 preparation (structural):** The `Platform/` directory now provides the
+organizational foundation for hardware binding:
+
+- `PlatformBinding` typeclass (`SeLe4n/Platform/Contract.lean`)
+- `MachineConfig` and `MemoryRegion` types (`SeLe4n/Machine.lean`)
+- `VSpaceBackend` abstraction with `listVSpaceBackend` instance
+- `ExtendedBootBoundaryContract` with platform boot fields
+- Simulation platform (`Platform/Sim/`) for testing
+- RPi5 stubs (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,
+  ARM64 machine config, and platform-specific runtime contract
+
+The critical prerequisite for full H3 execution is closing the remaining WS-F
+proof gaps. Untyped memory (WS-F2) and information-flow completeness (WS-F3)
+are now complete.
 
 ---
 

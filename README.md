@@ -97,11 +97,13 @@ machine-checked invariant preservation proofs:
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │          Information Flow  (Policy, Projection, Enforcement)         │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Architecture  (VSpace, Adapter, Assumptions)                │
+│          Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions) │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  Model  (Object, State, CDT)                         │
 ├──────────────────────────────────────────────────────────────────────┤
-│                 Foundations  (Prelude, Machine)                      │
+│                 Foundations  (Prelude, Machine, MachineConfig)        │
+├──────────────────────────────────────────────────────────────────────┤
+│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,7 +113,7 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 | Module | Purpose |
 |--------|---------|
 | `SeLe4n/Prelude.lean` | Typed identifiers (`ThreadId`, `ObjId`, `CPtr`, etc.) + `KernelM` monad |
-| `SeLe4n/Machine.lean` | Register file, memory, timer — abstract machine primitives |
+| `SeLe4n/Machine.lean` | Register file, memory, timer, `MachineConfig`, `MemoryRegion` |
 | `SeLe4n/Model/Object.lean` | `TCB`, `Endpoint`, `Notification`, `CNode`, `VSpaceRoot`, CDT |
 | `SeLe4n/Model/State.lean` | `SystemState` with functional maps, lifecycle metadata, CDT slot↔node |
 | `SeLe4n/Kernel/Scheduler/*` | Priority + EDF scheduling, domain partitioning, timer tick |
@@ -121,9 +123,12 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 | `SeLe4n/Kernel/IPC/Invariant.lean` | IPC invariant preservation proofs |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation |
 | `SeLe4n/Kernel/Service/*` | Service graph, dependency tracking, policy enforcement *(extension)* |
-| `SeLe4n/Kernel/Architecture/*` | VSpace map/unmap/lookup, adapter contracts, boundary assumptions |
+| `SeLe4n/Kernel/Architecture/*` | VSpace map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
 | `SeLe4n/Kernel/InformationFlow/*` | N-domain labels, state projection, non-interference, enforcement |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface and invariant bundle aliases |
+| `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — formal interface for hardware targets |
+| `SeLe4n/Platform/Sim/*` | Simulation platform binding (permissive contracts for testing) |
+| `SeLe4n/Platform/RPi5/*` | Raspberry Pi 5 platform binding (BCM2712/ARM64 H3-prep stubs) |
 | `Main.lean` | Executable trace harness |
 | `tests/` | Negative-state suite, information-flow suite, trace sequence probe |
 
@@ -142,9 +147,12 @@ full execution plan.
 4. ~~Close proof gaps for `timerTick`, `cspaceMutate`, notification ops~~ **(WS-F4 COMPLETED)** — `timerTick` scheduler/kernel invariant preservation, `cspaceMutate`/`cspaceRevokeCdt`/`cspaceRevokeCdtStrict` capability invariant preservation, notification signal/wait ipcInvariant + schedulerInvariantBundle + ipcSchedulerContractPredicates preservation; 11 Tier-3 surface anchors
 
 **Path to Raspberry Pi 5:**
-The hardware target is Raspberry Pi 5 (ARM64). Once audit remediation closes the
-proof gaps, the next phase binds architecture-neutral semantics to platform-specific
-interfaces without invalidating core proofs. See
+The hardware target is Raspberry Pi 5 (ARM64). The `Platform/` directory now
+provides the structural foundation for hardware binding: a `PlatformBinding`
+typeclass, `MachineConfig`/`MemoryRegion` types, a `VSpaceBackend` abstraction,
+and concrete stubs for RPi5 (BCM2712 memory map, GIC-400 IRQ constants, ARM64
+runtime contract). Once remaining audit remediation closes, H3 will populate
+these stubs with hardware-validated contracts. See
 [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
 
 ## Completed workstreams (historical)
