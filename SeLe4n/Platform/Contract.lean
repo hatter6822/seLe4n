@@ -26,8 +26,9 @@ and test harnesses instantiate a concrete platform.
 ## Current instantiations
 
 - `SeLe4n.Platform.Sim.simPlatformBinding` — simulation target for trace
-  harness and test execution. Wraps the permissive fixtures from
-  `SeLe4n.Testing.RuntimeContractFixtures`.
+  harness and test execution. Defines permissive contracts parallel to
+  `SeLe4n.Testing.RuntimeContractFixtures` (functionally equivalent but
+  organized under the Platform namespace).
 - `SeLe4n.Platform.RPi5.rpi5PlatformBinding` — Raspberry Pi 5 (BCM2712/ARM64)
   stub for H3 hardware binding.
 -/

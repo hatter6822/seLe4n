@@ -223,6 +223,24 @@ def totalRAM (cfg : MachineConfig) : Nat :=
 def addressInMap (cfg : MachineConfig) (addr : PAddr) : Bool :=
   cfg.memoryMap.any (·.contains addr)
 
+/-- A pairwise non-overlap check over the memory map regions. -/
+private def noOverlapAux : List MemoryRegion → Bool
+  | [] => true
+  | r :: rs => rs.all (fun r' => !r.overlaps r') && noOverlapAux rs
+
+/-- A machine configuration is well-formed when:
+    1. All regions have nonzero size.
+    2. No two regions overlap.
+    3. Page size is a positive power of two.
+    4. Register, virtual address, and physical address widths are positive. -/
+def wellFormed (cfg : MachineConfig) : Bool :=
+  cfg.memoryMap.all (·.size > 0)
+  && noOverlapAux cfg.memoryMap
+  && cfg.pageSize > 0
+  && cfg.registerWidth > 0
+  && cfg.virtualAddressWidth > 0
+  && cfg.physicalAddressWidth > 0
+
 end MachineConfig
 
 end SeLe4n

@@ -52,17 +52,22 @@ def uart0Base : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFE201000
 
     Regions are listed from low to high address:
     1. RAM: 0x0000_0000 – 0xFC00_0000 (4032 MiB usable before peripherals)
-    2. Low peripherals: 0xFE00_0000 – 0xFF84_FFFF (legacy + GIC)
-    3. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet) -/
+    2. GPU/VideoCore: 0xFC00_0000 – 0xFE00_0000 (32 MiB reserved for GPU firmware)
+    3. Low peripherals: 0xFE00_0000 – 0xFF84_FFFF (legacy BCM2712 + GIC-400)
+    4. Reserved: 0xFF85_0000 – 0xFFFF_FFFF (above GIC, to 4 GB boundary)
+    5. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet) -/
 def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
   [ { base := SeLe4n.PAddr.ofNat 0x00000000
       size := 4032 * 1024 * 1024  -- 4032 MiB usable RAM
       kind := .ram }
+  , { base := SeLe4n.PAddr.ofNat 0xFC000000
+      size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
+      kind := .reserved }
   , { base := SeLe4n.PAddr.ofNat 0xFE000000
-      size := 0x01850000  -- ~24.3 MiB peripheral window
+      size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
       kind := .device }
   , { base := SeLe4n.PAddr.ofNat 0xFF850000
-      size := 0x007B0000  -- reserved region above GIC
+      size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
       kind := .reserved }
   ]
 

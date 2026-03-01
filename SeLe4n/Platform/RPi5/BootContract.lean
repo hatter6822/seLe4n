@@ -41,12 +41,17 @@ def rpi5BootContract : BootBoundaryContract :=
 /-- RPi5 interrupt contract: declares which IRQ lines the GIC-400 supports
     and assumes all supported lines have handler mappings.
 
-    In H3, `irqLineSupported` will check against the actual GIC-400 SPI
-    count and PPI assignments. `irqHandlerMapped` will verify that the
-    IRQ handler table has been populated during boot. -/
+    **Supported range:** INTIDs 0–223 (SGIs 0–15, PPIs 16–31, SPIs 32–223).
+    SGIs (software-generated interrupts) are included because the GIC-400
+    distributes them like any other interrupt; they don't need boot-time
+    handler mapping but are addressable.
+
+    In H3, `irqLineSupported` will be refined to distinguish SGI/PPI/SPI
+    ranges. `irqHandlerMapped` will verify that the IRQ handler table has
+    been populated during boot for PPIs and SPIs. -/
 def rpi5InterruptContract : InterruptBoundaryContract :=
   {
-    irqLineSupported := fun irq => irq.toNat < gicSpiCount + 32  -- SPIs + PPIs
+    irqLineSupported := fun irq => irq.toNat < gicSpiCount + 32  -- SGIs + PPIs + SPIs
     irqHandlerMapped := fun _ _ => True  -- placeholder: all mapped
   }
 

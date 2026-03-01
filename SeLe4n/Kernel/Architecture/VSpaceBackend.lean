@@ -22,17 +22,20 @@ strategy abstract:
 Each operation returns an `Option` to signal failure (conflict, not-found).
 The backend is responsible for maintaining its internal consistency.
 
-## Invariant obligations
+## Per-operation invariant obligations
 
 A backend must satisfy:
-1. **ASID uniqueness**: Two roots with the same ASID must be identical.
-2. **Non-overlap**: No two mappings within a root share the same virtual address.
-3. **Round-trip correctness**: `lookupPage` after `mapPage` returns the mapped
+1. **ASID preservation**: `mapPage` and `unmapPage` do not change the root's ASID.
+2. **Round-trip correctness**: `lookupPage` after `mapPage` returns the mapped
    physical address. `lookupPage` after `unmapPage` returns `none`.
+3. **Non-interference**: Map/unmap at one vaddr does not affect lookup at another.
 
-These obligations are expressed as propositions that a backend instantiation
-must prove. The current `ListVSpaceBackend` instance inherits these from
-the existing `VSpaceInvariant.lean` theorems.
+System-level invariants (e.g., cross-root ASID uniqueness, within-root
+no-virtual-overlap) are enforced by `SeLe4n/Kernel/Architecture/VSpace.lean`
+and `VSpaceInvariant.lean`, not by the backend itself.
+
+The current `ListVSpaceBackend` instance inherits all obligations from
+the existing `VSpaceRoot` lemmas in `SeLe4n/Model/Object.lean`.
 
 ## Status
 
