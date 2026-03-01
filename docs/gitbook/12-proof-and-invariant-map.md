@@ -353,14 +353,30 @@ Policy checks wired into kernel operations via `Enforcement.lean`:
 - `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting,
 - `serviceRestartChecked` — enforces `securityFlowsTo` before service restart.
 
-### Non-interference theorems (WS-D2 / F-05 complete)
+### Non-interference theorems (WS-D2 baseline + WS-F3 expansion)
 
 Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 
+WS-D2 baseline (5 theorems):
 - `chooseThread_preserves_lowEquivalent` — scheduler non-interference (TPI-D01),
+- `endpointSend_preserves_lowEquivalent` — IPC endpoint non-interference,
 - `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02),
 - `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
+
+WS-F3 additions (7 new theorems):
+- `notificationSignal_preserves_lowEquivalent` — notification signal NI (F-21),
+- `notificationWait_preserves_lowEquivalent` — notification wait NI (F-21),
+- `cspaceInsertSlot_preserves_lowEquivalent` — capability insert NI (CRIT-03),
+- `serviceStart_preserves_lowEquivalent` — service start NI (CRIT-03),
+- `serviceStop_preserves_lowEquivalent` — service stop NI (CRIT-03),
+- `serviceRestart_preserves_lowEquivalent` — service restart NI (CRIT-03),
+- `storeObject_at_unobservable_preserves_lowEquivalent` — generic infrastructure.
+
+WS-F3 enforcement-NI bridges (3 theorems):
+- `endpointSendChecked_NI` — bridges checked send to NI,
+- `cspaceMintChecked_NI` — bridges checked mint to NI,
+- `serviceRestartChecked_NI` — bridges checked restart to NI.
 
 ### IF-M4 bundle-level non-interference (WS-E5 complete)
 
@@ -377,7 +393,7 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (5 constructors: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`),
+- `NonInterferenceStep` inductive (11 constructors: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`; extended from 5 by WS-F3),
 - `step_preserves_projection` — single-step projection preservation,
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
@@ -416,7 +432,48 @@ Operation-level theorems:
 
 - `retypeFromUntyped_ok_decompose` — success decomposition into existential witnesses,
 - `retypeFromUntyped_error_typeMismatch` — non-untyped source returns type mismatch,
+- `retypeFromUntyped_error_allocSizeTooSmall` — undersized allocation rejected,
 - `retypeFromUntyped_error_regionExhausted` — oversized allocation fails,
 - `retypeFromUntyped_preserves_lifecycleMetadataConsistent` — metadata preservation,
 - `retypeFromUntyped_preserves_lifecycleInvariantBundle` — full bundle preservation,
 - `default_systemState_untypedMemoryInvariant` — default state satisfies invariant.
+
+## 16. WS-F1 IPC message transfer and dual-queue verification
+
+IPC operations now carry `IpcMessage` payloads (registers, caps, badge):
+
+- `endpointSendDual` / `endpointReceiveDual` — dual-queue IPC with message staging in `TCB.pendingMessage` (errors propagated, never silently swallowed),
+- `endpointCall` — send + block-for-reply compound with message,
+- `endpointReply` / `endpointReplyRecv` — reply + receive compound with message.
+
+Preservation theorems (TPI-D08/TPI-D09):
+- `endpointSendDual_preserves_ipcInvariant` / `_schedulerInvariantBundle` / `_ipcSchedulerContractPredicates`,
+- `endpointReceiveDual_preserves_ipcInvariant` / `_schedulerInvariantBundle` / `_ipcSchedulerContractPredicates`,
+- `endpointQueueRemoveDual_preserves_ipcInvariant` / `_schedulerInvariantBundle` / `_ipcSchedulerContractPredicates`,
+- `endpointCall_preserves_ipcInvariant` / `_schedulerInvariantBundle` / `_ipcSchedulerContractPredicates`,
+- `endpointReplyRecv_preserves_ipcInvariant` / `_schedulerInvariantBundle` / `_ipcSchedulerContractPredicates`,
+- `endpointReply_preserves_ipcSchedulerContractPredicates`.
+
+Supporting lemmas: `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`, `storeTcbQueueLinks`
+backward-preservation and frame lemmas.
+
+## 17. WS-F3 information-flow completeness
+
+**CRIT-02 — ObservableState extension** (`Projection.lean`):
+
+- `activeDomain` — scheduling transparency, always visible to all observers,
+- `irqHandlers` — filtered by target notification object observability,
+- `objectIndex` — filtered by object observability.
+
+**F-22 — CNode slot filtering** (`Projection.lean`):
+
+- `capTargetObservable` — observability gate for `.object`, `.cnodeSlot`, `.replyCap` targets,
+- `projectKernelObject` — redacts high-domain capability slot contents from CNodes,
+- `projectKernelObject_idempotent` — safety: double-filtering is idempotent,
+- `projectKernelObject_objectType` — safety: filtering preserves object type.
+
+**Enforcement-NI bridges** (`Invariant.lean`):
+
+- `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
+- `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
+- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.

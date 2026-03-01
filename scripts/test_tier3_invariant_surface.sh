@@ -500,6 +500,7 @@ run_check "INVARIANT" rg -n '^structure UntypedObject' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def retypeFromUntyped' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_decompose' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_typeMismatch' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_allocSizeTooSmall' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_regionExhausted' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^def untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
@@ -508,14 +509,17 @@ run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvar
 run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedDeviceRestriction' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedAllocSizeTooSmall' SeLe4n/Model/State.lean
 run_check "TRACE" rg -n 'retype-from-untyped success object kind' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'retype-from-untyped type-mismatch branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'retype-from-untyped region-exhausted branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'retype-from-untyped device-restriction branch' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'retype-from-untyped alloc-size-too-small branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'F2-01.*retype-from-untyped success' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'F2-03.*retype-from-untyped type-mismatch' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'F2-04.*retype-from-untyped region-exhausted' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'F2-06.*retype-from-untyped device-restriction' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'F2-08.*retype-from-untyped alloc-size-too-small' tests/fixtures/main_trace_smoke.expected
 run_check "INVARIANT" rg -n 'untypedWatermarkChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
 

@@ -78,6 +78,7 @@ F2-04     | critical | retype-from-untyped region-exhausted branch: SeLe4n.Model
 F2-05     | high     | retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
 F2-06     | critical | retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
 F2-07     | high     | retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
+F2-08     | high     | retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

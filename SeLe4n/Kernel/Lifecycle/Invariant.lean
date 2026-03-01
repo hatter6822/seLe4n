@@ -299,7 +299,7 @@ theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     SystemState.lifecycleMetadataConsistent st' := by
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
-    ⟨_ut, ut', _cap, stLookup, stUt, _offset, _hObj, _hNotDev,
+    ⟨_ut, ut', _cap, stLookup, stUt, _offset, _hObj, _hNotDev, _hAllocSz,
      hLookup, _hAuth, _hAlloc, hStoreUt, hStoreChild⟩
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
@@ -345,7 +345,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     untypedMemoryInvariant st' := by
   rcases hInv with ⟨hWM, hCB, hNO, hUI⟩
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
-    ⟨ut, ut', _cap, stLookup, stUt, offset, hObj, _hNotDev,
+    ⟨ut, ut', _cap, stLookup, stUt, offset, hObj, _hNotDev, _hAllocSz,
      hLookup, _hAuth, hAlloc, hStoreUt, hStoreChild⟩
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup

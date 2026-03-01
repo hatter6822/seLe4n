@@ -92,11 +92,13 @@ Deterministic branch contract:
 1. The source object must exist and be an `UntypedObject` (`untypedTypeMismatch` otherwise).
 2. Device untypeds cannot back typed kernel objects except other untypeds
    (`untypedDeviceRestriction` if violated).
-3. Authority capability must target the untyped object and include `write` rights
+3. The allocation size must be at least `objectTypeAllocSize` for the target type
+   (`untypedAllocSizeTooSmall` otherwise).
+4. Authority capability must target the untyped object and include `write` rights
    (`illegalAuthority` otherwise).
-4. The requested allocation size must fit within the remaining region space
+5. The requested allocation size must fit within the remaining region space
    (`untypedRegionExhausted` otherwise).
-5. On success: watermark is advanced, new child is recorded, and the new typed
+6. On success: watermark is advanced, new child is recorded, and the new typed
    object is stored at `childId` via `storeObject`. -/
 def retypeFromUntyped
     (authority : CSpaceAddr)
@@ -111,6 +113,9 @@ def retypeFromUntyped
         -- Device untypeds cannot back typed kernel objects (except other untypeds)
         if ut.isDevice && newObj.objectType != .untyped then
           .error .untypedDeviceRestriction
+        -- Allocation size must be at least the minimum for the target object type
+        else if allocSize < objectTypeAllocSize newObj.objectType then
+          .error .untypedAllocSizeTooSmall
         else
           match cspaceLookupSlot authority st with
           | .error e => .error e
@@ -146,6 +151,7 @@ theorem retypeFromUntyped_ok_decompose
     ∃ ut ut' cap stLookup stUt offset,
       st.objects untypedId = some (.untyped ut) ∧
       (ut.isDevice = false ∨ newObj.objectType = .untyped) ∧
+      ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, stLookup) ∧
       lifecycleRetypeAuthority cap untypedId = true ∧
       ut.allocate childId allocSize = some (ut', offset) ∧
@@ -166,31 +172,9 @@ theorem retypeFromUntyped_ok_decompose
           cases hDevBool : ut.isDevice <;> simp only [hDevBool] at hStep
           · -- ut.isDevice = false: device check trivially passes
             simp only [Bool.false_and, Bool.false_eq_true, ↓reduceIte] at hStep
-            cases hLookup : cspaceLookupSlot authority st with
-            | error e => simp [hLookup] at hStep
-            | ok pair =>
-                rcases pair with ⟨cap, stLookup⟩
-                simp [hLookup] at hStep
-                by_cases hAuth : lifecycleRetypeAuthority cap untypedId
-                · simp [hAuth] at hStep
-                  cases hAlloc : UntypedObject.allocate ut childId allocSize with
-                  | none => simp [hAlloc] at hStep
-                  | some result =>
-                      rcases result with ⟨ut', offset⟩
-                      simp [hAlloc] at hStep
-                      cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
-                      | error e => simp [hStoreUt] at hStep
-                      | ok pair2 =>
-                          rcases pair2 with ⟨_, stUt⟩
-                          simp [hStoreUt] at hStep
-                          exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
-                · simp [hAuth] at hStep
-          · -- ut.isDevice = true: need objectType check
-            by_cases hObjType : newObj.objectType = KernelObjectType.untyped
-            · -- objectType = untyped: device check passes
-              have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
-                simp [bne, hObjType]
-              simp [hBne] at hStep
+            by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
+            · simp [hAllocSz] at hStep
+            · simp [hAllocSz] at hStep
               cases hLookup : cspaceLookupSlot authority st with
               | error e => simp [hLookup] at hStep
               | ok pair =>
@@ -208,9 +192,37 @@ theorem retypeFromUntyped_ok_decompose
                         | ok pair2 =>
                             rcases pair2 with ⟨_, stUt⟩
                             simp [hStoreUt] at hStep
-                            exact ⟨ut, ut', cap, stLookup, stUt, offset,
-                              rfl, Or.inr hObjType, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                            exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                   · simp [hAuth] at hStep
+          · -- ut.isDevice = true: need objectType check
+            by_cases hObjType : newObj.objectType = KernelObjectType.untyped
+            · -- objectType = untyped: device check passes
+              have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
+                simp [bne, hObjType]
+              simp [hBne] at hStep
+              by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
+              · simp [hAllocSz] at hStep
+              · simp [hAllocSz] at hStep
+                cases hLookup : cspaceLookupSlot authority st with
+                | error e => simp [hLookup] at hStep
+                | ok pair =>
+                    rcases pair with ⟨cap, stLookup⟩
+                    simp [hLookup] at hStep
+                    by_cases hAuth : lifecycleRetypeAuthority cap untypedId
+                    · simp [hAuth] at hStep
+                      cases hAlloc : UntypedObject.allocate ut childId allocSize with
+                      | none => simp [hAlloc] at hStep
+                      | some result =>
+                          rcases result with ⟨ut', offset⟩
+                          simp [hAlloc] at hStep
+                          cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
+                          | error e => simp [hStoreUt] at hStep
+                          | ok pair2 =>
+                              rcases pair2 with ⟨_, stUt⟩
+                              simp [hStoreUt] at hStep
+                              exact ⟨ut, ut', cap, stLookup, stUt, offset,
+                                rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                    · simp [hAuth] at hStep
             · -- objectType != untyped: device restriction fires -> contradiction
               have hBne : (newObj.objectType != KernelObjectType.untyped) = true := by
                 simp [bne, hObjType]
@@ -233,6 +245,26 @@ theorem retypeFromUntyped_error_typeMismatch
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
 
+/-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/
+theorem retypeFromUntyped_error_allocSizeTooSmall
+    (st : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
+    (allocSize : Nat) (ut : UntypedObject)
+    (hObj : st.objects untypedId = some (.untyped ut))
+    (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
+    (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
+    retypeFromUntyped authority untypedId childId newObj allocSize st =
+      .error .untypedAllocSizeTooSmall := by
+  unfold retypeFromUntyped
+  simp [hObj]
+  cases hNotDev with
+  | inl hFalse => simp [hFalse, hSmall]
+  | inr hUt =>
+      rw [hUt] at hSmall
+      by_cases hDevBool : ut.isDevice
+      · simp [hDevBool, hUt, hSmall]
+      · simp [hDevBool, hUt, hSmall]
+
 /-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit. -/
 theorem retypeFromUntyped_error_regionExhausted
     (st : SystemState) (authority : CSpaceAddr)
@@ -240,6 +272,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (allocSize : Nat) (ut : UntypedObject) (cap : Capability)
     (hObj : st.objects untypedId = some (.untyped ut))
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
+    (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuth : lifecycleRetypeAuthority cap untypedId = true)
     (hNoFit : ut.allocate childId allocSize = none) :
@@ -248,11 +281,12 @@ theorem retypeFromUntyped_error_regionExhausted
   unfold retypeFromUntyped
   simp [hObj]
   cases hNotDev with
-  | inl hFalse => simp [hFalse, hLookup, hAuth, hNoFit]
+  | inl hFalse => simp [hFalse, hAllocSzOk, hLookup, hAuth, hNoFit]
   | inr hUt =>
+      rw [hUt] at hAllocSzOk
       by_cases hDevBool : ut.isDevice
-      · simp [hDevBool, hUt, hLookup, hAuth, hNoFit]
-      · simp [hDevBool, hLookup, hAuth, hNoFit]
+      · simp [hDevBool, hUt, hAllocSzOk, hLookup, hAuth, hNoFit]
+      · simp [hDevBool, hUt, hAllocSzOk, hLookup, hAuth, hNoFit]
 
 /- Local lifecycle transition helper lemmas (M4-A step 4).
 These theorems keep preservation scripts focused on invariant obligations rather than

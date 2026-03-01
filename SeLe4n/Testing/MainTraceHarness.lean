@@ -752,6 +752,10 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.retypeFromUntyped rootSlot demoUntyped 54 newEp epAllocSize st1 with
   | .error err => IO.println s!"retype-from-untyped wrong-authority branch: {reprStr err}"
   | .ok _ => IO.println "unexpected retype-from-untyped success with wrong authority"
+  -- F2-08: Alloc size too small — try allocSize=1 for an endpoint (needs 64)
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped 55 newEp 1 st1 with
+  | .error err => IO.println s!"retype-from-untyped alloc-size-too-small branch: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success with undersized allocation"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
