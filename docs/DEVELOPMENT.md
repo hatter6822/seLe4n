@@ -7,13 +7,13 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- **active:** WS-F portfolio (v0.12.2 audit remediation — WS-F1, WS-F2, WS-F3, WS-F4 completed),
-- **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
-- **completed predecessor:** WS-E portfolio (v0.11.6, WS-E1..E6 all completed),
+- **active:** WS-G portfolio (kernel performance optimization — WS-G1 completed),
+- **findings baseline:** [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
+- **completed predecessor:** WS-F portfolio (v0.12.2 audit remediation — WS-F1..F4 completed), WS-E (v0.11.6),
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning source:
-[`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
+[`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](./audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 
 ---
 
@@ -32,27 +32,29 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Active workstream (WS-F: v0.12.2 audit remediation)
+## 3) Active workstream (WS-G: Kernel Performance Optimization)
 
-The WS-F portfolio addresses findings from two independent v0.12.2 codebase audits.
-See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+The WS-G portfolio addresses 14 performance findings from the v0.12.5 kernel performance audit.
+See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
 for the full execution plan.
 
 ### 3.1 Workstream summary
 
 | ID | Focus | Priority | Key findings | Status |
 |----|-------|----------|--------------|--------|
-| **WS-F1** | IPC message transfer + dual-queue verification | Critical | CRIT-01, CRIT-05, F-10, F-11 | **Completed** |
-| **WS-F2** | Untyped memory model | Critical | CRIT-04 | **Completed** |
-| **WS-F3** | Information-flow completeness | High | CRIT-02, CRIT-03, F-20, F-21, F-22 | **Completed** |
-| **WS-F4** | Proof gap closure | High | F-03, F-06, F-12 | **Completed** |
-| **WS-F5** | Model fidelity | Medium | CRIT-06, HIGH-01..04 | Planning |
-| **WS-F6** | Invariant quality | Medium | F-07, F-13, F-15, F-18 | Planning |
-| **WS-F7** | Testing expansion | Low | F-24, F-25, F-26 | Planning |
-| **WS-F8** | Cleanup | Low | F-01, F-14, F-19 | Planning |
+| **WS-G1** | Hashable/BEq infrastructure | Prerequisite | (infrastructure) | **Completed** |
+| **WS-G2** | Object store HashMap | Critical | F-P01, F-P10, F-P13 | Planning |
+| **WS-G3** | ASID resolution table | Critical | F-P06 | Planning |
+| **WS-G4** | Run queue restructure | Critical | F-P02, F-P07, F-P12 | Planning |
+| **WS-G5** | CNode slot HashMap | High | F-P03 | Planning |
+| **WS-G6** | VSpace mapping HashMap | High | F-P05 | Planning |
+| **WS-G7** | IPC queue + notification | High | F-P04, F-P11 | Planning |
+| **WS-G8** | Graph traversal optimization | High | F-P08, F-P14 | Planning |
+| **WS-G9** | Info-flow projection optimization | High | F-P09 | Planning |
 
 ### 3.2 Prior completed portfolios (historical)
 
+- **WS-F1..F4:** completed. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 - **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 - **WS-D1..D4:** completed. See [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
 - **WS-C1..C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).

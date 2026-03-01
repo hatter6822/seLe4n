@@ -20,7 +20,7 @@ This chapter maps where semantics, proofs, and execution evidence live in the cu
 ### Foundation layer
 
 - `SeLe4n/Prelude.lean`
-  - IDs/aliases and core monadic kernel execution shape.
+  - IDs/aliases, `Hashable` instances (WS-G1), and core monadic kernel execution shape.
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
 - `SeLe4n/Model/Object.lean`

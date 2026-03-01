@@ -672,7 +672,7 @@ P3:  [WS-G5]──[WS-G6]──[WS-G7]──[WS-G8]──[WS-G9]
 
 | Workstream | Priority | Findings | Status | Est. effort |
 |------------|----------|----------|--------|-------------|
-| WS-G1 | Prerequisite | (infrastructure) | Planning | Low |
+| WS-G1 | Prerequisite | (infrastructure) | **Completed** | Low |
 | WS-G2 | Critical | F-P01, F-P10, F-P13 | Planning | Medium-High |
 | WS-G3 | Critical | F-P06 | Planning | Low |
 | WS-G4 | Critical | F-P02, F-P07, F-P12 | Planning | High |

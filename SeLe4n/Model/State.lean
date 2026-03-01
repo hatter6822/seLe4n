@@ -75,6 +75,12 @@ structure SlotRef where
   slot : SeLe4n.Slot
   deriving Repr, DecidableEq
 
+/-- WS-G1: Hash instance for composite HashMap/HashSet keying.
+    Combines cnode and slot hashes via `mixHash` for uniform distribution.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable SlotRef where
+  hash a := mixHash (hash a.cnode) (hash a.slot)
+
 /-- Lifecycle metadata required by the first M4-A transition story.
 
 `objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
