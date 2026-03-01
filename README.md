@@ -23,7 +23,7 @@
 
 ## What is seLe4n?
 
-seLe4n is a microkernel** built from the ground up inLean 4. Every kernel 
+seLe4n is a microkernel built from the ground up inLean 4. Every kernel 
 transition is an executable pure function. Every invariantis machine-checked 
 by the Lean type-checker — zero `sorry`, zero `axiom`.
 
