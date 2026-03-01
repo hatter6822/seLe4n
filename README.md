@@ -18,9 +18,8 @@
   <a href="https://sel4.systems">seL4</a> architecture. First hardware target:
   <strong>Raspberry Pi 5</strong>.
   Created thoughtfully with the help of:
-  claude :robot: :heart: :robot: codex
-  
-  <h4>TREAT THIS KERNEL ACCORDINGLY</h4>
+  claude :robot: :heart: :robot: codex  
+  <strong>TREAT THIS KERNEL ACCORDINGLY</strong>
 </p>
 
 ---
