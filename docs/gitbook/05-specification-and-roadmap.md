@@ -13,34 +13,38 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.4` |
+| Version | `0.12.5` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 16,485 across 34 files |
-| Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3 completed |
+| Production LoC | 19,483 across 34 files |
+| Proved theorems | 522 (zero sorry/axiom) |
+| Hardware readiness | H2 complete, H3 ready to begin |
+| Completed portfolios | WS-F (v0.12.2), WS-E (v0.11.6), WS-D, WS-C, WS-B |
 
 ## Milestone history
 
 Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
-remediation) → WS-B..E (4 audit portfolios, all completed).
+remediation) → WS-B..E (4 audit portfolios) → WS-F (v0.12.2 audit remediation,
+all 4 critical workstreams completed).
 
-## Active workstream: WS-F
+## Next: Hardware binding (WS-G)
 
-The WS-F portfolio addresses v0.12.2 audit findings (6 CRIT, 6 HIGH, 12 MED, 9 LOW).
+All audit remediation is complete. The project is now preparing for H3 (Raspberry Pi 5
+platform binding). Planned workstreams:
 
-Critical priorities:
-1. **WS-F1**: ~~IPC message transfer + dual-queue verification~~ **COMPLETED**
-2. **WS-F2**: ~~Untyped memory model~~ **COMPLETED**
-3. **WS-F3**: ~~Information-flow completeness~~ **COMPLETED**
-4. **WS-F4**: Proof gap closure
+| Workstream | Scope | Priority |
+|------------|-------|----------|
+| **WS-G1** | Instantiate `AdapterProofHooks` with RPi5-specific contracts | Critical |
+| **WS-G2** | ARM64 register ABI + multi-level VSpace page tables | High |
+| **WS-G3** | Interrupt dispatch transitions + verified boot sequence | High |
+| **WS-G4** | Bounded resource pools + MMIO memory separation | Medium |
 
-See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
+See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md) and
+[hardware readiness audit](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md).
 
 ## Hardware roadmap
 
-H0 (neutral semantics, complete) → H1 (boundary interfaces, complete) →
-H2 (proof deepening, active) → H3 (Raspberry Pi 5 binding) → H4 (evidence convergence).
+H0 (complete) → H1 (complete) → H2 (complete) → **H3 (ready to begin)** → H4 (planned).
 
 See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md).
 

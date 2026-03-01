@@ -1,5 +1,14 @@
 ## [0.12.5] - 2026-03-01
 
+### Hardware Readiness Audit
+
+- **End-to-end audit**: Comprehensive hardware readiness assessment confirming H2 complete, H3 (Raspberry Pi 5 binding) ready to begin.
+- **Audit document**: `docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md` — covers proof soundness (zero sorry/axiom, 522 theorems), architecture layer assessment, kernel subsystem review, test coverage analysis, and 8 findings for H3 planning.
+- **WS-G workstream planning**: Four hardware binding workstreams defined (WS-G1: AdapterProofHooks instantiation, WS-G2: ARM64 register ABI + multi-level VSpace, WS-G3: interrupt dispatch + boot, WS-G4: resource bounds + MMIO).
+- **Documentation sync**: README, SELE4N_SPEC, DEVELOPMENT, CLAIM_EVIDENCE_INDEX, and 6 GitBook chapters updated to reflect H2 completion and H3 readiness.
+- **Metrics update**: Production LoC corrected to 19,483 (from 16,485), theorem count updated to 522 (from 400+).
+- **Test validation**: All four test tiers pass (Tier 0-4 including nightly determinism probes with 5 seeds x 320 steps). Zero warnings. Zero sorry/axiom.
+
 ### WS-F4: Proof Gap Closure (completed)
 
 - **timerTick preservation (F-03):** `timerTick_preserves_schedulerInvariantBundle` and `timerTick_preserves_kernelInvariant` — covers `queueCurrentConsistent`, `runQueueUnique`, `currentThreadValid`, `currentThreadInActiveDomain`. Expired-timeslice path delegates to `schedule_preserves_*`; non-expired path proves scheduler unchanged directly.

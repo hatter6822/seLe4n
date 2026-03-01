@@ -19,8 +19,9 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 16,485 lines of Lean across 34 modules, 400+ machine-checked theorems, zero unsound
-constructs, comprehensive tiered CI with security scanning.
+Current state: 19,483 lines of production Lean across 34 modules, 522 machine-checked theorems,
+zero sorry/axiom, comprehensive tiered CI with security scanning. Hardware stage H2 complete,
+H3 (Raspberry Pi 5 binding) ready to begin.
 
 ## 3. Architectural improvements over seL4
 
@@ -46,14 +47,18 @@ M7 (audit remediation).
 - **WS-E** (v0.11.6): test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness — all 6 workstreams completed.
 - **WS-D** (v0.11.0), **WS-C** (v0.9.32), **WS-B** (v0.9.0): all completed.
 
-### Active work
+### Active work: Hardware binding (H3)
 
-- **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
-  - **WS-F1** (IPC message transfer + dual-queue verification): **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems; 7 trace anchors with actual data transfer.
-  - **WS-F2** (Untyped memory model): **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` with allocSize validation, device restriction, 10+ theorems, 6 negative tests, 8 trace anchors.
-  - **WS-F3** (Information-flow completeness): **COMPLETED** — `ObservableState` extended with 3 fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering; 15 NI theorems (12 standalone + 3 enforcement-NI bridges); WS-F3 test suite.
-  - WS-F4..F8: planning.
-  See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
+All audit remediation is complete:
+- **WS-F1** (IPC message transfer): **COMPLETED** — 14 preservation theorems, 7 trace anchors.
+- **WS-F2** (Untyped memory): **COMPLETED** — `UntypedObject`, `retypeFromUntyped`, 10+ theorems, 6 negative tests.
+- **WS-F3** (Information-flow completeness): **COMPLETED** — 15 NI theorems, CNode slot filtering.
+- **WS-F4** (Proof gap closure): **COMPLETED** — `timerTick`, `cspaceMutate`, notification preservation.
+
+The project is now preparing for H3 (Raspberry Pi 5 platform binding). The
+[hardware readiness audit](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md) confirms
+readiness and defines the WS-G workstream structure.
+See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md).
 
 ## 5. Architecture mental model
 
@@ -93,6 +98,7 @@ For milestone-moving changes:
 
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
+- Hardware readiness audit: [`AUDIT_HARDWARE_READINESS_v0.12.5.md`](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md)
 - Active audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
 - Workstream plan: [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

@@ -7,12 +7,13 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- **active:** WS-F portfolio (v0.12.2 audit remediation — WS-F1, WS-F2, WS-F3, WS-F4 completed),
-- **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
-- **completed predecessor:** WS-E portfolio (v0.11.6, WS-E1..E6 all completed),
-- **hardware target:** Raspberry Pi 5 (ARM64).
+- **active:** WS-G portfolio (hardware binding) — preparing H3 (RPi5 platform binding),
+- **hardware readiness:** [`AUDIT_HARDWARE_READINESS_v0.12.5.md`](audits/AUDIT_HARDWARE_READINESS_v0.12.5.md),
+- **completed predecessor:** WS-F portfolio (v0.12.2, WS-F1..F4 all completed),
+- **hardware target:** Raspberry Pi 5 (ARM64, BCM2712).
 
-Canonical planning source:
+Canonical planning sources:
+[`docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md`](./audits/AUDIT_HARDWARE_READINESS_v0.12.5.md),
 [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 
 ---

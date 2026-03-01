@@ -43,12 +43,12 @@ improving on specific architectural aspects:
 |-----------|-------|
 | **Version** | `0.12.5` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 16,485 across 34 files |
-| **Proved theorems** | 400+ (zero sorry/axiom) |
+| **Production Lean LoC** | 19,483 across 34 files |
+| **Proved theorems** | 522 (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
+| **Hardware readiness** | H2 complete, H3 ready — [`AUDIT_HARDWARE_READINESS_v0.12.5.md`](docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active workstream** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3, WS-F4 completed |
-| **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed portfolios** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start
 
@@ -127,25 +127,21 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 | `Main.lean` | Executable trace harness |
 | `tests/` | Negative-state suite, information-flow suite, trace sequence probe |
 
-## What's next: v0.12.2 audit remediation (WS-F)
+## What's next: Hardware binding (H3)
 
-Two independent audits identified the gaps between current proofs and
-production-kernel requirements. The immediate priority is resolving these
-findings systematically. See the
-[WS-F workstream plan](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for the
-full execution plan.
+All audit remediation is complete (WS-F1..F4). The project is now ready to
+begin hardware-specific workstreams targeting Raspberry Pi 5 (ARM64, BCM2712).
 
-**Critical priorities:**
-1. ~~Integrate `IpcMessage` into IPC operations~~ **(WS-F1 COMPLETED)** — messages now flow through all dual-queue and compound IPC operations with 14 preservation theorems and 7 trace anchors
-2. ~~Add Untyped memory model with watermark tracking~~ **(WS-F2 COMPLETED)** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation with allocSize validation, 10+ theorems, 6 negative tests, 8 trace anchors
-3. ~~Extend `ObservableState` projection to cover all security-relevant fields~~ **(WS-F3 COMPLETED)** — 3 new fields (activeDomain, irqHandlers, objectIndex), CNode slot filtering via `projectKernelObject`, 15 NI theorems (12 standalone + 3 enforcement-NI bridges), enforcement-NI bridge for `serviceRestartChecked`
-4. ~~Close proof gaps for `timerTick`, `cspaceMutate`, notification ops~~ **(WS-F4 COMPLETED)** — `timerTick` scheduler/kernel invariant preservation, `cspaceMutate`/`cspaceRevokeCdt`/`cspaceRevokeCdtStrict` capability invariant preservation, notification signal/wait ipcInvariant + schedulerInvariantBundle + ipcSchedulerContractPredicates preservation; 11 Tier-3 surface anchors
+**Hardware readiness audit**: [`docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md`](docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md)
 
-**Path to Raspberry Pi 5:**
-The hardware target is Raspberry Pi 5 (ARM64). Once audit remediation closes the
-proof gaps, the next phase binds architecture-neutral semantics to platform-specific
-interfaces without invalidating core proofs. See
-[Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
+**Planned workstreams (WS-G):**
+1. **WS-G1**: Instantiate `AdapterProofHooks` with RPi5-specific contracts
+2. **WS-G2**: ARM64 register ABI mapping + multi-level VSpace page tables
+3. **WS-G3**: Interrupt dispatch transitions + verified boot sequence
+4. **WS-G4**: Bounded resource pools + MMIO memory separation
+
+See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md)
+for the full hardware binding roadmap.
 
 ## Completed workstreams (historical)
 

@@ -50,12 +50,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.12.5` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
-| **Production LoC** | 16,485 across 34 Lean files |
-| **Proved theorems** | 400+ (zero sorry/axiom) |
+| **Production LoC** | 19,483 across 34 Lean files |
+| **Proved theorems** | 522 (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
+| **Hardware readiness** | H2 complete, H3 ready — [`AUDIT_HARDWARE_READINESS_v0.12.5.md`](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active portfolio** | WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3, WS-F4 completed |
-| **Prior completed** | WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed portfolios** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
 
@@ -163,14 +163,25 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 
 | Stage | Description | Status |
 |-------|-------------|--------|
-| **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
-| **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
-| **H2** | Audit-driven proof deepening (close critical gaps) | Active (WS-F) |
-| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | Planned |
+| **H0** | Architecture-neutral semantics and proofs | **Complete** (M1–M7, WS-B..E) |
+| **H1** | Architecture-boundary interfaces and adapters | **Complete** (M6) |
+| **H2** | Audit-driven proof deepening (close critical gaps) | **Complete** (WS-F1..F4) |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **Ready to begin** |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
-The critical prerequisite for H3 is closing the WS-F proof gaps — particularly
-complete information-flow coverage (WS-F3). Untyped memory (WS-F2) and information-flow completeness (WS-F3) are now complete.
+All WS-F audit remediation is complete. The hardware readiness audit
+([`AUDIT_HARDWARE_READINESS_v0.12.5.md`](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md))
+confirms that the codebase is ready for H3 with 522 machine-checked theorems,
+zero sorry/axiom, and all four test tiers passing.
+
+### 6.3 Planned Hardware Workstreams (WS-G)
+
+| Workstream | Scope | Priority |
+|------------|-------|----------|
+| **WS-G1** | Instantiate `AdapterProofHooks` with RPi5-specific contracts | Critical |
+| **WS-G2** | ARM64 register ABI mapping + multi-level VSpace page tables | High |
+| **WS-G3** | Interrupt dispatch transitions + verified boot sequence | High |
+| **WS-G4** | Bounded resource pools + MMIO memory separation | Medium |
 
 ---
 
@@ -221,6 +232,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 | Artifact | Path |
 |----------|------|
+| Hardware readiness audit (v0.12.5) | [`docs/audits/AUDIT_HARDWARE_READINESS_v0.12.5.md`](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md) |
 | Codebase audit v1 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md) |
 | Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |

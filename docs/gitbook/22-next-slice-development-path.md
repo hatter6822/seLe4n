@@ -1,49 +1,52 @@
 # Next Development Path
 
-## Current priority: WS-F (v0.12.2 audit remediation)
+## Current priority: Hardware binding (WS-G / H3)
 
-The immediate development path is closing the findings from two independent v0.12.2
-codebase audits. This is the prerequisite for Raspberry Pi 5 hardware binding.
+All audit remediation is complete (WS-F1..F4). The immediate development path is
+hardware-specific workstreams targeting Raspberry Pi 5 (ARM64, BCM2712).
 
-See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-for the full plan.
+See the [hardware readiness audit](../audits/AUDIT_HARDWARE_READINESS_v0.12.5.md)
+for the full assessment and findings.
 
-## Phase sequence
+## Completed audit remediation (WS-F)
 
-### P1 — Critical IPC, memory, and proof gaps (WS-F1, WS-F2, WS-F4)
+- **WS-F1**: IPC message transfer + dual-queue verification — **COMPLETED**
+- **WS-F2**: Untyped memory model — **COMPLETED**
+- **WS-F3**: Information-flow completeness — **COMPLETED**
+- **WS-F4**: Proof gap closure (timerTick, cspaceMutate, notifications) — **COMPLETED**
 
-Three workstreams run in parallel:
-- **WS-F1**: ~~Wire `IpcMessage` into operations, verify dual-queue model.~~ **COMPLETED** — messages flow through all IPC operations with 14 preservation theorems and 7 trace anchors.
-- **WS-F2**: ~~Add Untyped memory with watermark tracking.~~ **COMPLETED** — `UntypedObject`, `retypeFromUntyped`, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors.
-- **WS-F4**: Close timerTick, cspaceMutate, notification proof gaps.
+## Hardware binding workstreams (WS-G)
 
-### P2 — Information-flow completeness (WS-F3) — **COMPLETED**
+| Workstream | Scope | Priority | Status |
+|------------|-------|----------|--------|
+| **WS-G1** | Instantiate `AdapterProofHooks` with RPi5-specific contracts | Critical | Ready |
+| **WS-G2** | ARM64 register ABI + multi-level VSpace page tables | High | Ready |
+| **WS-G3** | Interrupt dispatch transitions + verified boot sequence | High | Blocked on WS-G1 |
+| **WS-G4** | Bounded resource pools + MMIO memory separation | Medium | Blocked on WS-G2 |
 
-- ~~Extend `ObservableState` projection to all security-relevant fields.~~ Done: 3 new fields (activeDomain, irqHandlers, objectIndex).
-- ~~Prove non-interference for new projection fields.~~ Done: 15 NI theorems (12 standalone + 3 enforcement-NI bridges).
-- ~~Connect enforcement layer to NI theorems.~~ Done: enforcement-NI bridge for `serviceRestartChecked`.
-- CNode slot filtering via `projectKernelObject` prevents capability target leakage (F-22).
-- Test suite extended with WS-F3 coverage (IRQ projection, object index, CNode filtering, 7-field low-equivalence).
+### WS-G1: AdapterProofHooks instantiation
 
-### P3 — Model fidelity and invariant quality (WS-F5, WS-F6)
+Provide the first concrete `AdapterProofHooks` instance for RPi5 that satisfies
+`RuntimeBoundaryContract` predicates for ARM Generic Timer, register context, and
+memory access. This unblocks all conditional adapter preservation theorems.
 
-- Notification badge bitmask, per-thread registers, multi-level CSpace.
-- Reclassify tautological invariants, instantiate adapter proof hooks.
+### WS-G2: ARM64 platform model
 
-### P4 — Testing and cleanup (WS-F7, WS-F8)
+1. Define ARM64 register enumeration (x0-x30, SP, PC, PSTATE, ELR_EL1, SPSR_EL1).
+2. Extend `VSpaceRoot` to ARMv8 4-level page tables with permission bits (R/W/X).
+3. Add TLB coherency model as runtime contract predicate.
 
-- Extend runtime oracle and trace probe coverage.
-- Resolve legacy/dual-queue divergence, remove dead code.
+### WS-G3: Interrupt and boot
 
-## After WS-F: Raspberry Pi 5 binding (H3)
+1. Add interrupt dispatch transitions with GIC-400 routing.
+2. Define boot sequence as verified state construction from BCM2712 device tree.
+3. Prove boot state satisfies `apiInvariantBundle`.
 
-Once WS-F closes critical proof gaps:
+### WS-G4: Resource bounds and MMIO
 
-1. Map `MachineState` to BCM2712 hardware.
-2. Bind `VSpaceRoot` to ARMv8 page tables.
-3. Implement GIC-400 interrupt routing.
-4. Verify boot sequence as initial state construction.
-5. Run proof-carrying executable on hardware.
+1. Define `MAX_OBJECTS`, `MAX_CDT_NODES`, `MAX_DEPENDENCIES` constants.
+2. Partition memory model into normal/device/reserved regions.
+3. Prove resource pool invariants.
 
 ## Long-horizon items
 
