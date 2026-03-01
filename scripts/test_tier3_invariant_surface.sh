@@ -486,6 +486,8 @@ run_check "INVARIANT" rg -n 'capabilityRightsStructuralChecks' SeLe4n/Testing/In
 run_check "INVARIANT" rg -n 'lifecycleMetadataChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'serviceGraphAcyclicityChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'vspaceAsidUniquenessChecks' SeLe4n/Testing/InvariantChecks.lean
+# WS-G3/F-P06: ASID table consistency runtime checks must remain present.
+run_check "INVARIANT" rg -n 'asidTableConsistencyChecks' SeLe4n/Testing/InvariantChecks.lean
 
 # WS-E1 M-10 parameterized topology anchors must remain present.
 run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTraceHarness.lean

@@ -5,9 +5,9 @@
 - **ASID resolution O(1) via HashMap:** `resolveAsidRoot` rewritten from O(n) `objectIndex.findSome?` linear scan to O(1) `Std.HashMap ASID ObjId` lookup with object-store validation. New `asidTable` field in `SystemState`.
 - **asidTable maintenance in storeObject:** erase-before-insert pattern ensures old ASID entries are cleaned up when overwriting a VSpaceRoot. Three bridge lemmas: `storeObject_asidTable_vspaceRoot`, `storeObject_asidTable_vspaceRoot_ne`, `storeObject_asidTable_non_vspaceRoot`.
 - **asidTableConsistent invariant:** bidirectional soundness + completeness agreement between `asidTable` and VSpaceRoot objects. `vspaceInvariantBundle` extended from 2-conjunct to 3-conjunct (+ `asidTableConsistent`).
-- **Preservation proofs updated:** both map/unmap success-path theorems prove `asidTableConsistent` preservation. All 4 round-trip theorems simplified (no longer need `objectIndexSetSync` hypothesis).
-- **StateBuilder + InvariantChecks:** test state builder auto-populates `asidTable` from VSpaceRoot objects. Runtime `asidTableConsistencyChecks` added to invariant check surface.
-- **Tier-3 test anchors:** `objectIndex.findSome?` exit criterion (expect NOT found in VSpace.lean), `st.asidTable` positive anchor, updated theorem name anchors.
+- **Preservation proofs updated:** both map/unmap success-path theorems prove `asidTableConsistent` preservation via shared `asidTableConsistent_of_storeObject_vspaceRoot` helper (deduplicates ~50 lines). All 4 round-trip theorems simplified (no longer need `objectIndexSetSync` hypothesis).
+- **StateBuilder + InvariantChecks:** test state builder auto-populates `asidTable` from VSpaceRoot objects. Runtime `asidTableConsistencyChecks` added to invariant check surface with Tier-3 anchor.
+- **Tier-3 test anchors:** `objectIndex.findSome?` exit criterion (expect NOT found in VSpace.lean), `st.asidTable` positive anchor, `asidTableConsistencyChecks` runtime check anchor, updated theorem name anchors.
 - **Full proof migration:** zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
 - Closes finding F-P06 (ASID resolution linear scan).
 

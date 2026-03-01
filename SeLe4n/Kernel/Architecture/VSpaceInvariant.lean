@@ -66,6 +66,79 @@ def vspaceInvariantBundle (st : SystemState) : Prop :=
   vspaceAsidRootsUnique st ∧ vspaceRootNonOverlap st ∧ asidTableConsistent st
 
 -- ============================================================================
+-- WS-G3: Shared asidTableConsistent preservation helper
+-- ============================================================================
+
+/-- WS-G3: After storing a VSpaceRoot whose ASID is preserved from the original,
+    `asidTableConsistent` is preserved. Used by both map and unmap success-path
+    preservation theorems to avoid proof duplication. -/
+private theorem asidTableConsistent_of_storeObject_vspaceRoot
+    (st st' : SystemState)
+    (rootId : SeLe4n.ObjId) (root root' : VSpaceRoot)
+    (hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st'))
+    (hObjRoot : st.objects[rootId]? = some (KernelObject.vspaceRoot root))
+    (hObjEq : st'.objects[rootId]? = some (.vspaceRoot root'))
+    (hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]?)
+    (hAsidPreserved : root'.asid = root.asid)
+    (hUniq : vspaceAsidRootsUnique st)
+    (hConsist : asidTableConsistent st) :
+    asidTableConsistent st' := by
+  have hTableNew : st'.asidTable[root'.asid]? = some rootId :=
+    storeObject_asidTable_vspaceRoot st st' rootId root' hStore
+  have hTableNe : ∀ a, a ≠ root'.asid → st'.asidTable[a]? =
+      (match st.objects[rootId]? with
+       | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[a]?
+       | _ => st.asidTable[a]?) :=
+    fun a hNe => storeObject_asidTable_vspaceRoot_ne st st' rootId root' a hNe hStore
+  rcases hConsist with ⟨hSound, hComplete⟩
+  constructor
+  -- Soundness
+  · intro a oid hLookup
+    by_cases hAEq : a = root'.asid
+    · subst hAEq
+      rw [hTableNew] at hLookup
+      cases hLookup
+      exact ⟨root', hObjEq, rfl⟩
+    · have hLookup' := hTableNe a hAEq
+      rw [hLookup'] at hLookup
+      simp only [hObjRoot] at hLookup
+      have hAsidNeRoot : a ≠ root.asid := by
+        rw [← hAsidPreserved]; exact hAEq
+      rw [HashMap_getElem?_erase] at hLookup
+      have hEraseNe : ¬((root.asid == a) = true) := by
+        intro h; exact hAsidNeRoot (eq_of_beq h).symm
+      simp only [hEraseNe] at hLookup
+      rcases hSound a oid hLookup with ⟨r, hObjR, hAsidR⟩
+      by_cases hOidEq : oid = rootId
+      · subst hOidEq
+        rw [hObjRoot] at hObjR; cases hObjR
+        exfalso; exact hAEq (hAsidPreserved.trans hAsidR).symm
+      · exact ⟨r, (hObjNe oid hOidEq).symm ▸ hObjR, hAsidR⟩
+  -- Completeness
+  · intro oid' r' hObjR
+    by_cases hOidEq : oid' = rootId
+    · subst hOidEq
+      rw [hObjEq] at hObjR
+      have hR'Eq := KernelObject.vspaceRoot.inj (Option.some.inj hObjR)
+      subst hR'Eq
+      exact hTableNew
+    · rw [hObjNe oid' hOidEq] at hObjR
+      have hPre := hComplete oid' r' hObjR
+      have hAsidNe : r'.asid ≠ root.asid := by
+        intro h
+        have := hUniq oid' rootId r' root hObjR hObjRoot h
+        exact hOidEq this
+      by_cases hAEq : r'.asid = root'.asid
+      · exact absurd (hAEq.trans hAsidPreserved) hAsidNe
+      · rw [hTableNe r'.asid hAEq]
+        simp only [hObjRoot]
+        rw [HashMap_getElem?_erase]
+        have hEraseNe : ¬((root.asid == r'.asid) = true) := by
+          intro h; exact hAsidNe (eq_of_beq h).symm
+        simp only [hEraseNe]
+        exact hPre
+
+-- ============================================================================
 -- Error-case preservation (trivial — see F-16 classification above)
 -- ============================================================================
 
@@ -157,61 +230,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 (hNoOverlap rootId root hObjRoot) hMapRoot
             · rw [hObjNe oid hEq] at hObj
               exact hNoOverlap oid r hObj
-          -- 3. asidTableConsistent st'
-          · have hTableNew : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' hStore
-            have hTableNe : ∀ a, a ≠ root'.asid → st'.asidTable[a]? =
-                (match st.objects[rootId]? with
-                 | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[a]?
-                 | _ => st.asidTable[a]?) :=
-              fun a hNe => storeObject_asidTable_vspaceRoot_ne st st' rootId root' a hNe hStore
-            rcases hConsist with ⟨hSound, hComplete⟩
-            constructor
-            -- Soundness
-            · intro a oid hLookup
-              by_cases hAEq : a = root'.asid
-              · subst hAEq
-                rw [hTableNew] at hLookup
-                cases hLookup
-                exact ⟨root', hObjEq, rfl⟩
-              · have hLookup' := hTableNe a hAEq
-                rw [hLookup'] at hLookup
-                simp only [hObjRoot] at hLookup
-                have hAsidNeRoot : a ≠ root.asid := by
-                  rw [← hAsidPreserved]; exact hAEq
-                rw [HashMap_getElem?_erase] at hLookup
-                have hEraseNe : ¬((root.asid == a) = true) := by
-                  intro h; exact hAsidNeRoot (eq_of_beq h).symm
-                simp only [hEraseNe] at hLookup
-                rcases hSound a oid hLookup with ⟨r, hObjR, hAsidR⟩
-                by_cases hOidEq : oid = rootId
-                · subst hOidEq
-                  rw [hObjRoot] at hObjR; cases hObjR
-                  exfalso; exact hAEq (hAsidPreserved.trans hAsidR).symm
-                · exact ⟨r, (hObjNe oid hOidEq).symm ▸ hObjR, hAsidR⟩
-            -- Completeness
-            · intro oid' r' hObjR
-              by_cases hOidEq : oid' = rootId
-              · subst hOidEq
-                rw [hObjEq] at hObjR
-                have hR'Eq := KernelObject.vspaceRoot.inj (Option.some.inj hObjR)
-                subst hR'Eq
-                exact hTableNew
-              · rw [hObjNe oid' hOidEq] at hObjR
-                have hPre := hComplete oid' r' hObjR
-                have hAsidNe : r'.asid ≠ root.asid := by
-                  intro h
-                  have := hUniq oid' rootId r' root hObjR hObjRoot h
-                  exact hOidEq this
-                by_cases hAEq : r'.asid = root'.asid
-                · exact absurd (hAEq.trans hAsidPreserved) hAsidNe
-                · rw [hTableNe r'.asid hAEq]
-                  simp only [hObjRoot]
-                  rw [HashMap_getElem?_erase]
-                  have hEraseNe : ¬((root.asid == r'.asid) = true) := by
-                    intro h; exact hAsidNe (eq_of_beq h).symm
-                  simp only [hEraseNe]
-                  exact hPre
+          -- 3. asidTableConsistent st' (via shared helper)
+          · exact asidTableConsistent_of_storeObject_vspaceRoot
+              st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
 
 /-- F-08/WS-G3: A successful `vspaceUnmapPage` preserves the VSpace invariant bundle.
 
@@ -278,61 +299,9 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
                 (hNoOverlap rootId root hObjRoot) hUnmapRoot
             · rw [hObjNe oid hEq] at hObj
               exact hNoOverlap oid r hObj
-          -- 3. asidTableConsistent st'
-          · have hTableNew : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' hStore
-            have hTableNe : ∀ a, a ≠ root'.asid → st'.asidTable[a]? =
-                (match st.objects[rootId]? with
-                 | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[a]?
-                 | _ => st.asidTable[a]?) :=
-              fun a hNe => storeObject_asidTable_vspaceRoot_ne st st' rootId root' a hNe hStore
-            rcases hConsist with ⟨hSound, hComplete⟩
-            constructor
-            -- Soundness
-            · intro a oid hLookup
-              by_cases hAEq : a = root'.asid
-              · subst hAEq
-                rw [hTableNew] at hLookup
-                cases hLookup
-                exact ⟨root', hObjEq, rfl⟩
-              · have hLookup' := hTableNe a hAEq
-                rw [hLookup'] at hLookup
-                simp only [hObjRoot] at hLookup
-                have hAsidNeRoot : a ≠ root.asid := by
-                  rw [← hAsidPreserved]; exact hAEq
-                rw [HashMap_getElem?_erase] at hLookup
-                have hEraseNe : ¬((root.asid == a) = true) := by
-                  intro h; exact hAsidNeRoot (eq_of_beq h).symm
-                simp only [hEraseNe] at hLookup
-                rcases hSound a oid hLookup with ⟨r, hObjR, hAsidR⟩
-                by_cases hOidEq : oid = rootId
-                · subst hOidEq
-                  rw [hObjRoot] at hObjR; cases hObjR
-                  exfalso; exact hAEq (hAsidPreserved.trans hAsidR).symm
-                · exact ⟨r, (hObjNe oid hOidEq).symm ▸ hObjR, hAsidR⟩
-            -- Completeness
-            · intro oid' r' hObjR
-              by_cases hOidEq : oid' = rootId
-              · subst hOidEq
-                rw [hObjEq] at hObjR
-                have hR'Eq := KernelObject.vspaceRoot.inj (Option.some.inj hObjR)
-                subst hR'Eq
-                exact hTableNew
-              · rw [hObjNe oid' hOidEq] at hObjR
-                have hPre := hComplete oid' r' hObjR
-                have hAsidNe : r'.asid ≠ root.asid := by
-                  intro h
-                  have := hUniq oid' rootId r' root hObjR hObjRoot h
-                  exact hOidEq this
-                by_cases hAEq : r'.asid = root'.asid
-                · exact absurd (hAEq.trans hAsidPreserved) hAsidNe
-                · rw [hTableNe r'.asid hAEq]
-                  simp only [hObjRoot]
-                  rw [HashMap_getElem?_erase]
-                  have hEraseNe : ¬((root.asid == r'.asid) = true) := by
-                    intro h; exact hAsidNe (eq_of_beq h).symm
-                  simp only [hEraseNe]
-                  exact hPre
+          -- 3. asidTableConsistent st' (via shared helper)
+          · exact asidTableConsistent_of_storeObject_vspaceRoot
+              st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
 
 -- ============================================================================
 -- TPI-D05 / TPI-001: VSpace round-trip theorems
