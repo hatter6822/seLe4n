@@ -1065,10 +1065,10 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
                 lifecycleAuthorityMonotonicity_holds _⟩
 
 -- ============================================================================
--- WS-F4/F-03: cspaceMutate preservation
+-- WS-F4/F-06: cspaceMutate preservation
 -- ============================================================================
 
-/-- WS-F4/F-03: cspaceMutate preserves capabilityInvariantBundle.
+/-- WS-F4/F-06: cspaceMutate preserves capabilityInvariantBundle.
 Mutate composes cspaceLookupSlot (read-only) + cn.insert (which preserves
 slotsUnique) + storeObject + storeCapabilityRef. -/
 theorem cspaceMutate_preserves_capabilityInvariantBundle
@@ -1135,7 +1135,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
     lifecycleAuthorityMonotonicity_holds st'⟩
 
 -- ============================================================================
--- WS-F4/F-03: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
+-- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
 -- ============================================================================
 
 /-- Helper: CDT-only state updates preserve capabilityInvariantBundle. -/
@@ -1228,7 +1228,7 @@ private theorem revokeCdtFold_preserves
       rw [hStep] at hFold
       exact ih stMid stFinal (revokeCdtFoldBody_preserves stInit stMid node hInv hStep) hFold
 
-/-- WS-F4/F-03: cspaceRevokeCdt preserves capabilityInvariantBundle.
+/-- WS-F4/F-06: cspaceRevokeCdt preserves capabilityInvariantBundle.
 Composes cspaceRevoke (proven) + fold over CDT descendants. -/
 theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -1249,7 +1249,7 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
           (.ok ((), stLocal)) = .ok ((), st') at hStep
       exact revokeCdtFold_preserves _ stLocal st' hLocalInv hStep
 
-/-- WS-F4/F-03: cspaceRevokeCdtStrict preserves capabilityInvariantBundle.
+/-- WS-F4/F-06: cspaceRevokeCdtStrict preserves capabilityInvariantBundle.
 The strict variant composes cspaceRevoke + a fold that only does cspaceDeleteSlot
 and CDT operations, same as the non-strict variant. -/
 theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle

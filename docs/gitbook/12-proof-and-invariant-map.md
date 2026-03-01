@@ -83,6 +83,7 @@ Preservation shape:
 - WS-F1 dual-queue: `endpointSendDual_preserves_ipcInvariant`, `endpointReceiveDual_preserves_ipcInvariant`, `endpointQueueRemoveDual_preserves_ipcInvariant` (TPI-D08).
 - WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
 - WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
+- WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
 
 ## 5. IPC-scheduler coherence (M3.5)
 
@@ -513,6 +514,8 @@ Supporting infrastructure:
 - `notificationSignal_preserves_schedulerInvariantBundle` — compositional through `scheduler_unchanged_through_store_tcb` + ensureRunnable helpers
 - `notificationWait_preserves_ipcInvariant` — badge-consume path (storeObject → storeTcbIpcState) and wait path (storeObject → storeTcbIpcState → removeRunnable)
 - `notificationWait_preserves_schedulerInvariantBundle` — badge-consume scheduler unchanged; wait path through removeRunnable with currentThread safety
+- `notificationSignal_preserves_ipcSchedulerContractPredicates` — M3.5 contract predicate closure: wake path follows endpointReply pattern (storeTcbIpcState → ensureRunnable); merge path via `contracts_of_same_scheduler_ipcState` (no TCB/scheduler change)
+- `notificationWait_preserves_ipcSchedulerContractPredicates` — M3.5 contract predicate closure: badge-consume path (scheduler unchanged, waiter set to .ready); wait path (.blockedOnNotification not covered by blockedOnSend/blockedOnReceive predicates, waiter removed from runnable)
 
 Supporting infrastructure:
 - `storeObject_notification_preserves_ipcInvariant` — dual of `storeObject_endpoint_preserves_ipcInvariant`; new helper for notification-storing operations

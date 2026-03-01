@@ -66,7 +66,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~3078 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~3750 lines)
 - `SeLe4n/Kernel/Capability/Invariant.lean` (~1594 lines)
 - `SeLe4n/Kernel/IPC/DualQueue.lean` (~1537 lines)
 - `SeLe4n/Kernel/IPC/Operations.lean` (~1025 lines)

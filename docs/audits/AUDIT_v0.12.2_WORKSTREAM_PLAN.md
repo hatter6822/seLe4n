@@ -140,10 +140,11 @@ and connect the enforcement layer to non-interference theorems.
 2. `cspaceMutate_preserves_capabilityInvariantBundle` — uses `revert/unfold` decomposition pattern; case-splits on capability lookup, rights check, and storeObject.
 3. `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` — compositional through `storeObject_notification_preserves_ipcInvariant` helper; wake/merge/badge-consume/wait paths fully covered.
 4. `cspaceRevokeCdt_preserves_capabilityInvariantBundle` and `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` — fold induction via extracted `revokeCdtFoldBody` with error propagation lemmas; CDT-only state updates handled by `capabilityInvariantBundle_of_cdt_update`.
+5. `notificationSignal_preserves_ipcSchedulerContractPredicates` and `notificationWait_preserves_ipcSchedulerContractPredicates` — M3.5 contract predicate gap closure for notification operations. Wake/badge-consume paths use backward TCB transport through storeObject + storeTcbIpcState; merge path via `contracts_of_same_scheduler_ipcState`; wait path handles `.blockedOnNotification` (orthogonal to `blockedOnSend`/`blockedOnReceive` predicates) with removeRunnable.
 
 **Exit evidence (met):**
 - `lake build` passes with zero errors/warnings.
-- `test_full.sh` passes (Tier 0-3) with 9 new Tier-3 surface anchors.
+- `test_full.sh` passes (Tier 0-3) with 11 Tier-3 surface anchors.
 - Zero `sorry`/`axiom` in production proof surface.
 
 **Dependencies:** None.
