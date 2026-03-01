@@ -48,6 +48,13 @@ M7 (audit remediation).
 
 ### Active work
 
+- **WS-G** (kernel performance optimization): HashMap-based data structure migration for O(1) operations.
+  - **WS-G1** (Hashable infrastructure): **COMPLETED** (v0.12.6) — `Hashable` for all 13 typed identifiers.
+  - **WS-G2** (Object store HashMap): **COMPLETED** (v0.12.7) — `Std.HashMap ObjId KernelObject`.
+  - **WS-G3** (ASID resolution table): **COMPLETED** (v0.12.8) — `Std.HashMap ASID ObjId`.
+  - **WS-G4** (Run queue restructure): **COMPLETED** (v0.12.9) — priority-bucketed `RunQueue`.
+  - **WS-G5** (CNode slot HashMap): **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability` for O(1) capability operations.
+  - WS-G6..G9: planning.
 - **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
   - **WS-F1** (IPC message transfer + dual-queue verification): **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems; 7 trace anchors with actual data transfer.
   - **WS-F2** (Untyped memory model): **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` with allocSize validation, device restriction, 10+ theorems, 6 negative tests, 8 trace anchors.

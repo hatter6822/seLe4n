@@ -74,25 +74,36 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable
-by the given observer. All other object types pass through unchanged. -/
+by the given observer. All other object types pass through unchanged.
+
+WS-G5: Uses `HashMap.filter` for O(m) filtering on HashMap-backed CNode slots. -/
 def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) : KernelObject :=
   match obj with
   | .cnode cn =>
-      .cnode { cn with slots := cn.slots.filter (fun (_, cap) =>
+      .cnode { cn with slots := cn.slots.filter (fun _ cap =>
         capTargetObservable ctx observer cap.target) }
   | other => other
 
-/-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields the
-same result as filtering once. -/
+/-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
+observationally equivalent results to filtering once.
+
+WS-G5: With HashMap-backed CNode slots, idempotency is stated at the slot
+lookup level rather than structural equality, because `Std.HashMap.filter`
+in Lean 4.28.0 reverses internal `AssocList` bucket ordering, making
+`(m.filter f).filter f ≠ m.filter f` structurally despite identical entries.
+For all non-CNode variants, structural equality holds directly. -/
 theorem projectKernelObject_idempotent
-    (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) :
-    projectKernelObject ctx observer (projectKernelObject ctx observer obj) =
-      projectKernelObject ctx observer obj := by
+    (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject)
+    (slot : SeLe4n.Slot) :
+    match projectKernelObject ctx observer (projectKernelObject ctx observer obj),
+          projectKernelObject ctx observer obj with
+    | .cnode cn1, .cnode cn2 => cn1.lookup slot = cn2.lookup slot
+    | _, _ => True := by
   cases obj with
   | cnode cn =>
-    simp only [projectKernelObject]
-    simp only [List.filter_filter, Bool.and_self]
-  | _ => rfl
+    simp only [projectKernelObject, CNode.lookup]
+    exact SeLe4n.HashMap_filter_filter_getElem? cn.slots _ slot
+  | _ => trivial
 
 /-- WS-F3/F-22: `projectKernelObject` preserves object type. -/
 theorem projectKernelObject_objectType

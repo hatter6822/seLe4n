@@ -286,7 +286,7 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         | some (.cnode cn) =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
             let revokedRefs : List SlotRef :=
-              (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
+              (cn.slots.toList.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
                 (fun entry => { cnode := addr.cnode, slot := entry.fst })
             match storeObject addr.cnode (.cnode cn') st' with
             | .error e => .error e

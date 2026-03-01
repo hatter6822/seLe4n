@@ -340,7 +340,7 @@ subsystem rewrites, significant theorem re-proof).
 
 ---
 
-### WS-G5: CNode Slot HashMap (F-P03) — HIGH
+### WS-G5: CNode Slot HashMap (F-P03) — COMPLETED
 
 **Objective:** Replace list-based CNode slots with `Std.HashMap Slot Capability`,
 reducing every capability lookup, insert, and delete from O(m) to O(1) amortized.
@@ -390,6 +390,18 @@ recommended (HashMap object store ensures CNode retrieval is O(1)).
 
 **Estimated effort:** Medium (contained to CNode subsystem; well-defined
 theorem migration).
+
+**Completion notes (v0.12.10):**
+Completed in v0.12.10. `CNode.slots` migrated from `List (Slot × Capability)` to
+`Std.HashMap Slot Capability`. All CNode operations (`lookup`, `insert`, `remove`)
+are O(1) amortized. `slotsUnique` invariant trivially true (HashMap key uniqueness).
+Two bridge lemmas added to Prelude.lean: `HashMap_filter_preserves_key` for
+`revokeTargetLocal` source-slot preservation, and `HashMap_filter_filter_getElem?` for
+projection filter idempotency (reformulated at slot-lookup level because
+`AssocList.filter` reverses bucket ordering). `projectKernelObject_idempotent`
+reformulated from structural to slot-level equality. Manual `BEq CNode` and
+`BEq KernelObject` instances replace lost `DecidableEq` derivation. All 10 files
+modified, zero sorry/axiom, `test_full.sh` passes Tier 0-3. Closes F-P03.
 
 ---
 
@@ -699,8 +711,8 @@ P3:  [WS-G5]──[WS-G6]──[WS-G7]──[WS-G8]──[WS-G9]
 | WS-G1 | Prerequisite | (infrastructure) | **Completed** | Low |
 | WS-G2 | Critical | F-P01, F-P10, F-P13 | **Completed** | Medium-High |
 | WS-G3 | Critical | F-P06 | **Completed** | Low |
-| WS-G4 | Critical | F-P02, F-P07, F-P12 | Planning | High |
-| WS-G5 | High | F-P03 | Planning | Medium |
+| WS-G4 | Critical | F-P02, F-P07, F-P12 | **Completed** | High |
+| WS-G5 | High | F-P03 | **Completed** | Medium |
 | WS-G6 | High | F-P05 | Planning | Medium |
 | WS-G7 | High | F-P04, F-P11 | Planning | Low-Medium |
 | WS-G8 | High | F-P08, F-P14 | Planning | Medium |

@@ -608,10 +608,11 @@ def ownerOfSlot (ref : SlotRef) : CSpaceOwner :=
 def ownsSlot (st : SystemState) (owner : CSpaceOwner) (ref : SlotRef) : Prop :=
   owner = ownerOfSlot ref ∧ ∃ cap, lookupSlotCap st ref = some cap
 
-/-- Enumerate all concrete capability entries held by one modeled owner CNode. -/
+/-- Enumerate all concrete capability entries held by one modeled owner CNode.
+WS-G5: Projects HashMap-backed slots to `List` for enumeration compatibility. -/
 def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × Capability) :=
   match lookupCNode st owner with
-  | some cn => cn.slots
+  | some cn => cn.slots.toList
   | none => []
 
 /-- Lifecycle metadata view of object identity typing. -/

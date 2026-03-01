@@ -41,7 +41,7 @@ Preservation shape:
 
 Component level:
 
-- `cspaceSlotUnique` — structural CNode slot-index uniqueness (reformulated in WS-E2; non-tautological, requires `CNode.slotsUnique`),
+- `cspaceSlotUnique` — structural CNode slot-index uniqueness (reformulated in WS-E2; WS-G5: trivially true with `Std.HashMap` key uniqueness),
 - `cspaceLookupSound` — lookup completeness grounded in slot membership (reformulated in WS-E2; non-tautological),
 - `cspaceAttenuationRule` — minted capabilities attenuate rights,
 - `lifecycleAuthorityMonotonicity` — authority only decreases through lifecycle operations.
@@ -485,7 +485,7 @@ backward-preservation and frame lemmas.
 
 - `capTargetObservable` — observability gate for `.object`, `.cnodeSlot`, `.replyCap` targets,
 - `projectKernelObject` — redacts high-domain capability slot contents from CNodes,
-- `projectKernelObject_idempotent` — safety: double-filtering is idempotent,
+- `projectKernelObject_idempotent` — safety: double-filtering is idempotent (WS-G5: reformulated to slot-level lookup equality for `Std.HashMap` compatibility),
 - `projectKernelObject_objectType` — safety: filtering preserves object type.
 
 **Enforcement-NI bridges** (`Invariant.lean`):

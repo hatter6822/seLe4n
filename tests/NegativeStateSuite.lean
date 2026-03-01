@@ -28,7 +28,7 @@ private def baseState : SystemState :=
     |>.withObject cnodeId (.cnode {
       guard := 0
       radix := 0
-      slots := [
+      slots := Std.HashMap.ofList [
         (0, {
           target := .object endpointId
           rights := [.read, .write]
@@ -40,7 +40,7 @@ private def baseState : SystemState :=
     |>.withObject guardedCnodeId (.cnode {
       guard := 1
       radix := 2
-      slots := [
+      slots := Std.HashMap.ofList [
         (1, {
           target := .object endpointId
           rights := [.read]
@@ -195,7 +195,7 @@ private def f2UntypedState : SystemState :=
     |>.withObject f2UntypedAuthCnode (.cnode {
       guard := 0
       radix := 0
-      slots := [
+      slots := Std.HashMap.ofList [
         (0, {
           target := .object f2UntypedObjId
           rights := [.read, .write, .grant]
@@ -222,7 +222,7 @@ private def f2DeviceState : SystemState :=
     |>.withObject f2UntypedAuthCnode (.cnode {
       guard := 0
       radix := 0
-      slots := [
+      slots := Std.HashMap.ofList [
         (0, {
           target := .object f2DeviceUntypedId
           rights := [.read, .write, .grant]
@@ -306,7 +306,7 @@ private def runNegativeChecks : IO Unit := do
       objects := baseState.objects.insert cnodeId (.cnode {
             guard := 0
             radix := 0
-            slots := [
+            slots := Std.HashMap.ofList [
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := [.read, .write]

@@ -86,17 +86,16 @@ def cspaceSlotUnique (st : SystemState) : Prop :=
     st.objects[cnodeId]? = some (KernelObject.cnode cn) →
     cn.slotsUnique
 
-/-- Lookup completeness: every capability entry in a CNode's slot list is retrievable
-via `lookupSlotCap`.
+/-- Lookup completeness: every capability stored in a CNode's slot HashMap is
+retrievable via `lookupSlotCap`.
 
-WS-E2 / C-01 reformulation: this is non-trivial because `CNode.lookup` uses
-`List.find?`, which returns only the first match for a given slot index. If duplicate
-slot indices existed (violating `cspaceSlotUnique`), later entries would be
-unretrievable. This property holds if and only if `cspaceSlotUnique` holds. -/
+WS-G5: With HashMap-backed slots, lookup completeness is direct — `CNode.lookup`
+delegates to `HashMap.getElem?`, which is the canonical accessor. The property
+is trivially true by the identity `CNode.lookup slot = cn.slots[slot]?`. -/
 def cspaceLookupSound (st : SystemState) : Prop :=
   ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability),
     st.objects[cnodeId]? = some (KernelObject.cnode cn) →
-    (slot, cap) ∈ cn.slots →
+    cn.lookup slot = some cap →
     SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap
 
 /-- Attenuation rule component used by the M2 capability invariant bundle. -/
@@ -195,8 +194,8 @@ theorem cspaceRevoke_local_target_reduction
       | cnode cn =>
 
           let revokedRefs : List SlotRef :=
-            (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
-              (fun entry => { cnode := addr.cnode, slot := entry.fst })
+            (cn.slots.toList.filter (fun entry => entry.1 ≠ addr.slot ∧ entry.2.target = parent.target)).map
+              (fun entry => { cnode := addr.cnode, slot := entry.1 })
           let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
             { st with
@@ -224,34 +223,33 @@ theorem cspaceRevoke_local_target_reduction
             have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
               { cnode := addr.cnode, slot := slot } hObjEq
             simpa [hEq] using hLookup
-          simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            CNode.lookup, CNode.revokeTargetLocal] at hLookupStored
-          rcases hLookupStored with ⟨slot', hFind⟩
-          have hPred :
-              ((decide (slot' = addr.slot) || !decide (cap.target = parent.target)) &&
-                decide (slot' = slot)) = true := by
-            have hPredRaw := List.find?_some
-              (p := fun entry : SeLe4n.Slot × Capability =>
-                (decide (entry.fst = addr.slot) || !decide (entry.snd.target = parent.target)) &&
-                  decide (entry.fst = slot))
-              (a := (slot', cap)) hFind
-            simpa using hPredRaw
-          have hSplit :
-              (decide (slot' = addr.slot) || !decide (cap.target = parent.target)) = true ∧
-              decide (slot' = slot) = true := by
-            simpa [Bool.and_eq_true] using hPred
-          have hEqSlot : slot' = slot := by
-            simpa using hSplit.2
-          have hOrProp : slot' = addr.slot ∨ cap.target ≠ parent.target := by
-            simpa using hSplit.1
+          -- WS-G5: With HashMap-backed slots, CNode.lookup delegates to getElem?.
+          -- Extract that the filtered HashMap lookup succeeds at `slot`.
+          have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
+            simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
+              CNode.lookup] at hLookupStored
+            exact hLookupStored
+          -- revokeTargetLocal filters with: fun s c => s == addr.slot || !(c.target == parent.target)
+          have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) := by
+            rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
+            exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [hFilterLookup])
+          -- By mem_filter, the filter predicate holds for the stored key and value.
+          have ⟨hMemOrig, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilter
+          -- Normalize: getKey slot ≈ slot, and the stored value cn.slots[slot] = cap
+          have hKeyEq : cn.slots.getKey slot hMemOrig = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrig)
+          have hValEq : cn.slots[slot] = cap := by
+            have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots _ _ _ slot hMemFilter
+            have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilter
+            rw [h1] at h2
+            rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
+            rw [hFilterLookup] at h2
+            exact (Option.some.inj h2).symm
+          rw [hKeyEq, hValEq] at hPredTrue
+          -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
           by_cases hSlot : slot = addr.slot
           · exact hSlot
-          · have hNotTarget : cap.target ≠ parent.target := by
-              rcases hOrProp with hSrc | hNe
-              · exfalso
-                exact hSlot (hEqSlot.symm.trans hSrc)
-              · exact hNe
-            exact False.elim (hNotTarget hTarget)
+          · exfalso
+            simp [hSlot, hTarget] at hPredTrue
 
 theorem cspaceLookupSlot_preserves_state
     (st st' : SystemState)
@@ -351,8 +349,8 @@ theorem cspaceRevoke_preserves_source
           | cnode cn =>
 
               let revokedRefs : List SlotRef :=
-                (cn.slots.filter (fun entry => entry.fst ≠ addr.slot ∧ entry.snd.target = parent.target)).map
-                  (fun entry => { cnode := addr.cnode, slot := entry.fst })
+                (cn.slots.toList.filter (fun entry => entry.1 ≠ addr.slot ∧ entry.2.target = parent.target)).map
+                  (fun entry => { cnode := addr.cnode, slot := entry.1 })
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
@@ -649,16 +647,15 @@ theorem badge_merge_idempotent
 
 /-- Derive `cspaceLookupSound` from `cspaceSlotUnique` for any state.
 
-This bridge theorem connects the two reformulated invariant components: lookup
-completeness follows from slot-index uniqueness because `CNode.mem_lookup_of_slotsUnique`
-requires uniqueness to guarantee that `find?` returns the expected entry. -/
+WS-G5: With HashMap-backed slots, `CNode.lookup` delegates directly to
+`HashMap.getElem?`, making lookup completeness trivial by definition.
+The bridge from `slotsUnique` to `lookupSound` is now immediate. -/
 theorem cspaceLookupSound_of_cspaceSlotUnique
-    (st : SystemState) (hUniq : cspaceSlotUnique st) :
+    (st : SystemState) (_hUniq : cspaceSlotUnique st) :
     cspaceLookupSound st := by
-  intro cnodeId cn slot cap hObj hMem
-  have hU := hUniq cnodeId cn hObj
-  simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj]
-  exact CNode.mem_lookup_of_slotsUnique cn slot cap hU hMem
+  intro cnodeId cn slot cap hObj hLookup
+  simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj, CNode.lookup]
+  exact hLookup
 
 /-- WS-E2 / H-01: Transfer `cspaceSlotUnique` across a non-CNode `storeObject`.
 

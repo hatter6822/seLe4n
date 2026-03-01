@@ -1,3 +1,17 @@
+## [0.12.10] - 2026-03-01
+
+### WS-G5: CNode Slot HashMap (completed)
+
+- **CNode slot HashMap migration:** `CNode.slots` changed from `List (Slot × Capability)` to `Std.HashMap Slot Capability`. All capability lookups (`CNode.lookup`), inserts (`CNode.insert`), and deletes (`CNode.remove`) now O(1) amortized instead of O(m) linear scan.
+- **`slotsUnique` invariant trivially true:** HashMap enforces key uniqueness by construction. `CNode.slotsUnique` redefined as `True`, and all three preservation theorems (`insert_slotsUnique`, `remove_slotsUnique`, `revokeTargetLocal_slotsUnique`) now prove `trivial`.
+- **Bridge lemmas:** `HashMap_filter_preserves_key` (single-filter key preservation for `revokeTargetLocal`) and `HashMap_filter_filter_getElem?` (double-filter idempotency for projection) in `Prelude.lean`. Both avoid `Std.HashMap`'s `Option.pfilter` dependent types by working at the membership level.
+- **Projection idempotency reformulated:** `projectKernelObject_idempotent` in `Projection.lean` reformulated from structural equality to slot-level lookup equality, because `Std.HashMap.filter` reverses internal `AssocList` bucket ordering making `(m.filter f).filter f ≠ m.filter f` structurally.
+- **BEq instances for runtime tests:** Manual `BEq CNode` (entry-wise HashMap comparison) and `BEq KernelObject` instances replace the lost `DecidableEq KernelObject` derivation.
+- **CSpace invariant proofs migrated:** `cspaceRevoke_local_target_reduction` rewritten with HashMap-level reasoning (`mem_filter`, `getKey_beq`, `getElem_filter`). `cspaceLookupSound_of_cspaceSlotUnique` simplified (HashMap lookup is direct). `revokedRefs` computations use `cn.slots.toList.filter`.
+- **Test infrastructure updated:** `InvariantChecks.lean` uses `cn.slots.toList.foldr`. `MainTraceHarness.lean` and all test suites use `Std.HashMap.ofList` for CNode construction. `InformationFlowSuite.lean` uses `cn.slots.toList.any` and `cn.slots.size`.
+- **Full proof migration:** zero sorry/axiom across all 10 modified files. `test_full.sh` passes (Tier 0-3).
+- Closes finding F-P03 (CNode slot linear scan).
+
 ## [0.12.9] - 2026-03-01
 
 ### WS-G4: Run Queue Restructure (completed)
