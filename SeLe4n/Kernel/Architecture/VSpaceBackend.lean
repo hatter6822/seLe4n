@@ -4,8 +4,8 @@ import SeLe4n.Model.State
 # VSpace Backend Abstraction (H3 preparation)
 
 This module defines the `VSpaceBackend` typeclass — a forward-looking
-abstraction over VSpace implementations. The current flat-list model
-(`VSpaceRoot.mappings : List (VAddr × PAddr)`) satisfies this interface
+abstraction over VSpace implementations. The current HashMap model
+(`VSpaceRoot.mappings : Std.HashMap VAddr PAddr`) satisfies this interface
 naturally. When H3 introduces ARMv8 hierarchical page tables, a new
 backend can be instantiated without changing the abstract kernel proofs.
 
@@ -102,19 +102,19 @@ class VSpaceBackend (Root : Type) where
       lookupPage root' vaddr' = lookupPage root vaddr'
 
 -- ============================================================================
--- List-based VSpaceBackend instance (current model)
+-- HashMap-based VSpaceBackend instance (current model) — WS-G6/F-P05
 -- ============================================================================
 
 open SeLe4n.Model in
-/-- The existing flat-list `VSpaceRoot` satisfies the `VSpaceBackend` interface.
+/-- WS-G6/F-P05: The HashMap-backed `VSpaceRoot` satisfies the `VSpaceBackend` interface.
 
-    This instance delegates to the operations and lemmas already defined in
+    This instance delegates to the O(1) operations and lemmas defined in
     `SeLe4n.Model.Object` (`VSpaceRoot.mapPage`, `.unmapPage`, `.lookup`)
     and proved in `VSpaceRoot.mapPage_asid_eq`, `lookup_mapPage_eq`, etc.
 
     No new proofs are required — all obligations are discharged by existing
     theorems. -/
-instance listVSpaceBackend : VSpaceBackend VSpaceRoot where
+instance hashMapVSpaceBackend : VSpaceBackend VSpaceRoot where
   mapPage root vaddr paddr := root.mapPage vaddr paddr
   unmapPage root vaddr := root.unmapPage vaddr
   lookupPage root vaddr := root.lookup vaddr

@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.10` |
+| Version | `0.12.11` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 16,485 across 34 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G5 completed |
+| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G6 completed |
 
 ## Milestone history
 
@@ -36,6 +36,7 @@ Completed:
 3. **WS-G3**: ~~ASID Resolution Table~~ **COMPLETED** (v0.12.8)
 4. **WS-G4**: ~~Run queue restructure~~ **COMPLETED** (v0.12.9)
 5. **WS-G5**: ~~CNode slot HashMap~~ **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability`; `HashMap.fold` for `cspaceRevoke` `revokedRefs`
+6. **WS-G6**: ~~VSpace mapping HashMap~~ **COMPLETED** (v0.12.11) — `Std.HashMap VAddr PAddr`; `noVirtualOverlap` trivially true; closes F-P05
 
 Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
 

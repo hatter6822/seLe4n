@@ -54,11 +54,14 @@ def asidTableConsistent (st : SystemState) : Prop :=
 /-- Bounded translation surface: all translated physical addresses are in the finite machine window.
 
 **Status:** Forward declaration for WS-E6 (model completeness). Not yet integrated into
-`vspaceInvariantBundle` or consumed by any preservation theorem. -/
+`vspaceInvariantBundle` or consumed by any preservation theorem.
+
+WS-G6: Reformulated from list membership `(v, p) ∈ root.mappings` to HashMap
+lookup `root.mappings[v]? = some p`. -/
 def boundedAddressTranslation (st : SystemState) (bound : Nat) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot) (v : SeLe4n.VAddr) (p : SeLe4n.PAddr),
     st.objects[oid]? = some (KernelObject.vspaceRoot root) →
-    (v, p) ∈ root.mappings →
+    root.mappings[v]? = some p →
     p.toNat < bound
 
 /-- WS-B1/WS-G3 architecture/VSpace invariant bundle entrypoint. -/

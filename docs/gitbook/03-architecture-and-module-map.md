@@ -53,6 +53,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - TCB structure + IPC state + intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`),
   - endpoint protocol fields,
   - CNode `Std.HashMap Slot Capability` slot store and local revoke helper (WS-G5),
+  - VSpaceRoot `Std.HashMap VAddr PAddr` mapping store with O(1) lookup/map/unmap (WS-G6),
   - `KernelObject` discriminated union.
 
 - `SeLe4n/Model/State.lean`
