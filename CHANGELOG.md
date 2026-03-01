@@ -10,6 +10,16 @@
 - **Testing:** 7 trace scenarios (F2-01..F2-07), 5 negative-state tests, runtime watermark invariant checks, 23 Tier-3 surface anchors.
 - Closes CRIT-04 (No Untyped memory).
 
+### WS-F3: Information-Flow Completeness (completed)
+
+- **ObservableState extension (CRIT-02):** 3 new security-relevant fields — `activeDomain` (scheduling transparency, always visible), `irqHandlers` (filtered by target object observability), `objectIndex` (filtered by object observability). All NI theorems extended to preserve the 7-field projection.
+- **CNode slot filtering (F-22):** `projectKernelObject` redacts CNode capability slots whose targets reference high-domain objects. `capTargetObservable` gate covers `.object`, `.cnodeSlot`, and `.replyCap` target variants. Safety theorems: `projectKernelObject_idempotent` and `projectKernelObject_objectType`.
+- **NI theorem coverage (CRIT-03):** 12 standalone `_preserves_lowEquivalent` theorems (endpointSend, chooseThread, cspaceMint, cspaceRevoke, lifecycleRetypeObject, notificationSignal, notificationWait, cspaceInsertSlot, serviceStart, serviceStop, serviceRestart, storeObject). 3 enforcement-NI bridge theorems (endpointSendChecked_NI, cspaceMintChecked_NI, serviceRestartChecked_NI).
+- **Enforcement-NI bridge (F-20):** Bool case-splitting pattern connects checked operations to NI domain-separation hypotheses. Each bridge theorem extracts the flow-allowed proof, rewrites to the unchecked operation, and delegates to the standalone NI theorem.
+- **Composed NI framework (H-05):** `NonInterferenceStep` inductive with 12 constructors, `step_preserves_projection` one-sided theorem, `composedNonInterference_step/trace` two-sided bundle theorems, `preservesLowEquivalence` abstract predicate with sequential composition and error-action helpers.
+- **Testing:** 39 WS-F3 tests in InformationFlowSuite covering activeDomain projection, IRQ handler filtering, object index filtering, CNode slot filtering (all 3 CapTarget variants), 7-field low-equivalence, serviceRestartChecked enforcement. 22 Tier-3 surface anchors.
+- Closes CRIT-02 (incomplete projection), CRIT-03 (NI 5→12 operations), F-20 (enforcement-NI gap), F-21 (notificationSignal NI), F-22 (CNode projection leak).
+
 ### WS-F1: IPC message transfer and dual-queue verification (completed)
 
 - **IPC message transfer:** `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, and `endpointReplyRecv` now carry `IpcMessage` payloads (registers, caps, badge) through send/receive rendezvous. Messages are staged in sender's `TCB.pendingMessage` while blocked and transferred to the receiver's TCB on handshake/dequeue.

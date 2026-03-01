@@ -23,7 +23,7 @@ operations do not leak information to low-clearance observers.
 - F-21: notificationSignal NI → new theorems for notification operations
 - F-22: CNode projection leak → projectKernelObject filtering
 
-**Non-interference theorems:**
+**Non-interference theorems (two-sided low-equivalence preservation):**
 - `endpointSend_preserves_lowEquivalent`
 - `chooseThread_preserves_lowEquivalent` (WS-D2 / TPI-D01)
 - `cspaceMint_preserves_lowEquivalent` (WS-D2 / TPI-D02)
@@ -31,13 +31,17 @@ operations do not leak information to low-clearance observers.
 - `lifecycleRetypeObject_preserves_lowEquivalent` (WS-D2 / TPI-D03)
 - `notificationSignal_preserves_lowEquivalent` (WS-F3 / F-21)
 - `notificationWait_preserves_lowEquivalent` (WS-F3 / F-21)
-- `schedule_preserves_lowEquivalent` (WS-F3 / CRIT-03)
-- `handleYield_preserves_lowEquivalent` (WS-F3 / CRIT-03)
-- `cspaceInsertSlot_preserves_lowEquivalent` (WS-F3 / CRIT-03)
 - `cspaceInsertSlot_preserves_lowEquivalent` (WS-F3 / CRIT-03)
 - `serviceStart_preserves_lowEquivalent` (WS-F3 / CRIT-03)
 - `serviceStop_preserves_lowEquivalent` (WS-F3 / CRIT-03)
 - `serviceRestart_preserves_lowEquivalent` (WS-F3 / CRIT-03)
+- `storeObject_at_unobservable_preserves_lowEquivalent` (generic)
+
+**Remaining operations for WS-F4 NI coverage:**
+  `schedule`, `handleYield`, `timerTick`, `switchDomain`,
+  `endpointReceive`, `endpointReply`, `endpointReplyRecv`,
+  `cspaceDeleteSlot`, `cspaceCopy`, `cspaceMove`, `cspaceMutate`,
+  `vspaceMapPage`, `vspaceUnmapPage`, adapter operations.
 
 **Enforcement-NI bridge theorems** (WS-F3 / F-20):
 - `endpointSendChecked_NI`
@@ -1191,6 +1195,11 @@ inductive NonInterferenceStep
       (hSvcHigh : serviceObservable ctx observer sid = false)
       (hStep : SeLe4n.Kernel.serviceStop sid policy st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  | serviceRestart
+      (sid : ServiceId) (policyStop policyStart : ServicePolicy)
+      (hSvcHigh : serviceObservable ctx observer sid = false)
+      (hStep : SeLe4n.Kernel.serviceRestart sid policyStop policyStart st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05: A single non-interference step preserves the observer's
 projection (one-sided version). -/
@@ -1321,6 +1330,47 @@ theorem step_preserves_projection
       rw [serviceStop_preserves_irqHandlers st st' sid policy hOp]
     · simp only [projectObjectIndex]
       rw [serviceStop_preserves_objectIndex st st' sid policy hOp]
+  | serviceRestart sid policyStop policyStart hSH hOp =>
+    rcases serviceRestart_decompose st st' sid policyStop policyStart hOp with ⟨mid, hStop, hStart⟩
+    have hMid : projectState ctx observer mid = projectState ctx observer st := by
+      simp only [projectState]; congr 1
+      · funext oid; simp only [projectObjects]
+        by_cases hObs : objectObservable ctx observer oid
+        · simp [hObs]; rw [serviceStop_preserves_objects st mid sid policyStop hStop]
+        · simp [hObs]
+      · simp [projectRunnable, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · simp [projectCurrent, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · funext s; simp only [projectServiceStatus]
+        by_cases hObs : serviceObservable ctx observer s
+        · simp [hObs]; by_cases hEq : s = sid
+          · subst hEq; simp [hSH] at hObs
+          · rw [serviceStop_preserves_lookupService_ne st mid sid policyStop s hEq hStop]
+        · simp [hObs]
+      · simp [projectActiveDomain, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · funext irq; simp only [projectIrqHandlers]
+        rw [serviceStop_preserves_irqHandlers st mid sid policyStop hStop]
+      · simp only [projectObjectIndex]
+        rw [serviceStop_preserves_objectIndex st mid sid policyStop hStop]
+    have hFinal : projectState ctx observer st' = projectState ctx observer mid := by
+      simp only [projectState]; congr 1
+      · funext oid; simp only [projectObjects]
+        by_cases hObs : objectObservable ctx observer oid
+        · simp [hObs]; rw [serviceStart_preserves_objects mid st' sid policyStart hStart]
+        · simp [hObs]
+      · simp [projectRunnable, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · simp [projectCurrent, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · funext s; simp only [projectServiceStatus]
+        by_cases hObs : serviceObservable ctx observer s
+        · simp [hObs]; by_cases hEq : s = sid
+          · subst hEq; simp [hSH] at hObs
+          · rw [serviceStart_preserves_lookupService_ne mid st' sid policyStart s hEq hStart]
+        · simp [hObs]
+      · simp [projectActiveDomain, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · funext irq; simp only [projectIrqHandlers]
+        rw [serviceStart_preserves_irqHandlers mid st' sid policyStart hStart]
+      · simp only [projectObjectIndex]
+        rw [serviceStart_preserves_objectIndex mid st' sid policyStart hStart]
+    rw [hFinal, hMid]
 
 /-- WS-F3/H-05: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/

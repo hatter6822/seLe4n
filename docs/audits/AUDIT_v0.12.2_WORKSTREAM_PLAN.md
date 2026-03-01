@@ -119,7 +119,7 @@ and connect the enforcement layer to non-interference theorems.
 
 **Deliverables (completed):**
 1. Extended `ObservableState` with 3 new security-relevant fields: `activeDomain` (scheduling transparency), `irqHandlers` (filtered by target observability), `objectIndex` (filtered by object observability).
-2. Proved non-interference for all new projection fields across high-step and low-step unwinding (7+ NI theorems covering `endpointSend`, `notificationSignal`, `storeObject`, `cspaceRevoke`, `serviceRestartChecked`, etc.).
+2. Proved non-interference for all new projection fields across high-step and low-step unwinding (12 standalone NI theorems covering `endpointSend`, `chooseThread`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetypeObject`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `storeObject`; plus 3 enforcement-NI bridge theorems).
 3. Proved enforcement-to-NI connection: `serviceRestartChecked` enforcement-NI bridge via Bool case-splitting pattern; existing bridges for `endpointSendChecked` and `cspaceMintChecked` extended with new field preservation.
 4. Added `notificationSignal` non-interference theorem with full 7-field preservation.
 5. Implemented CNode slot filtering via `projectKernelObject` to prevent high-domain capability target leakage (F-22). Proved `projectKernelObject_idempotent` and `projectKernelObject_objectType` safety theorems.

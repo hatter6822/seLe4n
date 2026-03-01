@@ -20,7 +20,7 @@ Three workstreams run in parallel:
 ### P2 — Information-flow completeness (WS-F3) — **COMPLETED**
 
 - ~~Extend `ObservableState` projection to all security-relevant fields.~~ Done: 3 new fields (activeDomain, irqHandlers, objectIndex).
-- ~~Prove non-interference for new projection fields.~~ Done: 7+ NI preservation theorems.
+- ~~Prove non-interference for new projection fields.~~ Done: 15 NI theorems (12 standalone + 3 enforcement-NI bridges).
 - ~~Connect enforcement layer to NI theorems.~~ Done: enforcement-NI bridge for `serviceRestartChecked`.
 - CNode slot filtering via `projectKernelObject` prevents capability target leakage (F-22).
 - Test suite extended with WS-F3 coverage (IRQ projection, object index, CNode filtering, 7-field low-equivalence).

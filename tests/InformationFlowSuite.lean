@@ -550,6 +550,29 @@ private def runInformationFlowChecks : IO Unit := do
   | _ =>
     throw <| IO.userError "WS-F3/F-22: endpoint at oid 1 should be visible to public observer"
 
+  -- CNode slot filtering for .cnodeSlot target variant
+  let cnodeSlotState :=
+    (BootstrapBuilder.empty
+      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
+      |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject 60 (.cnode { guard := 0, radix := 8, slots :=
+          [ (0, { target := .cnodeSlot 1 0, rights := [.read], badge := none })    -- cnodeSlot to public CNode
+          , (1, { target := .cnodeSlot 2 0, rights := [.read], badge := none })    -- cnodeSlot to secret CNode
+          ] })
+      |>.build)
+
+  let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
+  match cnodeSlotProj.objects 60 with
+  | some (.cnode cn) =>
+    expect "WS-F3/F-22: cnodeSlot target to public CNode is visible"
+      (cn.slots.any (fun (s, _) => s = 0))
+    expect "WS-F3/F-22: cnodeSlot target to secret CNode is filtered"
+      (!cn.slots.any (fun (s, _) => s = 1))
+    expect "WS-F3/F-22: cnodeSlot variant: exactly 1 of 2 slots visible"
+      (cn.slots.length = 1)
+  | _ =>
+    throw <| IO.userError "WS-F3/F-22: CNode at oid 60 should be visible for cnodeSlot test"
+
   IO.println "WS-F3/F-22 CNode slot filtering checks passed"
 
   -- ---------- Full 7-field low-equivalence ----------

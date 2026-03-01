@@ -133,7 +133,7 @@ Authoritative detail:
 
 ### 5.2 High — Proof Coverage and Security
 
-- **WS-F3:** ~~Information-flow completeness~~ **COMPLETED** — extended `ObservableState` with 3 new fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering via `projectKernelObject` (F-22); 7+ NI preservation theorems for new projection fields; enforcement-NI bridge for `serviceRestartChecked`; test suite extended with WS-F3 coverage (CRIT-02, CRIT-03, F-20, F-21, F-22)
+- **WS-F3:** ~~Information-flow completeness~~ **COMPLETED** — extended `ObservableState` with 3 new fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering via `projectKernelObject` (F-22); 15 NI theorems (12 standalone + 3 enforcement-NI bridges); enforcement-NI bridge for `serviceRestartChecked`; test suite extended with WS-F3 coverage (CRIT-02, CRIT-03, F-20, F-21, F-22)
 - **WS-F4:** Proof gap closure — `timerTick`, `cspaceMutate`, notification full-system preservation, compound IPC ops (F-03, F-06, F-12)
 
 ### 5.3 Medium — Architectural Quality
