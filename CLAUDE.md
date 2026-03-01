@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.12.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.12.6.
 
 ## Build and run
 
@@ -285,10 +285,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-F (v0.12.2 audit remediation) — WS-F1, WS-F2, WS-F3, WS-F4 completed
-- **Active findings baseline**: `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`
-- **Planning backbone**: `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`
-- **Completed**: WS-F1..F3 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Active portfolio**: WS-G (kernel performance optimization) — WS-G1 completed
+- **Active findings baseline**: `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`
+- **Planning backbone**: `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`
+- **Completed**: WS-G1 (v0.12.6), WS-F1..F4 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

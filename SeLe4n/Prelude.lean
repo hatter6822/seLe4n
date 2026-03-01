@@ -1,3 +1,6 @@
+import Std.Data.HashMap
+import Std.Data.HashSet
+
 namespace SeLe4n
 
 /-! ## H-06/WS-E3: Identifier sentinel convention
@@ -18,6 +21,11 @@ service at ID 0. This mirrors seL4's convention where capability pointer 0
 structure ObjId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable ObjId where
+  hash a := hash a.val
 
 namespace ObjId
 
@@ -48,6 +56,11 @@ end ObjId
 structure ThreadId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable ThreadId where
+  hash a := hash a.val
 
 namespace ThreadId
 
@@ -109,6 +122,11 @@ structure DomainId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable DomainId where
+  hash a := hash a.val
+
 namespace DomainId
 
 /-- Constructor helper kept explicit for migration ergonomics. -/
@@ -129,6 +147,11 @@ end DomainId
 structure Priority where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable Priority where
+  hash a := hash a.val
 
 namespace Priority
 
@@ -155,6 +178,11 @@ structure Deadline where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable Deadline where
+  hash a := hash a.val
+
 namespace Deadline
 
 @[inline] def ofNat (n : Nat) : Deadline := ⟨n⟩
@@ -179,6 +207,11 @@ structure Irq where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable Irq where
+  hash a := hash a.val
+
 namespace Irq
 
 /-- Constructor helper kept explicit for migration ergonomics. -/
@@ -199,6 +232,11 @@ end Irq
 structure ServiceId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable ServiceId where
+  hash a := hash a.val
 
 namespace ServiceId
 
@@ -226,6 +264,11 @@ end ServiceId
 structure CPtr where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable CPtr where
+  hash a := hash a.val
 
 namespace CPtr
 
@@ -259,6 +302,11 @@ structure Slot where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable Slot where
+  hash a := hash a.val
+
 namespace Slot
 
 /-- Constructor helper kept explicit for migration ergonomics. -/
@@ -279,6 +327,11 @@ end Slot
 structure Badge where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable Badge where
+  hash a := hash a.val
 
 namespace Badge
 
@@ -301,6 +354,11 @@ structure ASID where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable ASID where
+  hash a := hash a.val
+
 namespace ASID
 
 /-- Constructor helper kept explicit for migration ergonomics. -/
@@ -322,6 +380,11 @@ structure VAddr where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable VAddr where
+  hash a := hash a.val
+
 namespace VAddr
 
 /-- Constructor helper kept explicit for migration ergonomics. -/
@@ -342,6 +405,11 @@ end VAddr
 structure PAddr where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable PAddr where
+  hash a := hash a.val
 
 namespace PAddr
 

@@ -1,3 +1,13 @@
+## [0.12.6] - 2026-03-01
+
+### WS-G1: Hashable/BEq Infrastructure (completed)
+
+- **Hashable instances for all 13 typed identifiers:** `ObjId`, `ThreadId`, `DomainId`, `Priority`, `Deadline`, `Irq`, `ServiceId`, `CPtr`, `Slot`, `Badge`, `ASID`, `VAddr`, `PAddr` — all marked `@[inline]` for zero runtime overhead, delegating to `Nat` hash. BEq is provided by the existing `DecidableEq` derivations via `instBEqOfDecidableEq`.
+- **Hashable instance for composite key `SlotRef`:** uses `mixHash` to combine `cnode` and `slot` hashes for uniform distribution in HashMap/HashSet.
+- **Std imports:** `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, making O(1) hash-based data structures available to all kernel modules.
+- **Zero behavioral change:** all existing tests pass identically (Tier 0-3). Zero sorry/axiom.
+- **Foundation for WS-G2..G9:** every subsequent performance workstream depends on these instances for HashMap/HashSet usage.
+
 ## [0.12.5] - 2026-03-01
 
 ### WS-F4: Proof Gap Closure (completed)

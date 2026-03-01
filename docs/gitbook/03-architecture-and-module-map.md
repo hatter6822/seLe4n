@@ -38,7 +38,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### Foundations
 
 - `SeLe4n/Prelude.lean`
-  - object/thread IDs and kernel monad contract used globally.
+  - object/thread IDs and kernel monad contract used globally,
+  - `Hashable` instances for all 13 typed identifiers (WS-G1),
+  - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
 - `SeLe4n/Machine.lean`
   - machine registers, memory abstraction, and pure update/read helpers,
   - `MachineConfig` (register/address width, page size, ASID limit) and
