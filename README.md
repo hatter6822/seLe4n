@@ -17,6 +17,8 @@
   A microkernel written in Lean 4 with machine-checked proofs, inspired by the
   <a href="https://sel4.systems">seL4</a> architecture. First hardware target:
   <strong>Raspberry Pi 5</strong>.
+</p>
+<p align="center">
   Created thoughtfully with the help of:
   claude :robot: :heart: :robot: codex  
   <strong>TREAT THIS KERNEL ACCORDINGLY</strong>
