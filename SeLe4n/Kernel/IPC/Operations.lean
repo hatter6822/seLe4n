@@ -82,7 +82,11 @@ def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
-/-- Add a sender to an endpoint wait queue with explicit state transition.
+/-- **Deprecated (WS-G7):** Use `endpointSendDual` from `IPC.DualQueue` instead.
+This legacy O(n) endpoint send is retained only for backward compatibility of
+existing invariant proofs; new code should use the O(1) dual-queue path.
+
+Add a sender to an endpoint wait queue with explicit state transition.
 
 WS-E3/H-09: Thread IPC state transitions are now enforced:
 - **Blocking paths** (idle→send, send→send): the sender's IPC state is set to
@@ -124,7 +128,11 @@ def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Register one waiting receiver on an idle endpoint.
+/-- **Deprecated (WS-G7):** Use `endpointReceiveDual` from `IPC.DualQueue` instead.
+This legacy O(n) endpoint await-receive is retained only for backward compatibility
+of existing invariant proofs; new code should use the O(1) dual-queue path.
+
+Register one waiting receiver on an idle endpoint.
 
 WS-E3/H-09: After registration, the receiver's IPC state is set to
 `.blockedOnReceive endpointId` and the receiver is removed from the runnable queue.
@@ -148,7 +156,11 @@ def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Consume one queued sender from an endpoint wait queue.
+/-- **Deprecated (WS-G7):** Use `endpointReceiveDual` from `IPC.DualQueue` instead.
+This legacy O(n) endpoint receive is retained only for backward compatibility of
+existing invariant proofs; new code should use the O(1) dual-queue path.
+
+Consume one queued sender from an endpoint wait queue.
 
 WS-E3/H-09: After dequeuing a sender, the sender's IPC state is set to `.ready`
 and the sender is added to the runnable queue. This unblocks the sender that was
@@ -209,9 +221,15 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
 
 /-- Wait on a notification: consume pending badge or block the caller.
 
-WS-D4/F-12: Before appending a thread to the waiting list, checks whether
-the thread is already present. Returns `alreadyWaiting` if so, preventing
-duplicate entries and ensuring the waiting list remains duplicate-free. -/
+WS-G7/F-P11: Duplicate-wait check uses O(1) TCB ipcState lookup instead of
+O(n) list membership scan. If the waiter's ipcState is already
+`.blockedOnNotification notificationId`, the thread is already waiting and
+`alreadyWaiting` is returned.
+
+WS-G7/F-P11: Waiter is prepended (`waiter :: waitingThreads`) instead of
+appended (`waitingThreads ++ [waiter]`), reducing enqueue from O(n) to O(1).
+FIFO ordering is not required by the seL4 notification spec — any waiter may
+be woken on signal. -/
 def notificationWait
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
@@ -228,21 +246,24 @@ def notificationWait
                 | .error e => .error e
                 | .ok st'' => .ok (some badge, st'')
         | none =>
-            -- F-12: Reject if waiter is already in the waiting list
-            if waiter ∈ ntfn.waitingThreads then
-              .error .alreadyWaiting
-            else
-              let ntfn' : Notification := {
-                state := .waiting
-                waitingThreads := ntfn.waitingThreads ++ [waiter]
-                pendingBadge := none
-              }
-              match storeObject notificationId (.notification ntfn') st with
-              | .error e => .error e
-              | .ok ((), st') =>
-                  match storeTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+            -- WS-G7/F-P11: O(1) duplicate check via TCB ipcState instead of O(n) list membership
+            match lookupTcb st waiter with
+            | none => .error .objectNotFound
+            | some tcb =>
+                if tcb.ipcState = .blockedOnNotification notificationId then
+                  .error .alreadyWaiting
+                else
+                  let ntfn' : Notification := {
+                    state := .waiting
+                    waitingThreads := waiter :: ntfn.waitingThreads
+                    pendingBadge := none
+                  }
+                  match storeObject notificationId (.notification ntfn') st with
                   | .error e => .error e
-                  | .ok st'' => .ok (none, removeRunnable st'' waiter)
+                  | .ok ((), st') =>
+                      match storeTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+                      | .error e => .error e
+                      | .ok st'' => .ok (none, removeRunnable st'' waiter)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -467,19 +488,22 @@ theorem storeTcbIpcState_notification_backward
         rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hNtfn; exact hNtfn
 
-/-- Double-wait is rejected: if the thread is already waiting,
-`notificationWait` returns `alreadyWaiting`. -/
+/-- WS-G7/F-P11: Double-wait is rejected: if the waiter's TCB ipcState is
+already `.blockedOnNotification notifId`, `notificationWait` returns
+`alreadyWaiting`. Uses O(1) TCB lookup instead of O(n) list membership. -/
 theorem notificationWait_error_alreadyWaiting
     (waiter : SeLe4n.ThreadId)
     (notifId : SeLe4n.ObjId)
     (st : SystemState)
     (ntfn : Notification)
+    (tcb : TCB)
     (hObj : st.objects[notifId]? = some (.notification ntfn))
     (hNoBadge : ntfn.pendingBadge = none)
-    (hMem : waiter ∈ ntfn.waitingThreads) :
+    (hTcb : lookupTcb st waiter = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
     notificationWait notifId waiter st = .error .alreadyWaiting := by
   unfold notificationWait
-  simp [hObj, hNoBadge, hMem]
+  simp [hObj, hNoBadge, hTcb, hBlocked]
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
 has an empty waiting list. -/
@@ -501,21 +525,26 @@ theorem notificationWait_badge_path_notification
       cases hBadge : ntfn.pendingBadge with
       | none =>
         simp only [hBadge] at hStep
-        split at hStep
-        · simp at hStep
-        · revert hStep
-          cases hStore : storeObject notifId _ st with
-          | error e => simp
-          | ok pair =>
-            simp only []
-            intro hStep
-            revert hStep
-            cases hTcb : storeTcbIpcState pair.2 waiter _ with
+        -- WS-G7: lookupTcb match
+        cases hLookup : lookupTcb st waiter with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hStore : storeObject notifId _ st with
             | error e => simp
-            | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨h, _⟩
-              exact absurd h (by simp)
+            | ok pair =>
+              simp only []
+              intro hStep
+              revert hStep
+              cases hTcb : storeTcbIpcState pair.2 waiter _ with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨h, _⟩
+                exact absurd h (by simp)
       | some b =>
         simp only [hBadge] at hStep
         let newNtfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
@@ -538,8 +567,9 @@ theorem notificationWait_badge_path_notification
               storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hTcb
             exact ⟨newNtfn, hNtfnPreserved, rfl⟩
 
-/-- Decomposition: on the wait path, the post-state notification has the
-waiter appended, and the waiter was not already in the pre-state list. -/
+/-- WS-G7/F-P11: Decomposition: on the wait path, the post-state notification has the
+waiter prepended. The waiter's TCB existed and was not already blocked on this
+notification. -/
 theorem notificationWait_wait_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
@@ -548,9 +578,8 @@ theorem notificationWait_wait_path_notification
     ∃ ntfn ntfn',
       st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = none ∧
-      waiter ∉ ntfn.waitingThreads ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.waitingThreads = ntfn.waitingThreads ++ [waiter] := by
+      ntfn'.waitingThreads = waiter :: ntfn.waitingThreads := by
   unfold notificationWait at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
@@ -577,31 +606,37 @@ theorem notificationWait_wait_path_notification
             exact absurd h (by simp)
       | none =>
         simp only [hBadge] at hStep
-        by_cases hMem : waiter ∈ ntfn.waitingThreads
-        · simp [hMem] at hStep
-        · simp only [hMem, ite_false] at hStep
-          let ntfn' : Notification := { state := .waiting, waitingThreads := ntfn.waitingThreads ++ [waiter], pendingBadge := none }
-          revert hStep
-          cases hStore : storeObject notifId (.notification ntfn') st with
-          | error e => simp
-          | ok pair =>
-            simp only []
-            intro hStep
+        -- WS-G7: match on lookupTcb
+        cases hLookup : lookupTcb st waiter with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          -- ipcState check
+          by_cases hBlocked : tcb.ipcState = .blockedOnNotification notifId
+          · simp [hBlocked] at hStep
+          · simp only [hBlocked, ite_false] at hStep
+            let ntfn' : Notification := { state := .waiting, waitingThreads := waiter :: ntfn.waitingThreads, pendingBadge := none }
             revert hStep
-            cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
+            cases hStore : storeObject notifId (.notification ntfn') st with
             | error e => simp
-            | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hStEq⟩
-              have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-              have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
-                storeObject_objects_eq st pair.2 notifId (.notification ntfn') hStore
-              have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
-                storeTcbIpcState_preserves_notification pair.2 st2 waiter
-                  (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hTcb
-              refine ⟨ntfn, ntfn', rfl, hBadge, hMem, ?_, rfl⟩
-              rw [← hStEq, hRemObj]
-              exact hNtfnPreserved
+            | ok pair =>
+              simp only []
+              intro hStep
+              revert hStep
+              cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hStEq⟩
+                have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
+                have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
+                  storeObject_objects_eq st pair.2 notifId (.notification ntfn') hStore
+                have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
+                  storeTcbIpcState_preserves_notification pair.2 st2 waiter
+                    (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hTcb
+                refine ⟨ntfn, ntfn', rfl, hBadge, ?_, rfl⟩
+                rw [← hStEq, hRemObj]
+                exact hNtfnPreserved
 
 -- ============================================================================
 -- WS-E3/H-09: Scheduler lemmas for removeRunnable and ensureRunnable

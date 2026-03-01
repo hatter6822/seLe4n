@@ -44,15 +44,17 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
 | `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable |
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
-| `endpointSend`, `endpointReceive`, `endpointAwaitReceive` | IPC | Stable |
+| `endpointSend`, `endpointReceive`, `endpointAwaitReceive` | IPC (legacy) | Deprecated (WS-G7) |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
-| `endpointSendDual`, `endpointReceiveDual` | IPC | Stable |
+| `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `serviceStart`, `serviceStop`, `serviceRestart` | Service | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
-| `endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
+| `endpointSendChecked` | Info-flow (legacy) | Deprecated (WS-G7) |
+| `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
+| `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
 -/
 
 namespace SeLe4n.Kernel

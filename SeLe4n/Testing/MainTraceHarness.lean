@@ -250,21 +250,22 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stLargeScheduled) =>
       IO.println s!"large queue scheduled current: {reprStr (stLargeScheduled.scheduler.current.map SeLe4n.ThreadId.toNat)}"
 
+  -- WS-G7: multi-endpoint test migrated to dual-queue operations
   let stMultiEndpoint : SystemState :=
     { st1 with
       objects := st1.objects.insert demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
         |>.insert 31 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
     }
-  match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 .empty stMultiEndpoint with
   | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext 31 12 stEp1 with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext 31 12 .empty stEp1 with
       | .error err => IO.println s!"multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
-          match SeLe4n.Kernel.endpointReceive demoEndpoint stEp2 with
+          match SeLe4n.Kernel.endpointReceiveDual demoEndpoint 12 stEp2 with
           | .error err => IO.println s!"multi-endpoint receive A error: {reprStr err}"
           | .ok (senderA, stEp3) =>
-              match SeLe4n.Kernel.endpointReceive 31 stEp3 with
+              match SeLe4n.Kernel.endpointReceiveDual 31 1 stEp3 with
               | .error err => IO.println s!"multi-endpoint receive B error: {reprStr err}"
               | .ok (senderB, _) =>
                   IO.println s!"multi-endpoint receive senders: {senderA}, {senderB}"
@@ -391,47 +392,38 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
               | .error err => IO.println s!"post-delete lookup (expected error): {reprStr err}"
               | .ok (cap, _) =>
                   IO.println s!"unexpected cap after delete: {reprStr cap}"
-              match SeLe4n.Kernel.endpointAwaitReceive demoEndpoint 1 st5 with
+              -- WS-G7: handshake + send-queue test using dual-queue operations
+              -- Use st3 (pre-retype) where both TCBs (1, 12) still exist
+              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint 12 st3 with
                   | .error err => IO.println s!"endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 st6 with
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 .empty st6 with
                       | .error err => IO.println s!"endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "handshake send matched waiting receiver"
-                          match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 st7 with
+                          -- Sender blocks (no receiver waiting), then receiver dequeues
+                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 .empty st7 with
                           | .error err => IO.println s!"endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
-                              match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 st8 with
-                              | .error err => IO.println s!"endpoint send #2 error: {reprStr err}"
-                              | .ok (_, st9) =>
-                                  IO.println "queued two senders on endpoint"
-                                  match SeLe4n.Kernel.endpointReceive demoEndpoint st9 with
-                                  | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
-                                  | .ok (sender1, st10) =>
-                                      IO.println s!"endpoint receive #1 sender: {sender1}"
-                                      match SeLe4n.Kernel.endpointReceive demoEndpoint st10 with
-                                      | .error err => IO.println s!"endpoint receive #2 error: {reprStr err}"
-                                      | .ok (sender2, st11) =>
-                                          IO.println s!"endpoint receive #2 sender: {sender2}"
-                                          match SeLe4n.Kernel.endpointReceive demoEndpoint st11 with
-                                          | .error err =>
-                                              IO.println s!"endpoint receive #3 (expected mismatch): {reprStr err}"
-                                          | .ok (sender3, _) =>
-                                                IO.println s!"unexpected endpoint receive #3 sender: {sender3}"
-                                          match SeLe4n.Kernel.notificationWait demoNotification 1 st11 with
-                                          | .error err => IO.println s!"notification wait #1 error: {reprStr err}"
-                                          | .ok (badge, st12) =>
-                                              IO.println s!"notification wait #1 result: {reprStr badge}"
-                                              match SeLe4n.Kernel.notificationSignal demoNotification 99 st12 with
-                                              | .error err => IO.println s!"notification signal #1 error: {reprStr err}"
-                                              | .ok (_, st13) =>
-                                                  match SeLe4n.Kernel.notificationSignal demoNotification 123 st13 with
-                                                  | .error err => IO.println s!"notification signal #2 error: {reprStr err}"
-                                                  | .ok (_, st14) =>
-                                                      match SeLe4n.Kernel.notificationWait demoNotification 1 st14 with
-                                                      | .error err => IO.println s!"notification wait #2 error: {reprStr err}"
-                                                      | .ok (badge2, _) =>
-                                                          IO.println s!"notification wait #2 result: {reprStr badge2}"
+                              IO.println "queued sender on endpoint"
+                              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint 12 st8 with
+                              | .error err => IO.println s!"endpoint receive #1 error: {reprStr err}"
+                              | .ok (sender1, st9) =>
+                                  IO.println s!"endpoint receive #1 sender: {sender1}"
+                                  match SeLe4n.Kernel.notificationWait demoNotification 1 st9 with
+                                  | .error err => IO.println s!"notification wait #1 error: {reprStr err}"
+                                  | .ok (badge, st10) =>
+                                      IO.println s!"notification wait #1 result: {reprStr badge}"
+                                      match SeLe4n.Kernel.notificationSignal demoNotification 99 st10 with
+                                      | .error err => IO.println s!"notification signal #1 error: {reprStr err}"
+                                      | .ok (_, st11) =>
+                                          match SeLe4n.Kernel.notificationSignal demoNotification 123 st11 with
+                                          | .error err => IO.println s!"notification signal #2 error: {reprStr err}"
+                                          | .ok (_, st12) =>
+                                              match SeLe4n.Kernel.notificationWait demoNotification 1 st12 with
+                                              | .error err => IO.println s!"notification wait #2 error: {reprStr err}"
+                                              | .ok (badge2, _) =>
+                                                  IO.println s!"notification wait #2 result: {reprStr badge2}"
       match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
       | .error err => IO.println s!"cspace lookup error: {reprStr err}"
       | .ok (cap, _) =>

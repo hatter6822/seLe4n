@@ -101,16 +101,17 @@ Unlike the original `stepOp` which silently returned unchanged state on any erro
 this function classifies each error and returns a structured outcome. -/
 def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
   match op with
+  -- WS-G7: migrated to dual-queue operations
   | .send =>
-      match SeLe4n.Kernel.endpointSendChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid st with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid .empty st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   | .awaitReceive =>
-      match SeLe4n.Kernel.endpointAwaitReceive probeEndpointId tid st with
+      match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .awaitReceive err
   | .receive =>
-      match SeLe4n.Kernel.endpointReceive probeEndpointId st with
+      match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .receive err
 

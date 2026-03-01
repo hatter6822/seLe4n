@@ -1,5 +1,6 @@
 import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.IPC.Operations
+import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Operations
 
@@ -34,9 +35,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Policy-checked endpoint send: verifies that information may flow from the
-sender's security domain to the endpoint's security domain before delegating
-to the underlying `endpointSend` operation.
+/-- Policy-checked endpoint send (legacy): verifies that information may flow
+from the sender's security domain to the endpoint's security domain before
+delegating to the underlying `endpointSend` operation.
+
+WS-G7: Deprecated in favor of `endpointSendDualChecked` which uses O(1)
+intrusive dual-queue operations. Retained for backward compatibility of
+existing invariant proofs.
 
 Returns `flowDenied` when `securityFlowsTo senderLabel endpointLabel = false`. -/
 def endpointSendChecked
@@ -48,6 +53,28 @@ def endpointSendChecked
     let endpointLabel := ctx.endpointLabelOf endpointId
     if securityFlowsTo senderLabel endpointLabel then
       endpointSend endpointId sender st
+    else
+      .error .flowDenied
+
+/-- WS-G7/F-P04: Policy-checked endpoint send using O(1) dual-queue.
+
+Verifies that information may flow from the sender's security domain to the
+endpoint's security domain, then delegates to `endpointSendDual`.
+
+This is the recommended replacement for `endpointSendChecked` as part of the
+legacy-to-dual-queue migration (WS-G7).
+
+Returns `flowDenied` when `securityFlowsTo senderLabel endpointLabel = false`. -/
+def endpointSendDualChecked
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage := IpcMessage.empty) : Kernel Unit :=
+  fun st =>
+    let senderLabel := ctx.threadLabelOf sender
+    let endpointLabel := ctx.endpointLabelOf endpointId
+    if securityFlowsTo senderLabel endpointLabel then
+      endpointSendDual endpointId sender msg st
     else
       .error .flowDenied
 
@@ -105,6 +132,36 @@ theorem endpointSendChecked_eq_endpointSend_when_allowed
       endpointSend endpointId sender st := by
   unfold endpointSendChecked
   simp [hFlow]
+
+/-- WS-G7: When the policy allows flow, the dual-queue checked send behaves
+identically to the unchecked dual-queue send. -/
+theorem endpointSendDualChecked_eq_endpointSendDual_when_allowed
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
+               (ctx.endpointLabelOf endpointId) = true) :
+    endpointSendDualChecked ctx endpointId sender msg st =
+      endpointSendDual endpointId sender msg st := by
+  unfold endpointSendDualChecked
+  simp [hFlow]
+
+/-- WS-G7: When the policy denies flow, the dual-queue checked send returns
+`flowDenied` without modifying state. -/
+theorem endpointSendDualChecked_flowDenied
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
+               (ctx.endpointLabelOf endpointId) = false) :
+    endpointSendDualChecked ctx endpointId sender msg st =
+      .error .flowDenied := by
+  unfold endpointSendDualChecked
+  simp [hDeny]
 
 /-- When the policy denies flow, the checked send returns `flowDenied`
 without modifying state. -/
