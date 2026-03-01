@@ -125,6 +125,11 @@ structure SystemState where
   scheduler : SchedulerState
   irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
   lifecycle : LifecycleMetadata
+  /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
+      Maintained by `storeObject` — insertions on `.vspaceRoot` stores, erasures
+      when a VSpaceRoot is overwritten. Replaces the O(n) `objectIndex.findSome?`
+      scan in `resolveAsidRoot`. -/
+  asidTable : Std.HashMap SeLe4n.ASID SeLe4n.ObjId := {}
   cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
   cdtSlotNode : SlotRef → Option CdtNodeId := fun _ => none
   cdtNodeSlot : CdtNodeId → Option SlotRef := fun _ => none
@@ -149,6 +154,7 @@ instance : Inhabited SystemState where
       objectTypes := {}
       capabilityRefs := fun _ => none
     }
+    asidTable := {}
     cdt := .empty
     cdtSlotNode := fun _ => none
     cdtNodeSlot := fun _ => none
@@ -176,7 +182,9 @@ def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
 WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
 the O(k) closure-chain accumulation on every lookup.
 WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
-of O(n) list membership scan. -/
+of O(n) list membership scan.
+WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
+VSpaceRoot, inserts new ASID when storing a VSpaceRoot. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     .ok ((), {
@@ -195,6 +203,13 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
             else
               st.lifecycle.capabilityRefs ref
         }
+        asidTable :=
+          let cleared := match st.objects[id]? with
+            | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+            | _ => st.asidTable
+          match obj with
+          | .vspaceRoot newRoot => cleared.insert newRoot.asid id
+          | _ => cleared
     })
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
@@ -498,6 +513,64 @@ theorem storeObject_cdt_eq
   unfold storeObject at hStore
   cases hStore
   rfl
+
+-- ============================================================================
+-- WS-G3/F-P06: storeObject ASID table maintenance lemmas
+-- ============================================================================
+
+/-- WS-G3: After storing a VSpaceRoot, the ASID table maps the new root's ASID to `id`. -/
+theorem storeObject_asidTable_vspaceRoot
+    (st st' : SystemState) (id : SeLe4n.ObjId) (newRoot : VSpaceRoot)
+    (hStore : storeObject id (.vspaceRoot newRoot) st = .ok ((), st')) :
+    st'.asidTable[newRoot.asid]? = some id := by
+  unfold storeObject at hStore
+  cases hStore
+  simp only []
+  rw [HashMap_getElem?_insert]; simp
+
+/-- WS-G3: After storing a VSpaceRoot, a different ASID's table entry is unchanged
+    unless it was the old root's ASID that got erased. -/
+theorem storeObject_asidTable_vspaceRoot_ne
+    (st st' : SystemState) (id : SeLe4n.ObjId) (newRoot : VSpaceRoot)
+    (asid : SeLe4n.ASID)
+    (hNe : asid ≠ newRoot.asid)
+    (hStore : storeObject id (.vspaceRoot newRoot) st = .ok ((), st')) :
+    st'.asidTable[asid]? =
+      (match st.objects[id]? with
+       | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[asid]?
+       | _ => st.asidTable[asid]?) := by
+  unfold storeObject at hStore
+  cases hStore
+  simp only []
+  rw [HashMap_getElem?_insert]
+  have hNeBeq : ¬((newRoot.asid == asid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
+  simp only [hNeBeq]
+  cases hOld : st.objects[id]? with
+  | none => rfl
+  | some obj =>
+      cases obj with
+      | vspaceRoot _ => rfl
+      | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ => rfl
+
+/-- WS-G3: After storing a non-VSpaceRoot, the ASID table only changes if the old
+    object was a VSpaceRoot (in which case the old ASID is erased). -/
+theorem storeObject_asidTable_non_vspaceRoot
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotVSpace : ∀ r, obj ≠ .vspaceRoot r)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.asidTable =
+      match st.objects[id]? with
+      | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+      | _ => st.asidTable := by
+  unfold storeObject at hStore
+  cases hStore
+  cases obj with
+  | vspaceRoot r => exact absurd rfl (hNotVSpace r)
+  | tcb _ => rfl
+  | cnode _ => rfl
+  | endpoint _ => rfl
+  | notification _ => rfl
+  | untyped _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=

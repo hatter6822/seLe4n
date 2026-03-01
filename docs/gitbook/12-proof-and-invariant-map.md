@@ -169,7 +169,7 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
-## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete)
+## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06 updated)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:
 
@@ -185,10 +185,14 @@ VSpace invariant bundle preservation is now proven for both success and error pa
   - `vspaceLookup_after_unmap`: after unmap, lookup fails with translationFault
   - `vspaceLookup_unmap_other`: unmap at vaddr doesn't affect lookup at different vaddr'
 
+VSpace invariant bundle structure (3-conjunct, WS-G3):
+- `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID
+- `vspaceRootNonOverlap` — VSpaceRoot mapping ranges do not overlap
+- `asidTableConsistent` — bidirectional soundness + completeness between `asidTable` HashMap and VSpaceRoot objects
+
 Supporting infrastructure in `VSpace.lean`:
-- `resolveAsidRoot_some_implies` — extracts object-store facts from successful ASID resolution
-- `resolveAsidRoot_of_unique_root` — characterization lemma enabling round-trip proofs
-- `storeObject_objectIndex_eq_of_mem` — objectIndex stability for in-place updates
+- `resolveAsidRoot_some_implies_obj` — extracts asidTable + object-store facts from successful ASID resolution (WS-G3: O(1) HashMap lookup)
+- `resolveAsidRoot_of_asidTable_entry` — characterization lemma enabling round-trip proofs (WS-G3: no uniqueness/objectIndex needed)
 
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 

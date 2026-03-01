@@ -17,12 +17,15 @@ open SeLe4n.Model
 def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
   ∃ root, st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid
 
-/-- Locate one root object id carrying `asid` in the bounded discovery window. -/
+/-- WS-G3/F-P06: Locate the root object id carrying `asid` via O(1) hash lookup.
+    Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot. -/
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
-  st.objectIndex.findSome? (fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
+  match st.asidTable[asid]? with
+  | some oid =>
+    match st.objects[oid]? with
     | some (.vspaceRoot root) => if root.asid = asid then some (oid, root) else none
-    | _ => none)
+    | _ => none
+  | none => none
 
 /-- Deterministic VSpace map transition with explicit failures. -/
 def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Kernel Unit :=
@@ -68,81 +71,54 @@ def vspaceAsidRootsUnique (st : SystemState) : Prop :=
     root₁.asid = root₂.asid →
     oid₁ = oid₂
 
-/-- Extract concrete object-store facts from a successful `resolveAsidRoot` result. -/
-theorem resolveAsidRoot_some_implies
+/-- WS-G3: Extract concrete object-store and ASID table facts from a successful
+    `resolveAsidRoot` result. Pure definitional — no invariant hypothesis needed. -/
+theorem resolveAsidRoot_some_implies_obj
     (st : SystemState) (asid : SeLe4n.ASID)
     (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
     (hResolve : resolveAsidRoot st asid = some (rootId, root)) :
-    st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid ∧ rootId ∈ st.objectIndex := by
+    st.asidTable[asid]? = some rootId ∧
+    st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧
+    root.asid = asid := by
   unfold resolveAsidRoot at hResolve
-  generalize st.objectIndex = idx at hResolve ⊢
-  induction idx with
-  | nil => simp [List.findSome?_nil] at hResolve
-  | cons a rest ih =>
-      simp only [List.findSome?_cons] at hResolve
-      split at hResolve
-      · next hMatch =>
-        cases hObjA : st.objects[a]? with
-        | none => simp [hObjA] at hMatch
-        | some obj =>
-            cases obj with
-            | vspaceRoot r =>
-                simp only [hObjA] at hMatch
-                split at hMatch
-                · next hAsidEq =>
-                  simp at hMatch
-                  rcases hMatch with ⟨rfl, rfl⟩
-                  simp at hResolve
-                  rcases hResolve with ⟨rfl, rfl⟩
-                  exact ⟨hObjA, hAsidEq, List.mem_cons_self⟩
-                · simp at hMatch
-            | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ =>
-                simp [hObjA] at hMatch
-      · next hNone =>
-        rcases ih hResolve with ⟨hObj, hAsid, hMem⟩
-        exact ⟨hObj, hAsid, List.mem_cons_of_mem a hMem⟩
+  cases hTable : st.asidTable[asid]? with
+  | none => simp [hTable] at hResolve
+  | some oid =>
+      simp only [hTable] at hResolve
+      cases hObj : st.objects[oid]? with
+      | none => simp [hObj] at hResolve
+      | some obj =>
+          cases obj with
+          | vspaceRoot r =>
+              simp only [hObj] at hResolve
+              by_cases hAsidEq : r.asid = asid
+              · simp only [hAsidEq, ite_true] at hResolve
+                have hPairEq := Option.some.inj hResolve
+                have hOidEq : oid = rootId := congrArg Prod.fst hPairEq
+                have hRootEq : r = root := congrArg Prod.snd hPairEq
+                subst hOidEq; subst hRootEq
+                exact ⟨rfl, hObj, hAsidEq⟩
+              · simp only [hAsidEq, ite_false] at hResolve; cases hResolve
+          | tcb _ => simp [hObj] at hResolve
+          | cnode _ => simp [hObj] at hResolve
+          | endpoint _ => simp [hObj] at hResolve
+          | notification _ => simp [hObj] at hResolve
+          | untyped _ => simp [hObj] at hResolve
 
-/-- Characterization lemma: given ASID-uniqueness, object-store membership, and objectIndex
-    membership, `resolveAsidRoot` returns exactly the expected root.
+/-- WS-G3/F-P06: Characterization lemma — given the ASID table entry and object-store
+    evidence, `resolveAsidRoot` returns exactly the expected root.
 
-    This is the key lemma enabling round-trip theorems for VSpace operations. -/
-theorem resolveAsidRoot_of_unique_root
+    This replaces `resolveAsidRoot_of_unique_root` — no ASID uniqueness or objectIndex
+    membership needed, just the table entry and object-store facts. -/
+theorem resolveAsidRoot_of_asidTable_entry
     (st : SystemState) (asid : SeLe4n.ASID)
     (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
+    (hTable : st.asidTable[asid]? = some rootId)
     (hObj : st.objects[rootId]? = some (KernelObject.vspaceRoot root))
-    (hAsid : root.asid = asid)
-    (hMem : rootId ∈ st.objectIndex)
-    (hUniq : vspaceAsidRootsUnique st) :
+    (hAsid : root.asid = asid) :
     resolveAsidRoot st asid = some (rootId, root) := by
   unfold resolveAsidRoot
-  generalize st.objectIndex = idx at hMem ⊢
-  induction idx with
-  | nil => exact absurd hMem List.not_mem_nil
-  | cons a rest ih =>
-      simp only [List.findSome?_cons]
-      by_cases hEq : a = rootId
-      · subst hEq
-        simp [hObj, hAsid]
-      · -- a ≠ rootId: show the function at a returns none (no VSpace root with this ASID)
-        have hMemRest : rootId ∈ rest := by
-          cases hMem with
-          | head => exact absurd rfl hEq
-          | tail _ h => exact h
-        suffices hNone : (match (st.objects[a]? : Option KernelObject) with
-            | some (.vspaceRoot r) => if r.asid = asid then some (a, r) else none
-            | _ => none) = none by
-          simp [hNone]
-          exact ih hMemRest
-        cases hObjA : st.objects[a]? with
-        | none => simp
-        | some obj =>
-            cases obj with
-            | vspaceRoot r =>
-                simp
-                intro hAsidR
-                -- r.asid = asid and root.asid = asid, so by uniqueness a = rootId
-                exact absurd (hUniq a rootId r root hObjA hObj (hAsidR.trans hAsid.symm)) hEq
-            | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ => simp
+  simp [hTable, hObj, hAsid]
 
 -- ============================================================================
 -- storeObject preservation lemmas for VSpace operations
