@@ -400,8 +400,11 @@ Two bridge lemmas added to Prelude.lean: `HashMap_filter_preserves_key` for
 projection filter idempotency (reformulated at slot-lookup level because
 `AssocList.filter` reverses bucket ordering). `projectKernelObject_idempotent`
 reformulated from structural to slot-level equality. Manual `BEq CNode` and
-`BEq KernelObject` instances replace lost `DecidableEq` derivation. All 10 files
-modified, zero sorry/axiom, `test_full.sh` passes Tier 0-3. Closes F-P03.
+`BEq KernelObject` instances replace lost `DecidableEq` derivation.
+`revokedRefs` computation in `cspaceRevoke` uses `HashMap.fold` for a single O(m)
+pass (no intermediate `.toList` allocation). Test slot-existence checks use
+`HashMap.contains` for O(1). All 10 files modified, zero sorry/axiom,
+`test_full.sh` passes Tier 0-3. Closes F-P03.
 
 ---
 

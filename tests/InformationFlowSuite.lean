@@ -521,13 +521,13 @@ private def runInformationFlowChecks : IO Unit := do
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
     expect "WS-F3/F-22: public observer sees cap slot targeting public object"
-      (cn.slots.toList.any (fun (s, _) => s = 0))
+      (cn.slots.contains 0)
     -- Slot 1 (target: secret obj 2) should be filtered out
     expect "WS-F3/F-22: public observer cannot see cap slot targeting secret object"
-      (!cn.slots.toList.any (fun (s, _) => s = 1))
+      (!cn.slots.contains 1)
     -- Slot 2 (target: replyCap to public thread 1) should be present
     expect "WS-F3/F-22: public observer sees reply cap to public thread"
-      (cn.slots.toList.any (fun (s, _) => s = 2))
+      (cn.slots.contains 2)
     -- Verify slot count
     expect "WS-F3/F-22: public observer sees exactly 2 of 3 slots"
       (cn.slots.size = 2)
@@ -565,9 +565,9 @@ private def runInformationFlowChecks : IO Unit := do
   match cnodeSlotProj.objects 60 with
   | some (.cnode cn) =>
     expect "WS-F3/F-22: cnodeSlot target to public CNode is visible"
-      (cn.slots.toList.any (fun (s, _) => s = 0))
+      (cn.slots.contains 0)
     expect "WS-F3/F-22: cnodeSlot target to secret CNode is filtered"
-      (!cn.slots.toList.any (fun (s, _) => s = 1))
+      (!cn.slots.contains 1)
     expect "WS-F3/F-22: cnodeSlot variant: exactly 1 of 2 slots visible"
       (cn.slots.size = 1)
   | _ =>

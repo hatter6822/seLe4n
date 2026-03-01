@@ -193,9 +193,12 @@ theorem cspaceRevoke_local_target_reduction
       | untyped _ => simp [hObj] at hStep
       | cnode cn =>
 
+                    -- WS-G5: revokedRefs via HashMap.fold — single O(m) pass.
           let revokedRefs : List SlotRef :=
-            (cn.slots.toList.filter (fun entry => entry.1 ≠ addr.slot ∧ entry.2.target = parent.target)).map
-              (fun entry => { cnode := addr.cnode, slot := entry.1 })
+            cn.slots.fold (fun acc s c =>
+              if s != addr.slot && c.target == parent.target then
+                { cnode := addr.cnode, slot := s } :: acc
+              else acc) []
           let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
             { st with
@@ -348,9 +351,12 @@ theorem cspaceRevoke_preserves_source
           | untyped _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
 
+              -- WS-G5: revokedRefs via HashMap.fold — single O(m) pass.
               let revokedRefs : List SlotRef :=
-                (cn.slots.toList.filter (fun entry => entry.1 ≠ addr.slot ∧ entry.2.target = parent.target)).map
-                  (fun entry => { cnode := addr.cnode, slot := entry.1 })
+                cn.slots.fold (fun acc s c =>
+                  if s != addr.slot && c.target == parent.target then
+                    { cnode := addr.cnode, slot := s } :: acc
+                  else acc) []
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
