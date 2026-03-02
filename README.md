@@ -43,7 +43,7 @@ The project began as a formalization of seL4 semantics and has evolved into a
 novel kernel that preserves seL4's capability-based security model while
 introducing substantial architectural improvements:
 
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use `Std.HashMap`/`Std.HashSet` (9-workstream migration, zero invariant weakening)
+- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use `Std.HashMap`/`Std.HashSet` 
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
