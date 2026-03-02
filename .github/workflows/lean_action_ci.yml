@@ -80,6 +80,11 @@ jobs:
       - name: Run Tier 2 negative-state checks
         run: ./scripts/ci_capture_timing.sh smoke-negative ./scripts/test_tier2_negative.sh
 
+      - name: Run documentation sync checks (M-19)
+        env:
+          DOCS_SYNC_SKIP_LEAN_SETUP: '1'
+        run: ./scripts/ci_capture_timing.sh docs-sync ./scripts/test_docs_sync.sh
+
       - name: Upload trace fixture diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

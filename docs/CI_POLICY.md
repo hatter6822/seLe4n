@@ -13,10 +13,10 @@ For pull requests into `main`, branch protection should require all of the follo
 These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job runs only its incremental tier; earlier tiers are gated by job dependencies:
 
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `test-smoke` (after test-fast): `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_negative.sh`
+- `test-smoke` (after test-fast): `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_negative.sh` + `./scripts/test_docs_sync.sh`
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 
-Documentation sync (`./scripts/test_docs_sync.sh`) is available for local use but is not part of CI gates.
+Documentation sync (`./scripts/test_docs_sync.sh`) is integrated into the smoke CI job and the `test_smoke.sh` entrypoint (WS-H3/M-19). Documentation navigation/link drift is caught automatically on every PR.
 
 ## 2. Deterministic replay evidence (Tier 4)
 

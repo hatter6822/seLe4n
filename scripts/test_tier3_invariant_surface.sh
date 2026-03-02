@@ -8,6 +8,51 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
+# M-20 guard: rg (ripgrep) availability check with grep -P fallback.
+# Tier 3 has ~440 rg invocations.  Without this guard, a missing rg
+# produces hundreds of command-not-found errors instead of one clear message.
+if ! command -v rg >/dev/null 2>&1; then
+  # shellcheck disable=SC2312
+  if echo "test" | grep -P "test" >/dev/null 2>&1; then
+    log_section "INVARIANT" "ripgrep (rg) not found; using grep -P fallback for Tier 3 checks."
+    _RG_SHIM_DIR="$(mktemp -d)"
+    cat > "${_RG_SHIM_DIR}/rg" <<'RGSHIM'
+#!/usr/bin/env bash
+# Minimal rg -> grep -P shim (WS-H3/M-20 fallback).
+nflag=""
+pattern=""
+files=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n) nflag="-n"; shift ;;
+    -*) shift ;;
+    *)
+      if [[ -z "${pattern}" ]]; then
+        pattern="$1"
+      else
+        files+=("$1")
+      fi
+      shift
+      ;;
+  esac
+done
+if [[ -n "${nflag}" ]]; then
+  exec grep -Pn -- "${pattern}" "${files[@]}"
+else
+  exec grep -P -- "${pattern}" "${files[@]}"
+fi
+RGSHIM
+    chmod +x "${_RG_SHIM_DIR}/rg"
+    export PATH="${_RG_SHIM_DIR}:${PATH}"
+    # shellcheck disable=SC2154
+    _rg_shim_cleanup() { rm -rf "${_RG_SHIM_DIR}"; }
+    trap '_rg_shim_cleanup' EXIT
+  else
+    record_failure "INVARIANT" "Tier 3 requires ripgrep (rg) or grep with PCRE support. Neither is available."
+    finalize_report
+  fi
+fi
+
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
 run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean

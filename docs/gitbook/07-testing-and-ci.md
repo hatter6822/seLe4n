@@ -43,7 +43,7 @@ CI should execute these repository scripts directly to avoid local/CI drift.
 
 Required branch-protection checks and reproducible setup instructions are documented in [`docs/CI_POLICY.md`](../CI_POLICY.md). CI jobs run each tier incrementally (earlier tiers gated by job dependencies) to eliminate redundant re-execution.
 
-Documentation sync (`scripts/test_docs_sync.sh`) is available as a standalone local tool but is not part of CI gates.
+Documentation sync (`scripts/test_docs_sync.sh`) is integrated into the smoke CI job and the `test_smoke.sh` entrypoint (WS-H3/M-19), catching documentation navigation/link drift on every PR.
 
 WS-A8 baseline maturity automation is implemented in `.github/workflows/platform_security_baseline.yml`, adding an ARM64 fast-gate CI signal and automated baseline security scanning controls.
 
@@ -51,8 +51,8 @@ WS-A8 baseline maturity automation is implemented in `.github/workflows/platform
 
 All test entrypoints use `scripts/test_lib.sh` for:
 
-1. common argument handling (`--continue`),
-2. command execution wrappers (`run_check`),
+1. common argument handling (`--continue`; disables `set -e` in continue mode per WS-H3/H-12),
+2. command execution wrappers (`run_check` — returns 0 on success, 1 on failure),
 3. centralized pass/fail accounting and final report,
 4. optional automatic Lean setup helper path if `lake` is missing.
 
@@ -83,6 +83,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-E (completed):** v0.11.6 audit remediation workstreams (WS-E1..WS-E6) all completed.
 - **WS-E1 (completed):** Test infrastructure and CI hardening — SHA-pinned all GitHub Actions (F-14), added 5 runtime invariant check families (M-11: CSpace coherency, capability rights, lifecycle metadata, service acyclicity, VSpace ASID uniqueness), parameterized test topologies with 3 configurations (M-10), structured trace format with scenario/risk metadata (L-07), and theorem-body spot-check validation (L-08).
 - **WS-G refinement (v0.12.15):** Runtime invariant checks expanded with `runQueueThreadPriorityConsistentB` (RunQueue membership ↔ threadPriority consistency) and `cdtChildMapConsistentCheck` (CDT childMap ↔ edges bidirectional). `NegativeStateSuite` extended with `endpointReplyRecv` (2 negative + 1 positive) and `cspaceMutate` (2 negative + 2 positive) audit coverage checks. `StateBuilder.build` uses actual TCB priorities for RunQueue bucketing.
+- **WS-H3 (v0.12.17):** Build/CI infrastructure fixes — `run_check` returns non-zero on failure in continue mode (H-12); `test_docs_sync.sh` integrated into smoke CI and `test_smoke.sh` (M-19); Tier 3 `rg` availability guard with `grep -P` fallback shim (M-20).
 
 ## Practical failure triage
 

@@ -18,5 +18,7 @@ run_check "META" "${SCRIPT_DIR}/test_tier1_build.sh" "${sub_args[@]}"
 run_check "META" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate
 run_check "META" "${SCRIPT_DIR}/test_tier2_trace.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_negative.sh" "${sub_args[@]}"
+# M-19: documentation sync check — catches navigation/link drift on every PR.
+run_check "META" "${SCRIPT_DIR}/test_docs_sync.sh"
 
 finalize_report
