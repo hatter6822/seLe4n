@@ -84,4 +84,9 @@ else
   log_section "HYGIENE" "shellcheck unavailable; optional shell lint not executed in this environment."
 fi
 
+# Website link protection: verify that all paths referenced by sele4n.org
+# (hatter6822.github.io) still exist in the repository tree.  A failure here
+# means a rename or deletion would produce 404s on the project website.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
+
 finalize_report
