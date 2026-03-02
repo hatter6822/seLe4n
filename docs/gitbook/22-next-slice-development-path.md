@@ -2,10 +2,14 @@
 
 ## Current state
 
-**Version:** 0.12.15 (Lean 4.28.0)
+**Version:** 0.12.17 (Lean 4.28.0)
 
-Two major portfolios are completed:
+Three major portfolios are completed:
 
+- **WS-H Phase 1** (v0.12.16–v0.12.17): Critical correctness fixes — IPC
+  call-path semantic bug (WS-H1), lifecycle safety guards (WS-H2), build/CI
+  infrastructure hardening (WS-H3). See
+  [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G** (v0.12.6–v0.12.15): All 14 kernel performance findings closed.
   Every hot path migrated to O(1) hash-based structures. See
   [Kernel Performance Optimization](08-kernel-performance-optimization.md).

@@ -7,6 +7,13 @@
 - **Tier 3 rg availability guard (M-20 MEDIUM):** `test_tier3_invariant_surface.sh` has ~440 `rg` invocations. Previously, a missing `rg` produced hundreds of command-not-found errors. Added a guard at script entry that checks for `rg` availability. If absent, a `grep -P` fallback shim is created on PATH (handling both direct calls and `bash -lc` subshell invocations). If neither `rg` nor `grep -P` is available, the script fails with a single clear diagnostic message.
 - **Full integration:** `test_full.sh` passes (Tier 0-3). Zero sorry/axiom.
 
+### WS-H2/B-5: Lifecycle hFresh Auto-Derivation (audit gap closure)
+
+- **retypeFromUntyped_ok_childId_ne:** New theorem proving `childId ≠ untypedId` is automatically derivable from successful `retypeFromUntyped` execution (H-06 self-overwrite guard).
+- **retypeFromUntyped_ok_childId_fresh:** New theorem proving childId freshness among existing untyped children is automatically derivable from successful `retypeFromUntyped` execution (A-27 collision guard).
+- **retypeFromUntyped_preserves_untypedMemoryInvariant_auto:** New auto-derivation wrapper that eliminates the manual `hNe` and `hFresh` proof obligations from `retypeFromUntyped_preserves_untypedMemoryInvariant`. Callers need only supply the invariant precondition, new-object well-formedness, and success hypothesis — both safety conditions are derived from the operation semantics.
+- **Documentation updates:** GitBook chapters updated to v0.12.17 (19-end-to-end-audit, 22-next-slice-development-path, 07-testing-and-ci, README). Audit lineage table extended with WS-H portfolio entry. Theorem count updated to 575+.
+
 ## [0.12.16] - 2026-03-02
 
 ### WS-H1: IPC Call-Path Semantic Fix (completed)

@@ -407,4 +407,82 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     · exact hUtEq ▸ hUt'UI
     · exact hUI oid utPost hPre
 
+/-- WS-H2/B-5: If `retypeFromUntyped` succeeds, then `childId ≠ untypedId`.
+The self-overwrite guard (H-06) returns `childIdSelfOverwrite` when
+`childId = untypedId`, so success implies they are distinct. -/
+theorem retypeFromUntyped_ok_childId_ne
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    childId ≠ untypedId := by
+  intro h
+  unfold retypeFromUntyped at hStep
+  cases hObj : st.objects[untypedId]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ =>
+          simp [hObj] at hStep
+      | untyped _ =>
+          simp only [hObj] at hStep; simp [h] at hStep
+
+/-- WS-H2/B-5: If `retypeFromUntyped` succeeds, the childId is fresh among
+the source untyped's existing children. The A-27 collision guard returns
+`childIdCollision` when any existing child shares the childId, so success
+implies freshness. This eliminates the manual `hFresh` proof obligation. -/
+theorem retypeFromUntyped_ok_childId_fresh
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    ∀ ut, st.objects[untypedId]? = some (.untyped ut) →
+      ∀ c ∈ ut.children, c.objId ≠ childId := by
+  intro ut hObj c hMem hEq
+  have hNe : childId ≠ untypedId :=
+    retypeFromUntyped_ok_childId_ne st st' authority untypedId childId newObj allocSize hStep
+  have hStep' := hStep
+  unfold retypeFromUntyped at hStep'
+  simp only [hObj] at hStep'
+  have hCollF : st.objects[childId]?.isSome = false := by
+    cases h : st.objects[childId]?.isSome
+    · rfl
+    · simp [hNe, h] at hStep'
+  have hFrF : (ut.children.any fun c => c.objId == childId) = false := by
+    cases h : ut.children.any (fun c => c.objId == childId)
+    · rfl
+    · simp [hNe, hCollF, h] at hStep'
+  have hAny : (ut.children.any fun c' => c'.objId == childId) = true :=
+    List.any_eq_true.mpr ⟨c, hMem, by simp [hEq]⟩
+  rw [hAny] at hFrF
+  simp at hFrF
+
+/-- WS-H2/B-5: Auto-derivation variant of
+`retypeFromUntyped_preserves_untypedMemoryInvariant` that eliminates the
+manual `hNe` and `hFresh` proof obligations. Both conditions are derived
+from the success of `retypeFromUntyped` via the H-06 self-overwrite guard
+and A-27 child-collision guard respectively. Callers need only supply the
+invariant precondition, the new-object well-formedness hypothesis, and the
+success hypothesis. -/
+theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hInv : untypedMemoryInvariant st)
+    (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    untypedMemoryInvariant st' :=
+  retypeFromUntyped_preserves_untypedMemoryInvariant
+    st st' authority untypedId childId newObj allocSize hInv
+    (retypeFromUntyped_ok_childId_ne st st' authority untypedId childId newObj allocSize hStep)
+    hNewObjWF
+    (retypeFromUntyped_ok_childId_fresh st st' authority untypedId childId newObj allocSize hStep)
+    hStep
+
 end SeLe4n.Kernel
