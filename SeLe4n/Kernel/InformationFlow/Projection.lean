@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.InformationFlow.Policy
+import Std.Data.HashSet
 
 /-!
 WS-C3 proof-surface note:
@@ -168,6 +169,190 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     irqHandlers := projectIrqHandlers ctx observer st
     objectIndex := projectObjectIndex ctx observer st
   }
+
+-- ============================================================================
+-- WS-G9/F-P09: Precomputed observable-object set and optimized projections
+-- ============================================================================
+
+/-- WS-G9/F-P09: Precompute the set of all observable object IDs.
+
+Evaluates `objectObservable` exactly once per object in the index, building a
+`Std.HashSet ObjId` for O(1) subsequent lookups. This eliminates redundant
+`securityFlowsTo` evaluations across `projectObjects`, `projectIrqHandlers`,
+`projectObjectIndex`, and `capTargetObservable` within a single `projectState`
+call. -/
+@[inline] def computeObservableSet (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) : Std.HashSet SeLe4n.ObjId :=
+  st.objectIndex.foldl (fun acc oid =>
+    if objectObservable ctx observer oid then acc.insert oid else acc) {}
+
+/-- WS-G9: Core induction lemma for the observable set foldl. For any list `xs`,
+accumulator `s`, and element `a ∈ xs`: the result of the fold contains `a`
+iff `objectObservable ctx observer a = true` OR `s` already contained `a`. -/
+private theorem foldl_observable_set_mem
+    (ctx : LabelingContext) (observer : IfObserver)
+    (xs : List SeLe4n.ObjId) (s : Std.HashSet SeLe4n.ObjId) (a : SeLe4n.ObjId)
+    (hMem : a ∈ xs) :
+    (xs.foldl (fun acc oid =>
+        if objectObservable ctx observer oid then acc.insert oid else acc) s).contains a =
+      (objectObservable ctx observer a || s.contains a) := by
+  induction xs generalizing s with
+  | nil => nomatch hMem
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    by_cases hEq : a = x
+    · -- a = x: the head element
+      subst hEq
+      cases hObs : objectObservable ctx observer a with
+      | true =>
+        -- a is observable → inserted → stays in set through rest of fold
+        show (xs.foldl _ (s.insert a)).contains a = _
+        simp only [Bool.true_or]
+        exact List.foldl_preserves_contains _ _ _ (Std.HashSet.contains_insert_self ..)
+      | false =>
+        -- a is not observable → skipped → stays at s.contains a via pred_false lemma
+        show (xs.foldl _ s).contains a = _
+        simp only [Bool.false_or]
+        exact List.foldl_preserves_when_pred_false _ _ _ hObs
+    · -- a ≠ x: a must be in xs
+      have hInXs : a ∈ xs := List.mem_of_ne_of_mem hEq hMem
+      cases hObs : objectObservable ctx observer x with
+      | true =>
+        show (xs.foldl _ (s.insert x)).contains a = _
+        rw [ih (s.insert x) hInXs, Std.HashSet.contains_insert]
+        have hBeq : (x == a) = false := beq_false_of_ne (Ne.symm hEq)
+        simp [hBeq]
+      | false =>
+        show (xs.foldl _ s).contains a = _
+        exact ih s hInXs
+
+/-- WS-G9: Membership in the precomputed set is equivalent to the original
+`objectObservable` gate for any ObjId that appears in the objectIndex. -/
+theorem computeObservableSet_mem
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (oid : SeLe4n.ObjId)
+    (hMem : oid ∈ st.objectIndex) :
+    (computeObservableSet ctx observer st).contains oid =
+      objectObservable ctx observer oid := by
+  unfold computeObservableSet
+  rw [foldl_observable_set_mem ctx observer st.objectIndex {} oid hMem]
+  simp only [SeLe4n.HashSet_contains_empty, Bool.or_false]
+
+/-- WS-G9: An element not in the objectIndex is not in the observable set. -/
+theorem computeObservableSet_not_mem
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (oid : SeLe4n.ObjId)
+    (hNotMem : oid ∉ st.objectIndex) :
+    (computeObservableSet ctx observer st).contains oid = false := by
+  unfold computeObservableSet
+  rw [List.foldl_not_contains_when_absent (objectObservable ctx observer)
+      st.objectIndex {} hNotMem]
+  exact SeLe4n.HashSet_contains_empty
+
+/-- WS-G9: Optimized object projection using precomputed observable set.
+Replaces per-object `objectObservable` evaluation with O(1) `HashSet.contains`. -/
+def projectObjectsFast (ctx : LabelingContext) (observer : IfObserver)
+    (observableOids : Std.HashSet SeLe4n.ObjId) (st : SystemState) :
+    SeLe4n.ObjId → Option KernelObject :=
+  fun oid =>
+    if observableOids.contains oid then
+      (st.objects[oid]?).map (projectKernelObject ctx observer)
+    else
+      none
+
+/-- WS-G9: Optimized IRQ handler projection using precomputed observable set. -/
+def projectIrqHandlersFast (observableOids : Std.HashSet SeLe4n.ObjId)
+    (st : SystemState) : SeLe4n.Irq → Option SeLe4n.ObjId :=
+  fun irq =>
+    match st.irqHandlers irq with
+    | some oid => if observableOids.contains oid then some oid else none
+    | none => none
+
+/-- WS-G9: Optimized object index projection using precomputed observable set. -/
+def projectObjectIndexFast (observableOids : Std.HashSet SeLe4n.ObjId)
+    (st : SystemState) : List SeLe4n.ObjId :=
+  st.objectIndex.filter (observableOids.contains ·)
+
+/-- WS-G9/F-P09: Optimized state projection that precomputes the observable set
+once, then uses O(1) `HashSet.contains` for all observability checks.
+
+This is the runtime-fast equivalent of `projectState`. The `@[csimp]` attribute
+instructs the Lean compiler to replace `projectState` with `projectStateFast`
+during code generation, so all proofs use the original `projectState` definition
+while execution benefits from the precomputed set. -/
+def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
+  let observableOids := computeObservableSet ctx observer st
+  {
+    objects := projectObjectsFast ctx observer observableOids st
+    runnable := projectRunnable ctx observer st
+    current := projectCurrent ctx observer st
+    services := projectServiceStatus ctx observer st
+    activeDomain := projectActiveDomain ctx observer st
+    irqHandlers := projectIrqHandlersFast observableOids st
+    objectIndex := projectObjectIndexFast observableOids st
+  }
+
+/-- WS-G9: `projectObjectsFast` with the precomputed set agrees with `projectObjects`
+for states where all stored objects are in the objectIndex. -/
+private theorem projectObjectsFast_eq
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (hSync : ∀ oid, st.objects[oid]? ≠ none → oid ∈ st.objectIndex) :
+    projectObjectsFast ctx observer (computeObservableSet ctx observer st) st =
+      projectObjects ctx observer st := by
+  funext oid
+  unfold projectObjectsFast projectObjects
+  by_cases hIdx : oid ∈ st.objectIndex
+  · rw [computeObservableSet_mem ctx observer st oid hIdx]
+  · have hNone : st.objects[oid]? = none := by
+      cases h : st.objects[oid]? with
+      | none => rfl
+      | some _ => exact absurd (hSync oid (by simp [h])) hIdx
+    rw [computeObservableSet_not_mem ctx observer st oid hIdx, hNone]
+    simp
+
+/-- WS-G9: `projectIrqHandlersFast` agrees with `projectIrqHandlers` when all
+IRQ handler targets are in the objectIndex. -/
+private theorem projectIrqHandlersFast_eq
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (hIrqInIdx : ∀ irq oid, st.irqHandlers irq = some oid → oid ∈ st.objectIndex) :
+    projectIrqHandlersFast (computeObservableSet ctx observer st) st =
+      projectIrqHandlers ctx observer st := by
+  funext irq
+  unfold projectIrqHandlersFast projectIrqHandlers
+  cases hIrq : st.irqHandlers irq with
+  | none => rfl
+  | some oid =>
+    show (if (computeObservableSet ctx observer st).contains oid then some oid else none) =
+         (if objectObservable ctx observer oid then some oid else none)
+    rw [computeObservableSet_mem ctx observer st oid (hIrqInIdx irq oid hIrq)]
+
+/-- WS-G9: `projectObjectIndexFast` agrees with `projectObjectIndex`.
+Both filter `st.objectIndex` by the same effective predicate. -/
+private theorem projectObjectIndexFast_eq
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    projectObjectIndexFast (computeObservableSet ctx observer st) st =
+      projectObjectIndex ctx observer st := by
+  unfold projectObjectIndexFast projectObjectIndex
+  apply List.filter_congr
+  intro oid hMem
+  exact computeObservableSet_mem ctx observer st oid hMem
+
+/-- WS-G9/F-P09: `projectStateFast` and `projectState` produce identical results
+for well-formed states where all stored objects appear in the objectIndex and
+all IRQ handler targets appear in the objectIndex.
+
+These invariants hold for any state reachable from `default` via `storeObject`
+(which maintains both `objectIndex` and `objectIndexSet` in sync). -/
+theorem projectStateFast_eq
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (hObjSync : ∀ oid, st.objects[oid]? ≠ none → oid ∈ st.objectIndex)
+    (hIrqSync : ∀ irq oid, st.irqHandlers irq = some oid → oid ∈ st.objectIndex) :
+    projectStateFast ctx observer st = projectState ctx observer st := by
+  simp only [projectStateFast, projectState]
+  congr 1
+  · exact projectObjectsFast_eq ctx observer st hObjSync
+  · exact projectIrqHandlersFast_eq ctx observer st hIrqSync
+  · exact projectObjectIndexFast_eq ctx observer st
 
 /-- Two states are low-equivalent when their observer projections are equal. -/
 def lowEquivalent (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop :=

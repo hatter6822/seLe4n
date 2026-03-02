@@ -541,3 +541,34 @@ Supporting infrastructure:
 Supporting infrastructure:
 - `storeObject_notification_preserves_ipcInvariant` — dual of `storeObject_endpoint_preserves_ipcInvariant`; new helper for notification-storing operations
 - Existing well-formedness lemmas: `notificationSignal_result_wellFormed_wake/merge`, `notificationWait_result_wellFormed_badge/wait`
+
+## 19. WS-G9 information-flow projection optimization (F-P09)
+
+**Precomputed observable set** (`Projection.lean`):
+
+- `computeObservableSet` — builds `Std.HashSet ObjId` via single `foldl` pass over `st.objectIndex`, using `objectObservable` as predicate. All sub-projection functions use O(1) `contains` lookups instead of redundant `objectObservable` re-evaluation (~12,800 comparisons → N lookups).
+
+**`@[csimp]`-ready fast projection** (`Projection.lean`):
+
+- `projectStateFast` — optimized `projectState` using precomputed observable set,
+- `projectObjectsFast` — O(1) observability via `observableOids.contains`,
+- `projectIrqHandlersFast` — O(1) observability via `observableOids.contains`,
+- `projectObjectIndexFast` — O(1) observability via `observableOids.contains`.
+
+**Equivalence proofs** (`Projection.lean`):
+
+- `foldl_observable_set_mem` — core induction lemma: HashSet membership ↔ list membership ∧ predicate,
+- `computeObservableSet_mem` — membership in computed set ↔ `objectObservable` for indexed ObjIds,
+- `computeObservableSet_not_mem` — non-indexed ObjIds are not in the observable set,
+- `projectObjectsFast_eq` — fast variant equals original `projectObjects`,
+- `projectIrqHandlersFast_eq` — fast variant equals original `projectIrqHandlers`,
+- `projectObjectIndexFast_eq` — fast variant equals original `projectObjectIndex` (via `List.filter_congr`),
+- `projectStateFast_eq` — top-level equivalence: `projectStateFast = projectState` under state synchronization invariants.
+
+**HashSet bridge lemmas** (`Prelude.lean`):
+
+- `List.foldl_preserves_contains` — monotonicity: elements already in the set remain after foldl,
+- `List.foldl_not_contains_when_absent` — elements not in the list are unaffected by foldl,
+- `List.foldl_preserves_when_pred_false` — elements with false predicate are unaffected by foldl.
+
+**Design invariant:** Original `projectState` definition is unchanged — all existing NI theorems in `Invariant.lean` (1448 lines) remain untouched. `projectStateFast` provides the performance path with proven equivalence.

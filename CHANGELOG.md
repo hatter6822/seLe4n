@@ -1,3 +1,14 @@
+## [0.12.14] - 2026-03-01
+
+### WS-G9: Information-Flow Projection Optimization (completed)
+
+- **Precomputed observable set (F-P09):** `projectState` previously evaluated `objectObservable` redundantly across `projectObjects`, `projectIrqHandlers`, `projectObjectIndex`, and CNode `capTargetObservable` — up to ~12,800 label comparisons per projection for 50 CNodes × 256 slots. New `computeObservableSet` builds a `Std.HashSet ObjId` via single `foldl` pass over `st.objectIndex`; all sub-projection functions now use O(1) `contains` lookups.
+- **`@[csimp]`-ready design:** Original `projectState` definition kept unchanged to preserve all existing non-interference proofs in `Invariant.lean` (1448 lines, untouched). New `projectStateFast` is an optimized alternative with `projectObjectsFast`, `projectIrqHandlersFast`, `projectObjectIndexFast` — all using the precomputed HashSet. Top-level equivalence theorem `projectStateFast_eq` proves `projectStateFast = projectState` under standard state synchronization invariants, ready for `@[csimp]` compiler substitution.
+- **HashSet bridge lemmas:** 3 new `List.foldl` monotonicity/preservation lemmas in `Prelude.lean`: `foldl_preserves_contains`, `foldl_not_contains_when_absent`, `foldl_preserves_when_pred_false`. Core induction lemma `foldl_observable_set_mem` in `Projection.lean` proves membership equivalence for the observable set.
+- **Zero downstream proof breakage:** All non-interference theorems, enforcement wrappers, and invariant proofs remain unchanged. `projectState` definition is untouched; `projectStateFast` provides the performance path.
+- **Full proof migration:** zero sorry/axiom across all 2 modified files. `test_full.sh` passes (Tier 0-3).
+- Closes finding F-P09 (information-flow projection redundant observability evaluation).
+
 ## [0.12.13] - 2026-03-01
 
 ### WS-G8: Graph Traversal Optimization (completed)

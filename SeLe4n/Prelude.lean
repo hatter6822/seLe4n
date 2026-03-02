@@ -688,6 +688,69 @@ theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulB
   rw [Std.HashSet.contains_insert]; simp
 
 -- ============================================================================
+-- WS-G9: List.foldl HashSet bridge lemmas for observable-set precomputation
+-- ============================================================================
+
+/-- WS-G9: If `s.contains a = true`, then after folding any list with conditional
+inserts, `a` remains in the set. Monotonicity of HashSet.insert under foldl. -/
+theorem List.foldl_preserves_contains {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (hContains : s.contains a = true) :
+    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a = true := by
+  induction xs generalizing s with
+  | nil => exact hContains
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    split
+    · exact ih (s.insert x) (by rw [Std.HashSet.contains_insert]; simp [hContains])
+    · exact ih s hContains
+
+/-- WS-G9: If `a` is not in the list `xs`, then folding conditional inserts does
+not change whether `a` is in the set. -/
+theorem List.foldl_not_contains_when_absent {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (hNotIn : a ∉ xs) :
+    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
+      s.contains a := by
+  induction xs generalizing s with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    have hNe : a ≠ x := fun h => hNotIn (h ▸ List.Mem.head xs)
+    have hNotInXs : a ∉ xs := fun h => hNotIn (List.Mem.tail x h)
+    split
+    · rw [ih (s.insert x) hNotInXs]
+      rw [Std.HashSet.contains_insert]
+      simp [Ne.symm hNe]
+    · exact ih s hNotInXs
+
+/-- WS-G9: If `p a = false`, then folding with conditional inserts guarded by `p`
+preserves `a`'s containment status. Whether `a` is in the list or not, `p a = false`
+prevents any insertion of `a`, so the final `contains a` equals `s.contains a`. -/
+theorem List.foldl_preserves_when_pred_false {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (hPa : p a = false) :
+    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
+      s.contains a := by
+  induction xs generalizing s with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    by_cases hEq : x = a
+    · -- x = a: since p a = false, the if-branch doesn't insert, leaving s unchanged
+      subst hEq
+      split
+      · rename_i hContra; rw [hPa] at hContra; exact absurd hContra (by decide)
+      · exact ih s
+    · -- x ≠ a: whether or not x is inserted, a's membership is unchanged
+      split
+      · -- p x = true: x is inserted; a ≠ x so a remains unchanged
+        rw [ih (s.insert x), Std.HashSet.contains_insert]
+        simp [beq_false_of_ne hEq]
+      · -- p x = false: nothing inserted
+        exact ih s
+
+-- ============================================================================
 -- H-06/WS-E3: Sentinel identity theorems
 -- ============================================================================
 

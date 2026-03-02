@@ -1,12 +1,12 @@
 # Next Development Path
 
-## Current priority: WS-F (v0.12.2 audit remediation)
+## Current state: WS-G portfolio completed (v0.12.14)
 
-The immediate development path is closing the findings from two independent v0.12.2
-codebase audits. This is the prerequisite for Raspberry Pi 5 hardware binding.
+The WS-G kernel performance optimization portfolio is fully completed. All 14
+performance findings (F-P01 through F-P14) from the v0.12.5 performance audit
+have been resolved across WS-G1..G9 (v0.12.6–v0.12.14).
 
-See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
-for the full plan.
+See [Specification & Roadmap](05-specification-and-roadmap.md) for full status.
 
 ## Phase sequence
 
