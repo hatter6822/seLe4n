@@ -63,6 +63,13 @@ def withLifecycleCapabilityRef
 def withMachine (builder : BootstrapBuilder) (machine : SeLe4n.MachineState) : BootstrapBuilder :=
   { builder with machine := machine }
 
+/-- Extract the actual TCB priority for a thread from the builder's object list.
+    Falls back to Priority 0 if the thread has no TCB entry. -/
+private def lookupThreadPriority (objects : List (SeLe4n.ObjId × KernelObject)) (tid : SeLe4n.ThreadId) : SeLe4n.Priority :=
+  match objects.find? (fun (oid, _) => oid == tid.toObjId) with
+  | some (_, .tcb tcb) => tcb.priority
+  | _ => ⟨0⟩
+
 /-- Materialize a full `SystemState` from the builder tables. -/
 def build (builder : BootstrapBuilder) : SystemState :=
   {
@@ -72,7 +79,9 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
     services := listLookup builder.services
     scheduler := {
-      runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid => (tid, ⟨0⟩)))
+      -- WS-G4 fix: use actual TCB priorities for RunQueue bucketing
+      runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
+        (tid, lookupThreadPriority builder.objects tid)))
       current := builder.current
     }
     irqHandlers := listLookup builder.irqHandlers

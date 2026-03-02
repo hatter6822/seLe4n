@@ -887,7 +887,90 @@ private def runNegativeChecks : IO Unit := do
 
   IO.println "WS-F2 untyped memory negative checks passed"
 
+/-- Audit coverage: endpointReplyRecv and cspaceMutate tests.
+    Split into a separate function to avoid maxRecDepth limits in the main do block. -/
+private def runAuditCoverageChecks : IO Unit := do
+  -- ── Audit: endpointReplyRecv coverage ────────────────────────────────
+  -- NEG-REPLYRECV-01: replyRecv with non-existent reply target
+  expectError "endpointReplyRecv non-existent reply target"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 6) (SeLe4n.ThreadId.ofNat 999)
+      .empty baseState)
+    .objectNotFound
+
+  -- NEG-REPLYRECV-02: replyRecv when reply target is not in blockedOnReply state
+  expectError "endpointReplyRecv target not blocked on reply"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 6) (SeLe4n.ThreadId.ofNat 7)
+      .empty baseState)
+    .replyCapInvalid
+
+  -- POS-REPLYRECV: Set up a valid blockedOnReply scenario via endpointCall, then replyRecv
+  -- First, enqueue receiver in the dual-queue receiveQ (not legacy waitingReceiver)
+  let (_, stCallSetup1) ← expectOkState "replyRecv setup: receiver blocks on receive"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) baseState)
+  -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
+  let (_, stCallSetup2) ← expectOkState "replyRecv setup: caller calls endpoint"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) .empty stCallSetup1)
+  -- Verify caller is now blocked on reply
+  match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
+  | some (KernelObject.tcb callerTcb) =>
+      if callerTcb.ipcState = .blockedOnReply endpointId then
+        IO.println "positive check passed [replyRecv setup: caller blockedOnReply]"
+      else
+        throw <| IO.userError s!"replyRecv setup: expected caller blockedOnReply, got {reprStr callerTcb.ipcState}"
+  | _ => throw <| IO.userError "replyRecv setup: expected caller TCB"
+  -- Now execute replyRecv: receiver replies to caller and waits on endpoint
+  let (_, stReplyRecv) ← expectOkState "replyRecv success"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 8) (SeLe4n.ThreadId.ofNat 7)
+      .empty stCallSetup2)
+  -- Verify caller is unblocked (ready)
+  match (stReplyRecv.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
+  | some (KernelObject.tcb unblocked) =>
+      if unblocked.ipcState = .ready then
+        IO.println "positive check passed [replyRecv: caller unblocked after reply]"
+      else
+        throw <| IO.userError s!"replyRecv: expected caller ready, got {reprStr unblocked.ipcState}"
+  | _ => throw <| IO.userError "replyRecv: expected caller TCB after reply"
+  IO.println "endpointReplyRecv coverage checks passed"
+
+  -- ── Audit: cspaceMutate coverage ─────────────────────────────────────
+  -- NEG-MUTATE-01: mutate on non-existent CNode
+  expectError "cspaceMutate non-existent CNode"
+    (SeLe4n.Kernel.cspaceMutate { cnode := 999, slot := 0 } [.read] none baseState)
+    .objectNotFound
+
+  -- NEG-MUTATE-02: mutate with rights not a subset (escalation attempt)
+  expectError "cspaceMutate rights escalation denied"
+    (SeLe4n.Kernel.cspaceMutate slot0 [.read, .write, .grant] none baseState)
+    .invalidCapability
+
+  -- POS-MUTATE: attenuate rights successfully
+  let (_, stMutated) ← expectOkState "cspaceMutate attenuate to read-only"
+    (SeLe4n.Kernel.cspaceMutate slot0 [.read] none baseState)
+  -- Verify rights were attenuated
+  match SeLe4n.Kernel.cspaceLookupSlot slot0 stMutated with
+  | .ok (cap, _) =>
+      if cap.rights = [.read] then
+        IO.println "positive check passed [cspaceMutate: rights attenuated to read-only]"
+      else
+        throw <| IO.userError s!"cspaceMutate: expected [read], got {reprStr cap.rights}"
+  | .error err =>
+      throw <| IO.userError s!"cspaceMutate: lookup after mutate failed: {reprStr err}"
+
+  -- POS-MUTATE-BADGE: mutate with badge override
+  let (_, stBadgeMutate) ← expectOkState "cspaceMutate with badge override"
+    (SeLe4n.Kernel.cspaceMutate slot0 [.read] (some (SeLe4n.Badge.ofNat 77)) baseState)
+  match SeLe4n.Kernel.cspaceLookupSlot slot0 stBadgeMutate with
+  | .ok (cap, _) =>
+      if cap.badge = some 77 then
+        IO.println "positive check passed [cspaceMutate: badge override applied]"
+      else
+        throw <| IO.userError s!"cspaceMutate: expected badge 77, got {reprStr cap.badge}"
+  | .error err =>
+      throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {reprStr err}"
+  IO.println "cspaceMutate coverage checks passed"
+
 end SeLe4n.Testing
 
-def main : IO Unit :=
+def main : IO Unit := do
   SeLe4n.Testing.runNegativeChecks
+  SeLe4n.Testing.runAuditCoverageChecks

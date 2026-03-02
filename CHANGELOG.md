@@ -1,3 +1,16 @@
+## [0.12.15] - 2026-03-02
+
+### WS-G Refinement: Scheduler optimization, validation hardening, and audit coverage expansion
+
+- **RunQueue.remove bucket precomputation (WS-G4 refinement):** `RunQueue.remove` previously computed the filtered bucket twice — once for `byPriority` update and once for `maxPriority` update. Refactored to compute the filtered bucket once and reuse for both, eliminating redundant `List.filter` evaluation on every thread removal. Structural invariant documentation added explaining the implicit `membership` ↔ `threadPriority` consistency maintained by the insert/remove API.
+- **MachineConfig.wellFormed page-size validation hardened:** Added `isPowerOfTwo` helper using bitwise characterization (`n > 0 ∧ n &&& (n - 1) == 0`). `MachineConfig.wellFormed` now validates `pageSize` as a positive power of two instead of merely positive, catching misconfigured platforms with non-standard page sizes (e.g., `pageSize = 3`).
+- **Dead code removal:** Removed unused `filterByDomain` function from `Scheduler/Operations.lean` — dead code since WS-G4 replaced domain filtering with bucket-first scheduling via `chooseBestInBucket`. Added performance documentation note to `schedule` explaining the O(n) `List.Mem` membership check vs deferred O(1) HashSet alternative.
+- **Phantom object cleanup:** Removed phantom object ID 200 from `bootstrapInvariantObjectIds` in `MainTraceHarness.lean` — this ID had no corresponding object in the bootstrap state and added false positive invariant check passes.
+- **Runtime invariant checks expanded:** Added `runQueueThreadPriorityConsistentB` verifying that every thread in the RunQueue flat list has a corresponding `threadPriority` entry (structural API safety net). Added `cdtChildMapConsistentCheck` verifying bidirectional consistency between `CapDerivationTree.childMap` HashMap and `edges` list (both forward and backward directions).
+- **StateBuilder TCB priority integration (WS-G4 fix):** `BootstrapBuilder.build` now uses actual TCB priorities from the builder's object list for RunQueue bucketing via `lookupThreadPriority`, instead of defaulting all threads to priority 0. This ensures test states have correctly bucketed run queues matching their thread priority configuration.
+- **Audit test coverage expansion:** Added `runAuditCoverageChecks` to `NegativeStateSuite.lean` with comprehensive `endpointReplyRecv` coverage (2 negative checks: non-existent target, target not in blockedOnReply state; 1 positive flow via endpointCall→endpointReplyRecv chain verifying caller unblock) and `cspaceMutate` coverage (2 negative checks: non-existent CNode, rights escalation; 2 positive checks: rights attenuation, badge override).
+- **Full proof migration:** zero sorry/axiom across all 7 modified files. `test_full.sh` passes (Tier 0-3).
+
 ## [0.12.14] - 2026-03-01
 
 ### WS-G9: Information-Flow Projection Optimization (completed)
