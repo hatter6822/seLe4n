@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.16` |
+| Version | `0.12.17` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 21,340 across 40 files |
 | Proved theorems | 575 (zero sorry/axiom) |
-| Recently completed | WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
+| Recently completed | WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 
 ## Milestone history
@@ -26,7 +26,16 @@ Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
 remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
 (performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed) →
-WS-H2 (lifecycle safety guards, completed).
+WS-H2 (lifecycle safety guards, completed) → WS-H3 (build/CI infrastructure, completed).
+
+## Completed: WS-H3 Build/CI Infrastructure Fixes (v0.12.17)
+
+WS-H3 addresses build and CI infrastructure gaps identified in the v0.12.15
+audit: `run_check` return value fix (H-12) so failure is correctly signaled in
+continue mode, `test_docs_sync.sh` integration into the smoke CI job and
+`test_smoke.sh` entrypoint (M-19), and a `rg` availability guard with `grep -P`
+fallback in Tier 3 (M-20). See
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H2 Lifecycle Safety Guards (v0.12.16)
 

@@ -71,7 +71,7 @@ introducing substantial architectural improvements:
 ./scripts/setup_lean_env.sh   # install Lean toolchain
 lake build                     # compile all 40 modules (84 jobs)
 lake exe sele4n                # run trace harness
-./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state)
+./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
 
 ## Project documentation
@@ -90,7 +90,7 @@ lake exe sele4n                # run trace harness
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build)
-./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state checks)
+./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state + docs sync)
 ./scripts/test_full.sh      # + Tier 3 (invariant surface anchors)
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly determinism)
 ```
@@ -216,6 +216,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
 | **WS-H2** | v0.12.16 | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | H2 |
 | **WS-H1** | v0.12.16 | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | H1 |
 | **WS-G** | v0.12.6–v0.12.15 | Kernel performance: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | G1–G9 + refinement |

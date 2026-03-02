@@ -22,7 +22,7 @@ Documentation sync (`scripts/test_docs_sync.sh`) verifies GitBook navigation gen
 Required local/CI entrypoints:
 
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks)
+- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks + documentation sync)
 - `./scripts/test_full.sh` (Tier 0 + Tier 1 + Tier 2 + Tier 3)
 
 Nightly deterministic replay entrypoint:

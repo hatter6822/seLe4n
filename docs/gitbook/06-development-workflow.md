@@ -14,7 +14,7 @@ Canonical source: [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1 (hygiene + build)
-./scripts/test_smoke.sh     # Tier 0-2 (+ trace + negative-state)
+./scripts/test_smoke.sh     # Tier 0-2 (+ trace + negative-state + docs sync)
 ./scripts/test_full.sh      # Tier 0-3 (+ invariant surface anchors)
 ```
 
