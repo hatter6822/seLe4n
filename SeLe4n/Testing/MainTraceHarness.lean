@@ -474,7 +474,8 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   let replySched := { st1.scheduler with
     runQueue := st1.scheduler.runQueue.remove replyTarget }
   let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
-  match SeLe4n.Kernel.endpointReply replyTarget .empty stReply with
+  -- WS-H1/M-02: endpointReply now requires a replier; replyTarget has none constraint so any replier works
+  match SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 2) replyTarget .empty stReply with
   | .error err => IO.println s!"endpointReply error: {reprStr err}"
   | .ok (_, stReplied) =>
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
@@ -631,15 +632,16 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
       | .error err => IO.println s!"F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
           -- Verify caller is blocked on reply
+          -- WS-H1: Verify caller is blocked on reply with correct replyTarget
           let callerBlocked := match SeLe4n.Kernel.lookupTcb stCalled senderId with
             | some tcb => match tcb.ipcState with
-              | .blockedOnReply _ => true
+              | .blockedOnReply _ _ => true
               | _ => false
             | none => false
           IO.println s!"call/reply caller blocked: {callerBlocked}"
-          -- Reply with response message
+          -- WS-H1/M-02: Reply with response message — receiverId is the authorized replier
           let replyMsg : IpcMessage := { registers := [100, 200], caps := [], badge := none }
-          match SeLe4n.Kernel.endpointReply senderId replyMsg stCalled with
+          match SeLe4n.Kernel.endpointReply receiverId senderId replyMsg stCalled with
           | .error err => IO.println s!"F1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
               let replyResult := match SeLe4n.Kernel.lookupTcb stReplied senderId with
@@ -649,6 +651,70 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
                 | some m => m.registers
                 | none => []
               IO.println s!"call/reply response registers: {reprStr replyRegs}"
+  -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
+  -- caller transitions to blockedOnReply (not .ready), then explicit Reply unblocks.
+  let ep3 : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQ := {}, receiveQ := {} }
+  let callerId : SeLe4n.ThreadId := senderId    -- reuse thread 1
+  let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
+  let stH1 : SystemState := { st1 with objects := st1.objects.insert epId ep3 }
+  -- No receiver queued → caller enqueues on sendQ with blockedOnCall
+  let h1CallMsg : IpcMessage := { registers := [77], caps := [], badge := none }
+  match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
+  | .error err => IO.println s!"H1-01 call error: {reprStr err}"
+  | .ok (_, stBlocked) =>
+      -- Verify caller is blockedOnCall (not blockedOnSend)
+      let isBlockedOnCall := match SeLe4n.Kernel.lookupTcb stBlocked callerId with
+        | some tcb => match tcb.ipcState with
+          | .blockedOnCall _ => true
+          | _ => false
+        | none => false
+      IO.println s!"H1 caller blockedOnCall: {isBlockedOnCall}"
+      -- Receiver dequeues the Call sender
+      match SeLe4n.Kernel.endpointReceiveDual epId serverId stBlocked with
+      | .error err => IO.println s!"H1-02 receive error: {reprStr err}"
+      | .ok (_, stDequeued) =>
+          -- Verify caller transitioned to blockedOnReply (not .ready)
+          let isBlockedOnReply := match SeLe4n.Kernel.lookupTcb stDequeued callerId with
+            | some tcb => match tcb.ipcState with
+              | .blockedOnReply _ _ => true
+              | _ => false
+            | none => false
+          let callerNotReady := match SeLe4n.Kernel.lookupTcb stDequeued callerId with
+            | some tcb => match tcb.ipcState with
+              | .ready => false
+              | _ => true
+            | none => true
+          IO.println s!"H1 caller blockedOnReply after dequeue: {isBlockedOnReply}"
+          IO.println s!"H1 caller not ready after dequeue: {callerNotReady}"
+          -- Explicit Reply from the authorized server unblocks the caller
+          let h1ReplyMsg : IpcMessage := { registers := [88], caps := [], badge := none }
+          match SeLe4n.Kernel.endpointReply serverId callerId h1ReplyMsg stDequeued with
+          | .error err => IO.println s!"H1-03 reply error: {reprStr err}"
+          | .ok (_, stReplied) =>
+              let callerReady := match SeLe4n.Kernel.lookupTcb stReplied callerId with
+                | some tcb => match tcb.ipcState with
+                  | .ready => true
+                  | _ => false
+                | none => false
+              IO.println s!"H1 caller ready after reply: {callerReady}"
+              -- WS-H1/M-02: Verify unauthorized reply fails
+              let unauthorizedId : SeLe4n.ThreadId := 99
+              -- Re-block caller for the unauthorized test
+              match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
+              | .error _ => IO.println "H1 unauthorized setup skipped"
+              | .ok (_, stBlocked2) =>
+                  match SeLe4n.Kernel.endpointReceiveDual epId serverId stBlocked2 with
+                  | .error _ => IO.println "H1 unauthorized setup skipped"
+                  | .ok (_, stForAuth) =>
+                      match SeLe4n.Kernel.endpointReply unauthorizedId callerId h1ReplyMsg stForAuth with
+                      | .error .replyCapInvalid =>
+                          IO.println s!"H1 unauthorized reply rejected: true"
+                      | .error err =>
+                          IO.println s!"H1 unauthorized reply unexpected error: {reprStr err}"
+                      | .ok _ =>
+                          IO.println s!"H1 unauthorized reply rejected: false"
 
 -- ============================================================================
 -- WS-F2: Untyped memory model trace scenarios

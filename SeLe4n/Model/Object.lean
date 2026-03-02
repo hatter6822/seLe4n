@@ -73,13 +73,19 @@ end IpcMessage
 /-- Per-thread IPC scheduler-visible status.
 
 WS-E3/H-09: Endpoint-local blocking states for deterministic handshake.
-WS-E4/M-12: Added `blockedOnReply` for bidirectional IPC (sender waiting for reply). -/
+WS-E4/M-12: Added `blockedOnReply` for bidirectional IPC (sender waiting for reply).
+WS-H1/C-01: Added `blockedOnCall` — a Call sender blocked on the send queue carries
+  this state (distinct from `blockedOnSend`) so that upon dequeue the sender
+  transitions to `blockedOnReply`, not `.ready`.
+WS-H1/M-02: `blockedOnReply` now carries an optional `replyTarget` recording which
+  server thread is authorized to reply, preventing confused-deputy attacks. -/
 inductive ThreadIpcState where
   | ready
   | blockedOnSend (endpoint : SeLe4n.ObjId)
   | blockedOnReceive (endpoint : SeLe4n.ObjId)
   | blockedOnNotification (notification : SeLe4n.ObjId)
-  | blockedOnReply (endpoint : SeLe4n.ObjId)
+  | blockedOnReply (endpoint : SeLe4n.ObjId) (replyTarget : Option SeLe4n.ThreadId := none)
+  | blockedOnCall (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
 /-- Thread Control Block.

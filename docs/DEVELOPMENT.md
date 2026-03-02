@@ -8,7 +8,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 It is aligned to the **current project state**:
 
 - **next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation — model fidelity, invariant quality, testing, cleanup),
-- **recently completed:** WS-G (kernel performance optimization — all 9 workstreams + refinement, v0.12.15), WS-F1..F4 (critical audit remediation),
+- **recently completed:** WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization — all 9 workstreams + refinement, v0.12.15), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
@@ -52,6 +52,7 @@ for the full execution plan.
 
 ### 3.2 Completed portfolios
 
+- **WS-H1:** completed (v0.12.16). IPC call-path semantic fix — `blockedOnCall` variant, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates`. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G1..G9:** all completed (v0.12.6–v0.12.15). See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 - **WS-F1..F4:** completed. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 - **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).

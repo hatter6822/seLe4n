@@ -913,7 +913,8 @@ private def runAuditCoverageChecks : IO Unit := do
   -- Verify caller is now blocked on reply
   match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
   | some (KernelObject.tcb callerTcb) =>
-      if callerTcb.ipcState = .blockedOnReply endpointId then
+      -- WS-H1: blockedOnReply now carries replyTarget = some receiverId (ThreadId 8)
+      if callerTcb.ipcState = .blockedOnReply endpointId (some (SeLe4n.ThreadId.ofNat 8)) then
         IO.println "positive check passed [replyRecv setup: caller blockedOnReply]"
       else
         throw <| IO.userError s!"replyRecv setup: expected caller blockedOnReply, got {reprStr callerTcb.ipcState}"

@@ -1330,15 +1330,15 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 
-/-- WS-F1/WS-E4/M-12: endpointReply preserves capabilityInvariantBundle.
+/-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
-Updated for WS-F1 message transfer. -/
+Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation). -/
 theorem endpointReply_preserves_capabilityInvariantBundle
     (st st' : SystemState)
-    (target : SeLe4n.ThreadId)
+    (replier target : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (hInv : capabilityInvariantBundle st)
-    (hStep : endpointReply target msg st = .ok ((), st')) :
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle⟩
   unfold endpointReply at hStep
@@ -1351,36 +1351,67 @@ theorem endpointReply_preserves_capabilityInvariantBundle
       | blockedOnSend _ => simp [hIpc] at hStep
       | blockedOnReceive _ => simp [hIpc] at hStep
       | blockedOnNotification _ => simp [hIpc] at hStep
-      | blockedOnReply epId =>
+      | blockedOnCall _ => simp [hIpc] at hStep
+      | blockedOnReply epId rt =>
           simp only [hIpc] at hStep
-          cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-          | error e => simp [hTcb] at hStep
-          | ok st1 =>
-              simp only [hTcb, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-              -- storeTcbIpcStateAndMessage only writes TCBs, so CNode objects are unchanged
-              have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-                  st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
-                intro cnodeId cn hCn1
-                by_cases hEq : cnodeId = target.toObjId
-                · -- At target.toObjId, storeTcbIpcStateAndMessage wrote a TCB, not a CNode
-                  subst hEq
-                  have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
-                    unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
-                    | none => simp [hObj] at hLookup
-                    | some obj => cases obj with
-                      | tcb t => exact ⟨t, rfl⟩
-                      | _ => simp [hObj] at hLookup
-                  have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
-                  rcases hTcbPost with ⟨tcb', hTcb'⟩
-                  rw [hTcb'] at hCn1; cases hCn1
-                · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) cnodeId hEq hTcb] at hCn1; exact hCn1
-              have hU1 : cspaceSlotUnique st1 := by
-                intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-              have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
-                hU1 (ensureRunnable_preserves_objects st1 target)
-              exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
-                lifecycleAuthorityMonotonicity_holds _⟩
+          -- WS-H1/M-02: replyTarget validation adds branching
+          cases rt with
+          | some expected =>
+              by_cases hAuth : replier == expected <;> simp [hAuth] at hStep
+              cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | error e => simp [hTcb] at hStep
+              | ok st1 =>
+                  simp only [hTcb, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+                  have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+                      st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
+                    intro cnodeId cn hCn1
+                    by_cases hEq : cnodeId = target.toObjId
+                    · subst hEq
+                      have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
+                        unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
+                        | none => simp [hObj] at hLookup
+                        | some obj => cases obj with
+                          | tcb t => exact ⟨t, rfl⟩
+                          | _ => simp [hObj] at hLookup
+                      have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
+                      rcases hTcbPost with ⟨tcb', hTcb'⟩
+                      rw [hTcb'] at hCn1; cases hCn1
+                    · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) cnodeId hEq hTcb] at hCn1; exact hCn1
+                  have hU1 : cspaceSlotUnique st1 := by
+                    intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
+                  have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
+                    hU1 (ensureRunnable_preserves_objects st1 target)
+                  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
+                    lifecycleAuthorityMonotonicity_holds _⟩
+          | none =>
+              simp at hStep
+              cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | error e => simp [hTcb] at hStep
+              | ok st1 =>
+                  simp only [hTcb, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+                  have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+                      st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
+                    intro cnodeId cn hCn1
+                    by_cases hEq : cnodeId = target.toObjId
+                    · subst hEq
+                      have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
+                        unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
+                        | none => simp [hObj] at hLookup
+                        | some obj => cases obj with
+                          | tcb t => exact ⟨t, rfl⟩
+                          | _ => simp [hObj] at hLookup
+                      have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
+                      rcases hTcbPost with ⟨tcb', hTcb'⟩
+                      rw [hTcb'] at hCn1; cases hCn1
+                    · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) cnodeId hEq hTcb] at hCn1; exact hCn1
+                  have hU1 : cspaceSlotUnique st1 := by
+                    intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
+                  have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
+                    hU1 (ensureRunnable_preserves_objects st1 target)
+                  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
+                    lifecycleAuthorityMonotonicity_holds _⟩
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
 def coreIpcInvariantBundle (st : SystemState) : Prop :=
@@ -1398,11 +1429,21 @@ def ipcSchedulerBlockedSendComponent (st : SystemState) : Prop :=
 def ipcSchedulerBlockedReceiveComponent (st : SystemState) : Prop :=
   blockedOnReceiveNotRunnable st
 
+/-- WS-H1: Named coherence component: call-blocked threads are not runnable. -/
+def ipcSchedulerBlockedCallComponent (st : SystemState) : Prop :=
+  blockedOnCallNotRunnable st
+
+/-- WS-H1: Named coherence component: reply-blocked threads are not runnable. -/
+def ipcSchedulerBlockedReplyComponent (st : SystemState) : Prop :=
+  blockedOnReplyNotRunnable st
+
 /-- Named M3.5 aggregate coherence component for IPC+scheduler interaction. -/
 def ipcSchedulerCoherenceComponent (st : SystemState) : Prop :=
   ipcSchedulerRunnableReadyComponent st ∧
   ipcSchedulerBlockedSendComponent st ∧
-  ipcSchedulerBlockedReceiveComponent st
+  ipcSchedulerBlockedReceiveComponent st ∧
+  ipcSchedulerBlockedCallComponent st ∧
+  ipcSchedulerBlockedReplyComponent st
 
 theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState) :
     ipcSchedulerCoherenceComponent st ↔ ipcSchedulerContractPredicates st := by

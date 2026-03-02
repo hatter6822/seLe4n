@@ -215,10 +215,12 @@ private theorem default_lifecycleInvariantBundle :
 
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by

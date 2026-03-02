@@ -110,7 +110,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 |------|------|-------------------|
 | **Service lifecycle** | No kernel-level service concept | Service orchestration layer with dependency graphs, acyclic policy enforcement |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
-| **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal |
+| **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with domain-aware partitioning |
 | **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context |
@@ -171,7 +171,18 @@ Post-completion refinement addressing residual code quality, validation gaps, an
 - **StateBuilder priority fix:** `BootstrapBuilder.build` uses actual TCB priorities for RunQueue bucketing instead of defaulting to priority 0.
 - **Test coverage expansion:** `NegativeStateSuite` extended with `endpointReplyRecv` (2 negative + 1 positive via endpointCall chain) and `cspaceMutate` (2 negative + 2 positive including badge override) audit coverage checks.
 
-### 5.9 Prior Portfolio: WS-F (completed, v0.12.2)
+### 5.9 WS-H1: IPC Call-Path Semantic Fix (completed, v0.12.16)
+
+WS-H1 addresses the IPC call-path semantic gap identified in the v0.12.15 audit.
+The `endpointCall` operation now transitions the caller to a distinct `blockedOnCall`
+state (rather than reusing `blockedOnReply`), and reply operations validate the
+authorized replier via reply-target scoping.
+
+- **Part A (C-01 CRITICAL):** Added `blockedOnCall endpointId` variant to `ThreadIpcState`; `endpointCall` transitions caller to `blockedOnCall` instead of `blockedOnReply`; `endpointReceiveDual` detects call-origin senders via `senderWasCall` match and transitions them to `blockedOnReply endpointId (some caller)` with reply-target scoping.
+- **Part B (M-02 MEDIUM):** `endpointReply`/`endpointReplyRecv` validate `expectedReplier` field — only the designated receiver can complete the reply, preventing confused-deputy attacks.
+- **Part C (Invariant maintenance):** `ipcSchedulerContractPredicates` expanded from 3 to 5 conjuncts (added `blockedOnCallNotRunnable`, `blockedOnReplyNotRunnable`); all 62+ IPC invariant preservation theorems re-proved with zero sorry/axiom; 5 H1-series trace anchors added.
+
+### 5.10 Prior Portfolio: WS-F (completed, v0.12.2)
 
 The WS-F portfolio addressed findings from two independent v0.12.2 codebase audits.
 Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
@@ -182,7 +193,7 @@ Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 - **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
 - **WS-F5–F8:** Medium/Low priority — immediate next steps (see below)
 
-### 5.10 Next Steps: Remaining WS-F Workstreams (F5–F8)
+### 5.11 Next Steps: Remaining WS-F Workstreams (F5–F8)
 
 The remaining WS-F workstreams address medium/low-priority findings:
 
