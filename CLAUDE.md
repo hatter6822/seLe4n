@@ -275,6 +275,23 @@ When changing behavior, theorems, or workstream status, update in the same PR:
 Canonical ownership: root `docs/` files own policy/spec text. GitBook chapters
 under `docs/gitbook/` are mirrors that summarize and link to canonical sources.
 
+## Website link protection
+
+The project website ([sele4n.org](https://github.com/hatter6822/hatter6822.github.io))
+links to source files, documentation, scripts, assets, and directories in this
+repository.  Renaming or deleting any of these paths will produce 404 errors on
+the website.
+
+**Protected paths** are listed in `scripts/website_link_manifest.txt`.  The
+Tier 0 hygiene check (`scripts/check_website_links.sh`, called from
+`test_tier0_hygiene.sh`) verifies that every listed path still exists.  This
+runs on every PR and push to main via CI.
+
+**If you need to rename or remove a protected path:**
+1. Update the website (`hatter6822.github.io`) to use the new path first.
+2. Then update `scripts/website_link_manifest.txt` to match.
+3. CI will pass only when the manifest and the repo tree are consistent.
+
 ## Ignoring dev_history
 
 The `docs/dev_history/` directory contains milestone closeouts, prior audit reports
@@ -299,6 +316,7 @@ under `docs/` and `docs/gitbook/`.
 - [ ] Invariant/theorem updates paired with implementation
 - [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem changes
 - [ ] Documentation synchronized
+- [ ] No website-linked paths renamed or removed (see `scripts/website_link_manifest.txt`)
 
 ## Vulnerability reporting
 

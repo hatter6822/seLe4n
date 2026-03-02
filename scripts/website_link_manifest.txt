@@ -1,0 +1,115 @@
+# Website Link Manifest — seLe4n.org (hatter6822.github.io)
+#
+# This file lists every repository-relative path that the seLe4n project
+# website (https://github.com/hatter6822/hatter6822.github.io) links to.
+# The CI check in check_website_links.sh verifies that every path listed
+# here still exists in the repository. If a path is renamed or removed,
+# CI will fail until either:
+#   (a) the website is updated to use the new path, or
+#   (b) this manifest is updated to reflect the change.
+#
+# Format:
+#   - Lines starting with '#' are comments.
+#   - Blank lines are ignored.
+#   - Lines ending with '/' denote directories (checked with -d).
+#   - All other lines denote files (checked with -f).
+#
+# Source: https://github.com/hatter6822/hatter6822.github.io  index.html
+# Last synchronized: 2026-03-02
+
+# ── Repository root files ────────────────────────────────────────────
+LICENSE
+.gitignore
+Main.lean
+CONTRIBUTING.md
+CHANGELOG.md
+
+# ── Core Lean source files ───────────────────────────────────────────
+SeLe4n/Prelude.lean
+SeLe4n/Machine.lean
+
+# Model layer
+SeLe4n/Model/Object.lean
+SeLe4n/Model/State.lean
+
+# Kernel API
+SeLe4n/Kernel/API.lean
+
+# Scheduler
+SeLe4n/Kernel/Scheduler/RunQueue.lean
+SeLe4n/Kernel/Scheduler/Operations.lean
+SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# Capability
+SeLe4n/Kernel/Capability/Operations.lean
+SeLe4n/Kernel/Capability/Invariant.lean
+
+# IPC
+SeLe4n/Kernel/IPC/DualQueue.lean
+SeLe4n/Kernel/IPC/Operations.lean
+SeLe4n/Kernel/IPC/Invariant.lean
+
+# Information Flow
+SeLe4n/Kernel/InformationFlow/Policy.lean
+SeLe4n/Kernel/InformationFlow/Projection.lean
+SeLe4n/Kernel/InformationFlow/Enforcement.lean
+
+# Lifecycle
+SeLe4n/Kernel/Lifecycle/Operations.lean
+SeLe4n/Kernel/Lifecycle/Invariant.lean
+
+# Service
+SeLe4n/Kernel/Service/Operations.lean
+
+# Architecture
+SeLe4n/Kernel/Architecture/VSpace.lean
+SeLe4n/Kernel/Architecture/VSpaceBackend.lean
+SeLe4n/Kernel/Architecture/Adapter.lean
+
+# Platform
+SeLe4n/Platform/Contract.lean
+
+# ── Documentation files ──────────────────────────────────────────────
+docs/spec/SELE4N_SPEC.md
+docs/DEVELOPMENT.md
+docs/TESTING_FRAMEWORK_PLAN.md
+docs/THREAT_MODEL.md
+docs/INFORMATION_FLOW_ROADMAP.md
+docs/CLAIM_EVIDENCE_INDEX.md
+docs/PLATFORM_BINDING_ADR.md
+docs/VSPACE_MEMORY_MODEL_ADR.md
+
+# ── Scripts ──────────────────────────────────────────────────────────
+scripts/setup_lean_env.sh
+scripts/test_fast.sh
+scripts/test_smoke.sh
+scripts/test_full.sh
+scripts/test_nightly.sh
+scripts/test_tier0_hygiene.sh
+scripts/test_tier1_build.sh
+scripts/test_tier2_negative.sh
+scripts/test_tier2_trace.sh
+scripts/test_tier3_invariant_surface.sh
+
+# ── Assets (served via raw.githubusercontent.com) ────────────────────
+assets/logo.png
+assets/logo_dark.png
+
+# ── Directories (GitHub tree links) ─────────────────────────────────
+SeLe4n/
+SeLe4n/Kernel/
+SeLe4n/Kernel/Scheduler/
+SeLe4n/Kernel/Capability/
+SeLe4n/Kernel/IPC/
+SeLe4n/Kernel/InformationFlow/
+SeLe4n/Kernel/Lifecycle/
+SeLe4n/Kernel/Service/
+SeLe4n/Kernel/Architecture/
+SeLe4n/Model/
+SeLe4n/Testing/
+SeLe4n/Platform/
+SeLe4n/Platform/Sim/
+SeLe4n/Platform/RPi5/
+docs/
+scripts/
+tests/
