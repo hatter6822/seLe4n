@@ -43,7 +43,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
 - `SeLe4n/Machine.lean`
   - machine registers, memory abstraction, and pure update/read helpers,
-  - `MachineConfig` (register/address width, page size, ASID limit) and
+  - `MachineConfig` (register/address width, page size with `isPowerOfTwo` validation, ASID limit) and
     `MemoryRegion`/`MemoryKind` for platform memory map declaration.
 
 ### Model
@@ -58,7 +58,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Model/State.lean`
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
-  - `SchedulerState.runQueue : RunQueue` — priority-bucketed run queue (WS-G4),
+  - `SchedulerState.runQueue : RunQueue` — priority-bucketed run queue with O(1) bucket-precomputed `remove` (WS-G4),
   - `lookupObject` / `storeObject` / `setCurrentThread`,
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 

@@ -7,7 +7,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current active slice**:
 
-- **active:** WS-G portfolio (kernel performance optimization — WS-G1..G9 completed),
+- **active:** WS-G portfolio (kernel performance optimization — WS-G1..G9 completed; refinement pass v0.12.15),
 - **findings baseline:** [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
 - **completed predecessor:** WS-F portfolio (v0.12.2 audit remediation — WS-F1..F4 completed), WS-E (v0.11.6),
 - **hardware target:** Raspberry Pi 5 (ARM64).

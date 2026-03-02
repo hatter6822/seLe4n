@@ -82,6 +82,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-D (completed):** WS-D1 test validity, WS-D2 information-flow enforcement, WS-D3 proof gaps, WS-D4 kernel hardening all landed with updated Tier 2/3 coverage. WS-D5/WS-D6 absorbed into WS-E.
 - **WS-E (completed):** v0.11.6 audit remediation workstreams (WS-E1..WS-E6) all completed.
 - **WS-E1 (completed):** Test infrastructure and CI hardening — SHA-pinned all GitHub Actions (F-14), added 5 runtime invariant check families (M-11: CSpace coherency, capability rights, lifecycle metadata, service acyclicity, VSpace ASID uniqueness), parameterized test topologies with 3 configurations (M-10), structured trace format with scenario/risk metadata (L-07), and theorem-body spot-check validation (L-08).
+- **WS-G refinement (v0.12.15):** Runtime invariant checks expanded with `runQueueThreadPriorityConsistentB` (RunQueue membership ↔ threadPriority consistency) and `cdtChildMapConsistentCheck` (CDT childMap ↔ edges bidirectional). `NegativeStateSuite` extended with `endpointReplyRecv` (2 negative + 1 positive) and `cspaceMutate` (2 negative + 2 positive) audit coverage checks. `StateBuilder.build` uses actual TCB priorities for RunQueue bucketing.
 
 ## Practical failure triage
 
