@@ -4,7 +4,7 @@ Canonical source: [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-F target (prioritize current phase workstreams).
+1. Pick one coherent WS-G target (prioritize current phase workstreams).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
