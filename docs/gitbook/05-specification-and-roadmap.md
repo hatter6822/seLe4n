@@ -13,40 +13,49 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.14` |
+| Version | `0.12.15` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 16,485 across 34 files |
 | Proved theorems | 400+ (zero sorry/axiom) |
-| Active portfolio | WS-G (kernel performance optimization) — WS-G1..G9 completed |
+| Recently completed | WS-G (kernel performance optimization) — all 9 workstreams + refinement |
+| Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 
 ## Milestone history
 
 Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
-remediation) → WS-B..E (4 audit portfolios, all completed).
+remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
+(performance optimization, completed).
 
-## Active workstream: WS-G
+## Completed: WS-G kernel performance optimization
 
-The WS-G portfolio addresses kernel performance optimization findings from the
-[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
+The WS-G portfolio (v0.12.6–v0.12.15) closed all 14 findings from the
+[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
+migrating every kernel hot path to O(1) hash-based structures. All proofs
+re-verified — zero sorry/axiom.
 
-Completed:
-1. **WS-G1**: ~~Typed identifier Hashable instances~~ **COMPLETED** (v0.12.6)
-2. **WS-G2**: ~~Object store & ObjectIndex HashMap~~ **COMPLETED** (v0.12.7)
-3. **WS-G3**: ~~ASID Resolution Table~~ **COMPLETED** (v0.12.8)
-4. **WS-G4**: ~~Run queue restructure~~ **COMPLETED** (v0.12.9)
-5. **WS-G5**: ~~CNode slot HashMap~~ **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability`; `HashMap.fold` for `cspaceRevoke` `revokedRefs`
-6. **WS-G6**: ~~VSpace mapping HashMap~~ **COMPLETED** (v0.12.11) — `Std.HashMap VAddr PAddr`; `noVirtualOverlap` trivially true; closes F-P05
-7. **WS-G7**: ~~IPC Queue Completion & Notification~~ **COMPLETED** (v0.12.12) — Legacy endpoint ops deprecated; `notificationWait` O(1) TCB check + O(1) prepend; `endpointSendDualChecked` enforcement; closes F-P04, F-P11
-8. **WS-G8**: ~~Graph Traversal Optimization~~ **COMPLETED** (v0.12.13) — `serviceHasPathTo` O(n+e) DFS with `Std.HashSet`; CDT `childMap` O(1) HashMap index; `descendantsOf` O(N+E); closes F-P08, F-P14
-9. **WS-G9**: ~~Information-Flow Projection Optimization~~ **COMPLETED** (v0.12.14) — `computeObservableSet` precomputes `Std.HashSet ObjId`; `projectStateFast` with O(1) observability lookups; `projectStateFast_eq` equivalence proof (`@[csimp]`-ready); zero downstream proof breakage; closes F-P09
+See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
+for the full technical breakdown.
 
-Prior portfolio **WS-F** (v0.12.2 audit remediation): WS-F1..F4 all **COMPLETED**.
+## Next: remaining WS-F workstreams (F5–F8)
+
+WS-F1..F4 (critical/high priority) are completed. The remaining workstreams
+address medium/low findings from the v0.12.2 audits:
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
+
+See [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md).
 
 ## Hardware roadmap
 
 H0 (neutral semantics, complete) → H1 (boundary interfaces, complete) →
-H2 (proof deepening, active) → H3 (Raspberry Pi 5 binding) → H4 (evidence convergence).
+H2 (proof deepening, WS-F remaining) → H3 (Raspberry Pi 5 binding) →
+H4 (evidence convergence).
 
 See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md).
 

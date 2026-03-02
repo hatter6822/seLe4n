@@ -16,19 +16,23 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.12.2 has:
+seLe4n v0.12.15 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
 - **400+ proved theorems** across 7 kernel subsystems.
+- **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
 
-Key gaps identified by audits (addressed by WS-F):
+Critical audit gaps (all resolved by WS-F1..F4):
 
 - ~~IPC operations transfer scheduling state but not message data (CRIT-01).~~ **RESOLVED** (WS-F1)
 - ~~No Untyped memory model (CRIT-04).~~ **RESOLVED** (WS-F2)
 - ~~Information-flow covers 5 of 30+ operations (CRIT-03).~~ **RESOLVED** (WS-F3) — extended to 12+ operations with 15 NI theorems.
 - ~~Dual-queue IPC model has zero formal proofs (CRIT-05/F-10).~~ **RESOLVED** (WS-F1)
+
+Remaining medium/low findings (WS-F5..F8): model fidelity, invariant quality,
+testing expansion, cleanup.
 
 ## 3. Quality gates
 
@@ -62,7 +66,8 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 
 | Version | Portfolio | Status |
 |---------|-----------|--------|
-| v0.12.2 | WS-F | **Active** — WS-F1, WS-F2, WS-F3 completed |
+| v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
+| v0.12.2 | WS-F | WS-F1..F4 completed; **WS-F5..F8 remaining** |
 | v0.11.6 | WS-E | Completed (WS-E1..E6) |
 | v0.11.0 | WS-D | Completed (WS-D1..D4) |
 | v0.9.32 | WS-C | Completed (WS-C1..C8) |

@@ -5,15 +5,15 @@
 This guide is the day-to-day operating manual for contributors to seLe4n — a
 production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
-It is aligned to the **current active slice**:
+It is aligned to the **current project state**:
 
-- **active:** WS-G portfolio (kernel performance optimization — WS-G1..G9 completed; refinement pass v0.12.15),
-- **findings baseline:** [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
-- **completed predecessor:** WS-F portfolio (v0.12.2 audit remediation — WS-F1..F4 completed), WS-E (v0.11.6),
+- **next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation — model fidelity, invariant quality, testing, cleanup),
+- **recently completed:** WS-G (kernel performance optimization — all 9 workstreams + refinement, v0.12.15), WS-F1..F4 (critical audit remediation),
+- **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning source:
-[`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](./audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 
 ---
 
@@ -32,28 +32,27 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Active workstream (WS-G: Kernel Performance Optimization)
+## 3) Next workstream: remaining WS-F (F5–F8)
 
-The WS-G portfolio addresses 14 performance findings from the v0.12.5 kernel performance audit.
-See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
+The critical WS-F workstreams (F1–F4) and the WS-G performance optimization
+portfolio are completed. The next focus is the remaining medium/low-priority
+WS-F workstreams.
+
+See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
 for the full execution plan.
 
-### 3.1 Workstream summary
+### 3.1 Remaining workstreams
 
-| ID | Focus | Priority | Key findings | Status |
-|----|-------|----------|--------------|--------|
-| **WS-G1** | Hashable/BEq infrastructure | Prerequisite | (infrastructure) | **Completed** |
-| **WS-G2** | Object store HashMap | Critical | F-P01, F-P10, F-P13 | **Completed** |
-| **WS-G3** | ASID resolution table | Critical | F-P06 | **Completed** |
-| **WS-G4** | Run queue restructure | Critical | F-P02, F-P07, F-P12 | **Completed** |
-| **WS-G5** | CNode slot HashMap | High | F-P03 | **Completed** |
-| **WS-G6** | VSpace mapping HashMap | High | F-P05 | **Completed** |
-| **WS-G7** | IPC queue + notification | High | F-P04, F-P11 | **Completed** |
-| **WS-G8** | Graph traversal optimization | High | F-P08, F-P14 | **Completed** |
-| **WS-G9** | Info-flow projection optimization | High | F-P09 | **Completed** |
+| ID | Focus | Priority | Status |
+|----|-------|----------|--------|
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Next |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
 
-### 3.2 Prior completed portfolios (historical)
+### 3.2 Completed portfolios
 
+- **WS-G1..G9:** all completed (v0.12.6–v0.12.15). See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 - **WS-F1..F4:** completed. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 - **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
 - **WS-D1..D4:** completed. See [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
@@ -81,7 +80,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-F slice (prefer next priority in the active plan, starting with current phase targets).
+1. Sync branch and choose one coherent WS-F5..F8 slice (prefer next priority in the active plan, starting with P3 targets).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

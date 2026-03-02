@@ -5,9 +5,11 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Active findings baseline:** v0.12.2 audits ([v1](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [v2](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)).
-- **Active portfolio:** WS-F (v0.12.2 audit remediation — planning).
-- **Prior completed:** WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
+
+- **Version:** 0.12.15 (Lean 4.28.0).
+- **Recently completed:** WS-G (kernel performance optimization — 9 workstreams, all 14 findings closed).
+- **Next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation).
+- **Prior completed:** WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Historical records:** Milestone closeouts and prior audits in [`docs/dev_history/`](../dev_history/README.md).
 
@@ -24,15 +26,17 @@ Specification documents:
 4. [Specification & Roadmap](05-specification-and-roadmap.md)
 5. [Development Workflow](06-development-workflow.md)
 6. [Testing & CI](07-testing-and-ci.md)
-7. [v0.12.2 Audit Workstream Planning (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
+7. [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 8. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
 
-- Canonical execution matrix:
+- Recently completed (WS-G):
+  [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
+- GitBook chapter:
+  [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
+- Next workstream (WS-F5..F8):
   [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
-- GitBook planning chapter:
-  [v0.12.2 Audit Workstream Planning (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
 
 ## Development history
 
