@@ -11,6 +11,13 @@ structure RunQueue where
   /-- WS-G4: Structural invariant — every flat-list entry is in the HashSet.
       Needed to bridge `∈ rq.flat` (flat list) and `∈ rq` (HashSet) in proofs. -/
   flat_wf : ∀ tid, tid ∈ flat → membership.contains tid = true
+  /- WS-G4: Implicit invariant (maintained structurally by `insert`/`remove` API):
+     Every thread in `membership` has a corresponding entry in `threadPriority`,
+     and vice versa. This is NOT enforced as a proof obligation in the structure
+     because it would complicate the API without adding formal value — the only
+     mutations go through `insert` (adds both) and `remove` (erases both).
+     Violation would require direct structure construction bypassing the API.
+     Runtime verification: `InvariantChecks.runQueueThreadPriorityConsistentB`. -/
 namespace RunQueue
 @[inline] def empty : RunQueue where
   byPriority := {}; membership := {}; threadPriority := {}
@@ -55,19 +62,17 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
 
 def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   let prio := rq.threadPriority[tid]?
-  let byPrio' := match prio with
-    | none => rq.byPriority
+  -- WS-G4 refinement: compute filtered bucket once, reuse for both byPriority and maxPriority
+  let (byPrio', maxPrio') := match prio with
+    | none => (rq.byPriority, rq.maxPriority)
     | some p =>
         let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-        if bucket.isEmpty then rq.byPriority.erase p
-        else rq.byPriority.insert p bucket
-  let maxPrio' := match prio with
-    | none => rq.maxPriority
-    | some p =>
-        let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-        if rq.maxPriority == some p && bucket.isEmpty then
-          recomputeMaxPriority byPrio'
-        else rq.maxPriority
+        let byPrio' := if bucket.isEmpty then rq.byPriority.erase p
+                        else rq.byPriority.insert p bucket
+        let maxPrio' := if rq.maxPriority == some p && bucket.isEmpty then
+                           recomputeMaxPriority byPrio'
+                         else rq.maxPriority
+        (byPrio', maxPrio')
   { byPriority := byPrio'
     membership := rq.membership.erase tid
     threadPriority := rq.threadPriority.erase tid

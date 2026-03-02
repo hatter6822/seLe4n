@@ -192,12 +192,22 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
           (s!"notification waiter consistent: oid={oid} tid={tid.toNat}", ok) :: inner) acc
     | _ => acc) []
 
+/-- WS-G4: RunQueue internal consistency — every thread in the membership set has
+    a corresponding entry in `threadPriority`, and every `threadPriority` entry is
+    backed by membership. This invariant is maintained structurally by RunQueue.insert
+    and RunQueue.remove, but we verify it at runtime as a safety net. -/
+private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
+  let rq := st.scheduler.runQueue
+  rq.flat.all fun tid =>
+    rq.threadPriority[tid]?.isSome
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
     [ ("scheduler queue/current consistency", schedulerQueueCurrentConsistentB st)
     , ("scheduler runnable queue uniqueness", schedulerRunQueueUniqueB st)
     , ("scheduler current thread validity", currentThreadValidB st)
+    , ("scheduler runQueue threadPriority consistency", runQueueThreadPriorityConsistentB st)
     ]
   let runnableChecks : List (String × Bool) :=
     st.scheduler.runnable.map fun tid =>

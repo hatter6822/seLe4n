@@ -887,7 +887,58 @@ private def runNegativeChecks : IO Unit := do
 
   IO.println "WS-F2 untyped memory negative checks passed"
 
+/-- WS-F1: endpointReplyRecv compound operation coverage.
+    Separated from `runNegativeChecks` to stay within Lean's recursion depth limit. -/
+private def runReplyRecvChecks : IO Unit := do
+  let replyRecvEpId : SeLe4n.ObjId := endpointId
+  let replyRecvTarget : SeLe4n.ThreadId := ⟨7⟩
+  let replyRecvReceiver : SeLe4n.ThreadId := ⟨8⟩
+  let replyRecvMsg : IpcMessage := { registers := [77, 88], caps := [], badge := none }
+  let replyRecvSeed : SystemState :=
+    { baseState with
+      objects := baseState.objects.insert replyRecvTarget.toObjId (.tcb {
+            tid := replyRecvTarget
+            priority := 43
+            domain := 0
+            cspaceRoot := cnodeId
+            vspaceRoot := 20
+            ipcBuffer := 2048
+            ipcState := .blockedOnReply replyRecvEpId
+          })
+      scheduler := { baseState.scheduler with
+        runQueue := baseState.scheduler.runQueue.remove replyRecvTarget } }
+
+  let (_, stReplyRecv) ← expectOkState "endpointReplyRecv success"
+    (SeLe4n.Kernel.endpointReplyRecv replyRecvEpId replyRecvReceiver replyRecvTarget replyRecvMsg replyRecvSeed)
+
+  match (stReplyRecv.objects[replyRecvTarget.toObjId]? : Option KernelObject) with
+  | some (.tcb tcb) =>
+      if tcb.ipcState == .ready && tcb.pendingMessage.isSome then
+        IO.println "positive check passed [endpointReplyRecv unblocks target with message]"
+      else
+        throw <| IO.userError s!"endpointReplyRecv expected target ready with message, got ipcState={reprStr tcb.ipcState} pending={reprStr tcb.pendingMessage.isSome}"
+  | _ => throw <| IO.userError "endpointReplyRecv expected target TCB"
+
+  match (stReplyRecv.objects[replyRecvReceiver.toObjId]? : Option KernelObject) with
+  | some (.tcb tcb) =>
+      if tcb.ipcState == .blockedOnReceive replyRecvEpId then
+        IO.println "positive check passed [endpointReplyRecv receiver awaiting on endpoint]"
+      else
+        throw <| IO.userError s!"endpointReplyRecv expected receiver blockedOnReceive, got {reprStr tcb.ipcState}"
+  | _ => throw <| IO.userError "endpointReplyRecv expected receiver TCB"
+
+  expectError "endpointReplyRecv target not in reply state"
+    (SeLe4n.Kernel.endpointReplyRecv replyRecvEpId replyRecvReceiver ⟨8⟩ replyRecvMsg baseState)
+    .replyCapInvalid
+
+  expectError "endpointReplyRecv non-existent target"
+    (SeLe4n.Kernel.endpointReplyRecv replyRecvEpId replyRecvReceiver ⟨999⟩ replyRecvMsg baseState)
+    .objectNotFound
+
+  IO.println "WS-F1 endpointReplyRecv compound operation checks passed"
+
 end SeLe4n.Testing
 
-def main : IO Unit :=
+def main : IO Unit := do
   SeLe4n.Testing.runNegativeChecks
+  SeLe4n.Testing.runReplyRecvChecks
