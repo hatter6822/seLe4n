@@ -469,6 +469,12 @@ Operation-level theorems:
 - `retypeFromUntyped_preserves_lifecycleInvariantBundle` — full bundle preservation,
 - `default_systemState_untypedMemoryInvariant` — default state satisfies invariant.
 
+Auto-derivation theorems (WS-H2/B-5 — eliminates manual `hNe`/`hFresh` proof obligations):
+
+- `retypeFromUntyped_ok_childId_ne` — success implies `childId ≠ untypedId` (derived from H-06 self-overwrite guard),
+- `retypeFromUntyped_ok_childId_fresh` — success implies childId fresh among untyped's existing children (derived from A-27 collision guard),
+- `retypeFromUntyped_preserves_untypedMemoryInvariant_auto` — composed variant that auto-derives both `hNe` and `hFresh` from a success hypothesis; callers need only supply the invariant precondition, new-object well-formedness, and success hypothesis.
+
 ## 16. WS-F1 IPC message transfer and dual-queue verification
 
 IPC operations now carry `IpcMessage` payloads (registers, caps, badge):

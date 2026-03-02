@@ -16,13 +16,14 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.12.15 has:
+seLe4n v0.12.17 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **400+ proved theorems** across 7 kernel subsystems.
+- **575+ proved theorems** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
+- **Phase 1 correctness fixes** (WS-H1..H3): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened.
 
 Critical audit gaps (all resolved by WS-F1..F4):
 
@@ -39,8 +40,8 @@ testing expansion, cleanup.
 | Tier | Gate | What it validates |
 |------|------|-------------------|
 | **0** | Hygiene | No sorry/axiom, SHA-pinning, fixture isolation, shellcheck |
-| **1** | Build | Full `lake build` compilation (64 jobs) |
-| **2** | Trace + Negative | Fixture-diff trace (80 expectations) + corruption testing |
+| **1** | Build | Full `lake build` compilation (84 jobs) |
+| **2** | Trace + Negative | Fixture-diff trace + corruption testing + information-flow suite |
 | **3** | Invariant surface | 300+ symbol/doc anchor presence checks |
 | **4** | Nightly | Determinism replay + stochastic probe |
 
@@ -66,6 +67,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 
 | Version | Portfolio | Status |
 |---------|-----------|--------|
+| v0.12.15 | WS-H | Phase 1 **Completed** (WS-H1..H3: IPC fix, lifecycle guards, CI hardening); Phase 2–5 pending |
 | v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
 | v0.12.2 | WS-F | WS-F1..F4 completed; **WS-F5..F8 remaining** |
 | v0.11.6 | WS-E | Completed (WS-E1..E6) |

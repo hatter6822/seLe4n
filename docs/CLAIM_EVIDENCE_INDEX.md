@@ -73,6 +73,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D07 | Service dependency acyclicity invariant (Risk 0 resolved: vacuous definition fixed, declarative proof complete; BFS completeness bridge formally proved — TPI-D07-BRIDGE resolved). **BFS completeness proof:** the sole remaining `sorry` has been eliminated via a loop-invariant argument using `serviceCountBounded` as a precondition, establishing that BFS exploration with bounded fuel covers all reachable service nodes. No `sorry` remains in the acyclicity proof surface. | WS-D4 | CLOSED |
 | TPI-D10 | Untyped memory model: `UntypedObject`, `retypeFromUntyped`, watermark/bounds invariants, device restriction enforcement, lifecycle preservation through retype. Closes CRIT-04. | WS-F2 | CLOSED |
 | TPI-D11 | Lifecycle safety guards: childId self-overwrite/collision guards in `retypeFromUntyped`, TCB scheduler cleanup via `lifecycleRetypeWithCleanup`, CNode CDT detach, atomic retype. Proved `lifecycleRetypeWithCleanup_ok_runnable_no_dangling`. Closes H-05, H-06, A-26, A-27, A-28. | WS-H2 | CLOSED |
+| TPI-D11+ | Lifecycle hFresh auto-derivation: `retypeFromUntyped_ok_childId_ne` (H-06 self-overwrite guard → `childId ≠ untypedId`), `retypeFromUntyped_ok_childId_fresh` (A-27 collision guard → childId fresh among children), `retypeFromUntyped_preserves_untypedMemoryInvariant_auto` (eliminates manual `hNe`/`hFresh` proof obligations). Closes WS-H2/B-5. | WS-H2 | CLOSED |
 
 ## Update policy
 
