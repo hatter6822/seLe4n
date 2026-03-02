@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked â€
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (400+ proved theorems),
+2. machine-checked invariant preservation (574 proved theorems),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -50,8 +50,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.12.15` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` |
-| **Production LoC** | 16,485 across 34 Lean files |
-| **Proved theorems** | 400+ (zero sorry/axiom) |
+| **Production LoC** | 21,641 across 40 Lean files |
+| **Proved theorems** | 574 (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
