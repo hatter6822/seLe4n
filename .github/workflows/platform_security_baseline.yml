@@ -79,10 +79,10 @@ jobs:
           exit-code: '1'
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
         with:
           languages: actions
 
       - name: Run CodeQL analysis (informational; see docs/CI_POLICY.md)
-        uses: github/codeql-action/analyze@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
+        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
         continue-on-error: true
