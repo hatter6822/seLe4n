@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 16,485 lines of Lean across 34 modules, 400+ machine-checked theorems, zero unsound
+Current state: 21,340 lines of Lean across 40 modules, 575 machine-checked theorems, zero unsound
 constructs, comprehensive tiered CI with security scanning.
 
 ## 3. Architectural improvements over seL4
@@ -45,6 +45,7 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H1** (v0.12.16) | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct contract predicates | Completed |
 | **WS-G** (v0.12.15) | Kernel performance: O(1) hash-based data structures for all hot paths | All 9 workstreams completed |
 | **WS-F1..F4** (v0.12.2) | Critical audit remediation: IPC messages, untyped memory, info-flow, proof gaps | All 4 completed |
 | **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, info-flow | All 6 completed |

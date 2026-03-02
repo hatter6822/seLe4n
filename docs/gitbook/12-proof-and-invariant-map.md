@@ -105,11 +105,13 @@ Component level:
 
 - runnable threads should be IPC-ready,
 - blocked-on-send threads should not remain runnable,
-- blocked-on-receive threads should not remain runnable.
+- blocked-on-receive threads should not remain runnable,
+- blocked-on-call threads should not remain runnable (WS-H1),
+- blocked-on-reply threads should not remain runnable (WS-H1).
 
 Bundle level:
 
-- `ipcSchedulerContractPredicates`
+- `ipcSchedulerContractPredicates` (5 conjuncts: ready, send, receive, call, reply)
 - `ipcSchedulerCoherenceComponent`
 - `ipcSchedulerCouplingInvariantBundle`
 

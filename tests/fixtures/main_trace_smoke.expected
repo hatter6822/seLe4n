@@ -61,6 +61,11 @@ F1-01d    | high     | message sender cleared after transfer: true
 F1-02     | critical | rendezvous delivery registers: [99]
 F1-03a    | high     | call/reply caller blocked: true
 F1-03b    | critical | call/reply response registers: [100, 200]
+H1-01     | critical | H1 caller blockedOnCall: true
+H1-02     | critical | H1 caller blockedOnReply after dequeue: true
+H1-03     | critical | H1 caller not ready after dequeue: true
+H1-04     | critical | H1 caller ready after reply: true
+H1-05     | high     | H1 unauthorized reply rejected: true
 E6-M03    | high     | EDF tie-break chosen thread: some 12
 E6-M04a   | high     | timer tick remaining slice: 1
 E6-M04b   | high     | timer tick expiry rescheduled current: some 1

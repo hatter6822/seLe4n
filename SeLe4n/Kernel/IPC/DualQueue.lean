@@ -1552,6 +1552,11 @@ the pending message from the sender's TCB, deliver it into the receiver's
 TCB (pendingMessage), clear the sender's pending message, and unblock sender.
 Otherwise, enqueue receiver in intrusive receiveQ and block.
 
+WS-H1/C-01: When the dequeued sender is in `blockedOnCall` state, the sender
+transitions to `blockedOnReply` (not `.ready`), preserving the Call contract.
+The receiver's ThreadId is recorded as the `replyTarget` so only the authorized
+server can reply. Plain `blockedOnSend` senders transition to `.ready` as before.
+
 Returns the sender's ThreadId. The transferred message is available in the
 receiver's TCB.pendingMessage after the operation (matching seL4's model
 where the message lands in the receiver's IPC buffer). -/
@@ -1565,21 +1570,34 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, st') =>
-                -- WS-F1: Extract message from sender's TCB
-                let senderMsg := match lookupTcb st' sender with
-                  | some tcb => tcb.pendingMessage
-                  | none => none
-                -- Unblock sender and clear its pending message
-                match storeTcbIpcStateAndMessage st' sender .ready none with
-                | .error e => .error e
-                | .ok st'' =>
-                    let st''' := ensureRunnable st'' sender
-                    -- WS-F1: Deliver message to receiver's TCB.
-                    -- Error propagation: if the receiver TCB cannot be found,
-                    -- the operation fails rather than silently dropping the message.
-                    match storeTcbPendingMessage st''' receiver senderMsg with
-                    | .ok st4 => .ok (sender, st4)
-                    | .error e => .error e
+                -- WS-F1/WS-H1: Extract message and IPC state from sender's TCB in a single lookup.
+                -- blockedOnCall → blockedOnReply (caller stays blocked awaiting reply)
+                -- blockedOnSend → ready (plain send, unblock sender)
+                let (senderMsg, senderWasCall) := match lookupTcb st' sender with
+                  | some tcb => (tcb.pendingMessage, match tcb.ipcState with
+                    | .blockedOnCall _ => true
+                    | _ => false)
+                  | none => (none, false)
+                if senderWasCall then
+                  -- Call path: sender transitions to blockedOnReply, NOT ready
+                  match storeTcbIpcStateAndMessage st' sender
+                      (.blockedOnReply endpointId (some receiver)) none with
+                  | .error e => .error e
+                  | .ok st'' =>
+                      -- WS-F1: Deliver message to receiver's TCB.
+                      match storeTcbPendingMessage st'' receiver senderMsg with
+                      | .ok st''' => .ok (sender, st''')
+                      | .error e => .error e
+                else
+                  -- Send path: sender transitions to ready as before
+                  match storeTcbIpcStateAndMessage st' sender .ready none with
+                  | .error e => .error e
+                  | .ok st'' =>
+                      let st''' := ensureRunnable st'' sender
+                      -- WS-F1: Deliver message to receiver's TCB.
+                      match storeTcbPendingMessage st''' receiver senderMsg with
+                      | .ok st4 => .ok (sender, st4)
+                      | .error e => .error e
         | none =>
             match endpointQueueEnqueue endpointId true receiver st with
             | .error e => .error e
@@ -1597,7 +1615,10 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
 /-- WS-F1/WS-E4/M-12: Call operation — send then block for reply, with message transfer.
 
 If a receiver is queued: handshake with receiver (transfer `msg`), then block caller for reply.
-If no receiver queued: enqueue caller as sender with message stored in TCB. -/
+WS-H1/M-02: The caller's `blockedOnReply` records the receiver's ThreadId as `replyTarget`.
+If no receiver queued: enqueue caller as sender with message stored in TCB.
+WS-H1/C-01: The caller is enqueued with `blockedOnCall` (not `blockedOnSend`) so that
+when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`. -/
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
@@ -1613,16 +1634,16 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' receiver
-                    -- Caller blocks waiting for reply
-                    match storeTcbIpcState st''' caller (.blockedOnReply endpointId) with
+                    -- WS-H1/M-02: Caller blocks waiting for reply; record receiver as replyTarget
+                    match storeTcbIpcState st''' caller (.blockedOnReply endpointId (some receiver)) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
         | none =>
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
             | .ok st' =>
-                -- WS-F1: Store message in caller's TCB while blocked
-                match storeTcbIpcStateAndMessage st' caller (.blockedOnSend endpointId) (some msg) with
+                -- WS-H1/C-01: Store message and mark as blockedOnCall (not blockedOnSend)
+                match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), removeRunnable st'' caller)
     | some _ => .error .invalidCapability
@@ -1632,25 +1653,36 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
 
 Unblocks the target thread by setting its IPC state to ready, delivers the reply
 `msg` into the target's TCB, and adds it to the runnable queue.
-Fails if the target is not in blockedOnReply state. -/
-def endpointReply (target : SeLe4n.ThreadId) (msg : IpcMessage) : Kernel Unit :=
+Fails if the target is not in blockedOnReply state.
+WS-H1/M-02: Validates the `replier` matches the `replyTarget` recorded in the
+target's `blockedOnReply` state. If `replyTarget` is `some serverId` and
+`replier ≠ serverId`, the operation fails with `replyCapInvalid`, preventing
+confused-deputy attacks where unauthorized threads reply to blocked callers. -/
+def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
+    (msg : IpcMessage) : Kernel Unit :=
   fun st =>
     match lookupTcb st target with
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with
-        | .blockedOnReply _ =>
-            -- WS-F1: Deliver reply message and unblock
-            match storeTcbIpcStateAndMessage st target .ready (some msg) with
-            | .error e => .error e
-            | .ok st' => .ok ((), ensureRunnable st' target)
+        | .blockedOnReply _ replyTarget =>
+            -- WS-H1/M-02: Validate replier is the authorized server
+            let authorized := match replyTarget with
+              | some expected => replier == expected
+              | none => true
+            if authorized then
+              match storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | .error e => .error e
+              | .ok st' => .ok ((), ensureRunnable st' target)
+            else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 /-- WS-F1/WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
 
 Combines reply + receive in a single atomic operation, matching seL4_ReplyRecv.
 The reply delivers `msg` to the target and unblocks it, then the receiver waits
-on the endpoint for incoming messages. -/
+on the endpoint for incoming messages.
+WS-H1/M-02: Validates the receiver (replier) is the authorized `replyTarget`. -/
 def endpointReplyRecv
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
@@ -1661,15 +1693,21 @@ def endpointReplyRecv
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with
-        | .blockedOnReply _ =>
-            -- WS-F1: Deliver reply message and unblock target
-            match storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-            | .error e => .error e
-            | .ok st' =>
-                let st'' := ensureRunnable st' replyTarget
-                match endpointAwaitReceive endpointId receiver st'' with
-                | .error e => .error e
-                | .ok result => .ok result
+        | .blockedOnReply _ expectedReplier =>
+            -- WS-H1/M-02: Validate receiver is the authorized replier
+            let authorized := match expectedReplier with
+              | some expected => receiver == expected
+              | none => true
+            if authorized then
+              -- WS-F1: Deliver reply message and unblock target
+              match storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+              | .error e => .error e
+              | .ok st' =>
+                  let st'' := ensureRunnable st' replyTarget
+                  match endpointAwaitReceive endpointId receiver st'' with
+                  | .error e => .error e
+                  | .ok result => .ok result
+            else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 

@@ -1,3 +1,17 @@
+## [0.12.16] - 2026-03-02
+
+### WS-H1: IPC Call-Path Semantic Fix (completed)
+
+- **blockedOnCall IPC state (C-01 CRITICAL):** Added `blockedOnCall` variant to `ThreadIpcState` enum in `Model/Object.lean`. A Call sender blocked on the send queue now carries `blockedOnCall endpointId` (distinct from `blockedOnSend endpointId`), signaling that upon dequeue by `endpointReceiveDual`, the sender transitions to `blockedOnReply` (not `.ready`). This fixes the semantic bug where a blocked Call sender was erroneously unblocked as if it were a plain Send, violating the Call contract.
+- **Receiver-side call/send dispatch (C-01):** `endpointReceiveDual` now inspects the dequeued sender's `ipcState` to determine post-dequeue transition: `blockedOnCall` senders transition to `blockedOnReply` (caller stays blocked awaiting reply), while plain `blockedOnSend` senders transition to `.ready` (sender unblocked). The `let senderWasCall` conditional dispatches between the two paths.
+- **Reply-target scoping (M-02 MEDIUM):** Added optional `replyTarget : Option ThreadId` field to the `blockedOnReply` state, recording which server thread is authorized to reply. `endpointReply` and `endpointReplyRecv` now validate that the replier matches `replyTarget` (when set), preventing confused-deputy attacks where any thread could reply to any blocked caller.
+- **endpointCall updates:** Blocking path uses `blockedOnCall endpointId` instead of `blockedOnSend`; handshake path populates `blockedOnReply endpointId (some receiver)` with the receiver's ThreadId.
+- **ipcSchedulerContractPredicates expanded:** Predicate bundle extended from 3 to 5 conjuncts with `blockedOnCallNotRunnable` and `blockedOnReplyNotRunnable`, ensuring threads in call/reply blocking states are not in the runnable queue.
+- **Invariant proof maintenance:** All IPC invariant preservation theorems re-proved for the updated state transitions, including `endpointReceiveDual` dual-path proofs (call path and send path), `endpointCall` blocking/handshake proofs, and all `endpointReplyRecv` chain proofs.
+- **Trace and test coverage:** Updated trace harness with WS-H1 blocking-path scenarios (H1-01 through H1-05) verifying call/reply lifecycle. Updated `NegativeStateSuite` pattern matches for the new `blockedOnReply` signature.
+- **Code quality refinement:** Refactored `endpointReply` to use `let authorized := ...` pattern matching `endpointReplyRecv`, eliminating duplicated reply-delivery logic. Consolidated dual `lookupTcb` calls in `endpointReceiveDual` into a single lookup returning `(senderMsg, senderWasCall)`. Proof duplication in `endpointReply_preserves_ipcSchedulerContractPredicates` and `endpointReply_preserves_capabilityInvariantBundle` eliminated via `suffices` abstraction.
+- **Full proof migration:** zero sorry/axiom across all modified files. `test_full.sh` passes (Tier 0-3).
+
 ## [0.12.15] - 2026-03-02
 
 ### WS-G Refinement: Scheduler optimization, validation hardening, and audit coverage expansion

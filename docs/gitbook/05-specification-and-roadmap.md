@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.15` |
+| Version | `0.12.16` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 16,485 across 34 files |
-| Proved theorems | 400+ (zero sorry/axiom) |
-| Recently completed | WS-G (kernel performance optimization) — all 9 workstreams + refinement |
+| Production LoC | 21,340 across 40 files |
+| Proved theorems | 575 (zero sorry/axiom) |
+| Recently completed | WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 
 ## Milestone history
@@ -25,7 +25,14 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
 remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
-(performance optimization, completed).
+(performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed).
+
+## Completed: WS-H1 IPC call-path semantic fix (v0.12.16)
+
+WS-H1 addresses the IPC call-path semantic gap identified in the v0.12.15 audit:
+`blockedOnCall` state for call/reply semantics, reply-target scoping to prevent
+confused-deputy attacks, and 5-conjunct `ipcSchedulerContractPredicates` with full
+invariant proof maintenance. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-G kernel performance optimization
 
