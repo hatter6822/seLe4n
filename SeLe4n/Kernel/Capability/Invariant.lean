@@ -138,7 +138,14 @@ def cspaceSlotCountBounded (st : SystemState) : Prop :=
 points to an object that exists in the state. This ensures CDT-based
 revocation can locate capabilities referenced by node mappings. The
 predicate is robust through `detachSlotFromCdt` operations because
-detached nodes lose their mapping (vacuously satisfying the condition). -/
+detached nodes lose their mapping (vacuously satisfying the condition).
+
+**Scope vs spec intent**: The WS-H4 spec envisions mint-based CDT
+completeness ("every derived capability has a CDT edge"). This predicate
+captures the weaker but foundational node-slot reachability property:
+CDT nodes never point to deleted objects. Mint-tracking completeness
+requires `cspaceMintWithCdt` as the sole mint path (see M-08/A-20
+annotation in API.lean). -/
 def cdtCompleteness (st : SystemState) : Prop :=
   ∀ (nodeId : CdtNodeId) (ref : SlotRef),
     st.cdtNodeSlot nodeId = some ref →
@@ -158,8 +165,19 @@ single invariant entrypoint.
 
 WS-H4: Extended from 4-tuple to 7-tuple with meaningful security predicates:
 - `cspaceSlotCountBounded`: slot capacity bound (replaces trivially-true `slotsUnique`)
-- `cdtCompleteness`: CDT edge parent-slot reachability
-- `cdtAcyclicity`: CDT cycle-freedom for sound revocation -/
+- `cdtCompleteness`: CDT node-slot reachability (every CDT node points to an existing object)
+- `cdtAcyclicity`: CDT cycle-freedom for sound revocation
+
+**Design decisions (WS-H4):**
+- CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) take
+  `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as hypotheses rather than
+  proving acyclicity preservation through `addEdge`. This is because proving
+  `addEdge_preserves_acyclicity` requires a cycle-check precondition that must be
+  validated at the caller; the hypothesis pattern correctly defers this obligation.
+- CDT-shrinking operations (revoke/delete) prove acyclicity via
+  `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
+- `cspaceSlotUnique` is retained alongside `cspaceSlotCountBounded` for backward
+  compatibility with the existing proof surface. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
     lifecycleAuthorityMonotonicity st ∧

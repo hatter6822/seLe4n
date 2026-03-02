@@ -12,6 +12,14 @@
 - **Downstream callers updated:** Architecture/Invariant.lean default-state proofs, Service/Invariant.lean `storeServiceState_preserves`, and lifecycle composition theorems all updated for the 7-tuple.
 - **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3).
 
+### WS-H4 refinement: audit, optimization, and documentation sync
+
+- **Architecture/Invariant.lean proof deduplication:** Extracted `default_capabilityInvariantBundle` helper theorem, eliminating 4x duplication of the 7-tuple default-state construction in `default_system_state_proofLayerInvariantBundle`.
+- **API.lean M-08/A-20 annotation:** Added untracked-capability warning to `cspaceMint` API table entry — capabilities created via the non-CDT mint path are not tracked by CDT-based revocation; `cspaceMintWithCdt` should be preferred for tracked derivation.
+- **Docstring refinements:** Updated `cdtCompleteness` docstring to clarify node-slot reachability scope vs. spec-intended mint-based completeness. Updated `capabilityInvariantBundle` docstring with WS-H4 design decision rationale (hCdtPost hypothesis pattern, edgeWellFounded_sub strategy, slotsUnique retention).
+- **GitBook sync:** Updated 6 GitBook chapters (01-project-overview, 05-specification-and-roadmap, 07-testing-and-ci, 12-proof-and-invariant-map, 19-end-to-end-audit, 22-next-slice-development-path) with WS-H4 completion references, bundle redefinition details, and transfer theorem documentation.
+- **Spec/CLAUDE.md sync:** Updated `SELE4N_SPEC.md` portfolio table, `CLAUDE.md` workstream context, and `docs/DEVELOPMENT.md` with WS-H4 (v0.12.18) completion status.
+
 ## [0.12.17] - 2026-03-02
 
 ### WS-H3: Build/CI Infrastructure Fixes (completed)
