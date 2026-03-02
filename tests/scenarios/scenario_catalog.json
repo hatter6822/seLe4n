@@ -105,6 +105,27 @@
       "replay_tier": "nightly",
       "deterministic_seed": 101,
       "expected_trace_fragment": "service isolation api↔denied: true"
+    },
+    {
+      "id": "SCN-H2-CHILDID-SELF-OVERWRITE",
+      "subsystem": "lifecycle",
+      "risk_tags": ["security", "safety"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite"
+    },
+    {
+      "id": "SCN-H2-CHILDID-COLLISION",
+      "subsystem": "lifecycle",
+      "risk_tags": ["security", "safety"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision"
+    },
+    {
+      "id": "SCN-H2-RETYPE-CLEANUP",
+      "subsystem": "lifecycle",
+      "risk_tags": ["safety", "correctness"],
+      "replay_tier": "smoke",
+      "expected_trace_fragment": "lifecycle retype-with-cleanup old tid removed: true"
     }
   ]
 }

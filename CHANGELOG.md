@@ -12,6 +12,19 @@
 - **Code quality refinement:** Refactored `endpointReply` to use `let authorized := ...` pattern matching `endpointReplyRecv`, eliminating duplicated reply-delivery logic. Consolidated dual `lookupTcb` calls in `endpointReceiveDual` into a single lookup returning `(senderMsg, senderWasCall)`. Proof duplication in `endpointReply_preserves_ipcSchedulerContractPredicates` and `endpointReply_preserves_capabilityInvariantBundle` eliminated via `suffices` abstraction.
 - **Full proof migration:** zero sorry/axiom across all modified files. `test_full.sh` passes (Tier 0-3).
 
+### WS-H2: Lifecycle Safety Guards (completed)
+
+- **childId self-overwrite guard (H-06 CRITICAL):** `retypeFromUntyped` now rejects calls where `childId = untypedId`, preventing the untyped object from being overwritten by its own child. Returns new `KernelError.childIdSelfOverwrite` error.
+- **childId collision guards (A-26/A-27 HIGH):** `retypeFromUntyped` rejects calls where `childId` collides with an existing object in `st.objects` or with an existing child in the untyped's `children` list. Returns new `KernelError.childIdCollision` error.
+- **TCB retype scheduler cleanup (H-05 CRITICAL):** New `cleanupTcbReferences` helper removes a TCB's ThreadId from the scheduler run queue before retype. New `detachCNodeSlots` helper clears CDT slot mappings when a CNode is replaced by a non-CNode object. Both composed in `lifecyclePreRetypeCleanup`.
+- **Safe retype wrapper (H-05):** `lifecycleRetypeWithCleanup` wraps `lifecyclePreRetypeCleanup` + `lifecycleRetypeObject`, providing the recommended entry point with safety guarantees. Original `lifecycleRetypeObject` is unchanged to preserve all downstream invariant proofs.
+- **Theorem: no dangling runnable after TCB retype:** `lifecycleRetypeWithCleanup_ok_runnable_no_dangling` proves that after a successful TCB retype via the safe wrapper, the old ThreadId is not in the run queue.
+- **Atomic retype (A-28):** `retypeFromUntyped` computes both the updated untyped and the new child object before any state mutation, preventing partial-update inconsistencies.
+- **Preservation proofs:** Field-orthogonality theorems for all cleanup operations (`*_objects_eq`, `*_lifecycle_eq`, `*_scheduler_eq`). Fold induction proofs for `detachCNodeSlots` CDT traversal.
+- **Trace coverage:** F2-09/F2-10 trace scenarios for childId guards, LIFE-10 scenario for `lifecycleRetypeWithCleanup` with TCB cleanup verification. 3 new scenario catalog entries.
+- **Negative test coverage:** H2-NEG-01 through H2-NEG-03 in `NegativeStateSuite.lean` testing childIdSelfOverwrite, childIdCollision (existing object), and childIdCollision (untyped child).
+- **Full proof migration:** zero sorry/axiom. `test_smoke.sh` passes (86/86 trace, all negative checks).
+
 ## [0.12.15] - 2026-03-02
 
 ### WS-G Refinement: Scheduler optimization, validation hardening, and audit coverage expansion

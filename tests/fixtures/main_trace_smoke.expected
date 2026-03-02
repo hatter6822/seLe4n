@@ -38,6 +38,7 @@ ARCH-09   | low      | boundary memory high-address byte: 0
 LIFE-01   | critical | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
 LIFE-02   | critical | lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
 LIFE-03   | critical | lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+LIFE-10   | critical | lifecycle retype-with-cleanup old tid removed: true
 LIFE-04   | high     | created sibling cap with the same target
 LIFE-05   | high     | composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
 LIFE-06   | high     | composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
@@ -82,6 +83,8 @@ F2-05     | high     | retype-from-untyped not-found branch: SeLe4n.Model.Kernel
 F2-06     | critical | retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
 F2-07     | high     | retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
 F2-08     | high     | retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
+F2-09     | critical | retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
+F2-10     | critical | retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

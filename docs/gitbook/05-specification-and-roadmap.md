@@ -17,7 +17,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Lean toolchain | `4.28.0` |
 | Production LoC | 21,340 across 40 files |
 | Proved theorems | 575 (zero sorry/axiom) |
-| Recently completed | WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
+| Recently completed | WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 
 ## Milestone history
@@ -25,7 +25,17 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 (lifecycle) → M5 (service graph) → M6 (architecture boundary) → M7 (audit
 remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
-(performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed).
+(performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed) →
+WS-H2 (lifecycle safety guards, completed).
+
+## Completed: WS-H2 Lifecycle Safety Guards (v0.12.16)
+
+WS-H2 addresses lifecycle safety gaps identified in the v0.12.15 audit:
+childId self-overwrite and collision guards in `retypeFromUntyped`, TCB scheduler
+cleanup on retype via `lifecycleRetypeWithCleanup`, CNode CDT slot detach, and
+atomic dual-store retype. Proved `lifecycleRetypeWithCleanup_ok_runnable_no_dangling`
+— no dangling run queue entries after TCB retype. See
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H1 IPC call-path semantic fix (v0.12.16)
 
