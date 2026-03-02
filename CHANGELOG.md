@@ -1,3 +1,17 @@
+## [0.12.18] - 2026-03-02
+
+### WS-H4: Capability Invariant Redesign (completed)
+
+- **capabilityInvariantBundle extended from 4-tuple to 7-tuple (C-03 CRITICAL):** The `capabilityInvariantBundle` previously contained only `cspaceSlotUnique ∧ cspaceLookupSound ∧ cspaceAttenuationRule ∧ lifecycleAuthorityMonotonicity` — all trivially true or structural. Replaced with a meaningful 7-conjunct bundle adding: `cspaceSlotCountBounded` (every CNode has bounded slot count), `cdtCompleteness` (every CDT node-slot mapping references an existing object), and `cdtAcyclicity` (CDT derivation forest is well-founded via path-based acyclicity).
+- **New predicates in Model/Object.lean:** `CNode.slotCountBounded` (slot count ≤ maxCNodeSlots), `CapDerivationTree.edgeWellFounded` (no non-empty path from a node to itself), `edgeWellFounded_sub` (edge-subset preserves well-foundedness), `removeNode_edges_sub` (removeNode produces edge subset), `CNode.remove_slotCountBounded` and `CNode.revokeTargetLocal_slotCountBounded` (CNode operations preserve bounds).
+- **New predicates in Capability/Invariant.lean:** `cspaceSlotCountBounded st`, `cdtCompleteness st`, `cdtAcyclicity st` — formalized as quantified propositions over system state.
+- **Transfer theorem infrastructure:** Added ~20 helper theorems for propagating the 3 new predicates through state transitions: `cspaceSlotCountBounded_of_objects_eq`, `cdtCompleteness_of_storeObject`, `cdtAcyclicity_of_cdt_eq`, `wsH4_through_blocking_path`, `wsH4_through_handshake_path`, `wsH4_through_reply_path`, `wsH4_of_detachSlotFromCdt`, `wsH4_bounded_comp_of_cdt_only_update`, `capabilityInvariantBundle_of_cdt_update`, and more.
+- **All preservation theorems re-proved:** Every `_preserves_capabilityInvariantBundle` theorem (cspaceInsertSlot, cspaceMint, cspaceCopy, cspaceMove, cspaceMintWithCdt, cspaceMutate, cspaceDeleteSlot, cspaceRevoke, revokeCdtFoldBody, revokeCdtFold, endpointReply, endpointSend, endpointReceive, endpointAwaitReceive, lifecycleRetypeObject, storeServiceState) re-proved against the non-trivial 7-conjunct bundle.
+- **CDT-modifying operations:** For `cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt` (which add CDT edges that could break acyclicity), cdtCompleteness and cdtAcyclicity of the post-state are taken as hypotheses. For CDT-shrinking operations (removeNode in revoke), acyclicity is proven via `edgeWellFounded_sub` and `removeNode_edges_sub`.
+- **CNode insertion operations:** A `hSlotCapacity` / `hDstCapacity` hypothesis added to `cspaceInsertSlot`, `cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`, `cspaceMutate` since no HashMap size_insert lemma is available.
+- **Downstream callers updated:** Architecture/Invariant.lean default-state proofs, Service/Invariant.lean `storeServiceState_preserves`, and lifecycle composition theorems all updated for the 7-tuple.
+- **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3).
+
 ## [0.12.17] - 2026-03-02
 
 ### WS-H3: Build/CI Infrastructure Fixes (completed)

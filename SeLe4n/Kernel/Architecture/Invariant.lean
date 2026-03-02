@@ -227,24 +227,33 @@ theorem default_system_state_proofLayerInvariantBundle :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundle
   · exact default_schedulerInvariantBundle
-  -- 2. capabilityInvariantBundle
+  -- 2. capabilityInvariantBundle (7-tuple: unique, sound, attenuation, lifecycle, bounded, completeness, acyclicity)
   · exact ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
            by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-           by exact lifecycleAuthorityMonotonicity_holds _⟩
+           by exact lifecycleAuthorityMonotonicity_holds _,
+           by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+           by intro _ _ h; simp [default] at h,
+           by exact CapDerivationTree.empty_edgeWellFounded⟩
   -- 3. coreIpcInvariantBundle
   · exact ⟨default_schedulerInvariantBundle,
            ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
             by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
             by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-            by exact lifecycleAuthorityMonotonicity_holds _⟩,
+            by exact lifecycleAuthorityMonotonicity_holds _,
+            by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+            by intro _ _ h; simp [default] at h,
+            by exact CapDerivationTree.empty_edgeWellFounded⟩,
            default_ipcInvariant⟩
   -- 4. ipcSchedulerCouplingInvariantBundle
   · exact ⟨⟨default_schedulerInvariantBundle,
             ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
              by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
              by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-             by exact lifecycleAuthorityMonotonicity_holds _⟩,
+             by exact lifecycleAuthorityMonotonicity_holds _,
+             by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+             by intro _ _ h; simp [default] at h,
+             by exact CapDerivationTree.empty_edgeWellFounded⟩,
             default_ipcInvariant⟩,
            default_ipcSchedulerContractPredicates.1,
            default_ipcSchedulerContractPredicates.2⟩
@@ -256,7 +265,10 @@ theorem default_system_state_proofLayerInvariantBundle :
            by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
            by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-           by exact lifecycleAuthorityMonotonicity_holds _⟩
+           by exact lifecycleAuthorityMonotonicity_holds _,
+           by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+           by intro _ _ h; simp [default] at h,
+           by exact CapDerivationTree.empty_edgeWellFounded⟩
   -- 7. vspaceInvariantBundle (3-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent)
   · refine ⟨?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)
