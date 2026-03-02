@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.IPC.Operations
 
 namespace SeLe4n.Kernel
 
@@ -9,6 +10,201 @@ open SeLe4n.Model
 The authority capability must target the object directly and include `write` rights. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
   decide (cap.target = .object target) && Capability.hasRight cap .write
+
+
+-- ============================================================================
+-- WS-H2: Lifecycle Safety Guards
+-- ============================================================================
+
+/-- WS-H2/H-05: Clean up external references to a TCB being retyped away.
+    Removes the ThreadId from the scheduler run queue (`removeRunnable`).
+    This prevents the dangling-reference scenario described in H-05: after a TCB
+    is retyped, its ThreadId must not remain in the run queue pointing at what
+    is now a different object type.
+
+    Note: IPC endpoint queue references become stale after retype but are
+    safe — all IPC operations guard on `lookupTcb`, which fails gracefully
+    when the TCB no longer exists.  Full endpoint dequeue is deferred to a
+    future workstream to avoid breaking the `objects`-preservation chain
+    used by downstream invariant proofs. -/
+def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  removeRunnable st tid
+
+/-- After cleanup, the cleaned thread is not in the run queue. -/
+theorem cleanupTcbReferences_removes_from_runnable
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    ¬(tid ∈ (cleanupTcbReferences st tid).scheduler.runQueue) := by
+  unfold cleanupTcbReferences removeRunnable
+  exact RunQueue.not_mem_remove_self _ _
+
+/-- Cleanup preserves run queue membership for other threads. -/
+theorem cleanupTcbReferences_preserves_runnable_ne
+    (st : SystemState) (tid other : SeLe4n.ThreadId) (hNe : other ≠ tid)
+    (hMem : other ∈ st.scheduler.runQueue) :
+    other ∈ (cleanupTcbReferences st tid).scheduler.runQueue := by
+  unfold cleanupTcbReferences removeRunnable
+  rw [RunQueue.mem_remove]
+  exact ⟨hMem, hNe⟩
+
+/-- Cleanup preserves the objects store (scheduler-only operation). -/
+theorem cleanupTcbReferences_objects_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).objects = st.objects := by
+  unfold cleanupTcbReferences removeRunnable; rfl
+
+/-- Cleanup preserves lifecycle metadata (scheduler-only operation). -/
+theorem cleanupTcbReferences_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
+  unfold cleanupTcbReferences removeRunnable; rfl
+
+/-- CDT detach preserves the objects store. -/
+private theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.detachSlotFromCdt st ref).objects = st.objects := by
+  unfold SystemState.detachSlotFromCdt; split <;> rfl
+
+/-- CDT detach preserves lifecycle metadata. -/
+private theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.detachSlotFromCdt st ref).lifecycle = st.lifecycle := by
+  unfold SystemState.detachSlotFromCdt; split <;> rfl
+
+/-- WS-H2/A-11: Detach all CDT slot references for a CNode being replaced.
+    Iterates the CNode's slots and clears the cdtSlotNode/cdtNodeSlot
+    bidirectional mappings for each slot, preventing orphaned CDT references. -/
+def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
+  cn.slots.toList.foldl (fun acc pair =>
+    SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := pair.1 }
+  ) st
+
+/-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
+theorem detachCNodeSlots_objects_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).objects = st.objects := by
+  simp only [detachCNodeSlots]
+  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
+    (l.foldl (fun acc' pair =>
+      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).objects
+      = acc.objects := by
+    intro l
+    induction l with
+    | nil => intro acc; rfl
+    | cons pair rest ih =>
+      intro acc
+      simp only [List.foldl]
+      exact (ih _).trans (detachSlotFromCdt_objects_eq acc { cnode := cnodeId, slot := pair.1 })
+  exact key cn.slots.toList st
+
+/-- `detachCNodeSlots` preserves lifecycle metadata (CDT-only operation). -/
+theorem detachCNodeSlots_lifecycle_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
+  simp only [detachCNodeSlots]
+  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
+    (l.foldl (fun acc' pair =>
+      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).lifecycle
+      = acc.lifecycle := by
+    intro l
+    induction l with
+    | nil => intro acc; rfl
+    | cons pair rest ih =>
+      intro acc
+      simp only [List.foldl]
+      exact (ih _).trans (detachSlotFromCdt_lifecycle_eq acc { cnode := cnodeId, slot := pair.1 })
+  exact key cn.slots.toList st
+
+/-- WS-H2: Pre-retype cleanup combining TCB reference cleanup and CDT detach.
+    - If the current object is a TCB: clean up scheduler references.
+    - If the current object is a CNode being replaced by a non-CNode: detach
+      CDT slot mappings to prevent orphaned derivation tree references. -/
+def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject) : SystemState :=
+  let st := match currentObj with
+    | .tcb tcb => cleanupTcbReferences st tcb.tid
+    | _ => st
+  match currentObj with
+  | .cnode cn =>
+    match newObj with
+    | .cnode _ => st  -- CNode → CNode: no CDT cleanup needed
+    | _ => detachCNodeSlots st target cn
+  | _ => st
+
+/-- Pre-retype cleanup preserves the objects store. -/
+theorem lifecyclePreRetypeCleanup_objects_eq
+    (st : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject) :
+    (lifecyclePreRetypeCleanup st target currentObj newObj).objects = st.objects := by
+  unfold lifecyclePreRetypeCleanup
+  cases currentObj with
+  | tcb tcb => exact cleanupTcbReferences_objects_eq st tcb.tid
+  | cnode cn =>
+    cases newObj <;> simp only [] <;>
+    first | rfl | exact detachCNodeSlots_objects_eq st target cn
+  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => rfl
+
+/-- Pre-retype cleanup preserves lifecycle metadata. -/
+theorem lifecyclePreRetypeCleanup_lifecycle_eq
+    (st : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject) :
+    (lifecyclePreRetypeCleanup st target currentObj newObj).lifecycle = st.lifecycle := by
+  unfold lifecyclePreRetypeCleanup
+  cases currentObj with
+  | tcb tcb => exact cleanupTcbReferences_lifecycle_eq st tcb.tid
+  | cnode cn =>
+    cases newObj <;> simp only [] <;>
+    first | rfl | exact detachCNodeSlots_lifecycle_eq st target cn
+  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => rfl
+
+
+/-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
+private theorem cleanupTcbReferences_flat_subset
+    (st : SystemState) (tid x : SeLe4n.ThreadId)
+    (h : x ∈ (cleanupTcbReferences st tid).scheduler.runQueue.flat) :
+    x ∈ st.scheduler.runQueue.flat := by
+  unfold cleanupTcbReferences removeRunnable at h
+  simp only [] at h
+  exact (List.mem_filter.mp h).1
+
+/-- CDT cleanup preserves the scheduler. -/
+private theorem detachCNodeSlots_scheduler_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
+  simp only [detachCNodeSlots]
+  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
+    (l.foldl (fun acc' pair =>
+      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).scheduler
+      = acc.scheduler := by
+    intro l
+    induction l with
+    | nil => intro acc; rfl
+    | cons pair rest ih =>
+      intro acc
+      simp only [List.foldl]
+      have hDetach : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := pair.1 }).scheduler
+          = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
+      exact (ih _).trans hDetach
+  exact key cn.slots.toList st
+
+/-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
+    list was in the pre-cleanup flat list. -/
+private theorem lifecyclePreRetypeCleanup_flat_subset
+    (st : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject) (x : SeLe4n.ThreadId)
+    (h : x ∈ (lifecyclePreRetypeCleanup st target currentObj newObj).scheduler.runQueue.flat) :
+    x ∈ st.scheduler.runQueue.flat := by
+  unfold lifecyclePreRetypeCleanup at h
+  cases currentObj with
+  | tcb tcb =>
+    simp only [] at h
+    exact cleanupTcbReferences_flat_subset st tcb.tid x h
+  | cnode cn =>
+    cases newObj <;> simp only [] at h
+    all_goals first
+      | exact h
+      | (have hSched := detachCNodeSlots_scheduler_eq st target cn
+         rw [show (detachCNodeSlots st target cn).scheduler.runQueue.flat =
+               st.scheduler.runQueue.flat from by rw [hSched]] at h
+         exact h)
+  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => exact h
 
 /-- Retype an existing object id to a new typed object value.
 
@@ -110,8 +306,17 @@ def retypeFromUntyped
     match st.objects[untypedId]? with
     | none => .error .objectNotFound
     | some (.untyped ut) =>
+        -- WS-H2/H-06: childId must not equal untypedId (self-overwrite guard)
+        if childId = untypedId then
+          .error .childIdSelfOverwrite
+        -- WS-H2/A-26: childId must not collide with an existing object
+        else if st.objects[childId]?.isSome then
+          .error .childIdCollision
+        -- WS-H2/A-27: childId must not collide with an existing untyped child
+        else if ut.children.any (fun c => c.objId == childId) then
+          .error .childIdCollision
         -- Device untypeds cannot back typed kernel objects (except other untypeds)
-        if ut.isDevice && newObj.objectType != .untyped then
+        else if ut.isDevice && newObj.objectType != .untyped then
           .error .untypedDeviceRestriction
         -- Allocation size must be at least the minimum for the target object type
         else if allocSize < objectTypeAllocSize newObj.objectType then
@@ -121,14 +326,15 @@ def retypeFromUntyped
           | .error e => .error e
           | .ok (authCap, st') =>
               if lifecycleRetypeAuthority authCap untypedId then
+                -- WS-H2/A-28: Both objects are computed before any state mutation.
+                -- `ut'` and `newObj` are fully determined at this point.
                 match ut.allocate childId allocSize with
                 | none => .error .untypedRegionExhausted
                 | some (ut', _offset) =>
-                    -- Store the updated untyped (with advanced watermark)
+                    -- Atomic dual-store: untyped watermark advance + child creation
                     match storeObject untypedId (.untyped ut') st' with
                     | .error e => .error e
                     | .ok ((), stUt) =>
-                        -- Store the new typed object at childId
                         storeObject childId newObj stUt
               else
                 .error .illegalAuthority
@@ -169,6 +375,18 @@ theorem retypeFromUntyped_ok_decompose
       | vspaceRoot _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
+          -- WS-H2: Discharge childId safety guards (each .error contradicts .ok)
+          have hNeSelf : childId ≠ untypedId := by
+            intro h; simp [h] at hStep
+          have hCollF : st.objects[childId]?.isSome = false := by
+            cases h : st.objects[childId]?.isSome
+            · rfl
+            · simp [hNeSelf, h] at hStep
+          have hFrF : (ut.children.any fun c => c.objId == childId) = false := by
+            cases h : ut.children.any (fun c => c.objId == childId)
+            · rfl
+            · simp [hNeSelf, hCollF, h] at hStep
+          simp only [hNeSelf, hCollF, hFrF, ↓reduceIte] at hStep
           cases hDevBool : ut.isDevice <;> simp only [hDevBool] at hStep
           · -- ut.isDevice = false: device check trivially passes
             simp only [Bool.false_and, Bool.false_eq_true, ↓reduceIte] at hStep
@@ -245,18 +463,22 @@ theorem retypeFromUntyped_error_typeMismatch
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
 
+
 /-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/
 theorem retypeFromUntyped_error_allocSizeTooSmall
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hNeSelf : childId ≠ untypedId)
+    (hNoCollision : st.objects[childId]?.isSome = false)
+    (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
   unfold retypeFromUntyped
-  simp [hObj]
+  simp [hObj, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hSmall]
   | inr hUt =>
@@ -271,6 +493,9 @@ theorem retypeFromUntyped_error_regionExhausted
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject) (cap : Capability)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hNeSelf : childId ≠ untypedId)
+    (hNoCollision : st.objects[childId]?.isSome = false)
+    (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
@@ -279,7 +504,7 @@ theorem retypeFromUntyped_error_regionExhausted
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped
-  simp [hObj]
+  simp [hObj, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hAllocSzOk, hLookup, hAuth, hNoFit]
   | inr hUt =>
@@ -334,6 +559,7 @@ theorem cspaceLookupSlot_ok_state_eq
   | some cap' =>
       simp [hCap] at hLookup
       exact hLookup.2.symm
+
 
 theorem lifecycleRetypeObject_ok_as_storeObject
     (st st' : SystemState)
@@ -433,6 +659,7 @@ theorem lifecycleRetypeObject_error_illegalAuthority
   unfold lifecycleRetypeObject
   simp [hObj, hMeta, hLookup, hAuthFail]
 
+
 theorem lifecycleRetypeObject_success_updates_object
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -530,5 +757,55 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
                         · exact hLookup
                         · simpa [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] using hStep
 
+
+-- ============================================================================
+-- WS-H2: Safe lifecycle retype wrapper (cleanup + retype)
+-- ============================================================================
+
+/-- WS-H2: Safe lifecycle retype with reference cleanup.
+    Composes `lifecyclePreRetypeCleanup` (TCB scheduler dequeue + CNode CDT detach)
+    with `lifecycleRetypeObject`.  The cleanup runs on the pre-retype state;
+    the actual retype operates on the cleaned state.
+
+    Since cleanup preserves `objects` and `lifecycle`, the retype authority check
+    and lifecycle metadata check succeed on the cleaned state iff they succeed on
+    the original state.
+
+    This wrapper is the recommended entry point for callers that need the
+    H-05 safety guarantee (`lifecycleRetypeWithCleanup_ok_runnable_no_dangling`). -/
+def lifecycleRetypeWithCleanup
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match st.objects[target]? with
+    | none => lifecycleRetypeObject authority target newObj st
+    | some currentObj =>
+        let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
+        lifecycleRetypeObject authority target newObj stClean
+
+/-- WS-H2/H-05: After a TCB retype via the safe wrapper, the old ThreadId is
+    not in the run queue.  This is the key safety property required by H-05. -/
+theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (tcb : TCB)
+    (hObj : st.objects[target]? = some (.tcb tcb))
+    (hStep : lifecycleRetypeWithCleanup authority target newObj st = .ok ((), st')) :
+    ¬(tcb.tid ∈ st'.scheduler.runQueue) := by
+  unfold lifecycleRetypeWithCleanup at hStep
+  simp only [hObj] at hStep
+  -- hStep now has lifecycleRetypeObject on the cleaned state
+  rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
+    ⟨_, _, _, _, _, _, hStore⟩
+  have hSchedEq : st'.scheduler =
+      (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj).scheduler :=
+    lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
+  rw [hSchedEq]
+  unfold lifecyclePreRetypeCleanup
+  simp only []
+  exact cleanupTcbReferences_removes_from_runnable st tcb.tid
 
 end SeLe4n.Kernel

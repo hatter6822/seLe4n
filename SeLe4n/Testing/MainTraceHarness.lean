@@ -360,6 +360,13 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
       IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects[(12 : SeLe4n.ObjId)]?).map KernelObject.objectType}"
+  -- LIFE-10: WS-H2/H-05 lifecycleRetypeWithCleanup removes old TCB tid from run queue
+  match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot 12
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+  | .error err => IO.println s!"lifecycle retype-with-cleanup error: {reprStr err}"
+  | .ok (_, stCleaned) =>
+      let tid12InQueue := stCleaned.scheduler.runQueue.flat.any (· == (SeLe4n.ThreadId.ofNat 12))
+      IO.println s!"lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
   match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot [.read] none st1 with
   | .error err => IO.println s!"cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
@@ -794,6 +801,14 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped 55 newEp 1 st1 with
   | .error err => IO.println s!"retype-from-untyped alloc-size-too-small branch: {reprStr err}"
   | .ok _ => IO.println "unexpected retype-from-untyped success with undersized allocation"
+  -- F2-09: WS-H2/H-06 childId self-overwrite guard — childId = untypedId
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped demoUntyped newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped childId self-overwrite guard: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success with childId = untypedId"
+  -- F2-10: WS-H2/A-26 childId collision — childId collides with existing object
+  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped 1 newEp epAllocSize st1 with
+  | .error err => IO.println s!"retype-from-untyped childId collision guard: {reprStr err}"
+  | .ok _ => IO.println "unexpected retype-from-untyped success with childId collision"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds

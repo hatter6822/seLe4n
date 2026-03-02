@@ -214,7 +214,7 @@ receiver later dequeues the sender, and add reply-target scoping to `endpointRep
 
 ---
 
-### WS-H2: Lifecycle Safety Guards (HIGH)
+### WS-H2: Lifecycle Safety Guards (HIGH) — COMPLETED (v0.12.16)
 
 **Objective:** Harden lifecycle operations with runtime safety checks that match
 the preconditions assumed by invariant proofs, preventing silent object overwrites,

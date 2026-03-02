@@ -48,6 +48,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
+| `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `serviceStart`, `serviceStop`, `serviceRestart` | Service | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |

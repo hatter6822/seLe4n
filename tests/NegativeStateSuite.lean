@@ -887,6 +887,53 @@ private def runNegativeChecks : IO Unit := do
 
   IO.println "WS-F2 untyped memory negative checks passed"
 
+/-- WS-H2: Lifecycle safety guards negative tests.
+    Split into a separate function to avoid maxRecDepth limits in the main do block. -/
+private def runH2NegativeChecks : IO Unit := do
+  -- H2-NEG-01: childId self-overwrite — childId = untypedId
+  expectError "H2 childId self-overwrite guard"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedObjId
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+    .childIdSelfOverwrite
+
+  -- H2-NEG-02: childId collision with existing object
+  expectError "H2 childId collision with existing object"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedAuthCnode
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+    .childIdCollision
+
+  -- H2-NEG-03: childId collision with existing untyped child
+  let h2UntypedWithChild : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject f2UntypedObjId (.untyped {
+        regionBase := 0x10000
+        regionSize := 256
+        watermark := 64
+        children := [{ objId := 60, offset := 0, size := 64 }]
+        isDevice := false
+      })
+      |>.withObject f2UntypedAuthCnode (.cnode {
+        guard := 0
+        radix := 0
+        slots := Std.HashMap.ofList [
+          (0, {
+            target := .object f2UntypedObjId
+            rights := [.read, .write, .grant]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType f2UntypedObjId .untyped
+      |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
+      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
+      |>.build)
+  expectError "H2 childId collision with untyped child"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId 60
+      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 h2UntypedWithChild)
+    .childIdCollision
+
+  IO.println "WS-H2 lifecycle safety guards negative checks passed"
+
 /-- Audit coverage: endpointReplyRecv and cspaceMutate tests.
     Split into a separate function to avoid maxRecDepth limits in the main do block. -/
 private def runAuditCoverageChecks : IO Unit := do
@@ -974,4 +1021,5 @@ end SeLe4n.Testing
 
 def main : IO Unit := do
   SeLe4n.Testing.runNegativeChecks
+  SeLe4n.Testing.runH2NegativeChecks
   SeLe4n.Testing.runAuditCoverageChecks

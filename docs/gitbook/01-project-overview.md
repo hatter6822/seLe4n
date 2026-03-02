@@ -45,6 +45,7 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H2** (v0.12.16) | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | Completed |
 | **WS-H1** (v0.12.16) | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct contract predicates | Completed |
 | **WS-G** (v0.12.15) | Kernel performance: O(1) hash-based data structures for all hot paths | All 9 workstreams completed |
 | **WS-F1..F4** (v0.12.2) | Critical audit remediation: IPC messages, untyped memory, info-flow, proof gaps | All 4 completed |
