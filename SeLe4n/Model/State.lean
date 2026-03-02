@@ -23,7 +23,7 @@ inductive KernelError where
   | cyclicDependency
   | notImplemented
   | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
-  | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state
+  | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state, or replier not authorized (WS-H1/M-02)
   | untypedRegionExhausted   -- WS-F2: not enough space in untyped region
   | untypedTypeMismatch      -- WS-F2: source object is not an UntypedObject
   | untypedDeviceRestriction -- WS-F2: device untyped cannot back kernel objects

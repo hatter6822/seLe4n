@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 16,485 lines of Lean across 34 modules, 400+ machine-checked theorems, zero unsound
+Current state: 21,340 lines of Lean across 40 modules, 575 machine-checked theorems, zero unsound
 constructs, comprehensive tiered CI with security scanning.
 
 ## 3. Architectural improvements over seL4

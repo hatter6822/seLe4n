@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.12.15-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.12.16-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -56,9 +56,9 @@ introducing substantial architectural improvements:
 |-----------|-------|
 | **Version** | `0.12.16` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 21,641 across 40 files |
-| **Test Lean LoC** | 1,805 across 3 test suites |
-| **Proved theorems** | 574 (zero sorry/axiom) |
+| **Production Lean LoC** | 21,340 across 40 files |
+| **Test Lean LoC** | 1,806 across 3 test suites |
+| **Proved theorems** | 575 (zero sorry/axiom) |
 | **Build jobs** | 84 |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
@@ -136,7 +136,7 @@ aggregates all subsystem invariants into a single proof obligation.
 | `SeLe4n/Kernel/Capability/*` | CSpace lookup/mint/copy/move/delete/revoke with CDT tracking, guard/radix path resolution |
 | `SeLe4n/Kernel/IPC/Operations.lean` | Core endpoint send/receive, notification signal/wait (legacy, deprecated in favor of DualQueue) |
 | `SeLe4n/Kernel/IPC/DualQueue.lean` | Intrusive dual-queue IPC: send/receive/call/reply with `queuePPrev` back-pointers for O(1) removal |
-| `SeLe4n/Kernel/IPC/Invariant.lean` | 62 IPC invariant preservation theorems (largest proof module, 3,858 LoC) |
+| `SeLe4n/Kernel/IPC/Invariant.lean` | 63 IPC invariant preservation theorems (largest proof module, 4,805 LoC) |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
 | `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
 | `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr PAddr` map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
@@ -155,7 +155,7 @@ aggregates all subsystem invariants into a single proof obligation.
 The WS-G portfolio migrated every kernel hot path from linear data structures
 to O(1) hash-based alternatives — eliminating all 14 findings from the
 [v0.12.5 performance audit](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
-All 574 theorems were re-verified with zero sorry/axiom after each migration.
+All 575 theorems were re-verified with zero sorry/axiom after each migration.
 
 | Workstream | Data structure change | Complexity |
 |------------|----------------------|------------|
@@ -216,6 +216,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H1** | v0.12.16 | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | H1 |
 | **WS-G** | v0.12.6–v0.12.15 | Kernel performance: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | G1–G9 + refinement |
 | **WS-F1..F4** | v0.12.2–v0.12.5 | Critical audit remediation: IPC message transfer (14 theorems), untyped memory (watermark tracking), info-flow completeness (15 NI theorems), proof gap closure | F1–F4 |
 | **WS-E** | v0.11.0–v0.11.6 | Test/CI hardening, proof quality, kernel hardening, capability/IPC, info-flow enforcement, completeness | E1–E6 |

@@ -125,7 +125,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     ASID root resolution via O(1) `asidTable` HashMap lookup (WS-G3), and page-table management.
 - `SeLe4n/Kernel/Architecture/VSpaceBackend.lean` *(H3-prep)*
   - `VSpaceBackend` typeclass abstracting page map/unmap/lookup with round-trip obligations,
-  - `listVSpaceBackend` instance: the current flat-list `VSpaceRoot` satisfying the interface.
+  - `hashMapVSpaceBackend` instance: the current `HashMap`-backed `VSpaceRoot` satisfying the interface.
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
   - VSpace invariant bundle (3-conjunct: `vspaceAsidRootsUnique`, `vspaceRootNonOverlap`, `asidTableConsistent`),
     success-path and error-path preservation theorems,

@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.12.15.
+Lean 4.28.0 toolchain, Lake build system, version 0.12.16.
 
 ## Build and run
 
@@ -69,14 +69,14 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~3750 lines)
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~1594 lines)
-- `SeLe4n/Kernel/IPC/DualQueue.lean` (~1537 lines)
-- `SeLe4n/Kernel/IPC/Operations.lean` (~1025 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~974 lines)
-- `tests/NegativeStateSuite.lean` (~809 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~782 lines)
-- `SeLe4n/Kernel/Scheduler/Operations.lean` (~774 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~4805 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~1893 lines)
+- `SeLe4n/Kernel/IPC/DualQueue.lean` (~1714 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~1447 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~1179 lines)
+- `SeLe4n/Kernel/IPC/Operations.lean` (~1116 lines)
+- `tests/NegativeStateSuite.lean` (~977 lines)
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (~877 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~773 lines)
 - `SeLe4n/Model/State.lean` (~756 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)

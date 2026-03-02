@@ -13,10 +13,10 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.15` |
+| Version | `0.12.16` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 16,485 across 34 files |
-| Proved theorems | 400+ (zero sorry/axiom) |
+| Production LoC | 21,340 across 40 files |
+| Proved theorems | 575 (zero sorry/axiom) |
 | Recently completed | WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 

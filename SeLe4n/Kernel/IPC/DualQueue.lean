@@ -1570,18 +1570,14 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, st') =>
-                -- WS-F1: Extract message from sender's TCB
-                let senderMsg := match lookupTcb st' sender with
-                  | some tcb => tcb.pendingMessage
-                  | none => none
-                -- WS-H1/C-01: Check sender's IPC state to determine post-dequeue transition.
+                -- WS-F1/WS-H1: Extract message and IPC state from sender's TCB in a single lookup.
                 -- blockedOnCall → blockedOnReply (caller stays blocked awaiting reply)
                 -- blockedOnSend → ready (plain send, unblock sender)
-                let senderWasCall := match lookupTcb st' sender with
-                  | some tcb => match tcb.ipcState with
+                let (senderMsg, senderWasCall) := match lookupTcb st' sender with
+                  | some tcb => (tcb.pendingMessage, match tcb.ipcState with
                     | .blockedOnCall _ => true
-                    | _ => false
-                  | none => false
+                    | _ => false)
+                  | none => (none, false)
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
                   match storeTcbIpcStateAndMessage st' sender
@@ -1671,18 +1667,14 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
         match tcb.ipcState with
         | .blockedOnReply _ replyTarget =>
             -- WS-H1/M-02: Validate replier is the authorized server
-            match replyTarget with
-            | some expected =>
-                if replier == expected then
-                  match storeTcbIpcStateAndMessage st target .ready (some msg) with
-                  | .error e => .error e
-                  | .ok st' => .ok ((), ensureRunnable st' target)
-                else .error .replyCapInvalid
-            | none =>
-                -- No replyTarget constraint — any thread may reply
-                match storeTcbIpcStateAndMessage st target .ready (some msg) with
-                | .error e => .error e
-                | .ok st' => .ok ((), ensureRunnable st' target)
+            let authorized := match replyTarget with
+              | some expected => replier == expected
+              | none => true
+            if authorized then
+              match storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | .error e => .error e
+              | .ok st' => .ok ((), ensureRunnable st' target)
+            else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 /-- WS-F1/WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
