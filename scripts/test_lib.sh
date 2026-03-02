@@ -98,6 +98,12 @@ parse_common_args() {
         ;;
     esac
   done
+  # H-12 fix: in continue mode, disable errexit so that run_check can
+  # return non-zero without aborting the script.  Failure tracking is
+  # managed by record_failure/finalize_report, not by set -e.
+  if [[ "${CONTINUE_MODE}" -eq 1 ]]; then
+    set +e
+  fi
 }
 
 record_failure() {
@@ -122,6 +128,7 @@ run_check() {
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
     finalize_report
   fi
+  return 1
 }
 
 finalize_report() {

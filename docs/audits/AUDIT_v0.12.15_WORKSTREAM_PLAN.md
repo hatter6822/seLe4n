@@ -294,7 +294,7 @@ dangling scheduler/IPC references, and stale CDT entries.
 
 ---
 
-### WS-H3: Build/CI Infrastructure Fixes (HIGH)
+### WS-H3: Build/CI Infrastructure Fixes (HIGH) — COMPLETED (v0.12.17)
 
 **Objective:** Fix the `run_check` return value bug, integrate documentation sync
 into CI, and add a `rg` availability guard to Tier 3 tests.

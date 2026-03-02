@@ -14,7 +14,7 @@ Canonical source: [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1 (hygiene + build)
-./scripts/test_smoke.sh     # Tier 0-2 (+ trace + negative-state)
+./scripts/test_smoke.sh     # Tier 0-2 (+ trace + negative-state + docs sync)
 ./scripts/test_full.sh      # Tier 0-3 (+ invariant surface anchors)
 ```
 
@@ -36,8 +36,9 @@ For milestone-moving PRs:
 
 ## Remaining workstream sequence (WS-F5..F8)
 
-WS-G (kernel performance) and WS-F1..F4 (critical audit remediation) are
-completed. The remaining WS-F workstreams are:
+WS-G (kernel performance), WS-F1..F4 (critical audit remediation), and
+WS-H1..H3 (v0.12.15 audit Phase 1) are completed. The remaining WS-F
+workstreams are:
 
 | Phase | Workstreams | Description | Status |
 |-------|-------------|-------------|--------|

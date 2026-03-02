@@ -15,14 +15,14 @@ Current stage context: **v0.12.2 codebase audit (WS-F portfolio) is active. WS-E
   including code/theorem/trace anchor verification for all milestone surfaces.
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)
 
-Documentation sync (`scripts/test_docs_sync.sh`) is available as a standalone local tool for verifying GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is not part of the CI gate pipeline.
+Documentation sync (`scripts/test_docs_sync.sh`) verifies GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is integrated into the `test_smoke.sh` entrypoint and the smoke CI job (WS-H3/M-19), catching documentation navigation/link drift on every PR.
 
 ## 3. Required entrypoints and CI contract
 
 Required local/CI entrypoints:
 
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks)
+- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks + documentation sync)
 - `./scripts/test_full.sh` (Tier 0 + Tier 1 + Tier 2 + Tier 3)
 
 Nightly deterministic replay entrypoint:

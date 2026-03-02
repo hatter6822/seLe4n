@@ -5,7 +5,6 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-
 - **Version:** 0.12.15 (Lean 4.28.0).
 - **Recently completed:** WS-G (kernel performance optimization — 9 workstreams, all 14 findings closed).
 - **Next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation).
@@ -31,12 +30,10 @@ Specification documents:
 
 ## Where to find current workstream detail
 
-- Recently completed (WS-G):
-  [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
-- GitBook chapter:
-  [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Next workstream (WS-F5..F8):
+- Canonical execution matrix:
   [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+- GitBook planning chapter:
+  [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
 
 ## Development history
 

@@ -1,3 +1,12 @@
+## [0.12.17] - 2026-03-02
+
+### WS-H3: Build/CI Infrastructure Fixes (completed)
+
+- **run_check return value fix (H-12 HIGH):** `run_check` in `scripts/test_lib.sh` previously fell through to an implicit `return 0` after recording a failure when `CONTINUE_MODE=1`, causing callers to receive success even on failure. Fixed by adding explicit `return 1` in the failure path. In continue mode, `set -e` is now disabled after `parse_common_args` so that `run_check` can return non-zero without aborting the script; failure tracking is managed by `record_failure`/`finalize_report`.
+- **Documentation sync CI integration (M-19 MEDIUM):** `test_docs_sync.sh` was previously available only as a standalone local tool. Now integrated into both the `test_smoke.sh` entrypoint (local runs) and the `lean_action_ci.yml` smoke CI job (automated PR checks). Documentation navigation/link drift is now caught automatically on every PR.
+- **Tier 3 rg availability guard (M-20 MEDIUM):** `test_tier3_invariant_surface.sh` has ~440 `rg` invocations. Previously, a missing `rg` produced hundreds of command-not-found errors. Added a guard at script entry that checks for `rg` availability. If absent, a `grep -P` fallback shim is created on PATH (handling both direct calls and `bash -lc` subshell invocations). If neither `rg` nor `grep -P` is available, the script fails with a single clear diagnostic message.
+- **Full integration:** `test_full.sh` passes (Tier 0-3). Zero sorry/axiom.
+
 ## [0.12.16] - 2026-03-02
 
 ### WS-H1: IPC Call-Path Semantic Fix (completed)

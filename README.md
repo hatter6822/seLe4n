@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.12.16-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.12.17-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -54,7 +54,7 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.12.16` |
+| **Version** | `0.12.17` |
 | **Lean toolchain** | `4.28.0` |
 | **Production Lean LoC** | 21,340 across 40 files |
 | **Test Lean LoC** | 1,806 across 3 test suites |
@@ -63,7 +63,7 @@ introducing substantial architectural improvements:
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
-| **Completed** | WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start
 
@@ -71,7 +71,7 @@ introducing substantial architectural improvements:
 ./scripts/setup_lean_env.sh   # install Lean toolchain
 lake build                     # compile all 40 modules (84 jobs)
 lake exe sele4n                # run trace harness
-./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state)
+./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
 
 ## Project documentation
@@ -90,7 +90,7 @@ lake exe sele4n                # run trace harness
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build)
-./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state checks)
+./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state + docs sync)
 ./scripts/test_full.sh      # + Tier 3 (invariant surface anchors)
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly determinism)
 ```
@@ -216,6 +216,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
 | **WS-H2** | v0.12.16 | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | H2 |
 | **WS-H1** | v0.12.16 | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | H1 |
 | **WS-G** | v0.12.6–v0.12.15 | Kernel performance: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | G1–G9 + refinement |
