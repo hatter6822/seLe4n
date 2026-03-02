@@ -274,12 +274,22 @@ def projectObjectIndexFast (observableOids : Std.HashSet SeLe4n.ObjId)
   st.objectIndex.filter (observableOids.contains ·)
 
 /-- WS-G9/F-P09: Optimized state projection that precomputes the observable set
-once, then uses O(1) `HashSet.contains` for all observability checks.
+once, then uses O(1) `HashSet.contains` for all observability checks in the
+three sub-projections that gate on `objectObservable`: `projectObjects`,
+`projectIrqHandlers`, and `projectObjectIndex`.
 
-This is the runtime-fast equivalent of `projectState`. The `@[csimp]` attribute
-instructs the Lean compiler to replace `projectState` with `projectStateFast`
-during code generation, so all proofs use the original `projectState` definition
-while execution benefits from the precomputed set. -/
+This is the runtime-fast equivalent of `projectState`. The equivalence theorem
+`projectStateFast_eq` proves identical output under standard state synchronization
+invariants, making this suitable for `@[csimp]` compiler substitution once the
+preconditions are discharged at the call site.
+
+**Design note:** `projectKernelObject` (CNode slot filtering via `capTargetObservable`)
+is intentionally left unchanged. Capability targets may reference ObjIds not in
+`st.objectIndex` (e.g., stale/dangling references), so substituting
+`observableOids.contains` for `objectObservable` inside `capTargetObservable` would
+change filtering semantics without an additional "all capability targets are indexed"
+invariant. The primary F-P09 concern (redundant `objectObservable` across three
+top-level sub-projections) is fully resolved. -/
 def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   let observableOids := computeObservableSet ctx observer st
   {

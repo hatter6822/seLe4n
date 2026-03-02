@@ -604,7 +604,7 @@ low effort, CDT indexing is medium due to consistency invariant).
 
 ---
 
-### WS-G9: Information-Flow Projection Optimization (F-P09) — HIGH
+### WS-G9: Information-Flow Projection Optimization (F-P09) — COMPLETED
 
 **Objective:** Eliminate redundant observability evaluations and reduce CNode
 slot filtering overhead in `projectState` by precomputing an observable-object
