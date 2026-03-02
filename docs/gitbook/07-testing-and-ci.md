@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-H Phase 1 (v0.12.15 audit remediation) complete; WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-H Phase 1–2 (v0.12.15 audit remediation) complete through WS-H4; WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
@@ -84,6 +84,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-E1 (completed):** Test infrastructure and CI hardening — SHA-pinned all GitHub Actions (F-14), added 5 runtime invariant check families (M-11: CSpace coherency, capability rights, lifecycle metadata, service acyclicity, VSpace ASID uniqueness), parameterized test topologies with 3 configurations (M-10), structured trace format with scenario/risk metadata (L-07), and theorem-body spot-check validation (L-08).
 - **WS-G refinement (v0.12.15):** Runtime invariant checks expanded with `runQueueThreadPriorityConsistentB` (RunQueue membership ↔ threadPriority consistency) and `cdtChildMapConsistentCheck` (CDT childMap ↔ edges bidirectional). `NegativeStateSuite` extended with `endpointReplyRecv` (2 negative + 1 positive) and `cspaceMutate` (2 negative + 2 positive) audit coverage checks. `StateBuilder.build` uses actual TCB priorities for RunQueue bucketing.
 - **WS-H3 (v0.12.17):** Build/CI infrastructure fixes — `run_check` returns non-zero on failure in continue mode (H-12); `test_docs_sync.sh` integrated into smoke CI and `test_smoke.sh` (M-19); Tier 3 `rg` availability guard with `grep -P` fallback shim (M-20).
+- **WS-H4 (v0.12.18):** Capability invariant redesign — `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`. All 25+ preservation theorems re-proved against non-trivial predicates. Foundation lemmas added to `Model/Object.lean`. Default-state constructions in `Architecture/Invariant.lean` refactored with extracted helper.
 
 ## Practical failure triage
 

@@ -222,30 +222,31 @@ private theorem default_ipcSchedulerContractPredicates :
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
+/-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
+to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
+All components are vacuously true (empty objects/cdtNodeSlot) or use
+`CapDerivationTree.empty_edgeWellFounded`. -/
+private theorem default_capabilityInvariantBundle :
+    capabilityInvariantBundle (default : SystemState) :=
+  ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+   by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+   by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
+   by exact lifecycleAuthorityMonotonicity_holds _,
+   by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
+   by intro _ _ h; simp [default] at h,
+   by exact CapDerivationTree.empty_edgeWellFounded⟩
+
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundle
   · exact default_schedulerInvariantBundle
-  -- 2. capabilityInvariantBundle
-  · exact ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-           by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-           by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-           by exact lifecycleAuthorityMonotonicity_holds _⟩
+  -- 2. capabilityInvariantBundle (7-tuple: unique, sound, attenuation, lifecycle, bounded, completeness, acyclicity)
+  · exact default_capabilityInvariantBundle
   -- 3. coreIpcInvariantBundle
-  · exact ⟨default_schedulerInvariantBundle,
-           ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-            by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-            by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-            by exact lifecycleAuthorityMonotonicity_holds _⟩,
-           default_ipcInvariant⟩
+  · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariant⟩
   -- 4. ipcSchedulerCouplingInvariantBundle
-  · exact ⟨⟨default_schedulerInvariantBundle,
-            ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-             by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-             by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-             by exact lifecycleAuthorityMonotonicity_holds _⟩,
-            default_ipcInvariant⟩,
+  · exact ⟨⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariant⟩,
            default_ipcSchedulerContractPredicates.1,
            default_ipcSchedulerContractPredicates.2⟩
   -- 5. lifecycleInvariantBundle
@@ -253,10 +254,7 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability
   · exact ⟨by intro sid svc hSvc; simp [lookupService] at hSvc,
            default_lifecycleInvariantBundle,
-           by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-           by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-           by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-           by exact lifecycleAuthorityMonotonicity_holds _⟩
+           default_capabilityInvariantBundle⟩
   -- 7. vspaceInvariantBundle (3-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent)
   · refine ⟨?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)

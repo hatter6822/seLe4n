@@ -50,8 +50,8 @@ Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness
 
 Bundle level:
 
-- `capabilityInvariantBundle` (conjunction of the four components above)
-- `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique`)
+- `capabilityInvariantBundle` (WS-H4: 7-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceAttenuationRule`, `lifecycleAuthorityMonotonicity`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`)
+- `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique` plus WS-H4 components)
 
 Preservation shape:
 
@@ -59,8 +59,14 @@ Preservation shape:
 - `cspaceMutate_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
 - `cspaceRevokeCdt_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
 - `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` (WS-F4 / F-06),
-- IPC-level preservation for endpoint send/receive/await-receive (compositional),
-- lifecycle preservation with `hNewObjCNodeUniq` hypothesis.
+- IPC-level preservation for endpoint send/receive/await-receive/reply (compositional),
+- lifecycle preservation with `hNewObjCNodeUniq` + `hNewObjCNodeBounded` hypotheses (WS-H4).
+
+WS-H4 transfer theorems (new):
+
+- `wsH4_through_blocking_path` — storeObject(.endpoint) → storeTcbIpcState → removeRunnable,
+- `wsH4_through_handshake_path` — storeObject(.endpoint) → storeTcbIpcState → ensureRunnable,
+- `wsH4_through_reply_path` — storeTcbIpcStateAndMessage → ensureRunnable.
 
 Badge routing chain (H-03):
 
@@ -533,10 +539,27 @@ Proof strategy: case split on `scheduler.current` (none/some), object lookup (no
 - `cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle` — `suffices` with inline fold induction over total function; case-splits on `firstFailure`, `lookupCdtSlotOfNode`, `cspaceDeleteSlot`
 
 Supporting infrastructure:
-- `capabilityInvariantBundle_of_cdt_update` — CDT-only state changes preserve capability invariants
+- `capabilityInvariantBundle_of_cdt_update` — CDT-only state changes preserve capability invariants (WS-H4: requires `edgeWellFounded` witness for new CDT)
 - `revokeCdtFoldBody` — extracted fold body for named step preservation
-- `revokeCdtFoldBody_preserves` — single-step preservation through fold body
+- `revokeCdtFoldBody_preserves` — single-step preservation through fold body (WS-H4: uses `CapDerivationTree.edgeWellFounded_sub` + `removeNode_edges_sub` for CDT-shrinking acyclicity)
 - `revokeCdtFoldBody_error` / `revokeCdtFoldBody_foldl_error` — error propagation through fold
+
+### WS-H4: Capability invariant bundle redesign (`Capability/Invariant.lean`, `Model/Object.lean`)
+
+Three new predicates added to `capabilityInvariantBundle` (4-tuple → 7-tuple):
+- `cspaceSlotCountBounded` — every CNode has at most `2^radixBits` occupied slots
+- `cdtCompleteness` — every CDT node points to an existing object (node-slot coherence)
+- `cdtAcyclicity` — CDT edge-well-foundedness (no cycles via `edgeWellFounded`)
+
+Foundation lemmas in `Model/Object.lean`:
+- `CNode.slotCountBounded`, `empty_slotCountBounded`, `remove_slotCountBounded`, `revokeTargetLocal_slotCountBounded`
+- `CapDerivationTree.edgeWellFounded`, `empty_edgeWellFounded`, `edgeWellFounded_sub`, `removeNode_edges_sub`
+
+Transfer theorem strategy:
+- **Non-CNode stores**: `cspaceSlotCountBounded_of_storeObject_nonCNode` + `cdtCompleteness_of_storeObject` + `cdtAcyclicity_of_cdt_eq`
+- **CNode stores**: `cspaceSlotCountBounded_of_storeObject_cnode` with `hSlotCapacity`/`hDstCapacity` hypotheses
+- **CDT-modifying ops** (copy/move/mintWithCdt): `hCdtPost` hypothesis pattern defers acyclicity obligation to caller
+- **CDT-shrinking ops** (revoke fold): `edgeWellFounded_sub` + `removeNode_edges_sub`
 
 ### F-12: Notification ipcInvariant + schedulerInvariantBundle preservation (`IPC/Invariant.lean`)
 

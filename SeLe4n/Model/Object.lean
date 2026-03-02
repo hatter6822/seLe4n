@@ -760,6 +760,41 @@ theorem revokeTargetLocal_slotsUnique
     (cn.revokeTargetLocal sourceSlot target).slotsUnique :=
   trivial
 
+-- ============================================================================
+-- WS-H4: Meaningful CNode slot-count bound predicate
+-- ============================================================================
+
+/-- WS-H4/C-03: Every CNode has at most `2^radixBits` occupied slots.
+This is the meaningful replacement for the trivially-true `slotsUnique`
+predicate — it captures the actual capacity constraint that the CNode
+guard/radix semantics enforce. -/
+def slotCountBounded (cn : CNode) : Prop :=
+  cn.slots.size ≤ cn.slotCount
+
+/-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
+theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
+  unfold slotCountBounded empty slotCount
+  simp
+
+/-- Removing a slot preserves the slot-count bound (size can only decrease). -/
+theorem remove_slotCountBounded
+    (cn : CNode) (slot : SeLe4n.Slot)
+    (hBounded : cn.slotCountBounded) :
+    (cn.remove slot).slotCountBounded := by
+  show (cn.slots.erase slot).size ≤ 2 ^ cn.radix
+  have h : (cn.slots.erase slot).size ≤ cn.slots.size := Std.HashMap.size_erase_le
+  exact Nat.le_trans h hBounded
+
+/-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
+theorem revokeTargetLocal_slotCountBounded
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hBounded : cn.slotCountBounded) :
+    (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
+  show (cn.slots.filter (fun s c => s == sourceSlot || !c.target == target)).size ≤ 2 ^ cn.radix
+  have h := @Std.HashMap.size_filter_le_size _ _ _ _ cn.slots _ _
+    (fun s c => s == sourceSlot || !c.target == target)
+  exact Nat.le_trans h hBounded
+
 /-- WS-G5: If a slot is present in the HashMap, lookup returns its value.
 With HashMap-backed slots, `slotsUnique` is trivially satisfied (structural
 invariant of HashMap), so the uniqueness hypothesis is unused. -/
@@ -936,6 +971,43 @@ def acyclic (cdt : CapDerivationTree) : Prop :=
 theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
   intro e hMem
   simp [CapDerivationTree.empty] at hMem
+
+-- ============================================================================
+-- WS-H4: Edge-well-founded acyclicity (simpler formulation for subset proofs)
+-- ============================================================================
+
+/-- WS-H4/M-03: Edge-well-founded acyclicity — no node can reach itself
+through a non-empty path of derivation edges. This formulation enables clean
+subset-preservation proofs: if edges' ⊆ edges and edges is well-founded,
+then edges' is well-founded. -/
+def edgeWellFounded (cdt : CapDerivationTree) : Prop :=
+  ∀ (node : CdtNodeId),
+    ¬(∃ (path : List CdtNodeId),
+        path.length > 1 ∧
+        path.head? = some node ∧
+        path.getLast? = some node ∧
+        (∀ i, (h : i + 1 < path.length) →
+          ∃ e ∈ cdt.edges, e.parent = path[i] ∧ e.child = path[i + 1]))
+
+/-- WS-H4: Empty CDT is trivially edge-well-founded (no edges, no cycles). -/
+theorem empty_edgeWellFounded : CapDerivationTree.empty.edgeWellFounded := by
+  intro node ⟨path, _, _, _, hEdges⟩
+  have h0 := hEdges 0 (by omega)
+  rcases h0 with ⟨e, hMem, _, _⟩
+  simp [CapDerivationTree.empty] at hMem
+
+/-- WS-H4: Edge-well-foundedness is preserved under edge-subset.
+If every edge of `cdt'` is also in `cdt`, and `cdt` is well-founded,
+then `cdt'` is well-founded. -/
+theorem edgeWellFounded_sub
+    (cdt cdt' : CapDerivationTree)
+    (hWF : cdt.edgeWellFounded)
+    (hSub : ∀ e ∈ cdt'.edges, e ∈ cdt.edges) :
+    cdt'.edgeWellFounded := by
+  intro node ⟨path, hLen, hHead, hLast, hEdges⟩
+  exact hWF node ⟨path, hLen, hHead, hLast, fun i hi => by
+    rcases hEdges i hi with ⟨e, hMem, hp, hc⟩
+    exact ⟨e, hSub e hMem, hp, hc⟩⟩
 
 /-- Removing a node preserves a subset of edges. -/
 theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : CdtNodeId) :

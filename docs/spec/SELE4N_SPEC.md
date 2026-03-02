@@ -55,7 +55,7 @@ enforcement, and scheduling.
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
-| **Recently completed** | WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
+| **Recently completed** | WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
@@ -84,6 +84,7 @@ semantic and proof foundations of the previous one.
 
 | Portfolio | Scope | Workstreams |
 |-----------|-------|-------------|
+| **WS-H4** (v0.12.18) | Capability invariant redesign: `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`; all 25+ preservation theorems re-proved against non-trivial predicates | WS-H4 completed |
 | **WS-H3** (v0.12.17) | Build/CI infrastructure fixes: `run_check` return value fix (H-12), `test_docs_sync.sh` CI integration (M-19), Tier 3 `rg` availability guard with `grep -P` fallback (M-20) | WS-H3 completed |
 | **WS-H2** (v0.12.16) | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup on retype, CNode CDT detach, atomic retype | WS-H2 completed |
 | **WS-H1** (v0.12.16) | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | WS-H1 completed |

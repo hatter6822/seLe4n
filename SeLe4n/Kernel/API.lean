@@ -42,7 +42,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Stable |
 | `chooseThread`, `chooseThreadInDomain` | Scheduler | Stable |
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
-| `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable |
+| `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (M-08/A-20: `cspaceMint` does not record CDT edges — capabilities created via this path are untracked by CDT-based revocation; prefer `cspaceMintWithCdt` for tracked derivation) |
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
 | `endpointSend`, `endpointReceive`, `endpointAwaitReceive` | IPC (legacy) | Deprecated (WS-G7) |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
