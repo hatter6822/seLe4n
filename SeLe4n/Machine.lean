@@ -228,6 +228,11 @@ private def noOverlapAux : List MemoryRegion → Bool
   | [] => true
   | r :: rs => rs.all (fun r' => !r.overlaps r') && noOverlapAux rs
 
+/-- Check whether a natural number is a positive power of two (1, 2, 4, 8, ...).
+    Uses bitwise characterization: `n > 0 ∧ n &&& (n - 1) == 0`. -/
+@[inline] private def isPowerOfTwo (n : Nat) : Bool :=
+  n > 0 && (n &&& (n - 1)) == 0
+
 /-- A machine configuration is well-formed when:
     1. All regions have nonzero size.
     2. No two regions overlap.
@@ -236,7 +241,7 @@ private def noOverlapAux : List MemoryRegion → Bool
 def wellFormed (cfg : MachineConfig) : Bool :=
   cfg.memoryMap.all (·.size > 0)
   && noOverlapAux cfg.memoryMap
-  && cfg.pageSize > 0
+  && isPowerOfTwo cfg.pageSize
   && cfg.registerWidth > 0
   && cfg.virtualAddressWidth > 0
   && cfg.physicalAddressWidth > 0

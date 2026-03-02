@@ -133,16 +133,6 @@ private def chooseBestInBucket
     -- fall back to full-list scan.
     chooseBestRunnableInDomain objects rq.toList activeDomain none
 
-/-- M-05/WS-E6: Filter runnable threads to those in the specified domain. -/
-def filterByDomain
-    (objects : SeLe4n.ObjId → Option KernelObject)
-    (runnable : List SeLe4n.ThreadId)
-    (domain : SeLe4n.DomainId) : List SeLe4n.ThreadId :=
-  runnable.filter fun tid =>
-    match objects tid.toObjId with
-    | some (.tcb tcb) => tcb.domain == domain
-    | _ => false
-
 /-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
 
@@ -163,7 +153,13 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
 
 Failure modes are explicit:
 - malformed runnable entries (non-TCB object IDs) surface as `schedulerInvariantViolation`,
-- selecting a thread not present in runnable also surfaces as `schedulerInvariantViolation`. -/
+- selecting a thread not present in runnable also surfaces as `schedulerInvariantViolation`.
+
+**Performance note:** The membership check `tid ∈ st'.scheduler.runnable` resolves to
+`List.Mem tid rq.flat` (O(n)). An O(1) alternative via `tid ∈ st'.scheduler.runQueue`
+(HashSet-backed) is semantically equivalent under the RunQueue structural invariant
+`flat_wf` but would require adding a reverse invariant `flat_wf_rev` and updating
+~15 preservation theorem proofs. Deferred to a future workstream. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with

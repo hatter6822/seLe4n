@@ -30,7 +30,7 @@ def svcRestart : ServiceId := 104
 def svcRestartBroken : ServiceId := 105
 
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
-  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, demoUntyped, 200]
+  [1, 10, 11, 12, 20, demoEndpoint, demoNotification, demoUntyped]
 
 def bootstrapServiceIds : List ServiceId :=
   [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken]

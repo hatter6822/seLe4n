@@ -192,6 +192,25 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
           (s!"notification waiter consistent: oid={oid} tid={tid.toNat}", ok) :: inner) acc
     | _ => acc) []
 
+/-- Audit: Runtime check for CDT `childMapConsistent` — verifies that the
+`childMap` HashMap mirrors the parent→child edges in the `edges` list.
+Checks both directions: every childMap entry has a corresponding edge,
+and every edge has a corresponding childMap entry. -/
+private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool) :=
+  let cdt := st.cdt
+  -- Forward: every childMap entry has a corresponding edge
+  let forwardChecks := cdt.childMap.toList.foldr (fun (parent, children) acc =>
+    children.foldr (fun child inner =>
+      let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
+      (s!"cdt childMap→edges: parent={reprStr parent} child={reprStr child}", ok) :: inner) acc) []
+  -- Backward: every edge has a corresponding childMap entry
+  let backwardChecks := cdt.edges.map fun e =>
+    let ok := match cdt.childMap.get? e.parent with
+      | some children => children.any (· == e.child)
+      | none => false
+    (s!"cdt edges→childMap: parent={reprStr e.parent} child={reprStr e.child}", ok)
+  forwardChecks ++ backwardChecks
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -228,6 +247,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ asidTableConsistencyChecks objectIds st
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
+    ++ cdtChildMapConsistentCheck st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.
