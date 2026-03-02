@@ -43,27 +43,28 @@ M7 (audit remediation).
 
 ### Completed audit portfolios
 
-- **WS-E** (v0.11.6): test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness — all 6 workstreams completed.
-- **WS-D** (v0.11.0), **WS-C** (v0.9.32), **WS-B** (v0.9.0): all completed.
+| Portfolio | Scope | Status |
+|-----------|-------|--------|
+| **WS-G** (v0.12.15) | Kernel performance: O(1) hash-based data structures for all hot paths | All 9 workstreams completed |
+| **WS-F1..F4** (v0.12.2) | Critical audit remediation: IPC messages, untyped memory, info-flow, proof gaps | All 4 completed |
+| **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, info-flow | All 6 completed |
+| **WS-D** (v0.11.0), **WS-C** (v0.9.32), **WS-B** (v0.9.0) | Earlier audit portfolios | All completed |
 
-### Active work
+### What's next
 
-- **WS-G** (kernel performance optimization): HashMap-based data structure migration for O(1) operations.
-  - **WS-G1** (Hashable infrastructure): **COMPLETED** (v0.12.6) — `Hashable` for all 13 typed identifiers.
-  - **WS-G2** (Object store HashMap): **COMPLETED** (v0.12.7) — `Std.HashMap ObjId KernelObject`.
-  - **WS-G3** (ASID resolution table): **COMPLETED** (v0.12.8) — `Std.HashMap ASID ObjId`.
-  - **WS-G4** (Run queue restructure): **COMPLETED** (v0.12.9) — priority-bucketed `RunQueue`.
-  - **WS-G5** (CNode slot HashMap): **COMPLETED** (v0.12.10) — `Std.HashMap Slot Capability` for O(1) capability operations; `cspaceRevoke` `revokedRefs` via `HashMap.fold` (single O(m) pass).
-  - **WS-G6** (VSpace mapping HashMap): **COMPLETED** (v0.12.11) — `Std.HashMap VAddr PAddr`; closes F-P05.
-  - **WS-G7** (IPC queue + notification): **COMPLETED** (v0.12.12) — Legacy endpoint ops deprecated; O(1) TCB duplicate check; closes F-P04, F-P11.
-  - **WS-G8** (Graph traversal optimization): **COMPLETED** (v0.12.13) — O(n+e) DFS; CDT `childMap` O(1) index; closes F-P08, F-P14.
-  - **WS-G9** (Info-flow projection optimization): **COMPLETED** (v0.12.14) — `computeObservableSet` precomputes `Std.HashSet ObjId`; `projectStateFast` O(1) lookups; `@[csimp]`-ready equivalence proof; closes F-P09.
-- **WS-F** (v0.12.2 audit remediation): closing proof gaps identified by two independent audits.
-  - **WS-F1** (IPC message transfer + dual-queue verification): **COMPLETED** — `IpcMessage` wired into all dual-queue and compound IPC operations; 14 invariant preservation theorems; 7 trace anchors with actual data transfer.
-  - **WS-F2** (Untyped memory model): **COMPLETED** — `UntypedObject` with region/watermark, `retypeFromUntyped` with allocSize validation, device restriction, 10+ theorems, 6 negative tests, 8 trace anchors.
-  - **WS-F3** (Information-flow completeness): **COMPLETED** — `ObservableState` extended with 3 fields (activeDomain, irqHandlers, objectIndex); CNode slot filtering; 15 NI theorems (12 standalone + 3 enforcement-NI bridges); WS-F3 test suite.
-  - WS-F4..F8: planning.
-  See [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md).
+The immediate next steps are completing the remaining WS-F workstreams (F5–F8),
+which address medium/low-priority findings from the v0.12.2 audits:
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
+
+After WS-F: Raspberry Pi 5 hardware binding (H3).
+See [Next Development Path](22-next-slice-development-path.md) and
+[v0.12.2 Audit Remediation](24-comprehensive-audit-2026-workstream-planning.md).
 
 ## 5. Architecture mental model
 
@@ -103,6 +104,7 @@ For milestone-moving changes:
 
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
-- Active audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
-- Workstream plan: [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+- Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
+- Audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
+- Next workstream plan: [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) (WS-F5..F8)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

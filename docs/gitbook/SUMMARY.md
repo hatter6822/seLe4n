@@ -16,12 +16,13 @@
 - [Specification & Roadmap](05-specification-and-roadmap.md)
 - [Development Workflow](06-development-workflow.md)
 - [Testing & CI](07-testing-and-ci.md)
+- [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
 
 ## Audit and quality
 
-- [v0.12.2 Audit Workstream Planning (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
+- [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
 - [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
 
@@ -37,6 +38,5 @@
 ## Production path
 
 - [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
-- [Platform Binding Architecture (ADR)](../PLATFORM_BINDING_ADR.md)
 - [Project Usage and Value](17-project-usage-value.md)
 - [Next Development Path](22-next-slice-development-path.md)

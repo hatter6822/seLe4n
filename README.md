@@ -57,9 +57,9 @@ improving on specific architectural aspects:
 | **Production Lean LoC** | 16,485 across 34 files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
-| **Active findings** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active workstream** | WS-G (kernel performance optimization) — WS-G1..G9 completed; refinement pass (v0.12.15) |
-| **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation — model fidelity, invariant quality, testing, cleanup) |
+| **Completed** | WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ## Quick start
 
@@ -143,35 +143,55 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 | `Main.lean` | Executable trace harness |
 | `tests/` | Negative-state suite, information-flow suite, trace sequence probe |
 
-## What's next: v0.12.2 audit remediation (WS-F)
+## Recently completed: WS-G kernel performance optimization
 
-Two independent audits identified the gaps between current proofs and
-production-kernel requirements. The immediate priority is resolving these
-findings systematically. See the
-[WS-F workstream plan](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for the
-full execution plan.
+The WS-G portfolio (v0.12.6–v0.12.15) migrated every kernel hot path from
+linear data structures to O(1) hash-based alternatives — eliminating all 14
+performance findings from the [v0.12.5 performance audit](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
+All invariant proofs were re-verified with zero sorry/axiom.
 
-**Critical priorities:**
-1. ~~Integrate `IpcMessage` into IPC operations~~ **(WS-F1 COMPLETED)** — messages now flow through all dual-queue and compound IPC operations with 14 preservation theorems and 7 trace anchors
-2. ~~Add Untyped memory model with watermark tracking~~ **(WS-F2 COMPLETED)** — `UntypedObject` with region/watermark, `retypeFromUntyped` operation with allocSize validation, 10+ theorems, 6 negative tests, 8 trace anchors
-3. ~~Extend `ObservableState` projection to cover all security-relevant fields~~ **(WS-F3 COMPLETED)** — 3 new fields (activeDomain, irqHandlers, objectIndex), CNode slot filtering via `projectKernelObject`, 15 NI theorems (12 standalone + 3 enforcement-NI bridges), enforcement-NI bridge for `serviceRestartChecked`
-4. ~~Close proof gaps for `timerTick`, `cspaceMutate`, notification ops~~ **(WS-F4 COMPLETED)** — `timerTick` scheduler/kernel invariant preservation, `cspaceMutate`/`cspaceRevokeCdt`/`cspaceRevokeCdtStrict` capability invariant preservation, notification signal/wait ipcInvariant + schedulerInvariantBundle + ipcSchedulerContractPredicates preservation; 11 Tier-3 surface anchors
+| Workstream | Optimization | Complexity change |
+|------------|-------------|-------------------|
+| **WS-G1** | Hashable infrastructure for all typed identifiers | Foundation for O(1) lookups |
+| **WS-G2** | Object store `Std.HashMap ObjId KernelObject` | O(n) closure-chain → O(1) |
+| **WS-G3** | ASID resolution `Std.HashMap ASID ObjId` | O(n) linear scan → O(1) |
+| **WS-G4** | Priority-bucketed `RunQueue` with HashMap + HashSet | O(t) insert/remove → O(1) |
+| **WS-G5** | CNode `Std.HashMap Slot Capability` | O(m) list scan → O(1) |
+| **WS-G6** | VSpace `Std.HashMap VAddr PAddr` | O(m) list scan → O(1) |
+| **WS-G7** | IPC queue + notification O(1) duplicate check | O(n) append/scan → O(1) |
+| **WS-G8** | Service DFS + CDT `childMap` HashMap index | O(n^2) BFS → O(n+e) DFS |
+| **WS-G9** | Info-flow `computeObservableSet` with HashSet | O(n) per-object re-eval → O(1) |
 
-**Path to Raspberry Pi 5:**
-The hardware target is Raspberry Pi 5 (ARM64). The `Platform/` directory now
-provides the structural foundation for hardware binding: a `PlatformBinding`
-typeclass, `MachineConfig`/`MemoryRegion` types, a `VSpaceBackend` abstraction,
-and concrete stubs for RPi5 (BCM2712 memory map, GIC-400 IRQ constants, ARM64
-runtime contract). Once remaining audit remediation closes, H3 will populate
-these stubs with hardware-validated contracts. See
-[Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
+See [Kernel Performance Optimization](docs/gitbook/08-kernel-performance-optimization.md)
+for the full technical breakdown.
 
-## Completed workstreams (historical)
+## What's next: remaining WS-F workstreams (F5–F8)
+
+The critical WS-F workstreams (F1–F4) are all completed. The remaining
+medium/low-priority workstreams close model fidelity and testing gaps identified
+by the [v0.12.2 audits](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
+
+**After WS-F: Raspberry Pi 5 binding (H3).** The `Platform/` directory provides
+the structural foundation — `PlatformBinding` typeclass, `MachineConfig`/
+`MemoryRegion` types, `VSpaceBackend` abstraction, and RPi5 stubs (BCM2712,
+GIC-400, ARM64 config). H3 will populate these with hardware-validated contracts.
+See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
+
+## Completed workstreams
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
-| **WS-E** (v0.11.6) | Audit remediation: test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness | All 6 workstreams completed |
-| **WS-D** (v0.11.0) | Test validity, info-flow enforcement, proof gaps, kernel design | WS-D1..D4 completed; D5/D6 absorbed into WS-E |
+| **WS-G** (v0.12.15) | Kernel performance: 9 workstreams migrating all hot paths to O(1) hash-based structures | All 9 completed + refinement pass |
+| **WS-F1..F4** (v0.12.2) | Critical audit remediation: IPC message transfer, untyped memory, info-flow completeness, proof gaps | All 4 critical workstreams completed |
+| **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness | All 6 completed |
+| **WS-D** (v0.11.0) | Test validity, info-flow enforcement, proof gaps, kernel design | WS-D1..D4 completed |
 | **WS-C** (v0.9.32) | Model structure, documentation, maintainability | WS-C1..C8 completed |
 | **WS-B** (v0.9.0) | Comprehensive audit 2026-02 | WS-B1..B11 completed |
 

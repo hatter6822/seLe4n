@@ -1,49 +1,52 @@
 # Next Development Path
 
-## Current state: WS-G portfolio completed (v0.12.14)
+## Current state
 
-The WS-G kernel performance optimization portfolio is fully completed. All 14
-performance findings (F-P01 through F-P14) from the v0.12.5 performance audit
-have been resolved across WS-G1..G9 (v0.12.6–v0.12.14).
+**Version:** 0.12.15 (Lean 4.28.0)
 
-See [Specification & Roadmap](05-specification-and-roadmap.md) for full status.
+Two major portfolios are completed:
 
-## Phase sequence
+- **WS-G** (v0.12.6–v0.12.15): All 14 kernel performance findings closed.
+  Every hot path migrated to O(1) hash-based structures. See
+  [Kernel Performance Optimization](08-kernel-performance-optimization.md).
+- **WS-F1..F4** (v0.12.2–v0.12.5): All critical/high-priority audit findings
+  resolved — IPC message transfer, untyped memory model, information-flow
+  completeness, and proof gap closure.
 
-### P1 — Critical IPC, memory, and proof gaps (WS-F1, WS-F2, WS-F4)
+## Immediate next: WS-F5..F8
 
-Three workstreams run in parallel:
-- **WS-F1**: ~~Wire `IpcMessage` into operations, verify dual-queue model.~~ **COMPLETED** — messages flow through all IPC operations with 14 preservation theorems and 7 trace anchors.
-- **WS-F2**: ~~Add Untyped memory with watermark tracking.~~ **COMPLETED** — `UntypedObject`, `retypeFromUntyped`, device restriction, 10+ theorems, 5 negative tests, 9 trace anchors.
-- **WS-F4**: Close timerTick, cspaceMutate, notification proof gaps.
-
-### P2 — Information-flow completeness (WS-F3) — **COMPLETED**
-
-- ~~Extend `ObservableState` projection to all security-relevant fields.~~ Done: 3 new fields (activeDomain, irqHandlers, objectIndex).
-- ~~Prove non-interference for new projection fields.~~ Done: 15 NI theorems (12 standalone + 3 enforcement-NI bridges).
-- ~~Connect enforcement layer to NI theorems.~~ Done: enforcement-NI bridge for `serviceRestartChecked`.
-- CNode slot filtering via `projectKernelObject` prevents capability target leakage (F-22).
-- Test suite extended with WS-F3 coverage (IRQ projection, object index, CNode filtering, 7-field low-equivalence).
+The remaining WS-F workstreams address medium/low-priority findings from the
+v0.12.2 audits. These are organized into two phases:
 
 ### P3 — Model fidelity and invariant quality (WS-F5, WS-F6)
 
-- Notification badge bitmask, per-thread registers, multi-level CSpace.
-- Reclassify tautological invariants, instantiate adapter proof hooks.
+- **WS-F5** (Model fidelity): Notification badge bitmask semantics, per-thread
+  register state, multi-level CSpace lookups.
+- **WS-F6** (Invariant quality): Reclassify remaining tautological invariants,
+  instantiate adapter proof hooks with structural witnesses.
 
 ### P4 — Testing and cleanup (WS-F7, WS-F8)
 
-- Extend runtime oracle and trace probe coverage.
-- Resolve legacy/dual-queue divergence, remove dead code.
+- **WS-F7** (Testing expansion): Extend runtime oracle and trace probe
+  coverage. Add fixture scenarios for newly optimized data structures.
+- **WS-F8** (Cleanup): Resolve legacy/dual-queue API divergence, remove dead
+  code paths, consolidate deprecated operations.
+
+See [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
+for the full execution plan.
 
 ## After WS-F: Raspberry Pi 5 binding (H3)
 
-Once WS-F closes critical proof gaps:
+Once WS-F closes remaining proof and model gaps:
 
-1. Map `MachineState` to BCM2712 hardware.
-2. Bind `VSpaceRoot` to ARMv8 page tables.
-3. Implement GIC-400 interrupt routing.
-4. Verify boot sequence as initial state construction.
-5. Run proof-carrying executable on hardware.
+1. Populate RPi5 runtime contract with hardware-validated predicates.
+2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.
+3. Implement GIC-400 interrupt routing with IRQ acknowledgment.
+4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
+5. Define boot sequence as a verified initial state construction.
+
+The `Platform/RPi5/` stubs (BCM2712 memory map, GIC-400 constants, ARM64
+config) are already in place from H3-prep.
 
 ## Long-horizon items
 
@@ -55,6 +58,7 @@ Once WS-F closes critical proof gaps:
 
 ## Related chapters
 
+- Performance: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
 - Audit findings: [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)

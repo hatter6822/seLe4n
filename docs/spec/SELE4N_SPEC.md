@@ -15,7 +15,7 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 2. [Current State Snapshot](#2-current-state-snapshot)
 3. [Milestone History](#3-milestone-history)
 4. [Architectural Improvements over seL4](#4-architectural-improvements-over-sel4)
-5. [Active Workstream Portfolio (WS-G)](#5-active-workstream-portfolio-ws-g)
+5. [Completed Workstream Portfolio (WS-G) and Next Steps](#5-completed-workstream-portfolio-ws-g-and-next-steps)
 6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
 7. [Acceptance Expectations](#7-acceptance-expectations)
 8. [Non-Negotiable Baseline Contracts](#8-non-negotiable-baseline-contracts)
@@ -53,9 +53,10 @@ enforcement, and scheduling.
 | **Production LoC** | 16,485 across 34 Lean files |
 | **Proved theorems** | 400+ (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
-| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md), [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) |
-| **Active portfolio** | WS-G (kernel performance optimization) — WS-G1..G9 completed; refinement pass v0.12.15 |
-| **Prior completed** | WS-F (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
+| **Recently completed** | WS-G (v0.12.15, kernel performance — all 14 findings closed) |
+| **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 
 ---
 
@@ -119,10 +120,11 @@ carried forward into the production kernel.
 
 ---
 
-## 5. Active Workstream Portfolio (WS-G)
+## 5. Completed Workstream Portfolio (WS-G) and Next Steps
 
-The WS-G portfolio addresses kernel performance optimization findings from the
+The WS-G portfolio addressed kernel performance optimization findings from the
 [v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
+All 9 workstreams completed (v0.12.6–v0.12.15), closing all 14 findings.
 
 Authoritative detail:
 [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
@@ -178,7 +180,20 @@ Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 - **WS-F2:** ~~Untyped memory model~~ **COMPLETED**
 - **WS-F3:** ~~Information-flow completeness~~ **COMPLETED**
 - **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
-- **WS-F5–F8:** Medium/Low priority — deferred to future portfolios
+- **WS-F5–F8:** Medium/Low priority — immediate next steps (see below)
+
+### 5.10 Next Steps: Remaining WS-F Workstreams (F5–F8)
+
+The remaining WS-F workstreams address medium/low-priority findings:
+
+| ID | Focus | Priority | Status |
+|----|-------|----------|--------|
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Next |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
+
+After WS-F: Raspberry Pi 5 hardware binding (H3).
 
 ---
 

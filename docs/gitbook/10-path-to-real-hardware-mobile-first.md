@@ -20,19 +20,20 @@ developed with this target in mind.
 |-------|-------------|--------|---------------|
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
-| **H2** | Audit-driven proof deepening | **Active** (WS-F) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **H3-prep complete** | ~~WS-F2~~ (done), ~~WS-F3~~ (done) |
+| **H2** | Audit-driven proof deepening | **CRIT/HIGH resolved** (WS-F1..F4); WS-F5..F8 remaining | Close CRIT/HIGH findings |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **H3-prep complete** | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
-### H2 — Active: closing proof gaps (WS-F)
+### H2 — Proof deepening (critical gaps resolved)
 
-The v0.12.2 audits identified critical gaps that must be closed before hardware
-binding is meaningful:
+All critical/high-priority audit findings are resolved by WS-F1..F4:
 
-- **IPC message transfer** (CRIT-01): operations must actually move data.
+- ~~**IPC message transfer** (CRIT-01)~~: **RESOLVED** (WS-F1) — 14 preservation theorems.
 - ~~**Untyped memory** (CRIT-04)~~: **RESOLVED** (WS-F2) — `UntypedObject` with watermark, `retypeFromUntyped`, device restriction.
-- **Information flow** (CRIT-02/03): complete projection and NI coverage.
-- **Dual-queue verification** (CRIT-05): the production IPC model needs proofs.
+- ~~**Information flow** (CRIT-02/03)~~: **RESOLVED** (WS-F3) — 15 NI theorems, CNode slot filtering.
+- ~~**Dual-queue verification** (CRIT-05)~~: **RESOLVED** (WS-F1) — dual-queue invariant proofs.
+
+Remaining medium/low findings (WS-F5..F8) do not block H3.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
@@ -47,7 +48,7 @@ provides the organizational infrastructure for hardware binding:
   memory map with RAM/device/reserved regions.
 - **`VSpaceBackend` class** (`SeLe4n/Kernel/Architecture/VSpaceBackend.lean`) —
   abstract page map/unmap/lookup with round-trip correctness obligations.
-  The existing flat-list `VSpaceRoot` satisfies this via `listVSpaceBackend`.
+  The `VSpaceRoot` satisfies this via `hashMapVSpaceBackend` (WS-G6).
 - **`ExtendedBootBoundaryContract`** — adds entry exception level, MMU state,
   device tree location, entry point, and stack pointer to the base boot contract.
 - **Simulation platform** (`Platform/Sim/`) — `SimPlatform` with permissive
@@ -57,7 +58,7 @@ provides the organizational infrastructure for hardware binding:
   machine config (64-bit registers, 48-bit VA, 44-bit PA, 4 KiB pages,
   16-bit ASID), and a RAM-only memory access contract.
 
-**Remaining H3 work** (once WS-F closes critical proof gaps):
+**Remaining H3 work** (critical proof gaps are now closed by WS-F1..F4):
 
 1. Populate RPi5 runtime contract with hardware-validated predicates.
 2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.

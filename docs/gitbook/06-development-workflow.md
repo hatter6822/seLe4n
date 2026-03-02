@@ -4,7 +4,7 @@ Canonical source: [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-G target (prioritize current phase workstreams).
+1. Pick one coherent WS-F5..F8 target (or another identified workstream slice).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
@@ -28,21 +28,23 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 
 For milestone-moving PRs:
 
-- include WS-F workstream ID(s) (WS-F1..F8),
+- include workstream ID(s) (WS-F5..F8 for current focus),
 - show evidence commands,
 - map changes to workstream outcomes,
 - record deferrals and destination workstreams,
 - keep README/spec/development/GitBook status text synchronized.
 
-## Active workstream sequence (WS-F)
+## Remaining workstream sequence (WS-F5..F8)
 
-| Phase | Workstreams | Description |
-|-------|-------------|-------------|
-| **P0** | — | Publish WS-F backbone, update docs |
-| **P1** | WS-F1, WS-F2, WS-F4 | Critical IPC/memory + proof gaps (**WS-F1, WS-F2 completed**) |
-| **P2** | WS-F3 | Information-flow completeness (**Completed**) |
-| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality |
-| **P4** | WS-F7, WS-F8 | Testing + cleanup |
+WS-G (kernel performance) and WS-F1..F4 (critical audit remediation) are
+completed. The remaining WS-F workstreams are:
+
+| Phase | Workstreams | Description | Status |
+|-------|-------------|-------------|--------|
+| ~~**P1**~~ | ~~WS-F1, WS-F2, WS-F4~~ | ~~Critical IPC/memory + proof gaps~~ | **Completed** |
+| ~~**P2**~~ | ~~WS-F3~~ | ~~Information-flow completeness~~ | **Completed** |
+| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | Next |
+| **P4** | WS-F7, WS-F8 | Testing + cleanup | Planned |
 
 See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for details.
 
