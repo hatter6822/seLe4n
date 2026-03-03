@@ -4,6 +4,12 @@
 
 **Version:** 0.13.0 (Lean 4.28.0)
 
+**Verified metrics snapshot (from `./scripts/report_current_state.py`):**
+- Production LoC: 25,648 across 40 files
+- Test LoC: 1,854 across 3 suites
+- Proved declarations: 734 theorem/lemma declarations (zero sorry/axiom)
+- Build jobs: 84
+
 Three major portfolios are completed:
 
 - **WS-H Phase 1–3** (v0.12.16–v0.12.19): Critical correctness fixes — IPC

@@ -16,7 +16,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Version | `0.13.0` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 25,648 across 40 files |
+| Test LoC | 1,854 across 3 suites |
 | Proved declarations | 734 theorem/lemma declarations (zero sorry/axiom) |
+| Build jobs | 84 |
+| Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | Recently completed | WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |

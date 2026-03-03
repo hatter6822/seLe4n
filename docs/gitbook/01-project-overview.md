@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 25,648 lines of production Lean across 40 modules, 734 theorem/lemma declarations, zero unsound
-constructs, comprehensive tiered CI with security scanning.
+Current state: 25,648 lines of production Lean across 40 modules, 1,854 lines across 3 Lean test suites,
+734 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
 
 ## 3. Architectural improvements over seL4
 

@@ -66,6 +66,10 @@ introducing substantial architectural improvements:
 | **Completed** | WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
+All quantitative attributes above are generated from the codebase using
+`./scripts/report_current_state.py` and should be updated in README +
+`docs/spec/SELE4N_SPEC.md` + GitBook in the same PR.
+
 ## Quick start
 
 ```bash

@@ -59,9 +59,9 @@ for the full execution plan.
 - **WS-H1:** completed (v0.12.16). IPC call-path semantic fix — `blockedOnCall` variant, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates`. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G1..G9:** all completed (v0.12.6–v0.12.15). See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 - **WS-F1..F4:** completed. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
-- **WS-E1..E6:** all completed. See [`docs/dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md).
-- **WS-D1..D4:** completed. See [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md).
-- **WS-C1..C8:** completed. See [`docs/dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md).
+- **WS-E1..E6:** all completed (historical archive).
+- **WS-D1..D4:** completed (historical archive).
+- **WS-C1..C8:** completed (historical archive).
 
 ### 3.3 PR-to-workstream discipline
 
@@ -149,6 +149,9 @@ for cross-document synchronization expectations.
 
 Before touching any `Current state` numbers, run `./scripts/report_current_state.py`
 and propagate the output verbatim to README/spec/GitBook mirrors in the same PR.
+At minimum keep these attributes synchronized across all three surfaces: version,
+Lean toolchain, production/test LoC, theorem+lemma count, build jobs, active
+findings/audit references, and completed/next workstream status.
 
 ---
 
