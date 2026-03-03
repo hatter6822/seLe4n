@@ -56,14 +56,15 @@ introducing substantial architectural improvements:
 |-----------|-------|
 | **Version** | `0.13.0` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 21,340 across 40 files |
-| **Test Lean LoC** | 1,806 across 3 test suites |
-| **Proved theorems** | 627 (zero sorry/axiom) |
+| **Production Lean LoC** | 25,648 across 40 files |
+| **Test Lean LoC** | 1,854 across 3 test suites |
+| **Proved declarations** | 734 theorem/lemma declarations (zero sorry/axiom) |
 | **Build jobs** | 84 |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
 | **Completed** | WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 ## Quick start
 
@@ -155,7 +156,7 @@ aggregates all subsystem invariants into a single proof obligation.
 The WS-G portfolio migrated every kernel hot path from linear data structures
 to O(1) hash-based alternatives — eliminating all 14 findings from the
 [v0.12.5 performance audit](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
-All 575 theorems were re-verified with zero sorry/axiom after each migration.
+All theorem/invariant declarations were re-verified with zero sorry/axiom after each migration.
 
 | Workstream | Data structure change | Complexity |
 |------------|----------------------|------------|
