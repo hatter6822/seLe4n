@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Version:** 0.12.19 (Lean 4.28.0)
+**Version:** 0.13.0 (Lean 4.28.0)
 
 Three major portfolios are completed:
 

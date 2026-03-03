@@ -1,3 +1,12 @@
+## [0.13.0] - 2026-03-03
+
+### WS-H5 audit: documentation sync and Tier 3 surface anchors
+
+- **Documentation sync:** Fixed stale version and metric references across 7 documentation files — SELE4N_SPEC.md theorem count (575 -> 627), GitBook README/navigation_manifest version (0.12.15 -> 0.12.19), development workflow WS-H reference (H1..H3 -> H1..H5), kernel performance chapter theorem count (400+ -> 627), project usage value LoC/module/theorem counts (16,485/34/400+ -> 21,340/40/627).
+- **Tier 3 invariant surface anchors:** Added 18 WS-H5 anchor checks to `test_tier3_invariant_surface.sh` covering all 5 predicate definitions (`intrusiveQueueWellFormed`, `tcbQueueLinkIntegrity`, `dualQueueEndpointWellFormed`, `dualQueueSystemInvariant`, `ipcInvariantFull`), 5 safety/closure theorems (A-23/A-24), and 8 preservation theorems for all dual-queue operations.
+- **Testing milestone:** Added WS-H5 bullet to `07-testing-and-ci.md` milestone testing trajectory.
+- **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3). 627 proved theorems total.
+
 ## [0.12.19] - 2026-03-03
 
 ### WS-H5: IPC Dual-Queue Structural Invariant (completed)
