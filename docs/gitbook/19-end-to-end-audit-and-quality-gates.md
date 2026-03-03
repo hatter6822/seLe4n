@@ -16,7 +16,7 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.12.19 has:
+seLe4n v0.13.0 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
 - **627 proved theorems** across 7 kernel subsystems.
