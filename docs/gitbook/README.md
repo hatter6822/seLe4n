@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.12.15 (Lean 4.28.0).
-- **Recently completed:** WS-G (kernel performance optimization — 9 workstreams, all 14 findings closed).
+- **Version:** 0.12.19 (Lean 4.28.0). 627 proved theorems, zero sorry/axiom.
+- **Recently completed:** WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).
 - **Next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation).
-- **Prior completed:** WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
+- **Prior completed:** WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Historical records:** Milestone closeouts and prior audits in [`docs/dev_history/`](../dev_history/README.md).
 

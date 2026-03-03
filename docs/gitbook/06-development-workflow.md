@@ -37,7 +37,7 @@ For milestone-moving PRs:
 ## Remaining workstream sequence (WS-F5..F8)
 
 WS-G (kernel performance), WS-F1..F4 (critical audit remediation), and
-WS-H1..H3 (v0.12.15 audit Phase 1) are completed. The remaining WS-F
+WS-H1..H5 (v0.12.15 audit Phase 1-2) are completed. The remaining WS-F
 workstreams are:
 
 | Phase | Workstreams | Description | Status |

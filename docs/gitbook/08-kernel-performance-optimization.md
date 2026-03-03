@@ -192,7 +192,7 @@ Post-completion quality sweep:
 
 ## 6. Proof impact
 
-All 400+ theorems were re-verified after each workstream. Key proof artifacts:
+All 627 theorems were re-verified after each workstream. Key proof artifacts:
 
 - **60+ bridge lemmas** connecting HashMap/HashSet operations to prior list-based reasoning
 - **`objectIndexSetSync`** invariant (WS-G2): HashSet mirrors HashMap key set
