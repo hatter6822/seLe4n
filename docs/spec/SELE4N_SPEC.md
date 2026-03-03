@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked â€
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (627 proved theorems),
+2. machine-checked invariant preservation (734 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,15 @@ enforcement, and scheduling.
 | Attribute | Value |
 |-----------|-------|
 | **Package version** | `0.13.0` (`lakefile.toml`) |
-| **Lean toolchain** | `4.28.0` |
-| **Production LoC** | 21,340 across 40 Lean files |
-| **Proved theorems** | 627 (zero sorry/axiom) |
+| **Lean toolchain** | `4.28.0` (`lean-toolchain`) |
+| **Production LoC** | 25,648 across 40 Lean files |
+| **Proved declarations** | 734 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 | **Recently completed** | WS-H5 (v0.12.19, IPC dual-queue structural invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Metrics source of truth** | `./scripts/report_current_state.py` |
 
 ---
 

@@ -147,6 +147,9 @@ For changes that alter behavior, theorem surfaces, or slice status, update in th
 Use [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](./DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 for cross-document synchronization expectations.
 
+Before touching any `Current state` numbers, run `./scripts/report_current_state.py`
+and propagate the output verbatim to README/spec/GitBook mirrors in the same PR.
+
 ---
 
 ## 8) Definition of done (milestone-moving changes)
