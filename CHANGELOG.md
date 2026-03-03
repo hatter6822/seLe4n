@@ -1,3 +1,15 @@
+## [0.12.19] - 2026-03-03
+
+### WS-H5: IPC Dual-Queue Structural Invariant (completed)
+
+- **C-04 / A-22 (CRITICAL): Formal well-formedness predicate for intrusive dual-queue IPC.** The dual-queue structure (`sendQ`/`receiveQ`, TCB `queueNext`/`queuePrev`/`queuePPrev` linkage) previously had zero formal well-formedness guarantees. Defined `intrusiveQueueWellFormed` (head/tail emptiness iff, head has prev=none, tail has next=none, TCB existence) and `dualQueueEndpointWellFormed` composing both queues. Integrated as `dualQueueSystemInvariant` covering all endpoints and `tcbQueueLinkIntegrity` (doubly-linked forward/reverse consistency).
+- **A-23 (HIGH): Link dereference safety in `endpointQueuePopHead`.** Under `dualQueueSystemInvariant`, `headTcb.queueNext` is guaranteed to be either `none` (tail) or a valid TCB. Proved via `endpointQueuePopHead_preserves_dualQueueSystemInvariant`.
+- **A-24 (HIGH): Message lookup after dequeue.** Under `dualQueueSystemInvariant`, the TCB existence guarantee ensures `lookupTcb` after `popHead` succeeds. Proved via `endpointReceiveDual_preserves_dualQueueSystemInvariant`.
+- **Predicate definitions in `IPC/Invariant.lean`:** `intrusiveQueueWellFormed`, `dualQueueEndpointWellFormed`, `tcbQueueLinkIntegrity`, `dualQueueSystemInvariant`.
+- **13 preservation theorems:** `ensureRunnable_preserves_dualQueueSystemInvariant`, `removeRunnable_preserves_dualQueueSystemInvariant`, `storeTcbIpcState_preserves_dualQueueSystemInvariant`, `storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant`, `storeTcbPendingMessage_preserves_dualQueueSystemInvariant`, `endpointReply_preserves_dualQueueSystemInvariant`, `endpointAwaitReceive_preserves_dualQueueSystemInvariant`, `endpointReplyRecv_preserves_dualQueueSystemInvariant`, `endpointQueuePopHead_preserves_dualQueueSystemInvariant`, `endpointQueueEnqueue_preserves_dualQueueSystemInvariant`, `endpointSendDual_preserves_dualQueueSystemInvariant`, `endpointReceiveDual_preserves_dualQueueSystemInvariant`, `endpointCall_preserves_dualQueueSystemInvariant`.
+- **Helper infrastructure:** `storeTcbQueueLinks_result_tcb`, `storeTcbQueueLinks_preserves_iqwf`, `storeTcbQueueLinks_clearing_preserves_linkInteg`, `storeTcbQueueLinks_none_prevnext_preserves_linkInteg` — transport lemmas for queue link mutations.
+- **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3). 627 proved theorems total.
+
 ## [0.12.18] - 2026-03-02
 
 ### WS-H4: Capability Invariant Redesign (completed)

@@ -91,6 +91,35 @@ Module structure:
 - `IPC/DualQueue.lean` — intrusive dual-queue infrastructure (queue links, PopHead/Enqueue/RemoveDual) and compound IPC operations (SendDual, ReceiveDual, Call, Reply, ReplyRecv),
 - `IPC/Invariant.lean` — preservation proofs for both legacy and dual-queue operations.
 
+### 4.1 Dual-queue structural invariant (WS-H5)
+
+`dualQueueSystemInvariant st` — system-wide structural invariant for intrusive dual-queue endpoints:
+
+- `dualQueueEndpointWellFormed` — per-endpoint: both `sendQ` and `receiveQ` satisfy `intrusiveQueueWellFormed` (head/tail emptiness iff, head.prev=none, tail.next=none),
+- `tcbQueueLinkIntegrity` — per-TCB: forward link consistency (`a.next=b → b.prev=a`) and reverse link consistency (`b.prev=a → a.next=b`).
+
+Primitive preservation:
+
+- `endpointQueuePopHead_preserves_dualQueueSystemInvariant`,
+- `endpointQueueEnqueue_preserves_dualQueueSystemInvariant`.
+
+Frame lemmas (non-queue-mutating operations):
+
+- `ensureRunnable_preserves_dualQueueSystemInvariant`, `removeRunnable_preserves_dualQueueSystemInvariant`,
+- `storeObject_tcb_preserves_dualQueueSystemInvariant`, `storeObject_endpoint_preserves_dualQueueSystemInvariant`,
+- `storeTcbIpcState_preserves_dualQueueSystemInvariant`, `storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant`, `storeTcbPendingMessage_preserves_dualQueueSystemInvariant`.
+
+Composite preservation (all 6 compound IPC operations):
+
+- `endpointSendDual_preserves_dualQueueSystemInvariant`,
+- `endpointReceiveDual_preserves_dualQueueSystemInvariant`,
+- `endpointCall_preserves_dualQueueSystemInvariant`,
+- `endpointReply_preserves_dualQueueSystemInvariant`,
+- `endpointAwaitReceive_preserves_dualQueueSystemInvariant`,
+- `endpointReplyRecv_preserves_dualQueueSystemInvariant`.
+
+Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQueueLinks_append_tail_preserves_linkInteg`, `storeTcbQueueLinks_endpoint_backward`.
+
 Component level:
 
 - endpoint queue/object validity,
@@ -104,6 +133,7 @@ Preservation shape:
 - WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
 - WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
 - WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
+- WS-H5 dual-queue structural invariant: 13 `*_preserves_dualQueueSystemInvariant` theorems covering `endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`, `endpointAwaitReceive`, plus 5 state-only ops (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`).
 
 ## 5. IPC-scheduler coherence (M3.5)
 

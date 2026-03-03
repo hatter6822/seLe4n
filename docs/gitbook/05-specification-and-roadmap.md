@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.12.17` |
+| Version | `0.12.19` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 21,340 across 40 files |
-| Proved theorems | 575 (zero sorry/axiom) |
-| Recently completed | WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
+| Proved theorems | 627 (zero sorry/axiom) |
+| Recently completed | WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 
 ## Milestone history
@@ -27,7 +27,18 @@ Bootstrap → M1 (scheduler) → M2 (capability) → M3/M3.5 (IPC) → M4-A/M4-B
 remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
 (performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed) →
 WS-H2 (lifecycle safety guards, completed) → WS-H3 (build/CI infrastructure, completed) →
-WS-H4 (capability invariant redesign, completed).
+WS-H4 (capability invariant redesign, completed) → WS-H5 (IPC dual-queue structural
+invariant, completed).
+
+## Completed: WS-H5 IPC Dual-Queue Structural Invariant (v0.12.19)
+
+WS-H5 defines and proves a formal structural well-formedness invariant for the
+intrusive dual-queue IPC implementation, closing C-04/A-22 (CRITICAL), A-23
+(HIGH), and A-24 (HIGH). Core predicates: `intrusiveQueueWellFormed` (head/tail
+emptiness iff, boundary link consistency, TCB existence), `dualQueueSystemInvariant`
+(all endpoints well-formed + `tcbQueueLinkIntegrity` doubly-linked forward/reverse
+consistency). 13 preservation theorems cover all dual-queue operations. See
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H3 Build/CI Infrastructure Fixes (v0.12.17)
 

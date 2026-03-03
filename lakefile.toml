@@ -1,5 +1,5 @@
 name = "seLe4n"
-version = "0.12.17"
+version = "0.12.19"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
