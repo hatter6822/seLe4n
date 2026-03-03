@@ -51,9 +51,12 @@ enforcement, and scheduling.
 | **Package version** | `0.13.0` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 25,648 across 40 Lean files |
+| **Test LoC** | 1,854 across 3 Lean test suites |
 | **Proved declarations** | 734 theorem/lemma declarations (zero sorry/axiom) |
+| **Build jobs** | 84 |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 | **Recently completed** | WS-H5 (v0.12.19, IPC dual-queue structural invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |

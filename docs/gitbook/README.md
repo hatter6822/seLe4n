@@ -5,11 +5,15 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.13.0 (Lean 4.28.0). 734 theorem/lemma declarations, zero sorry/axiom.
+- **Version:** 0.13.0 (Lean 4.28.0).
+- **Codebase metrics:** 25,648 production LoC across 40 files; 1,854 test LoC across 3 suites; 734 theorem/lemma declarations (zero sorry/axiom); 84 build jobs.
+- **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md).
+- **Active audit:** [`docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G).
 - **Recently completed:** WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).
 - **Next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation).
 - **Prior completed:** WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - **Hardware target:** Raspberry Pi 5 (ARM64).
+- **Metrics source of truth:** `./scripts/report_current_state.py` (sync README/spec/GitBook together in one PR).
 - **Historical records:** Milestone closeouts and prior audits in [`docs/dev_history/`](../dev_history/README.md).
 
 Specification documents:
