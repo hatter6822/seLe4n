@@ -104,6 +104,7 @@ Preservation shape:
 - WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
 - WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
 - WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
+- WS-H5 dual-queue structural invariant: 13 `*_preserves_dualQueueSystemInvariant` theorems covering `endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`, `endpointAwaitReceive`, plus 5 state-only ops (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`).
 
 ## 5. IPC-scheduler coherence (M3.5)
 

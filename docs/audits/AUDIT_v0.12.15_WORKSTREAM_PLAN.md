@@ -428,7 +428,7 @@ scoped to not affect CDT types.
 
 ---
 
-### WS-H5: IPC Dual-Queue Structural Invariant (CRITICAL)
+### WS-H5: IPC Dual-Queue Structural Invariant (CRITICAL) — COMPLETED (v0.12.19)
 
 **Objective:** Define and prove a structural well-formedness invariant for the
 intrusive dual-queue IPC implementation, closing the gap where 1,676 lines of

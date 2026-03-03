@@ -90,6 +90,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/IPC/Invariant.lean`
   - endpoint + IPC invariants,
   - 5-conjunct scheduler-coherence contract predicates (`ipcSchedulerContractPredicates`),
+  - `dualQueueSystemInvariant` with `intrusiveQueueWellFormed`, `tcbQueueLinkIntegrity` (WS-H5),
   - preservation theorem entrypoints for both legacy and dual-queue operations.
 
 ### Lifecycle subsystem

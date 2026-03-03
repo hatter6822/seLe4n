@@ -16,14 +16,14 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.12.17 has:
+seLe4n v0.12.19 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **575+ proved theorems** across 7 kernel subsystems.
+- **627 proved theorems** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
-- **Phase 1 correctness fixes** (WS-H1..H3): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened.
+- **Phase 1–2 correctness fixes** (WS-H1..H5): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant.
 
 Critical audit gaps (all resolved by WS-F1..F4):
 
