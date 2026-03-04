@@ -148,7 +148,7 @@ requires `cspaceMintWithCdt` as the sole mint path (see M-08/A-20
 annotation in API.lean). -/
 def cdtCompleteness (st : SystemState) : Prop :=
   ∀ (nodeId : CdtNodeId) (ref : SlotRef),
-    st.cdtNodeSlot nodeId = some ref →
+    st.cdtNodeSlot[nodeId]? = some ref →
     st.objects[ref.cnode]? ≠ none
 
 /-- WS-H4/M-03: CDT acyclicity — the capability derivation tree has no cycles.
@@ -429,14 +429,21 @@ private theorem cdtCompleteness_of_detachSlotFromCdt
     cdtCompleteness (st.detachSlotFromCdt ref) := by
   intro nodeId slotRef hNS
   unfold SystemState.detachSlotFromCdt at hNS ⊢
-  cases hLookup : st.cdtSlotNode ref with
+  cases hLookup : st.cdtSlotNode[ref]? with
   | none => simp only [hLookup] at hNS ⊢; exact hComp nodeId slotRef hNS
   | some origNode =>
     simp only [hLookup] at hNS ⊢
-    -- objects unchanged (just with-update on cdtSlotNode/cdtNodeSlot)
+    -- objects unchanged except possibly at `origNode` erased by detach.
     by_cases hEq : nodeId = origNode
-    · simp [hEq] at hNS
-    · simp [hEq] at hNS; exact hComp nodeId slotRef hNS
+    · subst hEq
+      rw [HashMap_getElem?_erase] at hNS
+      simp at hNS
+    · rw [HashMap_getElem?_erase] at hNS
+      have hNeBeq : ¬((origNode == nodeId) = true) := by
+        intro hBeq
+        exact hEq (eq_of_beq hBeq).symm
+      simp [hNeBeq] at hNS
+      exact hComp nodeId slotRef hNS
 
 /-- WS-H4: detachSlotFromCdt preserves cdtAcyclicity (CDT edges unchanged). -/
 private theorem cdtAcyclicity_of_detachSlotFromCdt
@@ -446,7 +453,7 @@ private theorem cdtAcyclicity_of_detachSlotFromCdt
   unfold cdtAcyclicity
   show (st.detachSlotFromCdt ref).cdt.edgeWellFounded
   have : (st.detachSlotFromCdt ref).cdt = st.cdt := by
-    unfold SystemState.detachSlotFromCdt; cases st.cdtSlotNode ref <;> rfl
+    unfold SystemState.detachSlotFromCdt; cases st.cdtSlotNode[ref]? <;> rfl
   rw [this]; exact hAcyclic
 
 /-- WS-H4: detachSlotFromCdt preserves cspaceSlotCountBounded (objects unchanged). -/
@@ -686,11 +693,10 @@ theorem cspaceRevoke_local_target_reduction
                 {
                   st.lifecycle with
                     objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                    capabilityRefs := fun ref =>
-                      if ref.cnode = addr.cnode then
-                        ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
-                      else
-                        st.lifecycle.capabilityRefs ref
+                    capabilityRefs :=
+                      let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
+                      (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
+                        fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                 }
             }
           have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
@@ -844,11 +850,10 @@ theorem cspaceRevoke_preserves_source
                     {
                       st.lifecycle with
                         objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                        capabilityRefs := fun ref =>
-                          if ref.cnode = addr.cnode then
-                            ((cn.revokeTargetLocal addr.slot parent.target).lookup ref.slot).map Capability.target
-                          else
-                            st.lifecycle.capabilityRefs ref
+                        capabilityRefs :=
+                          let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
+                          (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
+                            fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                     }
                 }
               have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by

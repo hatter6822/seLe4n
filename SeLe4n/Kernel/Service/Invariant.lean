@@ -1086,7 +1086,12 @@ theorem serviceStart_preserves_lookupService_ne
       split at hStep <;> try (simp at hStep)
       split at hStep <;> try (simp at hStep)
       unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep
-      simp [lookupService, hNe]
+      simp [lookupService]
+      rw [HashMap_getElem?_insert]
+      have hNeBeq : ¬((sid == s) = true) := by
+        intro hEq
+        exact hNe (eq_of_beq hEq).symm
+      simp [hNeBeq]
 
 /-- WS-F3: serviceStop preserves the object store. -/
 theorem serviceStop_preserves_objects
@@ -1158,7 +1163,12 @@ theorem serviceStop_preserves_lookupService_ne
       split at hStep <;> try (simp at hStep)
       split at hStep <;> try (simp at hStep)
       unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep
-      simp [lookupService, hNe]
+      simp [lookupService]
+      rw [HashMap_getElem?_insert]
+      have hNeBeq : ¬((sid == s) = true) := by
+        intro hEq
+        exact hNe (eq_of_beq hEq).symm
+      simp [hNeBeq]
 
 /-- WS-F3: serviceRestart decomposes into stop + start. -/
 theorem serviceRestart_decompose
