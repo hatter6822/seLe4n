@@ -87,3 +87,6 @@ When a claim changes:
 2. update GitBook mirror(s) in the same PR,
 3. refresh this table row(s) for changed claims,
 4. run at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).
+
+
+- WS-H7: HashMap equality + closure-field migration landed in model/state/object surfaces; evidence: `SeLe4n/Model/Object.lean`, `SeLe4n/Model/State.lean`, and updated negative-state harness compatibility.

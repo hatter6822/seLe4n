@@ -334,3 +334,8 @@ Security assumptions and trust boundaries are documented in
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
+
+### WS-H7 state model migration note
+
+The state model now uses HashMap-backed storage for service registry, IRQ routing, lifecycle capability metadata, and CDT slot/node mirror maps. Equality checks for `VSpaceRoot` and `CNode` no longer rely on `HashMap.toList` ordering and use fold-based entry verification.

@@ -261,13 +261,12 @@ private def runNegativeChecks : IO Unit := do
       cdt := CapDerivationTree.empty
         |>.addEdge moveSrcNode moveChildNode .mint
         |>.addEdge moveParentNode moveSrcNode .copy
-      cdtSlotNode := fun ref =>
-        if ref = slot0 then some moveSrcNode else baseState.cdtSlotNode ref
-      cdtNodeSlot := fun node =>
-        if node = moveSrcNode then some slot0
-        else if node = moveParentNode then some { cnode := cnodeId, slot := 7 }
-        else if node = moveChildNode then some { cnode := cnodeId, slot := 8 }
-        else baseState.cdtNodeSlot node
+      cdtSlotNode := baseState.cdtSlotNode.insert slot0 moveSrcNode
+      cdtNodeSlot := Std.HashMap.insert
+        (Std.HashMap.insert
+          (Std.HashMap.insert baseState.cdtNodeSlot moveSrcNode slot0)
+          moveParentNode { cnode := cnodeId, slot := 7 })
+        moveChildNode { cnode := cnodeId, slot := 8 }
       cdtNextNode := 3
     }
   let (_, moveState) ← expectOkState "cspaceMove remaps slot-node pointer"
@@ -319,16 +318,16 @@ private def runNegativeChecks : IO Unit := do
       cdt := CapDerivationTree.empty
         |>.addEdge strictRootNode strictChildNodeBad .mint
         |>.addEdge strictRootNode strictChildNodeOk .copy
-      cdtSlotNode := fun ref =>
-        if ref = strictRootSlot then some strictRootNode
-        else if ref = strictChildSlotOk then some strictChildNodeOk
-        else if ref = strictChildSlotBad then some strictChildNodeBad
-        else baseState.cdtSlotNode ref
-      cdtNodeSlot := fun node =>
-        if node = strictRootNode then some strictRootSlot
-        else if node = strictChildNodeOk then some strictChildSlotOk
-        else if node = strictChildNodeBad then some strictChildSlotBad
-        else baseState.cdtNodeSlot node
+      cdtSlotNode := Std.HashMap.insert
+        (Std.HashMap.insert
+          (Std.HashMap.insert baseState.cdtSlotNode strictRootSlot strictRootNode)
+          strictChildSlotOk strictChildNodeOk)
+        strictChildSlotBad strictChildNodeBad
+      cdtNodeSlot := Std.HashMap.insert
+        (Std.HashMap.insert
+          (Std.HashMap.insert baseState.cdtNodeSlot strictRootNode strictRootSlot)
+          strictChildNodeOk strictChildSlotOk)
+        strictChildNodeBad strictChildSlotBad
       cdtNextNode := 33
     }
 

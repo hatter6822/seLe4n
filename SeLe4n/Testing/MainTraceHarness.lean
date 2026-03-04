@@ -276,54 +276,46 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   let chainL2 : ServiceId := 202
   let chainL1 : ServiceId := 201
   let chainTop : ServiceId := 200
+  let chainServices :=
+    st1.services
+      |>.insert chainRoot {
+        identity := { sid := chainRoot, backingObject := 12, owner := 10 }
+        status := .running
+        dependencies := []
+        isolatedFrom := []
+      }
+      |>.insert chainL4 {
+        identity := { sid := chainL4, backingObject := 12, owner := 10 }
+        status := .running
+        dependencies := [chainRoot]
+        isolatedFrom := []
+      }
+      |>.insert chainL3 {
+        identity := { sid := chainL3, backingObject := 12, owner := 10 }
+        status := .running
+        dependencies := [chainL4]
+        isolatedFrom := []
+      }
+      |>.insert chainL2 {
+        identity := { sid := chainL2, backingObject := 12, owner := 10 }
+        status := .running
+        dependencies := [chainL3]
+        isolatedFrom := []
+      }
+      |>.insert chainL1 {
+        identity := { sid := chainL1, backingObject := 12, owner := 10 }
+        status := .running
+        dependencies := [chainL2]
+        isolatedFrom := []
+      }
+      |>.insert chainTop {
+        identity := { sid := chainTop, backingObject := 12, owner := 10 }
+        status := .stopped
+        dependencies := [chainL1]
+        isolatedFrom := []
+      }
   let stServiceChain : SystemState :=
-    { st1 with
-      services := fun sid =>
-        if sid = chainRoot then
-          some {
-            identity := { sid := chainRoot, backingObject := 12, owner := 10 }
-            status := .running
-            dependencies := []
-            isolatedFrom := []
-          }
-        else if sid = chainL4 then
-          some {
-            identity := { sid := chainL4, backingObject := 12, owner := 10 }
-            status := .running
-            dependencies := [chainRoot]
-            isolatedFrom := []
-          }
-        else if sid = chainL3 then
-          some {
-            identity := { sid := chainL3, backingObject := 12, owner := 10 }
-            status := .running
-            dependencies := [chainL4]
-            isolatedFrom := []
-          }
-        else if sid = chainL2 then
-          some {
-            identity := { sid := chainL2, backingObject := 12, owner := 10 }
-            status := .running
-            dependencies := [chainL3]
-            isolatedFrom := []
-          }
-        else if sid = chainL1 then
-          some {
-            identity := { sid := chainL1, backingObject := 12, owner := 10 }
-            status := .running
-            dependencies := [chainL2]
-            isolatedFrom := []
-          }
-        else if sid = chainTop then
-          some {
-            identity := { sid := chainTop, backingObject := 12, owner := 10 }
-            status := .stopped
-            dependencies := [chainL1]
-            isolatedFrom := []
-          }
-        else
-          st1.services sid
-    }
+    { st1 with services := chainServices }
   match SeLe4n.Kernel.serviceStart chainTop allowAll stServiceChain with
   | .error err => IO.println s!"service dependency chain start error: {reprStr err}"
   | .ok (_, stChainStarted) =>

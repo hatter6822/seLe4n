@@ -3,6 +3,14 @@ import Std.Data.HashSet
 
 namespace SeLe4n
 
+/-- Convenience coercion: treat `HashMap` as a total lookup function returning
+`Option` values. This preserves legacy call-sites written as `m k` while the
+state model migrates from closure fields to HashMap-backed fields (WS-H7). -/
+instance {α : Type} {β : Type} [BEq α] [Hashable α] :
+    CoeFun (Std.HashMap α β) (fun _ => α → Option β) where
+  coe m := fun k => m[k]?
+
+
 /-! ## H-06/WS-E3: Identifier sentinel convention
 
 All identifier types (`ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`, `Badge`,

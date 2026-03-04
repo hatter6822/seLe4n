@@ -236,3 +236,9 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 Prior audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters
 are archived in [`docs/dev_history/`](docs/dev_history/README.md).
+
+
+## WS-H7 (in progress)
+
+- Migrated core closure-backed state fields (`services`, `irqHandlers`, `capabilityRefs`, `cdtSlotNode`, `cdtNodeSlot`) to `Std.HashMap` storage in `SystemState`.
+- Updated `VSpaceRoot` and `CNode` `BEq` implementations to fold-based HashMap entry checks (size + entry containment), removing `toList`-order dependence.

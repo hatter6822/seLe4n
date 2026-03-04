@@ -252,7 +252,12 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 5. lifecycleInvariantBundle
   · exact default_lifecycleInvariantBundle
   -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability
-  · exact ⟨by intro sid svc hSvc; simp [lookupService] at hSvc,
+  · exact ⟨by
+             intro sid svc hSvc
+             have hNone : (default : SystemState).services[sid]? = none := HashMap_getElem?_empty
+             have hFalse : False := by
+               simpa [lookupService, hNone] using hSvc
+             exact False.elim hFalse,
            default_lifecycleInvariantBundle,
            default_capabilityInvariantBundle⟩
   -- 7. vspaceInvariantBundle (3-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent)

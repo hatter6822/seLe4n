@@ -176,3 +176,8 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+
+
+### WS-H7 developer note
+
+When updating `SystemState`, use `HashMap.insert`/`erase` for `services`, `irqHandlers`, `lifecycle.capabilityRefs`, `cdtSlotNode`, and `cdtNodeSlot`. Avoid reintroducing closure-style function updates for these fields.
