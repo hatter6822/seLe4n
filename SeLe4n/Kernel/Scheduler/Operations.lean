@@ -74,6 +74,47 @@ theorem isBetterCandidate_asymm
           | zero => simp
           | succ m => simp; omega
 
+/-- WS-H6/A-17: transitivity for the strict candidate-preference relation. -/
+theorem isBetterCandidate_transitive
+    (p1 p2 p3 : SeLe4n.Priority) (d1 d2 d3 : SeLe4n.Deadline)
+    (h12 : isBetterCandidate p1 d1 p2 d2 = true)
+    (h23 : isBetterCandidate p2 d2 p3 d3 = true) :
+    isBetterCandidate p1 d1 p3 d3 = true := by
+  unfold isBetterCandidate at h12 h23 ⊢
+  by_cases h31 : p3.toNat > p1.toNat
+  · simp [h31]
+  · have hLe31 : p3.toNat ≤ p1.toNat := Nat.le_of_not_gt h31
+    by_cases h13 : p1.toNat < p3.toNat
+    · omega
+    · have hp12 : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
+        by_cases hp : p2.toNat > p1.toNat
+        · exact Or.inl hp
+        · have : p2.toNat = p1.toNat := by
+            have hp' : ¬(p2.toNat < p1.toNat) := by
+              intro hlt
+              simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h12
+            omega
+          exact Or.inr this
+      have hp23 : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
+        by_cases hp : p3.toNat > p2.toNat
+        · exact Or.inl hp
+        · have : p3.toNat = p2.toNat := by
+            have hp' : ¬(p3.toNat < p2.toNat) := by
+              intro hlt
+              simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h23
+            omega
+          exact Or.inr this
+      have hEqP : p1.toNat = p2.toNat ∧ p2.toNat = p3.toNat := by
+        have hge12 : p2.toNat ≥ p1.toNat := by omega
+        have hge23 : p3.toNat ≥ p2.toNat := by omega
+        have hle13 : p3.toNat ≤ p1.toNat := hLe31
+        omega
+      rcases hEqP with ⟨hEq12, hEq23⟩
+      simp [hEq12, hEq23] at h12 h23 ⊢
+      revert h12 h23
+      cases hd1 : d1.toNat <;> cases hd2 : d2.toNat <;> cases hd3 : d3.toNat <;> simp
+      omega
+
 /-- M-03/WS-E6: Three-level scheduling selection.
 
 Folds over the runnable list accumulating the best candidate using the
@@ -132,6 +173,19 @@ private def chooseBestInBucket
     -- Max-priority bucket had no eligible thread in this domain;
     -- fall back to full-list scan.
     chooseBestRunnableInDomain objects rq.toList activeDomain none
+
+/-- WS-H6/A-17: bucket-first candidate selection is definitionally equivalent
+to "scan max bucket, then fallback to full scan on miss" semantics. -/
+theorem bucketFirst_fullScan_equivalence
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    chooseBestInBucket objects rq activeDomain =
+      (match chooseBestRunnableInDomain objects rq.maxPriorityBucket activeDomain none with
+       | .error e => .error e
+       | .ok (some result) => .ok (some result)
+       | .ok none => chooseBestRunnableInDomain objects rq.toList activeDomain none) := by
+  rfl
 
 /-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.

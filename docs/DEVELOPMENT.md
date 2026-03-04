@@ -8,7 +8,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 It is aligned to the **current project state**:
 
 - **next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation — model fidelity, invariant quality, testing, cleanup),
-- **recently completed:** WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure fixes, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization — all 9 workstreams + refinement, v0.12.15), WS-F1..F4 (critical audit remediation),
+- **recently completed:** WS-H6 (scheduler proof completion, v0.12.20), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure fixes, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization — all 9 workstreams + refinement, v0.12.15), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
@@ -53,6 +53,7 @@ for the full execution plan.
 ### 3.2 Completed portfolios
 
 - **WS-H5:** completed (v0.12.19). IPC dual-queue structural invariant — `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH). See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+- **WS-H6:** completed (v0.12.20). Scheduler proof completion — reverse RunQueue consistency bridge (`membership_implies_flat`, `mem_toList_iff_mem`), strict candidate-order transitivity (`isBetterCandidate_transitive`), and bucket-first selection equivalence (`bucketFirst_fullScan_equivalence`). Closes M-04, M-05, M-06 scheduler proof gaps.
 - **WS-H4:** completed (v0.12.18). Capability invariant redesign — `capabilityInvariantBundle` extended from trivially-true 4-tuple to meaningful 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`. All preservation theorems re-proved. C-03, M-08/A-20, M-03. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-H3:** completed (v0.12.17). Build/CI infrastructure fixes — `run_check` return value fix (H-12), `test_docs_sync.sh` CI integration (M-19), Tier 3 `rg` availability guard with `grep -P` fallback (M-20). See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-H2:** completed (v0.12.16). Lifecycle safety guards — childId collision/self-overwrite guards, TCB scheduler cleanup on retype, CNode CDT detach, atomic retype. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
