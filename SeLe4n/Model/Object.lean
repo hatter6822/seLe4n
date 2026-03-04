@@ -628,7 +628,7 @@ instance : BEq VSpaceRoot where
   beq a b :=
     a.asid == b.asid &&
     a.mappings.size == b.mappings.size &&
-    a.mappings.toList.all (fun (k, v) => b.mappings[k]? == some v)
+    a.mappings.fold (init := true) (fun acc k v => acc && (b.mappings[k]? == some v))
 
 namespace CNode
 
@@ -843,7 +843,7 @@ instance : BEq CNode where
   beq a b :=
     a.guard == b.guard && a.radix == b.radix &&
     a.slots.size == b.slots.size &&
-    a.slots.toList.all (fun (k, v) => b.slots[k]? == some v)
+    a.slots.fold (init := true) (fun acc k v => acc && (b.slots[k]? == some v))
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model

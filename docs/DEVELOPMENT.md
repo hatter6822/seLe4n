@@ -176,3 +176,4 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+- [ ] For WS-H7/A-07 updates, verify `BEq VSpaceRoot` and `BEq CNode` avoid `HashMap.toList` order dependence (use size + fold checks).
