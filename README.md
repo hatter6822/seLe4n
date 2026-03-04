@@ -48,7 +48,7 @@ introducing substantial architectural improvements:
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Parameterized N-domain information-flow** framework with two-dimensional confidentiality/integrity labels (beyond seL4's binary partition)
-- **EDF + priority scheduling** with priority-bucketed `RunQueue`, domain-aware partitioning, and inline `maxPriority` tracking
+- **EDF + priority scheduling** with priority-bucketed `RunQueue`, domain-aware partitioning, inline `maxPriority` tracking, and bidirectional queue/list consistency (`flat_wf` + `flat_wf_rev`)
 
 ## Current state
 

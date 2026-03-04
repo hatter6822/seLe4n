@@ -175,6 +175,7 @@ Authoritative detail:
 Post-completion refinement addressing residual code quality, validation gaps, and test coverage across the WS-G portfolio:
 
 - **RunQueue.remove optimization:** Eliminated redundant bucket computation — filtered bucket now computed once and reused for both `byPriority` and `maxPriority` updates.
+- **WS-H6 scheduler proof foundation:** `RunQueue` now carries reverse structural invariant `flat_wf_rev`; theorem `membership_implies_flat` establishes `tid ∈ membership → tid ∈ flat`, completing bidirectional list/set consistency with existing `flat_wf`.
 - **MachineConfig validation hardening:** `wellFormed` now validates `pageSize` as a positive power of two via `isPowerOfTwo` (bitwise check), strengthening platform configuration safety.
 - **Dead code removal:** Removed unused `filterByDomain` from `Scheduler/Operations.lean` (superseded by WS-G4 bucket-first scheduling).
 - **Phantom object cleanup:** Removed object ID 200 from `bootstrapInvariantObjectIds` (no corresponding bootstrap object).

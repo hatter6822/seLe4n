@@ -11,6 +11,10 @@ structure RunQueue where
   /-- WS-G4: Structural invariant — every flat-list entry is in the HashSet.
       Needed to bridge `∈ rq.flat` (flat list) and `∈ rq` (HashSet) in proofs. -/
   flat_wf : ∀ tid, tid ∈ flat → membership.contains tid = true
+  /-- WS-H6/M-04: Reverse structural invariant — every HashSet member appears
+      in the flat list. Together with `flat_wf`, this yields bidirectional
+      consistency between O(1) membership checks and `toList` reasoning. -/
+  flat_wf_rev : ∀ tid, membership.contains tid = true → tid ∈ flat
   /- WS-G4: Implicit invariant (maintained structurally by `insert`/`remove` API):
      Every thread in `membership` has a corresponding entry in `threadPriority`,
      and vice versa. This is NOT enforced as a proof obligation in the structure
@@ -23,6 +27,9 @@ namespace RunQueue
   byPriority := {}; membership := {}; threadPriority := {}
   flat := []; size := 0; maxPriority := none
   flat_wf := fun _ h => nomatch h
+  flat_wf_rev := by
+    intro tid h
+    simp [Std.HashSet.contains_empty] at h
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -58,7 +65,17 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
         rcases hx with h | rfl
         · have := rq.flat_wf x h
           simp [Std.HashSet.contains_insert, this]
-        · simp [Std.HashSet.contains_insert] }
+        · simp [Std.HashSet.contains_insert]
+      flat_wf_rev := by
+        intro x hx
+        have hx0 : tid = x ∨ rq.membership.contains x = true := by
+          simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hx
+        have hx' : x = tid ∨ rq.membership.contains x = true :=
+          hx0.elim (fun h => Or.inl h.symm) Or.inr
+        rcases hx' with rfl | hOld
+        · simp [List.mem_append]
+        · have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hOld
+          simp [List.mem_append, hFlat] }
 
 def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   let prio := rq.threadPriority[tid]?
@@ -84,7 +101,15 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       have ⟨hFlat, hNe⟩ := List.mem_filter.mp hx
       have hXNeTid : x ≠ tid := by simpa using hNe
       have hMem := rq.flat_wf x hFlat
-      simp [Std.HashSet.contains_erase, hMem, Ne.symm hXNeTid] }
+      simp [Std.HashSet.contains_erase, hMem, Ne.symm hXNeTid]
+    flat_wf_rev := by
+      intro x hx
+      have hx' : rq.membership.contains x = true ∧ x ≠ tid := by
+        have hx0 : tid ≠ x ∧ rq.membership.contains x = true := by
+          simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using hx
+        exact ⟨hx0.2, fun hEq => hx0.1 hEq.symm⟩
+      have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx'.1
+      exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩ }
 
 def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
   if hc : rq.contains tid then
@@ -103,7 +128,15 @@ def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
                     simp only [List.mem_append, List.mem_singleton] at hx
                     rcases hx with h | rfl
                     · exact rq.flat_wf x (List.mem_of_mem_erase h)
-                    · exact hc }
+                    · exact hc
+                  flat_wf_rev := by
+                    intro x hx
+                    have hIn : x ∈ rq.flat := rq.flat_wf_rev x hx
+                    by_cases hEq : x = tid
+                    · subst hEq
+                      simp [List.mem_append]
+                    · have hErase : x ∈ rq.flat.erase tid := (List.mem_erase_of_ne hEq).2 hIn
+                      simp [List.mem_append, hEq, hErase] }
             else rq
   else rq
 
@@ -120,7 +153,15 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
           simp only [List.mem_append, List.mem_singleton] at hx
           rcases hx with h | rfl
           · exact rq.flat_wf x (List.mem_of_mem_erase h)
-          · exact hc }
+          · exact hc
+        flat_wf_rev := by
+          intro x hx
+          have hIn : x ∈ rq.flat := rq.flat_wf_rev x hx
+          by_cases hEq : x = tid
+          · subst hEq
+            simp [List.mem_append]
+          · have hErase : x ∈ rq.flat.erase tid := (List.mem_erase_of_ne hEq).2 hIn
+            simp [List.mem_append, hEq, hErase] }
   else rq
 
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat
@@ -168,9 +209,15 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     x ∈ rq.remove tid ↔ x ∈ rq ∧ x ≠ tid := by
   show (rq.remove tid).contains x = true ↔ rq.contains x = true ∧ x ≠ tid
   unfold remove contains
-  simp only [Std.HashSet.contains_erase, Bool.and_eq_true]
-  exact ⟨fun ⟨hne, hx⟩ => ⟨hx, fun heq => by subst heq; simp at hne⟩,
-         fun ⟨hx, hne⟩ => ⟨by simp [Ne.symm hne], hx⟩⟩
+  constructor
+  · intro h
+    have h0 : tid ≠ x ∧ rq.contains x = true := by
+      simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using h
+    exact ⟨h0.2, fun hEq => h0.1 hEq.symm⟩
+  · intro h
+    rcases h with ⟨hx, hne⟩
+    have hne' : tid ≠ x := fun hEq => hne hEq.symm
+    simp [Std.HashSet.contains_erase, hne', hx]
 
 theorem mem_rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
     x ∈ rq.rotateHead tid prio ↔ x ∈ rq := by
@@ -204,6 +251,11 @@ theorem not_mem_toList_of_not_mem (rq : RunQueue) (tid : ThreadId)
   intro hFlat
   have := rq.flat_wf tid hFlat
   exact h (by rw [mem_iff_contains]; exact this)
+
+/-- WS-H6/M-04: Reverse bridge from O(1) membership to flat-list membership. -/
+theorem membership_implies_flat (rq : RunQueue) (tid : ThreadId)
+    (h : tid ∈ rq) : tid ∈ rq.toList := by
+  simpa [toList, mem_iff_contains] using rq.flat_wf_rev tid h
 
 @[simp] theorem toList_empty : (empty : RunQueue).toList = [] := rfl
 
