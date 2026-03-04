@@ -48,7 +48,7 @@ introducing substantial architectural improvements:
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Parameterized N-domain information-flow** framework with two-dimensional confidentiality/integrity labels (beyond seL4's binary partition)
-- **EDF + priority scheduling** with priority-bucketed `RunQueue`, domain-aware partitioning, and inline `maxPriority` tracking
+- **EDF + priority scheduling** with priority-bucketed `RunQueue`, domain-aware partitioning, and inline `maxPriority` tracking, plus bidirectional `membership ↔ flat` consistency (`flat_wf` + `flat_wf_rev`)
 
 ## Current state
 
@@ -221,6 +221,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H6** | v0.12.20-dev | Scheduler proof-surface strengthening slice: RunQueue reverse structural invariant `flat_wf_rev`, theorem `membership_implies_flat`, equivalence lemma `mem_toList_iff_mem`, plus scheduler selection lemmas `isBetterCandidate_transitive` and `bucketFirst_fullScan_equivalence` | H6 (in progress) |
 | **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | H5 |
 | **WS-H4** | v0.12.18 | Capability invariant redesign: `capabilityInvariantBundle` 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity` | H4 |
 | **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
