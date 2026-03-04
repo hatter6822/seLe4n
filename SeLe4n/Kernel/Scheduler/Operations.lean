@@ -74,6 +74,47 @@ theorem isBetterCandidate_asymm
           | zero => simp
           | succ m => simp; omega
 
+/-- WS-H6: transitivity for the strict candidate-preference relation. -/
+theorem isBetterCandidate_transitive
+    (p1 p2 p3 : SeLe4n.Priority) (d1 d2 d3 : SeLe4n.Deadline)
+    (h12 : isBetterCandidate p1 d1 p2 d2 = true)
+    (h23 : isBetterCandidate p2 d2 p3 d3 = true) :
+    isBetterCandidate p1 d1 p3 d3 = true := by
+  unfold isBetterCandidate at h12 h23 ⊢
+  by_cases h31 : p3.toNat > p1.toNat
+  · simp [h31]
+  · have hLe31 : p3.toNat ≤ p1.toNat := Nat.le_of_not_gt h31
+    by_cases h13 : p1.toNat < p3.toNat
+    · omega
+    · have hp12 : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
+        by_cases hp : p2.toNat > p1.toNat
+        · exact Or.inl hp
+        · have : p2.toNat = p1.toNat := by
+            have hp' : ¬(p2.toNat < p1.toNat) := by
+              intro hlt
+              simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h12
+            omega
+          exact Or.inr this
+      have hp23 : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
+        by_cases hp : p3.toNat > p2.toNat
+        · exact Or.inl hp
+        · have : p3.toNat = p2.toNat := by
+            have hp' : ¬(p3.toNat < p2.toNat) := by
+              intro hlt
+              simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h23
+            omega
+          exact Or.inr this
+      have hEqP : p1.toNat = p2.toNat ∧ p2.toNat = p3.toNat := by
+        have hge12 : p2.toNat ≥ p1.toNat := by omega
+        have hge23 : p3.toNat ≥ p2.toNat := by omega
+        have hle13 : p3.toNat ≤ p1.toNat := hLe31
+        omega
+      rcases hEqP with ⟨hEq12, hEq23⟩
+      simp [hEq12, hEq23] at h12 h23 ⊢
+      revert h12 h23
+      cases hd1 : d1.toNat <;> cases hd2 : d2.toNat <;> cases hd3 : d3.toNat <;> simp
+      omega
+
 /-- M-03/WS-E6: Three-level scheduling selection.
 
 Folds over the runnable list accumulating the best candidate using the
@@ -133,6 +174,19 @@ private def chooseBestInBucket
     -- fall back to full-list scan.
     chooseBestRunnableInDomain objects rq.toList activeDomain none
 
+/-- WS-H6: bucket-first candidate selection is definitionally equivalent
+to "scan max bucket then fallback to full scan" semantics. -/
+theorem bucketFirst_fullScan_equivalence
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    chooseBestInBucket objects rq activeDomain =
+      (match chooseBestRunnableInDomain objects rq.maxPriorityBucket activeDomain none with
+       | .error e => .error e
+       | .ok (some result) => .ok (some result)
+       | .ok none => chooseBestRunnableInDomain objects rq.toList activeDomain none) := by
+  rfl
+
 /-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
 
@@ -155,11 +209,10 @@ Failure modes are explicit:
 - malformed runnable entries (non-TCB object IDs) surface as `schedulerInvariantViolation`,
 - selecting a thread not present in runnable also surfaces as `schedulerInvariantViolation`.
 
-**Performance note:** The membership check `tid ∈ st'.scheduler.runnable` resolves to
-`List.Mem tid rq.flat` (O(n)). An O(1) alternative via `tid ∈ st'.scheduler.runQueue`
-(HashSet-backed) is semantically equivalent under the RunQueue structural invariant
-`flat_wf` but would require adding a reverse invariant `flat_wf_rev` and updating
-~15 preservation theorem proofs. Deferred to a future workstream. -/
+**Performance note:** Membership validation uses O(1) HashSet-backed
+`tid ∈ st'.scheduler.runQueue`. WS-H6 also provides a bidirectional bridge
+(`RunQueue.mem_toList_iff_mem`) for any proof obligations phrased over
+`st'.scheduler.runnable` (`rq.toList`). -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
@@ -168,7 +221,7 @@ def schedule : Kernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
+            if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
               setCurrentThread (some tid) st'
             else
               .error .schedulerInvariantViolation
@@ -295,7 +348,7 @@ theorem schedule_eq_chooseThread_then_setCurrent :
           | some tid =>
               match st'.objects[tid.toObjId]? with
               | some (.tcb tcb) =>
-                  if tid ∈ st'.scheduler.runnable ∧ tcb.domain = st'.scheduler.activeDomain then
+                  if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
                     setCurrentThread (some tid) st'
                   else
                     .error .schedulerInvariantViolation
@@ -398,12 +451,16 @@ theorem schedule_preserves_wellFormed
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · simp [hChoose, hObj, hSchedOk] at hStep
                         have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
                           simpa [hChoose, hObj, hSchedOk] using hStep
-                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hSchedOk.1 hSet
-                      · simp [hChoose, hObj, hSchedOk] at hStep
+                        have hMemRunnable : tid ∈ stChoose.scheduler.runnable := by
+                          simpa [SchedulerState.runnable] using (RunQueue.mem_toList_iff_mem stChoose.scheduler.runQueue tid).2 hSchedOk.1
+                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hMemRunnable hSet
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hChoose, hObj, hSchedOk'] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -477,10 +534,12 @@ theorem schedule_preserves_runQueueUnique
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · exact setCurrentThread_preserves_runQueueUnique stChoose st' (some tid) hUniqueChoose (by
                           simpa [hChoose, hObj, hSchedOk] using hStep)
-                      · simp [hChoose, hObj, hSchedOk] at hStep
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hChoose, hObj, hSchedOk'] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -509,11 +568,13 @@ theorem schedule_preserves_currentThreadValid
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · exact setCurrentThread_some_preserves_currentThreadValid stChoose st' tid
                           ⟨tcb, hObj⟩
                           (by simpa [hChoose, hObj, hSchedOk] using hStep)
-                      · simp [hChoose, hObj, hSchedOk] at hStep
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hChoose, hObj, hSchedOk'] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
@@ -584,12 +645,14 @@ theorem schedule_preserves_currentThreadInActiveDomain
               | some obj =>
                   cases obj with
                   | tcb tcb =>
-                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runnable ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
                       · have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
                           simpa [hChoose, hObj, hSchedOk] using hStep
                         cases hSet
                         simp [currentThreadInActiveDomain, hObj, hSchedOk.2]
-                      · simp [hChoose, hObj, hSchedOk] at hStep
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hChoose, hObj, hSchedOk'] at hStep
                   | endpoint ep => simp [hChoose, hObj] at hStep
                   | notification ntfn => simp [hChoose, hObj] at hStep
                   | cnode cn => simp [hChoose, hObj] at hStep
