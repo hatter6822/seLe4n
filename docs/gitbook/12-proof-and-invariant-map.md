@@ -22,7 +22,7 @@ Component level:
 
 Data structure:
 
-- `RunQueue` (`Scheduler/RunQueue.lean`, WS-G4) — priority-bucketed run queue with `flat_wf` structural invariant bridging `Std.HashSet` membership and `flat : List ThreadId`. `chooseBestInBucket` bucket-first scheduling: O(k) max-priority bucket scan with full-list fallback. `remove` computes filtered bucket once for both `byPriority` and `maxPriority` (v0.12.15 refinement). Implicit `membership` ↔ `threadPriority` consistency maintained by insert/remove API (runtime-verified by `runQueueThreadPriorityConsistentB`).
+- `RunQueue` (`Scheduler/RunQueue.lean`, WS-G4/WS-H6) — priority-bucketed run queue with bidirectional structural invariants `flat_wf` and `flat_wf_rev`, plus bridge lemmas `membership_implies_flat` and `mem_toList_iff_mem` between `Std.HashSet` membership and `flat : List ThreadId`. `chooseBestInBucket` bucket-first scheduling: O(k) max-priority bucket scan with full-list fallback. `remove` computes filtered bucket once for both `byPriority` and `maxPriority` (v0.12.15 refinement). Implicit `membership` ↔ `threadPriority` consistency maintained by insert/remove API (runtime-verified by `runQueueThreadPriorityConsistentB`).
 - 13 bridge lemmas: `mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `not_mem_empty`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`.
 
 Bundle level:
@@ -36,6 +36,8 @@ Preservation shape:
 - `handleYield_preserves_*`
 - `timerTick_preserves_schedulerInvariantBundle` (WS-F4 / F-03)
 - `timerTick_preserves_kernelInvariant` (WS-F4 / F-03)
+- `isBetterCandidate_transitive` (WS-H6 / A-17)
+- `bucketFirst_fullScan_equivalence` (WS-H6 / A-17)
 
 ## 3. Capability invariants (M2)
 
