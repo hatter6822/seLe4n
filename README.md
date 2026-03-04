@@ -226,12 +226,15 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 | **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
 | **WS-H2** | v0.12.16 | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | H2 |
 | **WS-H1** | v0.12.16 | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | H1 |
+
 | **WS-G** | v0.12.6–v0.12.15 | Kernel performance: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | G1–G9 + refinement |
 | **WS-F1..F4** | v0.12.2–v0.12.5 | Critical audit remediation: IPC message transfer (14 theorems), untyped memory (watermark tracking), info-flow completeness (15 NI theorems), proof gap closure | F1–F4 |
 | **WS-E** | v0.11.0–v0.11.6 | Test/CI hardening, proof quality, kernel hardening, capability/IPC, info-flow enforcement, completeness | E1–E6 |
 | **WS-D** | v0.11.0 | Test validity, info-flow enforcement, proof gaps, kernel design | D1–D4 |
 | **WS-C** | v0.9.32 | Model structure, documentation, maintainability | C1–C8 |
 | **WS-B** | v0.9.0 | Comprehensive audit (2026-02) | B1–B11 |
+
+**WS-H6 progress note (v0.12.20-dev):** `RunQueue` now carries bidirectional structural consistency (`flat_wf` and `flat_wf_rev`), with theorem `membership_implies_flat` closing the M-04 reverse bridge (`tid ∈ membership → tid ∈ flat`).
 
 Prior audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters
 are archived in [`docs/dev_history/`](docs/dev_history/README.md).
