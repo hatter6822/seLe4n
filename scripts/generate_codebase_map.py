@@ -2,15 +2,18 @@
 """Generate a machine-readable seLe4n codebase map for website consumption.
 
 Outputs JSON with:
-- repository sync metadata (commit SHA + cache key)
+- repository identity metadata
+- source-derived sync metadata (stable across branches/merge commits)
 - every Lean module under SeLe4n/ plus Main/tests
 - declaration inventory (def/theorem/lemma/abbrev/instance/structure/inductive/class)
 
-This lets consumers invalidate stale local caches whenever commit SHA changes.
+This lets consumers invalidate stale local caches whenever Lean declaration
+surface changes, while avoiding branch/merge-only churn.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -40,11 +43,6 @@ class ModuleEntry:
     declarations: list[Decl]
 
 
-def run_git(args: list[str]) -> str:
-    out = subprocess.run(["git", *args], cwd=ROOT, text=True, capture_output=True, check=True)
-    return out.stdout.strip()
-
-
 def module_name(path: Path) -> str:
     rel = path.relative_to(ROOT).with_suffix("")
     return ".".join(rel.parts)
@@ -67,14 +65,58 @@ def lean_files() -> list[Path]:
     return prod + extras + test_files
 
 
+def source_fingerprint(paths: list[Path]) -> str:
+    """Compute a deterministic digest tied to Lean declaration sources only."""
+    digest = hashlib.sha256()
+    for path in paths:
+        rel = path.relative_to(ROOT).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def run_git(args: list[str]) -> str:
+    out = subprocess.run(["git", *args], cwd=ROOT, text=True, capture_output=True, check=True)
+    return out.stdout.strip()
+
+
+def git_head_metadata() -> dict[str, str]:
+    return {
+        "branch": run_git(["rev-parse", "--abbrev-ref", "HEAD"]),
+        "commit_sha": run_git(["rev-parse", "HEAD"]),
+        "tree_sha": run_git(["rev-parse", "HEAD^{tree}"]),
+        "committed_at_utc": run_git(["show", "-s", "--format=%cI", "HEAD"]),
+    }
+
+
+def normalized_for_check(payload: dict) -> dict:
+    """Return the subset that must remain stable for docs-sync checks.
+
+    `repository.head` is intentionally excluded because branch/commit metadata is
+    expected to change across PR branch updates and merge commits.
+    """
+    repository = payload.get("repository", {})
+    normalized_repository = {
+        "name": repository.get("name"),
+        "url": repository.get("url"),
+    }
+    return {
+        "schema_version": payload.get("schema_version"),
+        "repository": normalized_repository,
+        "source_sync": payload.get("source_sync"),
+        "summary": payload.get("summary"),
+        "modules": payload.get("modules"),
+    }
+
+
 def build_map() -> dict:
-    commit_sha = run_git(["rev-parse", "HEAD"])
-    tree_sha = run_git(["rev-parse", "HEAD^{tree}"])
-    branch = run_git(["rev-parse", "--abbrev-ref", "HEAD"])
-    committed_at_utc = run_git(["show", "-s", "--format=%cI", "HEAD"])
+    paths = lean_files()
+    source_digest = source_fingerprint(paths)
 
     modules: list[ModuleEntry] = []
-    for path in lean_files():
+    for path in paths:
         modules.append(
             ModuleEntry(
                 module=module_name(path),
@@ -89,12 +131,14 @@ def build_map() -> dict:
         "repository": {
             "name": "hatter6822/seLe4n",
             "url": "https://github.com/hatter6822/seLe4n",
-            "branch": branch,
-            "commit_sha": commit_sha,
-            "tree_sha": tree_sha,
-            "cache_key": f"{commit_sha}:{tree_sha}",
+            "head": git_head_metadata(),
         },
-        "committed_at_utc": committed_at_utc,
+        "source_sync": {
+            "scope": ["SeLe4n/**/*.lean", "Main.lean", "tests/**/*.lean"],
+            "digest_algorithm": "sha256",
+            "source_digest": source_digest,
+            "cache_key": source_digest,
+        },
         "summary": {
             "module_count": len(modules),
             "declaration_count": decl_total,
@@ -135,7 +179,16 @@ def main() -> int:
     rendered = render_json(payload, pretty=args.pretty)
 
     if args.check:
-        if not output.exists() or output.read_text(encoding="utf-8") != rendered:
+        if not output.exists():
+            print(
+                f"{output.relative_to(ROOT)} is stale. Regenerate with: "
+                f"./scripts/generate_codebase_map.py {'--pretty ' if args.pretty else ''}--output {args.output}",
+                file=sys.stderr,
+            )
+            return 1
+
+        existing_payload = json.loads(output.read_text(encoding="utf-8"))
+        if normalized_for_check(existing_payload) != normalized_for_check(payload):
             print(
                 f"{output.relative_to(ROOT)} is stale. Regenerate with: "
                 f"./scripts/generate_codebase_map.py {'--pretty ' if args.pretty else ''}--output {args.output}",
