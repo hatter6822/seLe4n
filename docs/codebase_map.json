@@ -3,12 +3,23 @@
   "repository": {
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
-    "branch": "main",
-    "commit_sha": "a33017e7561ce0dfa055281c15fddcf9fce35b42",
-    "tree_sha": "1745aa13aee809dbf6b8ab1c2922af291b486f9e",
-    "cache_key": "a33017e7561ce0dfa055281c15fddcf9fce35b42:1745aa13aee809dbf6b8ab1c2922af291b486f9e"
+    "head": {
+      "branch": "work",
+      "commit_sha": "e9de70e8f78a1a46eac61fb53377426492db06ec",
+      "tree_sha": "0e498221b0aa1a3fc426aad41912acd5631c7ec7",
+      "committed_at_utc": "2026-03-05T21:37:10+00:00"
+    }
   },
-  "committed_at_utc": "2026-03-04T23:21:22-05:00",
+  "source_sync": {
+    "scope": [
+      "SeLe4n/**/*.lean",
+      "Main.lean",
+      "tests/**/*.lean"
+    ],
+    "digest_algorithm": "sha256",
+    "source_digest": "97d278ef9f7a3f3b2c9ce10cbe8724291e748f34ea35e273ed32e99ade2e2a0f",
+    "cache_key": "97d278ef9f7a3f3b2c9ce10cbe8724291e748f34ea35e273ed32e99ade2e2a0f"
+  },
   "summary": {
     "module_count": 43,
     "declaration_count": 1363

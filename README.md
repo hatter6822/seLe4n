@@ -117,9 +117,12 @@ Validate that the committed file is in sync without writing:
 ./scripts/generate_codebase_map.py --pretty --check
 ```
 
-`docs/codebase_map.json` is also auto-refreshed on every merge to `main` by
-`.github/workflows/codebase_map_sync.yml`, ensuring website cache metadata stays
-current even when a PR omits manual regeneration.
+`docs/codebase_map.json` carries both: a deterministic `source_sync.source_digest`
+(sha256 over Lean source paths + contents) and volatile `repository.head` git
+metadata for observability. `--check` compares only the stable declaration-surface
+subset, so it is branch/merge-robust and fails only when Lean inputs drift.
+The post-merge `.github/workflows/codebase_map_sync.yml` job remains as a
+backstop for drift.
 
 ## Architecture
 
