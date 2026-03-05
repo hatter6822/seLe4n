@@ -29,14 +29,17 @@ jobs:
 
       - name: Restore Lean and Lake caches
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        env:
+          # ARM runners frequently time out while restoring very large .lake/build archives.
+          # Extend per-segment timeout to reduce transient "The operation was canceled" cache failures.
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '30'
         with:
           path: |
             ~/.elan
             .lake/packages
-            .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-nobuild-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-lean-
+            ${{ runner.os }}-${{ runner.arch }}-lean-nobuild-
 
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
