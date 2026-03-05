@@ -14,6 +14,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -25,14 +26,14 @@ DECL_RE = re.compile(
 )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class Decl:
     kind: str
     name: str
     line: int
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ModuleEntry:
     module: str
     path: str
@@ -51,17 +52,19 @@ def module_name(path: Path) -> str:
 
 def parse_declarations(path: Path) -> list[Decl]:
     decls: list[Decl] = []
-    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        m = DECL_RE.match(line)
-        if m:
-            decls.append(Decl(kind=m.group("kind"), name=m.group("name"), line=i))
+    with path.open(encoding="utf-8") as handle:
+        for i, line in enumerate(handle, start=1):
+            m = DECL_RE.match(line)
+            if m:
+                decls.append(Decl(kind=m.group("kind"), name=m.group("name"), line=i))
     return decls
 
 
 def lean_files() -> list[Path]:
     prod = sorted((ROOT / "SeLe4n").rglob("*.lean"))
-    extras = [ROOT / "Main.lean"] + sorted((ROOT / "tests").rglob("*.lean"))
-    return prod + extras
+    test_files = sorted((ROOT / "tests").rglob("*.lean"))
+    extras = [ROOT / "Main.lean"] if (ROOT / "Main.lean").exists() else []
+    return prod + extras + test_files
 
 
 def build_map() -> dict:
@@ -108,7 +111,11 @@ def build_map() -> dict:
     }
 
 
-def main() -> None:
+def render_json(payload: dict, pretty: bool) -> str:
+    return json.dumps(payload, indent=2 if pretty else None, ensure_ascii=False) + "\n"
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
@@ -116,16 +123,31 @@ def main() -> None:
         help="Output JSON path relative to repository root (default: docs/codebase_map.json)",
     )
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Fail if output file is out of date instead of writing it",
+    )
     args = parser.parse_args()
 
     payload = build_map()
     output = ROOT / args.output
+    rendered = render_json(payload, pretty=args.pretty)
+
+    if args.check:
+        if not output.exists() or output.read_text(encoding="utf-8") != rendered:
+            print(
+                f"{output.relative_to(ROOT)} is stale. Regenerate with: "
+                f"./scripts/generate_codebase_map.py {'--pretty ' if args.pretty else ''}--output {args.output}",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(payload, indent=2 if args.pretty else None, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    output.write_text(rendered, encoding="utf-8")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -155,9 +155,13 @@ Lean toolchain, production/test LoC, theorem+lemma count, build jobs, active
 findings/audit references, and completed/next workstream status.
 
 For website codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
-whenever Lean module/declaration surfaces change. The generated `docs/codebase_map.json`
-contains `repository.commit_sha` and `repository.cache_key`; website clients should
-invalidate local cache entries when either value changes.
+whenever Lean module/declaration surfaces change, then validate with
+`./scripts/generate_codebase_map.py --pretty --check`. The generated
+`docs/codebase_map.json` contains `repository.commit_sha` and
+`repository.cache_key`; website clients should invalidate local cache entries
+when either value changes. Post-merge enforcement runs in
+`.github/workflows/codebase_map_sync.yml`, which auto-regenerates and commits
+the map on `main` when drift is detected.
 
 ---
 
