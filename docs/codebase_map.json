@@ -1,0 +1,7134 @@
+{
+  "schema_version": "1.0.0",
+  "repository": {
+    "name": "hatter6822/seLe4n",
+    "url": "https://github.com/hatter6822/seLe4n",
+    "branch": "work",
+    "commit_sha": "496af43f72554e79b7afbd9cddc857efdcf3373b",
+    "tree_sha": "56f6dccd44629d5ff8aa29a8d2e0f7fea402abc3",
+    "cache_key": "496af43f72554e79b7afbd9cddc857efdcf3373b:56f6dccd44629d5ff8aa29a8d2e0f7fea402abc3"
+  },
+  "committed_at_utc": "2026-03-04T16:56:54-05:00",
+  "summary": {
+    "module_count": 43,
+    "declaration_count": 1363
+  },
+  "modules": [
+    {
+      "module": "SeLe4n.Kernel.API",
+      "path": "SeLe4n/Kernel/API.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "abbrev",
+          "name": "apiInvariantBundle",
+          "line": 69
+        },
+        {
+          "kind": "theorem",
+          "name": "apiInvariantBundle_default",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.Adapter",
+      "path": "SeLe4n/Kernel/Architecture/Adapter.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "AdapterErrorKind",
+          "line": 8
+        },
+        {
+          "kind": "def",
+          "name": "mapAdapterError",
+          "line": 14
+        },
+        {
+          "kind": "def",
+          "name": "advanceTimerState",
+          "line": 19
+        },
+        {
+          "kind": "def",
+          "name": "writeRegisterState",
+          "line": 23
+        },
+        {
+          "kind": "def",
+          "name": "adapterAdvanceTimer",
+          "line": 27
+        },
+        {
+          "kind": "def",
+          "name": "adapterWriteRegister",
+          "line": 40
+        },
+        {
+          "kind": "def",
+          "name": "adapterReadMemory",
+          "line": 54
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_error_invalidContext",
+          "line": 65
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_error_unsupportedBinding",
+          "line": 71
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterWriteRegister_error_unsupportedBinding",
+          "line": 80
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterReadMemory_error_unsupportedBinding",
+          "line": 89
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterReadMemory_ok_returns_machine_byte",
+          "line": 97
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_deterministic",
+          "line": 110
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.Assumptions",
+      "path": "SeLe4n/Kernel/Architecture/Assumptions.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "ArchAssumption",
+          "line": 8
+        },
+        {
+          "kind": "inductive",
+          "name": "TransitionSurface",
+          "line": 17
+        },
+        {
+          "kind": "inductive",
+          "name": "InvariantSurface",
+          "line": 28
+        },
+        {
+          "kind": "structure",
+          "name": "BootBoundaryContract",
+          "line": 38
+        },
+        {
+          "kind": "structure",
+          "name": "RuntimeBoundaryContract",
+          "line": 43
+        },
+        {
+          "kind": "structure",
+          "name": "InterruptBoundaryContract",
+          "line": 52
+        },
+        {
+          "kind": "inductive",
+          "name": "ContractRef",
+          "line": 57
+        },
+        {
+          "kind": "def",
+          "name": "assumptionContractMap",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "assumptionTransitionMap",
+          "line": 76
+        },
+        {
+          "kind": "def",
+          "name": "assumptionInvariantMap",
+          "line": 84
+        },
+        {
+          "kind": "def",
+          "name": "assumptionInventory",
+          "line": 92
+        },
+        {
+          "kind": "def",
+          "name": "assumptionInventoryComplete",
+          "line": 101
+        },
+        {
+          "kind": "theorem",
+          "name": "assumptionInventoryComplete_holds",
+          "line": 104
+        },
+        {
+          "kind": "theorem",
+          "name": "assumptionContractMap_nonempty",
+          "line": 109
+        },
+        {
+          "kind": "theorem",
+          "name": "assumptionTransitionMap_nonempty",
+          "line": 113
+        },
+        {
+          "kind": "theorem",
+          "name": "assumptionInvariantMap_nonempty",
+          "line": 117
+        },
+        {
+          "kind": "inductive",
+          "name": "ExceptionLevel",
+          "line": 152
+        },
+        {
+          "kind": "structure",
+          "name": "ExtendedBootBoundaryContract",
+          "line": 171
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.Invariant",
+      "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
+      "declaration_count": 20,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "proofLayerInvariantBundle",
+          "line": 40
+        },
+        {
+          "kind": "structure",
+          "name": "AdapterProofHooks",
+          "line": 50
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
+          "line": 68
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
+          "line": 90
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
+          "line": 108
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle",
+          "line": 127
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
+          "line": 135
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
+          "line": 146
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
+          "line": 157
+        },
+        {
+          "kind": "theorem",
+          "name": "advanceTimerState_preserves_vspaceInvariantBundle",
+          "line": 169
+        },
+        {
+          "kind": "theorem",
+          "name": "writeRegisterState_preserves_vspaceInvariantBundle",
+          "line": 178
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariantBundle",
+          "line": 194
+        },
+        {
+          "kind": "theorem",
+          "name": "default_ipcInvariant",
+          "line": 206
+        },
+        {
+          "kind": "theorem",
+          "name": "default_lifecycleInvariantBundle",
+          "line": 212
+        },
+        {
+          "kind": "theorem",
+          "name": "default_ipcSchedulerContractPredicates",
+          "line": 216
+        },
+        {
+          "kind": "theorem",
+          "name": "default_capabilityInvariantBundle",
+          "line": 229
+        },
+        {
+          "kind": "theorem",
+          "name": "default_system_state_proofLayerInvariantBundle",
+          "line": 239
+        },
+        {
+          "kind": "theorem",
+          "name": "deterministicTimerProgress_consumed_by_advanceTimer",
+          "line": 293
+        },
+        {
+          "kind": "theorem",
+          "name": "deterministicRegisterContext_consumed_by_writeRegister",
+          "line": 306
+        },
+        {
+          "kind": "theorem",
+          "name": "memoryAccessSafety_consumed_by_readMemory",
+          "line": 319
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.VSpace",
+      "path": "SeLe4n/Kernel/Architecture/VSpace.lean",
+      "declaration_count": 9,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "asidBoundToRoot",
+          "line": 17
+        },
+        {
+          "kind": "def",
+          "name": "resolveAsidRoot",
+          "line": 22
+        },
+        {
+          "kind": "def",
+          "name": "vspaceMapPage",
+          "line": 31
+        },
+        {
+          "kind": "def",
+          "name": "vspaceUnmapPage",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "vspaceLookup",
+          "line": 53
+        },
+        {
+          "kind": "def",
+          "name": "vspaceAsidRootsUnique",
+          "line": 67
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveAsidRoot_some_implies_obj",
+          "line": 76
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveAsidRoot_of_asidTable_entry",
+          "line": 113
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_objectIndex_eq_of_mem",
+          "line": 129
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.VSpaceBackend",
+      "path": "SeLe4n/Kernel/Architecture/VSpaceBackend.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "VSpaceBackend",
+          "line": 61
+        },
+        {
+          "kind": "instance",
+          "name": "hashMapVSpaceBackend",
+          "line": 117
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.VSpaceInvariant",
+      "path": "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "vspaceRootNonOverlap",
+          "line": 38
+        },
+        {
+          "kind": "def",
+          "name": "asidTableConsistent",
+          "line": 48
+        },
+        {
+          "kind": "def",
+          "name": "boundedAddressTranslation",
+          "line": 61
+        },
+        {
+          "kind": "def",
+          "name": "vspaceInvariantBundle",
+          "line": 68
+        },
+        {
+          "kind": "theorem",
+          "name": "asidTableConsistent_of_storeObject_vspaceRoot",
+          "line": 78
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_error_asidNotBound_preserves_vspaceInvariantBundle",
+          "line": 148
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle",
+          "line": 158
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_success_preserves_vspaceInvariantBundle",
+          "line": 179
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_success_preserves_vspaceInvariantBundle",
+          "line": 248
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceLookup_after_map",
+          "line": 318
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceLookup_map_other",
+          "line": 354
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceLookup_after_unmap",
+          "line": 391
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceLookup_unmap_other",
+          "line": 426
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Capability.Invariant",
+      "path": "SeLe4n/Kernel/Capability/Invariant.lean",
+      "declaration_count": 110,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "cspaceSlotUnique",
+          "line": 84
+        },
+        {
+          "kind": "def",
+          "name": "cspaceLookupSound",
+          "line": 95
+        },
+        {
+          "kind": "def",
+          "name": "cspaceAttenuationRule",
+          "line": 102
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleAuthorityMonotonicity",
+          "line": 114
+        },
+        {
+          "kind": "def",
+          "name": "cspaceSlotCountBounded",
+          "line": 133
+        },
+        {
+          "kind": "def",
+          "name": "cdtCompleteness",
+          "line": 149
+        },
+        {
+          "kind": "def",
+          "name": "cdtAcyclicity",
+          "line": 157
+        },
+        {
+          "kind": "def",
+          "name": "capabilityInvariantBundle",
+          "line": 181
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityStaleAuthorityInvariant",
+          "line": 188
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleCapabilityStaleAuthorityInvariant_of_bundles",
+          "line": 191
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_capabilityInvariantBundle",
+          "line": 203
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtCompleteness_of_capabilityInvariantBundle",
+          "line": 207
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAcyclicity_of_capabilityInvariantBundle",
+          "line": 211
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_storeObject_nonCNode",
+          "line": 221
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_storeObject_cnode",
+          "line": 241
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_objects_eq",
+          "line": 258
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtCompleteness_of_objects_nodeSlot_eq",
+          "line": 268
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtCompleteness_of_storeObject",
+          "line": 281
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAcyclicity_of_cdt_eq",
+          "line": 295
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_cdtNodeSlot_eq",
+          "line": 305
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_storeTcbIpcState",
+          "line": 314
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_cdt_eq",
+          "line": 325
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_cdt_eq",
+          "line": 344
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_cdt_eq",
+          "line": 364
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_cdt_eq",
+          "line": 373
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefs_cdt_eq",
+          "line": 386
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_of_storeObject",
+          "line": 396
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_of_objects_cdt_eq",
+          "line": 411
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtCompleteness_of_detachSlotFromCdt",
+          "line": 426
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAcyclicity_of_detachSlotFromCdt",
+          "line": 442
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotCountBounded_of_detachSlotFromCdt",
+          "line": 453
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_of_detachSlotFromCdt",
+          "line": 461
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_bounded_comp_of_cdt_only_update",
+          "line": 474
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_through_blocking_path",
+          "line": 484
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_through_handshake_path",
+          "line": 526
+        },
+        {
+          "kind": "theorem",
+          "name": "wsH4_through_reply_path",
+          "line": 574
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot_authority_reduction",
+          "line": 625
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_local_target_reduction",
+          "line": 648
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_preserves_state",
+          "line": 733
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_lookup_eq",
+          "line": 750
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_establishes_ownsSlot",
+          "line": 775
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot_lookup_eq_none",
+          "line": 785
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_preserves_source",
+          "line": 807
+        },
+        {
+          "kind": "theorem",
+          "name": "mintDerivedCap_attenuates",
+          "line": 869
+        },
+        {
+          "kind": "theorem",
+          "name": "mintDerivedCap_rights_attenuated_with_badge_override",
+          "line": 893
+        },
+        {
+          "kind": "theorem",
+          "name": "mintDerivedCap_target_preserved_with_badge_override",
+          "line": 909
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_child_attenuates",
+          "line": 918
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_badge_override_safe",
+          "line": 952
+        },
+        {
+          "kind": "theorem",
+          "name": "mintDerivedCap_badge_propagated",
+          "line": 973
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_child_badge_preserved",
+          "line": 985
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_badge_stored_fresh",
+          "line": 1015
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_recovers_pending_badge",
+          "line": 1034
+        },
+        {
+          "kind": "theorem",
+          "name": "badge_notification_routing_consistent",
+          "line": 1099
+        },
+        {
+          "kind": "theorem",
+          "name": "badge_merge_idempotent",
+          "line": 1126
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSound_of_cspaceSlotUnique",
+          "line": 1140
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_of_storeObject_nonCNode",
+          "line": 1151
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_of_storeObject_cnode",
+          "line": 1170
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_of_endpoint_store",
+          "line": 1188
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_of_objects_eq",
+          "line": 1197
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceAttenuationRule_holds",
+          "line": 1205
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleAuthorityMonotonicity_holds",
+          "line": 1211
+        },
+        {
+          "kind": "theorem",
+          "name": "capabilityInvariantBundle_of_slotUnique",
+          "line": 1223
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_preserves_capabilityInvariantBundle",
+          "line": 1233
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_capabilityInvariantBundle",
+          "line": 1247
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_preserves_capabilityInvariantBundle",
+          "line": 1323
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
+          "line": 1351
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_preserves_capabilityInvariantBundle",
+          "line": 1435
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceCopy_preserves_capabilityInvariantBundle",
+          "line": 1520
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMove_preserves_capabilityInvariantBundle",
+          "line": 1565
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintWithCdt_preserves_capabilityInvariantBundle",
+          "line": 1614
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMutate_preserves_capabilityInvariantBundle",
+          "line": 1658
+        },
+        {
+          "kind": "theorem",
+          "name": "capabilityInvariantBundle_of_cdt_update",
+          "line": 1763
+        },
+        {
+          "kind": "def",
+          "name": "revokeCdtFoldBody",
+          "line": 1775
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeCdtFoldBody_preserves",
+          "line": 1791
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeCdtFoldBody_error",
+          "line": 1827
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeCdtFoldBody_foldl_error",
+          "line": 1832
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeCdtFold_preserves",
+          "line": 1840
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevokeCdt_preserves_capabilityInvariantBundle",
+          "line": 1862
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle",
+          "line": 1884
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_capabilityInvariantBundle",
+          "line": 1980
+        },
+        {
+          "kind": "def",
+          "name": "coreIpcInvariantBundle",
+          "line": 2054
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerRunnableReadyComponent",
+          "line": 2058
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerBlockedSendComponent",
+          "line": 2062
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerBlockedReceiveComponent",
+          "line": 2066
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerBlockedCallComponent",
+          "line": 2070
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerBlockedReplyComponent",
+          "line": 2074
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerCoherenceComponent",
+          "line": 2078
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
+          "line": 2085
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerCouplingInvariantBundle",
+          "line": 2092
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCompositionInvariantBundle",
+          "line": 2097
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
+          "line": 2100
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
+          "line": 2119
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_ipcInvariant",
+          "line": 2164
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
+          "line": 2209
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
+          "line": 2230
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
+          "line": 2255
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
+          "line": 2274
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
+          "line": 2302
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_of_storeTcbIpcState",
+          "line": 2315
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_through_blocking_path",
+          "line": 2334
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceSlotUnique_through_handshake_path",
+          "line": 2347
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_capabilityInvariantBundle",
+          "line": 2362
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_capabilityInvariantBundle",
+          "line": 2416
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_capabilityInvariantBundle",
+          "line": 2446
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_coreIpcInvariantBundle",
+          "line": 2481
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_coreIpcInvariantBundle",
+          "line": 2494
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_coreIpcInvariantBundle",
+          "line": 2507
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_ipcSchedulerCouplingInvariantBundle",
+          "line": 2520
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_ipcSchedulerCouplingInvariantBundle",
+          "line": 2535
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_ipcSchedulerCouplingInvariantBundle",
+          "line": 2550
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Capability.Operations",
+      "path": "SeLe4n/Kernel/Capability/Operations.lean",
+      "declaration_count": 28,
+      "declarations": [
+        {
+          "kind": "abbrev",
+          "name": "CSpaceAddr",
+          "line": 8
+        },
+        {
+          "kind": "structure",
+          "name": "CSpacePathAddr",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "capAttenuates",
+          "line": 21
+        },
+        {
+          "kind": "def",
+          "name": "cspaceLookupSlot",
+          "line": 25
+        },
+        {
+          "kind": "def",
+          "name": "cspaceResolvePath",
+          "line": 35
+        },
+        {
+          "kind": "def",
+          "name": "cspaceLookupPath",
+          "line": 46
+        },
+        {
+          "kind": "def",
+          "name": "cspaceInsertSlot",
+          "line": 57
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_scheduler",
+          "line": 70
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_services",
+          "line": 99
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_objects_ne",
+          "line": 126
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_irqHandlers",
+          "line": 156
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_rejects_occupied_slot",
+          "line": 182
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_ok_iff_lookupSlotCap",
+          "line": 191
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_ok_implies_ownsSlot",
+          "line": 215
+        },
+        {
+          "kind": "def",
+          "name": "rightsSubset",
+          "line": 226
+        },
+        {
+          "kind": "theorem",
+          "name": "rightsSubset_sound",
+          "line": 229
+        },
+        {
+          "kind": "def",
+          "name": "mintDerivedCap",
+          "line": 239
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMint",
+          "line": 247
+        },
+        {
+          "kind": "def",
+          "name": "cspaceDeleteSlot",
+          "line": 260
+        },
+        {
+          "kind": "def",
+          "name": "cspaceRevoke",
+          "line": 280
+        },
+        {
+          "kind": "def",
+          "name": "cspaceCopy",
+          "line": 308
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMove",
+          "line": 326
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMutate",
+          "line": 349
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMintWithCdt",
+          "line": 373
+        },
+        {
+          "kind": "def",
+          "name": "cspaceRevokeCdt",
+          "line": 396
+        },
+        {
+          "kind": "structure",
+          "name": "RevokeCdtStrictFailure",
+          "line": 427
+        },
+        {
+          "kind": "structure",
+          "name": "RevokeCdtStrictReport",
+          "line": 437
+        },
+        {
+          "kind": "def",
+          "name": "cspaceRevokeCdtStrict",
+          "line": 452
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.DualQueue",
+      "path": "SeLe4n/Kernel/IPC/DualQueue.lean",
+      "declaration_count": 31,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "tcbWithQueueLinks",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "storeTcbQueueLinks",
+          "line": 18
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_preserves_objects_ne",
+          "line": 32
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_scheduler_eq",
+          "line": 51
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_endpoint_backward",
+          "line": 69
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_notification_backward",
+          "line": 91
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_tcb_ipcState_backward",
+          "line": 115
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_tcb_forward",
+          "line": 144
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueuePopHead",
+          "line": 164
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueueEnqueue",
+          "line": 202
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_scheduler_eq",
+          "line": 245
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_endpoint_backward_ne",
+          "line": 297
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_notification_backward",
+          "line": 351
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_tcb_forward",
+          "line": 409
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_tcb_ipcState_backward",
+          "line": 466
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_scheduler_eq",
+          "line": 531
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_endpoint_backward_ne",
+          "line": 580
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_notification_backward",
+          "line": 631
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_tcb_forward",
+          "line": 686
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_tcb_ipcState_backward",
+          "line": 738
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueueRemoveDual",
+          "line": 796
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_scheduler_eq",
+          "line": 876
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_tcb_forward",
+          "line": 999
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_endpoint_backward_ne",
+          "line": 1129
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_notification_backward",
+          "line": 1249
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_tcb_ipcState_backward",
+          "line": 1378
+        },
+        {
+          "kind": "def",
+          "name": "endpointSendDual",
+          "line": 1522
+        },
+        {
+          "kind": "def",
+          "name": "endpointReceiveDual",
+          "line": 1563
+        },
+        {
+          "kind": "def",
+          "name": "endpointCall",
+          "line": 1622
+        },
+        {
+          "kind": "def",
+          "name": "endpointReply",
+          "line": 1661
+        },
+        {
+          "kind": "def",
+          "name": "endpointReplyRecv",
+          "line": 1686
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant",
+      "path": "SeLe4n/Kernel/IPC/Invariant.lean",
+      "declaration_count": 141,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "storeObject_objects_eq",
+          "line": 23
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_objects_ne",
+          "line": 29
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_scheduler_eq",
+          "line": 38
+        },
+        {
+          "kind": "theorem",
+          "name": "tcb_lookup_of_endpoint_store",
+          "line": 44
+        },
+        {
+          "kind": "theorem",
+          "name": "runnable_membership_of_endpoint_store",
+          "line": 53
+        },
+        {
+          "kind": "theorem",
+          "name": "not_runnable_membership_of_endpoint_store",
+          "line": 60
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueueWellFormed",
+          "line": 71
+        },
+        {
+          "kind": "def",
+          "name": "endpointObjectValid",
+          "line": 77
+        },
+        {
+          "kind": "def",
+          "name": "endpointInvariant",
+          "line": 82
+        },
+        {
+          "kind": "def",
+          "name": "notificationQueueWellFormed",
+          "line": 85
+        },
+        {
+          "kind": "def",
+          "name": "notificationInvariant",
+          "line": 91
+        },
+        {
+          "kind": "def",
+          "name": "intrusiveQueueWellFormed",
+          "line": 117
+        },
+        {
+          "kind": "def",
+          "name": "tcbQueueLinkIntegrity",
+          "line": 131
+        },
+        {
+          "kind": "def",
+          "name": "dualQueueEndpointWellFormed",
+          "line": 147
+        },
+        {
+          "kind": "def",
+          "name": "dualQueueSystemInvariant",
+          "line": 158
+        },
+        {
+          "kind": "def",
+          "name": "ipcInvariant",
+          "line": 164
+        },
+        {
+          "kind": "def",
+          "name": "ipcInvariantFull",
+          "line": 170
+        },
+        {
+          "kind": "def",
+          "name": "runnableThreadIpcReady",
+          "line": 177
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnSendNotRunnable",
+          "line": 181
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnReceiveNotRunnable",
+          "line": 186
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnCallNotRunnable",
+          "line": 192
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnReplyNotRunnable",
+          "line": 198
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerContractPredicates",
+          "line": 203
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointObjectValid_of_queueWellFormed",
+          "line": 212
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_ok_implies_endpoint_object",
+          "line": 219
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_ok_implies_endpoint_object",
+          "line": 230
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_ok_implies_endpoint_object",
+          "line": 241
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_result_wellFormed",
+          "line": 257
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_result_wellFormed",
+          "line": 312
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_result_wellFormed",
+          "line": 339
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_cnode",
+          "line": 381
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_cnode",
+          "line": 441
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_cnode",
+          "line": 470
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_other_endpoint",
+          "line": 512
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_notification",
+          "line": 567
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_ipcInvariant",
+          "line": 628
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_ipcInvariant",
+          "line": 644
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_other_endpoint",
+          "line": 703
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_notification",
+          "line": 736
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_ipcInvariant",
+          "line": 770
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduler_unchanged_through_store_tcb",
+          "line": 792
+        },
+        {
+          "kind": "theorem",
+          "name": "tcb_preserved_through_endpoint_store",
+          "line": 802
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_schedulerInvariantBundle",
+          "line": 812
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_schedulerInvariantBundle",
+          "line": 965
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_schedulerInvariantBundle",
+          "line": 1026
+        },
+        {
+          "kind": "theorem",
+          "name": "tcb_transport_backward",
+          "line": 1098
+        },
+        {
+          "kind": "theorem",
+          "name": "blocking_path_preserves_contracts",
+          "line": 1113
+        },
+        {
+          "kind": "theorem",
+          "name": "handshake_path_preserves_contracts",
+          "line": 1189
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_ipcSchedulerContractPredicates",
+          "line": 1283
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_ipcSchedulerContractPredicates",
+          "line": 1331
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_ipcSchedulerContractPredicates",
+          "line": 1357
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_runnableThreadIpcReady",
+          "line": 1393
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_blockedOnSendNotRunnable",
+          "line": 1403
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_blockedOnReceiveNotRunnable",
+          "line": 1413
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_runnableThreadIpcReady",
+          "line": 1423
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_blockedOnSendNotRunnable",
+          "line": 1433
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable",
+          "line": 1443
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_runnableThreadIpcReady",
+          "line": 1453
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_blockedOnSendNotRunnable",
+          "line": 1463
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceive_preserves_blockedOnReceiveNotRunnable",
+          "line": 1473
+        },
+        {
+          "kind": "def",
+          "name": "notificationWaiterConsistent",
+          "line": 1490
+        },
+        {
+          "kind": "theorem",
+          "name": "not_mem_waitingThreads_of_ipcState_ne",
+          "line": 1499
+        },
+        {
+          "kind": "def",
+          "name": "uniqueWaiters",
+          "line": 1516
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_uniqueWaiters",
+          "line": 1522
+        },
+        {
+          "kind": "theorem",
+          "name": "default_notificationWaiterConsistent",
+          "line": 1622
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_result_wellFormed_wake",
+          "line": 1671
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_result_wellFormed_merge",
+          "line": 1683
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_result_wellFormed_badge",
+          "line": 1693
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_result_wellFormed_wait",
+          "line": 1700
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_schedulerInvariantBundle",
+          "line": 1717
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcInvariant",
+          "line": 1818
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduler_unchanged_through_store_tcb_msg",
+          "line": 1886
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_preserves_ipcInvariant",
+          "line": 1931
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_preserves_ipcInvariant",
+          "line": 1942
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_ipcInvariant",
+          "line": 1963
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_ipcInvariant",
+          "line": 1972
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_ipcInvariant",
+          "line": 1981
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_ipcInvariant",
+          "line": 1992
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_preserves_ipcInvariant",
+          "line": 2060
+        },
+        {
+          "kind": "theorem",
+          "name": "contracts_of_same_scheduler_ipcState",
+          "line": 2129
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_ipcInvariant",
+          "line": 2168
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_schedulerInvariantBundle",
+          "line": 2216
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_ipcSchedulerContractPredicates",
+          "line": 2318
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_ipcInvariant",
+          "line": 2480
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_schedulerInvariantBundle",
+          "line": 2571
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_ipcSchedulerContractPredicates",
+          "line": 2773
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_ipcInvariant",
+          "line": 3083
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_schedulerInvariantBundle",
+          "line": 3212
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates",
+          "line": 3236
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_ipcInvariant",
+          "line": 3261
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_schedulerInvariantBundle",
+          "line": 3318
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_ipcSchedulerContractPredicates",
+          "line": 3445
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_blocked_stays_blocked",
+          "line": 3638
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_ipcInvariant",
+          "line": 3684
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_schedulerInvariantBundle",
+          "line": 3749
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_ipcSchedulerContractPredicates",
+          "line": 3861
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcSchedulerContractPredicates",
+          "line": 4040
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_notification_preserves_ipcInvariant",
+          "line": 4156
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcInvariant",
+          "line": 4179
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_schedulerInvariantBundle",
+          "line": 4223
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcInvariant",
+          "line": 4313
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_schedulerInvariantBundle",
+          "line": 4379
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcSchedulerContractPredicates",
+          "line": 4501
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcSchedulerContractPredicates",
+          "line": 4647
+        },
+        {
+          "kind": "theorem",
+          "name": "intrusiveQueueWellFormed_empty",
+          "line": 4891
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueLinkIntegrity_initial",
+          "line": 4896
+        },
+        {
+          "kind": "theorem",
+          "name": "dualQueueEndpointWellFormed_empty_endpoint",
+          "line": 4906
+        },
+        {
+          "kind": "theorem",
+          "name": "dualQueueEndpointWellFormed_non_endpoint",
+          "line": 4915
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueLink_forward_safe",
+          "line": 4930
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueLink_reverse_safe",
+          "line": 4939
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_sender_exists",
+          "line": 4948
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_sender_exists",
+          "line": 4958
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_link_safe",
+          "line": 4969
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_intrusiveQueueWellFormed",
+          "line": 4983
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_intrusiveQueueWellFormed",
+          "line": 4993
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_tcbQueueLinkIntegrity",
+          "line": 5003
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_tcbQueueLinkIntegrity",
+          "line": 5015
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_dualQueueEndpointWellFormed",
+          "line": 5027
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_dualQueueEndpointWellFormed",
+          "line": 5042
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_dualQueueSystemInvariant",
+          "line": 5057
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_dualQueueSystemInvariant",
+          "line": 5067
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_tcb_preserves_intrusiveQueueWellFormed",
+          "line": 5085
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_tcb_preserves_tcbQueueLinkIntegrity",
+          "line": 5112
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_preserves_tcbQueueLinkIntegrity",
+          "line": 5160
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_preserves_intrusiveQueueWellFormed",
+          "line": 5180
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_dualQueueSystemInvariant",
+          "line": 5199
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
+          "line": 5242
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_dualQueueSystemInvariant",
+          "line": 5286
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_dualQueueSystemInvariant",
+          "line": 5337
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAwaitReceive_preserves_dualQueueSystemInvariant",
+          "line": 5378
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_dualQueueSystemInvariant",
+          "line": 5440
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_result_tcb",
+          "line": 5484
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_preserves_iqwf",
+          "line": 5504
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_clearing_preserves_linkInteg",
+          "line": 5530
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_noprevnext_preserves_linkInteg",
+          "line": 5566
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_append_tail_preserves_linkInteg",
+          "line": 5602
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_dualQueueSystemInvariant",
+          "line": 5712
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_preserves_dualQueueSystemInvariant",
+          "line": 6052
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_dualQueueSystemInvariant",
+          "line": 6367
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_dualQueueSystemInvariant",
+          "line": 6429
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_dualQueueSystemInvariant",
+          "line": 6536
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Operations",
+      "path": "SeLe4n/Kernel/IPC/Operations.lean",
+      "declaration_count": 55,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "removeRunnable",
+          "line": 8
+        },
+        {
+          "kind": "def",
+          "name": "ensureRunnable",
+          "line": 19
+        },
+        {
+          "kind": "def",
+          "name": "lookupTcb",
+          "line": 33
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupTcb_some_objects",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "storeTcbIpcState",
+          "line": 56
+        },
+        {
+          "kind": "def",
+          "name": "storeTcbPendingMessage",
+          "line": 66
+        },
+        {
+          "kind": "def",
+          "name": "storeTcbIpcStateAndMessage",
+          "line": 76
+        },
+        {
+          "kind": "def",
+          "name": "endpointSend",
+          "line": 96
+        },
+        {
+          "kind": "def",
+          "name": "endpointAwaitReceive",
+          "line": 140
+        },
+        {
+          "kind": "def",
+          "name": "endpointReceive",
+          "line": 168
+        },
+        {
+          "kind": "def",
+          "name": "notificationSignal",
+          "line": 190
+        },
+        {
+          "kind": "def",
+          "name": "notificationWait",
+          "line": 233
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_objects_ne",
+          "line": 275
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_notification",
+          "line": 299
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_objects",
+          "line": 318
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_objects",
+          "line": 325
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_scheduler_eq",
+          "line": 335
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_endpoint",
+          "line": 356
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_cnode",
+          "line": 375
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_vspaceRoot",
+          "line": 394
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_cnode_backward",
+          "line": 414
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_endpoint_backward",
+          "line": 440
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_notification_backward",
+          "line": 466
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_error_alreadyWaiting",
+          "line": 494
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_badge_path_notification",
+          "line": 510
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_wait_path_notification",
+          "line": 573
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_scheduler_current",
+          "line": 645
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_mem",
+          "line": 651
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_runnable_mem",
+          "line": 660
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_nodup",
+          "line": 673
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_scheduler_current",
+          "line": 681
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_mem_self",
+          "line": 689
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_mem_old",
+          "line": 701
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_runnable_mem_old",
+          "line": 714
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_nodup",
+          "line": 729
+        },
+        {
+          "kind": "theorem",
+          "name": "threadId_toObjId_injective",
+          "line": 751
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_ipcState_eq",
+          "line": 759
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_mem_reverse",
+          "line": 780
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_not_mem_self",
+          "line": 799
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_tcb_exists_at_target",
+          "line": 807
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_objects_ne",
+          "line": 830
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_scheduler_eq",
+          "line": 849
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_endpoint",
+          "line": 867
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_notification",
+          "line": 882
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_endpoint_backward",
+          "line": 897
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_notification_backward",
+          "line": 920
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_ipcState_eq",
+          "line": 943
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_tcb_exists_at_target",
+          "line": 963
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_objects_ne",
+          "line": 982
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_scheduler_eq",
+          "line": 1000
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_endpoint",
+          "line": 1018
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_endpoint_backward",
+          "line": 1031
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_notification_backward",
+          "line": 1052
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_tcb_forward",
+          "line": 1073
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_tcb_ipcState_backward",
+          "line": 1093
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.InformationFlow.Enforcement",
+      "path": "SeLe4n/Kernel/InformationFlow/Enforcement.lean",
+      "declaration_count": 21,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "endpointSendChecked",
+          "line": 47
+        },
+        {
+          "kind": "def",
+          "name": "endpointSendDualChecked",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMintChecked",
+          "line": 86
+        },
+        {
+          "kind": "def",
+          "name": "serviceRestartChecked",
+          "line": 104
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendChecked_eq_endpointSend_when_allowed",
+          "line": 124
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualChecked_eq_endpointSendDual_when_allowed",
+          "line": 138
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualChecked_flowDenied",
+          "line": 153
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendChecked_flowDenied",
+          "line": 168
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintChecked_eq_cspaceMint_when_allowed",
+          "line": 182
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintChecked_flowDenied",
+          "line": 197
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestartChecked_eq_serviceRestart_when_allowed",
+          "line": 212
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestartChecked_flowDenied",
+          "line": 227
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendChecked_self_domain_allowed",
+          "line": 241
+        },
+        {
+          "kind": "inductive",
+          "name": "EnforcementClass",
+          "line": 283
+        },
+        {
+          "kind": "def",
+          "name": "enforcementBoundary",
+          "line": 290
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendChecked_denied_preserves_state",
+          "line": 315
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintChecked_denied_preserves_state",
+          "line": 325
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestartChecked_denied_preserves_state",
+          "line": 336
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcement_sufficiency_endpointSend",
+          "line": 352
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcement_sufficiency_cspaceMint",
+          "line": 364
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcement_sufficiency_serviceRestart",
+          "line": 377
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.InformationFlow.Invariant",
+      "path": "SeLe4n/Kernel/InformationFlow/Invariant.lean",
+      "declaration_count": 36,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_projectObjectIndex",
+          "line": 66
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_projectObjectIndex",
+          "line": 80
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_at_unobservable_preserves_lowEquivalent",
+          "line": 115
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_projectState",
+          "line": 188
+        },
+        {
+          "kind": "theorem",
+          "name": "list_filter_ne_then_filter_eq",
+          "line": 208
+        },
+        {
+          "kind": "theorem",
+          "name": "list_filter_append_singleton_unobs",
+          "line": 230
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_projection",
+          "line": 238
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_projection",
+          "line": 266
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_projection",
+          "line": 296
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_projection",
+          "line": 337
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_projection_preserved",
+          "line": 360
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSend_preserves_lowEquivalent",
+          "line": 427
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_lowEquivalent",
+          "line": 460
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_preserves_lowEquivalent",
+          "line": 479
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_preserves_lowEquivalent",
+          "line": 551
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_lowEquivalent",
+          "line": 643
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_projection_preserved",
+          "line": 667
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_lowEquivalent",
+          "line": 711
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_projection_preserved",
+          "line": 740
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_lowEquivalent",
+          "line": 796
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_lowEquivalent",
+          "line": 821
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_lowEquivalent",
+          "line": 887
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_lowEquivalent",
+          "line": 941
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_preserves_lowEquivalent",
+          "line": 990
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendChecked_NI",
+          "line": 1016
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintChecked_NI",
+          "line": 1049
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestartChecked_NI",
+          "line": 1072
+        },
+        {
+          "kind": "inductive",
+          "name": "NonInterferenceStep",
+          "line": 1116
+        },
+        {
+          "kind": "theorem",
+          "name": "step_preserves_projection",
+          "line": 1192
+        },
+        {
+          "kind": "theorem",
+          "name": "composedNonInterference_step",
+          "line": 1363
+        },
+        {
+          "kind": "inductive",
+          "name": "NonInterferenceTrace",
+          "line": 1375
+        },
+        {
+          "kind": "theorem",
+          "name": "trace_preserves_projection",
+          "line": 1385
+        },
+        {
+          "kind": "theorem",
+          "name": "composedNonInterference_trace",
+          "line": 1396
+        },
+        {
+          "kind": "def",
+          "name": "preservesLowEquivalence",
+          "line": 1412
+        },
+        {
+          "kind": "theorem",
+          "name": "compose_preservesLowEquivalence",
+          "line": 1422
+        },
+        {
+          "kind": "theorem",
+          "name": "errorAction_preserves_lowEquiv",
+          "line": 1441
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.InformationFlow.Policy",
+      "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
+      "declaration_count": 51,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "Confidentiality",
+          "line": 8
+        },
+        {
+          "kind": "inductive",
+          "name": "Integrity",
+          "line": 14
+        },
+        {
+          "kind": "structure",
+          "name": "SecurityLabel",
+          "line": 20
+        },
+        {
+          "kind": "def",
+          "name": "publicLabel",
+          "line": 27
+        },
+        {
+          "kind": "def",
+          "name": "kernelTrusted",
+          "line": 30
+        },
+        {
+          "kind": "def",
+          "name": "confidentialityFlowsTo",
+          "line": 36
+        },
+        {
+          "kind": "def",
+          "name": "integrityFlowsTo",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "securityFlowsTo",
+          "line": 56
+        },
+        {
+          "kind": "structure",
+          "name": "LabelingContext",
+          "line": 61
+        },
+        {
+          "kind": "def",
+          "name": "defaultLabelingContext",
+          "line": 68
+        },
+        {
+          "kind": "theorem",
+          "name": "confidentialityFlowsTo_refl",
+          "line": 76
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_refl",
+          "line": 80
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_refl",
+          "line": 84
+        },
+        {
+          "kind": "theorem",
+          "name": "confidentialityFlowsTo_trans",
+          "line": 90
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_trans",
+          "line": 97
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_trans",
+          "line": 104
+        },
+        {
+          "kind": "structure",
+          "name": "SecurityDomain",
+          "line": 143
+        },
+        {
+          "kind": "def",
+          "name": "lowest",
+          "line": 150
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 152
+        },
+        {
+          "kind": "structure",
+          "name": "DomainFlowPolicy",
+          "line": 165
+        },
+        {
+          "kind": "def",
+          "name": "isReflexive",
+          "line": 171
+        },
+        {
+          "kind": "def",
+          "name": "isTransitive",
+          "line": 175
+        },
+        {
+          "kind": "def",
+          "name": "wellFormed",
+          "line": 180
+        },
+        {
+          "kind": "def",
+          "name": "allowAll",
+          "line": 184
+        },
+        {
+          "kind": "def",
+          "name": "linearOrder",
+          "line": 189
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.allowAll_reflexive",
+          "line": 198
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.allowAll_transitive",
+          "line": 202
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.allowAll_wellFormed",
+          "line": 206
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.linearOrder_reflexive",
+          "line": 210
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.linearOrder_transitive",
+          "line": 214
+        },
+        {
+          "kind": "theorem",
+          "name": "DomainFlowPolicy.linearOrder_wellFormed",
+          "line": 220
+        },
+        {
+          "kind": "def",
+          "name": "domainFlowsTo",
+          "line": 228
+        },
+        {
+          "kind": "theorem",
+          "name": "domainFlowsTo_refl",
+          "line": 231
+        },
+        {
+          "kind": "theorem",
+          "name": "domainFlowsTo_trans",
+          "line": 237
+        },
+        {
+          "kind": "structure",
+          "name": "GenericLabelingContext",
+          "line": 251
+        },
+        {
+          "kind": "def",
+          "name": "defaultGenericLabelingContext",
+          "line": 260
+        },
+        {
+          "kind": "def",
+          "name": "genericFlowCheck",
+          "line": 271
+        },
+        {
+          "kind": "structure",
+          "name": "EndpointFlowPolicy",
+          "line": 284
+        },
+        {
+          "kind": "def",
+          "name": "endpointFlowCheck",
+          "line": 289
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointFlowCheck_fallback",
+          "line": 299
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointFlowCheck_override",
+          "line": 310
+        },
+        {
+          "kind": "def",
+          "name": "embedLegacyLabel",
+          "line": 335
+        },
+        {
+          "kind": "theorem",
+          "name": "embedLegacyLabel_public",
+          "line": 343
+        },
+        {
+          "kind": "theorem",
+          "name": "embedLegacyLabel_kernelTrusted",
+          "line": 347
+        },
+        {
+          "kind": "theorem",
+          "name": "embedLegacyLabel_preserves_flow",
+          "line": 352
+        },
+        {
+          "kind": "def",
+          "name": "liftLegacyContext",
+          "line": 366
+        },
+        {
+          "kind": "def",
+          "name": "threeDomainExample",
+          "line": 383
+        },
+        {
+          "kind": "theorem",
+          "name": "threeDomainExample_wellFormed",
+          "line": 386
+        },
+        {
+          "kind": "theorem",
+          "name": "threeDomain_userland_to_driver",
+          "line": 391
+        },
+        {
+          "kind": "theorem",
+          "name": "threeDomain_driver_to_kernel",
+          "line": 396
+        },
+        {
+          "kind": "theorem",
+          "name": "threeDomain_kernel_not_to_userland",
+          "line": 401
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.InformationFlow.Projection",
+      "path": "SeLe4n/Kernel/InformationFlow/Projection.lean",
+      "declaration_count": 33,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "IfObserver",
+          "line": 18
+        },
+        {
+          "kind": "structure",
+          "name": "ObservableState",
+          "line": 26
+        },
+        {
+          "kind": "def",
+          "name": "objectObservable",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "threadObservable",
+          "line": 46
+        },
+        {
+          "kind": "def",
+          "name": "serviceObservable",
+          "line": 50
+        },
+        {
+          "kind": "def",
+          "name": "projectServiceStatus",
+          "line": 54
+        },
+        {
+          "kind": "def",
+          "name": "capTargetObservable",
+          "line": 70
+        },
+        {
+          "kind": "def",
+          "name": "projectKernelObject",
+          "line": 81
+        },
+        {
+          "kind": "theorem",
+          "name": "projectKernelObject_idempotent",
+          "line": 96
+        },
+        {
+          "kind": "theorem",
+          "name": "projectKernelObject_objectType",
+          "line": 110
+        },
+        {
+          "kind": "def",
+          "name": "projectObjects",
+          "line": 119
+        },
+        {
+          "kind": "def",
+          "name": "projectRunnable",
+          "line": 128
+        },
+        {
+          "kind": "def",
+          "name": "projectCurrent",
+          "line": 133
+        },
+        {
+          "kind": "def",
+          "name": "projectActiveDomain",
+          "line": 140
+        },
+        {
+          "kind": "def",
+          "name": "projectIrqHandlers",
+          "line": 146
+        },
+        {
+          "kind": "def",
+          "name": "projectObjectIndex",
+          "line": 154
+        },
+        {
+          "kind": "def",
+          "name": "projectState",
+          "line": 162
+        },
+        {
+          "kind": "def",
+          "name": "computeObservableSet",
+          "line": 184
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_observable_set_mem",
+          "line": 192
+        },
+        {
+          "kind": "theorem",
+          "name": "computeObservableSet_mem",
+          "line": 231
+        },
+        {
+          "kind": "theorem",
+          "name": "computeObservableSet_not_mem",
+          "line": 242
+        },
+        {
+          "kind": "def",
+          "name": "projectObjectsFast",
+          "line": 254
+        },
+        {
+          "kind": "def",
+          "name": "projectIrqHandlersFast",
+          "line": 264
+        },
+        {
+          "kind": "def",
+          "name": "projectObjectIndexFast",
+          "line": 272
+        },
+        {
+          "kind": "def",
+          "name": "projectStateFast",
+          "line": 293
+        },
+        {
+          "kind": "theorem",
+          "name": "projectObjectsFast_eq",
+          "line": 307
+        },
+        {
+          "kind": "theorem",
+          "name": "projectIrqHandlersFast_eq",
+          "line": 325
+        },
+        {
+          "kind": "theorem",
+          "name": "projectObjectIndexFast_eq",
+          "line": 341
+        },
+        {
+          "kind": "theorem",
+          "name": "projectStateFast_eq",
+          "line": 356
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalent",
+          "line": 368
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_refl",
+          "line": 371
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_symm",
+          "line": 378
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_trans",
+          "line": 386
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Lifecycle.Invariant",
+      "path": "SeLe4n/Kernel/Lifecycle/Invariant.lean",
+      "declaration_count": 35,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "lifecycleIdentityTypeExact",
+          "line": 40
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleIdentityNoTypeAliasConflict",
+          "line": 45
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleIdentityAliasingInvariant",
+          "line": 52
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityRefExact",
+          "line": 57
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityRefObjectTargetBacked",
+          "line": 62
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityReferenceInvariant",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityRefObjectTargetTypeAligned",
+          "line": 73
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleCapabilityRefNoTypeAliasConflict",
+          "line": 81
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleStaleReferenceExclusionInvariant",
+          "line": 89
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleIdentityStaleReferenceInvariant",
+          "line": 96
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleInvariantBundle",
+          "line": 100
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleIdentityNoTypeAliasConflict_of_exact",
+          "line": 103
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleCapabilityRefObjectTargetBacked_of_exact",
+          "line": 124
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleInvariantBundle_of_metadata_consistent",
+          "line": 137
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleMetadataConsistent_of_lifecycleInvariantBundle",
+          "line": 146
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleCapabilityRefObjectTargetTypeAligned_of_exact",
+          "line": 155
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleCapabilityRefNoTypeAliasConflict_of_identity",
+          "line": 163
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle",
+          "line": 170
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle",
+          "line": 181
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_lifecycleInvariantBundle",
+          "line": 187
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant",
+          "line": 203
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant",
+          "line": 215
+        },
+        {
+          "kind": "def",
+          "name": "untypedWatermarkInvariant",
+          "line": 233
+        },
+        {
+          "kind": "def",
+          "name": "untypedChildrenBoundsInvariant",
+          "line": 240
+        },
+        {
+          "kind": "def",
+          "name": "untypedChildrenNonOverlapInvariant",
+          "line": 247
+        },
+        {
+          "kind": "def",
+          "name": "untypedChildrenUniqueIdsInvariant",
+          "line": 254
+        },
+        {
+          "kind": "def",
+          "name": "untypedMemoryInvariant",
+          "line": 260
+        },
+        {
+          "kind": "theorem",
+          "name": "default_systemState_untypedMemoryInvariant",
+          "line": 268
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_untypedWatermarkInvariant_ne",
+          "line": 274
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_preserves_lifecycleMetadataConsistent",
+          "line": 292
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_preserves_lifecycleInvariantBundle",
+          "line": 312
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_preserves_untypedMemoryInvariant",
+          "line": 333
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_ok_childId_ne",
+          "line": 413
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_ok_childId_fresh",
+          "line": 436
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_preserves_untypedMemoryInvariant_auto",
+          "line": 471
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Lifecycle.Operations",
+      "path": "SeLe4n/Kernel/Lifecycle/Operations.lean",
+      "declaration_count": 42,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "lifecycleRetypeAuthority",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "cleanupTcbReferences",
+          "line": 30
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupTcbReferences_removes_from_runnable",
+          "line": 34
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupTcbReferences_preserves_runnable_ne",
+          "line": 41
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupTcbReferences_objects_eq",
+          "line": 50
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupTcbReferences_lifecycle_eq",
+          "line": 56
+        },
+        {
+          "kind": "theorem",
+          "name": "detachSlotFromCdt_objects_eq",
+          "line": 62
+        },
+        {
+          "kind": "theorem",
+          "name": "detachSlotFromCdt_lifecycle_eq",
+          "line": 67
+        },
+        {
+          "kind": "def",
+          "name": "detachCNodeSlots",
+          "line": 74
+        },
+        {
+          "kind": "theorem",
+          "name": "detachCNodeSlots_objects_eq",
+          "line": 80
+        },
+        {
+          "kind": "theorem",
+          "name": "detachCNodeSlots_lifecycle_eq",
+          "line": 98
+        },
+        {
+          "kind": "def",
+          "name": "lifecyclePreRetypeCleanup",
+          "line": 119
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecyclePreRetypeCleanup_objects_eq",
+          "line": 132
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecyclePreRetypeCleanup_lifecycle_eq",
+          "line": 145
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupTcbReferences_flat_subset",
+          "line": 159
+        },
+        {
+          "kind": "theorem",
+          "name": "detachCNodeSlots_scheduler_eq",
+          "line": 168
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecyclePreRetypeCleanup_flat_subset",
+          "line": 189
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleRetypeObject",
+          "line": 217
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleRevokeDeleteRetype",
+          "line": 249
+        },
+        {
+          "kind": "def",
+          "name": "objectTypeAllocSize",
+          "line": 277
+        },
+        {
+          "kind": "def",
+          "name": "retypeFromUntyped",
+          "line": 299
+        },
+        {
+          "kind": "def",
+          "name": "lookupUntyped",
+          "line": 344
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_ok_decompose",
+          "line": 350
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_error_typeMismatch",
+          "line": 450
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_error_allocSizeTooSmall",
+          "line": 468
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_error_regionExhausted",
+          "line": 491
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycle_storeObject_objects_eq",
+          "line": 520
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycle_storeObject_objects_ne",
+          "line": 528
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycle_storeObject_scheduler_eq",
+          "line": 537
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_ok_state_eq",
+          "line": 545
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_ok_as_storeObject",
+          "line": 564
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
+          "line": 595
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_ok_runnable_membership",
+          "line": 607
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_ok_not_runnable_membership",
+          "line": 622
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_error_illegalState",
+          "line": 637
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_error_illegalAuthority",
+          "line": 648
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeObject_success_updates_object",
+          "line": 663
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
+          "line": 692
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
+          "line": 702
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
+          "line": 715
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleRetypeWithCleanup",
+          "line": 776
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
+          "line": 789
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Invariant",
+      "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "queueCurrentConsistent",
+          "line": 30
+        },
+        {
+          "kind": "abbrev",
+          "name": "schedulerWellFormed",
+          "line": 39
+        },
+        {
+          "kind": "def",
+          "name": "runQueueUnique",
+          "line": 43
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadValid",
+          "line": 48
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadInActiveDomain",
+          "line": 56
+        },
+        {
+          "kind": "def",
+          "name": "kernelInvariant",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariantBundle",
+          "line": 79
+        },
+        {
+          "kind": "abbrev",
+          "name": "canonicalSchedulerInvariantBundle",
+          "line": 86
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerWellFormed_iff_queueCurrentConsistent",
+          "line": 89
+        },
+        {
+          "kind": "theorem",
+          "name": "queueCurrentConsistent_when_no_current",
+          "line": 93
+        },
+        {
+          "kind": "def",
+          "name": "timeSlicePositive",
+          "line": 106
+        },
+        {
+          "kind": "def",
+          "name": "edfCurrentHasEarliestDeadline",
+          "line": 120
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Operations",
+      "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
+      "declaration_count": 49,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "isBetterCandidate",
+          "line": 24
+        },
+        {
+          "kind": "theorem",
+          "name": "isBetterCandidate_irrefl",
+          "line": 36
+        },
+        {
+          "kind": "theorem",
+          "name": "isBetterCandidate_asymm",
+          "line": 45
+        },
+        {
+          "kind": "theorem",
+          "name": "isBetterCandidate_transitive",
+          "line": 78
+        },
+        {
+          "kind": "def",
+          "name": "chooseBestRunnableBy",
+          "line": 123
+        },
+        {
+          "kind": "def",
+          "name": "chooseBestRunnableInDomain",
+          "line": 148
+        },
+        {
+          "kind": "def",
+          "name": "chooseBestInBucket",
+          "line": 163
+        },
+        {
+          "kind": "theorem",
+          "name": "bucketFirst_fullScan_equivalence",
+          "line": 179
+        },
+        {
+          "kind": "def",
+          "name": "chooseThread",
+          "line": 199
+        },
+        {
+          "kind": "def",
+          "name": "schedule",
+          "line": 216
+        },
+        {
+          "kind": "def",
+          "name": "handleYield",
+          "line": 232
+        },
+        {
+          "kind": "def",
+          "name": "defaultTimeSlice",
+          "line": 251
+        },
+        {
+          "kind": "def",
+          "name": "timerTick",
+          "line": 264
+        },
+        {
+          "kind": "def",
+          "name": "chooseThreadInDomain",
+          "line": 297
+        },
+        {
+          "kind": "def",
+          "name": "switchDomain",
+          "line": 305
+        },
+        {
+          "kind": "def",
+          "name": "scheduleDomain",
+          "line": 325
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_eq_chooseThread_then_setCurrent",
+          "line": 341
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_wellFormed",
+          "line": 364
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_queueCurrentConsistent",
+          "line": 374
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_runQueueUnique",
+          "line": 384
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_none_preserves_currentThreadValid",
+          "line": 394
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_some_preserves_currentThreadValid",
+          "line": 402
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_state",
+          "line": 412
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_wellFormed",
+          "line": 431
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_queueCurrentConsistent",
+          "line": 470
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_queueCurrentConsistent",
+          "line": 479
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_runQueueUnique",
+          "line": 485
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_currentThreadValid",
+          "line": 494
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_currentThreadInActiveDomain",
+          "line": 503
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_runQueueUnique",
+          "line": 512
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_currentThreadValid",
+          "line": 549
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_wellFormed",
+          "line": 584
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_queueCurrentConsistent",
+          "line": 599
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_runQueueUnique",
+          "line": 605
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_currentThreadInActiveDomain",
+          "line": 626
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_currentThreadValid",
+          "line": 662
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_currentThreadInActiveDomain",
+          "line": 677
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_kernelInvariant",
+          "line": 692
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_kernelInvariant",
+          "line": 705
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_kernelInvariant",
+          "line": 715
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_schedulerInvariantBundle",
+          "line": 725
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_schedulerInvariantBundle",
+          "line": 737
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_schedulerInvariantBundle",
+          "line": 748
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_schedulerInvariantBundle",
+          "line": 768
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_currentThreadInActiveDomain",
+          "line": 795
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_schedulerInvariantBundle",
+          "line": 815
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadInDomain_preserves_state",
+          "line": 837
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_schedulerInvariantBundle",
+          "line": 856
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_kernelInvariant",
+          "line": 900
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.RunQueue",
+      "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
+      "declaration_count": 35,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "RunQueue",
+          "line": 4
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 26
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 36
+        },
+        {
+          "kind": "def",
+          "name": "recomputeMaxPriority",
+          "line": 43
+        },
+        {
+          "kind": "def",
+          "name": "insert",
+          "line": 51
+        },
+        {
+          "kind": "def",
+          "name": "remove",
+          "line": 79
+        },
+        {
+          "kind": "def",
+          "name": "rotateHead",
+          "line": 113
+        },
+        {
+          "kind": "def",
+          "name": "rotateToBack",
+          "line": 141
+        },
+        {
+          "kind": "def",
+          "name": "toList",
+          "line": 164
+        },
+        {
+          "kind": "def",
+          "name": "filterToList",
+          "line": 165
+        },
+        {
+          "kind": "def",
+          "name": "atPriority",
+          "line": 166
+        },
+        {
+          "kind": "def",
+          "name": "maxPriorityBucket",
+          "line": 170
+        },
+        {
+          "kind": "def",
+          "name": "maxPriorityValue",
+          "line": 176
+        },
+        {
+          "kind": "def",
+          "name": "ofList",
+          "line": 178
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_iff_contains",
+          "line": 183
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_false_of_not_mem",
+          "line": 186
+        },
+        {
+          "kind": "theorem",
+          "name": "not_mem_empty",
+          "line": 190
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_insert",
+          "line": 193
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_remove",
+          "line": 205
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_rotateHead",
+          "line": 219
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_rotateToBack",
+          "line": 231
+        },
+        {
+          "kind": "theorem",
+          "name": "not_mem_remove_self",
+          "line": 239
+        },
+        {
+          "kind": "theorem",
+          "name": "not_mem_toList_of_not_mem",
+          "line": 245
+        },
+        {
+          "kind": "theorem",
+          "name": "membership_implies_flat",
+          "line": 253
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_toList_iff_mem",
+          "line": 259
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_empty",
+          "line": 267
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_insert_not_mem",
+          "line": 269
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_filter_ne_of_false",
+          "line": 280
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_filter_insert_neg",
+          "line": 293
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_filter_remove_neg",
+          "line": 300
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_nodup_of_flat_nodup",
+          "line": 308
+        },
+        {
+          "kind": "theorem",
+          "name": "not_mem_remove_toList",
+          "line": 312
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_toList_rotateToBack_self",
+          "line": 321
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_rotateToBack_nodup",
+          "line": 329
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_toList_rotateToBack_ne",
+          "line": 347
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Service.Invariant",
+      "path": "SeLe4n/Kernel/Service/Invariant.lean",
+      "declaration_count": 74,
+      "declarations": [
+        {
+          "kind": "abbrev",
+          "name": "ServicePolicyPredicate",
+          "line": 50
+        },
+        {
+          "kind": "def",
+          "name": "policyBackingObjectTyped",
+          "line": 53
+        },
+        {
+          "kind": "def",
+          "name": "policyOwnerAuthorityRefRecorded",
+          "line": 57
+        },
+        {
+          "kind": "def",
+          "name": "policyOwnerAuthoritySlotPresent",
+          "line": 64
+        },
+        {
+          "kind": "def",
+          "name": "servicePolicySurfaceInvariant",
+          "line": 71
+        },
+        {
+          "kind": "def",
+          "name": "serviceLifecycleCapabilityInvariantBundle",
+          "line": 78
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceLifecycleCapabilityInvariantBundle_of_components",
+          "line": 81
+        },
+        {
+          "kind": "theorem",
+          "name": "policyBackingObjectTyped_of_lifecycleInvariant",
+          "line": 90
+        },
+        {
+          "kind": "theorem",
+          "name": "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
+          "line": 104
+        },
+        {
+          "kind": "theorem",
+          "name": "policyOwnerAuthoritySlotPresent_of_capabilityLookup",
+          "line": 118
+        },
+        {
+          "kind": "theorem",
+          "name": "servicePolicySurfaceInvariant_of_lifecycleInvariant",
+          "line": 136
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_policyDenied_separates_check_from_mutation",
+          "line": 150
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_policyDenied_separates_check_from_mutation",
+          "line": 162
+        },
+        {
+          "kind": "theorem",
+          "name": "storeServiceState_preserves_servicePolicySurfaceInvariant",
+          "line": 173
+        },
+        {
+          "kind": "theorem",
+          "name": "storeServiceState_preserves_lifecycleInvariantBundle",
+          "line": 202
+        },
+        {
+          "kind": "theorem",
+          "name": "storeServiceState_preserves_capabilityInvariantBundle",
+          "line": 220
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 236
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 264
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 290
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 306
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 316
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 326
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
+          "line": 338
+        },
+        {
+          "kind": "def",
+          "name": "serviceEdge",
+          "line": 398
+        },
+        {
+          "kind": "inductive",
+          "name": "serviceReachable",
+          "line": 402
+        },
+        {
+          "kind": "inductive",
+          "name": "serviceNontrivialPath",
+          "line": 408
+        },
+        {
+          "kind": "def",
+          "name": "serviceDependencyAcyclic",
+          "line": 420
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceReachable_trans",
+          "line": 427
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceReachable_of_edge",
+          "line": 434
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceReachable_of_nontrivialPath",
+          "line": 438
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceNontrivialPath_of_edge_reachable",
+          "line": 446
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceNontrivialPath_of_reachable_ne",
+          "line": 455
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceNontrivialPath_trans",
+          "line": 461
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceNontrivialPath_step_right",
+          "line": 468
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceEdge_storeServiceState_ne",
+          "line": 480
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceEdge_storeServiceState_updated",
+          "line": 492
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceEdge_post_insert",
+          "line": 504
+        },
+        {
+          "kind": "def",
+          "name": "lookupDeps",
+          "line": 527
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceEdge_iff_lookupDeps",
+          "line": 531
+        },
+        {
+          "kind": "def",
+          "name": "bfsClosed",
+          "line": 544
+        },
+        {
+          "kind": "theorem",
+          "name": "bfsClosed_init",
+          "line": 548
+        },
+        {
+          "kind": "theorem",
+          "name": "bfsClosed_skip",
+          "line": 553
+        },
+        {
+          "kind": "theorem",
+          "name": "bfsClosed_expand",
+          "line": 566
+        },
+        {
+          "kind": "theorem",
+          "name": "bfs_boundary_lemma",
+          "line": 591
+        },
+        {
+          "kind": "def",
+          "name": "bfsUniverse",
+          "line": 609
+        },
+        {
+          "kind": "theorem",
+          "name": "reach_in_universe",
+          "line": 615
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_mono",
+          "line": 623
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_strict",
+          "line": 638
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_vis_decrease",
+          "line": 664
+        },
+        {
+          "kind": "theorem",
+          "name": "step_of_reachable_ne",
+          "line": 676
+        },
+        {
+          "kind": "theorem",
+          "name": "go_tgt_eq",
+          "line": 686
+        },
+        {
+          "kind": "theorem",
+          "name": "go_skip_eq",
+          "line": 691
+        },
+        {
+          "kind": "theorem",
+          "name": "go_expand_eq",
+          "line": 698
+        },
+        {
+          "kind": "theorem",
+          "name": "go_complete",
+          "line": 715
+        },
+        {
+          "kind": "def",
+          "name": "serviceCountBounded",
+          "line": 792
+        },
+        {
+          "kind": "theorem",
+          "name": "registered_of_nontrivialPath_src",
+          "line": 797
+        },
+        {
+          "kind": "theorem",
+          "name": "bfs_complete_for_nontrivialPath",
+          "line": 818
+        },
+        {
+          "kind": "theorem",
+          "name": "nontrivialPath_post_insert_cases",
+          "line": 850
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRegisterDependency_preserves_acyclicity",
+          "line": 901
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_error_discards_state",
+          "line": 958
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_error_from_start_phase",
+          "line": 970
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceHasPathTo_fuel_zero",
+          "line": 992
+        },
+        {
+          "kind": "theorem",
+          "name": "bfs_false_implies_no_nontrivialPath",
+          "line": 999
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_objects",
+          "line": 1015
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_scheduler",
+          "line": 1030
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_irqHandlers",
+          "line": 1045
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_objectIndex",
+          "line": 1060
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_preserves_lookupService_ne",
+          "line": 1075
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_objects",
+          "line": 1092
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_scheduler",
+          "line": 1106
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_irqHandlers",
+          "line": 1120
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_objectIndex",
+          "line": 1134
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_preserves_lookupService_ne",
+          "line": 1148
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_decompose",
+          "line": 1164
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Service.Operations",
+      "path": "SeLe4n/Kernel/Service/Operations.lean",
+      "declaration_count": 20,
+      "declarations": [
+        {
+          "kind": "abbrev",
+          "name": "ServicePolicy",
+          "line": 8
+        },
+        {
+          "kind": "def",
+          "name": "storeServiceEntry",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "serviceStart",
+          "line": 22
+        },
+        {
+          "kind": "def",
+          "name": "serviceStop",
+          "line": 47
+        },
+        {
+          "kind": "def",
+          "name": "serviceRestart",
+          "line": 76
+        },
+        {
+          "kind": "def",
+          "name": "serviceBfsFuel",
+          "line": 99
+        },
+        {
+          "kind": "def",
+          "name": "serviceHasPathTo",
+          "line": 124
+        },
+        {
+          "kind": "def",
+          "name": "serviceRegisterDependency",
+          "line": 159
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRegisterDependency_error_self_loop",
+          "line": 180
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_error_policyDenied",
+          "line": 190
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStart_error_dependencyViolation",
+          "line": 202
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_error_policyDenied",
+          "line": 215
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceStop_error_illegalState",
+          "line": 227
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_error_of_stop_error",
+          "line": 238
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_error_of_start_error",
+          "line": 249
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRestart_ok_implies_staged_steps",
+          "line": 262
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceHasPathTo_fuel_zero_is_true",
+          "line": 289
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceHasPathTo_false_implies_not_fuel_exhaustion",
+          "line": 299
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceBfsFuel_adequate",
+          "line": 312
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceRegisterDependency_rejects_if_path_or_fuel_exhausted",
+          "line": 321
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Machine",
+      "path": "SeLe4n/Machine.lean",
+      "declaration_count": 40,
+      "declarations": [
+        {
+          "kind": "abbrev",
+          "name": "RegName",
+          "line": 6
+        },
+        {
+          "kind": "abbrev",
+          "name": "RegValue",
+          "line": 9
+        },
+        {
+          "kind": "abbrev",
+          "name": "Memory",
+          "line": 29
+        },
+        {
+          "kind": "structure",
+          "name": "RegisterFile",
+          "line": 32
+        },
+        {
+          "kind": "structure",
+          "name": "MachineState",
+          "line": 41
+        },
+        {
+          "kind": "def",
+          "name": "readReg",
+          "line": 49
+        },
+        {
+          "kind": "def",
+          "name": "writeReg",
+          "line": 52
+        },
+        {
+          "kind": "def",
+          "name": "readMem",
+          "line": 55
+        },
+        {
+          "kind": "def",
+          "name": "writeMem",
+          "line": 58
+        },
+        {
+          "kind": "def",
+          "name": "setPC",
+          "line": 61
+        },
+        {
+          "kind": "def",
+          "name": "tick",
+          "line": 64
+        },
+        {
+          "kind": "theorem",
+          "name": "readReg_writeReg_eq",
+          "line": 71
+        },
+        {
+          "kind": "theorem",
+          "name": "readReg_writeReg_ne",
+          "line": 75
+        },
+        {
+          "kind": "theorem",
+          "name": "readMem_writeMem_eq",
+          "line": 80
+        },
+        {
+          "kind": "theorem",
+          "name": "readMem_writeMem_ne",
+          "line": 84
+        },
+        {
+          "kind": "theorem",
+          "name": "writeReg_preserves_pc",
+          "line": 89
+        },
+        {
+          "kind": "theorem",
+          "name": "writeReg_preserves_sp",
+          "line": 92
+        },
+        {
+          "kind": "theorem",
+          "name": "writeMem_preserves_regs",
+          "line": 95
+        },
+        {
+          "kind": "theorem",
+          "name": "writeMem_preserves_timer",
+          "line": 98
+        },
+        {
+          "kind": "theorem",
+          "name": "setPC_preserves_memory",
+          "line": 101
+        },
+        {
+          "kind": "theorem",
+          "name": "setPC_preserves_timer",
+          "line": 104
+        },
+        {
+          "kind": "theorem",
+          "name": "tick_preserves_regs",
+          "line": 107
+        },
+        {
+          "kind": "theorem",
+          "name": "tick_preserves_memory",
+          "line": 110
+        },
+        {
+          "kind": "theorem",
+          "name": "tick_timer_succ",
+          "line": 113
+        },
+        {
+          "kind": "theorem",
+          "name": "default_memory_returns_zero",
+          "line": 122
+        },
+        {
+          "kind": "theorem",
+          "name": "default_registerFile_pc_zero",
+          "line": 127
+        },
+        {
+          "kind": "theorem",
+          "name": "default_registerFile_sp_zero",
+          "line": 131
+        },
+        {
+          "kind": "theorem",
+          "name": "default_timer_zero",
+          "line": 135
+        },
+        {
+          "kind": "inductive",
+          "name": "MemoryKind",
+          "line": 147
+        },
+        {
+          "kind": "structure",
+          "name": "MemoryRegion",
+          "line": 160
+        },
+        {
+          "kind": "def",
+          "name": "endAddr",
+          "line": 169
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 172
+        },
+        {
+          "kind": "def",
+          "name": "overlaps",
+          "line": 176
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_iff",
+          "line": 179
+        },
+        {
+          "kind": "structure",
+          "name": "MachineConfig",
+          "line": 201
+        },
+        {
+          "kind": "def",
+          "name": "totalRAM",
+          "line": 219
+        },
+        {
+          "kind": "def",
+          "name": "addressInMap",
+          "line": 223
+        },
+        {
+          "kind": "def",
+          "name": "noOverlapAux",
+          "line": 227
+        },
+        {
+          "kind": "def",
+          "name": "isPowerOfTwo",
+          "line": 233
+        },
+        {
+          "kind": "def",
+          "name": "wellFormed",
+          "line": 241
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Model.Object",
+      "path": "SeLe4n/Model/Object.lean",
+      "declaration_count": 117,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "ServiceStatus",
+          "line": 6
+        },
+        {
+          "kind": "structure",
+          "name": "ServiceIdentity",
+          "line": 14
+        },
+        {
+          "kind": "structure",
+          "name": "ServiceGraphEntry",
+          "line": 21
+        },
+        {
+          "kind": "inductive",
+          "name": "AccessRight",
+          "line": 28
+        },
+        {
+          "kind": "inductive",
+          "name": "CapTarget",
+          "line": 39
+        },
+        {
+          "kind": "structure",
+          "name": "Capability",
+          "line": 45
+        },
+        {
+          "kind": "def",
+          "name": "hasRight",
+          "line": 53
+        },
+        {
+          "kind": "structure",
+          "name": "IpcMessage",
+          "line": 61
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 69
+        },
+        {
+          "kind": "inductive",
+          "name": "ThreadIpcState",
+          "line": 82
+        },
+        {
+          "kind": "inductive",
+          "name": "QueuePPrev",
+          "line": 95
+        },
+        {
+          "kind": "structure",
+          "name": "TCB",
+          "line": 100
+        },
+        {
+          "kind": "inductive",
+          "name": "EndpointState",
+          "line": 131
+        },
+        {
+          "kind": "structure",
+          "name": "IntrusiveQueue",
+          "line": 141
+        },
+        {
+          "kind": "structure",
+          "name": "Endpoint",
+          "line": 152
+        },
+        {
+          "kind": "inductive",
+          "name": "NotificationState",
+          "line": 160
+        },
+        {
+          "kind": "structure",
+          "name": "Notification",
+          "line": 169
+        },
+        {
+          "kind": "structure",
+          "name": "CNode",
+          "line": 180
+        },
+        {
+          "kind": "structure",
+          "name": "UntypedChild",
+          "line": 189
+        },
+        {
+          "kind": "structure",
+          "name": "UntypedObject",
+          "line": 204
+        },
+        {
+          "kind": "def",
+          "name": "freeSpace",
+          "line": 223
+        },
+        {
+          "kind": "def",
+          "name": "canAllocate",
+          "line": 227
+        },
+        {
+          "kind": "def",
+          "name": "allocate",
+          "line": 232
+        },
+        {
+          "kind": "def",
+          "name": "reset",
+          "line": 244
+        },
+        {
+          "kind": "def",
+          "name": "watermarkValid",
+          "line": 248
+        },
+        {
+          "kind": "def",
+          "name": "childrenWithinWatermark",
+          "line": 252
+        },
+        {
+          "kind": "def",
+          "name": "childrenNonOverlap",
+          "line": 256
+        },
+        {
+          "kind": "def",
+          "name": "childrenUniqueIds",
+          "line": 261
+        },
+        {
+          "kind": "def",
+          "name": "wellFormed",
+          "line": 266
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_watermarkValid",
+          "line": 270
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_childrenWithinWatermark",
+          "line": 274
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_childrenNonOverlap",
+          "line": 279
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_childrenUniqueIds",
+          "line": 284
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_wellFormed",
+          "line": 289
+        },
+        {
+          "kind": "theorem",
+          "name": "canAllocate_implies_fits",
+          "line": 295
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_some_iff",
+          "line": 302
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_watermark_advance",
+          "line": 321
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_offset_eq_watermark",
+          "line": 330
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_watermark_monotone",
+          "line": 337
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_preserves_watermarkValid",
+          "line": 344
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_preserves_region",
+          "line": 355
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_preserves_childrenWithinWatermark",
+          "line": 366
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_preserves_childrenNonOverlap",
+          "line": 384
+        },
+        {
+          "kind": "theorem",
+          "name": "allocate_preserves_childrenUniqueIds",
+          "line": 406
+        },
+        {
+          "kind": "theorem",
+          "name": "reset_watermarkValid",
+          "line": 425
+        },
+        {
+          "kind": "theorem",
+          "name": "reset_wellFormed",
+          "line": 429
+        },
+        {
+          "kind": "structure",
+          "name": "VSpaceRoot",
+          "line": 445
+        },
+        {
+          "kind": "def",
+          "name": "lookup",
+          "line": 453
+        },
+        {
+          "kind": "def",
+          "name": "mapPage",
+          "line": 458
+        },
+        {
+          "kind": "def",
+          "name": "unmapPage",
+          "line": 465
+        },
+        {
+          "kind": "def",
+          "name": "noVirtualOverlap",
+          "line": 473
+        },
+        {
+          "kind": "theorem",
+          "name": "noVirtualOverlap_trivial",
+          "line": 484
+        },
+        {
+          "kind": "theorem",
+          "name": "noVirtualOverlap_empty",
+          "line": 489
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_unmapPage_eq_none",
+          "line": 494
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_mapPage_eq",
+          "line": 508
+        },
+        {
+          "kind": "theorem",
+          "name": "mapPage_asid_eq",
+          "line": 523
+        },
+        {
+          "kind": "theorem",
+          "name": "unmapPage_asid_eq",
+          "line": 536
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_eq_none_iff",
+          "line": 548
+        },
+        {
+          "kind": "theorem",
+          "name": "mapPage_noVirtualOverlap",
+          "line": 556
+        },
+        {
+          "kind": "theorem",
+          "name": "unmapPage_noVirtualOverlap",
+          "line": 572
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_mapPage_ne",
+          "line": 587
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_unmapPage_ne",
+          "line": 606
+        },
+        {
+          "kind": "inductive",
+          "name": "ResolveError",
+          "line": 635
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 640
+        },
+        {
+          "kind": "def",
+          "name": "slotCount",
+          "line": 644
+        },
+        {
+          "kind": "def",
+          "name": "resolveSlot",
+          "line": 653
+        },
+        {
+          "kind": "def",
+          "name": "lookup",
+          "line": 667
+        },
+        {
+          "kind": "def",
+          "name": "insert",
+          "line": 672
+        },
+        {
+          "kind": "def",
+          "name": "remove",
+          "line": 676
+        },
+        {
+          "kind": "def",
+          "name": "revokeTargetLocal",
+          "line": 686
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_remove_eq_none",
+          "line": 694
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_mem_of_some",
+          "line": 700
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveSlot_depthMismatch",
+          "line": 705
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_revokeTargetLocal_source_eq_lookup",
+          "line": 716
+        },
+        {
+          "kind": "def",
+          "name": "slotsUnique",
+          "line": 735
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_slotsUnique",
+          "line": 739
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_slotsUnique",
+          "line": 743
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_slotsUnique",
+          "line": 750
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeTargetLocal_slotsUnique",
+          "line": 757
+        },
+        {
+          "kind": "def",
+          "name": "slotCountBounded",
+          "line": 771
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_slotCountBounded",
+          "line": 775
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_slotCountBounded",
+          "line": 780
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeTargetLocal_slotCountBounded",
+          "line": 789
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_lookup_of_slotsUnique",
+          "line": 801
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_insert_eq",
+          "line": 808
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_insert_ne",
+          "line": 815
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_remove_ne",
+          "line": 827
+        },
+        {
+          "kind": "abbrev",
+          "name": "SlotAddr",
+          "line": 853
+        },
+        {
+          "kind": "inductive",
+          "name": "DerivationOp",
+          "line": 856
+        },
+        {
+          "kind": "abbrev",
+          "name": "CdtNodeId",
+          "line": 865
+        },
+        {
+          "kind": "structure",
+          "name": "CapDerivationEdge",
+          "line": 872
+        },
+        {
+          "kind": "def",
+          "name": "isChildOf",
+          "line": 880
+        },
+        {
+          "kind": "def",
+          "name": "isParentOf",
+          "line": 883
+        },
+        {
+          "kind": "structure",
+          "name": "CapDerivationTree",
+          "line": 892
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 902
+        },
+        {
+          "kind": "def",
+          "name": "addEdge",
+          "line": 906
+        },
+        {
+          "kind": "def",
+          "name": "childrenOf",
+          "line": 914
+        },
+        {
+          "kind": "def",
+          "name": "parentOf",
+          "line": 919
+        },
+        {
+          "kind": "def",
+          "name": "removeAsChild",
+          "line": 925
+        },
+        {
+          "kind": "def",
+          "name": "removeAsParent",
+          "line": 934
+        },
+        {
+          "kind": "def",
+          "name": "removeNode",
+          "line": 941
+        },
+        {
+          "kind": "def",
+          "name": "descendantsOf",
+          "line": 955
+        },
+        {
+          "kind": "def",
+          "name": "acyclic",
+          "line": 968
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_acyclic",
+          "line": 971
+        },
+        {
+          "kind": "def",
+          "name": "edgeWellFounded",
+          "line": 983
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_edgeWellFounded",
+          "line": 993
+        },
+        {
+          "kind": "theorem",
+          "name": "edgeWellFounded_sub",
+          "line": 1002
+        },
+        {
+          "kind": "theorem",
+          "name": "removeNode_edges_sub",
+          "line": 1013
+        },
+        {
+          "kind": "def",
+          "name": "childMapConsistent",
+          "line": 1021
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_childMapConsistent",
+          "line": 1026
+        },
+        {
+          "kind": "theorem",
+          "name": "addEdge_childMapConsistent",
+          "line": 1033
+        },
+        {
+          "kind": "structure",
+          "name": "ObservedDerivationEdge",
+          "line": 1077
+        },
+        {
+          "kind": "def",
+          "name": "projectObservedEdges",
+          "line": 1084
+        },
+        {
+          "kind": "inductive",
+          "name": "KernelObject",
+          "line": 1098
+        },
+        {
+          "kind": "inductive",
+          "name": "KernelObjectType",
+          "line": 1119
+        },
+        {
+          "kind": "def",
+          "name": "objectType",
+          "line": 1130
+        },
+        {
+          "kind": "def",
+          "name": "makeObjectCap",
+          "line": 1141
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Model.State",
+      "path": "SeLe4n/Model/State.lean",
+      "declaration_count": 84,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "KernelError",
+          "line": 7
+        },
+        {
+          "kind": "structure",
+          "name": "DomainScheduleEntry",
+          "line": 38
+        },
+        {
+          "kind": "structure",
+          "name": "SchedulerState",
+          "line": 43
+        },
+        {
+          "kind": "abbrev",
+          "name": "SchedulerState.runnable",
+          "line": 64
+        },
+        {
+          "kind": "structure",
+          "name": "SlotRef",
+          "line": 68
+        },
+        {
+          "kind": "structure",
+          "name": "LifecycleMetadata",
+          "line": 87
+        },
+        {
+          "kind": "structure",
+          "name": "SystemState",
+          "line": 91
+        },
+        {
+          "kind": "structure",
+          "name": "supporting",
+          "line": 111
+        },
+        {
+          "kind": "abbrev",
+          "name": "CSpaceOwner",
+          "line": 134
+        },
+        {
+          "kind": "abbrev",
+          "name": "Kernel",
+          "line": 159
+        },
+        {
+          "kind": "def",
+          "name": "lookupObject",
+          "line": 161
+        },
+        {
+          "kind": "def",
+          "name": "lookupVSpaceRoot",
+          "line": 168
+        },
+        {
+          "kind": "def",
+          "name": "storeObject",
+          "line": 183
+        },
+        {
+          "kind": "def",
+          "name": "storeCapabilityRef",
+          "line": 211
+        },
+        {
+          "kind": "def",
+          "name": "clearCapabilityRefsState",
+          "line": 221
+        },
+        {
+          "kind": "def",
+          "name": "clearCapabilityRefs",
+          "line": 233
+        },
+        {
+          "kind": "def",
+          "name": "setCurrentThread",
+          "line": 236
+        },
+        {
+          "kind": "def",
+          "name": "lookupService",
+          "line": 242
+        },
+        {
+          "kind": "def",
+          "name": "hasServiceDependency",
+          "line": 246
+        },
+        {
+          "kind": "def",
+          "name": "hasIsolationEdge",
+          "line": 252
+        },
+        {
+          "kind": "def",
+          "name": "dependenciesSatisfied",
+          "line": 258
+        },
+        {
+          "kind": "def",
+          "name": "storeServiceState",
+          "line": 268
+        },
+        {
+          "kind": "def",
+          "name": "setServiceStatusState",
+          "line": 275
+        },
+        {
+          "kind": "theorem",
+          "name": "storeServiceState_lookup_eq",
+          "line": 280
+        },
+        {
+          "kind": "theorem",
+          "name": "storeServiceState_lookup_ne",
+          "line": 287
+        },
+        {
+          "kind": "theorem",
+          "name": "setServiceStatusState_lookup_eq",
+          "line": 295
+        },
+        {
+          "kind": "theorem",
+          "name": "setServiceStatusState_preserves_objects",
+          "line": 304
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_services",
+          "line": 312
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_preserves_scheduler",
+          "line": 322
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_preserves_services",
+          "line": 331
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_preserves_objects",
+          "line": 340
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_preserves_irqHandlers",
+          "line": 350
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_preserves_objectIndex",
+          "line": 360
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_objects",
+          "line": 369
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefs_preserves_objects",
+          "line": 380
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_scheduler",
+          "line": 389
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_services",
+          "line": 399
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_lookupService",
+          "line": 409
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_irqHandlers",
+          "line": 417
+        },
+        {
+          "kind": "theorem",
+          "name": "clearCapabilityRefsState_preserves_objectIndex",
+          "line": 428
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCapabilityRef_lookup_eq",
+          "line": 438
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_objects_eq",
+          "line": 448
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_objects_ne",
+          "line": 458
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_scheduler_eq",
+          "line": 471
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_irqHandlers_eq",
+          "line": 481
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_machine_eq",
+          "line": 491
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_cdt_eq",
+          "line": 502
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_asidTable_vspaceRoot",
+          "line": 517
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_asidTable_vspaceRoot_ne",
+          "line": 528
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_asidTable_non_vspaceRoot",
+          "line": 552
+        },
+        {
+          "kind": "def",
+          "name": "objectIndexSetSync",
+          "line": 571
+        },
+        {
+          "kind": "theorem",
+          "name": "objectIndexSetSync_contains_of_mem",
+          "line": 575
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_updates_objectTypeMeta",
+          "line": 581
+        },
+        {
+          "kind": "def",
+          "name": "lookupCNode",
+          "line": 594
+        },
+        {
+          "kind": "def",
+          "name": "lookupSlotCap",
+          "line": 600
+        },
+        {
+          "kind": "def",
+          "name": "ownerOfSlot",
+          "line": 606
+        },
+        {
+          "kind": "def",
+          "name": "ownsSlot",
+          "line": 610
+        },
+        {
+          "kind": "def",
+          "name": "ownedSlots",
+          "line": 615
+        },
+        {
+          "kind": "def",
+          "name": "lookupObjectTypeMeta",
+          "line": 621
+        },
+        {
+          "kind": "def",
+          "name": "lookupCapabilityRefMeta",
+          "line": 625
+        },
+        {
+          "kind": "def",
+          "name": "lookupCdtNodeOfSlot",
+          "line": 630
+        },
+        {
+          "kind": "def",
+          "name": "lookupCdtSlotOfNode",
+          "line": 634
+        },
+        {
+          "kind": "def",
+          "name": "observedCdtEdges",
+          "line": 638
+        },
+        {
+          "kind": "theorem",
+          "name": "observedCdtEdges_eq_projection",
+          "line": 644
+        },
+        {
+          "kind": "def",
+          "name": "attachSlotToCdtNode",
+          "line": 652
+        },
+        {
+          "kind": "def",
+          "name": "detachSlotFromCdt",
+          "line": 672
+        },
+        {
+          "kind": "def",
+          "name": "ensureCdtNodeForSlot",
+          "line": 683
+        },
+        {
+          "kind": "theorem",
+          "name": "attachSlotToCdtNode_objects_eq",
+          "line": 698
+        },
+        {
+          "kind": "theorem",
+          "name": "detachSlotFromCdt_objects_eq",
+          "line": 702
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureCdtNodeForSlot_objects_eq",
+          "line": 707
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupSlotCap_eq_of_objects_eq",
+          "line": 713
+        },
+        {
+          "kind": "def",
+          "name": "objectTypeMetadataConsistent",
+          "line": 721
+        },
+        {
+          "kind": "def",
+          "name": "capabilityRefMetadataConsistent",
+          "line": 725
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleMetadataConsistent",
+          "line": 729
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupSlotCap_eq_none_of_lookupCNode_eq_none",
+          "line": 732
+        },
+        {
+          "kind": "theorem",
+          "name": "ownsSlot_iff",
+          "line": 739
+        },
+        {
+          "kind": "theorem",
+          "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
+          "line": 747
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_objectTypeMetadataConsistent",
+          "line": 756
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_capabilityRefMetadataConsistent",
+          "line": 774
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_lifecycleMetadataConsistent",
+          "line": 801
+        },
+        {
+          "kind": "theorem",
+          "name": "default_systemState_lifecycleConsistent",
+          "line": 820
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_metadata_sync_type_change",
+          "line": 846
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_metadata_sync_capref_at_stored",
+          "line": 863
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_objectIndex_monotone",
+          "line": 885
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Contract",
+      "path": "SeLe4n/Platform/Contract.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "PlatformBinding",
+          "line": 46
+        },
+        {
+          "kind": "def",
+          "name": "PlatformBinding.runtime",
+          "line": 59
+        },
+        {
+          "kind": "def",
+          "name": "PlatformBinding.boot",
+          "line": 63
+        },
+        {
+          "kind": "def",
+          "name": "PlatformBinding.interrupt",
+          "line": 67
+        },
+        {
+          "kind": "def",
+          "name": "PlatformBinding.config",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.RPi5.Board",
+      "path": "SeLe4n/Platform/RPi5/Board.lean",
+      "declaration_count": 11,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "peripheralBaseLow",
+          "line": 30
+        },
+        {
+          "kind": "def",
+          "name": "peripheralBaseHigh",
+          "line": 33
+        },
+        {
+          "kind": "def",
+          "name": "gicDistributorBase",
+          "line": 36
+        },
+        {
+          "kind": "def",
+          "name": "gicCpuInterfaceBase",
+          "line": 39
+        },
+        {
+          "kind": "def",
+          "name": "timerFrequencyHz",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "uart0Base",
+          "line": 45
+        },
+        {
+          "kind": "def",
+          "name": "rpi5MemoryMap",
+          "line": 59
+        },
+        {
+          "kind": "def",
+          "name": "rpi5MachineConfig",
+          "line": 79
+        },
+        {
+          "kind": "def",
+          "name": "gicSpiCount",
+          "line": 94
+        },
+        {
+          "kind": "def",
+          "name": "timerPpiId",
+          "line": 98
+        },
+        {
+          "kind": "def",
+          "name": "virtualTimerPpiId",
+          "line": 101
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.RPi5.BootContract",
+      "path": "SeLe4n/Platform/RPi5/BootContract.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "rpi5BootContract",
+          "line": 35
+        },
+        {
+          "kind": "def",
+          "name": "rpi5InterruptContract",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.RPi5.Contract",
+      "path": "SeLe4n/Platform/RPi5/Contract.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "RPi5Platform",
+          "line": 36
+        },
+        {
+          "kind": "instance",
+          "name": "rpi5PlatformBinding",
+          "line": 40
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.RPi5.RuntimeContract",
+      "path": "SeLe4n/Platform/RPi5/RuntimeContract.lean",
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "rpi5RuntimeContract",
+          "line": 33
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Sim.BootContract",
+      "path": "SeLe4n/Platform/Sim/BootContract.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "simBootContract",
+          "line": 18
+        },
+        {
+          "kind": "def",
+          "name": "simInterruptContract",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Sim.Contract",
+      "path": "SeLe4n/Platform/Sim/Contract.lean",
+      "declaration_count": 3,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "SimPlatform",
+          "line": 28
+        },
+        {
+          "kind": "def",
+          "name": "simMachineConfig",
+          "line": 32
+        },
+        {
+          "kind": "instance",
+          "name": "simPlatformBinding",
+          "line": 47
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Sim.RuntimeContract",
+      "path": "SeLe4n/Platform/Sim/RuntimeContract.lean",
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "simRuntimeContractPermissive",
+          "line": 23
+        },
+        {
+          "kind": "def",
+          "name": "simRuntimeContractRestrictive",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Prelude",
+      "path": "SeLe4n/Prelude.lean",
+      "declaration_count": 107,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "ObjId",
+          "line": 21
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 33
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 36
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 38
+        },
+        {
+          "kind": "def",
+          "name": "isReserved",
+          "line": 45
+        },
+        {
+          "kind": "def",
+          "name": "sentinel",
+          "line": 48
+        },
+        {
+          "kind": "def",
+          "name": "valid",
+          "line": 51
+        },
+        {
+          "kind": "structure",
+          "name": "ThreadId",
+          "line": 56
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 71
+        },
+        {
+          "kind": "def",
+          "name": "toObjId",
+          "line": 83
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 85
+        },
+        {
+          "kind": "def",
+          "name": "isReserved",
+          "line": 92
+        },
+        {
+          "kind": "def",
+          "name": "sentinel",
+          "line": 95
+        },
+        {
+          "kind": "def",
+          "name": "toObjIdChecked",
+          "line": 99
+        },
+        {
+          "kind": "theorem",
+          "name": "toObjIdChecked_eq_some_of_not_reserved",
+          "line": 103
+        },
+        {
+          "kind": "theorem",
+          "name": "ThreadId.toObjId_injective",
+          "line": 114
+        },
+        {
+          "kind": "structure",
+          "name": "DomainId",
+          "line": 121
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 133
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 136
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 138
+        },
+        {
+          "kind": "structure",
+          "name": "Priority",
+          "line": 147
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 159
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 162
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 164
+        },
+        {
+          "kind": "structure",
+          "name": "Deadline",
+          "line": 177
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 188
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 189
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 191
+        },
+        {
+          "kind": "def",
+          "name": "none",
+          "line": 198
+        },
+        {
+          "kind": "def",
+          "name": "immediate",
+          "line": 201
+        },
+        {
+          "kind": "structure",
+          "name": "Irq",
+          "line": 206
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 218
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 221
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 223
+        },
+        {
+          "kind": "structure",
+          "name": "ServiceId",
+          "line": 232
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 244
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 247
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 249
+        },
+        {
+          "kind": "def",
+          "name": "isReserved",
+          "line": 256
+        },
+        {
+          "kind": "def",
+          "name": "sentinel",
+          "line": 259
+        },
+        {
+          "kind": "structure",
+          "name": "CPtr",
+          "line": 264
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 276
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 279
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 281
+        },
+        {
+          "kind": "def",
+          "name": "isReserved",
+          "line": 289
+        },
+        {
+          "kind": "def",
+          "name": "sentinel",
+          "line": 292
+        },
+        {
+          "kind": "theorem",
+          "name": "default_eq_sentinel",
+          "line": 294
+        },
+        {
+          "kind": "theorem",
+          "name": "sentinel_isReserved",
+          "line": 296
+        },
+        {
+          "kind": "structure",
+          "name": "Slot",
+          "line": 301
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 313
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 316
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 318
+        },
+        {
+          "kind": "structure",
+          "name": "Badge",
+          "line": 327
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 339
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 342
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 344
+        },
+        {
+          "kind": "structure",
+          "name": "ASID",
+          "line": 353
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 365
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 368
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 370
+        },
+        {
+          "kind": "structure",
+          "name": "VAddr",
+          "line": 379
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 391
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 394
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 396
+        },
+        {
+          "kind": "structure",
+          "name": "PAddr",
+          "line": 405
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 417
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 420
+        },
+        {
+          "kind": "instance",
+          "name": "instOfNat",
+          "line": 422
+        },
+        {
+          "kind": "abbrev",
+          "name": "KernelM",
+          "line": 431
+        },
+        {
+          "kind": "def",
+          "name": "pure",
+          "line": 435
+        },
+        {
+          "kind": "def",
+          "name": "bind",
+          "line": 438
+        },
+        {
+          "kind": "def",
+          "name": "get",
+          "line": 457
+        },
+        {
+          "kind": "def",
+          "name": "set",
+          "line": 461
+        },
+        {
+          "kind": "def",
+          "name": "modify",
+          "line": 465
+        },
+        {
+          "kind": "def",
+          "name": "liftExcept",
+          "line": 469
+        },
+        {
+          "kind": "def",
+          "name": "throw",
+          "line": 476
+        },
+        {
+          "kind": "theorem",
+          "name": "get_returns_state",
+          "line": 481
+        },
+        {
+          "kind": "theorem",
+          "name": "set_replaces_state",
+          "line": 484
+        },
+        {
+          "kind": "theorem",
+          "name": "modify_applies_function",
+          "line": 487
+        },
+        {
+          "kind": "theorem",
+          "name": "liftExcept_ok",
+          "line": 490
+        },
+        {
+          "kind": "theorem",
+          "name": "liftExcept_error",
+          "line": 493
+        },
+        {
+          "kind": "theorem",
+          "name": "throw_errors",
+          "line": 496
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_get",
+          "line": 550
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_get",
+          "line": 556
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_get",
+          "line": 561
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_getElem",
+          "line": 568
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_getElem",
+          "line": 574
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_getElem",
+          "line": 579
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_getElem",
+          "line": 586
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_get",
+          "line": 590
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_filter_preserves_key",
+          "line": 600
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_filter_filter_getElem",
+          "line": 624
+        },
+        {
+          "kind": "theorem",
+          "name": "HashSet_contains_empty",
+          "line": 650
+        },
+        {
+          "kind": "theorem",
+          "name": "HashSet_contains_insert_iff",
+          "line": 656
+        },
+        {
+          "kind": "theorem",
+          "name": "HashSet_not_contains_insert",
+          "line": 670
+        },
+        {
+          "kind": "theorem",
+          "name": "HashSet_contains_insert_self",
+          "line": 685
+        },
+        {
+          "kind": "theorem",
+          "name": "List.foldl_preserves_contains",
+          "line": 696
+        },
+        {
+          "kind": "theorem",
+          "name": "List.foldl_not_contains_when_absent",
+          "line": 710
+        },
+        {
+          "kind": "theorem",
+          "name": "List.foldl_preserves_when_pred_false",
+          "line": 730
+        },
+        {
+          "kind": "theorem",
+          "name": "ObjId.default_eq_sentinel",
+          "line": 758
+        },
+        {
+          "kind": "theorem",
+          "name": "ThreadId.default_eq_sentinel",
+          "line": 761
+        },
+        {
+          "kind": "theorem",
+          "name": "ObjId.sentinel_isReserved",
+          "line": 764
+        },
+        {
+          "kind": "theorem",
+          "name": "ThreadId.sentinel_isReserved",
+          "line": 767
+        },
+        {
+          "kind": "theorem",
+          "name": "ObjId.valid_iff_not_reserved",
+          "line": 770
+        },
+        {
+          "kind": "theorem",
+          "name": "ServiceId.default_eq_sentinel",
+          "line": 775
+        },
+        {
+          "kind": "theorem",
+          "name": "ServiceId.sentinel_isReserved",
+          "line": 778
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.InvariantChecks",
+      "path": "SeLe4n/Testing/InvariantChecks.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "endpointQueueWellFormedB",
+          "line": 7
+        },
+        {
+          "kind": "def",
+          "name": "endpointObjectValidB",
+          "line": 13
+        },
+        {
+          "kind": "def",
+          "name": "lookupQueueTcbB",
+          "line": 18
+        },
+        {
+          "kind": "def",
+          "name": "intrusiveQueueWellFormedB",
+          "line": 53
+        },
+        {
+          "kind": "def",
+          "name": "notificationQueueWellFormedB",
+          "line": 66
+        },
+        {
+          "kind": "def",
+          "name": "schedulerQueueCurrentConsistentB",
+          "line": 72
+        },
+        {
+          "kind": "def",
+          "name": "schedulerRunQueueUniqueB",
+          "line": 77
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadValidB",
+          "line": 80
+        },
+        {
+          "kind": "def",
+          "name": "cspaceSlotCoherencyChecks",
+          "line": 90
+        },
+        {
+          "kind": "def",
+          "name": "capabilityRightsStructuralChecks",
+          "line": 106
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleMetadataChecks",
+          "line": 119
+        },
+        {
+          "kind": "def",
+          "name": "serviceGraphAcyclicityChecks",
+          "line": 128
+        },
+        {
+          "kind": "def",
+          "name": "vspaceAsidUniquenessChecks",
+          "line": 138
+        },
+        {
+          "kind": "def",
+          "name": "asidTableConsistencyChecks",
+          "line": 149
+        },
+        {
+          "kind": "def",
+          "name": "untypedWatermarkChecks",
+          "line": 172
+        },
+        {
+          "kind": "def",
+          "name": "notificationWaiterConsistentChecks",
+          "line": 184
+        },
+        {
+          "kind": "def",
+          "name": "runQueueThreadPriorityConsistentB",
+          "line": 199
+        },
+        {
+          "kind": "def",
+          "name": "cdtChildMapConsistentCheck",
+          "line": 208
+        },
+        {
+          "kind": "def",
+          "name": "stateInvariantChecksFor",
+          "line": 223
+        },
+        {
+          "kind": "def",
+          "name": "stateInvariantChecks",
+          "line": 268
+        },
+        {
+          "kind": "def",
+          "name": "failedChecks",
+          "line": 271
+        },
+        {
+          "kind": "def",
+          "name": "assertStateInvariantsFor",
+          "line": 274
+        },
+        {
+          "kind": "def",
+          "name": "assertStateInvariants",
+          "line": 282
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.MainTraceHarness",
+      "path": "SeLe4n/Testing/MainTraceHarness.lean",
+      "declaration_count": 32,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "mkRunQueue",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "rootSlot",
+          "line": 14
+        },
+        {
+          "kind": "def",
+          "name": "rootPath",
+          "line": 15
+        },
+        {
+          "kind": "def",
+          "name": "rootPathAlias",
+          "line": 16
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleAuthSlot",
+          "line": 17
+        },
+        {
+          "kind": "def",
+          "name": "mintedSlot",
+          "line": 18
+        },
+        {
+          "kind": "def",
+          "name": "siblingSlot",
+          "line": 19
+        },
+        {
+          "kind": "def",
+          "name": "demoEndpoint",
+          "line": 20
+        },
+        {
+          "kind": "def",
+          "name": "demoNotification",
+          "line": 21
+        },
+        {
+          "kind": "def",
+          "name": "demoUntyped",
+          "line": 22
+        },
+        {
+          "kind": "def",
+          "name": "untypedAuthSlot",
+          "line": 23
+        },
+        {
+          "kind": "def",
+          "name": "svcDb",
+          "line": 25
+        },
+        {
+          "kind": "def",
+          "name": "svcApi",
+          "line": 26
+        },
+        {
+          "kind": "def",
+          "name": "svcDenied",
+          "line": 27
+        },
+        {
+          "kind": "def",
+          "name": "svcBroken",
+          "line": 28
+        },
+        {
+          "kind": "def",
+          "name": "svcRestart",
+          "line": 29
+        },
+        {
+          "kind": "def",
+          "name": "svcRestartBroken",
+          "line": 30
+        },
+        {
+          "kind": "def",
+          "name": "bootstrapInvariantObjectIds",
+          "line": 32
+        },
+        {
+          "kind": "def",
+          "name": "bootstrapServiceIds",
+          "line": 35
+        },
+        {
+          "kind": "def",
+          "name": "bootstrapState",
+          "line": 38
+        },
+        {
+          "kind": "def",
+          "name": "runCapabilityAndArchitectureTrace",
+          "line": 139
+        },
+        {
+          "kind": "def",
+          "name": "runServiceAndStressTrace",
+          "line": 182
+        },
+        {
+          "kind": "def",
+          "name": "runLifecycleAndEndpointTrace",
+          "line": 339
+        },
+        {
+          "kind": "def",
+          "name": "runCapabilityIpcTrace",
+          "line": 444
+        },
+        {
+          "kind": "def",
+          "name": "runSchedulerTimingDomainTrace",
+          "line": 496
+        },
+        {
+          "kind": "def",
+          "name": "runIpcMessageTransferTrace",
+          "line": 566
+        },
+        {
+          "kind": "def",
+          "name": "runUntypedMemoryTrace",
+          "line": 732
+        },
+        {
+          "kind": "def",
+          "name": "runMainTraceFrom",
+          "line": 813
+        },
+        {
+          "kind": "def",
+          "name": "buildParameterizedTopology",
+          "line": 841
+        },
+        {
+          "kind": "def",
+          "name": "runParameterizedTopologyCheck",
+          "line": 892
+        },
+        {
+          "kind": "def",
+          "name": "runParameterizedTopologies",
+          "line": 906
+        },
+        {
+          "kind": "def",
+          "name": "runMainTrace",
+          "line": 914
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.RuntimeContractFixtures",
+      "path": "SeLe4n/Testing/RuntimeContractFixtures.lean",
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "runtimeContractAcceptAll",
+          "line": 13
+        },
+        {
+          "kind": "def",
+          "name": "runtimeContractDenyAll",
+          "line": 35
+        },
+        {
+          "kind": "def",
+          "name": "runtimeContractTimerOnly",
+          "line": 58
+        },
+        {
+          "kind": "def",
+          "name": "runtimeContractReadOnlyMemory",
+          "line": 81
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.StateBuilder",
+      "path": "SeLe4n/Testing/StateBuilder.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "listLookup",
+          "line": 8
+        },
+        {
+          "kind": "structure",
+          "name": "BootstrapBuilder",
+          "line": 16
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 28
+        },
+        {
+          "kind": "def",
+          "name": "withObject",
+          "line": 30
+        },
+        {
+          "kind": "def",
+          "name": "withService",
+          "line": 33
+        },
+        {
+          "kind": "def",
+          "name": "withRunnable",
+          "line": 39
+        },
+        {
+          "kind": "def",
+          "name": "withCurrent",
+          "line": 42
+        },
+        {
+          "kind": "def",
+          "name": "withIrqHandler",
+          "line": 45
+        },
+        {
+          "kind": "def",
+          "name": "withLifecycleObjectType",
+          "line": 51
+        },
+        {
+          "kind": "def",
+          "name": "withLifecycleCapabilityRef",
+          "line": 57
+        },
+        {
+          "kind": "def",
+          "name": "withMachine",
+          "line": 63
+        },
+        {
+          "kind": "def",
+          "name": "lookupThreadPriority",
+          "line": 68
+        },
+        {
+          "kind": "def",
+          "name": "build",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "module": "Main",
+      "path": "Main.lean",
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "module": "tests.InformationFlowSuite",
+      "path": "tests/InformationFlowSuite.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 8
+        },
+        {
+          "kind": "def",
+          "name": "publicLabel",
+          "line": 14
+        },
+        {
+          "kind": "def",
+          "name": "secretLabel",
+          "line": 17
+        },
+        {
+          "kind": "def",
+          "name": "reviewer",
+          "line": 20
+        },
+        {
+          "kind": "def",
+          "name": "admin",
+          "line": 23
+        },
+        {
+          "kind": "def",
+          "name": "sampleServiceEntry",
+          "line": 26
+        },
+        {
+          "kind": "def",
+          "name": "publicServiceEntry",
+          "line": 35
+        },
+        {
+          "kind": "def",
+          "name": "sampleState",
+          "line": 43
+        },
+        {
+          "kind": "def",
+          "name": "sampleLabeling",
+          "line": 53
+        },
+        {
+          "kind": "def",
+          "name": "altState",
+          "line": 70
+        },
+        {
+          "kind": "def",
+          "name": "runInformationFlowChecks",
+          "line": 83
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 649
+        }
+      ]
+    },
+    {
+      "module": "tests.NegativeStateSuite",
+      "path": "tests/NegativeStateSuite.lean",
+      "declaration_count": 33,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "endpointId",
+          "line": 9
+        },
+        {
+          "kind": "def",
+          "name": "cnodeId",
+          "line": 10
+        },
+        {
+          "kind": "def",
+          "name": "wrongTypeId",
+          "line": 11
+        },
+        {
+          "kind": "def",
+          "name": "guardedCnodeId",
+          "line": 12
+        },
+        {
+          "kind": "def",
+          "name": "sendEmptyEndpointId",
+          "line": 13
+        },
+        {
+          "kind": "def",
+          "name": "notificationId",
+          "line": 14
+        },
+        {
+          "kind": "def",
+          "name": "asidPrimary",
+          "line": 15
+        },
+        {
+          "kind": "def",
+          "name": "vaddrPrimary",
+          "line": 16
+        },
+        {
+          "kind": "def",
+          "name": "paddrPrimary",
+          "line": 17
+        },
+        {
+          "kind": "def",
+          "name": "slot0",
+          "line": 19
+        },
+        {
+          "kind": "def",
+          "name": "slot0Path",
+          "line": 20
+        },
+        {
+          "kind": "def",
+          "name": "guardedPathBadDepth",
+          "line": 21
+        },
+        {
+          "kind": "def",
+          "name": "badSlot",
+          "line": 22
+        },
+        {
+          "kind": "def",
+          "name": "guardedPathBadGuard",
+          "line": 23
+        },
+        {
+          "kind": "def",
+          "name": "baseState",
+          "line": 25
+        },
+        {
+          "kind": "def",
+          "name": "invariantObjectIds",
+          "line": 103
+        },
+        {
+          "kind": "def",
+          "name": "sendEmptyEndpointState",
+          "line": 106
+        },
+        {
+          "kind": "def",
+          "name": "expectError",
+          "line": 112
+        },
+        {
+          "kind": "def",
+          "name": "expectOkState",
+          "line": 125
+        },
+        {
+          "kind": "def",
+          "name": "expectOk",
+          "line": 137
+        },
+        {
+          "kind": "def",
+          "name": "expectThreadQueueLinks",
+          "line": 147
+        },
+        {
+          "kind": "def",
+          "name": "corruptThreadQueueLinks",
+          "line": 164
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedObjId",
+          "line": 180
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedChildId",
+          "line": 181
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedAuthCnode",
+          "line": 182
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedAuthSlot",
+          "line": 183
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedState",
+          "line": 186
+        },
+        {
+          "kind": "def",
+          "name": "f2DeviceUntypedId",
+          "line": 211
+        },
+        {
+          "kind": "def",
+          "name": "f2DeviceState",
+          "line": 213
+        },
+        {
+          "kind": "def",
+          "name": "runNegativeChecks",
+          "line": 238
+        },
+        {
+          "kind": "def",
+          "name": "runH2NegativeChecks",
+          "line": 892
+        },
+        {
+          "kind": "def",
+          "name": "runAuditCoverageChecks",
+          "line": 939
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 1022
+        }
+      ]
+    },
+    {
+      "module": "tests.TraceSequenceProbe",
+      "path": "tests/TraceSequenceProbe.lean",
+      "declaration_count": 19,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "ProbeOp",
+          "line": 8
+        },
+        {
+          "kind": "def",
+          "name": "probeEndpointId",
+          "line": 14
+        },
+        {
+          "kind": "def",
+          "name": "probeThreadIds",
+          "line": 16
+        },
+        {
+          "kind": "def",
+          "name": "probeBaseState",
+          "line": 19
+        },
+        {
+          "kind": "def",
+          "name": "nextRand",
+          "line": 34
+        },
+        {
+          "kind": "def",
+          "name": "pickOp",
+          "line": 37
+        },
+        {
+          "kind": "def",
+          "name": "pickThreadId",
+          "line": 43
+        },
+        {
+          "kind": "def",
+          "name": "endpointConsistencyHolds",
+          "line": 46
+        },
+        {
+          "kind": "def",
+          "name": "probeInvariantObjectIds",
+          "line": 53
+        },
+        {
+          "kind": "def",
+          "name": "checkStateInvariants",
+          "line": 56
+        },
+        {
+          "kind": "def",
+          "name": "checkEndpointConsistency",
+          "line": 63
+        },
+        {
+          "kind": "inductive",
+          "name": "StepOutcome",
+          "line": 75
+        },
+        {
+          "kind": "def",
+          "name": "classifyError",
+          "line": 87
+        },
+        {
+          "kind": "def",
+          "name": "stepOp",
+          "line": 102
+        },
+        {
+          "kind": "structure",
+          "name": "ProbeStats",
+          "line": 119
+        },
+        {
+          "kind": "def",
+          "name": "pickThreadCount",
+          "line": 153
+        },
+        {
+          "kind": "def",
+          "name": "runProbe",
+          "line": 156
+        },
+        {
+          "kind": "def",
+          "name": "parseNatArg",
+          "line": 167
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 172
+        }
+      ]
+    }
+  ]
+}

@@ -154,6 +154,11 @@ At minimum keep these attributes synchronized across all three surfaces: version
 Lean toolchain, production/test LoC, theorem+lemma count, build jobs, active
 findings/audit references, and completed/next workstream status.
 
+For website codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
+whenever Lean module/declaration surfaces change. The generated `docs/codebase_map.json`
+contains `repository.commit_sha` and `repository.cache_key`; website clients should
+invalidate local cache entries when either value changes.
+
 ---
 
 ## 8) Definition of done (milestone-moving changes)
