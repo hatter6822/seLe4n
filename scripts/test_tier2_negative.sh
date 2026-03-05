@@ -10,7 +10,9 @@ cd "${REPO_ROOT}"
 
 ensure_lake_available
 
-run_check "TRACE" lake exe negative_state_suite
-run_check "TRACE" lake exe information_flow_suite
+# Run suites through the Lean interpreter to avoid pathological C compilation
+# times for very large test modules (notably NegativeStateSuite).
+run_check "TRACE" lake env lean --run tests/NegativeStateSuite.lean
+run_check "TRACE" lake env lean --run tests/InformationFlowSuite.lean
 
 finalize_report
