@@ -103,6 +103,19 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly det
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
 
+## Website codebase map feed
+
+Generate the canonical machine-readable codebase map with:
+
+```bash
+./scripts/generate_codebase_map.py --pretty
+```
+
+This writes `docs/codebase_map.json` with all Lean modules and declaration
+inventory plus a commit-derived `repository.cache_key`. Website clients should
+use that key (or `repository.commit_sha`) to invalidate local caches and always
+refresh when repository state changes.
+
 ## Architecture
 
 seLe4n is organized as layered contracts, each with executable transitions and

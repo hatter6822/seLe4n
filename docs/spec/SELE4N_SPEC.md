@@ -61,6 +61,7 @@ enforcement, and scheduling.
 | **Recently completed** | WS-H6 (v0.12.20, scheduler proof-surface completion), WS-H5 (v0.12.19, IPC dual-queue structural invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` |
+| **Codebase map feed** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; includes commit-derived cache key) |
 
 ---
 
