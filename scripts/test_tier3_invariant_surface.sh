@@ -98,7 +98,7 @@ run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Pr
 run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^private def runInformationFlowChecks' tests/InformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check "TRACE" lake env lean --run tests/InformationFlowSuite\.lean' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
@@ -107,7 +107,7 @@ run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
-run_check "INVARIANT" rg -n '^run_check "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check "TRACE" lake env lean --run tests/NegativeStateSuite\.lean' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
 run_check "INVARIANT" rg -n '^def runMainTrace' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^def bootstrapState' SeLe4n/Testing/MainTraceHarness.lean
