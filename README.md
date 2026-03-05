@@ -111,10 +111,15 @@ Generate the canonical machine-readable codebase map with:
 ./scripts/generate_codebase_map.py --pretty
 ```
 
-This writes `docs/codebase_map.json` with all Lean modules and declaration
-inventory plus a commit-derived `repository.cache_key`. Website clients should
-use that key (or `repository.commit_sha`) to invalidate local caches and always
-refresh when repository state changes.
+Validate that the committed file is in sync without writing:
+
+```bash
+./scripts/generate_codebase_map.py --pretty --check
+```
+
+`docs/codebase_map.json` is also auto-refreshed on every merge to `main` by
+`.github/workflows/codebase_map_sync.yml`, ensuring website cache metadata stays
+current even when a PR omits manual regeneration.
 
 ## Architecture
 

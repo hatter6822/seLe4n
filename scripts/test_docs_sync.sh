@@ -17,6 +17,8 @@ fi
 
 python3 "${SCRIPT_DIR}/check_markdown_links.py"
 
+python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
+
 # Prefer an already-installed elan toolchain in non-login shells.
 if [[ -f "${HOME}/.elan/env" ]]; then
   # shellcheck disable=SC1091

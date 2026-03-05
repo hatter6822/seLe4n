@@ -89,4 +89,6 @@ fi
 # means a rename or deletion would produce 404s on the project website.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 
+run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
+
 finalize_report
