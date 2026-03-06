@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "b6342949dc9db008d7c65149c108e7f276d66641",
-      "tree_sha": "456bf97fdeb065b70a742133dea1f5fc43810b90",
-      "committed_at_utc": "2026-03-05T18:20:56-05:00"
+      "branch": "work",
+      "commit_sha": "e43f84bd7c3ae15dd9b53ad0a2493e918017ac92",
+      "tree_sha": "6f98ed1220a5fd7d160e5989532afcd048960651",
+      "committed_at_utc": "2026-03-06T16:46:00+00:00"
     }
   },
   "source_sync": {
@@ -17,12 +17,12 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "97d278ef9f7a3f3b2c9ce10cbe8724291e748f34ea35e273ed32e99ade2e2a0f",
-    "cache_key": "97d278ef9f7a3f3b2c9ce10cbe8724291e748f34ea35e273ed32e99ade2e2a0f"
+    "source_digest": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3",
+    "cache_key": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1363
+    "declaration_count": 1364
   },
   "modules": [
     {
@@ -304,17 +304,17 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 293
+          "line": 299
         },
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 306
+          "line": 312
         },
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 319
+          "line": 325
         }
       ]
     },
@@ -612,407 +612,407 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_detachSlotFromCdt",
-          "line": 442
+          "line": 449
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_detachSlotFromCdt",
-          "line": 453
+          "line": 460
         },
         {
           "kind": "theorem",
           "name": "wsH4_of_detachSlotFromCdt",
-          "line": 461
+          "line": 468
         },
         {
           "kind": "theorem",
           "name": "wsH4_bounded_comp_of_cdt_only_update",
-          "line": 474
+          "line": 481
         },
         {
           "kind": "theorem",
           "name": "wsH4_through_blocking_path",
-          "line": 484
+          "line": 491
         },
         {
           "kind": "theorem",
           "name": "wsH4_through_handshake_path",
-          "line": 526
+          "line": 533
         },
         {
           "kind": "theorem",
           "name": "wsH4_through_reply_path",
-          "line": 574
+          "line": 581
         },
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_authority_reduction",
-          "line": 625
+          "line": 632
         },
         {
           "kind": "theorem",
           "name": "cspaceRevoke_local_target_reduction",
-          "line": 648
+          "line": 655
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_preserves_state",
-          "line": 733
+          "line": 739
         },
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_lookup_eq",
-          "line": 750
+          "line": 756
         },
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_establishes_ownsSlot",
-          "line": 775
+          "line": 781
         },
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_lookup_eq_none",
-          "line": 785
+          "line": 791
         },
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_source",
-          "line": 807
+          "line": 813
         },
         {
           "kind": "theorem",
           "name": "mintDerivedCap_attenuates",
-          "line": 869
+          "line": 874
         },
         {
           "kind": "theorem",
           "name": "mintDerivedCap_rights_attenuated_with_badge_override",
-          "line": 893
+          "line": 898
         },
         {
           "kind": "theorem",
           "name": "mintDerivedCap_target_preserved_with_badge_override",
-          "line": 909
+          "line": 914
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_child_attenuates",
-          "line": 918
+          "line": 923
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_badge_override_safe",
-          "line": 952
+          "line": 957
         },
         {
           "kind": "theorem",
           "name": "mintDerivedCap_badge_propagated",
-          "line": 973
+          "line": 978
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_child_badge_preserved",
-          "line": 985
+          "line": 990
         },
         {
           "kind": "theorem",
           "name": "notificationSignal_badge_stored_fresh",
-          "line": 1015
+          "line": 1020
         },
         {
           "kind": "theorem",
           "name": "notificationWait_recovers_pending_badge",
-          "line": 1034
+          "line": 1039
         },
         {
           "kind": "theorem",
           "name": "badge_notification_routing_consistent",
-          "line": 1099
+          "line": 1104
         },
         {
           "kind": "theorem",
           "name": "badge_merge_idempotent",
-          "line": 1126
+          "line": 1131
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSound_of_cspaceSlotUnique",
-          "line": 1140
+          "line": 1145
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeObject_nonCNode",
-          "line": 1151
+          "line": 1156
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeObject_cnode",
-          "line": 1170
+          "line": 1175
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_endpoint_store",
-          "line": 1188
+          "line": 1193
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_objects_eq",
-          "line": 1197
+          "line": 1202
         },
         {
           "kind": "theorem",
           "name": "cspaceAttenuationRule_holds",
-          "line": 1205
+          "line": 1210
         },
         {
           "kind": "theorem",
           "name": "lifecycleAuthorityMonotonicity_holds",
-          "line": 1211
+          "line": 1216
         },
         {
           "kind": "theorem",
           "name": "capabilityInvariantBundle_of_slotUnique",
-          "line": 1223
+          "line": 1228
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_preserves_capabilityInvariantBundle",
-          "line": 1233
+          "line": 1238
         },
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_capabilityInvariantBundle",
-          "line": 1247
+          "line": 1252
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_capabilityInvariantBundle",
-          "line": 1323
+          "line": 1328
         },
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
-          "line": 1351
+          "line": 1356
         },
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_capabilityInvariantBundle",
-          "line": 1435
+          "line": 1440
         },
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_capabilityInvariantBundle",
-          "line": 1520
+          "line": 1525
         },
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_capabilityInvariantBundle",
-          "line": 1565
+          "line": 1570
         },
         {
           "kind": "theorem",
           "name": "cspaceMintWithCdt_preserves_capabilityInvariantBundle",
-          "line": 1614
+          "line": 1619
         },
         {
           "kind": "theorem",
           "name": "cspaceMutate_preserves_capabilityInvariantBundle",
-          "line": 1658
+          "line": 1663
         },
         {
           "kind": "theorem",
           "name": "capabilityInvariantBundle_of_cdt_update",
-          "line": 1763
+          "line": 1768
         },
         {
           "kind": "def",
           "name": "revokeCdtFoldBody",
-          "line": 1775
+          "line": 1780
         },
         {
           "kind": "theorem",
           "name": "revokeCdtFoldBody_preserves",
-          "line": 1791
+          "line": 1796
         },
         {
           "kind": "theorem",
           "name": "revokeCdtFoldBody_error",
-          "line": 1827
-        },
-        {
-          "kind": "theorem",
-          "name": "revokeCdtFoldBody_foldl_error",
           "line": 1832
         },
         {
           "kind": "theorem",
+          "name": "revokeCdtFoldBody_foldl_error",
+          "line": 1837
+        },
+        {
+          "kind": "theorem",
           "name": "revokeCdtFold_preserves",
-          "line": 1840
+          "line": 1845
         },
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdt_preserves_capabilityInvariantBundle",
-          "line": 1862
+          "line": 1867
         },
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle",
-          "line": 1884
+          "line": 1889
         },
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_capabilityInvariantBundle",
-          "line": 1980
+          "line": 1985
         },
         {
           "kind": "def",
           "name": "coreIpcInvariantBundle",
-          "line": 2054
+          "line": 2059
         },
         {
           "kind": "def",
           "name": "ipcSchedulerRunnableReadyComponent",
-          "line": 2058
+          "line": 2063
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedSendComponent",
-          "line": 2062
+          "line": 2067
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReceiveComponent",
-          "line": 2066
+          "line": 2071
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedCallComponent",
-          "line": 2070
+          "line": 2075
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReplyComponent",
-          "line": 2074
+          "line": 2079
         },
         {
           "kind": "def",
           "name": "ipcSchedulerCoherenceComponent",
-          "line": 2078
+          "line": 2083
         },
         {
           "kind": "theorem",
           "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
-          "line": 2085
+          "line": 2090
         },
         {
           "kind": "def",
           "name": "ipcSchedulerCouplingInvariantBundle",
-          "line": 2092
+          "line": 2097
         },
         {
           "kind": "def",
           "name": "lifecycleCompositionInvariantBundle",
-          "line": 2097
+          "line": 2102
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
-          "line": 2100
+          "line": 2105
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
-          "line": 2119
+          "line": 2124
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_ipcInvariant",
-          "line": 2164
+          "line": 2169
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
-          "line": 2209
+          "line": 2214
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
-          "line": 2230
+          "line": 2235
         },
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
-          "line": 2255
+          "line": 2260
         },
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 2274
+          "line": 2279
         },
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
-          "line": 2302
+          "line": 2307
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeTcbIpcState",
-          "line": 2315
+          "line": 2320
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_blocking_path",
-          "line": 2334
+          "line": 2339
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_handshake_path",
-          "line": 2347
+          "line": 2352
         },
         {
           "kind": "theorem",
           "name": "endpointSend_preserves_capabilityInvariantBundle",
-          "line": 2362
+          "line": 2367
         },
         {
           "kind": "theorem",
           "name": "endpointAwaitReceive_preserves_capabilityInvariantBundle",
-          "line": 2416
+          "line": 2421
         },
         {
           "kind": "theorem",
           "name": "endpointReceive_preserves_capabilityInvariantBundle",
-          "line": 2446
+          "line": 2451
         },
         {
           "kind": "theorem",
           "name": "endpointSend_preserves_coreIpcInvariantBundle",
-          "line": 2481
+          "line": 2486
         },
         {
           "kind": "theorem",
           "name": "endpointAwaitReceive_preserves_coreIpcInvariantBundle",
-          "line": 2494
+          "line": 2499
         },
         {
           "kind": "theorem",
           "name": "endpointReceive_preserves_coreIpcInvariantBundle",
-          "line": 2507
+          "line": 2512
         },
         {
           "kind": "theorem",
           "name": "endpointSend_preserves_ipcSchedulerCouplingInvariantBundle",
-          "line": 2520
+          "line": 2525
         },
         {
           "kind": "theorem",
           "name": "endpointAwaitReceive_preserves_ipcSchedulerCouplingInvariantBundle",
-          "line": 2535
+          "line": 2540
         },
         {
           "kind": "theorem",
           "name": "endpointReceive_preserves_ipcSchedulerCouplingInvariantBundle",
-          "line": 2550
+          "line": 2555
         }
       ]
     },
@@ -4300,32 +4300,32 @@
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_objects",
-          "line": 1092
+          "line": 1097
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_scheduler",
-          "line": 1106
+          "line": 1111
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_irqHandlers",
-          "line": 1120
+          "line": 1125
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_objectIndex",
-          "line": 1134
+          "line": 1139
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_lookupService_ne",
-          "line": 1148
+          "line": 1153
         },
         {
           "kind": "theorem",
           "name": "serviceRestart_decompose",
-          "line": 1164
+          "line": 1174
         }
       ]
     },
@@ -5268,397 +5268,397 @@
         {
           "kind": "structure",
           "name": "LifecycleMetadata",
-          "line": 87
+          "line": 86
         },
         {
           "kind": "structure",
           "name": "SystemState",
-          "line": 91
+          "line": 90
         },
         {
           "kind": "structure",
           "name": "supporting",
-          "line": 111
+          "line": 110
         },
         {
           "kind": "abbrev",
           "name": "CSpaceOwner",
-          "line": 134
+          "line": 133
         },
         {
           "kind": "abbrev",
           "name": "Kernel",
-          "line": 159
+          "line": 158
         },
         {
           "kind": "def",
           "name": "lookupObject",
-          "line": 161
+          "line": 160
         },
         {
           "kind": "def",
           "name": "lookupVSpaceRoot",
-          "line": 168
+          "line": 167
         },
         {
           "kind": "def",
           "name": "storeObject",
-          "line": 183
+          "line": 182
         },
         {
           "kind": "def",
           "name": "storeCapabilityRef",
-          "line": 211
+          "line": 210
         },
         {
           "kind": "def",
           "name": "clearCapabilityRefsState",
-          "line": 221
+          "line": 223
         },
         {
           "kind": "def",
           "name": "clearCapabilityRefs",
-          "line": 233
+          "line": 235
         },
         {
           "kind": "def",
           "name": "setCurrentThread",
-          "line": 236
+          "line": 238
         },
         {
           "kind": "def",
           "name": "lookupService",
-          "line": 242
+          "line": 244
         },
         {
           "kind": "def",
           "name": "hasServiceDependency",
-          "line": 246
+          "line": 248
         },
         {
           "kind": "def",
           "name": "hasIsolationEdge",
-          "line": 252
+          "line": 254
         },
         {
           "kind": "def",
           "name": "dependenciesSatisfied",
-          "line": 258
+          "line": 260
         },
         {
           "kind": "def",
           "name": "storeServiceState",
-          "line": 268
+          "line": 270
         },
         {
           "kind": "def",
           "name": "setServiceStatusState",
-          "line": 275
+          "line": 277
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_eq",
-          "line": 280
+          "line": 282
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_ne",
-          "line": 287
+          "line": 289
         },
         {
           "kind": "theorem",
           "name": "setServiceStatusState_lookup_eq",
-          "line": 295
+          "line": 302
         },
         {
           "kind": "theorem",
           "name": "setServiceStatusState_preserves_objects",
-          "line": 304
+          "line": 311
         },
         {
           "kind": "theorem",
           "name": "storeObject_preserves_services",
-          "line": 312
+          "line": 319
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_scheduler",
-          "line": 322
+          "line": 329
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_services",
-          "line": 331
+          "line": 338
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objects",
-          "line": 340
+          "line": 347
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_irqHandlers",
-          "line": 350
+          "line": 357
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objectIndex",
-          "line": 360
+          "line": 367
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_preserves_objects",
-          "line": 369
+          "line": 376
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefs_preserves_objects",
-          "line": 380
+          "line": 387
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_preserves_scheduler",
-          "line": 389
+          "line": 396
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_preserves_services",
-          "line": 399
+          "line": 406
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_lookupService",
-          "line": 409
+          "line": 416
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_preserves_irqHandlers",
-          "line": 417
+          "line": 424
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_preserves_objectIndex",
-          "line": 428
+          "line": 435
         },
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_lookup_eq",
-          "line": 438
+          "line": 445
         },
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq",
-          "line": 448
+          "line": 465
         },
         {
           "kind": "theorem",
           "name": "storeObject_objects_ne",
-          "line": 458
+          "line": 475
         },
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq",
-          "line": 471
+          "line": 488
         },
         {
           "kind": "theorem",
           "name": "storeObject_irqHandlers_eq",
-          "line": 481
+          "line": 498
         },
         {
           "kind": "theorem",
           "name": "storeObject_machine_eq",
-          "line": 491
+          "line": 508
         },
         {
           "kind": "theorem",
           "name": "storeObject_cdt_eq",
-          "line": 502
+          "line": 519
         },
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot",
-          "line": 517
+          "line": 534
         },
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot_ne",
-          "line": 528
+          "line": 545
         },
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_non_vspaceRoot",
-          "line": 552
+          "line": 569
         },
         {
           "kind": "def",
           "name": "objectIndexSetSync",
-          "line": 571
+          "line": 588
         },
         {
           "kind": "theorem",
           "name": "objectIndexSetSync_contains_of_mem",
-          "line": 575
+          "line": 592
         },
         {
           "kind": "theorem",
           "name": "storeObject_updates_objectTypeMeta",
-          "line": 581
+          "line": 598
         },
         {
           "kind": "def",
           "name": "lookupCNode",
-          "line": 594
+          "line": 611
         },
         {
           "kind": "def",
           "name": "lookupSlotCap",
-          "line": 600
+          "line": 617
         },
         {
           "kind": "def",
           "name": "ownerOfSlot",
-          "line": 606
+          "line": 623
         },
         {
           "kind": "def",
           "name": "ownsSlot",
-          "line": 610
+          "line": 627
         },
         {
           "kind": "def",
           "name": "ownedSlots",
-          "line": 615
+          "line": 632
         },
         {
           "kind": "def",
           "name": "lookupObjectTypeMeta",
-          "line": 621
+          "line": 638
         },
         {
           "kind": "def",
           "name": "lookupCapabilityRefMeta",
-          "line": 625
+          "line": 642
         },
         {
           "kind": "def",
           "name": "lookupCdtNodeOfSlot",
-          "line": 630
+          "line": 647
         },
         {
           "kind": "def",
           "name": "lookupCdtSlotOfNode",
-          "line": 634
+          "line": 651
         },
         {
           "kind": "def",
           "name": "observedCdtEdges",
-          "line": 638
+          "line": 655
         },
         {
           "kind": "theorem",
           "name": "observedCdtEdges_eq_projection",
-          "line": 644
+          "line": 661
         },
         {
           "kind": "def",
           "name": "attachSlotToCdtNode",
-          "line": 652
+          "line": 669
         },
         {
           "kind": "def",
           "name": "detachSlotFromCdt",
-          "line": 672
+          "line": 687
         },
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlot",
-          "line": 683
-        },
-        {
-          "kind": "theorem",
-          "name": "attachSlotToCdtNode_objects_eq",
           "line": 698
         },
         {
           "kind": "theorem",
+          "name": "attachSlotToCdtNode_objects_eq",
+          "line": 713
+        },
+        {
+          "kind": "theorem",
           "name": "detachSlotFromCdt_objects_eq",
-          "line": 702
+          "line": 717
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_objects_eq",
-          "line": 707
+          "line": 722
         },
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_of_objects_eq",
-          "line": 713
+          "line": 728
         },
         {
           "kind": "def",
           "name": "objectTypeMetadataConsistent",
-          "line": 721
+          "line": 736
         },
         {
           "kind": "def",
           "name": "capabilityRefMetadataConsistent",
-          "line": 725
+          "line": 740
         },
         {
           "kind": "def",
           "name": "lifecycleMetadataConsistent",
-          "line": 729
+          "line": 744
         },
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_none_of_lookupCNode_eq_none",
-          "line": 732
-        },
-        {
-          "kind": "theorem",
-          "name": "ownsSlot_iff",
-          "line": 739
-        },
-        {
-          "kind": "theorem",
-          "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
           "line": 747
         },
         {
           "kind": "theorem",
+          "name": "ownsSlot_iff",
+          "line": 754
+        },
+        {
+          "kind": "theorem",
+          "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
+          "line": 762
+        },
+        {
+          "kind": "theorem",
           "name": "storeObject_preserves_objectTypeMetadataConsistent",
-          "line": 756
+          "line": 771
         },
         {
           "kind": "theorem",
           "name": "storeObject_preserves_capabilityRefMetadataConsistent",
-          "line": 774
+          "line": 789
         },
         {
           "kind": "theorem",
           "name": "storeObject_preserves_lifecycleMetadataConsistent",
-          "line": 801
+          "line": 799
         },
         {
           "kind": "theorem",
           "name": "default_systemState_lifecycleConsistent",
-          "line": 820
+          "line": 818
         },
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_type_change",
-          "line": 846
+          "line": 840
         },
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_capref_at_stored",
-          "line": 863
+          "line": 857
         },
         {
           "kind": "theorem",
           "name": "storeObject_objectIndex_monotone",
-          "line": 885
+          "line": 880
         }
       ]
     },
@@ -6640,52 +6640,52 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 339
+          "line": 331
         },
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 444
+          "line": 436
         },
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 496
+          "line": 488
         },
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 566
+          "line": 558
         },
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 732
+          "line": 724
         },
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 813
+          "line": 805
         },
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 841
+          "line": 833
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 892
+          "line": 884
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 906
+          "line": 898
         },
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 914
+          "line": 906
         }
       ]
     },
@@ -6870,7 +6870,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 33,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "def",
@@ -7025,17 +7025,22 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 892
+          "line": 888
         },
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 939
+          "line": 935
+        },
+        {
+          "kind": "def",
+          "name": "runWSH7Checks",
+          "line": 1018
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 1022
+          "line": 1072
         }
       ]
     },

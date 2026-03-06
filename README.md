@@ -243,6 +243,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
 | **WS-H6** | v0.12.20 | Scheduler proof-surface completion: reverse RunQueue invariant `flat_wf_rev`, bridge lemmas `membership_implies_flat`/`mem_toList_iff_mem`, candidate-order theorem `isBetterCandidate_transitive`, and `bucketFirst_fullScan_equivalence`; scheduler membership validation now uses O(1) runQueue membership | H6 |
+| **WS-H7** | v0.12.21 | HashMap equality + state-store migration: `BEq VSpaceRoot`/`BEq CNode` now use size+fold order-independent entry checks; closure-backed fields (`services`, `irqHandlers`, `capabilityRefs`, `cdtSlotNode`, `cdtNodeSlot`) migrated to `Std.HashMap` to eliminate closure-chain growth | H7 |
 | **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | H5 |
 | **WS-H4** | v0.12.18 | Capability invariant redesign: `capabilityInvariantBundle` 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity` | H4 |
 | **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |

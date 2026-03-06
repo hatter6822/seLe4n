@@ -146,7 +146,7 @@ notification object is observable by the observer. -/
 def projectIrqHandlers (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     SeLe4n.Irq → Option SeLe4n.ObjId :=
   fun irq =>
-    match st.irqHandlers irq with
+    match st.irqHandlers[irq]? with
     | some oid => if objectObservable ctx observer oid then some oid else none
     | none => none
 
@@ -264,7 +264,7 @@ def projectObjectsFast (ctx : LabelingContext) (observer : IfObserver)
 def projectIrqHandlersFast (observableOids : Std.HashSet SeLe4n.ObjId)
     (st : SystemState) : SeLe4n.Irq → Option SeLe4n.ObjId :=
   fun irq =>
-    match st.irqHandlers irq with
+    match st.irqHandlers[irq]? with
     | some oid => if observableOids.contains oid then some oid else none
     | none => none
 
@@ -324,12 +324,12 @@ private theorem projectObjectsFast_eq
 IRQ handler targets are in the objectIndex. -/
 private theorem projectIrqHandlersFast_eq
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (hIrqInIdx : ∀ irq oid, st.irqHandlers irq = some oid → oid ∈ st.objectIndex) :
+    (hIrqInIdx : ∀ (irq : SeLe4n.Irq) (oid : SeLe4n.ObjId), st.irqHandlers[irq]? = some oid → oid ∈ st.objectIndex) :
     projectIrqHandlersFast (computeObservableSet ctx observer st) st =
       projectIrqHandlers ctx observer st := by
   funext irq
   unfold projectIrqHandlersFast projectIrqHandlers
-  cases hIrq : st.irqHandlers irq with
+  cases hIrq : st.irqHandlers[irq]? with
   | none => rfl
   | some oid =>
     show (if (computeObservableSet ctx observer st).contains oid then some oid else none) =
@@ -356,7 +356,7 @@ These invariants hold for any state reachable from `default` via `storeObject`
 theorem projectStateFast_eq
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (hObjSync : ∀ oid, st.objects[oid]? ≠ none → oid ∈ st.objectIndex)
-    (hIrqSync : ∀ irq oid, st.irqHandlers irq = some oid → oid ∈ st.objectIndex) :
+    (hIrqSync : ∀ (irq : SeLe4n.Irq) (oid : SeLe4n.ObjId), st.irqHandlers[irq]? = some oid → oid ∈ st.objectIndex) :
     projectStateFast ctx observer st = projectState ctx observer st := by
   simp only [projectStateFast, projectState]
   congr 1
