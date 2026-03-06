@@ -140,6 +140,104 @@ local syntax "visible" : term
             ],
         )
 
+    def test_parse_declaration_spans_records_ranges(self) -> None:
+        fixture = Path("/tmp/test_generate_codebase_map_spans_fixture.lean")
+        fixture.write_text(
+            """
+def alpha : Nat :=
+  1
+
+def beta : Nat :=
+  alpha + 1
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        spans = m.parse_declaration_spans(fixture)
+        self.assertEqual(
+            [(s.kind, s.name, s.line, s.end_line) for s in spans],
+            [
+                ("def", "alpha", 1, 3),
+                ("def", "beta", 4, 5),
+            ],
+        )
+
+    def test_called_declarations_for_span_collects_qualified_targets(self) -> None:
+        lines = [
+            "def foo : Nat :=",  # line 1
+            "  helper + localRef",  # line 2
+        ]
+        span = m.DeclSpan(kind="def", name="foo", line=1, end_line=2)
+        token_index = {
+            "helper": {"A.helper", "B.helper"},
+            "localRef": {"M.foo", "M.localRef"},
+        }
+
+        calls = m._called_declarations_for_span(
+            lines=lines,
+            span=span,
+            token_index=token_index,
+            parent_qualified_name="M.foo",
+        )
+
+        self.assertEqual(calls, ["A.helper", "B.helper", "M.localRef"])
+
+
+    def test_called_declarations_for_span_ignores_namespace_like_parents(self) -> None:
+        lines = [
+            "namespace Demo.Core",
+            "def helper : Nat := 1",
+            "end Demo.Core",
+        ]
+        span = m.DeclSpan(kind="namespace", name="Demo.Core", line=1, end_line=3)
+        token_index = {"Demo.Core": {"Demo.Core"}, "helper": {"Demo.Core.helper"}}
+
+        calls = m._called_declarations_for_span(
+            lines=lines,
+            span=span,
+            token_index=token_index,
+            parent_qualified_name="Demo.Core",
+        )
+
+        self.assertEqual(calls, [])
+
+    def test_build_map_does_not_use_tail_token_aliases_for_dotted_names(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            lean_path = root / "SeLe4n" / "Mini.lean"
+            lean_path.parent.mkdir(parents=True)
+            lean_path.write_text(
+                """
+namespace Pkg
+def helper.inner : Nat := 1
+def caller : Nat := inner
+def caller2 : Nat := helper.inner
+end Pkg
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            old_root = m.ROOT
+            old_git_head_metadata = m.git_head_metadata
+            try:
+                m.ROOT = root
+                m.git_head_metadata = lambda: {
+                    "branch": "test",
+                    "commit_sha": "abc",
+                    "tree_sha": "def",
+                    "committed_at_utc": "2026-01-01T00:00:00Z",
+                }
+                payload = m.build_map()
+            finally:
+                m.ROOT = old_root
+                m.git_head_metadata = old_git_head_metadata
+
+        module = payload["modules"][0]
+        calls_by_decl = {decl["name"]: decl["calls"] for decl in module["declarations"]}
+        self.assertEqual(calls_by_decl["caller"], [])
+        self.assertEqual(calls_by_decl["caller2"], ["SeLe4n.Mini.helper.inner"])
+
     def test_module_name_is_repo_relative(self) -> None:
         self.assertEqual(
             m.module_name(m.ROOT / "SeLe4n/Kernel/API.lean"),
@@ -219,6 +317,42 @@ local syntax "visible" : term
         }
         changed_source = {**base, "source_sync": {"source_digest": "def"}}
         self.assertNotEqual(m.normalized_for_check(base), m.normalized_for_check(changed_source))
+
+    def test_build_map_includes_calls(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            lean_path = root / "SeLe4n" / "Mini.lean"
+            lean_path.parent.mkdir(parents=True)
+            lean_path.write_text(
+                """
+def helper : Nat := 1
+def useHelper : Nat := helper
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            old_root = m.ROOT
+            old_git_head_metadata = m.git_head_metadata
+            try:
+                m.ROOT = root
+                m.git_head_metadata = lambda: {
+                    "branch": "test",
+                    "commit_sha": "abc",
+                    "tree_sha": "def",
+                    "committed_at_utc": "2026-01-01T00:00:00Z",
+                }
+                payload = m.build_map()
+            finally:
+                m.ROOT = old_root
+                m.git_head_metadata = old_git_head_metadata
+
+        self.assertEqual(payload["schema_version"], "1.0.0")
+        module = payload["modules"][0]
+        self.assertEqual(module["module"], "SeLe4n.Mini")
+        calls_by_decl = {decl["name"]: decl["calls"] for decl in module["declarations"]}
+        self.assertEqual(calls_by_decl["helper"], [])
+        self.assertEqual(calls_by_decl["useHelper"], ["SeLe4n.Mini.helper"])
 
 
 if __name__ == "__main__":

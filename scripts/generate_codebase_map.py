@@ -83,6 +83,16 @@ NAME_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
 FIRST_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_'.]*)")
 QUOTED_TOKEN_RE = re.compile(r"\"[^\"\n]*\"")
 
+NON_REFERENCEABLE_KINDS = {"section", "namespace", "universe", "universes", "variable", "variables", "parameter", "parameters"}
+LEAN_RESERVED_TOKENS = {
+    "def", "theorem", "lemma", "example", "instance", "opaque", "abbrev", "axiom", "constant", "constants",
+    "inductive", "structure", "class", "declare_syntax_cat", "syntax_cat", "syntax", "macro", "macro_rules",
+    "notation", "infix", "infixl", "infixr", "prefix", "postfix", "elab", "elab_rules", "term_elab", "command_elab",
+    "tactic", "universe", "universes", "variable", "variables", "parameter", "parameters", "section", "namespace",
+    "private", "protected", "noncomputable", "unsafe", "partial", "scoped", "local", "where", "by", "match", "with",
+    "let", "in", "if", "then", "else", "do", "for", "return", "have", "show", "from", "fun", "Type", "Prop",
+}
+
 
 def _strip_lean_comments(line: str, block_depth: int) -> tuple[str, int]:
     """Strip line + block comments while tracking nested block depth."""
@@ -112,6 +122,10 @@ def _strip_lean_comments(line: str, block_depth: int) -> tuple[str, int]:
         i += 1
 
     return "".join(out), block_depth
+
+
+def _strip_quoted_literals(line: str) -> str:
+    return QUOTED_TOKEN_RE.sub(" ", line)
 
 
 def _split_head_segment(rest: str) -> str:
@@ -196,6 +210,15 @@ class Decl:
     kind: str
     name: str
     line: int
+    calls: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class DeclSpan:
+    kind: str
+    name: str
+    line: int
+    end_line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,19 +234,65 @@ def module_name(path: Path) -> str:
 
 
 def parse_declarations(path: Path) -> list[Decl]:
-    decls: list[Decl] = []
+    return [Decl(kind=d.kind, name=d.name, line=d.line, calls=[]) for d in parse_declaration_spans(path)]
+
+
+def parse_declaration_spans(path: Path) -> list[DeclSpan]:
+    decls: list[DeclSpan] = []
+    pending_heads: list[tuple[str, str, int]] = []
     block_depth = 0
-    with path.open(encoding="utf-8") as handle:
-        for i, line in enumerate(handle, start=1):
-            clean, block_depth = _strip_lean_comments(line, block_depth)
-            if block_depth > 0 and not clean.strip():
-                continue
-            m = DECL_HEAD_RE.match(clean)
-            if m:
-                kind = m.group("kind")
-                for name in _extract_names(kind, m.group("rest"), i):
-                    decls.append(Decl(kind=kind, name=name, line=i))
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines, start=1):
+        clean, block_depth = _strip_lean_comments(line, block_depth)
+        if block_depth > 0 and not clean.strip():
+            continue
+        m = DECL_HEAD_RE.match(clean)
+        if m:
+            if pending_heads:
+                for kind, name, start_line in pending_heads:
+                    decls.append(DeclSpan(kind=kind, name=name, line=start_line, end_line=i - 1))
+                pending_heads = []
+            kind = m.group("kind")
+            for name in _extract_names(kind, m.group("rest"), i):
+                pending_heads.append((kind, name, i))
+
+    end_line = len(lines) if lines else 1
+    for kind, name, start_line in pending_heads:
+        decls.append(DeclSpan(kind=kind, name=name, line=start_line, end_line=end_line))
     return decls
+
+
+def _called_declarations_for_span(
+    lines: list[str],
+    span: DeclSpan,
+    token_index: dict[str, set[str]],
+    parent_qualified_name: str,
+) -> list[str]:
+    if span.kind in NON_REFERENCEABLE_KINDS:
+        return []
+
+    called: set[str] = set()
+    block_depth = 0
+    start = max(1, span.line)
+    end = min(len(lines), max(span.end_line, span.line))
+    for line_no in range(start, end + 1):
+        clean, block_depth = _strip_lean_comments(lines[line_no - 1], block_depth)
+        if line_no == span.line:
+            head = DECL_HEAD_RE.match(clean)
+            if head:
+                clean = head.group("rest")
+
+        clean = _strip_quoted_literals(clean)
+        for token in NAME_TOKEN_RE.findall(clean):
+            if token in LEAN_RESERVED_TOKENS:
+                continue
+            matched = token_index.get(token)
+            if not matched:
+                continue
+            called.update(matched)
+
+    called.discard(parent_qualified_name)
+    return sorted(called)
 
 
 def lean_files() -> list[Path]:
@@ -283,13 +352,40 @@ def build_map() -> dict:
     paths = lean_files()
     source_digest = source_fingerprint(paths)
 
+    spans_by_path: dict[Path, list[DeclSpan]] = {path: parse_declaration_spans(path) for path in paths}
+
+    qualified_by_token: dict[str, set[str]] = {}
+    for path, spans in spans_by_path.items():
+        mod = module_name(path)
+        for span in spans:
+            if span.name.startswith("<anonymous:") or span.kind in NON_REFERENCEABLE_KINDS:
+                continue
+            if not NAME_TOKEN_RE.fullmatch(span.name):
+                continue
+            qualified = f"{mod}.{span.name}"
+            qualified_by_token.setdefault(span.name, set()).add(qualified)
+
     modules: list[ModuleEntry] = []
     for path in paths:
+        spans = spans_by_path[path]
+        lines = path.read_text(encoding="utf-8").splitlines()
+        decls: list[Decl] = []
+        mod = module_name(path)
+        for span in spans:
+            qualified_parent = f"{mod}.{span.name}"
+            calls = _called_declarations_for_span(
+                lines=lines,
+                span=span,
+                token_index=qualified_by_token,
+                parent_qualified_name=qualified_parent,
+            )
+            decls.append(Decl(kind=span.kind, name=span.name, line=span.line, calls=calls))
+
         modules.append(
             ModuleEntry(
-                module=module_name(path),
+                module=mod,
                 path=str(path.relative_to(ROOT)),
-                declarations=parse_declarations(path),
+                declarations=decls,
             )
         )
 

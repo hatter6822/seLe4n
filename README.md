@@ -121,6 +121,9 @@ Validate that the committed file is in sync without writing:
 (sha256 over Lean source paths + contents) and volatile `repository.head` git
 metadata for observability. `--check` compares only the stable declaration-surface
 subset, so it is branch/merge-robust and fails only when Lean inputs drift.
+Each declaration entry now also includes a `calls` array listing referenced declarations
+(using fully-qualified names) discovered within that declaration body; existing
+fields remain unchanged for backward compatibility.
 The post-merge `.github/workflows/codebase_map_sync.yml` job remains as a
 backstop for drift.
 

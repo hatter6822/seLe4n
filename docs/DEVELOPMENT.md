@@ -163,7 +163,9 @@ whenever Lean module/declaration surfaces change, then validate with
 metadata. Website clients should invalidate local cache entries on
 `source_sync.source_digest` changes. `--check` compares only the stable subset,
 keeping CI robust across branch/merge-only commits while still detecting real
-declaration-surface drift. Post-merge enforcement runs in
+declaration-surface drift. Each declaration record also exposes a backward-compatible `calls`
+array with fully-qualified declaration references found in that declaration body.
+Post-merge enforcement runs in
 `.github/workflows/codebase_map_sync.yml`, which auto-regenerates and commits
 the map on `main` when drift is detected.
 
