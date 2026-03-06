@@ -242,6 +242,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H7** | v0.12.21 | HashMap equality/state migration foundation: order-independent `BEq` for `VSpaceRoot`/`CNode` (`size + fold`), and closure-backed state fields migrated to `Std.HashMap` (`capabilityRefs`, `services`, `irqHandlers`, `cdtSlotNode`, `cdtNodeSlot`) | H7 |
 | **WS-H6** | v0.12.20 | Scheduler proof-surface completion: reverse RunQueue invariant `flat_wf_rev`, bridge lemmas `membership_implies_flat`/`mem_toList_iff_mem`, candidate-order theorem `isBetterCandidate_transitive`, and `bucketFirst_fullScan_equivalence`; scheduler membership validation now uses O(1) runQueue membership | H6 |
 | **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | H5 |
 | **WS-H4** | v0.12.18 | Capability invariant redesign: `capabilityInvariantBundle` 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity` | H4 |

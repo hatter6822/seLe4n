@@ -624,7 +624,8 @@ private def runInformationFlowChecks : IO Unit := do
   expect "WS-F3: same-domain serviceRestartChecked matches unchecked"
     (match checkedRestart, uncheckedRestart with
       | .ok ((), s₁), .ok ((), s₂) =>
-          (s₁.services 10).map ServiceGraphEntry.status = (s₂.services 10).map ServiceGraphEntry.status
+          (s₁.services[(10 : ServiceId)]?).map ServiceGraphEntry.status =
+            (s₂.services[(10 : ServiceId)]?).map ServiceGraphEntry.status
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 

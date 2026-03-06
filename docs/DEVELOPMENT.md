@@ -188,3 +188,4 @@ A change is done when all are true:
 - [ ] Invariant/theorem updates are paired with implementation changes.
 - [ ] Required validation commands were run.
 - [ ] Documentation was synchronized.
+- [ ] For WS-H7 changes, verify HashMap-backed equality does not depend on `toList` order and migrated state fields no longer use closure stores.

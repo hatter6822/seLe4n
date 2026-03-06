@@ -78,6 +78,7 @@ The following categories of theorems exist in the proof surface. Claims about pr
 | TPI-D10 | Untyped memory model: `UntypedObject`, `retypeFromUntyped`, watermark/bounds invariants, device restriction enforcement, lifecycle preservation through retype. Closes CRIT-04. | WS-F2 | CLOSED |
 | TPI-D11 | Lifecycle safety guards: childId self-overwrite/collision guards in `retypeFromUntyped`, TCB scheduler cleanup via `lifecycleRetypeWithCleanup`, CNode CDT detach, atomic retype. Proved `lifecycleRetypeWithCleanup_ok_runnable_no_dangling`. Closes H-05, H-06, A-26, A-27, A-28. | WS-H2 | CLOSED |
 | TPI-D11+ | Lifecycle hFresh auto-derivation: `retypeFromUntyped_ok_childId_ne` (H-06 self-overwrite guard → `childId ≠ untypedId`), `retypeFromUntyped_ok_childId_fresh` (A-27 collision guard → childId fresh among children), `retypeFromUntyped_preserves_untypedMemoryInvariant_auto` (eliminates manual `hNe`/`hFresh` proof obligations). Closes WS-H2/B-5. | WS-H2 | CLOSED |
+| TPI-H7 | HashMap equality and state migration foundation: `BEq VSpaceRoot`/`BEq CNode` are order-independent (`size + fold`), and closure-backed state fields (`capabilityRefs`, `services`, `irqHandlers`, `cdtSlotNode`, `cdtNodeSlot`) are migrated to `Std.HashMap` with invariant/test surface updates. Closes A-07, A-10, H-09. | WS-H7 | CLOSED |
 
 ## Update policy
 

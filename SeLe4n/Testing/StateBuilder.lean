@@ -77,17 +77,17 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objects := Std.HashMap.ofList builder.objects
     objectIndex := builder.objects.map Prod.fst
     objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
-    services := listLookup builder.services
+    services := Std.HashMap.ofList builder.services
     scheduler := {
       -- WS-G4 fix: use actual TCB priorities for RunQueue bucketing
       runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
         (tid, lookupThreadPriority builder.objects tid)))
       current := builder.current
     }
-    irqHandlers := listLookup builder.irqHandlers
+    irqHandlers := Std.HashMap.ofList builder.irqHandlers
     lifecycle := {
       objectTypes := Std.HashMap.ofList builder.lifecycleObjectTypes
-      capabilityRefs := listLookup builder.lifecycleCapabilityRefs
+      capabilityRefs := Std.HashMap.ofList builder.lifecycleCapabilityRefs
     }
     -- WS-G3/F-P06: Populate ASID table from VSpaceRoot objects
     asidTable := Std.HashMap.ofList (builder.objects.filterMap fun (oid, obj) =>

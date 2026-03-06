@@ -298,7 +298,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
-8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
+8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface,
+9. HashMap-backed equality for `VSpaceRoot` and `CNode` is order-independent (`size + fold`; no `toList`-order dependence).
 
 ---
 

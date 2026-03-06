@@ -137,3 +137,7 @@ Before opening an architecture-boundary PR:
 3. update tests/fixtures/symbol anchors as needed,
 4. synchronize docs (README/spec/DEVELOPMENT/GitBook),
 5. include a short "what this unlocks for Raspberry Pi 5 path" note.
+
+WS-H7 guardrail: for `Std.HashMap`-backed state and object structures, avoid
+order-sensitive equality (`toList` order) in proof/logic surfaces; use
+size+containment patterns (`size` + `fold`/lookup checks) instead.
