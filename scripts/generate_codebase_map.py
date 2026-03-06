@@ -137,7 +137,6 @@ def build_map() -> dict:
             "scope": ["SeLe4n/**/*.lean", "Main.lean", "tests/**/*.lean"],
             "digest_algorithm": "sha256",
             "source_digest": source_digest,
-            "cache_key": source_digest,
         },
         "summary": {
             "module_count": len(modules),

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "work",
-      "commit_sha": "e43f84bd7c3ae15dd9b53ad0a2493e918017ac92",
-      "tree_sha": "6f98ed1220a5fd7d160e5989532afcd048960651",
-      "committed_at_utc": "2026-03-06T16:46:00+00:00"
+      "commit_sha": "6ea747e93eec643cd909ca83814f9b9930f423f4",
+      "tree_sha": "5fd77bb2ae91a57294d6f7c7752766041e5cc095",
+      "committed_at_utc": "2026-03-06T17:01:30+00:00"
     }
   },
   "source_sync": {
@@ -17,8 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3",
-    "cache_key": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3"
+    "source_digest": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3"
   },
   "summary": {
     "module_count": 43,

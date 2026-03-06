@@ -83,7 +83,7 @@ class Marker where
                     "committed_at_utc": "2026-01-01T00:00:00Z",
                 },
             },
-            "source_sync": {"cache_key": "abc"},
+            "source_sync": {"source_digest": "abc"},
             "summary": {"module_count": 1, "declaration_count": 2},
             "modules": [{"module": "Main", "path": "Main.lean", "declaration_count": 0, "declarations": []}],
         }
@@ -105,11 +105,11 @@ class Marker where
         base = {
             "schema_version": "1.0.0",
             "repository": {"name": "hatter6822/seLe4n", "url": "https://github.com/hatter6822/seLe4n"},
-            "source_sync": {"cache_key": "abc"},
+            "source_sync": {"source_digest": "abc"},
             "summary": {"module_count": 1, "declaration_count": 2},
             "modules": [{"module": "Main", "path": "Main.lean", "declaration_count": 0, "declarations": []}],
         }
-        changed_source = {**base, "source_sync": {"cache_key": "def"}}
+        changed_source = {**base, "source_sync": {"source_digest": "def"}}
         self.assertNotEqual(m.normalized_for_check(base), m.normalized_for_check(changed_source))
 
 
