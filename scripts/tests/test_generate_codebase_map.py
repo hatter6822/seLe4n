@@ -32,6 +32,114 @@ class Marker where
             ],
         )
 
+    def test_parse_declarations_supports_extended_schema_kinds(self) -> None:
+        fixture = Path("/tmp/test_generate_codebase_map_extended_fixture.lean")
+        fixture.write_text(
+            """
+constant alpha : Nat
+constants beta gamma : Nat
+axiom hAxiom : True
+example : True := by trivial
+opaque hiddenImpl : Nat
+abbrev alias := alpha
+instance : Inhabited Nat where
+  default := 0
+initialize initValue : Nat := 0
+syntax "foo" : command
+macro "bar" : command => `(command| #check Nat)
+macro_rules
+  | `(command| baz) => `(command| #check Nat)
+notation "⊕" => Nat.add
+infixl:65 " +++ " => Nat.add
+prefix:70 "@@" => Nat.succ
+postfix:max "!!" => Nat.succ
+elab "z" : term => `(Nat.zero)
+elab_rules : term
+  | `(z2) => `(Nat.zero)
+term_elab myTerm : term
+command_elab myCmd
+  | `(command| #noop) => pure ()
+tactic myTac
+declare_syntax_cat mycat
+syntax_cat myothercat
+universe u
+universes v w
+variable (x : Nat)
+variables (y z : Nat)
+parameter (p : Nat)
+parameters (q r : Nat)
+section MySection
+namespace MyNamespace
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        decls = m.parse_declarations(fixture)
+        got = {(d.kind, d.name) for d in decls}
+        expected_subset = {
+            ("constant", "alpha"),
+            ("constants", "beta"),
+            ("constants", "gamma"),
+            ("axiom", "hAxiom"),
+            ("opaque", "hiddenImpl"),
+            ("abbrev", "alias"),
+            ("instance", "<anonymous:instance:7>"),
+            ("initialize", "initValue"),
+            ("syntax", '"foo"'),
+            ("macro", '"bar"'),
+            ("macro_rules", "<anonymous:macro_rules:12>"),
+            ("notation", '"⊕"'),
+            ("infixl", '" +++ "'),
+            ("prefix", '"@@"'),
+            ("postfix", '"!!"'),
+            ("elab", '"z"'),
+            ("elab_rules", "<anonymous:elab_rules:19>"),
+            ("term_elab", "myTerm"),
+            ("command_elab", "myCmd"),
+            ("tactic", "myTac"),
+            ("declare_syntax_cat", "mycat"),
+            ("syntax_cat", "myothercat"),
+            ("universe", "u"),
+            ("universes", "v"),
+            ("universes", "w"),
+            ("variable", "x"),
+            ("variables", "y"),
+            ("variables", "z"),
+            ("parameter", "p"),
+            ("parameters", "q"),
+            ("parameters", "r"),
+            ("section", "MySection"),
+            ("namespace", "MyNamespace"),
+        }
+        self.assertTrue(expected_subset.issubset(got))
+
+    def test_parse_declarations_ignores_comments_and_handles_modifiers(self) -> None:
+        fixture = Path("/tmp/test_generate_codebase_map_comments_fixture.lean")
+        fixture.write_text(
+            """
+-- def commentedOut := 0
+/-
+  theorem hiddenInBlock : True := by trivial
+-/
+noncomputable def visibleDef : Nat := 1
+unsafe theorem visibleTheorem : True := by trivial
+local syntax "visible" : term
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        decls = m.parse_declarations(fixture)
+        self.assertEqual(
+            [(d.kind, d.name) for d in decls],
+            [
+                ("def", "visibleDef"),
+                ("theorem", "visibleTheorem"),
+                ("syntax", '"visible"'),
+            ],
+        )
+
     def test_module_name_is_repo_relative(self) -> None:
         self.assertEqual(
             m.module_name(m.ROOT / "SeLe4n/Kernel/API.lean"),

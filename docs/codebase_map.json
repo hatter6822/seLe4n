@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "62c11c44c468976e3f54da160629fc0ba0d24c66",
-      "tree_sha": "88deb55fb6e789bbcc7be1cc22baa54e6832a52f",
-      "committed_at_utc": "2026-03-06T12:27:15-05:00"
+      "branch": "work",
+      "commit_sha": "43f9ab03815e17339c2348f426c16cee1c085239",
+      "tree_sha": "ff9ebe569ded613f755cc154fd477d24d468998f",
+      "committed_at_utc": "2026-03-06T19:33:32+00:00"
     }
   },
   "source_sync": {
@@ -21,14 +21,19 @@
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1364
+    "declaration_count": 1493
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 61
+        },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
@@ -44,8 +49,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Adapter",
       "path": "SeLe4n/Kernel/Architecture/Adapter.lean",
-      "declaration_count": 13,
+      "declaration_count": 14,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 3
+        },
         {
           "kind": "inductive",
           "name": "AdapterErrorKind",
@@ -116,8 +126,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Assumptions",
       "path": "SeLe4n/Kernel/Architecture/Assumptions.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 3
+        },
         {
           "kind": "inductive",
           "name": "ArchAssumption",
@@ -213,8 +228,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 20,
+      "declaration_count": 21,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 30
+        },
         {
           "kind": "def",
           "name": "proofLayerInvariantBundle",
@@ -320,8 +340,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpace",
       "path": "SeLe4n/Kernel/Architecture/VSpace.lean",
-      "declaration_count": 9,
+      "declaration_count": 10,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 12
+        },
         {
           "kind": "def",
           "name": "asidBoundToRoot",
@@ -372,8 +397,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceBackend",
       "path": "SeLe4n/Kernel/Architecture/VSpaceBackend.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 47
+        },
         {
           "kind": "class",
           "name": "VSpaceBackend",
@@ -389,8 +419,13 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceInvariant",
       "path": "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean",
-      "declaration_count": 13,
+      "declaration_count": 14,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 33
+        },
         {
           "kind": "def",
           "name": "vspaceRootNonOverlap",
@@ -461,8 +496,13 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant",
       "path": "SeLe4n/Kernel/Capability/Invariant.lean",
-      "declaration_count": 110,
+      "declaration_count": 111,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 70
+        },
         {
           "kind": "def",
           "name": "cspaceSlotUnique",
@@ -1018,8 +1058,13 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 28,
+      "declaration_count": 29,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "abbrev",
           "name": "CSpaceAddr",
@@ -1165,8 +1210,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue",
       "path": "SeLe4n/Kernel/IPC/DualQueue.lean",
-      "declaration_count": 31,
+      "declaration_count": 32,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "def",
           "name": "tcbWithQueueLinks",
@@ -1327,8 +1377,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant",
       "path": "SeLe4n/Kernel/IPC/Invariant.lean",
-      "declaration_count": 141,
+      "declaration_count": 142,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 15
+        },
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq",
@@ -2039,8 +2094,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations",
       "path": "SeLe4n/Kernel/IPC/Operations.lean",
-      "declaration_count": 55,
+      "declaration_count": 56,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "def",
           "name": "removeRunnable",
@@ -2321,8 +2381,13 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Enforcement",
       "path": "SeLe4n/Kernel/InformationFlow/Enforcement.lean",
-      "declaration_count": 21,
+      "declaration_count": 22,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 34
+        },
         {
           "kind": "def",
           "name": "endpointSendChecked",
@@ -2433,8 +2498,13 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant.lean",
-      "declaration_count": 36,
+      "declaration_count": 37,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 56
+        },
         {
           "kind": "theorem",
           "name": "storeObject_preserves_projectObjectIndex",
@@ -2620,8 +2690,13 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 51,
+      "declaration_count": 56,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "inductive",
           "name": "Confidentiality",
@@ -2636,6 +2711,11 @@
           "kind": "structure",
           "name": "SecurityLabel",
           "line": 20
+        },
+        {
+          "kind": "namespace",
+          "name": "SecurityLabel",
+          "line": 25
         },
         {
           "kind": "def",
@@ -2708,6 +2788,11 @@
           "line": 143
         },
         {
+          "kind": "namespace",
+          "name": "SecurityDomain",
+          "line": 147
+        },
+        {
           "kind": "def",
           "name": "lowest",
           "line": 150
@@ -2718,9 +2803,19 @@
           "line": 152
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:155>",
+          "line": 155
+        },
+        {
           "kind": "structure",
           "name": "DomainFlowPolicy",
           "line": 165
+        },
+        {
+          "kind": "namespace",
+          "name": "DomainFlowPolicy",
+          "line": 168
         },
         {
           "kind": "def",
@@ -2882,8 +2977,13 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Projection",
       "path": "SeLe4n/Kernel/InformationFlow/Projection.lean",
-      "declaration_count": 33,
+      "declaration_count": 34,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 13
+        },
         {
           "kind": "structure",
           "name": "IfObserver",
@@ -3054,8 +3154,13 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant.lean",
-      "declaration_count": 35,
+      "declaration_count": 36,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 34
+        },
         {
           "kind": "def",
           "name": "lifecycleIdentityTypeExact",
@@ -3236,8 +3341,13 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations",
       "path": "SeLe4n/Kernel/Lifecycle/Operations.lean",
-      "declaration_count": 42,
+      "declaration_count": 43,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 4
+        },
         {
           "kind": "def",
           "name": "lifecycleRetypeAuthority",
@@ -3453,8 +3563,13 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 12,
+      "declaration_count": 13,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 21
+        },
         {
           "kind": "def",
           "name": "queueCurrentConsistent",
@@ -3520,8 +3635,13 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations",
       "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
-      "declaration_count": 49,
+      "declaration_count": 50,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "def",
           "name": "isBetterCandidate",
@@ -3772,12 +3892,22 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 35,
+      "declaration_count": 42,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 2
+        },
         {
           "kind": "structure",
           "name": "RunQueue",
           "line": 4
+        },
+        {
+          "kind": "namespace",
+          "name": "RunQueue",
+          "line": 25
         },
         {
           "kind": "def",
@@ -3785,9 +3915,34 @@
           "line": 26
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:33>",
+          "line": 33
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:34>",
+          "line": 34
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:35>",
+          "line": 35
+        },
+        {
           "kind": "def",
           "name": "contains",
           "line": 36
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:38>",
+          "line": 38
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:40>",
+          "line": 40
         },
         {
           "kind": "def",
@@ -3954,8 +4109,13 @@
     {
       "module": "SeLe4n.Kernel.Service.Invariant",
       "path": "SeLe4n/Kernel/Service/Invariant.lean",
-      "declaration_count": 74,
+      "declaration_count": 75,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 45
+        },
         {
           "kind": "abbrev",
           "name": "ServicePolicyPredicate",
@@ -4331,8 +4491,13 @@
     {
       "module": "SeLe4n.Kernel.Service.Operations",
       "path": "SeLe4n/Kernel/Service/Operations.lean",
-      "declaration_count": 20,
+      "declaration_count": 21,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 3
+        },
         {
           "kind": "abbrev",
           "name": "ServicePolicy",
@@ -4438,8 +4603,13 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 40,
+      "declaration_count": 45,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n",
+          "line": 3
+        },
         {
           "kind": "abbrev",
           "name": "RegName",
@@ -4461,9 +4631,19 @@
           "line": 32
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:37>",
+          "line": 37
+        },
+        {
           "kind": "structure",
           "name": "MachineState",
           "line": 41
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:46>",
+          "line": 46
         },
         {
           "kind": "def",
@@ -4591,6 +4771,11 @@
           "line": 160
         },
         {
+          "kind": "namespace",
+          "name": "MemoryRegion",
+          "line": 166
+        },
+        {
           "kind": "def",
           "name": "endAddr",
           "line": 169
@@ -4614,6 +4799,11 @@
           "kind": "structure",
           "name": "MachineConfig",
           "line": 201
+        },
+        {
+          "kind": "namespace",
+          "name": "MachineConfig",
+          "line": 216
         },
         {
           "kind": "def",
@@ -4645,8 +4835,13 @@
     {
       "module": "SeLe4n.Model.Object",
       "path": "SeLe4n/Model/Object.lean",
-      "declaration_count": 117,
+      "declaration_count": 129,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Model",
+          "line": 3
+        },
         {
           "kind": "inductive",
           "name": "ServiceStatus",
@@ -4678,6 +4873,11 @@
           "line": 45
         },
         {
+          "kind": "namespace",
+          "name": "Capability",
+          "line": 51
+        },
+        {
           "kind": "def",
           "name": "hasRight",
           "line": 53
@@ -4686,6 +4886,11 @@
           "kind": "structure",
           "name": "IpcMessage",
           "line": 61
+        },
+        {
+          "kind": "namespace",
+          "name": "IpcMessage",
+          "line": 67
         },
         {
           "kind": "def",
@@ -4746,6 +4951,11 @@
           "kind": "structure",
           "name": "UntypedObject",
           "line": 204
+        },
+        {
+          "kind": "namespace",
+          "name": "UntypedObject",
+          "line": 220
         },
         {
           "kind": "def",
@@ -4883,6 +5093,11 @@
           "line": 445
         },
         {
+          "kind": "namespace",
+          "name": "VSpaceRoot",
+          "line": 450
+        },
+        {
           "kind": "def",
           "name": "lookup",
           "line": 453
@@ -4956,6 +5171,16 @@
           "kind": "theorem",
           "name": "lookup_unmapPage_ne",
           "line": 606
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:627>",
+          "line": 627
+        },
+        {
+          "kind": "namespace",
+          "name": "CNode",
+          "line": 633
         },
         {
           "kind": "inductive",
@@ -5083,6 +5308,11 @@
           "line": 827
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:842>",
+          "line": 842
+        },
+        {
           "kind": "abbrev",
           "name": "SlotAddr",
           "line": 853
@@ -5103,6 +5333,11 @@
           "line": 872
         },
         {
+          "kind": "namespace",
+          "name": "CapDerivationEdge",
+          "line": 878
+        },
+        {
           "kind": "def",
           "name": "isChildOf",
           "line": 880
@@ -5116,6 +5351,11 @@
           "kind": "structure",
           "name": "CapDerivationTree",
           "line": 892
+        },
+        {
+          "kind": "namespace",
+          "name": "CapDerivationTree",
+          "line": 900
         },
         {
           "kind": "def",
@@ -5218,9 +5458,19 @@
           "line": 1098
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:1109>",
+          "line": 1109
+        },
+        {
           "kind": "inductive",
           "name": "KernelObjectType",
           "line": 1119
+        },
+        {
+          "kind": "namespace",
+          "name": "KernelObject",
+          "line": 1128
         },
         {
           "kind": "def",
@@ -5237,8 +5487,13 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 84,
+      "declaration_count": 88,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Model",
+          "line": 5
+        },
         {
           "kind": "inductive",
           "name": "KernelError",
@@ -5265,6 +5520,11 @@
           "line": 68
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:76>",
+          "line": 76
+        },
+        {
           "kind": "structure",
           "name": "LifecycleMetadata",
           "line": 86
@@ -5275,14 +5535,19 @@
           "line": 90
         },
         {
-          "kind": "structure",
-          "name": "supporting",
-          "line": 110
-        },
-        {
           "kind": "abbrev",
           "name": "CSpaceOwner",
           "line": 133
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:135>",
+          "line": 135
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:138>",
+          "line": 138
         },
         {
           "kind": "abbrev",
@@ -5505,6 +5770,11 @@
           "line": 598
         },
         {
+          "kind": "namespace",
+          "name": "SystemState",
+          "line": 608
+        },
+        {
           "kind": "def",
           "name": "lookupCNode",
           "line": 611
@@ -5664,8 +5934,13 @@
     {
       "module": "SeLe4n.Platform.Contract",
       "path": "SeLe4n/Platform/Contract.lean",
-      "declaration_count": 5,
+      "declaration_count": 6,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform",
+          "line": 36
+        },
         {
           "kind": "class",
           "name": "PlatformBinding",
@@ -5696,8 +5971,13 @@
     {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 23
+        },
         {
           "kind": "def",
           "name": "peripheralBaseLow",
@@ -5758,8 +6038,13 @@
     {
       "module": "SeLe4n.Platform.RPi5.BootContract",
       "path": "SeLe4n/Platform/RPi5/BootContract.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 26
+        },
         {
           "kind": "def",
           "name": "rpi5BootContract",
@@ -5775,8 +6060,13 @@
     {
       "module": "SeLe4n.Platform.RPi5.Contract",
       "path": "SeLe4n/Platform/RPi5/Contract.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 33
+        },
         {
           "kind": "structure",
           "name": "RPi5Platform",
@@ -5792,8 +6082,13 @@
     {
       "module": "SeLe4n.Platform.RPi5.RuntimeContract",
       "path": "SeLe4n/Platform/RPi5/RuntimeContract.lean",
-      "declaration_count": 1,
+      "declaration_count": 2,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 25
+        },
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
@@ -5804,8 +6099,13 @@
     {
       "module": "SeLe4n.Platform.Sim.BootContract",
       "path": "SeLe4n/Platform/Sim/BootContract.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.Sim",
+          "line": 11
+        },
         {
           "kind": "def",
           "name": "simBootContract",
@@ -5821,8 +6121,13 @@
     {
       "module": "SeLe4n.Platform.Sim.Contract",
       "path": "SeLe4n/Platform/Sim/Contract.lean",
-      "declaration_count": 3,
+      "declaration_count": 4,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.Sim",
+          "line": 25
+        },
         {
           "kind": "structure",
           "name": "SimPlatform",
@@ -5843,8 +6148,13 @@
     {
       "module": "SeLe4n.Platform.Sim.RuntimeContract",
       "path": "SeLe4n/Platform/Sim/RuntimeContract.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.Sim",
+          "line": 16
+        },
         {
           "kind": "def",
           "name": "simRuntimeContractPermissive",
@@ -5860,12 +6170,27 @@
     {
       "module": "SeLe4n.Prelude",
       "path": "SeLe4n/Prelude.lean",
-      "declaration_count": 107,
+      "declaration_count": 163,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n",
+          "line": 4
+        },
         {
           "kind": "structure",
           "name": "ObjId",
           "line": 21
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:27>",
+          "line": 27
+        },
+        {
+          "kind": "namespace",
+          "name": "ObjId",
+          "line": 30
         },
         {
           "kind": "def",
@@ -5881,6 +6206,11 @@
           "kind": "instance",
           "name": "instOfNat",
           "line": 38
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:41>",
+          "line": 41
         },
         {
           "kind": "def",
@@ -5903,6 +6233,16 @@
           "line": 56
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:62>",
+          "line": 62
+        },
+        {
+          "kind": "namespace",
+          "name": "ThreadId",
+          "line": 65
+        },
+        {
           "kind": "def",
           "name": "ofNat",
           "line": 68
@@ -5921,6 +6261,11 @@
           "kind": "instance",
           "name": "instOfNat",
           "line": 85
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:88>",
+          "line": 88
         },
         {
           "kind": "def",
@@ -5953,6 +6298,16 @@
           "line": 121
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:127>",
+          "line": 127
+        },
+        {
+          "kind": "namespace",
+          "name": "DomainId",
+          "line": 130
+        },
+        {
           "kind": "def",
           "name": "ofNat",
           "line": 133
@@ -5968,9 +6323,24 @@
           "line": 138
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:141>",
+          "line": 141
+        },
+        {
           "kind": "structure",
           "name": "Priority",
           "line": 147
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:153>",
+          "line": 153
+        },
+        {
+          "kind": "namespace",
+          "name": "Priority",
+          "line": 156
         },
         {
           "kind": "def",
@@ -5988,9 +6358,24 @@
           "line": 164
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:167>",
+          "line": 167
+        },
+        {
           "kind": "structure",
           "name": "Deadline",
           "line": 177
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:183>",
+          "line": 183
+        },
+        {
+          "kind": "namespace",
+          "name": "Deadline",
+          "line": 186
         },
         {
           "kind": "def",
@@ -6008,6 +6393,11 @@
           "line": 191
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:194>",
+          "line": 194
+        },
+        {
           "kind": "def",
           "name": "none",
           "line": 198
@@ -6021,6 +6411,16 @@
           "kind": "structure",
           "name": "Irq",
           "line": 206
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:212>",
+          "line": 212
+        },
+        {
+          "kind": "namespace",
+          "name": "Irq",
+          "line": 215
         },
         {
           "kind": "def",
@@ -6038,9 +6438,24 @@
           "line": 223
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:226>",
+          "line": 226
+        },
+        {
           "kind": "structure",
           "name": "ServiceId",
           "line": 232
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:238>",
+          "line": 238
+        },
+        {
+          "kind": "namespace",
+          "name": "ServiceId",
+          "line": 241
         },
         {
           "kind": "def",
@@ -6058,6 +6473,11 @@
           "line": 249
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:252>",
+          "line": 252
+        },
+        {
           "kind": "def",
           "name": "isReserved",
           "line": 256
@@ -6073,6 +6493,16 @@
           "line": 264
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:270>",
+          "line": 270
+        },
+        {
+          "kind": "namespace",
+          "name": "CPtr",
+          "line": 273
+        },
+        {
           "kind": "def",
           "name": "ofNat",
           "line": 276
@@ -6086,6 +6516,11 @@
           "kind": "instance",
           "name": "instOfNat",
           "line": 281
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:284>",
+          "line": 284
         },
         {
           "kind": "def",
@@ -6113,6 +6548,16 @@
           "line": 301
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:307>",
+          "line": 307
+        },
+        {
+          "kind": "namespace",
+          "name": "Slot",
+          "line": 310
+        },
+        {
           "kind": "def",
           "name": "ofNat",
           "line": 313
@@ -6128,9 +6573,24 @@
           "line": 318
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:321>",
+          "line": 321
+        },
+        {
           "kind": "structure",
           "name": "Badge",
           "line": 327
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:333>",
+          "line": 333
+        },
+        {
+          "kind": "namespace",
+          "name": "Badge",
+          "line": 336
         },
         {
           "kind": "def",
@@ -6148,9 +6608,24 @@
           "line": 344
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:347>",
+          "line": 347
+        },
+        {
           "kind": "structure",
           "name": "ASID",
           "line": 353
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:359>",
+          "line": 359
+        },
+        {
+          "kind": "namespace",
+          "name": "ASID",
+          "line": 362
         },
         {
           "kind": "def",
@@ -6168,9 +6643,24 @@
           "line": 370
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:373>",
+          "line": 373
+        },
+        {
           "kind": "structure",
           "name": "VAddr",
           "line": 379
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:385>",
+          "line": 385
+        },
+        {
+          "kind": "namespace",
+          "name": "VAddr",
+          "line": 388
         },
         {
           "kind": "def",
@@ -6188,9 +6678,24 @@
           "line": 396
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:399>",
+          "line": 399
+        },
+        {
           "kind": "structure",
           "name": "PAddr",
           "line": 405
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:411>",
+          "line": 411
+        },
+        {
+          "kind": "namespace",
+          "name": "PAddr",
+          "line": 414
         },
         {
           "kind": "def",
@@ -6208,9 +6713,19 @@
           "line": 422
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:425>",
+          "line": 425
+        },
+        {
           "kind": "abbrev",
           "name": "KernelM",
           "line": 431
+        },
+        {
+          "kind": "namespace",
+          "name": "KernelM",
+          "line": 433
         },
         {
           "kind": "def",
@@ -6221,6 +6736,16 @@
           "kind": "def",
           "name": "bind",
           "line": 438
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:444>",
+          "line": 444
+        },
+        {
+          "kind": "namespace",
+          "name": "KernelM",
+          "line": 454
         },
         {
           "kind": "def",
@@ -6276,6 +6801,71 @@
           "kind": "theorem",
           "name": "throw_errors",
           "line": 496
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:505>",
+          "line": 505
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:508>",
+          "line": 508
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:511>",
+          "line": 511
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:514>",
+          "line": 514
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:517>",
+          "line": 517
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:520>",
+          "line": 520
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:523>",
+          "line": 523
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:526>",
+          "line": 526
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:529>",
+          "line": 529
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:532>",
+          "line": 532
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:535>",
+          "line": 535
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:538>",
+          "line": 538
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:541>",
+          "line": 541
         },
         {
           "kind": "theorem",
@@ -6402,8 +6992,13 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 23,
+      "declaration_count": 25,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 5
+        },
         {
           "kind": "def",
           "name": "endpointQueueWellFormedB",
@@ -6418,6 +7013,11 @@
           "kind": "def",
           "name": "lookupQueueTcbB",
           "line": 18
+        },
+        {
+          "kind": "def",
+          "name": "intrusiveQueueReachable",
+          "line": 23
         },
         {
           "kind": "def",
@@ -6524,8 +7124,13 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 32,
+      "declaration_count": 33,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 8
+        },
         {
           "kind": "def",
           "name": "mkRunQueue",
@@ -6691,8 +7296,13 @@
     {
       "module": "SeLe4n.Testing.RuntimeContractFixtures",
       "path": "SeLe4n/Testing/RuntimeContractFixtures.lean",
-      "declaration_count": 4,
+      "declaration_count": 5,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 5
+        },
         {
           "kind": "def",
           "name": "runtimeContractAcceptAll",
@@ -6718,8 +7328,13 @@
     {
       "module": "SeLe4n.Testing.StateBuilder",
       "path": "SeLe4n/Testing/StateBuilder.lean",
-      "declaration_count": 13,
+      "declaration_count": 15,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 5
+        },
         {
           "kind": "def",
           "name": "listLookup",
@@ -6729,6 +7344,11 @@
           "kind": "structure",
           "name": "BootstrapBuilder",
           "line": 16
+        },
+        {
+          "kind": "namespace",
+          "name": "BootstrapBuilder",
+          "line": 26
         },
         {
           "kind": "def",
@@ -6802,8 +7422,13 @@
     {
       "module": "tests.InformationFlowSuite",
       "path": "tests/InformationFlowSuite.lean",
-      "declaration_count": 12,
+      "declaration_count": 13,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 6
+        },
         {
           "kind": "def",
           "name": "expect",
@@ -6869,8 +7494,13 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 34,
+      "declaration_count": 35,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 7
+        },
         {
           "kind": "def",
           "name": "endpointId",
@@ -7046,8 +7676,13 @@
     {
       "module": "tests.TraceSequenceProbe",
       "path": "tests/TraceSequenceProbe.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 6
+        },
         {
           "kind": "inductive",
           "name": "ProbeOp",
@@ -7122,6 +7757,16 @@
           "kind": "structure",
           "name": "ProbeStats",
           "line": 119
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:126>",
+          "line": 126
+        },
+        {
+          "kind": "def",
+          "name": "runProbeLoop",
+          "line": 129
         },
         {
           "kind": "def",
