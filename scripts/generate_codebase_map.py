@@ -22,11 +22,173 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DECL_RE = re.compile(
-    r"^\s*(?:@[\w\[\]\.\s]+\s+)?(?:private\s+)?"
-    r"(?P<kind>def|theorem|lemma|abbrev|instance|structure|inductive|class)\s+"
-    r"(?P<name>[A-Za-z0-9_'.]+)"
+DECL_KINDS = [
+    "inductive",
+    "structure",
+    "class",
+    "def",
+    "theorem",
+    "lemma",
+    "example",
+    "instance",
+    "opaque",
+    "abbrev",
+    "axiom",
+    "constant",
+    "constants",
+    "declare_syntax_cat",
+    "syntax_cat",
+    "syntax",
+    "macro",
+    "macro_rules",
+    "notation",
+    "infix",
+    "infixl",
+    "infixr",
+    "prefix",
+    "postfix",
+    "elab",
+    "elab_rules",
+    "term_elab",
+    "command_elab",
+    "tactic",
+    "universe",
+    "universes",
+    "variable",
+    "variables",
+    "parameter",
+    "parameters",
+    "section",
+    "namespace",
+    "initialize",
+]
+
+DECL_MODIFIERS = [
+    "private",
+    "protected",
+    "noncomputable",
+    "unsafe",
+    "partial",
+    "scoped",
+    "local",
+]
+
+DECL_HEAD_RE = re.compile(
+    r"^\s*(?:@[\w\[\]\.\s]+\s+)?"
+    r"(?:(?:" + "|".join(DECL_MODIFIERS) + r")\s+)*"
+    r"(?P<kind>" + "|".join(DECL_KINDS) + r")\b\s*(?P<rest>.*)$"
 )
+
+NAME_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
+FIRST_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_'.]*)")
+QUOTED_TOKEN_RE = re.compile(r"\"[^\"\n]*\"")
+
+
+def _strip_lean_comments(line: str, block_depth: int) -> tuple[str, int]:
+    """Strip line + block comments while tracking nested block depth."""
+    out: list[str] = []
+    i = 0
+    while i < len(line):
+        if block_depth > 0:
+            if line.startswith("/-", i):
+                block_depth += 1
+                i += 2
+                continue
+            if line.startswith("-/", i):
+                block_depth -= 1
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if line.startswith("--", i):
+            break
+        if line.startswith("/-", i):
+            block_depth += 1
+            i += 2
+            continue
+
+        out.append(line[i])
+        i += 1
+
+    return "".join(out), block_depth
+
+
+def _split_head_segment(rest: str) -> str:
+    for marker in (":=", " where", ":", "=>"):
+        idx = rest.find(marker)
+        if idx != -1:
+            return rest[:idx]
+    return rest
+
+
+def _extract_names(kind: str, rest: str, line: int) -> list[str]:
+    rest = rest.strip()
+    if not rest:
+        return [f"<anonymous:{kind}:{line}>"]
+
+    if kind in {"constants", "universes", "variables", "parameters"}:
+        names = NAME_TOKEN_RE.findall(_split_head_segment(rest))
+        if names:
+            return names
+        return [f"<anonymous:{kind}:{line}>"]
+
+    if kind in {
+        "syntax",
+        "notation",
+        "infix",
+        "infixl",
+        "infixr",
+        "prefix",
+        "postfix",
+        "elab",
+        "macro",
+        "macro_rules",
+        "initialize",
+    }:
+        m = FIRST_NAME_RE.match(rest)
+        if m:
+            return [m.group("name")]
+        quoted = QUOTED_TOKEN_RE.search(rest)
+        if quoted:
+            return [quoted.group(0)]
+        if rest[0] in {'`', "'"}:
+            return [rest.split()[0]]
+
+    if kind in {
+        "def",
+        "theorem",
+        "lemma",
+        "example",
+        "instance",
+        "opaque",
+        "abbrev",
+        "axiom",
+        "constant",
+        "inductive",
+        "structure",
+        "class",
+        "declare_syntax_cat",
+        "syntax_cat",
+        "elab_rules",
+        "term_elab",
+        "command_elab",
+        "tactic",
+        "universe",
+        "variable",
+        "parameter",
+        "section",
+        "namespace",
+    }:
+        m = FIRST_NAME_RE.match(rest)
+        if m:
+            return [m.group("name")]
+        if kind in {"variable", "parameter"}:
+            names = NAME_TOKEN_RE.findall(_split_head_segment(rest))
+            if names:
+                return [names[0]]
+
+    return [f"<anonymous:{kind}:{line}>"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,11 +212,17 @@ def module_name(path: Path) -> str:
 
 def parse_declarations(path: Path) -> list[Decl]:
     decls: list[Decl] = []
+    block_depth = 0
     with path.open(encoding="utf-8") as handle:
         for i, line in enumerate(handle, start=1):
-            m = DECL_RE.match(line)
+            clean, block_depth = _strip_lean_comments(line, block_depth)
+            if block_depth > 0 and not clean.strip():
+                continue
+            m = DECL_HEAD_RE.match(clean)
             if m:
-                decls.append(Decl(kind=m.group("kind"), name=m.group("name"), line=i))
+                kind = m.group("kind")
+                for name in _extract_names(kind, m.group("rest"), i):
+                    decls.append(Decl(kind=kind, name=name, line=i))
     return decls
 
 
