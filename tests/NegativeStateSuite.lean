@@ -261,13 +261,11 @@ private def runNegativeChecks : IO Unit := do
       cdt := CapDerivationTree.empty
         |>.addEdge moveSrcNode moveChildNode .mint
         |>.addEdge moveParentNode moveSrcNode .copy
-      cdtSlotNode := fun ref =>
-        if ref = slot0 then some moveSrcNode else baseState.cdtSlotNode ref
-      cdtNodeSlot := fun node =>
-        if node = moveSrcNode then some slot0
-        else if node = moveParentNode then some { cnode := cnodeId, slot := 7 }
-        else if node = moveChildNode then some { cnode := cnodeId, slot := 8 }
-        else baseState.cdtNodeSlot node
+      cdtSlotNode := baseState.cdtSlotNode.insert slot0 moveSrcNode
+      cdtNodeSlot := (((baseState.cdtNodeSlot
+        |>.insert moveSrcNode slot0)
+        |>.insert moveParentNode { cnode := cnodeId, slot := 7 })
+        |>.insert moveChildNode { cnode := cnodeId, slot := 8 })
       cdtNextNode := 3
     }
   let (_, moveState) ← expectOkState "cspaceMove remaps slot-node pointer"
@@ -319,16 +317,14 @@ private def runNegativeChecks : IO Unit := do
       cdt := CapDerivationTree.empty
         |>.addEdge strictRootNode strictChildNodeBad .mint
         |>.addEdge strictRootNode strictChildNodeOk .copy
-      cdtSlotNode := fun ref =>
-        if ref = strictRootSlot then some strictRootNode
-        else if ref = strictChildSlotOk then some strictChildNodeOk
-        else if ref = strictChildSlotBad then some strictChildNodeBad
-        else baseState.cdtSlotNode ref
-      cdtNodeSlot := fun node =>
-        if node = strictRootNode then some strictRootSlot
-        else if node = strictChildNodeOk then some strictChildSlotOk
-        else if node = strictChildNodeBad then some strictChildSlotBad
-        else baseState.cdtNodeSlot node
+      cdtSlotNode := ((((baseState.cdtSlotNode
+        |>.insert strictRootSlot strictRootNode)
+        |>.insert strictChildSlotOk strictChildNodeOk)
+        |>.insert strictChildSlotBad strictChildNodeBad))
+      cdtNodeSlot := (((baseState.cdtNodeSlot
+        |>.insert strictRootNode strictRootSlot)
+        |>.insert strictChildNodeOk strictChildSlotOk)
+        |>.insert strictChildNodeBad strictChildSlotBad)
       cdtNextNode := 33
     }
 
@@ -1017,9 +1013,64 @@ private def runAuditCoverageChecks : IO Unit := do
       throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {reprStr err}"
   IO.println "cspaceMutate coverage checks passed"
 
+
+/-- WS-H7 regression checks: HashMap BEq order-independence and capabilityRef metadata sync. -/
+private def runWSH7Checks : IO Unit := do
+  let vr1 : VSpaceRoot :=
+    { asid := 77
+      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 4096 8192).insert 12288 16384 }
+  let vr2 : VSpaceRoot :=
+    { asid := 77
+      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 12288 16384).insert 4096 8192 }
+  if vr1 == vr2 then
+    IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
+  else
+    throw <| IO.userError "WS-H7 VSpaceRoot BEq ignores insertion order: expected true"
+
+  let capA : Capability := { target := .object endpointId, rights := [.read], badge := none }
+  let capB : Capability := { target := .object notificationId, rights := [.read, .write], badge := none }
+  let cn1 : CNode :=
+    { guard := 0, radix := 2
+      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 1 capA).insert 2 capB }
+  let cn2 : CNode :=
+    { guard := 0, radix := 2
+      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 2 capB).insert 1 capA }
+  if cn1 == cn2 then
+    IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
+  else
+    throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
+
+  let lifecycleCnode : KernelObject := .cnode { guard := 0, radix := 1, slots := Std.HashMap.ofList [(0, capA)] }
+  let lifecycleEndpoint : KernelObject := .endpoint { state := .idle, queue := [], waitingReceiver := none }
+
+  let stAfterCnode :=
+    match storeObject 500 lifecycleCnode baseState with
+    | .ok ((), st') => st'
+    | .error err =>
+        panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {reprStr err}"
+
+  if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := 500, slot := 0 } = some capA.target then
+    IO.println "positive check passed [WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot]"
+  else
+    throw <| IO.userError "WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot: expected some target"
+
+  let stAfterOverwrite :=
+    match storeObject 500 lifecycleEndpoint stAfterCnode with
+    | .ok ((), st') => st'
+    | .error err =>
+        panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {reprStr err}"
+
+  if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := 500, slot := 0 } = none then
+    IO.println "positive check passed [WS-H7 storeObject clears capabilityRef metadata when overwriting CNode]"
+  else
+    throw <| IO.userError "WS-H7 storeObject clears capabilityRef metadata when overwriting CNode: expected none"
+
+  IO.println "WS-H7 regression checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
   SeLe4n.Testing.runNegativeChecks
   SeLe4n.Testing.runH2NegativeChecks
   SeLe4n.Testing.runAuditCoverageChecks
+  SeLe4n.Testing.runWSH7Checks

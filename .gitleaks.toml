@@ -1,0 +1,10 @@
+title = "seLe4n gitleaks allowlist overrides"
+
+[allowlist]
+description = "Allow deterministic generated digest key in historical codebase map commits"
+paths = [
+  '''^docs/codebase_map\.json$''',
+]
+regexes = [
+  '''"cache_key":\s*"[a-f0-9]{64}"''',
+]

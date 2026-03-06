@@ -53,6 +53,7 @@ for the full execution plan.
 ### 3.2 Completed portfolios
 
 - **WS-H6:** completed (v0.12.20). Scheduler proof-surface completion — reverse `RunQueue` invariant `flat_wf_rev`, bidirectional membership/list lemmas `membership_implies_flat` + `mem_toList_iff_mem`, scheduler ordering theorem `isBetterCandidate_transitive`, and definitional equivalence anchor `bucketFirst_fullScan_equivalence`; scheduler membership validation now uses O(1) `runQueue` membership checks.
+- **WS-H7:** completed (v0.12.21). HashMap equality + state-store migration — `BEq VSpaceRoot`/`BEq CNode` switched from `toList` order-sensitive checks to size+fold order-independent checks; `services`, `irqHandlers`, `lifecycle.capabilityRefs`, `cdtSlotNode`, and `cdtNodeSlot` migrated from closure functions to `Std.HashMap`, removing O(k) closure-chain accumulation.
 - **WS-H5:** completed (v0.12.19). IPC dual-queue structural invariant — `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH). See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-H4:** completed (v0.12.18). Capability invariant redesign — `capabilityInvariantBundle` extended from trivially-true 4-tuple to meaningful 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`. All preservation theorems re-proved. C-03, M-08/A-20, M-03. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-H3:** completed (v0.12.17). Build/CI infrastructure fixes — `run_check` return value fix (H-12), `test_docs_sync.sh` CI integration (M-19), Tier 3 `rg` availability guard with `grep -P` fallback (M-20). See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
@@ -157,10 +158,10 @@ findings/audit references, and completed/next workstream status.
 For website codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
 whenever Lean module/declaration surfaces change, then validate with
 `./scripts/generate_codebase_map.py --pretty --check`. The generated
-`docs/codebase_map.json` contains stable `source_sync.source_digest`/`cache_key`
+`docs/codebase_map.json` contains stable `source_sync.source_digest`
 (sha256 over Lean source paths + contents) plus volatile `repository.head` git
 metadata. Website clients should invalidate local cache entries on
-`source_sync.cache_key` changes. `--check` compares only the stable subset,
+`source_sync.source_digest` changes. `--check` compares only the stable subset,
 keeping CI robust across branch/merge-only commits while still detecting real
 declaration-surface drift. Post-merge enforcement runs in
 `.github/workflows/codebase_map_sync.yml`, which auto-regenerates and commits
