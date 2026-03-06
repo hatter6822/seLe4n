@@ -83,6 +83,59 @@ NAME_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
 FIRST_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_'.]*)")
 QUOTED_TOKEN_RE = re.compile(r"\"[^\"\n]*\"")
 
+NON_REFERENCABLE_DECL_KINDS = {
+    "declare_syntax_cat",
+    "syntax_cat",
+    "syntax",
+    "macro",
+    "macro_rules",
+    "notation",
+    "infix",
+    "infixl",
+    "infixr",
+    "prefix",
+    "postfix",
+    "elab",
+    "elab_rules",
+    "term_elab",
+    "command_elab",
+    "tactic",
+    "universe",
+    "universes",
+    "variable",
+    "variables",
+    "parameter",
+    "parameters",
+    "section",
+    "namespace",
+}
+
+
+def _declaration_ranges(decls: list[tuple[str, str, int]], line_count: int) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for i, (_, _, start_line) in enumerate(decls):
+        next_start = decls[i + 1][2] if i + 1 < len(decls) else line_count + 1
+        ranges.append((start_line - 1, next_start - 1))
+    return ranges
+
+
+def _tokenize_decl_ranges(
+    lines: list[str],
+    ranges: list[tuple[int, int]],
+    reference_candidates: set[str],
+) -> list[set[str]]:
+    per_decl: list[set[str]] = []
+    block_depth = 0
+    for start_idx, end_idx in ranges:
+        refs: set[str] = set()
+        for raw in lines[start_idx:end_idx]:
+            clean, block_depth = _strip_lean_comments(raw, block_depth)
+            if not clean:
+                continue
+            refs.update(token for token in NAME_TOKEN_RE.findall(clean) if token in reference_candidates)
+        per_decl.append(refs)
+    return per_decl
+
 
 def _strip_lean_comments(line: str, block_depth: int) -> tuple[str, int]:
     """Strip line + block comments while tracking nested block depth."""
@@ -196,6 +249,7 @@ class Decl:
     kind: str
     name: str
     line: int
+    called: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,19 +265,38 @@ def module_name(path: Path) -> str:
 
 
 def parse_declarations(path: Path) -> list[Decl]:
-    decls: list[Decl] = []
+    decls: list[tuple[str, str, int]] = []
     block_depth = 0
-    with path.open(encoding="utf-8") as handle:
-        for i, line in enumerate(handle, start=1):
-            clean, block_depth = _strip_lean_comments(line, block_depth)
-            if block_depth > 0 and not clean.strip():
-                continue
-            m = DECL_HEAD_RE.match(clean)
-            if m:
-                kind = m.group("kind")
-                for name in _extract_names(kind, m.group("rest"), i):
-                    decls.append(Decl(kind=kind, name=name, line=i))
-    return decls
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines, start=1):
+        clean, block_depth = _strip_lean_comments(line, block_depth)
+        if block_depth > 0 and not clean.strip():
+            continue
+        m = DECL_HEAD_RE.match(clean)
+        if m:
+            kind = m.group("kind")
+            for name in _extract_names(kind, m.group("rest"), i):
+                decls.append((kind, name, i))
+
+    referencable_names = {
+        name
+        for kind, name, _ in decls
+        if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:")
+    }
+    ranges = _declaration_ranges(decls, len(lines))
+    calls_per_decl = _tokenize_decl_ranges(lines, ranges, referencable_names)
+
+    result: list[Decl] = []
+    for (kind, name, line), called_names in zip(decls, calls_per_decl):
+        result.append(
+            Decl(
+                kind=kind,
+                name=name,
+                line=line,
+                called=sorted(n for n in called_names if n != name),
+            )
+        )
+    return result
 
 
 def lean_files() -> list[Path]:

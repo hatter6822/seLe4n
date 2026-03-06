@@ -119,8 +119,11 @@ Validate that the committed file is in sync without writing:
 
 `docs/codebase_map.json` carries both: a deterministic `source_sync.source_digest`
 (sha256 over Lean source paths + contents) and volatile `repository.head` git
-metadata for observability. `--check` compares only the stable declaration-surface
-subset, so it is branch/merge-robust and fails only when Lean inputs drift.
+metadata for observability. Each declaration entry now also includes an additive
+`called` array that enumerates in-module declaration references for that
+declaration (empty when none are detected). `--check` compares only the stable
+declaration-surface subset, so it is branch/merge-robust and fails only when Lean
+inputs drift.
 The post-merge `.github/workflows/codebase_map_sync.yml` job remains as a
 backstop for drift.
 
