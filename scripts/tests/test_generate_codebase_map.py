@@ -1,6 +1,6 @@
 import unittest
-from tempfile import TemporaryDirectory
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import scripts.generate_codebase_map as m
 
@@ -140,11 +140,51 @@ local syntax "visible" : term
             ],
         )
 
-    def test_module_name_is_repo_relative(self) -> None:
-        self.assertEqual(
-            m.module_name(m.ROOT / "SeLe4n/Kernel/API.lean"),
-            "SeLe4n.Kernel.API",
+    def test_parse_declarations_collects_internal_called(self) -> None:
+        fixture = Path("/tmp/test_generate_codebase_map_called_fixture.lean")
+        fixture.write_text(
+            """
+def leaf : Nat := 1
+
+def helper : Nat :=
+  leaf + leaf
+
+def root : Nat :=
+  helper + leaf
+""".strip()
+            + "\n",
+            encoding="utf-8",
         )
+
+        decls = m.parse_declarations(fixture)
+        got = {d.name: d.called for d in decls}
+        self.assertEqual(got["leaf"], [])
+        self.assertEqual(got["helper"], ["leaf"])
+        self.assertEqual(got["root"], ["helper", "leaf"])
+
+    def test_parse_declarations_called_excludes_namespace_and_section_symbols(self) -> None:
+        fixture = Path("/tmp/test_generate_codebase_map_called_namespace_fixture.lean")
+        fixture.write_text(
+            """
+namespace X
+
+def helper : Nat := 1
+
+theorem t : True := by
+  have _ : Nat := helper
+  trivial
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        decls = m.parse_declarations(fixture)
+        got = {d.name: d.called for d in decls}
+        self.assertEqual(got["X"], [])
+        self.assertEqual(got["t"], ["helper"])
+
+    def test_module_name_is_repo_relative(self) -> None:
+        self.assertEqual(m.module_name(m.ROOT / "SeLe4n/Kernel/API.lean"), "SeLe4n.Kernel.API")
 
     def test_render_json_pretty_and_compact(self) -> None:
         payload = {"k": 1, "v": [1, 2]}
