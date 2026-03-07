@@ -5,17 +5,18 @@
 **Version:** 0.13.1 (Lean 4.28.0)
 
 **Verified metrics snapshot (from `./scripts/report_current_state.py`):**
-- Production LoC: 26,196 across 40 files
+- Production LoC: 26,194 across 40 files
 - Test LoC: 1,905 across 3 suites
-- Proved declarations: 752 theorem/lemma declarations (zero sorry/axiom)
+- Proved declarations: 753 theorem/lemma declarations (zero sorry/axiom)
 - Build jobs: 84
 
 Three major portfolios are completed:
 
-- **WS-H Phase 1–3** (v0.12.16–v0.12.19): Critical correctness fixes — IPC
+- **WS-H Phase 1–6** (v0.12.16–v0.13.1): Critical correctness fixes — IPC
   call-path semantic bug (WS-H1), lifecycle safety guards (WS-H2), build/CI
   infrastructure hardening (WS-H3), capability invariant redesign (WS-H4),
-  IPC dual-queue structural invariant (WS-H5). See
+  IPC dual-queue structural invariant (WS-H5), scheduler proof completion
+  with EDF invariant domain-fix and timeSlicePositive preservation (WS-H6). See
   [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G** (v0.12.6–v0.12.15): All 14 kernel performance findings closed.
   Every hot path migrated to O(1) hash-based structures. See
