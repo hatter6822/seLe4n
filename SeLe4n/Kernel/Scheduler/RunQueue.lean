@@ -277,6 +277,21 @@ theorem toList_insert_not_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority)
   · rename_i hTrue; exact absurd hTrue (by simp [contains] at hf; simp [contains, hf])
   · rfl
 
+/-- WS-H9: Erasing an element that is rejected by `p` doesn't change the filter result. -/
+private theorem List.filter_erase_of_neg {α : Type} [DecidableEq α]
+    (xs : List α) (a : α) (p : α → Bool) (hp : p a = false) :
+    (xs.erase a).filter p = xs.filter p := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    by_cases hxa : x = a
+    · subst hxa
+      simp only [List.erase_cons_head, List.filter, hp]
+    · simp only [List.erase_cons]
+      have hne : ¬((x == a) = true) := fun h => hxa (beq_iff_eq.mp h)
+      simp only [if_neg hne]
+      cases hpx : p x <;> simp_all [List.filter]
+
 private theorem filter_filter_ne_of_false {α : Type} [DecidableEq α]
     (xs : List α) (a : α) (p : α → Bool) (hp : p a = false) :
     (xs.filter (fun x => decide (x ≠ a))).filter p = xs.filter p := by
@@ -304,6 +319,23 @@ theorem toList_filter_remove_neg (rq : RunQueue) (tid : ThreadId)
     simp only [toList]; exact h
   unfold remove
   exact filter_filter_ne_of_false rq.flat tid p hp
+
+set_option linter.unusedSimpArgs false in
+/-- WS-H9: Filtering rotateToBack's toList by a predicate that rejects `tid` yields
+the same result as filtering the original toList. Used for scheduler NI proofs. -/
+theorem toList_filter_rotateToBack_neg (rq : RunQueue) (tid : ThreadId)
+    (p : ThreadId → Bool) (hp : p tid = false) :
+    (rq.rotateToBack tid).toList.filter p = rq.toList.filter p := by
+  simp only [toList]
+  unfold rotateToBack
+  split
+  · -- tid is in the queue: flat becomes erase ++ [tid]
+    show (rq.flat.erase tid ++ [tid]).filter p = rq.flat.filter p
+    rw [List.filter_append]
+    simp only [List.filter, hp, ite_false, List.nil_append, List.append_nil]
+    exact List.filter_erase_of_neg rq.flat tid p hp
+  · -- tid not in queue: no-op
+    rfl
 
 theorem toList_nodup_of_flat_nodup (rq : RunQueue) (h : rq.flat.Nodup) :
     rq.toList.Nodup := h
