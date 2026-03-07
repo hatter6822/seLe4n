@@ -1728,7 +1728,7 @@ cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
 private theorem cspaceCopy_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (st st' : SystemState)
-    (hSrcHigh : objectObservable ctx observer src.cnode = false)
+    (_hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1996,8 +1996,92 @@ inductive NonInterferenceStep
       (hSvcHigh : serviceObservable ctx observer sid = false)
       (hStep : SeLe4n.Kernel.serviceRestart sid policyStop policyStart st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  | schedule
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
+          threadObservable ctx observer tid = false)
+      (hStep : SeLe4n.Kernel.schedule st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | vspaceMapPage
+      (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+      (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
+          objectObservable ctx observer rootId = false)
+      (hStep : Architecture.vspaceMapPage asid vaddr paddr st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | vspaceUnmapPage
+      (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+      (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
+          objectObservable ctx observer rootId = false)
+      (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | vspaceLookup
+      (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+      (hStep : Architecture.vspaceLookup asid vaddr st = .ok (paddr, st'))
+    : NonInterferenceStep ctx observer st st'
+  | cspaceCopy
+      (src dst : CSpaceAddr)
+      (hSrcHigh : objectObservable ctx observer src.cnode = false)
+      (hDstHigh : objectObservable ctx observer dst.cnode = false)
+      (hStep : SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | cspaceMove
+      (src dst : CSpaceAddr)
+      (hSrcHigh : objectObservable ctx observer src.cnode = false)
+      (hDstHigh : objectObservable ctx observer dst.cnode = false)
+      (hStep : SeLe4n.Kernel.cspaceMove src dst st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | cspaceDeleteSlot
+      (addr : CSpaceAddr)
+      (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+      (hStep : SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | endpointReply
+      (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+      (hTargetHigh : threadObservable ctx observer target = false)
+      (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
+      (hStep : endpointReply replier target msg st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | storeObjectHigh
+      (oid : SeLe4n.ObjId) (obj : KernelObject)
+      (hOidHigh : objectObservable ctx observer oid = false)
+      (hStep : storeObject oid obj st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | setCurrentThread
+      (tid : Option SeLe4n.ThreadId)
+      (hTidHigh : ∀ t, tid = some t → threadObservable ctx observer t = false)
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hStep : setCurrentThread tid st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | ensureRunnableHigh
+      (tid : SeLe4n.ThreadId)
+      (hTidHigh : threadObservable ctx observer tid = false)
+      (hEq : st' = ensureRunnable st tid)
+    : NonInterferenceStep ctx observer st st'
+  | removeRunnableHigh
+      (tid : SeLe4n.ThreadId)
+      (hTidHigh : threadObservable ctx observer tid = false)
+      (hEq : st' = removeRunnable st tid)
+    : NonInterferenceStep ctx observer st st'
+  | storeTcbIpcStateAndMessageHigh
+      (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+      (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+      (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    : NonInterferenceStep ctx observer st st'
+  | storeTcbQueueLinksHigh
+      (tid : SeLe4n.ThreadId)
+      (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+      (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+      (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    : NonInterferenceStep ctx observer st st'
+  | cspaceMutateHigh
+      (addr : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+      (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+      (hStep : cspaceMutate addr rights badge st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
 
-/-- WS-F3/H-05: A single non-interference step preserves the observer's
+/-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
 theorem step_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -2185,8 +2269,64 @@ theorem step_preserves_projection
       · simp [projectDomainSchedule, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
       · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
     rw [hFinal, hMid]
+  | schedule hCurH hAllR hOp =>
+    exact schedule_preserves_projection ctx observer st st' hCurH hAllR hOp
+  | vspaceMapPage asid vaddr paddr hRH hOp =>
+    exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st st' hRH hOp
+  | vspaceUnmapPage asid vaddr hRH hOp =>
+    exact vspaceUnmapPage_preserves_projection ctx observer asid vaddr st st' hRH hOp
+  | vspaceLookup asid vaddr paddr hOp =>
+    have := vspaceLookup_preserves_state st asid vaddr paddr st' hOp; subst this; rfl
+  | cspaceCopy src dst hSH hDH hOp =>
+    exact cspaceCopy_preserves_projection ctx observer src dst st st' hSH hDH hOp
+  | cspaceMove src dst hSH hDH hOp =>
+    exact cspaceMove_preserves_projection ctx observer src dst st st' hSH hDH hOp
+  | cspaceDeleteSlot addr hAH hOp =>
+    exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hOp
+  | endpointReply replier target msg hTH hTOH hOp =>
+    exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hOp
+  | storeObjectHigh oid obj hOH hOp =>
+    exact storeObject_preserves_projection ctx observer st st' oid obj hOH hOp
+  | setCurrentThread tid hTidH hCurH hOp =>
+    exact setCurrentThread_preserves_projection ctx observer tid st st' hTidH hCurH hOp
+  | ensureRunnableHigh tid hTH hEq =>
+    rw [hEq]; exact ensureRunnable_preserves_projection ctx observer st tid hTH
+  | removeRunnableHigh tid hTH hEq =>
+    rw [hEq]; exact removeRunnable_preserves_projection ctx observer st tid hTH
+  | storeTcbIpcStateAndMessageHigh tid ipc msg hTOH hOp =>
+    exact storeTcbIpcStateAndMessage_preserves_projection ctx observer st st' tid ipc msg hTOH hOp
+  | storeTcbQueueLinksHigh tid prev pprev next hTOH hOp =>
+    exact storeTcbQueueLinks_preserves_projection ctx observer st st' tid prev pprev next hTOH hOp
+  | cspaceMutateHigh addr rights badge hAH hOp =>
+    unfold cspaceMutate at hOp
+    cases hL : cspaceLookupSlot addr st with
+    | error e => simp [hL] at hOp
+    | ok p =>
+      rcases p with ⟨cap, stL⟩
+      have hStEq := cspaceLookupSlot_preserves_state st stL addr cap hL
+      subst stL
+      simp only [hL] at hOp
+      split at hOp
+      · -- rights subset: storeObject + storeCapabilityRef
+        split at hOp
+        · -- some (.cnode cn)
+          next cn =>
+          split at hOp
+          · -- storeObject error
+            next e hStore => simp at hOp
+          · -- storeObject ok
+            next stMid hStore =>
+            have hProjMid := storeObject_preserves_projection ctx observer st stMid
+                addr.cnode _ hAH hStore
+            have hProjFinal := storeCapabilityRef_preserves_projection ctx observer stMid st'
+                addr (some _) hOp
+            rw [hProjFinal, hProjMid]
+        · -- not a cnode
+          simp at hOp
+      · -- rights not subset: error
+        simp at hOp
 
-/-- WS-F3/H-05: Primary IF-M4 composition theorem — single-step bundle
+/-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/
 theorem composedNonInterference_step
     (ctx : LabelingContext) (observer : IfObserver)

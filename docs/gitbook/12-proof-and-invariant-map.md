@@ -475,13 +475,29 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (11 constructors: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`; extended from 5 by WS-F3),
-- `step_preserves_projection` — single-step projection preservation,
+- `NonInterferenceStep` inductive (25 constructors; extended from 11 by WS-H9: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, `endpointReply`, `storeObjectHigh`, `setCurrentThread`, `ensureRunnableHigh`, `removeRunnableHigh`, `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`, `cspaceMutateHigh`),
+- `step_preserves_projection` — single-step projection preservation (all 25 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
 - `preservesLowEquivalence`, `compose_preservesLowEquivalence` — abstract composition,
 - `errorAction_preserves_lowEquiv` — error path preservation.
+
+WS-H9 new NI preservation theorems (21 theorems):
+- `schedule_preserves_projection` — scheduler NI (high-current + all-runnable-high conditions),
+- `setCurrentThread_preserves_projection` — thread switch NI,
+- `ensureRunnable_preserves_projection` / `removeRunnable_preserves_projection` — run queue NI,
+- `vspaceMapPage_preserves_projection` / `_lowEquivalent` — VSpace map NI,
+- `vspaceUnmapPage_preserves_projection` / `_lowEquivalent` — VSpace unmap NI,
+- `vspaceLookup_preserves_state` / `_lowEquivalent` — VSpace lookup NI,
+- `cspaceCopy_preserves_projection` / `_lowEquivalent` — CSpace copy NI,
+- `cspaceMove_preserves_projection` / `_lowEquivalent` — CSpace move NI,
+- `cspaceDeleteSlot_preserves_projection` / `_lowEquivalent` — CSpace delete NI,
+- `endpointReply_preserves_projection` / `_lowEquivalent` — IPC reply NI,
+- `storeTcbIpcStateAndMessage_preserves_projection` — IPC state NI,
+- `storeTcbQueueLinks_preserves_projection` — queue links NI,
+- `storeObject_preserves_projection` / `storeCapabilityRef_preserves_projection` — observable-state NI,
+- `switchDomain_preserves_lowEquivalent` — domain switch two-sided NI.
 
 **M-07 — Enforcement boundary specification:**
 

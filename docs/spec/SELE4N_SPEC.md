@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked â€
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (800 theorem/lemma declarations),
+2. machine-checked invariant preservation (827 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -48,17 +48,17 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.13.2` (`lakefile.toml`) |
+| **Package version** | `0.13.4` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 26,861 across 40 Lean files |
+| **Production LoC** | 27,338 across 40 Lean files |
 | **Test LoC** | 2,063 across 3 Lean test suites |
-| **Proved declarations** | 800 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 827 theorem/lemma declarations (zero sorry/axiom) |
 | **Build jobs** | 84 |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | **Next workstream** | WS-F5..F8 (remaining v0.12.2 audit remediation) |
-| **Recently completed** | WS-H8 (v0.13.2, enforcement-NI bridge & missing wrappers), WS-H6 (v0.13.1, scheduler proof-surface completion), WS-H5 (v0.12.19, IPC dual-queue structural invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
+| **Recently completed** | WS-H9 (v0.13.4, non-interference coverage extension >80%), WS-H8 (v0.13.2, enforcement-NI bridge & missing wrappers), WS-H6 (v0.13.1, scheduler proof-surface completion), WS-H5 (v0.12.19, IPC dual-queue structural invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI infrastructure), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path semantic fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` |
 | **Codebase map feed** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`; includes `source_sync.source_digest` with branch/commit metadata preserved under `repository.head`; each declaration entry includes additive `called` references for internal declaration invocations; docs-sync checks compare the stable subset)) |
