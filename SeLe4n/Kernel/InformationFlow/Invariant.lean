@@ -177,8 +177,23 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     rw [storeObject_preserves_projectObjectIndex ctx observer s₁ s₁' targetId obj₁ hTargetHigh hStore₁,
         storeObject_preserves_projectObjectIndex ctx observer s₂ s₂' targetId obj₂ hTargetHigh hStore₂]
     exact hIdxLow
+  have hDTR : projectDomainTimeRemaining ctx observer s₁' = projectDomainTimeRemaining ctx observer s₂' := by
+    have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
+    have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
+    simp [projectDomainTimeRemaining, hSched₁, hSched₂]
+    exact congrArg ObservableState.domainTimeRemaining hLow
+  have hDS : projectDomainSchedule ctx observer s₁' = projectDomainSchedule ctx observer s₂' := by
+    have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
+    have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
+    simp [projectDomainSchedule, hSched₁, hSched₂]
+    exact congrArg ObservableState.domainSchedule hLow
+  have hDSI : projectDomainScheduleIndex ctx observer s₁' = projectDomainScheduleIndex ctx observer s₂' := by
+    have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
+    have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
+    simp [projectDomainScheduleIndex, hSched₁, hSched₂]
+    exact congrArg ObservableState.domainScheduleIndex hLow
   unfold lowEquivalent
-  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx']
+  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI]
 
 -- ============================================================================
 -- WS-E5: clearCapabilityRefsState preserves projection (used by composed proofs)
@@ -198,6 +213,9 @@ private theorem clearCapabilityRefsState_preserves_projectState
   · simp [projectActiveDomain, clearCapabilityRefsState_preserves_scheduler]
   · funext irq; simp [projectIrqHandlers, clearCapabilityRefsState_preserves_irqHandlers]
   · simp [projectObjectIndex, clearCapabilityRefsState_preserves_objectIndex]
+  · simp [projectDomainTimeRemaining, clearCapabilityRefsState_preserves_scheduler]
+  · simp [projectDomainSchedule, clearCapabilityRefsState_preserves_scheduler]
+  · simp [projectDomainScheduleIndex, clearCapabilityRefsState_preserves_scheduler]
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -260,7 +278,13 @@ private theorem removeRunnable_preserves_projection
       projectIrqHandlers ctx observer st := rfl
   have hIdx : projectObjectIndex ctx observer (removeRunnable st tid) =
       projectObjectIndex ctx observer st := rfl
-  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx]
+  have hDTR : projectDomainTimeRemaining ctx observer (removeRunnable st tid) =
+      projectDomainTimeRemaining ctx observer st := rfl
+  have hDS : projectDomainSchedule ctx observer (removeRunnable st tid) =
+      projectDomainSchedule ctx observer st := rfl
+  have hDSI : projectDomainScheduleIndex ctx observer (removeRunnable st tid) =
+      projectDomainScheduleIndex ctx observer st := rfl
+  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 private theorem ensureRunnable_preserves_projection
@@ -332,6 +356,12 @@ private theorem storeTcbIpcState_preserves_projection
         funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
       · -- objectIndex: non-observable target
         exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
+      · -- WS-H8: domainTimeRemaining
+        simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · -- WS-H8: domainSchedule
+        simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · -- WS-H8: domainScheduleIndex
+        simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
 
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 private theorem storeObject_preserves_projection
@@ -355,6 +385,9 @@ private theorem storeObject_preserves_projection
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid obj hStore]
   · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid obj hStore]
   · exact storeObject_preserves_projectObjectIndex ctx observer st st' oid obj hOidHigh hStore
+  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid obj hStore]
+  · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid obj hStore]
+  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid obj hStore]
 
 /-- WS-E3/H-09: endpointSend at non-observable entities preserves projection (single execution). -/
 private theorem endpointSend_projection_preserved
@@ -542,6 +575,12 @@ theorem cspaceMint_preserves_lowEquivalent
         rw [cspaceInsertSlot_preserves_projectObjectIndex s₁ s₁' dst c₁ hDstHigh hInsert₁,
             cspaceInsertSlot_preserves_projectObjectIndex s₂ s₂' dst c₂ hDstHigh hInsert₂]
         exact congrArg ObservableState.objectIndex hLow
+      · -- domainTimeRemaining
+        simpa [projectDomainTimeRemaining, hSched₁, hSched₂] using congrArg ObservableState.domainTimeRemaining hLow
+      · -- domainSchedule
+        simpa [projectDomainSchedule, hSched₁, hSched₂] using congrArg ObservableState.domainSchedule hLow
+      · -- domainScheduleIndex
+        simpa [projectDomainScheduleIndex, hSched₁, hSched₂] using congrArg ObservableState.domainScheduleIndex hLow
 
 -- ============================================================================
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
@@ -634,6 +673,18 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
                 · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
                 · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+              · -- domainTimeRemaining
+                simp only [projectDomainTimeRemaining]
+                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                exact congrArg ObservableState.domainTimeRemaining hLow
+              · -- domainSchedule
+                simp only [projectDomainSchedule]
+                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                exact congrArg ObservableState.domainSchedule hLow
+              · -- domainScheduleIndex
+                simp only [projectDomainScheduleIndex]
+                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                exact congrArg ObservableState.domainScheduleIndex hLow
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)
@@ -857,6 +908,12 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
   · rw [cspaceInsertSlot_preserves_projectObjectIndex s₁ s₁' dst cap hDstHigh hStep₁,
         cspaceInsertSlot_preserves_projectObjectIndex s₂ s₂' dst cap hDstHigh hStep₂]
     exact congrArg ObservableState.objectIndex hLow
+  · -- domainTimeRemaining
+    simpa [projectDomainTimeRemaining, hSched₁, hSched₂] using congrArg ObservableState.domainTimeRemaining hLow
+  · -- domainSchedule
+    simpa [projectDomainSchedule, hSched₁, hSched₂] using congrArg ObservableState.domainSchedule hLow
+  · -- domainScheduleIndex
+    simpa [projectDomainScheduleIndex, hSched₁, hSched₂] using congrArg ObservableState.domainScheduleIndex hLow
 
 /-! ### WS-F3: Capability CRUD operations — deferred proofs
 
@@ -936,6 +993,18 @@ theorem serviceStart_preserves_lowEquivalent
     rw [serviceStart_preserves_objectIndex s₁ s₁' sid policy hStep₁,
         serviceStart_preserves_objectIndex s₂ s₂' sid policy hStep₂]
     exact congrArg ObservableState.objectIndex hLow
+  · -- domainTimeRemaining
+    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainTimeRemaining, h₁, h₂] using congrArg ObservableState.domainTimeRemaining hLow
+  · -- domainSchedule
+    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainSchedule, h₁, h₂] using congrArg ObservableState.domainSchedule hLow
+  · -- domainScheduleIndex
+    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
 
 /-- WS-F3: serviceStop at a non-observable service preserves low-equivalence. -/
 theorem serviceStop_preserves_lowEquivalent
@@ -985,6 +1054,18 @@ theorem serviceStop_preserves_lowEquivalent
     rw [serviceStop_preserves_objectIndex s₁ s₁' sid policy hStep₁,
         serviceStop_preserves_objectIndex s₂ s₂' sid policy hStep₂]
     exact congrArg ObservableState.objectIndex hLow
+  · -- domainTimeRemaining
+    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainTimeRemaining, h₁, h₂] using congrArg ObservableState.domainTimeRemaining hLow
+  · -- domainSchedule
+    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainSchedule, h₁, h₂] using congrArg ObservableState.domainSchedule hLow
+  · -- domainScheduleIndex
+    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
 
 /-- WS-F3: serviceRestart at a non-observable service preserves low-equivalence. -/
 theorem serviceRestart_preserves_lowEquivalent
@@ -1089,6 +1170,115 @@ theorem serviceRestartChecked_NI
   rw [serviceRestartChecked_eq_serviceRestart_when_allowed ctx orchestrator sid policyStop policyStart s₂ hFlow] at hStep₂
   exact serviceRestart_preserves_lowEquivalent ctx observer sid policyStop policyStart
     s₁ s₂ s₁' s₂' hLow hSvcHigh hStep₁ hStep₂
+
+-- ============================================================================
+-- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
+-- ============================================================================
+
+/-- WS-H8/H-07: If endpointSendDualChecked succeeds, the resulting state
+transition preserves low-equivalence. Bridge theorem for the recommended
+dual-queue IPC path.
+
+The proof reduces the dual-queue checked wrapper to the legacy `endpointSend`
+NI theorem via the enforcement flow extraction + `endpointSendDual_as_send`
+bisimulation bridge. -/
+theorem endpointSendDualChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hSendDualNI : ∀ t₁ t₂ t₁' t₂',
+        lowEquivalent ctx observer t₁ t₂ →
+        endpointSendDual endpointId sender msg t₁ = .ok ((), t₁') →
+        endpointSendDual endpointId sender msg t₂ = .ok ((), t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : endpointSendDualChecked ctx endpointId sender msg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointSendDualChecked ctx endpointId sender msg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true :=
+    enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg s₁ s₁' hStep₁
+  -- Extract the underlying dual-queue send
+  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₁ hFlow] at hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₂ hFlow] at hStep₂
+  exact hSendDualNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+
+/-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
+transition preserves low-equivalence. -/
+theorem notificationSignalChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hNtfnHigh : objectObservable ctx observer notificationId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
+        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+    (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
+        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+    (hStep₁ : notificationSignalChecked ctx notificationId signaler badge s₁ = .ok ((), s₁'))
+    (hStep₂ : notificationSignalChecked ctx notificationId signaler badge s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true := by
+    cases h : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) with
+    | false =>
+      have := notificationSignalChecked_flowDenied ctx notificationId signaler badge s₁ h
+      rw [this] at hStep₁; simp at hStep₁
+    | true => rfl
+  rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₁ hFlow] at hStep₁
+  rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₂ hFlow] at hStep₂
+  exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
+    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hStep₁ hStep₂
+
+/-- WS-H8/H-07: If cspaceCopyChecked succeeds, the resulting state transition
+preserves low-equivalence.
+
+The enforcement bridge extracts the flow check from the wrapper, then delegates
+to the underlying `cspaceCopy` NI theorem (taken as hypothesis pending WS-H9
+decomposition lemmas for CDT-aware operations). -/
+theorem cspaceCopyChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (src dst : CSpaceAddr)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCopyNI : ∀ t₁ t₂ t₁' t₂',
+        lowEquivalent ctx observer t₁ t₂ →
+        cspaceCopy src dst t₁ = .ok ((), t₁') →
+        cspaceCopy src dst t₂ = .ok ((), t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : cspaceCopyChecked ctx src dst s₁ = .ok ((), s₁'))
+    (hStep₂ : cspaceCopyChecked ctx src dst s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow := enforcementSoundness_cspaceCopyChecked ctx src dst s₁ s₁' hStep₁
+  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₁ hFlow] at hStep₁
+  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₂ hFlow] at hStep₂
+  exact hCopyNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+
+/-- WS-H8/H-07: If cspaceMoveChecked succeeds, the resulting state transition
+preserves low-equivalence.
+
+Same bridge pattern as cspaceCopyChecked_NI — takes the underlying move NI
+theorem as hypothesis. -/
+theorem cspaceMoveChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (src dst : CSpaceAddr)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hMoveNI : ∀ t₁ t₂ t₁' t₂',
+        lowEquivalent ctx observer t₁ t₂ →
+        cspaceMove src dst t₁ = .ok ((), t₁') →
+        cspaceMove src dst t₂ = .ok ((), t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : cspaceMoveChecked ctx src dst s₁ = .ok ((), s₁'))
+    (hStep₂ : cspaceMoveChecked ctx src dst s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow := enforcementSoundness_cspaceMoveChecked ctx src dst s₁ s₁' hStep₁
+  rw [cspaceMoveChecked_eq_cspaceMove_when_allowed ctx src dst s₁ hFlow] at hStep₁
+  rw [cspaceMoveChecked_eq_cspaceMove_when_allowed ctx src dst s₂ hFlow] at hStep₂
+  exact hMoveNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
 
 -- ============================================================================
 -- WS-E5/H-05 + WS-F3: Bundle-level composed non-interference (IF-M4)
@@ -1225,6 +1415,9 @@ theorem step_preserves_projection
       · funext irq; simp only [projectIrqHandlers]
         rw [cspaceInsertSlot_preserves_irqHandlers st st' dst c hInsert]
       · exact cspaceInsertSlot_preserves_projectObjectIndex st st' dst c hDstH hInsert
+      · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
+      · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
+      · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
   | cspaceRevoke addr hAddrH hOp =>
     unfold cspaceRevoke at hOp
     cases hL : cspaceLookupSlot addr st with
@@ -1278,6 +1471,9 @@ theorem step_preserves_projection
     · funext irq; simp only [projectIrqHandlers]
       rw [cspaceInsertSlot_preserves_irqHandlers st st' dst cap hOp]
     · exact cspaceInsertSlot_preserves_projectObjectIndex st st' dst cap hDH hOp
+    · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
+    · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
+    · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
   | serviceStart sid policy hSH hOp =>
     simp only [projectState]; congr 1
     · funext oid; simp only [projectObjects]
@@ -1297,6 +1493,9 @@ theorem step_preserves_projection
       rw [serviceStart_preserves_irqHandlers st st' sid policy hOp]
     · simp only [projectObjectIndex]
       rw [serviceStart_preserves_objectIndex st st' sid policy hOp]
+    · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler st st' sid policy hOp]
+    · simp [projectDomainSchedule, serviceStart_preserves_scheduler st st' sid policy hOp]
+    · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler st st' sid policy hOp]
   | serviceStop sid policy hSH hOp =>
     simp only [projectState]; congr 1
     · funext oid; simp only [projectObjects]
@@ -1316,6 +1515,9 @@ theorem step_preserves_projection
       rw [serviceStop_preserves_irqHandlers st st' sid policy hOp]
     · simp only [projectObjectIndex]
       rw [serviceStop_preserves_objectIndex st st' sid policy hOp]
+    · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st st' sid policy hOp]
+    · simp [projectDomainSchedule, serviceStop_preserves_scheduler st st' sid policy hOp]
+    · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st st' sid policy hOp]
   | serviceRestart sid policyStop policyStart hSH hOp =>
     rcases serviceRestart_decompose st st' sid policyStop policyStart hOp with ⟨mid, hStop, hStart⟩
     have hMid : projectState ctx observer mid = projectState ctx observer st := by
@@ -1337,6 +1539,9 @@ theorem step_preserves_projection
         rw [serviceStop_preserves_irqHandlers st mid sid policyStop hStop]
       · simp only [projectObjectIndex]
         rw [serviceStop_preserves_objectIndex st mid sid policyStop hStop]
+      · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · simp [projectDomainSchedule, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st mid sid policyStop hStop]
     have hFinal : projectState ctx observer st' = projectState ctx observer mid := by
       simp only [projectState]; congr 1
       · funext oid; simp only [projectObjects]
@@ -1356,6 +1561,9 @@ theorem step_preserves_projection
         rw [serviceStart_preserves_irqHandlers mid st' sid policyStart hStart]
       · simp only [projectObjectIndex]
         rw [serviceStart_preserves_objectIndex mid st' sid policyStart hStart]
+      · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · simp [projectDomainSchedule, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
     rw [hFinal, hMid]
 
 /-- WS-F3/H-05: Primary IF-M4 composition theorem — single-step bundle

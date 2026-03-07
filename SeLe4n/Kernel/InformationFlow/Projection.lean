@@ -22,14 +22,23 @@ structure IfObserver where
 /-- Projection result used by IF-M1 low-equivalence statements.
 
 WS-F3/CRIT-02: Extended with `activeDomain`, `irqHandlers`, and `objectIndex`
-to cover all security-relevant scheduler, interrupt, and identity fields. -/
+to cover all security-relevant scheduler, interrupt, and identity fields.
+
+WS-H8/A-36/H-11: Extended with `domainTimeRemaining`, `domainSchedule`, and
+`domainScheduleIndex` to prevent timing-channel attacks via domain scheduling
+metadata. All three are visible under scheduling transparency (same rationale
+as `activeDomain`). -/
 structure ObservableState where
   objects : SeLe4n.ObjId → Option KernelObject
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
   services : ServiceId → Option ServiceStatus
   /-- WS-F3: Active scheduling domain — visible to all observers (scheduling
-      transparency: all threads need to know which domain is active). -/
+      transparency: all threads need to know which domain is active).
+      WS-H8/A-36: Documented as deliberate security assumption — scheduling
+      transparency requires all threads to observe the active domain for
+      deterministic scheduling behavior. This matches seL4's domain scheduler
+      design where domain identity is not a secret. -/
   activeDomain : SeLe4n.DomainId
   /-- WS-F3: IRQ handler mappings filtered to only those targeting observable
       notification objects. Prevents leaking high-domain IRQ routing. -/
@@ -37,6 +46,17 @@ structure ObservableState where
   /-- WS-F3: Object index filtered to observable IDs. Prevents leaking the
       existence of high-domain objects through the identity registry. -/
   objectIndex : List SeLe4n.ObjId
+  /-- WS-H8/A-36/H-11: Remaining ticks in current domain schedule entry.
+      Visible under scheduling transparency — allows NI proofs to cover
+      domain timing state, preventing timing-channel information leaks. -/
+  domainTimeRemaining : Nat
+  /-- WS-H8/A-36/H-11: Domain schedule table. Visible under scheduling
+      transparency — the schedule is system-wide configuration, not per-domain
+      secret state. -/
+  domainSchedule : List DomainScheduleEntry
+  /-- WS-H8/A-36/H-11: Current index into domain schedule. Visible under
+      scheduling transparency. -/
+  domainScheduleIndex : Nat
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -155,10 +175,28 @@ def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : Sys
     List SeLe4n.ObjId :=
   st.objectIndex.filter (objectObservable ctx observer)
 
+/-- WS-H8/A-36: Project domain time remaining (scheduling transparency — always visible). -/
+def projectDomainTimeRemaining (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
+    Nat :=
+  st.scheduler.domainTimeRemaining
+
+/-- WS-H8/A-36: Project domain schedule (scheduling transparency — always visible). -/
+def projectDomainSchedule (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
+    List DomainScheduleEntry :=
+  st.scheduler.domainSchedule
+
+/-- WS-H8/A-36: Project domain schedule index (scheduling transparency — always visible). -/
+def projectDomainScheduleIndex (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
+    Nat :=
+  st.scheduler.domainScheduleIndex
+
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
 WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
-projections for complete security-relevant state coverage. -/
+projections for complete security-relevant state coverage.
+
+WS-H8/A-36/H-11: Extended with domainTimeRemaining, domainSchedule, and
+domainScheduleIndex projections for timing-channel coverage. -/
 def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   {
     objects := projectObjects ctx observer st
@@ -168,6 +206,9 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     activeDomain := projectActiveDomain ctx observer st
     irqHandlers := projectIrqHandlers ctx observer st
     objectIndex := projectObjectIndex ctx observer st
+    domainTimeRemaining := projectDomainTimeRemaining ctx observer st
+    domainSchedule := projectDomainSchedule ctx observer st
+    domainScheduleIndex := projectDomainScheduleIndex ctx observer st
   }
 
 -- ============================================================================
@@ -300,6 +341,9 @@ def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : Syste
     activeDomain := projectActiveDomain ctx observer st
     irqHandlers := projectIrqHandlersFast observableOids st
     objectIndex := projectObjectIndexFast observableOids st
+    domainTimeRemaining := projectDomainTimeRemaining ctx observer st
+    domainSchedule := projectDomainSchedule ctx observer st
+    domainScheduleIndex := projectDomainScheduleIndex ctx observer st
   }
 
 /-- WS-G9: `projectObjectsFast` with the precomputed set agrees with `projectObjects`

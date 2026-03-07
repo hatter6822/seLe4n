@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 26,194 lines of production Lean across 40 modules, 1,905 lines across 3 Lean test suites,
-753 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
+Current state: 26,861 lines of production Lean across 40 modules, 2,063 lines across 3 Lean test suites,
+779 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
 
 ## 3. Architectural improvements over seL4
 
@@ -45,6 +45,8 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata, NI bridge theorems. Closes A-35/H-07, A-36/A-37/H-11 | Completed |
+| **WS-H6** (v0.13.1) | Scheduler proof completion: `timeSlicePositive` preservation for all 6 scheduler ops, EDF invariant domain-fix, candidate optimality, `schedulerInvariantBundleFull` 5-tuple bundle | Completed |
 | **WS-H5** (v0.12.19) | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems. Closes C-04/A-22, A-23, A-24 | Completed |
 | **WS-H4** (v0.12.18) | Capability invariant redesign: `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`; all 25+ preservation theorems re-proved | Completed |
 | **WS-H3** (v0.12.17) | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | Completed |

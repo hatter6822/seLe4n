@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-H Phase 1–3 (v0.12.15 audit remediation) complete through WS-H5; WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-H Phase 1–8 (v0.12.15 audit remediation) complete through WS-H8; WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
@@ -87,6 +87,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-H4 (v0.12.18):** Capability invariant redesign — `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`. All 25+ preservation theorems re-proved against non-trivial predicates. Foundation lemmas added to `Model/Object.lean`. Default-state constructions in `Architecture/Invariant.lean` refactored with extracted helper.
 - **WS-H5 (v0.12.19):** IPC dual-queue structural invariant — `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity` predicates defined; 13 preservation theorems for all dual-queue operations (`endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`, `endpointAwaitReceive`, plus 5 state-only ops). Runtime `intrusiveQueueWellFormedB` checker integrated into endpoint invariant checks. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH). 734 theorem/lemma declarations total (zero sorry/axiom).
 - **WS-H6 (v0.13.1):** Scheduler proof completion — `timeSlicePositive` preservation proven for all 6 scheduler operations; `edfCurrentHasEarliestDeadline` fixed to be domain-aware; `chooseBestRunnableBy_optimal` (fold optimality), `noBetter_implies_edf` (bridge lemma), `schedulerInvariantBundleFull` (5-tuple bundle with composition). 13 new theorems. 752 theorem/lemma declarations total (zero sorry/axiom).
+- **WS-H8 (v0.13.2):** Enforcement-NI bridge & missing wrappers — 5 enforcement soundness meta-theorems connecting `securityFlowsTo` checks to NI hypotheses; 4 new `*Checked` wrappers (`notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`); `ObservableState` extended with `domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex`; NI bridge theorems; 12 new executable tests in `InformationFlowSuite.lean`. 26 new theorems. 779 theorem/lemma declarations total (zero sorry/axiom).
 
 ## Practical failure triage
 

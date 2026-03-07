@@ -13,15 +13,15 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.13.1` |
+| Version | `0.13.2` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 26,194 across 40 files |
-| Test LoC | 1,905 across 3 suites |
-| Proved declarations | 753 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 26,861 across 40 files |
+| Test LoC | 2,063 across 3 suites |
+| Proved declarations | 779 theorem/lemma declarations (zero sorry/axiom) |
 | Build jobs | 84 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
-| Recently completed | WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
+| Recently completed | WS-H8 (enforcement-NI bridge & missing wrappers, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
 | Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |
 
@@ -33,7 +33,8 @@ remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
 (performance optimization, completed) → WS-H1 (IPC call-path semantic fix, completed) →
 WS-H2 (lifecycle safety guards, completed) → WS-H3 (build/CI infrastructure, completed) →
 WS-H4 (capability invariant redesign, completed) → WS-H5 (IPC dual-queue structural
-invariant, completed).
+invariant, completed) → WS-H6 (scheduler proof completion, completed) →
+WS-H8 (enforcement-NI bridge & missing wrappers, completed).
 
 ## Completed: WS-H5 IPC Dual-Queue Structural Invariant (v0.12.19)
 

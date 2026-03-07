@@ -16,14 +16,14 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.13.1 has:
+seLe4n v0.13.2 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **753 theorem/lemma declarations** across 7 kernel subsystems.
+- **779 theorem/lemma declarations** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
-- **Phase 1–2 correctness fixes** (WS-H1..H5): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant.
+- **Phase 1–3 correctness fixes** (WS-H1..H8): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge with 4 new enforcement wrappers and projection hardening.
 
 Critical audit gaps (all resolved by WS-F1..F4):
 
@@ -67,7 +67,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 
 | Version | Portfolio | Status |
 |---------|-----------|--------|
-| v0.12.15 | WS-H | Phase 1–3 **Completed** (WS-H1..H5: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant); Phase 4–5 pending |
+| v0.12.15 | WS-H | Phase 1–3 **Completed** (WS-H1..H8: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge & missing wrappers) |
 | v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
 | v0.12.2 | WS-F | WS-F1..F4 completed; **WS-F5..F8 remaining** |
 | v0.11.6 | WS-E | Completed (WS-E1..E6) |

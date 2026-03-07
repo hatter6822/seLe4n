@@ -388,4 +388,419 @@ theorem enforcement_sufficiency_serviceRestart
   | true => left; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
 
+-- ============================================================================
+-- WS-H8: Missing enforcement wrappers (A-35/H-07)
+-- ============================================================================
+
+/-! ## WS-H8 — Enforcement-NI Bridge & Missing Wrappers
+
+Findings addressed:
+- **A-35 / H-07** (CRITICAL): Enforcement-NI bridge is disconnected — no theorem
+  connects `securityFlowsTo` checks to domain-separation guarantees.
+- **H-07** (HIGH): `notificationSignal`, `cspaceCopy`, `cspaceMove`,
+  `endpointReceiveDual` lack information-flow enforcement wrappers.
+- **A-36 / A-37 / H-11** (HIGH): Domain timing metadata not projected.
+
+This section adds 4 new policy-checked wrappers and their correctness theorems,
+extending the enforcement boundary from 3 to 7 policy-gated operations. -/
+
+/-- WS-H8/H-07: Policy-checked notification signal: verifies that information
+may flow from the signaler's security domain to the notification object's
+security domain before delegating to `notificationSignal`.
+
+A high-domain thread signaling a low-domain notification leaks one bit of
+information; the wrapper gates on `securityFlowsTo` to prevent this.
+
+Returns `flowDenied` when `securityFlowsTo signalerLabel notificationLabel = false`. -/
+def notificationSignalChecked
+    (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId)
+    (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) : Kernel Unit :=
+  fun st =>
+    let signalerLabel := ctx.threadLabelOf signaler
+    let notificationLabel := ctx.objectLabelOf notificationId
+    if securityFlowsTo signalerLabel notificationLabel then
+      notificationSignal notificationId badge st
+    else
+      .error .flowDenied
+
+/-- WS-H8/H-07: Policy-checked capability copy: verifies that information may
+flow from the source CNode's domain to the destination CNode's domain before
+delegating to `cspaceCopy`.
+
+Cross-domain capability copy could transfer authority from a restricted domain
+to an unrestricted domain; the wrapper gates on `securityFlowsTo`.
+
+Returns `flowDenied` when `securityFlowsTo srcLabel dstLabel = false`. -/
+def cspaceCopyChecked
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    let srcLabel := ctx.objectLabelOf src.cnode
+    let dstLabel := ctx.objectLabelOf dst.cnode
+    if securityFlowsTo srcLabel dstLabel then
+      cspaceCopy src dst st
+    else
+      .error .flowDenied
+
+/-- WS-H8/H-07: Policy-checked capability move: verifies that information may
+flow from the source CNode's domain to the destination CNode's domain before
+delegating to `cspaceMove`.
+
+Returns `flowDenied` when `securityFlowsTo srcLabel dstLabel = false`. -/
+def cspaceMoveChecked
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    let srcLabel := ctx.objectLabelOf src.cnode
+    let dstLabel := ctx.objectLabelOf dst.cnode
+    if securityFlowsTo srcLabel dstLabel then
+      cspaceMove src dst st
+    else
+      .error .flowDenied
+
+/-- WS-H8/H-07: Policy-checked endpoint receive (dual-queue): verifies that
+information may flow from the endpoint's domain to the receiver's domain
+before delegating to `endpointReceiveDual`.
+
+The receiver learns about the sender's presence and message content; the
+wrapper gates on `securityFlowsTo` from endpoint to receiver domain.
+
+Returns `flowDenied` when `securityFlowsTo endpointLabel receiverLabel = false`. -/
+def endpointReceiveDualChecked
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : Kernel SeLe4n.ThreadId :=
+  fun st =>
+    let endpointLabel := ctx.endpointLabelOf endpointId
+    let receiverLabel := ctx.threadLabelOf receiver
+    if securityFlowsTo endpointLabel receiverLabel then
+      endpointReceiveDual endpointId receiver st
+    else
+      .error .flowDenied
+
+-- ============================================================================
+-- WS-H8: Correctness theorems for new wrappers
+-- ============================================================================
+
+/-- WS-H8: When the policy allows flow, notificationSignalChecked behaves
+identically to the unchecked signal. -/
+theorem notificationSignalChecked_eq_notificationSignal_when_allowed
+    (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId)
+    (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf signaler)
+               (ctx.objectLabelOf notificationId) = true) :
+    notificationSignalChecked ctx notificationId signaler badge st =
+      notificationSignal notificationId badge st := by
+  unfold notificationSignalChecked
+  simp [hFlow]
+
+/-- WS-H8: When the policy denies flow, notificationSignalChecked returns
+`flowDenied` without modifying state. -/
+theorem notificationSignalChecked_flowDenied
+    (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId)
+    (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf signaler)
+               (ctx.objectLabelOf notificationId) = false) :
+    notificationSignalChecked ctx notificationId signaler badge st =
+      .error .flowDenied := by
+  unfold notificationSignalChecked
+  simp [hDeny]
+
+/-- WS-H8: When the policy allows flow, cspaceCopyChecked behaves identically
+to the unchecked copy. -/
+theorem cspaceCopyChecked_eq_cspaceCopy_when_allowed
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = true) :
+    cspaceCopyChecked ctx src dst st =
+      cspaceCopy src dst st := by
+  unfold cspaceCopyChecked
+  simp [hFlow]
+
+/-- WS-H8: When the policy denies flow, cspaceCopyChecked returns `flowDenied`. -/
+theorem cspaceCopyChecked_flowDenied
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = false) :
+    cspaceCopyChecked ctx src dst st =
+      .error .flowDenied := by
+  unfold cspaceCopyChecked
+  simp [hDeny]
+
+/-- WS-H8: When the policy allows flow, cspaceMoveChecked behaves identically
+to the unchecked move. -/
+theorem cspaceMoveChecked_eq_cspaceMove_when_allowed
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = true) :
+    cspaceMoveChecked ctx src dst st =
+      cspaceMove src dst st := by
+  unfold cspaceMoveChecked
+  simp [hFlow]
+
+/-- WS-H8: When the policy denies flow, cspaceMoveChecked returns `flowDenied`. -/
+theorem cspaceMoveChecked_flowDenied
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = false) :
+    cspaceMoveChecked ctx src dst st =
+      .error .flowDenied := by
+  unfold cspaceMoveChecked
+  simp [hDeny]
+
+/-- WS-H8: When the policy allows flow, endpointReceiveDualChecked behaves
+identically to the unchecked receive. -/
+theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf receiver) = true) :
+    endpointReceiveDualChecked ctx endpointId receiver st =
+      endpointReceiveDual endpointId receiver st := by
+  unfold endpointReceiveDualChecked
+  simp [hFlow]
+
+/-- WS-H8: When the policy denies flow, endpointReceiveDualChecked returns
+`flowDenied`. -/
+theorem endpointReceiveDualChecked_flowDenied
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf receiver) = false) :
+    endpointReceiveDualChecked ctx endpointId receiver st =
+      .error .flowDenied := by
+  unfold endpointReceiveDualChecked
+  simp [hDeny]
+
+-- ============================================================================
+-- WS-H8: Denied-preserves-state theorems for new wrappers
+-- ============================================================================
+
+/-- WS-H8: notificationSignalChecked denied → no state change. -/
+theorem notificationSignalChecked_denied_preserves_state
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf signaler)
+               (ctx.objectLabelOf notificationId) = false) :
+    ¬∃ st', notificationSignalChecked ctx notificationId signaler badge st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [notificationSignalChecked, hDeny] at h
+
+/-- WS-H8: cspaceCopyChecked denied → no state change. -/
+theorem cspaceCopyChecked_denied_preserves_state
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = false) :
+    ¬∃ st', cspaceCopyChecked ctx src dst st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [cspaceCopyChecked, hDeny] at h
+
+/-- WS-H8: cspaceMoveChecked denied → no state change. -/
+theorem cspaceMoveChecked_denied_preserves_state
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
+               (ctx.objectLabelOf dst.cnode) = false) :
+    ¬∃ st', cspaceMoveChecked ctx src dst st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [cspaceMoveChecked, hDeny] at h
+
+/-- WS-H8: endpointReceiveDualChecked denied → no state change. -/
+theorem endpointReceiveDualChecked_denied_preserves_state
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf receiver) = false) :
+    ¬∃ (r : SeLe4n.ThreadId) (st' : SystemState),
+      endpointReceiveDualChecked ctx endpointId receiver st = .ok (r, st') := by
+  intro ⟨r, st', h⟩
+  simp [endpointReceiveDualChecked, hDeny] at h
+
+-- ============================================================================
+-- WS-H8: Enforcement sufficiency theorems for new wrappers
+-- ============================================================================
+
+/-- WS-H8: `notificationSignalChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_notificationSignal
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true ∧
+       notificationSignalChecked ctx notificationId signaler badge st =
+         notificationSignal notificationId badge st) ∨
+    (securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = false ∧
+       notificationSignalChecked ctx notificationId signaler badge st =
+         .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) with
+  | true => left; exact ⟨rfl, by simp [notificationSignalChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [notificationSignalChecked, hFlow]⟩
+
+/-- WS-H8: `cspaceCopyChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_cspaceCopy
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
+       cspaceCopyChecked ctx src dst st = cspaceCopy src dst st) ∨
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false ∧
+       cspaceCopyChecked ctx src dst st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
+  | true => left; exact ⟨rfl, by simp [cspaceCopyChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [cspaceCopyChecked, hFlow]⟩
+
+/-- WS-H8: `cspaceMoveChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_cspaceMove
+    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
+       cspaceMoveChecked ctx src dst st = cspaceMove src dst st) ∨
+    (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false ∧
+       cspaceMoveChecked ctx src dst st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
+  | true => left; exact ⟨rfl, by simp [cspaceMoveChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [cspaceMoveChecked, hFlow]⟩
+
+/-- WS-H8: `endpointReceiveDualChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_endpointReceiveDual
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true ∧
+       endpointReceiveDualChecked ctx endpointId receiver st =
+         endpointReceiveDual endpointId receiver st) ∨
+    (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = false ∧
+       endpointReceiveDualChecked ctx endpointId receiver st =
+         .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
+  | true => left; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
+
+-- ============================================================================
+-- WS-H8: Updated enforcement boundary classification (21 operations)
+-- ============================================================================
+
+/-- WS-H8: Updated enforcement boundary — 7 policy-gated operations (up from 3).
+
+Extends the canonical classification with 4 new policy-gated wrappers:
+- `notificationSignalChecked` — signaler→notification flow
+- `cspaceCopyChecked` — source CNode→destination CNode flow
+- `cspaceMoveChecked` — source CNode→destination CNode flow
+- `endpointReceiveDualChecked` — endpoint→receiver flow -/
+def enforcementBoundaryExtended : List EnforcementClass :=
+  [ .policyGated "endpointSendChecked"
+  , .policyGated "endpointSendDualChecked"
+  , .policyGated "cspaceMintChecked"
+  , .policyGated "serviceRestartChecked"
+  , .policyGated "notificationSignalChecked"
+  , .policyGated "cspaceCopyChecked"
+  , .policyGated "cspaceMoveChecked"
+  , .policyGated "endpointReceiveDualChecked"
+  , .capabilityOnly "cspaceLookupSlot"
+  , .capabilityOnly "cspaceInsertSlot"
+  , .capabilityOnly "cspaceDeleteSlot"
+  , .capabilityOnly "cspaceRevoke"
+  , .readOnly "chooseThread"
+  , .readOnly "lookupObject"
+  , .readOnly "lookupService"
+  , .readOnly "cspaceResolvePath"
+  , .capabilityOnly "lifecycleRetypeObject"
+  , .capabilityOnly "lifecycleRevokeDeleteRetype"
+  , .capabilityOnly "storeObject"
+  ]
+
+-- ============================================================================
+-- WS-H8/A-35: Enforcement soundness meta-theorem
+-- ============================================================================
+
+/-- WS-H8/A-35: Enforcement soundness — a checked operation that succeeds
+implies the flow check passed. This is the foundational bridge connecting
+the enforcement layer to non-interference hypotheses.
+
+For any checked wrapper: if the operation succeeds (returns `.ok`), then
+the `securityFlowsTo` check must have evaluated to `true`, meaning the
+operation's source domain is authorized to flow to the destination domain. -/
+theorem enforcementSoundness_endpointSendDualChecked
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (st st' : SystemState)
+    (hStep : endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st')) :
+    securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
+  cases h : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
+  | true => rfl
+  | false =>
+    have := endpointSendDualChecked_flowDenied ctx endpointId sender msg st h
+    rw [this] at hStep; simp at hStep
+
+/-- WS-H8/A-35: Enforcement soundness for notificationSignalChecked. -/
+theorem enforcementSoundness_notificationSignalChecked
+    (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (st st' : SystemState)
+    (hStep : notificationSignalChecked ctx notificationId signaler badge st = .ok ((), st')) :
+    securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true := by
+  cases h : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) with
+  | true => rfl
+  | false =>
+    have := notificationSignalChecked_flowDenied ctx notificationId signaler badge st h
+    rw [this] at hStep; simp at hStep
+
+/-- WS-H8/A-35: Enforcement soundness for cspaceCopyChecked. -/
+theorem enforcementSoundness_cspaceCopyChecked
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceCopyChecked ctx src dst st = .ok ((), st')) :
+    securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true := by
+  cases h : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
+  | true => rfl
+  | false =>
+    have := cspaceCopyChecked_flowDenied ctx src dst st h
+    rw [this] at hStep; simp at hStep
+
+/-- WS-H8/A-35: Enforcement soundness for cspaceMoveChecked. -/
+theorem enforcementSoundness_cspaceMoveChecked
+    (ctx : LabelingContext)
+    (src dst : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceMoveChecked ctx src dst st = .ok ((), st')) :
+    securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true := by
+  cases h : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
+  | true => rfl
+  | false =>
+    have := cspaceMoveChecked_flowDenied ctx src dst st h
+    rw [this] at hStep; simp at hStep
+
+/-- WS-H8/A-35: Enforcement soundness for endpointReceiveDualChecked. -/
+theorem enforcementSoundness_endpointReceiveDualChecked
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
+    (hStep : endpointReceiveDualChecked ctx endpointId receiver st = .ok (r, st')) :
+    securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
+  cases h : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
+  | true => rfl
+  | false =>
+    have := endpointReceiveDualChecked_flowDenied ctx endpointId receiver st h
+    rw [this] at hStep; simp at hStep
+
 end SeLe4n.Kernel
