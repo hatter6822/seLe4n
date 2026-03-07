@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/enforcement-ni-bridge-wrappers-SAQb5",
-      "commit_sha": "7171041bd37a534b90264b37efa94742481922f3",
-      "tree_sha": "00b49772e82d16ae016c3d1b06dc02f99def0401",
-      "committed_at_utc": "2026-03-07T06:09:43+00:00"
+      "branch": "main",
+      "commit_sha": "0d278c6e7fd989b5c0c55e1c21ac176bf0e6b35e",
+      "tree_sha": "394d785b2869a30fc961f956c5064e7191ffc51e",
+      "committed_at_utc": "2026-03-07T02:29:45-05:00"
     }
   },
   "source_sync": {
