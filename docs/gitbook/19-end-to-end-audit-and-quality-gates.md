@@ -16,10 +16,10 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.13.0 has:
+seLe4n v0.13.1 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **734 theorem/lemma declarations** across 7 kernel subsystems.
+- **752 theorem/lemma declarations** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.

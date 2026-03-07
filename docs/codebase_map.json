@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "f5f1fbe6f36d3f89f130c4f2ea70cf7725ea783c",
-      "tree_sha": "4e142679a018b95163134e7e39f69b73f5b775e9",
-      "committed_at_utc": "2026-03-06T21:02:14-05:00"
+      "branch": "claude/audit-workstream-implementation-Shm72",
+      "commit_sha": "19237d3a1b304fa6494664c2df44ccb971d2cf35",
+      "tree_sha": "acbef4653fc1666aad27c11eb9634c88fdac4229",
+      "committed_at_utc": "2026-03-07T02:02:22+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f4e7296ee5b84be61f8239c38479ef1d862bd7e5cb778d904c05d9644dfe9e5e"
+    "source_digest": "f3c124baf1f34200a8d6e9fa635abadf9729d42e54c43dc4a472d1a13ff5bae8"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1493
+    "declaration_count": 1508
   },
   "modules": [
     {
@@ -6144,7 +6144,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 13,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -6239,15 +6239,34 @@
         {
           "kind": "def",
           "name": "edfCurrentHasEarliestDeadline",
-          "line": 120,
+          "line": 125,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariantBundleFull",
+          "line": 152,
+          "called": [
+            "edfCurrentHasEarliestDeadline",
+            "schedulerInvariantBundle",
+            "timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantBundleFull_to_base",
+          "line": 156,
+          "called": [
+            "schedulerInvariantBundle",
+            "schedulerInvariantBundleFull"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations",
       "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
-      "declaration_count": 50,
+      "declaration_count": 63,
       "declarations": [
         {
           "kind": "namespace",
@@ -6689,6 +6708,122 @@
             "schedule_preserves_currentThreadInActiveDomain",
             "timerTick",
             "timerTick_preserves_schedulerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isBetterCandidate_not_better_trans",
+          "line": 947,
+          "called": [
+            "isBetterCandidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableBy_optimal_combined",
+          "line": 976,
+          "called": [
+            "chooseBestRunnableBy",
+            "isBetterCandidate",
+            "isBetterCandidate_irrefl",
+            "isBetterCandidate_not_better_trans",
+            "isBetterCandidate_transitive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableBy_optimal",
+          "line": 1083,
+          "called": [
+            "chooseBestRunnableBy",
+            "chooseBestRunnableBy_optimal_combined",
+            "isBetterCandidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "noBetter_implies_edf",
+          "line": 1099,
+          "called": [
+            "isBetterCandidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_timeSlicePositive",
+          "line": 1114,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_timeSlicePositive",
+          "line": 1123,
+          "called": [
+            "chooseThread",
+            "chooseThread_preserves_state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_timeSlicePositive",
+          "line": 1132,
+          "called": [
+            "chooseThread",
+            "chooseThread_preserves_state",
+            "schedule",
+            "setCurrentThread_preserves_timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_timeSlicePositive",
+          "line": 1168,
+          "called": [
+            "handleYield",
+            "schedule_preserves_timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_timeSlicePositive",
+          "line": 1198,
+          "called": [
+            "switchDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_timeSlicePositive",
+          "line": 1217,
+          "called": [
+            "defaultTimeSlice",
+            "schedule_preserves_timeSlicePositive",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1293,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1303,
+          "called": [
+            "switchDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_schedulerInvariantBundleFull",
+          "line": 1323,
+          "called": [
+            "switchDomain",
+            "switchDomain_preserves_edfCurrentHasEarliestDeadline",
+            "switchDomain_preserves_schedulerInvariantBundle",
+            "switchDomain_preserves_timeSlicePositive"
           ]
         }
       ]

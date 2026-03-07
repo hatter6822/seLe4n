@@ -1,5 +1,6 @@
 /.lake
 /tests/artifacts
+__pycache__/
 
 # WS-B9 security hardening: local secret/config artifacts should never be committed.
 .env
