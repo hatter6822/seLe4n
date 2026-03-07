@@ -66,9 +66,9 @@ Preservation shape:
 
 WS-H4 transfer theorems (new):
 
-- `wsH4_through_blocking_path` — storeObject(.endpoint) → storeTcbIpcState → removeRunnable,
-- `wsH4_through_handshake_path` — storeObject(.endpoint) → storeTcbIpcState → ensureRunnable,
-- `wsH4_through_reply_path` — storeTcbIpcStateAndMessage → ensureRunnable.
+- `cdtPredicates_through_blocking_path` — storeObject(.endpoint) → storeTcbIpcState → removeRunnable,
+- `cdtPredicates_through_handshake_path` — storeObject(.endpoint) → storeTcbIpcState → ensureRunnable,
+- `cdtPredicates_through_reply_path` — storeTcbIpcStateAndMessage → ensureRunnable.
 
 Badge routing chain (H-03):
 

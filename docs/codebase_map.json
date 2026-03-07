@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "c3119346e6c9bd0f66d500c26147d836774eca62",
-      "tree_sha": "0c85bc082e04f1611d5b45d1ea76d813226938b8",
-      "committed_at_utc": "2026-03-06T16:03:03-05:00"
+      "branch": "work",
+      "commit_sha": "f54d3b4b1d43b08e9c1a05f76523146ef5055deb",
+      "tree_sha": "7b1405e9ab877b3ba8e7dbceccdf7457bafb6667",
+      "committed_at_utc": "2026-03-06T21:03:16+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bf3a1f56ef58c939e1ebeba7a00196f189afcf22a903b4e335a5bb0b0f14bad3"
+    "source_digest": "f4e7296ee5b84be61f8239c38479ef1d862bd7e5cb778d904c05d9644dfe9e5e"
   },
   "summary": {
     "module_count": 43,
@@ -915,7 +915,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_of_storeObject",
+          "name": "cdtPredicates_of_storeObject_nonCNode",
           "line": 396,
           "called": [
             "cdtAcyclicity",
@@ -929,7 +929,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_of_objects_cdt_eq",
+          "name": "cdtPredicates_of_objects_cdtNodeSlot_eq",
           "line": 411,
           "called": [
             "cdtAcyclicity",
@@ -967,7 +967,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_of_detachSlotFromCdt",
+          "name": "cdtPredicates_of_detachSlotFromCdt",
           "line": 468,
           "called": [
             "cdtAcyclicity",
@@ -980,7 +980,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_bounded_comp_of_cdt_only_update",
+          "name": "boundedCompleteness_of_cdt_only_update",
           "line": 481,
           "called": [
             "cdtCompleteness",
@@ -989,7 +989,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_through_blocking_path",
+          "name": "cdtPredicates_through_blocking_path",
           "line": 491,
           "called": [
             "cdtAcyclicity",
@@ -1007,7 +1007,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_through_handshake_path",
+          "name": "cdtPredicates_through_handshake_path",
           "line": 533,
           "called": [
             "cdtAcyclicity",
@@ -1025,7 +1025,7 @@
         },
         {
           "kind": "theorem",
-          "name": "wsH4_through_reply_path",
+          "name": "cdtPredicates_through_reply_path",
           "line": 581,
           "called": [
             "cdtAcyclicity",
@@ -1496,11 +1496,11 @@
           "line": 1985,
           "called": [
             "capabilityInvariantBundle",
+            "cdtPredicates_through_reply_path",
             "cspaceLookupSound_of_cspaceSlotUnique",
             "cspaceSlotUnique",
             "cspaceSlotUnique_of_objects_eq",
-            "lifecycleAuthorityMonotonicity_holds",
-            "wsH4_through_reply_path"
+            "lifecycleAuthorityMonotonicity_holds"
           ]
         },
         {
@@ -1696,12 +1696,12 @@
           "line": 2367,
           "called": [
             "capabilityInvariantBundle",
+            "cdtPredicates_through_blocking_path",
+            "cdtPredicates_through_handshake_path",
             "cspaceLookupSound_of_cspaceSlotUnique",
             "cspaceSlotUnique_through_blocking_path",
             "cspaceSlotUnique_through_handshake_path",
-            "lifecycleAuthorityMonotonicity_holds",
-            "wsH4_through_blocking_path",
-            "wsH4_through_handshake_path"
+            "lifecycleAuthorityMonotonicity_holds"
           ]
         },
         {
@@ -1710,10 +1710,10 @@
           "line": 2421,
           "called": [
             "capabilityInvariantBundle",
+            "cdtPredicates_through_blocking_path",
             "cspaceLookupSound_of_cspaceSlotUnique",
             "cspaceSlotUnique_through_blocking_path",
-            "lifecycleAuthorityMonotonicity_holds",
-            "wsH4_through_blocking_path"
+            "lifecycleAuthorityMonotonicity_holds"
           ]
         },
         {
@@ -1722,10 +1722,10 @@
           "line": 2451,
           "called": [
             "capabilityInvariantBundle",
+            "cdtPredicates_through_handshake_path",
             "cspaceLookupSound_of_cspaceSlotUnique",
             "cspaceSlotUnique_through_handshake_path",
-            "lifecycleAuthorityMonotonicity_holds",
-            "wsH4_through_handshake_path"
+            "lifecycleAuthorityMonotonicity_holds"
           ]
         },
         {
