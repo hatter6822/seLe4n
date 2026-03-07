@@ -36,6 +36,21 @@
   proves that `chooseBestRunnableBy` result is drawn from the scanned list.
 - **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3).
 
+### WS-H7 Audit Remediation: BEq Soundness Theorems
+
+- **VSpaceRoot BEq soundness (A-07):** `VSpaceRoot.beq_asid_eq` — proves that
+  `(a == b) = true` implies `a.asid = b.asid`. Documents TPI-D7: full
+  `LawfulBEq VSpaceRoot` requires `HashMap.ext` (not available in Lean 4.28.0
+  without Batteries).
+- **CNode BEq soundness (A-07):** `CNode.beq_guard_radix_eq` — proves that
+  `(a == b) = true` implies `a.guard = b.guard ∧ a.radix = b.radix`. Same
+  TPI-D7 limitation applies to the `slots` HashMap field.
+- **Tracked proof impediment TPI-D7:** `LawfulBEq` instances for `VSpaceRoot`
+  and `CNode` require `Std.HashMap.ext` (extensionality lemma). This is not
+  available in the current toolchain. The BEq instances are semantically correct
+  (size + entry-wise fold), but the extensionality bridge is deferred.
+- **801 proved theorem/lemma declarations.** Zero sorry, zero axiom, zero warnings.
+
 ## [0.13.2] - 2026-03-07
 
 ### WS-H8: Enforcement-NI Bridge & Missing Wrappers

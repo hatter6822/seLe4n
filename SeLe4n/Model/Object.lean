@@ -630,6 +630,19 @@ instance : BEq VSpaceRoot where
     a.mappings.size == b.mappings.size &&
     a.mappings.fold (init := true) (fun acc k v => acc && b.mappings[k]? == some v)
 
+/-- WS-H7/A-07: VSpaceRoot BEq soundness — ASID equality is extractable from beq.
+
+The full `LawfulBEq VSpaceRoot` instance (i.e., `(a == b) = true ↔ a = b`) requires
+`HashMap.ext : (∀ k, m₁[k]? = m₂[k]?) → m₁ = m₂`, which is not available in the
+Lean 4.28.0 / Std toolchain without Batteries. The BEq instance is semantically
+correct (size check + entry-wise fold guarantees bidirectional containment), but the
+extensionality bridge from entry-wise equality to structural equality is blocked.
+Tracked as TPI-D7 — resolved when Batteries `HashMap.ext` becomes available. -/
+theorem VSpaceRoot.beq_asid_eq (a b : VSpaceRoot) (h : (a == b) = true) :
+    a.asid = b.asid := by
+  simp only [BEq.beq, Bool.and_eq_true] at h
+  exact eq_of_beq h.1.1
+
 namespace CNode
 
 inductive ResolveError where
@@ -844,6 +857,16 @@ instance : BEq CNode where
     a.guard == b.guard && a.radix == b.radix &&
     a.slots.size == b.slots.size &&
     a.slots.fold (init := true) (fun acc k v => acc && b.slots[k]? == some v)
+
+/-- WS-H7/A-07: CNode BEq soundness — guard and radix equality extractable from beq.
+
+Same TPI-D7 limitation as VSpaceRoot: full `LawfulBEq CNode` requires `HashMap.ext`
+for the `slots` field. The BEq instance is semantically correct (size + entry-wise fold),
+but structural equality proof is blocked on `HashMap.ext`. -/
+theorem CNode.beq_guard_radix_eq (a b : CNode) (h : (a == b) = true) :
+    a.guard = b.guard ∧ a.radix = b.radix := by
+  simp only [BEq.beq, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1.1.1, h.1.1.2⟩
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model
