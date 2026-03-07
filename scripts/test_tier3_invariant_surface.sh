@@ -97,7 +97,7 @@ run_check "INVARIANT" rg -n '^theorem securityFlowsTo_trans' SeLe4n/Kernel/Infor
 run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^private def runInformationFlowChecks' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^def runInformationFlowChecks' tests/InformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^run_check "TRACE" lake env lean --run tests/InformationFlowSuite\.lean' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh

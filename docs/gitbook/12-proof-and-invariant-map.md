@@ -447,6 +447,19 @@ WS-F3 enforcement-NI bridges (3 theorems):
 - `cspaceMintChecked_NI` — bridges checked mint to NI,
 - `serviceRestartChecked_NI` — bridges checked restart to NI.
 
+WS-H8 enforcement-NI bridges (4 theorems):
+- `endpointSendDualChecked_NI` — bridges dual-queue checked send to NI,
+- `notificationSignalChecked_NI` — bridges checked signal to NI,
+- `cspaceCopyChecked_NI` — bridges checked copy to NI (underlying NI as hypothesis),
+- `cspaceMoveChecked_NI` — bridges checked move to NI (underlying NI as hypothesis).
+
+WS-H8 enforcement soundness (5 theorems):
+- `enforcementSoundness_endpointSendDualChecked`,
+- `enforcementSoundness_notificationSignalChecked`,
+- `enforcementSoundness_cspaceCopyChecked`,
+- `enforcementSoundness_cspaceMoveChecked`,
+- `enforcementSoundness_endpointReceiveDualChecked`.
+
 ### IF-M4 bundle-level non-interference (WS-E5 complete)
 
 **H-04 — Parameterized security labels (≥3 domains):**
@@ -474,8 +487,15 @@ WS-F3 enforcement-NI bridges (3 theorems):
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
 - `enforcementBoundary` — exhaustive 17-entry classification table,
-- `denied_preserves_state_*` — denial preservation for all 3 checked operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs.
+- `enforcementBoundaryExtended` — WS-H8 extended 19-entry table (8 policy-gated),
+- `denied_preserves_state_*` — denial preservation for all 7 checked operations,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 checked operations.
+
+**WS-H8/A-36 — Projection hardening:**
+
+- `ObservableState` extended with `domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex`,
+- `projectDomainTimeRemaining`, `projectDomainSchedule`, `projectDomainScheduleIndex` projection helpers,
+- All 19 NI theorems updated to handle new fields.
 
 ## 12. Untyped memory invariants (WS-F2)
 

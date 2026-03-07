@@ -1,6 +1,8 @@
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
 
+set_option maxRecDepth 1024
+
 open SeLe4n.Model
 
 namespace SeLe4n.Testing
@@ -80,7 +82,7 @@ private def altState : SystemState :=
     |>.withCurrent none
     |>.build)
 
-private def runInformationFlowChecks : IO Unit := do
+def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
     (SeLe4n.Kernel.securityFlowsTo secretLabel secretLabel)
@@ -643,6 +645,162 @@ private def runInformationFlowChecks : IO Unit := do
 
   IO.println "WS-F3 serviceRestartChecked enforcement checks passed"
   IO.println "all WS-F3 information-flow completeness checks passed"
+
+  -- ========================================================================
+  -- WS-H8: Enforcement-NI Bridge & Missing Wrappers
+  -- ========================================================================
+
+  IO.println "\n--- WS-H8: Enforcement-NI bridge & missing wrappers ---"
+
+  -- WS-H8: notificationSignalChecked tests
+  let ntfnState :=
+    (BootstrapBuilder.empty
+      |>.withObject 30 (.notification {
+          state := .idle
+          pendingBadge := none
+          waitingThreads := [] })
+      |>.build)
+
+  -- Same-domain signal (public signaler → public notification) should succeed
+  let sameDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx 30 1 42 ntfnState
+  let uncheckedSignal := SeLe4n.Kernel.notificationSignal 30 42 ntfnState
+
+  expect "WS-H8: same-domain notificationSignalChecked matches unchecked"
+    (match checkedSignal, uncheckedSignal with
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(30 : ObjId)]? == s₂.objects[(30 : ObjId)]?
+      | .error e₁, .error e₂ => e₁ == e₂
+      | _, _ => false)
+
+  -- Cross-domain signal (secret signaler → public notification) should be denied
+  let crossDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => secretLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx 30 1 42 ntfnState
+  expect "WS-H8: cross-domain notificationSignalChecked returns flowDenied"
+    (match deniedSignal with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-H8 notificationSignalChecked enforcement checks passed"
+
+  -- WS-H8: cspaceCopyChecked tests
+  let copySrcCNode := SeLe4n.Model.CNode.empty
+  let copySrcCNodeWithCap := copySrcCNode.insert 0 {
+    target := .object 99
+    rights := [.read]
+    badge := none }
+  let copyState :=
+    (BootstrapBuilder.empty
+      |>.withObject 40 (.cnode copySrcCNodeWithCap)
+      |>.withObject 41 (.cnode SeLe4n.Model.CNode.empty)
+      |>.build)
+
+  let copySrc : SlotRef := { cnode := 40, slot := 0 }
+  let copyDst : SlotRef := { cnode := 41, slot := 0 }
+
+  -- Same-domain copy should succeed
+  let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst copyState
+  let uncheckedCopy := SeLe4n.Kernel.cspaceCopy copySrc copyDst copyState
+
+  expect "WS-H8: same-domain cspaceCopyChecked matches unchecked"
+    (match checkedCopy, uncheckedCopy with
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(41 : ObjId)]? == s₂.objects[(41 : ObjId)]?
+      | .error e₁, .error e₂ => e₁ == e₂
+      | _, _ => false)
+
+  -- Cross-domain copy (secret src → public dst) should be denied
+  let crossDomainCopyCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = 40 then secretLabel else publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst copyState
+  expect "WS-H8: cross-domain cspaceCopyChecked returns flowDenied"
+    (match deniedCopy with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-H8 cspaceCopyChecked enforcement checks passed"
+
+  -- WS-H8: cspaceMoveChecked tests (same pattern)
+  let deniedMove := SeLe4n.Kernel.cspaceMoveChecked crossDomainCopyCtx copySrc copyDst copyState
+  expect "WS-H8: cross-domain cspaceMoveChecked returns flowDenied"
+    (match deniedMove with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-H8 cspaceMoveChecked enforcement checks passed"
+
+  -- WS-H8: endpointReceiveDualChecked tests
+  let recvEpState :=
+    (BootstrapBuilder.empty
+      |>.withObject 50 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.build)
+
+  -- Cross-domain receive (secret endpoint → public receiver) should be denied
+  let crossDomainRecvCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun oid => if oid = 50 then secretLabel else publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+
+  let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx 50 1 recvEpState
+  expect "WS-H8: cross-domain endpointReceiveDualChecked returns flowDenied"
+    (match deniedRecv with
+      | .error .flowDenied => true
+      | _ => false)
+
+  -- Same-domain receive should delegate to unchecked
+  let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx 50 1 recvEpState
+  let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual 50 1 recvEpState
+  expect "WS-H8: same-domain endpointReceiveDualChecked matches unchecked"
+    (match sameDomainRecv, uncheckedRecv with
+      | .ok (r₁, _), .ok (r₂, _) => r₁ = r₂
+      | .error e₁, .error e₂ => e₁ = e₂
+      | _, _ => false)
+
+  IO.println "WS-H8 endpointReceiveDualChecked enforcement checks passed"
+
+  -- WS-H8: Enforcement boundary classification check
+  let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
+  let policyGatedCount := extendedBoundary.filter (fun e => match e with
+    | .policyGated _ => true | _ => false) |>.length
+  expect "WS-H8: enforcement boundary has 8 policy-gated ops"
+    (policyGatedCount = 8)
+
+  IO.println "WS-H8 enforcement boundary classification verified"
+
+  -- WS-H8/A-36: ObservableState domain timing metadata coverage
+  -- Verify that projectState includes domain timing fields
+  let timingState :=
+    { (BootstrapBuilder.empty.build) with
+        scheduler := { (BootstrapBuilder.empty.build).scheduler with
+          domainTimeRemaining := 42
+          domainSchedule := [{ domain := 0, length := 10 }, { domain := 1, length := 5 }]
+          domainScheduleIndex := 1 } }
+
+  let projection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
+    { clearance := publicLabel } timingState
+
+  expect "WS-H8/A-36: domainTimeRemaining projected"
+    (projection.domainTimeRemaining = 42)
+  expect "WS-H8/A-36: domainSchedule projected"
+    (projection.domainSchedule.length = 2)
+  expect "WS-H8/A-36: domainScheduleIndex projected"
+    (projection.domainScheduleIndex = 1)
+
+  IO.println "WS-H8/A-36 domain timing metadata projection verified"
+  IO.println "all WS-H8 information-flow enforcement checks passed"
 
 end SeLe4n.Testing
 

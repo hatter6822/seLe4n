@@ -1,3 +1,40 @@
+## [0.13.2] - 2026-03-07
+
+### WS-H8: Enforcement-NI Bridge & Missing Wrappers
+
+- **Enforcement-NI bridge connected (A-35/H-07 CRITICAL):** Added enforcement
+  soundness meta-theorems (`enforcementSoundness_endpointSendDualChecked`,
+  `enforcementSoundness_notificationSignalChecked`,
+  `enforcementSoundness_cspaceCopyChecked`,
+  `enforcementSoundness_cspaceMoveChecked`,
+  `enforcementSoundness_endpointReceiveDualChecked`) proving that checked
+  operation success implies the `securityFlowsTo` check passed. These form the
+  foundational bridge connecting the enforcement layer to non-interference
+  hypotheses.
+- **4 new enforcement wrappers (H-07 HIGH):** `notificationSignalChecked`,
+  `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked` —
+  each gates on `securityFlowsTo` before delegating to the unchecked operation.
+  Enforcement boundary extended from 3 to 8 policy-gated operations.
+- **NI bridge theorems:** `endpointSendDualChecked_NI`,
+  `notificationSignalChecked_NI`, `cspaceCopyChecked_NI`,
+  `cspaceMoveChecked_NI` — each proves that if the checked wrapper succeeds,
+  low-equivalence is preserved (cspaceCopy/Move take underlying NI as
+  hypothesis pending WS-H9 decomposition lemmas).
+- **Projection hardening (A-36/A-37/H-11 HIGH):** Extended `ObservableState`
+  with `domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex` fields.
+  Added projection helpers and updated all 19 NI theorems in Invariant.lean.
+  `activeDomain` kept always-visible as deliberate scheduling transparency.
+- **Correctness theorems:** `*_eq_*_when_allowed` (4), `*_flowDenied` (4),
+  `*_denied_preserves_state` (4), `enforcement_sufficiency_*` (4) for all
+  new wrappers.
+- **Extended enforcement boundary:** `enforcementBoundaryExtended` — 8
+  policy-gated operations (up from 3 in `enforcementBoundary`).
+- **Test coverage:** 12 new executable tests in `InformationFlowSuite.lean`
+  covering same-domain match, cross-domain denial, boundary classification,
+  and domain timing metadata projection.
+- **26 new theorems.** Zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
+  779 proved theorems total.
+
 ## [0.13.1] - 2026-03-07
 
 ### WS-H6: Scheduler Proof Completion (partial)
