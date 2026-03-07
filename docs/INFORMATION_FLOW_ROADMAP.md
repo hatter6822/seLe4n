@@ -6,13 +6,14 @@ serves as the security trajectory for the Raspberry Pi 5 hardware target.
 
 ## 1. Purpose
 
-seLe4n already proves capability, scheduler, IPC, lifecycle, service, and
+seLe4n proves capability, scheduler, IPC, lifecycle, service, and
 architecture-boundary invariants. The v0.12.2 audits identified that information-flow
-coverage is at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
+coverage was at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
 
-WS-F3 addresses this gap. This roadmap defined the incremental path from 5
-proofs to broader coverage. With WS-F3 completed, NI coverage now stands at
-12 standalone theorems + 3 enforcement-NI bridges = 15 total NI proofs.
+**Current state (post WS-F3):** NI coverage now stands at 12 standalone
+`_preserves_lowEquivalent` theorems + 3 enforcement-NI bridges = **15 total NI
+proofs**. IF-M1 through IF-M4 and WS-F3 are all completed. The remaining
+milestone is IF-M5 (platform-facing integration readiness).
 
 ## 2. Scope and assumptions
 

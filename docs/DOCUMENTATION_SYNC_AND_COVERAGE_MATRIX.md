@@ -56,9 +56,9 @@ For documentation/planning PRs:
 ## 4) Current-stage status summary
 
 - Next planning baseline: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F5..F8 remaining).
-- Recently completed: WS-G (v0.12.15, all 9 workstreams, 14 performance findings closed).
+- Recently completed: WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC structural invariant, v0.12.19), WS-G (v0.12.15, all 9 workstreams, 14 performance findings closed).
 - Active findings baseline: `AUDIT_CODEBASE_v0.12.2_v1.md`, `AUDIT_CODEBASE_v0.12.2_v2.md`.
-- Completed portfolios: WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
+- Completed portfolios: WS-H1..H7, WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 - Hardware target: Raspberry Pi 5 (ARM64).
