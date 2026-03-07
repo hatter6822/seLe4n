@@ -262,6 +262,9 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `tests/fixtures/main_trace_smoke.expected`. Update fixture only with rationale.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId`, etc.
   are wrapper structures, not `Nat` aliases. Use explicit `.toNat`/`.ofNat`.
+- **Internal-first naming**: theorem/function/definition names must describe
+  semantics (state update shape, preserved invariant, transition path). Do **not**
+  encode workstream IDs (`WS-*`, `wsH*`, etc.) in identifier names.
 
 ## Documentation rules
 

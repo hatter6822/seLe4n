@@ -393,7 +393,7 @@ private theorem clearCapabilityRefs_cdt_eq
 
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/
-private theorem wsH4_of_storeObject
+private theorem cdtPredicates_of_storeObject_nonCNode
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
@@ -408,7 +408,7 @@ private theorem wsH4_of_storeObject
 
 /-- WS-H4: Transfer all three new predicates when objects and CDT fields are
 both preserved. Used for scheduler-only updates (removeRunnable, ensureRunnable). -/
-private theorem wsH4_of_objects_cdt_eq
+private theorem cdtPredicates_of_objects_cdtNodeSlot_eq
     (st st' : SystemState)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
@@ -465,7 +465,7 @@ private theorem cspaceSlotCountBounded_of_detachSlotFromCdt
     (SystemState.detachSlotFromCdt_objects_eq st ref)
 
 /-- WS-H4: Transfer all three new predicates through detachSlotFromCdt. -/
-private theorem wsH4_of_detachSlotFromCdt
+private theorem cdtPredicates_of_detachSlotFromCdt
     (st : SystemState) (ref : SlotRef)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st) :
@@ -478,7 +478,7 @@ private theorem wsH4_of_detachSlotFromCdt
 
 /-- WS-H4: CDT-only state update preserves cspaceSlotCountBounded and cdtCompleteness.
 Used for `{ st with cdt := cdt' }` where objects and cdtNodeSlot are unchanged. -/
-private theorem wsH4_bounded_comp_of_cdt_only_update
+private theorem boundedCompleteness_of_cdt_only_update
     (st : SystemState) (cdt' : CapDerivationTree)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) :
@@ -488,7 +488,7 @@ private theorem wsH4_bounded_comp_of_cdt_only_update
 
 /-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB blocking path.
 storeObject(.endpoint) → storeTcbIpcState → removeRunnable preserves all three. -/
-private theorem wsH4_through_blocking_path
+private theorem cdtPredicates_through_blocking_path
     (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (ep : Endpoint) (ipc : ThreadIpcState)
     (hBounded : cspaceSlotCountBounded st)
@@ -530,7 +530,7 @@ private theorem wsH4_through_blocking_path
 
 /-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB handshake path.
 storeObject(.endpoint) → storeTcbIpcState → ensureRunnable preserves all three. -/
-private theorem wsH4_through_handshake_path
+private theorem cdtPredicates_through_handshake_path
     (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (ep : Endpoint)
     (hBounded : cspaceSlotCountBounded st)
@@ -578,7 +578,7 @@ private theorem wsH4_through_handshake_path
 
 /-- WS-H4: Transfer WS-H4 predicates through reply path.
 storeTcbIpcStateAndMessage → ensureRunnable preserves all three. -/
-private theorem wsH4_through_reply_path
+private theorem cdtPredicates_through_reply_path
     (st st1 : SystemState) (target : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hBounded : cspaceSlotCountBounded st)
@@ -2051,7 +2051,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
             hU1 (ensureRunnable_preserves_objects st1 target)
           have ⟨hBndE, hCompE, hAcyclicE⟩ :=
-            wsH4_through_reply_path st st1 target .ready (some msg) hBounded hComp hAcyclic hTcb
+            cdtPredicates_through_reply_path st st1 target .ready (some msg) hBounded hComp hAcyclic hTcb
           exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
             lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
 
@@ -2385,7 +2385,7 @@ theorem endpointSend_preserves_capabilityInvariantBundle
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
         have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
-        have ⟨hBndE, hCompE, hAcyclicE⟩ := wsH4_through_blocking_path st pair.2 st2 endpointId sender _ _ hBounded hComp hAcyclic hStore hTcb
+        have ⟨hBndE, hCompE, hAcyclicE⟩ := cdtPredicates_through_blocking_path st pair.2 st2 endpointId sender _ _ hBounded hComp hAcyclic hStore hTcb
         exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
   | send =>
     simp [endpointSend, hObj, hState] at hStep; revert hStep
@@ -2398,7 +2398,7 @@ theorem endpointSend_preserves_capabilityInvariantBundle
       | ok st2 =>
         simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
         have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId sender _ _ hUnique hStore hTcb
-        have ⟨hBndE, hCompE, hAcyclicE⟩ := wsH4_through_blocking_path st pair.2 st2 endpointId sender _ _ hBounded hComp hAcyclic hStore hTcb
+        have ⟨hBndE, hCompE, hAcyclicE⟩ := cdtPredicates_through_blocking_path st pair.2 st2 endpointId sender _ _ hBounded hComp hAcyclic hStore hTcb
         exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
   | receive =>
     simp [endpointSend, hObj, hState] at hStep
@@ -2414,7 +2414,7 @@ theorem endpointSend_preserves_capabilityInvariantBundle
         | ok st2 =>
           simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
           have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId receiver _ hUnique hStore hTcb
-          have ⟨hBndE, hCompE, hAcyclicE⟩ := wsH4_through_handshake_path st pair.2 st2 endpointId receiver _ hBounded hComp hAcyclic hStore hTcb
+          have ⟨hBndE, hCompE, hAcyclicE⟩ := cdtPredicates_through_handshake_path st pair.2 st2 endpointId receiver _ hBounded hComp hAcyclic hStore hTcb
           exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointAwaitReceive`. -/
@@ -2444,7 +2444,7 @@ theorem endpointAwaitReceive_preserves_capabilityInvariantBundle
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             have hU := cspaceSlotUnique_through_blocking_path st pair.2 st2 endpointId receiver _ _ hUnique hStore hTcb
-            have ⟨hBndE, hCompE, hAcyclicE⟩ := wsH4_through_blocking_path st pair.2 st2 endpointId receiver _ _ hBounded hComp hAcyclic hStore hTcb
+            have ⟨hBndE, hCompE, hAcyclicE⟩ := cdtPredicates_through_blocking_path st pair.2 st2 endpointId receiver _ _ hBounded hComp hAcyclic hStore hTcb
             exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `endpointReceive`. -/
@@ -2480,7 +2480,7 @@ theorem endpointReceive_preserves_capabilityInvariantBundle
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨hSenderEq, hStEq⟩
             subst hStEq; subst hSenderEq
             have hU := cspaceSlotUnique_through_handshake_path st pair.2 st2 endpointId hd _ hUnique hStore hTcb
-            have ⟨hBndE, hCompE, hAcyclicE⟩ := wsH4_through_handshake_path st pair.2 st2 endpointId hd _ hBounded hComp hAcyclic hStore hTcb
+            have ⟨hBndE, hCompE, hAcyclicE⟩ := cdtPredicates_through_handshake_path st pair.2 st2 endpointId hd _ hBounded hComp hAcyclic hStore hTcb
             exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
 
 theorem endpointSend_preserves_coreIpcInvariantBundle
