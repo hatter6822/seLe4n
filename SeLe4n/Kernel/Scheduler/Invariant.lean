@@ -157,4 +157,23 @@ theorem schedulerInvariantBundleFull_to_base {st : SystemState}
     (h : schedulerInvariantBundleFull st) : schedulerInvariantBundle st :=
   h.1
 
+-- ============================================================================
+-- WS-H6: RunQueue priority-match predicate
+-- ============================================================================
+
+/-- WS-H6: The RunQueue's recorded `threadPriority` mapping matches the actual
+TCB priority for every run-queue member.
+
+This is an external-consistency predicate bridging the RunQueue's internal
+`threadPriority` field to the authoritative TCB priority in the object store.
+Together with `RunQueue.wellFormed`, it enables the bucket-first scheduling
+proof: if a thread has the same priority as the selected candidate, it must
+reside in the same priority bucket. -/
+def schedulerPriorityMatch (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runQueue →
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+        st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
+    | _ => True
+
 end SeLe4n.Kernel

@@ -359,5 +359,166 @@ theorem mem_toList_rotateToBack_ne (rq : RunQueue) (tid x : ThreadId)
       exact Or.inl (List.mem_erase_of_ne hne |>.mpr h)
   · exact Iff.rfl
 
+-- ============================================================================
+-- WS-H6: RunQueue well-formedness predicate
+-- ============================================================================
+
+/-- WS-H6: RunQueue well-formedness — priority-bucket structure is consistent
+with the membership set and thread-priority mapping.
+
+This captures the implicit structural invariant maintained by the
+insert/remove/rotate API (see RunQueue structure comment, lines 18-24).
+
+- **Forward**: every thread in a priority bucket is a run-queue member whose
+  recorded priority matches the bucket's priority.
+- **Reverse**: every run-queue member appears in its recorded-priority bucket. -/
+def wellFormed (rq : RunQueue) : Prop :=
+  (∀ prio tid, tid ∈ ((rq.byPriority[prio]?).getD []) →
+     rq.membership.contains tid = true ∧ rq.threadPriority[tid]? = some prio) ∧
+  (∀ tid, rq.membership.contains tid = true →
+     ∃ prio, rq.threadPriority[tid]? = some prio ∧
+       tid ∈ ((rq.byPriority[prio]?).getD []))
+
+/-- WS-H6: If a thread is in the max-priority bucket and the RunQueue is
+well-formed, then the thread is a member of the run queue. -/
+theorem maxPriorityBucket_subset (rq : RunQueue) (hwf : rq.wellFormed)
+    (t : ThreadId) (ht : t ∈ rq.maxPriorityBucket) : t ∈ rq := by
+  unfold maxPriorityBucket at ht
+  split at ht
+  · simp at ht
+  · rename_i prio _
+    unfold atPriority at ht
+    rw [mem_iff_contains]
+    exact (hwf.1 prio t ht).1
+
+/-- WS-H6: If a thread is in the max-priority bucket and the RunQueue is
+well-formed, then its recorded priority equals the max-priority value. -/
+theorem maxPriorityBucket_threadPriority (rq : RunQueue) (hwf : rq.wellFormed)
+    (t : ThreadId) (ht : t ∈ rq.maxPriorityBucket) :
+    ∃ prio, rq.maxPriority = some prio ∧ rq.threadPriority[t]? = some prio := by
+  unfold maxPriorityBucket at ht
+  split at ht
+  · simp at ht
+  · rename_i prio hMP
+    unfold atPriority at ht
+    exact ⟨prio, hMP, (hwf.1 prio t ht).2⟩
+
+/-- WS-H6: If a thread is a run-queue member whose recorded priority matches
+`maxPriority`, then the thread is in `maxPriorityBucket`. -/
+theorem mem_maxPriorityBucket_of_threadPriority (rq : RunQueue) (hwf : rq.wellFormed)
+    (t : ThreadId) (prio : Priority)
+    (hMem : t ∈ rq) (hTP : rq.threadPriority[t]? = some prio)
+    (hMP : rq.maxPriority = some prio) : t ∈ rq.maxPriorityBucket := by
+  show t ∈ (match rq.maxPriority with | none => [] | some p => rq.atPriority p)
+  rw [hMP]
+  show t ∈ rq.atPriority prio
+  unfold atPriority
+  obtain ⟨p, hpTP, hpBucket⟩ := hwf.2 t (mem_iff_contains.mp hMem)
+  have hEq : p = prio := Option.some.inj (hpTP.symm.trans hTP)
+  subst hEq
+  exact hpBucket
+
+-- ============================================================================
+-- WS-H6: rotateToBack field-preservation lemmas
+-- ============================================================================
+
+/-- `rotateToBack` does not change `membership`. -/
+theorem rotateToBack_membership (rq : RunQueue) (tid : ThreadId) :
+    (rq.rotateToBack tid).membership = rq.membership := by
+  unfold rotateToBack
+  split <;> rfl
+
+/-- `rotateToBack` does not change `threadPriority`. -/
+theorem rotateToBack_threadPriority (rq : RunQueue) (tid : ThreadId) :
+    (rq.rotateToBack tid).threadPriority = rq.threadPriority := by
+  unfold rotateToBack
+  split <;> rfl
+
+/-- `rotateToBack` does not change `maxPriority`. -/
+theorem rotateToBack_maxPriority (rq : RunQueue) (tid : ThreadId) :
+    (rq.rotateToBack tid).maxPriority = rq.maxPriority := by
+  unfold rotateToBack
+  split <;> rfl
+
+/-- `rotateToBack` does not change `contains`. -/
+theorem rotateToBack_contains (rq : RunQueue) (tid t : ThreadId) :
+    (rq.rotateToBack tid).contains t = rq.contains t := by
+  simp only [contains, rotateToBack_membership]
+
+/-- `rotateToBack` preserves membership (∈). -/
+theorem rotateToBack_mem_iff (rq : RunQueue) (tid t : ThreadId) :
+    t ∈ rq.rotateToBack tid ↔ t ∈ rq := by
+  simp only [mem_iff_contains, rotateToBack_contains]
+
+/-- Elements of the rotated flat list were in the original flat list. -/
+theorem rotateToBack_flat_subset (rq : RunQueue) (tid t : ThreadId) :
+    t ∈ (rq.rotateToBack tid).flat → t ∈ rq.flat := by
+  unfold rotateToBack
+  split
+  · intro h
+    simp only [List.mem_append, List.mem_singleton] at h
+    rcases h with h | rfl
+    · exact List.mem_of_mem_erase h
+    · exact rq.flat_wf_rev _ (by assumption)
+  · exact id
+
+/-- Original flat list elements appear in the rotated flat list. -/
+theorem rotateToBack_flat_superset (rq : RunQueue) (tid t : ThreadId) :
+    t ∈ rq.flat → t ∈ (rq.rotateToBack tid).flat := by
+  unfold rotateToBack
+  split
+  · intro h
+    simp only [List.mem_append, List.mem_singleton]
+    by_cases hEq : t = tid
+    · exact Or.inr hEq
+    · exact Or.inl ((List.mem_erase_of_ne hEq).2 h)
+  · exact id
+
+/-- `rotateToBack` preserves `wellFormed`. -/
+theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) (tid : ThreadId) :
+    (rq.rotateToBack tid).wellFormed := by
+  by_cases hc : rq.contains tid
+  · -- tid is in the run queue; rotation applies
+    have hTidMem : rq.membership.contains tid = true := hc
+    obtain ⟨tidPrio, hTidTP, hTidBucket⟩ := hwf.2 tid hTidMem
+    have hPrioVal : rq.threadPriority[tid]?.getD ⟨0⟩ = tidPrio := by
+      simp only [hTidTP, Option.getD]
+    -- Fully unfold the rotated wellFormed to access raw fields
+    unfold wellFormed
+    simp only [rotateToBack, hc, dite_true]
+    -- Now goal has: rq.membership, rq.threadPriority, rq.byPriority.insert ...
+    constructor
+    · -- Forward: bucket member → membership ∧ threadPriority
+      intro p t hMem
+      simp only [HashMap_getElem?_insert] at hMem
+      split at hMem
+      · -- prio == p: t is in the modified bucket
+        rename_i hPEq
+        simp only [Option.getD] at hMem
+        simp only [List.mem_append, List.mem_singleton] at hMem
+        rcases hMem with hFilter | rfl
+        · have hOrig := (List.mem_filter.mp hFilter).1
+          have hFwd := hwf.1 (rq.threadPriority[tid]?.getD ⟨0⟩) t hOrig
+          exact ⟨hFwd.1, by rw [(eq_of_beq hPEq).symm]; exact hFwd.2⟩
+        · exact ⟨hTidMem, by rw [(eq_of_beq hPEq).symm, hPrioVal]; exact hTidTP⟩
+      · -- prio ≠ p: bucket unchanged
+        exact hwf.1 p t hMem
+    · -- Reverse: membership → ∃ prio with bucket entry
+      intro t hMem
+      obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hMem
+      refine ⟨p, hTP, ?_⟩
+      simp only [HashMap_getElem?_insert]
+      split
+      · -- prio == p
+        rename_i hPEq
+        simp only [Option.getD, List.mem_append, List.mem_singleton]
+        by_cases hTEq : t = tid
+        · exact Or.inr hTEq
+        · rw [← eq_of_beq hPEq] at hBucket
+          exact Or.inl (List.mem_filter.mpr ⟨hBucket, by simp [hTEq]⟩)
+      · exact hBucket
+  · -- tid not in run queue; rotateToBack is identity
+    simp only [rotateToBack, show ¬(rq.contains tid = true) from hc]; exact hwf
+
 end RunQueue
 end SeLe4n.Kernel

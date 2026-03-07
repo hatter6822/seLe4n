@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "0d278c6e7fd989b5c0c55e1c21ac176bf0e6b35e",
-      "tree_sha": "394d785b2869a30fc961f956c5064e7191ffc51e",
-      "committed_at_utc": "2026-03-07T02:29:45-05:00"
+      "branch": "claude/audit-optimize-codebase-3hUFg",
+      "commit_sha": "5e9b986e92eca4e156acd110c891c35645124a7a",
+      "tree_sha": "e42707c438195ec886fa0ee75f07e04e1d09047f",
+      "committed_at_utc": "2026-03-07T07:29:52+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c827361aedeae332d287f3aac710304df8113437670b03c8d579d2785535a192"
+    "source_digest": "db49512456c340cb8c989968fbe2978d20c63f527cf5485706cd6eadae22f880"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1542
+    "declaration_count": 1566
   },
   "modules": [
     {
@@ -6413,7 +6413,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -6529,13 +6529,19 @@
             "schedulerInvariantBundle",
             "schedulerInvariantBundleFull"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "schedulerPriorityMatch",
+          "line": 172,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations",
       "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
-      "declaration_count": 64,
+      "declaration_count": 75,
       "declarations": [
         {
           "kind": "namespace",
@@ -7101,13 +7107,124 @@
             "switchDomain_preserves_schedulerInvariantBundle",
             "switchDomain_preserves_timeSlicePositive"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1340,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableBy_result_fields",
+          "line": 1364,
+          "called": [
+            "chooseBestRunnableBy",
+            "isBetterCandidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableBy_result_mem_aux",
+          "line": 1424,
+          "called": [
+            "chooseBestRunnableBy",
+            "isBetterCandidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableBy_result_mem",
+          "line": 1481,
+          "called": [
+            "chooseBestRunnableBy",
+            "chooseBestRunnableBy_result_mem_aux"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestInBucket_edf_bridge",
+          "line": 1509,
+          "called": [
+            "chooseBestInBucket",
+            "chooseBestRunnableBy_optimal",
+            "chooseBestRunnableBy_result_fields",
+            "chooseBestRunnableBy_result_mem",
+            "chooseBestRunnableInDomain",
+            "noBetter_implies_edf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1659,
+          "called": [
+            "chooseBestInBucket",
+            "chooseBestInBucket_edf_bridge",
+            "chooseThread",
+            "schedule",
+            "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
+            "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1710,
+          "called": [
+            "handleYield",
+            "schedule_preserves_edfCurrentHasEarliestDeadline"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
+          "line": 1753,
+          "called": [
+            "defaultTimeSlice",
+            "schedule_preserves_edfCurrentHasEarliestDeadline",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_schedulerInvariantBundleFull",
+          "line": 1833,
+          "called": [
+            "schedule",
+            "schedule_preserves_edfCurrentHasEarliestDeadline",
+            "schedule_preserves_schedulerInvariantBundle",
+            "schedule_preserves_timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_schedulerInvariantBundleFull",
+          "line": 1848,
+          "called": [
+            "handleYield",
+            "handleYield_preserves_edfCurrentHasEarliestDeadline",
+            "handleYield_preserves_schedulerInvariantBundle",
+            "handleYield_preserves_timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_schedulerInvariantBundleFull",
+          "line": 1863,
+          "called": [
+            "timerTick",
+            "timerTick_preserves_edfCurrentHasEarliestDeadline",
+            "timerTick_preserves_schedulerInvariantBundle",
+            "timerTick_preserves_timeSlicePositive"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 42,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -7473,6 +7590,119 @@
             "RunQueue",
             "rotateToBack",
             "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "wellFormed",
+          "line": 375,
+          "called": [
+            "RunQueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxPriorityBucket_subset",
+          "line": 384,
+          "called": [
+            "RunQueue",
+            "atPriority",
+            "maxPriorityBucket",
+            "mem_iff_contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxPriorityBucket_threadPriority",
+          "line": 396,
+          "called": [
+            "RunQueue",
+            "atPriority",
+            "maxPriorityBucket"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_maxPriorityBucket_of_threadPriority",
+          "line": 408,
+          "called": [
+            "RunQueue",
+            "atPriority"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_membership",
+          "line": 426,
+          "called": [
+            "RunQueue",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_threadPriority",
+          "line": 432,
+          "called": [
+            "RunQueue",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_maxPriority",
+          "line": 438,
+          "called": [
+            "RunQueue",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_contains",
+          "line": 444,
+          "called": [
+            "RunQueue",
+            "contains",
+            "rotateToBack_membership"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_mem_iff",
+          "line": 449,
+          "called": [
+            "RunQueue",
+            "mem_iff_contains",
+            "rotateToBack_contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_flat_subset",
+          "line": 454,
+          "called": [
+            "RunQueue",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_flat_superset",
+          "line": 466,
+          "called": [
+            "RunQueue",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_preserves_wellFormed",
+          "line": 478,
+          "called": [
+            "RunQueue",
+            "rotateToBack",
+            "wellFormed"
           ]
         }
       ]

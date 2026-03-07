@@ -13,11 +13,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.13.2` |
+| Version | `0.13.3` |
 | Lean toolchain | `4.28.0` |
 | Production LoC | 26,861 across 40 files |
 | Test LoC | 2,063 across 3 suites |
-| Proved declarations | 779 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 800 theorem/lemma declarations (zero sorry/axiom) |
 | Build jobs | 84 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |

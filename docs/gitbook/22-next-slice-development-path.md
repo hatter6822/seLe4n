@@ -2,12 +2,12 @@
 
 ## Current state
 
-**Version:** 0.13.2 (Lean 4.28.0)
+**Version:** 0.13.3 (Lean 4.28.0)
 
 **Verified metrics snapshot (from `./scripts/report_current_state.py`):**
 - Production LoC: 26,861 across 40 files
 - Test LoC: 2,063 across 3 suites
-- Proved declarations: 779 theorem/lemma declarations (zero sorry/axiom)
+- Proved declarations: 800 theorem/lemma declarations (zero sorry/axiom)
 - Build jobs: 84
 
 Three major portfolios are completed:
