@@ -1328,4 +1328,548 @@ theorem switchDomain_preserves_schedulerInvariantBundleFull
          switchDomain_preserves_timeSlicePositive st st' hTS hStep,
          switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep⟩
 
-end SeLe4n.Kernel
+-- ============================================================================
+-- WS-H6 completion: EDF preservation for schedule, handleYield, timerTick
+-- ============================================================================
+
+/-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
+satisfies the EDF deadline ordering among same-domain/same-priority candidates.
+
+The proof uses the post-condition that `setCurrentThread` only changes
+`scheduler.current`, leaving `objects` and `runnable` unchanged. -/
+theorem setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (tcbSel : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcbSel))
+    (hEdfLocal : ∀ t, t ∈ st.scheduler.runnable →
+      match st.objects[t.toObjId]? with
+      | some (.tcb tcb) =>
+          tcb.domain = tcbSel.domain →
+          tcb.priority = tcbSel.priority →
+          tcbSel.deadline.toNat = 0 ∨
+            (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
+      | _ => True)
+    (hStep : setCurrentThread (some tid) st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold setCurrentThread at hStep
+  cases hStep
+  unfold edfCurrentHasEarliestDeadline
+  simp only [hObj]
+  exact hEdfLocal
+
+/-- WS-H6: If `chooseBestRunnableBy` returns `some (resTid, resPrio, resDl)`, then
+`objects resTid.toObjId = some (.tcb tcb)` for some TCB with `tcb.priority = resPrio`
+and `tcb.deadline = resDl`. The result's fields always correspond to the actual TCB. -/
+private theorem chooseBestRunnableBy_result_fields
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (init : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableBy objects eligible runnable init =
+      .ok (some (resTid, resPrio, resDl)))
+    (hInit : ∀ iTid iPrio iDl, init = some (iTid, iPrio, iDl) →
+      ∃ itcb, objects iTid.toObjId = some (.tcb itcb) ∧
+        itcb.priority = iPrio ∧ itcb.deadline = iDl) :
+    ∃ tcb, objects resTid.toObjId = some (.tcb tcb) ∧
+      tcb.priority = resPrio ∧ tcb.deadline = resDl := by
+  induction runnable generalizing init with
+  | nil =>
+      unfold chooseBestRunnableBy at hOk
+      simp at hOk
+      cases hOk
+      exact hInit resTid resPrio resDl rfl
+  | cons hd tl ih =>
+      unfold chooseBestRunnableBy at hOk
+      cases hHdObj : objects hd.toObjId with
+      | none => simp [hHdObj] at hOk
+      | some obj =>
+          cases obj with
+          | tcb hdTcb =>
+              simp only [hHdObj] at hOk
+              cases hElig : eligible hdTcb with
+              | false =>
+                  simp only [hElig] at hOk
+                  exact ih init hOk hInit
+              | true =>
+                  simp only [hElig, ↓reduceIte] at hOk
+                  cases init with
+                  | none =>
+                      exact ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk (by
+                        intro iTid iPrio iDl hEq
+                        simp at hEq; obtain ⟨rfl, rfl, rfl⟩ := hEq
+                        exact ⟨hdTcb, hHdObj, rfl, rfl⟩)
+                  | some triple =>
+                      obtain ⟨initTid, initPrio, initDl⟩ := triple
+                      dsimp only at hOk
+                      cases hBeat : isBetterCandidate initPrio initDl hdTcb.priority hdTcb.deadline with
+                      | true =>
+                          simp only [hBeat, ite_true] at hOk
+                          exact ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk (by
+                            intro iTid iPrio iDl hEq
+                            simp at hEq; obtain ⟨rfl, rfl, rfl⟩ := hEq
+                            exact ⟨hdTcb, hHdObj, rfl, rfl⟩)
+                      | false =>
+                          simp only [hBeat] at hOk
+                          exact ih (some (initTid, initPrio, initDl)) hOk hInit
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+              simp [hHdObj] at hOk
+
+/-- WS-H6: If `chooseBestRunnableBy` with `init = none` returns a result, the
+result thread is a member of the scanned list.
+
+Proved via induction: the result is either the head of the list (when it becomes
+the first eligible candidate) or comes from the recursive tail scan. -/
+private theorem chooseBestRunnableBy_result_mem_aux
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
+    (list : List SeLe4n.ThreadId)
+    (init : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableBy objects eligible list init =
+      .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ list → ∃ tcb, objects t.toObjId = some (.tcb tcb)) :
+    resTid ∈ list ∨ (∃ ip id, init = some (resTid, ip, id)) := by
+  induction list generalizing init with
+  | nil =>
+    unfold chooseBestRunnableBy at hOk
+    simp at hOk; cases hOk
+    exact Or.inr ⟨resPrio, resDl, rfl⟩
+  | cons hd tl ih =>
+    unfold chooseBestRunnableBy at hOk
+    have hAllTl : ∀ t, t ∈ tl → ∃ tcb, objects t.toObjId = some (.tcb tcb) :=
+      fun t ht => hAllTcb t (List.mem_cons.mpr (Or.inr ht))
+    cases hHdObj : objects hd.toObjId with
+    | none => simp [hHdObj] at hOk
+    | some obj =>
+      cases obj with
+      | tcb hdTcb =>
+        simp only [hHdObj] at hOk
+        cases hElig : eligible hdTcb with
+        | false =>
+          simp only [hElig] at hOk
+          have := ih init hOk hAllTl
+          exact this.elim (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
+        | true =>
+          simp only [hElig, ↓reduceIte] at hOk
+          cases init with
+          | none =>
+            have := ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk hAllTl
+            rcases this with hTl | ⟨ip, id, hInit⟩
+            · exact Or.inl (List.mem_cons.mpr (Or.inr hTl))
+            · simp at hInit; obtain ⟨rfl, _, _⟩ := hInit
+              exact Or.inl (List.mem_cons.mpr (Or.inl rfl))
+          | some triple =>
+            obtain ⟨initTid, initPrio, initDl⟩ := triple
+            dsimp only at hOk
+            cases hBeat : isBetterCandidate initPrio initDl hdTcb.priority hdTcb.deadline with
+            | true =>
+              simp only [hBeat, ite_true] at hOk
+              have := ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk hAllTl
+              rcases this with hTl | ⟨ip, id, hInit⟩
+              · exact Or.inl (List.mem_cons.mpr (Or.inr hTl))
+              · simp at hInit; obtain ⟨rfl, _, _⟩ := hInit
+                exact Or.inl (List.mem_cons.mpr (Or.inl rfl))
+            | false =>
+              simp only [hBeat] at hOk
+              have := ih (some (initTid, initPrio, initDl)) hOk hAllTl
+              exact this.elim (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+        simp [hHdObj] at hOk
+
+private theorem chooseBestRunnableBy_result_mem
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
+    (list : List SeLe4n.ThreadId)
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableBy objects eligible list none =
+      .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ list → ∃ tcb, objects t.toObjId = some (.tcb tcb)) :
+    resTid ∈ list := by
+  have := chooseBestRunnableBy_result_mem_aux objects eligible list none
+    resTid resPrio resDl hOk hAllTcb
+  rcases this with hMem | ⟨_, _, hNone⟩
+  · exact hMem
+  · exact absurd hNone (by simp)
+
+
+/-- WS-H6: Bridge from `chooseBestInBucket` to the EDF deadline ordering.
+
+Given RunQueue well-formedness and priority-match, the result of
+`chooseBestInBucket` is EDF-optimal among all domain-eligible runnable threads
+at the same priority level.
+
+The proof handles both paths of the bucket-first strategy:
+- **Bucket success**: RunQueue well-formedness guarantees all same-priority
+  threads reside in the same bucket, so per-bucket optimality implies global
+  optimality at the same priority level.
+- **Full-scan fallback**: optimality over `rq.toList` directly covers all
+  runnable threads. -/
+private theorem chooseBestInBucket_edf_bridge
+    (st : SystemState)
+    (tid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (tcbSel : TCB)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hDomEq : tcbSel.domain = st.scheduler.activeDomain)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hResult : chooseBestInBucket st.objects.get? st.scheduler.runQueue
+      st.scheduler.activeDomain = .ok (some (tid, resPrio, resDl)))
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcbSel)) :
+    ∀ t, t ∈ st.scheduler.runnable →
+      match st.objects[t.toObjId]? with
+      | some (.tcb tcb) =>
+          tcb.domain = tcbSel.domain →
+          tcb.priority = tcbSel.priority →
+          tcbSel.deadline.toNat = 0 ∨
+            (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
+      | _ => True := by
+  -- Convert to objects.get?
+  have hAllTcbGet : ∀ u, u ∈ st.scheduler.runQueue.toList →
+      ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+    intro u hMu
+    obtain ⟨utcb, hutcb⟩ := hAllTcb u (by simpa [SchedulerState.runnable] using hMu)
+    exact ⟨utcb, hutcb⟩
+  have hObjGet : st.objects.get? tid.toObjId = some (.tcb tcbSel) := hObj
+  -- Domain-eligibility helper
+  have eligOfDom : ∀ (tcb : TCB), tcb.domain = tcbSel.domain →
+      (fun tc : TCB => tc.domain == st.scheduler.activeDomain) tcb = true := by
+    intro tcb htDom; simp; rw [htDom, hDomEq]
+  -- Unfold chooseBestInBucket
+  unfold chooseBestInBucket at hResult
+  cases hBucket : chooseBestRunnableInDomain st.objects.get?
+      st.scheduler.runQueue.maxPriorityBucket st.scheduler.activeDomain none with
+  | error e => simp [hBucket] at hResult
+  | ok bestB =>
+    cases bestB with
+    | none =>
+      -- ── Full-scan fallback ──
+      simp only [hBucket] at hResult
+      cases hFull : chooseBestRunnableInDomain st.objects.get?
+          st.scheduler.runQueue.toList st.scheduler.activeDomain none with
+      | error e => simp [hFull] at hResult
+      | ok bestF =>
+        cases bestF with
+        | none => simp [hFull] at hResult
+        | some triple =>
+          simp only [hFull] at hResult
+          have hTripleEq : triple = (tid, resPrio, resDl) := by
+            simp at hResult; exact hResult
+          subst hTripleEq
+          have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+            (fun tc => tc.domain == st.scheduler.activeDomain)
+            st.scheduler.runQueue.toList none tid resPrio resDl hFull
+            (by intro _ _ _ h; simp at h)
+          obtain ⟨resTcb, hResTcb, hResPrio, hResDl⟩ := hFields
+          rw [hObjGet] at hResTcb; cases hResTcb; subst hResPrio; subst hResDl
+          intro t hMem
+          cases hTObj : st.objects[t.toObjId]? with
+          | none => simp
+          | some tObj =>
+            cases tObj with
+            | tcb tcb =>
+              intro htDom htPrio
+              have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
+              have hMemList : t ∈ st.scheduler.runQueue.toList := by
+                simpa [SchedulerState.runnable] using hMem
+              have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+                (fun tc => tc.domain == st.scheduler.activeDomain)
+                st.scheduler.runQueue.toList tid tcbSel.priority tcbSel.deadline
+                hFull hAllTcbGet
+              have hNoBetter := hOpt t hMemList tcb hTObjGet (eligOfDom tcb htDom)
+              rw [htPrio] at hNoBetter
+              exact noBetter_implies_edf tcbSel.deadline tcb.deadline tcbSel.priority hNoBetter
+            | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp
+    | some triple =>
+      -- ── Bucket success ──
+      simp only [hBucket] at hResult
+      have hTripleEq : triple = (tid, resPrio, resDl) := by
+        simp at hResult; exact hResult
+      subst hTripleEq
+      -- All bucket members have TCBs
+      have hBucketAllTcb : ∀ u, u ∈ st.scheduler.runQueue.maxPriorityBucket →
+          ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+        intro u hU
+        have hURq := RunQueue.maxPriorityBucket_subset st.scheduler.runQueue hwf u hU
+        obtain ⟨utcb, hutcb⟩ := hAllTcb u (by
+          simpa [SchedulerState.runnable] using
+            RunQueue.membership_implies_flat st.scheduler.runQueue u hURq)
+        exact ⟨utcb, hutcb⟩
+      -- Result fields
+      have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+        (fun tc => tc.domain == st.scheduler.activeDomain)
+        st.scheduler.runQueue.maxPriorityBucket none tid resPrio resDl hBucket
+        (by intro _ _ _ h; simp at h)
+      obtain ⟨resTcb, hResTcb, hResPrio, hResDl⟩ := hFields
+      rw [hObjGet] at hResTcb; cases hResTcb; subst hResPrio; subst hResDl
+      -- tid ∈ maxPriorityBucket
+      have hTidInBucket : tid ∈ st.scheduler.runQueue.maxPriorityBucket :=
+        chooseBestRunnableBy_result_mem st.objects.get?
+          (fun tc => tc.domain == st.scheduler.activeDomain)
+          st.scheduler.runQueue.maxPriorityBucket tid tcbSel.priority tcbSel.deadline
+          hBucket hBucketAllTcb
+      -- Extract max priority
+      obtain ⟨maxPrio, hMP, hTidTP⟩ :=
+        RunQueue.maxPriorityBucket_threadPriority st.scheduler.runQueue hwf tid hTidInBucket
+      have hTidMem := RunQueue.maxPriorityBucket_subset st.scheduler.runQueue hwf tid hTidInBucket
+      -- maxPrio = tcbSel.priority (via prioMatch)
+      have hPMTid := hpm tid hTidMem
+      simp only [hObj] at hPMTid
+      have hMaxEqPrio : maxPrio = tcbSel.priority := Option.some.inj (hTidTP.symm.trans hPMTid)
+      -- Main goal
+      intro t hMem
+      cases hTObj : st.objects[t.toObjId]? with
+      | none => simp
+      | some tObj =>
+        cases tObj with
+        | tcb tcb =>
+          intro htDom htPrio
+          -- t ∈ runQueue
+          have hTInRq : t ∈ st.scheduler.runQueue := by
+            rw [RunQueue.mem_iff_contains]
+            exact st.scheduler.runQueue.flat_wf t
+              (by simpa [SchedulerState.runnable] using hMem)
+          -- threadPriority[t]? = some maxPrio (via prioMatch + tcb.priority = maxPrio)
+          have hPMt := hpm t hTInRq; simp only [hTObj] at hPMt
+          have hTTP : st.scheduler.runQueue.threadPriority[t]? = some maxPrio :=
+            hPMt.trans (congrArg some (htPrio.trans hMaxEqPrio.symm))
+          -- t ∈ maxPriorityBucket (via wellFormed)
+          have hTInBucket :=
+            RunQueue.mem_maxPriorityBucket_of_threadPriority st.scheduler.runQueue hwf
+              t maxPrio hTInRq hTTP hMP
+          -- Bucket optimality → EDF
+          have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
+          have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+            (fun tc => tc.domain == st.scheduler.activeDomain)
+            st.scheduler.runQueue.maxPriorityBucket tid tcbSel.priority tcbSel.deadline
+            hBucket hBucketAllTcb
+          have hNoBetter := hOpt t hTInBucket tcb hTObjGet (eligOfDom tcb htDom)
+          rw [htPrio] at hNoBetter
+          exact noBetter_implies_edf tcbSel.deadline tcb.deadline tcbSel.priority hNoBetter
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp
+
+/-- WS-H6: `schedule` preserves `edfCurrentHasEarliestDeadline`.
+
+When schedule selects `none`, EDF is trivially `True`. When schedule selects
+`some tid`, the EDF property follows from `chooseBestInBucket_edf_bridge`.
+
+**Hypotheses**: RunQueue well-formedness and external priority-match. -/
+theorem schedule_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : schedule st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold schedule at hStep
+  -- Unfold chooseThread to access chooseBestInBucket directly
+  simp only [chooseThread] at hStep
+  cases hCIB : chooseBestInBucket st.objects.get? st.scheduler.runQueue
+      st.scheduler.activeDomain with
+  | error e => simp [hCIB] at hStep
+  | ok cibRes =>
+    simp only [hCIB] at hStep
+    cases cibRes with
+    | none =>
+      -- chooseThread returned none → setCurrentThread none
+      exact setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline st st' hStep
+    | some triple =>
+      obtain ⟨tid, resPrio, resDl⟩ := triple
+      -- chooseThread returned some tid
+      simp at hStep
+      cases hObj : st.objects[tid.toObjId]? with
+      | none => simp [hObj] at hStep
+      | some obj =>
+        cases obj with
+        | tcb tcbSel =>
+          simp only [hObj] at hStep
+          by_cases hSchedOk : st.scheduler.runQueue.contains tid = true ∧
+              tcbSel.domain = st.scheduler.activeDomain
+          · simp only [hSchedOk] at hStep
+            exact setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
+              st st' tid tcbSel hObj
+              (chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
+                hwf hpm hSchedOk.2 hAllTcb hCIB hObj)
+              hStep
+          · exfalso; simp [hSchedOk] at hStep
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+          simp [hObj] at hStep
+
+/-- WS-H6: `handleYield` preserves `edfCurrentHasEarliestDeadline`.
+
+`handleYield` rotates the current thread in its priority bucket and then
+calls `schedule`, which re-selects the best candidate from scratch.
+
+The EDF property is **re-established** (not merely preserved) by the
+`schedule` call. The rotation preserves RunQueue well-formedness and
+priority-match because it only reorders elements within a bucket without
+changing `threadPriority`, `membership`, or `objects`. -/
+theorem handleYield_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : handleYield st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    -- no current thread → delegates directly to schedule
+    simp only [hCur] at hStep
+    exact schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep
+  | some curTid =>
+    simp only [hCur] at hStep
+    -- handleYield checks membership, rotates, then calls schedule
+    by_cases hMemRQ : curTid ∈ st.scheduler.runQueue
+    · rw [if_pos hMemRQ] at hStep
+      -- hStep is definitionally equal to schedule of the rotated state
+      exact schedule_preserves_edfCurrentHasEarliestDeadline _ st'
+        (RunQueue.rotateToBack_preserves_wellFormed st.scheduler.runQueue hwf curTid)
+        (fun t hMem => by
+          simp only [RunQueue.rotateToBack_threadPriority]
+          exact hpm t ((RunQueue.rotateToBack_mem_iff _ _ _).mp hMem))
+        (fun t hMem => by
+          simp only [SchedulerState.runnable, RunQueue.toList] at hMem
+          exact hAllTcb t (by
+            simp only [SchedulerState.runnable, RunQueue.toList]
+            exact RunQueue.rotateToBack_flat_subset st.scheduler.runQueue curTid t hMem))
+        hStep
+    · have : ¬(st.scheduler.runQueue.contains curTid = true) := by
+        rwa [← RunQueue.mem_iff_contains]
+      simp [this] at hStep
+
+/-- WS-H6: `timerTick` preserves `edfCurrentHasEarliestDeadline`.
+
+- **No current thread**: scheduler unchanged, EDF trivially holds.
+- **Time-slice not expired**: only the TCB's `timeSlice` field is
+  decremented; `scheduler.current` and thread deadlines are unchanged,
+  so EDF is preserved.
+- **Time-slice expired**: TCB time-slice reset, queue rotation, and
+  `schedule` call re-establish EDF from scratch. -/
+theorem timerTick_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hEdf : edfCurrentHasEarliestDeadline st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : timerTick st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; cases hStep
+    unfold edfCurrentHasEarliestDeadline; simp [hCur]
+  | some curTid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[curTid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb curTcb =>
+        simp only [hObj] at hStep
+        by_cases hExpire : curTcb.timeSlice ≤ 1
+        · -- Time-slice expired: reset, rotate, reschedule
+          rw [if_pos hExpire] at hStep
+          -- st.scheduler.runQueue is unchanged (only objects/machine changed)
+          -- The if-then checks membership, rotates, and calls schedule
+          by_cases hMemRQ : curTid ∈ st.scheduler.runQueue
+          · rw [if_pos (show curTid ∈ _ from hMemRQ)] at hStep
+            exact schedule_preserves_edfCurrentHasEarliestDeadline _ st'
+              (RunQueue.rotateToBack_preserves_wellFormed st.scheduler.runQueue hwf curTid)
+              (fun t hMem => by
+                simp only [RunQueue.rotateToBack_threadPriority, HashMap_getElem?_insert]
+                have hMem' := (RunQueue.rotateToBack_mem_iff _ _ _).mp hMem
+                by_cases hEq : curTid.toObjId == t.toObjId
+                · simp only [hEq, ite_true]
+                  have := hpm t hMem'
+                  rw [show t.toObjId = curTid.toObjId from (eq_of_beq hEq).symm, hObj] at this
+                  exact this
+                · simp only [hEq]; exact hpm t hMem')
+              (fun t hMem => by
+                simp only [SchedulerState.runnable, RunQueue.toList] at hMem
+                have hMemOrig : t ∈ st.scheduler.runnable := by
+                  simp only [SchedulerState.runnable, RunQueue.toList]
+                  exact RunQueue.rotateToBack_flat_subset st.scheduler.runQueue curTid t hMem
+                obtain ⟨tcbOrig, hTcbOrig⟩ := hAllTcb t hMemOrig
+                simp only [HashMap_getElem?_insert]
+                by_cases hEq : curTid.toObjId == t.toObjId
+                · simp only [hEq, ite_true]
+                  exact ⟨{ curTcb with timeSlice := defaultTimeSlice }, rfl⟩
+                · simp only [hEq]; exact ⟨tcbOrig, hTcbOrig⟩)
+              hStep
+          · rw [if_neg hMemRQ] at hStep; simp at hStep
+        · -- Time-slice not expired: only timeSlice changes
+          rw [if_neg hExpire] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+          subst hStep
+          -- Transfer from hEdf: objects only differ at curTid (timeSlice field)
+          unfold edfCurrentHasEarliestDeadline at hEdf ⊢
+          simp only [hCur] at hEdf ⊢
+          rw [hObj] at hEdf
+          -- Simplify curTid lookup via insert-self
+          simp only [HashMap_getElem?_insert, beq_self_eq_true, ite_true]
+          intro t hMem
+          specialize hEdf t hMem
+          by_cases hEq : curTid.toObjId == t.toObjId
+          · -- Same ObjId: both curTid and t map to modified curTcb
+            simp only [hEq, ite_true]
+            -- Same thread: deadline ≤ deadline is trivially true
+            intro _ _; exact Or.inr (Or.inr (Nat.le_refl _))
+          · -- Different ObjId: lookup unchanged
+            simp only [hEq]; exact hEdf
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+        simp [hObj] at hStep
+
+-- ============================================================================
+-- WS-H6: Full scheduler invariant bundle composition theorems
+-- ============================================================================
+
+/-- WS-H6: `schedule` preserves the full scheduler invariant bundle. -/
+theorem schedule_preserves_schedulerInvariantBundleFull
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundleFull st)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : schedule st = .ok ((), st')) :
+    schedulerInvariantBundleFull st' := by
+  rcases hInv with ⟨hBase, hTS, hEDF⟩
+  exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hStep,
+         schedule_preserves_timeSlicePositive st st' hTS hStep,
+         schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep⟩
+
+/-- WS-H6: `handleYield` preserves the full scheduler invariant bundle. -/
+theorem handleYield_preserves_schedulerInvariantBundleFull
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundleFull st)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : handleYield st = .ok ((), st')) :
+    schedulerInvariantBundleFull st' := by
+  rcases hInv with ⟨hBase, hTS, hEDF⟩
+  exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hStep,
+         handleYield_preserves_timeSlicePositive st st' hTS hStep,
+         handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep⟩
+
+/-- WS-H6: `timerTick` preserves the full scheduler invariant bundle. -/
+theorem timerTick_preserves_schedulerInvariantBundleFull
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundleFull st)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : timerTick st = .ok ((), st')) :
+    schedulerInvariantBundleFull st' := by
+  rcases hInv with ⟨hBase, hTS, hEDF⟩
+  exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hStep,
+         timerTick_preserves_timeSlicePositive st st' hTS hStep,
+         timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hEDF hAllTcb hStep⟩

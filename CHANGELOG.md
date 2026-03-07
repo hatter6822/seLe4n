@@ -1,3 +1,41 @@
+## [0.13.3] - 2026-03-07
+
+### WS-H6: EDF Scheduler Proof Completion
+
+- **EDF bridge theorem completed (A-14/H-06 CRITICAL):** `chooseBestInBucket_edf_bridge` —
+  proves that `chooseBestInBucket` result is EDF-optimal among all domain-eligible
+  runnable threads at the same priority level. Handles both bucket-success and
+  full-scan-fallback paths using RunQueue well-formedness and priority-match
+  external predicates.
+- **RunQueue well-formedness predicate (H-06):** `RunQueue.wellFormed` — external
+  predicate capturing the implicit invariant maintained by insert/remove/rotate
+  API: forward (bucket→membership+threadPriority) and reverse
+  (membership→bucket) consistency.
+- **RunQueue well-formedness lemmas (H-06):** `maxPriorityBucket_subset`,
+  `maxPriorityBucket_threadPriority`, `mem_maxPriorityBucket_of_threadPriority`
+  — bridge lemmas connecting well-formedness to bucket-first EDF scheduling.
+- **Rotation preserves well-formedness (H-06):** `rotateToBack_preserves_wellFormed`
+  and 6 field-preservation lemmas (`rotateToBack_membership`,
+  `rotateToBack_threadPriority`, `rotateToBack_maxPriority`,
+  `rotateToBack_contains`, `rotateToBack_mem_iff`,
+  `rotateToBack_flat_subset`, `rotateToBack_flat_superset`) — proves that
+  `rotateToBack` preserves `wellFormed` and all RunQueue structural fields.
+- **External priority-match predicate (H-06):** `schedulerPriorityMatch` —
+  bridges RunQueue's internal `threadPriority` to authoritative TCB priority
+  in the object store.
+- **Full EDF preservation chain (H-06):**
+  `schedule_preserves_edfCurrentHasEarliestDeadline`,
+  `handleYield_preserves_edfCurrentHasEarliestDeadline`,
+  `timerTick_preserves_edfCurrentHasEarliestDeadline` — all sorry-free.
+- **Full bundle composition (H-06):**
+  `schedule_preserves_schedulerInvariantBundleFull`,
+  `handleYield_preserves_schedulerInvariantBundleFull`,
+  `timerTick_preserves_schedulerInvariantBundleFull`.
+- **Fold result membership lemma (H-06):**
+  `chooseBestRunnableBy_result_mem_aux` and `chooseBestRunnableBy_result_mem` —
+  proves that `chooseBestRunnableBy` result is drawn from the scanned list.
+- **Zero sorry/axiom.** `test_full.sh` passes (Tier 0-3).
+
 ## [0.13.2] - 2026-03-07
 
 ### WS-H8: Enforcement-NI Bridge & Missing Wrappers
