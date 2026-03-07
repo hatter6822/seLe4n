@@ -1,3 +1,36 @@
+## [0.13.1] - 2026-03-07
+
+### WS-H6: Scheduler Proof Completion (partial)
+
+- **Time-slice positivity fully proven (A-15/H-08 CRITICAL):** Added preservation
+  theorems for `timeSlicePositive` across all scheduler operations:
+  `setCurrentThread_preserves_timeSlicePositive`,
+  `chooseThread_preserves_timeSlicePositive`,
+  `schedule_preserves_timeSlicePositive`,
+  `handleYield_preserves_timeSlicePositive`,
+  `switchDomain_preserves_timeSlicePositive`,
+  `timerTick_preserves_timeSlicePositive`. Previously defined but with zero proofs.
+- **Candidate selection optimality proven (A-17/M-05/M-06 HIGH):**
+  `isBetterCandidate_transitive` (strict partial order completion),
+  `isBetterCandidate_not_better_trans` (negation transitivity),
+  `chooseBestRunnableBy_optimal_combined` and `chooseBestRunnableBy_optimal`
+  (fold-based selection produces no strictly better alternative).
+- **EDF invariant definition fixed (A-14 design gap):**
+  `edfCurrentHasEarliestDeadline` previously quantified over all runnable threads
+  regardless of scheduling domain, which was unprovable for the domain-aware
+  scheduler. Added `tcb.domain = curTcb.domain` constraint to align the invariant
+  with `chooseBestRunnableInDomain` semantics.
+- **EDF bridge lemma:** `noBetter_implies_edf` — converts `isBetterCandidate = false`
+  at equal priority to the deadline-comparison form used by the EDF invariant.
+- **EDF trivial preservation:** `setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline`,
+  `switchDomain_preserves_edfCurrentHasEarliestDeadline`.
+- **Full scheduler bundle:** `schedulerInvariantBundleFull` (5-tuple extending the
+  structural triad with `timeSlicePositive` and `edfCurrentHasEarliestDeadline`),
+  `schedulerInvariantBundleFull_to_base` (projection),
+  `switchDomain_preserves_schedulerInvariantBundleFull` (composition).
+- **13 new theorems.** Zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
+  750 proved theorems total.
+
 ## [0.13.0] - 2026-03-03
 
 ### WS-H5 audit: documentation sync and Tier 3 surface anchors

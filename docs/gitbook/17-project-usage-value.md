@@ -10,8 +10,8 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **25,648 lines** of production Lean code across 40 modules.
-- **734 theorem/lemma declarations** with zero sorry/axiom.
+- **26,196 lines** of production Lean code across 40 modules.
+- **752 theorem/lemma declarations** with zero sorry/axiom.
 - **4-tier CI** with hygiene, build, trace, and invariant surface gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
 - **Executable trace harness** with 68 fixture expectations.

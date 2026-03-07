@@ -113,10 +113,15 @@ def timeSlicePositive (st : SystemState) : Prop :=
 -- M-03/WS-E6: EDF scheduling invariant
 -- ============================================================================
 
-/-- M-03/WS-E6: The currently scheduled thread has the earliest deadline
-among all runnable threads at the same priority level. This captures the
-EDF policy: within equal priority, the thread with the most urgent deadline
-is selected. -/
+/-- M-03/WS-E6/WS-H6: The currently scheduled thread has the earliest deadline
+among all runnable threads **in the same scheduling domain** at the same
+priority level. This captures the domain-partitioned EDF policy: within equal
+priority and equal domain, the thread with the most urgent deadline is selected.
+
+**WS-H6 fix:** The original definition quantified over all runnable threads
+regardless of domain, which was unprovable for a domain-aware scheduler that
+only selects among same-domain candidates. Adding the domain constraint
+aligns the invariant with `chooseBestRunnableInDomain` semantics. -/
 def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
@@ -126,10 +131,30 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
           ∀ tid, tid ∈ st.scheduler.runnable →
             match st.objects[tid.toObjId]? with
             | some (.tcb tcb) =>
+                tcb.domain = curTcb.domain →
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨
                 (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
             | _ => True
       | _ => True
+
+-- ============================================================================
+-- WS-H6: Full scheduler invariant bundle
+-- ============================================================================
+
+/-- Full Scheduler Invariant Bundle — extends the structural triad with
+`timeSlicePositive` and `edfCurrentHasEarliestDeadline`.
+
+WS-H6: Promotes the previously orphaned time-slice and EDF invariants into a
+composed bundle with preservation theorems for all scheduler operations.
+Cross-subsystem consumers that only need the structural triad should continue
+using `schedulerInvariantBundle` (the 3-component version). -/
+def schedulerInvariantBundleFull (st : SystemState) : Prop :=
+  schedulerInvariantBundle st ∧ timeSlicePositive st ∧ edfCurrentHasEarliestDeadline st
+
+/-- Project the structural triad from the full bundle. -/
+theorem schedulerInvariantBundleFull_to_base {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : schedulerInvariantBundle st :=
+  h.1
 
 end SeLe4n.Kernel

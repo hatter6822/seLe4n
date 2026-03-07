@@ -937,4 +937,397 @@ theorem timerTick_preserves_kernelInvariant
             simp [currentThreadInActiveDomain, hCur, hObj] at hDom; exact hDom
           simp [hDomOrig]
 
+-- ============================================================================
+-- WS-H6: isBetterCandidate "not-better-than" transitivity
+-- ============================================================================
+
+/-- WS-H6: If A doesn't beat B and B doesn't beat C, then A doesn't beat C.
+This is transitivity of the "not strictly better" relation, used in the
+fold-based optimality proof. -/
+private theorem isBetterCandidate_not_better_trans
+    (p1 p2 p3 : SeLe4n.Priority) (d1 d2 d3 : SeLe4n.Deadline)
+    (h12 : isBetterCandidate p2 d2 p1 d1 = false)
+    (h23 : isBetterCandidate p3 d3 p2 d2 = false) :
+    isBetterCandidate p3 d3 p1 d1 = false := by
+  unfold isBetterCandidate at *
+  have hp12 : ¬(p1.toNat > p2.toNat) := fun h => by simp [h] at h12
+  have hp23 : ¬(p2.toNat > p3.toNat) := fun h => by simp [h] at h23
+  have hp13 : ¬(p1.toNat > p3.toNat) := fun h => by omega
+  simp only [hp13, ↓reduceIte]
+  by_cases h1lt3 : p1.toNat < p3.toNat
+  · simp [h1lt3]
+  · simp only [h1lt3, ↓reduceIte]
+    simp only [show ¬(p1.toNat > p2.toNat) from hp12,
+               show ¬(p1.toNat < p2.toNat) from by omega, ↓reduceIte] at h12
+    simp only [show ¬(p2.toNat > p3.toNat) from hp23,
+               show ¬(p2.toNat < p3.toNat) from by omega, ↓reduceIte] at h23
+    revert h12 h23
+    cases d1.toNat <;> cases d2.toNat <;> cases d3.toNat <;> simp_all <;> omega
+
+-- ============================================================================
+-- WS-H6: chooseBestRunnableBy fold optimality
+-- ============================================================================
+
+/-- WS-H6: Combined optimality for `chooseBestRunnableBy`.
+Proves simultaneously:
+  (P1) no eligible thread in the list beats the result, and
+  (P2) init (if any) doesn't beat the result.
+These are proven together by induction to avoid circular dependency. -/
+private theorem chooseBestRunnableBy_optimal_combined
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (init : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableBy objects eligible runnable init =
+           .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ runnable → ∃ tcb, objects t.toObjId = some (.tcb tcb)) :
+    -- P1: no eligible thread in `runnable` beats result
+    (∀ t, t ∈ runnable →
+      ∀ tcb, objects t.toObjId = some (.tcb tcb) →
+        eligible tcb = true →
+          isBetterCandidate resPrio resDl tcb.priority tcb.deadline = false) ∧
+    -- P2: init doesn't beat result
+    (∀ initTid ip id, init = some (initTid, ip, id) →
+       isBetterCandidate resPrio resDl ip id = false) := by
+  induction runnable generalizing init with
+  | nil =>
+    simp [chooseBestRunnableBy] at hOk
+    constructor
+    · intro t hMem; simp at hMem
+    · intro initTid ip id hInit; subst hOk; cases hInit
+      exact isBetterCandidate_irrefl resPrio resDl
+  | cons hd tl ih =>
+    unfold chooseBestRunnableBy at hOk
+    have hAllTl : ∀ t, t ∈ tl → ∃ tcb, objects t.toObjId = some (.tcb tcb) :=
+      fun t hMem => hAllTcb t (List.mem_cons.mpr (Or.inr hMem))
+    have hHdMem := hAllTcb hd (List.mem_cons.mpr (Or.inl rfl))
+    obtain ⟨hdTcb, hHdObj⟩ := hHdMem
+    simp only [hHdObj] at hOk
+    -- Split on whether hd is eligible
+    cases hEligB : eligible hdTcb with
+    | false =>
+      -- hd not eligible: best' = init, skip hd
+      simp only [hEligB] at hOk
+      have ⟨ihP1, ihP2⟩ := ih init hOk hAllTl
+      constructor
+      · intro t hMem tcb hObj hE
+        simp only [List.mem_cons] at hMem
+        rcases hMem with h_eq | hTl
+        · have h1 : objects hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+          rw [hHdObj] at h1; cases h1; simp [hE] at hEligB
+        · exact ihP1 t hTl tcb hObj hE
+      · exact ihP2
+    | true =>
+      simp only [hEligB, ↓reduceIte] at hOk
+      -- Split on init
+      cases init with
+      | none =>
+        -- init = none: hd becomes the new init
+        have ⟨ihP1, ihP2⟩ := ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk hAllTl
+        constructor
+        · intro t hMem tcb hObj hE
+          simp only [List.mem_cons] at hMem
+          rcases hMem with h_eq | hTl
+          · have hFlds : tcb.priority = hdTcb.priority ∧ tcb.deadline = hdTcb.deadline := by
+              have h1 : objects hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+              rw [hHdObj] at h1; cases h1; exact ⟨rfl, rfl⟩
+            rw [hFlds.1, hFlds.2]
+            exact ihP2 hd hdTcb.priority hdTcb.deadline rfl
+          · exact ihP1 t hTl tcb hObj hE
+        · intro _ ip id hNone; cases hNone
+      | some triple =>
+        obtain ⟨initTid, initPrio, initDl⟩ := triple
+        dsimp only at hOk
+        cases hBeatB : isBetterCandidate initPrio initDl hdTcb.priority hdTcb.deadline with
+        | true =>
+          -- hd beats init: hd becomes new best
+          simp only [hBeatB, ite_true] at hOk
+          have ⟨ihP1, ihP2⟩ := ih (some (hd, hdTcb.priority, hdTcb.deadline)) hOk hAllTl
+          constructor
+          · intro t hMem tcb hObj hE
+            simp only [List.mem_cons] at hMem
+            rcases hMem with h_eq | hTl
+            · have hFlds : tcb.priority = hdTcb.priority ∧ tcb.deadline = hdTcb.deadline := by
+                have h1 : objects hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+                rw [hHdObj] at h1; cases h1; exact ⟨rfl, rfl⟩
+              rw [hFlds.1, hFlds.2]
+              exact ihP2 hd hdTcb.priority hdTcb.deadline rfl
+            · exact ihP1 t hTl tcb hObj hE
+          · -- init doesn't beat result: by contradiction via transitivity
+            intro _ ip id hSome; cases hSome
+            have hHdNoBetter := ihP2 hd hdTcb.priority hdTcb.deadline rfl
+            cases hResVsInit : isBetterCandidate resPrio resDl initPrio initDl with
+            | false => rfl
+            | true =>
+              exact absurd (isBetterCandidate_transitive resPrio initPrio hdTcb.priority
+                        resDl initDl hdTcb.deadline hResVsInit hBeatB) (by rw [hHdNoBetter]; decide)
+        | false =>
+          -- hd doesn't beat init: best' = init
+          simp only [hBeatB] at hOk
+          have ⟨ihP1, ihP2⟩ := ih (some (initTid, initPrio, initDl)) hOk hAllTl
+          constructor
+          · intro t hMem tcb hObj hE
+            simp only [List.mem_cons] at hMem
+            rcases hMem with h_eq | hTl
+            · have hFlds : tcb.priority = hdTcb.priority ∧ tcb.deadline = hdTcb.deadline := by
+                have h1 : objects hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+                rw [hHdObj] at h1; cases h1; exact ⟨rfl, rfl⟩
+              rw [hFlds.1, hFlds.2]
+              exact isBetterCandidate_not_better_trans hdTcb.priority initPrio resPrio
+                hdTcb.deadline initDl resDl hBeatB (ihP2 initTid initPrio initDl rfl)
+            · exact ihP1 t hTl tcb hObj hE
+          · exact ihP2
+
+/-- WS-H6: Specialized optimality for init = none. -/
+private theorem chooseBestRunnableBy_optimal
+    (objects : SeLe4n.ObjId → Option KernelObject)
+    (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableBy objects eligible runnable none = .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ runnable → ∃ tcb, objects t.toObjId = some (.tcb tcb)) :
+    ∀ t, t ∈ runnable →
+      ∀ tcb, objects t.toObjId = some (.tcb tcb) →
+        eligible tcb = true →
+          isBetterCandidate resPrio resDl tcb.priority tcb.deadline = false :=
+  (chooseBestRunnableBy_optimal_combined objects eligible runnable none
+    resTid resPrio resDl hOk hAllTcb).1
+
+/-- WS-H6: Connection from `isBetterCandidate` optimality to the EDF predicate.
+If a thread t doesn't beat the result at equal priority, the EDF condition holds. -/
+theorem noBetter_implies_edf
+    (resDl tDl : SeLe4n.Deadline)
+    (prio : SeLe4n.Priority)
+    (hNoBetter : isBetterCandidate prio resDl prio tDl = false) :
+    resDl.toNat = 0 ∨ (tDl.toNat = 0 ∨ resDl.toNat ≤ tDl.toNat) := by
+  unfold isBetterCandidate at hNoBetter
+  simp [show ¬(prio.toNat > prio.toNat) from by omega] at hNoBetter
+  revert hNoBetter
+  cases hd1 : resDl.toNat <;> cases hd2 : tDl.toNat <;> simp_all <;> omega
+
+-- ============================================================================
+-- WS-H6: timeSlicePositive preservation
+-- ============================================================================
+
+/-- WS-H6: `setCurrentThread` preserves `timeSlicePositive` — only `current` changes. -/
+theorem setCurrentThread_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (tid : Option SeLe4n.ThreadId)
+    (hInv : timeSlicePositive st)
+    (hStep : setCurrentThread tid st = .ok ((), st')) :
+    timeSlicePositive st' := by
+  simp [setCurrentThread] at hStep; cases hStep; exact hInv
+
+/-- WS-H6: `chooseThread` preserves `timeSlicePositive` — state unchanged. -/
+theorem chooseThread_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : timeSlicePositive st)
+    (hStep : chooseThread st = .ok (next, st')) :
+    timeSlicePositive st' := by
+  rcases chooseThread_preserves_state st st' next hStep with rfl; exact hInv
+
+/-- WS-H6: `schedule` preserves `timeSlicePositive`. -/
+theorem schedule_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (hInv : timeSlicePositive st)
+    (hStep : schedule st = .ok ((), st')) :
+    timeSlicePositive st' := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          have hState : stChoose = st := chooseThread_preserves_state st stChoose next hChoose
+          have hInvC : timeSlicePositive stChoose := by rw [hState]; exact hInv
+          cases next with
+          | none =>
+              exact setCurrentThread_preserves_timeSlicePositive stChoose st' none hInvC
+                (by simpa [hChoose] using hStep)
+          | some tid =>
+              cases hObj : stChoose.objects[tid.toObjId]? with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hOk : tid ∈ stChoose.scheduler.runQueue ∧
+                          tcb.domain = stChoose.scheduler.activeDomain
+                      · exact setCurrentThread_preserves_timeSlicePositive stChoose st' (some tid) hInvC
+                          (by simpa [hChoose, hObj, hOk] using hStep)
+                      · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
+                            tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hOk
+                        simp [hChoose, hObj, hOk'] at hStep
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+                      simp [hChoose, hObj] at hStep
+
+/-- WS-H6: `handleYield` preserves `timeSlicePositive`.
+`rotateToBack` preserves membership, then delegates to `schedule`. -/
+theorem handleYield_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (hInv : timeSlicePositive st)
+    (hStep : handleYield st = .ok ((), st')) :
+    timeSlicePositive st' := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur] at hStep
+    exact schedule_preserves_timeSlicePositive st st' hInv hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    split at hStep
+    · rename_i hMem
+      have hInvRot : timeSlicePositive
+          { st with scheduler := { st.scheduler with
+              runQueue := st.scheduler.runQueue.rotateToBack tid
+              current := some tid } } := by
+        intro t hMemRot
+        simp only [SchedulerState.runnable] at hMemRot
+        have hMemOrig : t ∈ st.scheduler.runnable := by
+          simp only [SchedulerState.runnable]
+          exact (RunQueue.mem_toList_iff_mem _ t).mpr
+            ((RunQueue.mem_rotateToBack st.scheduler.runQueue tid t).mp
+              ((RunQueue.mem_toList_iff_mem _ t).mp hMemRot))
+        exact hInv t hMemOrig
+      exact schedule_preserves_timeSlicePositive _ st' hInvRot hStep
+    · exact absurd hStep (by simp)
+
+/-- WS-H6: `switchDomain` preserves `timeSlicePositive` — only domain fields change. -/
+theorem switchDomain_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (hInv : timeSlicePositive st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    timeSlicePositive st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; cases hStep; exact hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · cases hStep; exact hInv
+      · simp at hStep; cases hStep
+        -- Only domain fields changed, objects and runnable unchanged
+        exact hInv
+
+/-- WS-H6: `timerTick` preserves `timeSlicePositive`.
+Expired case: resets to `defaultTimeSlice` (= 5 > 0), then delegates to `schedule`.
+Not-expired case: decrements, and since `timeSlice > 1`, the result is still > 0. -/
+theorem timerTick_preserves_timeSlicePositive
+    (st st' : SystemState)
+    (hInv : timeSlicePositive st)
+    (hStep : timerTick st = .ok ((), st')) :
+    timeSlicePositive st' := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; cases hStep; exact hInv
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        by_cases hExpire : tcb.timeSlice ≤ 1
+        · -- Time-slice expired: reset to defaultTimeSlice, rotate, reschedule
+          rw [if_pos hExpire] at hStep
+          split at hStep
+          · rename_i hMemRQ
+            -- The intermediate state has updated objects (tid gets defaultTimeSlice)
+            -- and rotated runQueue. Need timeSlicePositive for that state.
+            have hInvMid : timeSlicePositive
+                { st with
+                  objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := defaultTimeSlice })
+                  machine := tick st.machine
+                  scheduler := { st.scheduler with
+                    runQueue := st.scheduler.runQueue.rotateToBack tid
+                    current := some tid } } := by
+              intro t hMemRot
+              simp only [SchedulerState.runnable] at hMemRot
+              have hMemOrig : t ∈ st.scheduler.runnable := by
+                simp only [SchedulerState.runnable]
+                exact (RunQueue.mem_toList_iff_mem _ t).mpr
+                  ((RunQueue.mem_rotateToBack st.scheduler.runQueue tid t).mp
+                    ((RunQueue.mem_toList_iff_mem _ t).mp hMemRot))
+              by_cases hEq : t = tid
+              · subst hEq
+                rw [HashMap_getElem?_insert]; simp [defaultTimeSlice]
+              · have hNeObjId : (tid.toObjId == t.toObjId) = false := by
+                  cases hb : (tid.toObjId == t.toObjId)
+                  · rfl
+                  · exfalso; apply hEq
+                    have : tid.toObjId = t.toObjId := by
+                      exact of_decide_eq_true (by rwa [ThreadId.toObjId, ThreadId.toObjId] at hb)
+                    cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
+                rw [HashMap_getElem?_insert, hNeObjId]
+                exact hInv t hMemOrig
+            exact schedule_preserves_timeSlicePositive _ st' hInvMid hStep
+          · simp at hStep
+        · -- Time-slice not expired: decrement, timeSlice - 1 > 0
+          rw [if_neg hExpire] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          intro t hMem
+          by_cases hEq : t = tid
+          · subst hEq
+            rw [HashMap_getElem?_insert]; simp; omega
+          · have hNeObjId : (tid.toObjId == t.toObjId) = false := by
+              cases hb : (tid.toObjId == t.toObjId)
+              · rfl
+              · exfalso; apply hEq
+                have : tid.toObjId = t.toObjId := by
+                  exact of_decide_eq_true (by rwa [ThreadId.toObjId, ThreadId.toObjId] at hb)
+                cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
+            rw [HashMap_getElem?_insert, hNeObjId]
+            exact hInv t hMem
+
+-- ============================================================================
+-- WS-H6: EDF invariant preservation (trivial cases)
+-- ============================================================================
+
+/-- WS-H6: `setCurrentThread none` trivially preserves EDF — no current thread. -/
+theorem setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (hStep : setCurrentThread none st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold setCurrentThread at hStep
+  cases hStep
+  simp [edfCurrentHasEarliestDeadline]
+
+/-- WS-H6: `switchDomain` preserves `edfCurrentHasEarliestDeadline`.
+Domain switch sets `current := none` in the transition case. -/
+theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
+    (st st' : SystemState)
+    (hInv : edfCurrentHasEarliestDeadline st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    edfCurrentHasEarliestDeadline st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; cases hStep; exact hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · cases hStep; exact hInv
+      · simp at hStep; cases hStep
+        simp [edfCurrentHasEarliestDeadline]
+
+-- ============================================================================
+-- WS-H6: schedulerInvariantBundleFull composition
+-- ============================================================================
+
+/-- WS-H6: `switchDomain` preserves the full scheduler invariant bundle. -/
+theorem switchDomain_preserves_schedulerInvariantBundleFull
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundleFull st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    schedulerInvariantBundleFull st' := by
+  rcases hInv with ⟨hBase, hTS, hEDF⟩
+  exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
+         switchDomain_preserves_timeSlicePositive st st' hTS hStep,
+         switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep⟩
+
 end SeLe4n.Kernel
