@@ -28,8 +28,14 @@
   structural triad with `timeSlicePositive` and `edfCurrentHasEarliestDeadline`),
   `schedulerInvariantBundleFull_to_base` (projection),
   `switchDomain_preserves_schedulerInvariantBundleFull` (composition).
-- **13 new theorems.** Zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
-  750 proved theorems total.
+- **Refactoring:** Extracted `threadId_ne_objId_beq_false` helper to deduplicate
+  recurring ObjId inequality proofs in `timerTick_preserves_timeSlicePositive`.
+  Made `noBetter_implies_edf` private (internal bridge lemma).
+- **Linker hardening:** Added CRT startup file verification (`crti.o`, `crt1.o`,
+  `Scrt1.o`) to `setup_lean_env.sh` with automatic toolchain re-download on
+  incomplete extraction. Prevents `ld: cannot find crti.o` linker errors.
+- **14 new theorems.** Zero sorry/axiom. `test_full.sh` passes (Tier 0-3).
+  753 proved theorems total.
 
 ## [0.13.0] - 2026-03-03
 

@@ -350,6 +350,46 @@ if ! command -v lake >/dev/null 2>&1; then
   exit 1
 fi
 
+# -------- Linker sanity: verify CRT startup files exist (crti.o fix) --------
+# Lean's clang uses --sysroot to find crti.o/crt1.o inside the toolchain.
+# If the toolchain extraction was incomplete, linking will fail with
+# "ld: cannot find crti.o". Detect this early and attempt recovery.
+verify_crt_files() {
+  local tc_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
+  local missing=0
+  for crt_file in crti.o crt1.o Scrt1.o; do
+    if [ ! -f "${tc_dir}/lib/${crt_file}" ]; then
+      missing=1
+      break
+    fi
+  done
+  if [ "${missing}" -eq 1 ]; then
+    echo "[setup] warning: CRT startup files missing from toolchain (crti.o linker fix)" >&2
+    echo "[setup] re-downloading toolchain to restore linker prerequisites" >&2
+    # Remove the incomplete toolchain and re-install
+    rm -rf "${tc_dir}"
+    manual_curl_install
+    # shellcheck disable=SC1090
+    source "${ELAN_ENV_FILE}"
+    # Verify again after re-install
+    for crt_file in crti.o crt1.o Scrt1.o; do
+      if [ ! -f "${tc_dir}/lib/${crt_file}" ]; then
+        echo "[setup] warning: ${crt_file} still missing after re-install; linking may fail" >&2
+        # Fallback: try to install system libc-dev
+        if command -v apt-get >/dev/null 2>&1; then
+          apt_update_once
+          run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y libc-dev 2>/dev/null || true
+        fi
+        return 1
+      fi
+    done
+    log "[setup] CRT files restored successfully"
+  fi
+  return 0
+}
+
+verify_crt_files
+
 log "[setup] Lean environment is ready"
 log "[setup] lake version: $(lake --version)"
 

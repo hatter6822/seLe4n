@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "c9dbb439fe26dcd8c93d612e8fcd1ba82e4d4d12",
+      "branch": "claude/audit-pr349-linker-fix-IbtIy",
+      "commit_sha": "72ac8975ce3ff9c2294140cfc55c4b663ab6ae12",
       "tree_sha": "8ce2bf79486de2718581f43d34b403f28bde6e7a",
-      "committed_at_utc": "2026-03-06T23:47:47-05:00"
+      "committed_at_utc": "2026-03-07T03:41:18+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f3c124baf1f34200a8d6e9fa635abadf9729d42e54c43dc4a472d1a13ff5bae8"
+    "source_digest": "c688556786e0afc4ca5340ce354f958b688d99e3ebf001ceab5ce6b145b40ec5"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1508
+    "declaration_count": 1509
   },
   "modules": [
     {
@@ -6266,7 +6266,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations",
       "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
-      "declaration_count": 63,
+      "declaration_count": 64,
       "declarations": [
         {
           "kind": "namespace",
@@ -6793,24 +6793,31 @@
         },
         {
           "kind": "theorem",
+          "name": "threadId_ne_objId_beq_false",
+          "line": 1216,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "timerTick_preserves_timeSlicePositive",
-          "line": 1217,
+          "line": 1229,
           "called": [
             "defaultTimeSlice",
             "schedule_preserves_timeSlicePositive",
+            "threadId_ne_objId_beq_false",
             "timerTick"
           ]
         },
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1293,
+          "line": 1291,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1303,
+          "line": 1301,
           "called": [
             "switchDomain"
           ]
@@ -6818,7 +6825,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 1323,
+          "line": 1321,
           "called": [
             "switchDomain",
             "switchDomain_preserves_edfCurrentHasEarliestDeadline",

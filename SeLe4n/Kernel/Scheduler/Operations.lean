@@ -1096,7 +1096,7 @@ private theorem chooseBestRunnableBy_optimal
 
 /-- WS-H6: Connection from `isBetterCandidate` optimality to the EDF predicate.
 If a thread t doesn't beat the result at equal priority, the EDF condition holds. -/
-theorem noBetter_implies_edf
+private theorem noBetter_implies_edf
     (resDl tDl : SeLe4n.Deadline)
     (prio : SeLe4n.Priority)
     (hNoBetter : isBetterCandidate prio resDl prio tDl = false) :
@@ -1211,6 +1211,18 @@ theorem switchDomain_preserves_timeSlicePositive
         -- Only domain fields changed, objects and runnable unchanged
         exact hInv
 
+/-- WS-H6: If two ThreadIds are not equal, their ObjIds are BEq-false.
+Extracted to deduplicate the recurring inequality proof in object-store updates. -/
+private theorem threadId_ne_objId_beq_false
+    (tid t : SeLe4n.ThreadId) (hNe : t ≠ tid) :
+    (tid.toObjId == t.toObjId) = false := by
+  cases hb : (tid.toObjId == t.toObjId)
+  · rfl
+  · exfalso; apply hNe
+    have : tid.toObjId = t.toObjId := by
+      exact of_decide_eq_true (by rwa [ThreadId.toObjId, ThreadId.toObjId] at hb)
+    cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
+
 /-- WS-H6: `timerTick` preserves `timeSlicePositive`.
 Expired case: resets to `defaultTimeSlice` (= 5 > 0), then delegates to `schedule`.
 Not-expired case: decrements, and since `timeSlice > 1`, the result is still > 0. -/
@@ -1256,14 +1268,7 @@ theorem timerTick_preserves_timeSlicePositive
               by_cases hEq : t = tid
               · subst hEq
                 rw [HashMap_getElem?_insert]; simp [defaultTimeSlice]
-              · have hNeObjId : (tid.toObjId == t.toObjId) = false := by
-                  cases hb : (tid.toObjId == t.toObjId)
-                  · rfl
-                  · exfalso; apply hEq
-                    have : tid.toObjId = t.toObjId := by
-                      exact of_decide_eq_true (by rwa [ThreadId.toObjId, ThreadId.toObjId] at hb)
-                    cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
-                rw [HashMap_getElem?_insert, hNeObjId]
+              · rw [HashMap_getElem?_insert, threadId_ne_objId_beq_false tid t hEq]
                 exact hInv t hMemOrig
             exact schedule_preserves_timeSlicePositive _ st' hInvMid hStep
           · simp at hStep
@@ -1275,14 +1280,7 @@ theorem timerTick_preserves_timeSlicePositive
           by_cases hEq : t = tid
           · subst hEq
             rw [HashMap_getElem?_insert]; simp; omega
-          · have hNeObjId : (tid.toObjId == t.toObjId) = false := by
-              cases hb : (tid.toObjId == t.toObjId)
-              · rfl
-              · exfalso; apply hEq
-                have : tid.toObjId = t.toObjId := by
-                  exact of_decide_eq_true (by rwa [ThreadId.toObjId, ThreadId.toObjId] at hb)
-                cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
-            rw [HashMap_getElem?_insert, hNeObjId]
+          · rw [HashMap_getElem?_insert, threadId_ne_objId_beq_false tid t hEq]
             exact hInv t hMem
 
 -- ============================================================================
