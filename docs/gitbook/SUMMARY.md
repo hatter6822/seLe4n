@@ -26,11 +26,11 @@
 - [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md)
 - [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
 
-## Architecture and policy
+## Security and architecture
 
+- [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
 - [VSpace + Bounded Memory Model (ADR)](26-ws-b1-vspace-memory-adr.md)
 - [Model Structure and Maintainability (ADR)](30-ws-c7-model-structure-and-maintainability.md)
-- [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
 - [CI Maturity and Telemetry Baseline](29-ci-maturity-and-telemetry-baseline.md)
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md)

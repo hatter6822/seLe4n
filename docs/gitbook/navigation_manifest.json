@@ -26,6 +26,10 @@
       "path": "03-architecture-and-module-map.md"
     },
     {
+      "title": "Project Design Deep Dive",
+      "path": "04-project-design-deep-dive.md"
+    },
+    {
       "title": "Specification & Roadmap",
       "path": "05-specification-and-roadmap.md"
     },
@@ -36,10 +40,6 @@
     {
       "title": "Testing & CI",
       "path": "07-testing-and-ci.md"
-    },
-    {
-      "title": "Kernel Performance Optimization (WS-G)",
-      "path": "08-kernel-performance-optimization.md"
     },
     {
       "title": "Codebase Reference",
@@ -115,8 +115,12 @@
       ]
     },
     {
-      "section": "Architecture and policy",
+      "section": "Security and architecture",
       "pages": [
+        {
+          "title": "Threat Model and Security Hardening",
+          "path": "28-threat-model-and-security-hardening.md"
+        },
         {
           "title": "VSpace + Bounded Memory Model (ADR)",
           "path": "26-ws-b1-vspace-memory-adr.md"
@@ -124,10 +128,6 @@
         {
           "title": "Model Structure and Maintainability (ADR)",
           "path": "30-ws-c7-model-structure-and-maintainability.md"
-        },
-        {
-          "title": "Threat Model and Security Hardening",
-          "path": "28-threat-model-and-security-hardening.md"
         },
         {
           "title": "CI Maturity and Telemetry Baseline",

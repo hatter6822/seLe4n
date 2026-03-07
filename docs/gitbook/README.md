@@ -26,10 +26,10 @@ Specification documents:
 1. [Project Overview](01-project-overview.md)
 2. [Microkernel and seL4 Primer](02-microkernel-and-sel4-primer.md)
 3. [Architecture & Module Map](03-architecture-and-module-map.md)
-4. [Specification & Roadmap](05-specification-and-roadmap.md)
-5. [Development Workflow](06-development-workflow.md)
-6. [Testing & CI](07-testing-and-ci.md)
-7. [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
+4. [Project Design Deep Dive](04-project-design-deep-dive.md)
+5. [Specification & Roadmap](05-specification-and-roadmap.md)
+6. [Development Workflow](06-development-workflow.md)
+7. [Testing & CI](07-testing-and-ci.md)
 8. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
