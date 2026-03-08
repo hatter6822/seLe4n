@@ -26,8 +26,10 @@ Welcome to the official wiki for **r/seLe4n**, the community hub for the seLe4n 
 15. [Project Status and Accomplishments](#15-project-status-and-accomplishments)
 16. [Roadmap and Future Direction](#16-roadmap-and-future-direction)
 17. [Getting Started as a Contributor](#17-getting-started-as-a-contributor)
-18. [Glossary](#18-glossary)
-19. [Frequently Asked Questions](#19-frequently-asked-questions)
+18. [Deep Dive: Subsystem Formal Models](#18-deep-dive-subsystem-formal-models)
+19. [seLe4n vs seL4 vs Redox vs Fuchsia](#19-selen-vs-sel4-vs-redox-vs-fuchsia)
+20. [Glossary](#20-glossary)
+21. [Frequently Asked Questions](#21-frequently-asked-questions)
 
 ---
 
@@ -597,7 +599,447 @@ lake exe sele4n
 
 ---
 
-## 18. Glossary
+## 18. Deep Dive: Subsystem Formal Models
+
+This section describes the mathematical foundations underpinning each kernel subsystem. seLe4n's kernel state is modeled as a total function from configurations to configurations, with every transition expressed as a pure function over an algebraic data type. The notation below uses standard mathematical conventions; the actual Lean 4 source uses dependent types and constructive logic.
+
+### 18.1 State Machine Foundation
+
+The kernel is a deterministic state machine:
+
+```
+S = (M, O, Σ, Λ, Γ, Δ, Ψ)
+```
+
+where:
+- **M** = `MachineState` — registers (R : RegName → RegValue), memory (μ : PAddr → UInt8), timer (τ ∈ ℕ)
+- **O** = `HashMap ObjId KernelObject` — the global object store (finite partial function Id → Obj)
+- **Σ** = `SchedulerState` — run queue, domain schedule, active domain, current thread
+- **Λ** = `LifecycleMetadata` — object type map, capability reference counts
+- **Γ** = `HashMap ServiceId ServiceGraphEntry` — service dependency graph
+- **Δ** = `CapDerivationTree` — capability derivation forest
+- **Ψ** = `HashMap ASID ObjId` — ASID-to-VSpace binding table
+
+Every kernel transition is a function:
+
+```
+t : S × Request → S × (Result | Error)
+```
+
+with the critical property that `t` is **total** — defined for all inputs — and **deterministic** — the same input always produces the same output. This is enforced by Lean's type system: every pattern match is exhaustive, every recursion is structurally terminating.
+
+### 18.2 Capability Algebra
+
+The capability system forms a **bounded semilattice** over access rights:
+
+```
+(𝒫(R), ⊆, ∩, R)     where R = {read, write, grant, grantReply}
+```
+
+**Attenuation law:** For any mint operation producing capability c' from parent c:
+
+```
+rights(c') ⊆ rights(c)
+```
+
+This is a monotone function on the rights lattice — capabilities can only lose rights through derivation, never gain them. The CDT tracks these derivations as a forest:
+
+```
+CDT = (N, E, root)     where N ⊆ SlotRef, E ⊆ N × N
+```
+
+**Acyclicity invariant:**
+
+```
+∀ path p in CDT : ¬∃ cycle in p
+```
+
+**Revocation semantics:** Revoking node n removes the entire subtree rooted at n:
+
+```
+revoke(n) = { m ∈ N | n →* m }     (transitive closure of E from n)
+```
+
+The CDT's `childMap : HashMap NodeId (List NodeId)` enables O(1) children enumeration, making revocation O(k) where k is the subtree size.
+
+### 18.3 IPC: Dual-Queue Formal Model
+
+Each endpoint E maintains two FIFO queues:
+
+```
+E = (sendQ, receiveQ)     where sendQ, receiveQ : IntrusiveQueue(ThreadId)
+```
+
+An intrusive queue Q is a doubly-linked list with backpointers, represented by the tuple:
+
+```
+Q = (head : Option ThreadId, tail : Option ThreadId)
+```
+
+with per-node linkage stored in the TCB:
+
+```
+link(t) = (prev : Option ThreadId, pprev : Option QueuePPrev, next : Option ThreadId)
+```
+
+The **pprev backpointer** points not to the previous node, but to the *pointer field that references this node* — either the queue's head pointer or the previous node's `next` field. This enables O(1) removal:
+
+```
+remove(t):
+  *pprev(t) ← next(t)           // O(1): update the pointer that points to t
+  if next(t) ≠ ∅:
+    pprev(next(t)) ← pprev(t)   // O(1): update successor's backpointer
+```
+
+**IPC rendezvous semantics:**
+
+```
+send(sender, endpoint):
+  if receiveQ(endpoint) ≠ ∅:
+    receiver ← popHead(receiveQ)
+    transfer(message(sender), receiver)       // Rendezvous: O(1)
+  else:
+    pushTail(sendQ(endpoint), sender)         // Block: O(1)
+    state(sender) ← blockedOnSend(endpoint)
+```
+
+**Structural invariant (machine-checked):**
+
+```
+intrusiveQueueWellFormed(Q) ≡
+  ∀ t ∈ Q :
+    (next(t) = ∅ ∨ prev(next(t)) = some t) ∧
+    (pprev(t) correctly references the pointer to t) ∧
+    (t ∈ Q ↔ state(t) matches Q's blocking type)
+```
+
+### 18.4 Scheduler: Priority × EDF × Domain Model
+
+The scheduler selects threads from a three-dimensional space:
+
+```
+candidate_order(a, b) =
+  if priority(a) > priority(b):           return a        -- Priority dominates
+  elif priority(a) = priority(b):
+    if deadline(a) ≠ 0 ∧ deadline(b) ≠ 0:
+      if deadline(a) < deadline(b):       return a        -- EDF tie-break
+      elif deadline(a) = deadline(b):     return incumbent -- FIFO stability
+      else:                               return b
+    elif deadline(a) ≠ 0:                 return a        -- Nonzero deadline wins
+    elif deadline(b) ≠ 0:                 return b
+    else:                                 return incumbent -- Both zero: stable
+  else:                                   return b
+```
+
+**Proven properties of `isBetterCandidate`:**
+
+```
+irreflexivity:   ∀ t : ¬isBetterCandidate(t, t)
+asymmetry:       ∀ a b : isBetterCandidate(a, b) → ¬isBetterCandidate(b, a)
+transitivity:    ∀ a b c : isBetterCandidate(a, b) → isBetterCandidate(b, c)
+                           → isBetterCandidate(a, c)
+```
+
+**Domain partitioning model:**
+
+```
+DomainSchedule = List (DomainId × ℕ)     -- (domain, ticks) pairs
+activeDomain : DomainId                    -- currently executing domain
+domainTimeRemaining : ℕ                    -- ticks until domain switch
+
+eligible(t) ≡ domain(t) = activeDomain ∧ t ∈ runQueue
+```
+
+**RunQueue bucket model:**
+
+```
+RunQueue = {
+  buckets : HashMap Priority (List ThreadId)
+  maxPriority : Option Priority              -- cached maximum
+  threadSet : HashSet ThreadId               -- O(1) membership
+}
+
+chooseThread(rq, activeDomain):
+  bucket ← buckets[maxPriority]
+  return first t ∈ bucket where domain(t) = activeDomain
+```
+
+### 18.5 Information Flow: Lattice-Based Security
+
+Security labels form a **bounded lattice** (L, ⊑, ⊔, ⊓, ⊥, ⊤):
+
+```
+Label = (confidentiality : Level, integrity : Level)
+
+(c₁, i₁) ⊑ (c₂, i₂)  ≡  c₁ ≤ c₂ ∧ i₁ ≤ i₂
+```
+
+**Flow predicate:**
+
+```
+flowsTo(ℓ_src, ℓ_dst) ≡ ℓ_src ⊑ ℓ_dst
+```
+
+**Non-interference property (Goguen-Meseguer style):**
+
+For security domain d and projection function `purge_d` that removes all events invisible to d:
+
+```
+∀ s₁ s₂ : SystemState, ∀ d : Domain :
+  s₁ ≈_d s₂ →                           -- d-equivalent initial states
+  ∀ op : KernelOp :
+    exec(op, s₁) ≈_d exec(op, s₂)       -- d-equivalent final states
+```
+
+where `s₁ ≈_d s₂` means s₁ and s₂ are indistinguishable to an observer at security level d. This is formalized as:
+
+```
+stateProjection(s, d) = {
+  objects:   { (id, obj) ∈ s.objects | label(id) ⊑ d }
+  scheduler: filter(s.scheduler, λ t → label(t) ⊑ d)
+  services:  filter(s.services, λ svc → label(svc) ⊑ d)
+}
+```
+
+### 18.6 Memory Lifecycle: Watermark Allocation Model
+
+Untyped memory regions form a **monotonic allocator**:
+
+```
+UntypedRegion = {
+  base : PAddr
+  size : ℕ
+  watermark : ℕ          -- invariant: 0 ≤ watermark ≤ size
+  children : List ObjId
+}
+
+allocate(region, objSize):
+  if watermark + objSize ≤ size:
+    addr ← base + watermark
+    watermark' ← watermark + objSize    -- monotonic: watermark' ≥ watermark
+    return (addr, region')
+  else:
+    return Error.insufficientMemory
+```
+
+**Monotonicity invariant (machine-checked):**
+
+```
+∀ transition t : watermark(after(t)) ≥ watermark(before(t))
+```
+
+This guarantees that allocated memory is never silently reclaimed — deallocation requires an explicit `revoke` through the CDT, followed by a watermark reset only when all children are freed.
+
+### 18.7 Service Graph: Acyclic Dependency Model
+
+The service graph is a **directed acyclic graph** (DAG):
+
+```
+G = (V, E)     where V = ServiceId, E ⊆ V × V
+```
+
+**Acyclicity enforcement via DFS:**
+
+```
+hasPathTo(src, dst, visited):
+  if src = dst:                 return true
+  if src ∈ visited:             return false       -- cycle-safe
+  for dep ∈ dependencies(src):
+    if hasPathTo(dep, dst, visited ∪ {src}):
+      return true
+  return false
+
+registerDependency(svc, dep):
+  if hasPathTo(dep, svc, ∅):    return Error.cyclicDependency
+  else:                         E' ← E ∪ {(svc, dep)}
+```
+
+**Start precondition:**
+
+```
+canStart(svc) ≡ ∀ dep ∈ dependencies(svc) : status(dep) = running
+```
+
+**Restart atomicity:**
+
+```
+restart(svc) =
+  let s₁ ← stop(svc)
+  match s₁:
+    | Error e → (Error e, state unchanged)
+    | Ok _    → start(svc)     -- if start fails, svc remains stopped
+```
+
+### 18.8 VSpace: Abstract Page Table Model
+
+Virtual memory is modeled as a partial function:
+
+```
+VSpace = HashMap VAddr PAddr     -- total on mapped pages, ∅ on unmapped
+
+mapPage(vs, va, pa):     vs' = vs[va ↦ pa]
+unmapPage(vs, va):       vs' = vs \ {va}
+lookup(vs, va):          vs[va] if va ∈ dom(vs), else Error.pageFault
+```
+
+**ASID binding model:**
+
+```
+asidTable : HashMap ASID ObjId
+
+resolveAsidRoot(asid):
+  return asidTable[asid]     -- O(1) lookup
+```
+
+### 18.9 Platform Boundary: Contract Satisfaction Model
+
+The platform boundary is modeled as a set of **decidable predicates** that the hardware must satisfy:
+
+```
+RuntimeContract = {
+  timerMonotonic:        ∀ s s' : τ(s') ≥ τ(s)
+  registerContextStable: ∀ s s' : context(s') is well-formed given context(s)
+  memoryAccessAllowed:   ∀ s, addr : addr ∈ allowedRegions(s)
+}
+```
+
+**Adapter enforcement:**
+
+```
+adapterOp(contract, op, state):
+  if contract.predicate(state):
+    return op(state)           -- proceed
+  else:
+    return Error.contractViolation    -- defense in depth
+```
+
+Each predicate has a `Decidable` instance, meaning `contract.predicate(state)` evaluates to `true` or `false` at runtime — no axioms, no assumptions about hardware behavior.
+
+---
+
+## 19. seLe4n vs seL4 vs Redox vs Fuchsia
+
+This section provides a detailed comparison of seLe4n with three other notable kernel projects: seL4 (the gold standard for verified microkernels), Redox (a Rust-based microkernel OS), and Fuchsia (Google's capability-based OS with the Zircon kernel).
+
+### Overview
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia (Zircon)** |
+|---|---|---|---|---|
+| **Language** | Lean 4 | C (kernel) + Isabelle/HOL (proofs) | Rust | C++ |
+| **Formal verification** | Full — proofs on executable code, zero sorry/axiom | Full — 3-layer refinement proof in Isabelle/HOL (~200K lines) | None — relies on Rust's type system and memory safety | None — standard testing and fuzzing |
+| **Proof methodology** | Co-located proofs on pure functions (single layer) | Post-hoc refinement (abstract spec → executable spec → C) | N/A | N/A |
+| **Kernel type** | Microkernel | Microkernel | Microkernel | Microkernel (hybrid tendencies) |
+| **Target hardware** | Raspberry Pi 5 (ARM64) — in progress | ARM, x86, RISC-V — production | x86_64 — production | ARM64, x86_64 — production |
+| **Primary use case** | Safety-critical, high-assurance systems | Safety-critical, embedded, defense | General-purpose desktop/server OS | Consumer devices (phones, laptops, IoT) |
+| **Maturity** | Research/pre-production | Production (deployed in defense, automotive, IoT) | Alpha/beta | Production (deployed on Nest Hub, etc.) |
+| **License** | Open source | GPL v2 (kernel), BSD (libs) | MIT | BSD-style (multiple) |
+
+### Access Control Model
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Model** | Capability-based | Capability-based | Scheme-based (URL namespaces) | Capability-based (handles) |
+| **Capability storage** | CNodes with HashMap slots (O(1)) | CNodes with array slots | Namespace-based file descriptors | Handle table per process |
+| **Derivation tracking** | CDT with HashMap children | CDT with doubly-linked list | N/A — no formal derivation model | N/A — handles are not derivation-tracked |
+| **Rights attenuation** | Monotone: derived.rights ⊆ parent.rights, proven | Monotone: derived.rights ⊆ parent.rights | File permissions (rwx) | Rights bitmask, attenuated on transfer |
+| **Revocation** | CDT subtree revocation with strict error reporting | CDT revocation (silent error swallowing) | File descriptor close | Handle close (no cascade) |
+| **Formal guarantee** | Machine-checked attenuation + CDT acyclicity | Machine-checked in Isabelle/HOL | Rust type safety only | None |
+
+### IPC Architecture
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Mechanism** | Synchronous endpoint rendezvous | Synchronous endpoint rendezvous | Scheme-based (read/write on schemes) | Channels (async), ports, fifos |
+| **Queue structure** | Intrusive dual-queue (separate send/receive) | Single linked list per endpoint | OS-level pipe/socket buffers | Kernel-managed message queues |
+| **Dequeue complexity** | O(1) arbitrary removal via pprev backpointer | O(n) for mid-queue removal | N/A (buffered) | O(1) amortized (kernel queues) |
+| **Message passing** | Staged in sender TCB, transferred on rendezvous | Register-based (short) or shared buffer (long) | Byte streams through schemes | Structured messages with handles |
+| **Blocking model** | 5 explicit IPC states (send, receive, call, reply, notification) | 3 states (send, receive, notification) | Non-blocking by default | Async with wait primitives |
+| **Notifications** | Badge-based lightweight signaling | Badge-based notification objects | Signal-based (Unix-style) | Signals on kernel objects |
+| **Formal guarantee** | 13 preservation theorems, dual-queue structural invariant | Verified in Isabelle/HOL refinement | None | None |
+
+### Scheduling
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Algorithm** | Priority + EDF tie-breaking + domain partitioning | Priority round-robin + domain partitioning | Priority round-robin | Fair scheduler (deadline-based) + priority profiles |
+| **Real-time support** | EDF for sporadic servers, domain-based temporal isolation | MCS (Mixed Criticality Scheduling) extensions | Limited | Deadline-based profiles |
+| **Run queue** | Priority-bucketed HashMap with cached max (O(1)) | Bitmap + per-priority linked lists | Standard priority queue | Per-CPU run queues with load balancing |
+| **Multi-core** | Single-core (multi-core planned) | Multi-core (big.LITTLE aware) | Multi-core | Multi-core |
+| **Formal guarantee** | Proven irreflexivity/asymmetry/transitivity of candidate order | Verified scheduling invariants | None | None |
+
+### Memory Management
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Model** | Untyped regions with watermark allocation | Untyped memory with retype | Traditional virtual memory (mmap-style) | Virtual Memory Objects (VMOs) + Virtual Memory Address Regions (VMARs) |
+| **Allocation** | Monotonic watermark (proven never decreases) | Watermark + free list | Kernel allocator (slab/buddy) | VMO-backed page allocation |
+| **Device memory** | Explicitly rejected from kernel object backing | Device untyped (restricted operations) | Memory-mapped I/O regions | MMIO resources via BTI (Bus Transaction Initiator) |
+| **Page tables** | Abstract HashMap model with VSpaceBackend typeclass | Architecture-specific page tables | x86_64 page tables | Architecture-specific page tables (ASLR) |
+| **Formal guarantee** | Watermark monotonicity + collision detection proofs | Verified memory safety in refinement | Rust borrow checker (no formal proof) | None |
+
+### Information Flow and Security
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Model** | N-domain 2D labels (confidentiality × integrity) | Binary intransitive non-interference | Unix-style user/group permissions | Capability-based (no formal IF model) |
+| **Enforcement** | Two-layer: policy-checked ops + capability gates | Authority confinement + IPC filtering | Namespace isolation | Sandboxing via component framework |
+| **Non-interference** | 72+ theorems, 31-constructor step relation, >80% coverage | Full intransitive non-interference proof | None | None |
+| **Security domains** | Parameterized labels with lattice ordering | Fixed security domains | User/group/namespace | Component-level isolation |
+
+### Service Management
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Location** | In-kernel (first-class service graph) | User-space (no kernel support) | User-space (scheme servers) | User-space (Component Framework) |
+| **Dependency tracking** | DAG with DFS cycle detection (O(n+e)) | N/A | N/A | Component manifest dependencies |
+| **Lifecycle** | Deterministic state machine (stopped→running→failed→isolated) | N/A | Init-system managed | Component lifecycle managed by framework |
+| **Restart semantics** | Atomic stop-then-start with partial-failure safety | N/A | Process restart | Component restart with state preservation |
+| **Formal guarantee** | Cycle-freedom + dependency satisfaction proofs | N/A | None | None |
+
+### Verification and Assurance
+
+| | **seLe4n** | **seL4** | **Redox** | **Fuchsia** |
+|---|---|---|---|---|
+| **Proof technology** | Lean 4 dependent types | Isabelle/HOL | N/A | N/A |
+| **Proof lines** | ~28,700 lines (code + proofs unified) | ~200,000 lines of Isabelle/HOL proof | N/A | N/A |
+| **Proof approach** | Direct: proofs on executable functions | Indirect: 3-layer refinement (abstract → executable → C) | N/A | N/A |
+| **Refinement gap** | None — specification = implementation | Formally bridged (but complex, ~10 person-years) | N/A | N/A |
+| **Memory safety** | By construction (pure functional, no pointers) | Proven (C code verified against spec) | Rust borrow checker (compile-time) | C++ with sanitizers and fuzzing |
+| **Sorry/axiom count** | 0 (mechanically verified) | 0 (in proof surface) | N/A | N/A |
+| **Executable evidence** | Trace harness with fixture validation | Executable spec in Haskell | Test suites | Extensive test and fuzz suites |
+
+### When to Choose Each
+
+**Choose seLe4n when:**
+- You need the highest possible assurance with the smallest refinement gap
+- Your domain requires provable information-flow security (multi-level security, defense, medical)
+- You want verified real-time scheduling guarantees (EDF + domain partitioning)
+- You are building for ARM64 embedded systems (RPi5 target)
+- You want in-kernel service orchestration with formal dependency guarantees
+
+**Choose seL4 when:**
+- You need a production-ready verified kernel today
+- Your deployment requires multi-architecture support (ARM, x86, RISC-V)
+- You need the extensive seL4 ecosystem (CAmkES, seL4 Foundation tooling)
+- Your verification requirements are met by the Isabelle/HOL refinement approach
+- You need multi-core support
+
+**Choose Redox when:**
+- You want a Unix-compatible microkernel OS with modern tooling
+- Memory safety via Rust is sufficient (no formal verification needed)
+- You are building a general-purpose desktop/server application
+- You value developer experience and familiar APIs (POSIX-like)
+
+**Choose Fuchsia when:**
+- You are building consumer-facing devices (phones, smart home, IoT)
+- You need Google's ecosystem integration and long-term support
+- Scalability across device classes is important
+- You need mature async IPC and component-based architecture
+- Formal verification is not a hard requirement
+
+---
+
+## 20. Glossary
 
 | Term | Definition |
 |------|-----------|
@@ -625,7 +1067,7 @@ lake exe sele4n
 
 ---
 
-## 19. Frequently Asked Questions
+## 21. Frequently Asked Questions
 
 ### Is seLe4n a fork of seL4?
 
