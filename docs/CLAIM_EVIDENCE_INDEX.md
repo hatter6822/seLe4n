@@ -43,6 +43,7 @@ each claim to executable or inspectable evidence.
 | Runtime invariant checks include RunQueue threadPriority and CDT childMap consistency. | `SeLe4n/Testing/InvariantChecks.lean` | `./scripts/test_smoke.sh` | v0.12.15: `runQueueThreadPriorityConsistentB` (membership ↔ threadPriority) and `cdtChildMapConsistentCheck` (childMap ↔ edges bidirectional) added to runtime check surface. |
 | StateBuilder uses actual TCB priorities for RunQueue initialization. | `SeLe4n/Testing/StateBuilder.lean` | `./scripts/test_smoke.sh` | v0.12.15: `lookupThreadPriority` extracts TCB priority from builder objects; `BootstrapBuilder.build` passes actual priorities to `RunQueue.ofList`. |
 | NegativeStateSuite covers endpointReplyRecv and cspaceMutate. | `tests/NegativeStateSuite.lean` | `./scripts/test_smoke.sh` | v0.12.15: `runAuditCoverageChecks` with endpointReplyRecv (2 neg + 1 pos via endpointCall chain) and cspaceMutate (2 neg + 2 pos including badge override). |
+| Comprehensive end-to-end audit confirms zero critical issues at v0.13.6. | `docs/audits/AUDIT_CODEBASE_v0.13.6.md` | `./scripts/test_tier0_hygiene.sh`, `./scripts/test_tier3_invariant_surface.sh` | v0.13.6: Full audit of 40 production files (29,351 LoC), 866 theorem/lemma declarations verified sorry/axiom-free, all security properties confirmed (sentinel discipline, CDT acyclicity, NI >80%), O(1) hash-based hot paths verified, stale documentation metrics corrected (A-v13.6-01, A-v13.6-02). |
 
 ## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
 

@@ -91,6 +91,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-H9 (v0.13.4):** Non-interference coverage extension — 27 new NI preservation theorems across scheduler, IPC, CSpace, VSpace, and observable-state operations; `NonInterferenceStep` extended from 11 to 28 constructors; `composedNonInterference_trace` covers all constructors; NI coverage exceeds >80% of kernel operations. Closes C-02/A-40 (CRITICAL), M-15 (MEDIUM). 813 theorem/lemma declarations (zero sorry/axiom).
 - **WS-H7/H8/H9 gap closure (v0.13.5):** BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, `NonInterferenceStep` extended to 31 constructors. 840 theorem/lemma declarations (zero sorry/axiom).
 - **WS-H10 (v0.13.6):** Security model foundations — `ObservableState` extended with domain-gated `machineRegs`; BIBA lattice alternatives; `DeclassificationPolicy` with `declassifyStore_NI`; `endpointFlowPolicyWellFormed`; `InformationFlowConfigInvariant` bundle. Closes C-05/A-38 (CRITICAL), A-34 (CRITICAL), A-39 (MEDIUM), M-16 (MEDIUM). 866 theorem/lemma declarations (zero sorry/axiom).
+- **End-to-end audit (v0.13.6):** Comprehensive codebase audit covering all 40 production files (29,351 LoC), 866 theorem/lemma declarations, 3 test suites (2,063 LoC), build scripts, and platform bindings. Zero critical issues found. Stale documentation metrics corrected (theorem counts, LoC). Audit report: [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md).
 
 ## Practical failure triage
 
