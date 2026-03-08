@@ -165,11 +165,11 @@ aggregates all subsystem invariants into a single proof obligation.
 | `SeLe4n/Kernel/Capability/*` | CSpace lookup/mint/copy/move/delete/revoke with CDT tracking, guard/radix path resolution |
 | `SeLe4n/Kernel/IPC/Operations.lean` | Core endpoint send/receive, notification signal/wait (legacy, deprecated in favor of DualQueue) |
 | `SeLe4n/Kernel/IPC/DualQueue.lean` | Intrusive dual-queue IPC: send/receive/call/reply with `queuePPrev` back-pointers for O(1) removal |
-| `SeLe4n/Kernel/IPC/Invariant.lean` | 63 IPC invariant preservation theorems (largest proof module, 4,805 LoC) |
+| `SeLe4n/Kernel/IPC/Invariant.lean` | 95+ IPC invariant preservation theorems (largest proof module, ~6,600 LoC) |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
 | `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
 | `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr PAddr` map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
-| `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), `computeObservableSet` with `HashSet`, 69 non-interference theorems covering >80% of kernel operations |
+| `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), BIBA lattice alternatives, `DeclassificationPolicy`, 69 NI theorems covering >80% of kernel operations, 31-constructor `NonInterferenceStep` |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface and `apiInvariantBundle` alias |
 | `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
 | `SeLe4n/Platform/Sim/*` | Simulation platform binding (permissive contracts for testing) |
@@ -216,6 +216,20 @@ for the full technical breakdown.
 
 ## What's next
 
+### Remaining WS-H workstreams (H11–H16)
+
+WS-H1..H10 are all completed. The remaining workstreams address Phases 4–5 of
+the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium |
+| **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium |
+| **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
+| **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
+| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
+| **WS-H16** | Testing and documentation expansion | Low |
+
 ### Remaining WS-F workstreams (F5–F8)
 
 The critical WS-F workstreams (F1–F4) are all completed. The remaining
@@ -231,8 +245,9 @@ by the [v0.12.2 audits](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
 
 ### Raspberry Pi 5 hardware binding (H3)
 
-After WS-F, the next major milestone is populating the RPi5 platform stubs with
-hardware-validated contracts. The `Platform/` directory already provides:
+After the remaining workstreams, the next major milestone is populating the RPi5
+platform stubs with hardware-validated contracts. The `Platform/` directory
+already provides:
 
 - **`PlatformBinding` typeclass** with `RuntimeBoundaryContract`, `BootBoundaryContract`, and `InterruptBoundaryContract`
 - **RPi5 board definition** — BCM2712 SoC address map, GIC-400 distributor/CPU interface, PL011 UART, 4 GB memory layout
@@ -245,9 +260,13 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
-| **WS-H6** | v0.12.20 | Scheduler proof-surface completion: reverse RunQueue invariant `flat_wf_rev`, bridge lemmas `membership_implies_flat`/`mem_toList_iff_mem`, candidate-order theorem `isBetterCandidate_transitive`, and `bucketFirst_fullScan_equivalence`; scheduler membership validation now uses O(1) runQueue membership | H6 |
-| **WS-H7** | v0.12.21 | HashMap equality + state-store migration: `BEq VSpaceRoot`/`BEq CNode` now use size+fold order-independent entry checks; closure-backed fields (`services`, `irqHandlers`, `capabilityRefs`, `cdtSlotNode`, `cdtNodeSlot`) migrated to `Std.HashMap` to eliminate closure-chain growth | H7 |
-| **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | H5 |
+| **WS-H10** | v0.13.6 | Security model foundations: `ObservableState` with `machineRegs`, BIBA lattice alternatives, `DeclassificationPolicy`, `endpointFlowPolicyWellFormed`, `InformationFlowConfigInvariant`. Closes C-05/A-38, A-34, A-39, M-16 | H10 |
+| **WS-H7/H8/H9 gaps** | v0.13.5 | BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, 31-constructor `NonInterferenceStep` | H7/H8/H9 gap closure |
+| **WS-H9** | v0.13.4 | Non-interference coverage >80%: 27 new NI theorems, 28-constructor `NonInterferenceStep`, `composedNonInterference_trace`. Closes C-02/A-40 (CRITICAL) | H9 |
+| **WS-H8** | v0.13.2 | Enforcement-NI bridge: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata. Closes A-35/H-07, A-36/A-37/H-11 | H8 |
+| **WS-H6** | v0.13.1 | Scheduler proof completion: `timeSlicePositive` fully proven, EDF domain-aware fix, `schedulerInvariantBundleFull` 5-tuple | H6 |
+| **WS-H7** | v0.12.21 | HashMap equality + state-store migration: order-independent `BEq`, closure→HashMap migration for 5 state fields | H7 |
+| **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems. Closes C-04/A-22, A-23, A-24 | H5 |
 | **WS-H4** | v0.12.18 | Capability invariant redesign: `capabilityInvariantBundle` 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity` | H4 |
 | **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
 | **WS-H2** | v0.12.16 | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | H2 |

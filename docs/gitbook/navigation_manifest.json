@@ -1,12 +1,12 @@
 {
   "description": "This GitBook is the long-form guide for seLe4n \u2014 a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Version:** 0.13.3 (Lean 4.28.0).",
-    "**Codebase metrics:** 26,861 production LoC across 40 files; 2,063 test LoC across 3 suites; 800 theorem/lemma declarations (zero sorry/axiom); 84 build jobs.",
+    "**Version:** 0.13.6 (Lean 4.28.0).",
+    "**Codebase metrics:** 29,351 production LoC across 40 files; 2,063 test LoC across 3 suites; 866 theorem/lemma declarations (zero sorry/axiom); 84 build jobs.",
     "**Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md).",
     "**Active audit:** [`docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G).",
-    "**Recently completed:** WS-H8 (enforcement-NI bridge & missing wrappers, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).",
-    "**Next workstream:** WS-F5..F8 (remaining v0.12.2 audit remediation).",
+    "**Recently completed:** WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).",
+    "**Next workstream:** WS-H11..H16 (remaining v0.12.15 audit remediation) and WS-F5..F8 (remaining v0.12.2 audit remediation).",
     "**Prior completed:** WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
     "**Metrics source of truth:** `./scripts/report_current_state.py` (sync README/spec/GitBook together in one PR).",
@@ -162,11 +162,11 @@
     }
   ],
   "current_workstream_doc": {
-    "label": "docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md",
-    "path": "../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md"
+    "label": "docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md",
+    "path": "../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md"
   },
   "current_workstream_chapter": {
-    "title": "v0.12.2 Audit Remediation (WS-F)",
-    "path": "24-comprehensive-audit-2026-workstream-planning.md"
+    "title": "Next Development Path",
+    "path": "22-next-slice-development-path.md"
   }
 }

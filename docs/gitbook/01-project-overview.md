@@ -64,10 +64,12 @@ M7 (audit remediation).
 
 The immediate next steps are:
 
-1. **WS-H10..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4-5):
-   security model foundations, VSpace enrichment, scheduler/IPC semantic alignment,
-   CSpace/service model enrichment, type safety, platform hardening, testing expansion.
-2. **Raspberry Pi 5 hardware binding** — ARM64 code generation and hardware bring-up.
+1. **WS-H11..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4–5):
+   VSpace enrichment, scheduler/IPC semantic alignment, CSpace/service model
+   enrichment, type safety, platform hardening, testing expansion.
+2. **WS-F5..F8** — Remaining v0.12.2 audit remediation (medium/low priority):
+   model fidelity, invariant quality, testing expansion, cleanup.
+3. **Raspberry Pi 5 hardware binding (H3)** — ARM64 code generation and hardware bring-up.
 
 See [Next Development Path](22-next-slice-development-path.md) and
 [v0.12.15 Audit Workstream Plan](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
