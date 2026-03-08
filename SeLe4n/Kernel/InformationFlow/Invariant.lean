@@ -1901,8 +1901,196 @@ theorem endpointReply_preserves_lowEquivalent
   exact hLow
 
 -- ============================================================================
--- WS-E5/H-05 + WS-F3: Bundle-level composed non-interference (IF-M4)
+-- WS-H9: Scheduler compound operation NI proofs
 -- ============================================================================
+
+/-- WS-H9: rotateToBack a non-observable thread preserves projection.
+`rotateToBack` changes run queue ordering but `projectRunnable` filters by
+`threadObservable`, so non-observable threads are invisible in the projected list. -/
+private theorem rotateToBack_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+        { st with scheduler := { st.scheduler with
+            runQueue := st.scheduler.runQueue.rotateToBack tid } }
+      = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh]
+
+/-- WS-H9: handleYield with non-observable current thread preserves projection.
+handleYield = rotateToBack (non-obs thread filtered out of projection) + schedule. -/
+private theorem handleYield_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState)
+    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
+    (hStep : handleYield st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep
+    exact schedule_preserves_projection ctx observer st st'
+      (fun _ h => by simp [hCur] at h) hAllRunnable hStep
+  | some tid =>
+    have hTidHigh := hCurrentHigh tid hCur
+    -- Do NOT simp [hCur] into hStep — it breaks struct matching for `set`
+    -- The unfolded handleYield at hStep has: match st.scheduler.current with | some tid => if tid ∈ ... then schedule {st with ...} else .error ...
+    -- After `cases hCur`, the match resolved, leaving the if-then-else
+    simp only [hCur] at hStep
+    by_cases hMem : tid ∈ st.scheduler.runQueue
+    · -- tid ∈ runQueue: rotate + schedule
+      simp only [hMem, ite_true] at hStep
+      have hRotProj := rotateToBack_preserves_projection ctx observer st tid hTidHigh
+      have hAllRunnableRot : ∀ t, t ∈ ({ st with scheduler := { st.scheduler with
+              runQueue := st.scheduler.runQueue.rotateToBack tid } } : SystemState).scheduler.runnable →
+            threadObservable ctx observer t = false := by
+        intro t hMem'; simp only [SchedulerState.runnable] at hMem'
+        exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr
+          ((RunQueue.rotateToBack_mem_iff _ _ t).mp
+            ((RunQueue.mem_toList_iff_mem _ t).mp hMem')))
+      have hSchedStep : schedule { st with scheduler := { st.scheduler with
+          runQueue := st.scheduler.runQueue.rotateToBack tid } } = .ok ((), st') := by
+        simpa [hCur] using hStep
+      exact (schedule_preserves_projection ctx observer
+        { st with scheduler := { st.scheduler with
+            runQueue := st.scheduler.runQueue.rotateToBack tid } }
+        st'
+        (fun t hc => hCurrentHigh t (by simpa using hc))
+        hAllRunnableRot hSchedStep).trans hRotProj
+    · -- tid ∉ runQueue: error — contradiction with hStep
+      simp [hMem] at hStep
+
+/-- WS-H9: handleYield preserves low-equivalence. -/
+theorem handleYield_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+        threadObservable ctx observer t = false)
+    (hAllRunnable₁ : ∀ tid, tid ∈ s₁.scheduler.runnable →
+        threadObservable ctx observer tid = false)
+    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+        threadObservable ctx observer t = false)
+    (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
+        threadObservable ctx observer tid = false)
+    (hStep₁ : handleYield s₁ = .ok ((), s₁'))
+    (hStep₂ : handleYield s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [
+    handleYield_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hAllRunnable₁ hStep₁,
+    handleYield_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hAllRunnable₂ hStep₂]
+  exact hLow
+
+/-- WS-H9: Inserting a non-observable object and ticking machine preserves projection.
+machine is not in ObservableState; the insert is at a non-observable ObjId. -/
+private theorem insert_tick_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hOidHigh : objectObservable ctx observer oid = false) :
+    projectState ctx observer
+        { st with objects := st.objects.insert oid obj, machine := tick st.machine }
+      = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext o; simp only [projectObjects]
+    by_cases hObs : objectObservable ctx observer o
+    · simp only [hObs, ite_true]
+      by_cases hEq : o = oid
+      · subst hEq; simp [hOidHigh] at hObs
+      · rw [HashMap_getElem?_insert]; simp [show ¬(oid == o) from by simp; exact Ne.symm hEq]
+    · simp [hObs]
+
+/-- WS-H9: timerTick with non-observable current thread preserves projection.
+timerTick modifies: machine (not projected), objects at current tid (non-obs),
+and optionally rotateToBack + schedule (covered by existing helpers). -/
+private theorem timerTick_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState)
+    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentObjHigh : ∀ t, st.scheduler.current = some t → objectObservable ctx observer t.toObjId = false)
+    (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
+    (hStep : timerTick st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; subst hStep
+    simp only [projectState]; congr 1 <;> rfl
+  | some tid =>
+    simp only [hCur] at hStep
+    have hTidHigh := hCurrentHigh tid hCur
+    have hTidObjHigh := hCurrentObjHigh tid hCur
+    -- Split on the match st.objects[tid.toObjId]?
+    split at hStep
+    · -- Case: some (.tcb tcb)
+      next tcb hTcbEq =>
+      -- Split on timeSlice ≤ 1
+      split at hStep
+      · -- Time-slice expired
+        -- Split on tid ∈ runQueue (inside the expired branch)
+        split at hStep
+        · -- tid ∈ runQueue: rotateToBack + schedule
+          next hMem =>
+          -- Name the reset TCB object to avoid struct-parsing issues
+          let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }
+          have hInsertProj := insert_tick_preserves_projection ctx observer st
+            tid.toObjId tcbReset hTidObjHigh
+          let stIT : SystemState :=
+            { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
+          let stRot : SystemState :=
+            { stIT with scheduler := { stIT.scheduler with
+                runQueue := stIT.scheduler.runQueue.rotateToBack tid } }
+          have hRotProj := rotateToBack_preserves_projection ctx observer stIT tid hTidHigh
+          have hCurSched : ∀ t, stRot.scheduler.current = some t →
+              threadObservable ctx observer t = false :=
+            fun t hc => hCurrentHigh t (by simpa [stRot, stIT] using hc)
+          have hAllRunnableSched : ∀ t, t ∈ stRot.scheduler.runnable →
+              threadObservable ctx observer t = false := by
+            intro t hMem'; simp only [show stRot.scheduler.runnable =
+              (st.scheduler.runQueue.rotateToBack tid).toList from rfl] at hMem'
+            exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr
+              ((RunQueue.rotateToBack_mem_iff _ _ t).mp
+                ((RunQueue.mem_toList_iff_mem _ t).mp hMem')))
+          have hSchedStep : schedule stRot = .ok ((), st') := by
+            simpa [stRot, stIT, hCur] using hStep
+          rw [schedule_preserves_projection ctx observer stRot st' hCurSched hAllRunnableSched hSchedStep,
+              hRotProj, hInsertProj]
+        · -- tid ∉ runQueue: error
+          simp at hStep
+      · -- Time-slice not expired: insert + tick
+        next hSliceNot =>
+        have hEq := Except.ok.inj hStep
+        simp only [Prod.mk.injEq, true_and] at hEq; subst hEq
+        exact insert_tick_preserves_projection ctx observer st tid.toObjId
+          (KernelObject.tcb { tcb with timeSlice := tcb.timeSlice - 1 }) hTidObjHigh
+    · -- Catch-all: error (not a TCB or not found)
+      simp at hStep
+
+/-- WS-H9: timerTick preserves low-equivalence. -/
+theorem timerTick_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+        threadObservable ctx observer t = false)
+    (hCurrentObjHigh₁ : ∀ t, s₁.scheduler.current = some t →
+        objectObservable ctx observer t.toObjId = false)
+    (hAllRunnable₁ : ∀ tid, tid ∈ s₁.scheduler.runnable →
+        threadObservable ctx observer tid = false)
+    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+        threadObservable ctx observer t = false)
+    (hCurrentObjHigh₂ : ∀ t, s₂.scheduler.current = some t →
+        objectObservable ctx observer t.toObjId = false)
+    (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
+        threadObservable ctx observer tid = false)
+    (hStep₁ : timerTick s₁ = .ok ((), s₁'))
+    (hStep₂ : timerTick s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [
+    timerTick_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hCurrentObjHigh₁ hAllRunnable₁ hStep₁,
+    timerTick_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hCurrentObjHigh₂ hAllRunnable₂ hStep₂]
+  exact hLow
 
 /-! ## H-05 — Composed Bundle Non-Interference
 
@@ -2079,6 +2267,22 @@ inductive NonInterferenceStep
       (addr : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
       (hAddrHigh : objectObservable ctx observer addr.cnode = false)
       (hStep : cspaceMutate addr rights badge st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | handleYield
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
+          threadObservable ctx observer tid = false)
+      (hStep : SeLe4n.Kernel.handleYield st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | timerTick
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hCurrentObjHigh : ∀ t, st.scheduler.current = some t →
+          objectObservable ctx observer t.toObjId = false)
+      (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
+          threadObservable ctx observer tid = false)
+      (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
@@ -2325,6 +2529,10 @@ theorem step_preserves_projection
           simp at hOp
       · -- rights not subset: error
         simp at hOp
+  | handleYield hCH hAR hOp =>
+    exact handleYield_preserves_projection ctx observer st st' hCH hAR hOp
+  | timerTick hCH hCOH hAR hOp =>
+    exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hOp
 
 /-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/

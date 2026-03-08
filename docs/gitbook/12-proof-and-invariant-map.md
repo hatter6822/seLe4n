@@ -475,8 +475,8 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (25 constructors; extended from 11 by WS-H9: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, `endpointReply`, `storeObjectHigh`, `setCurrentThread`, `ensureRunnableHigh`, `removeRunnableHigh`, `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`, `cspaceMutateHigh`),
-- `step_preserves_projection` — single-step projection preservation (all 25 constructors),
+- `NonInterferenceStep` inductive (28 constructors; extended from 11 by WS-H9: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, `endpointReply`, `storeObjectHigh`, `setCurrentThread`, `ensureRunnableHigh`, `removeRunnableHigh`, `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`, `cspaceMutateHigh`, `handleYield`, `timerTick`),
+- `step_preserves_projection` — single-step projection preservation (all 28 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/non-interference-coverage-extension-NVB2o",
-      "commit_sha": "1f02571a779cb840a3bb0f4dc730a31b834f07f2",
-      "tree_sha": "af833f70641ce9152306895ffd98f6e9c9aca862",
-      "committed_at_utc": "2026-03-07T23:17:39+00:00"
+      "commit_sha": "abe146cef7151fe77239b590d40f2df488013eca",
+      "tree_sha": "a1774f56f1ceba1464ddc2dd94e8847e36bbd41e",
+      "committed_at_utc": "2026-03-07T23:46:30+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "be2be8534504fbd6c6fd392d7ee9da60c10393b7dc0d488159f9566e8f92c270"
+    "source_digest": "fc60392ff8e2d3fa7e02540e7197b656034e59068b78cb080af0eb916c75c805"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1593
+    "declaration_count": 1599
   },
   "modules": [
     {
@@ -4585,7 +4585,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant.lean",
-      "declaration_count": 66,
+      "declaration_count": 72,
       "declarations": [
         {
           "kind": "namespace",
@@ -5020,15 +5020,62 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "rotateToBack_preserves_projection",
+          "line": 1910,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_projection",
+          "line": 1923,
+          "called": [
+            "rotateToBack_preserves_projection",
+            "schedule_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_lowEquivalent",
+          "line": 1966,
+          "called": [
+            "handleYield_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_tick_preserves_projection",
+          "line": 1988,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_projection",
+          "line": 2007,
+          "called": [
+            "insert_tick_preserves_projection",
+            "rotateToBack_preserves_projection",
+            "schedule_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_lowEquivalent",
+          "line": 2071,
+          "called": [
+            "timerTick_preserves_projection"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "NonInterferenceStep",
-          "line": 1926,
+          "line": 2114,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "step_preserves_projection",
-          "line": 2086,
+          "line": 2290,
           "called": [
             "NonInterferenceStep",
             "clearCapabilityRefsState_preserves_projectState",
@@ -5039,6 +5086,7 @@
             "endpointReply_preserves_projection",
             "endpointSend_projection_preserved",
             "ensureRunnable_preserves_projection",
+            "handleYield_preserves_projection",
             "notificationSignal_projection_preserved",
             "notificationWait_projection_preserved",
             "removeRunnable_preserves_projection",
@@ -5048,6 +5096,7 @@
             "storeObject_preserves_projection",
             "storeTcbIpcStateAndMessage_preserves_projection",
             "storeTcbQueueLinks_preserves_projection",
+            "timerTick_preserves_projection",
             "vspaceLookup_preserves_state",
             "vspaceMapPage_preserves_projection",
             "vspaceUnmapPage_preserves_projection"
@@ -5056,7 +5105,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_step",
-          "line": 2331,
+          "line": 2539,
           "called": [
             "NonInterferenceStep",
             "step_preserves_projection"
@@ -5065,7 +5114,7 @@
         {
           "kind": "inductive",
           "name": "NonInterferenceTrace",
-          "line": 2343,
+          "line": 2551,
           "called": [
             "NonInterferenceStep"
           ]
@@ -5073,7 +5122,7 @@
         {
           "kind": "theorem",
           "name": "trace_preserves_projection",
-          "line": 2353,
+          "line": 2561,
           "called": [
             "NonInterferenceTrace",
             "step_preserves_projection"
@@ -5082,7 +5131,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_trace",
-          "line": 2364,
+          "line": 2572,
           "called": [
             "NonInterferenceTrace",
             "trace_preserves_projection"
@@ -5091,13 +5140,13 @@
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 2380,
+          "line": 2588,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 2390,
+          "line": 2598,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -5105,7 +5154,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 2409,
+          "line": 2617,
           "called": [
             "preservesLowEquivalence"
           ]

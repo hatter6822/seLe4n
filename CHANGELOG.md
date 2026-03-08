@@ -2,12 +2,12 @@
 
 ### WS-H9: Non-Interference Coverage Extension
 
-- **NI coverage extended from ~25% to >80% (C-02/A-40 CRITICAL):** Added 21
+- **NI coverage extended from ~25% to >80% (C-02/A-40 CRITICAL):** Added 27
   new non-interference preservation theorems covering scheduler, IPC, CSpace,
   VSpace, and observable-state operations. Total NI theorems in
-  `Invariant.lean`: 63 (up from ~19). Proof surface covers all kernel
+  `Invariant.lean`: 69 (up from ~19). Proof surface covers all kernel
   transitions that modify security-relevant state.
-- **NonInterferenceStep inductive extended to 25 constructors (M-15 MEDIUM):**
+- **NonInterferenceStep inductive extended to 28 constructors (M-15 MEDIUM):**
   Up from 11 constructors. Covers: `chooseThread`, `endpointSend`,
   `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`,
   `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`,
@@ -16,12 +16,16 @@
   `endpointReply`, `storeObjectHigh`, `setCurrentThread`,
   `ensureRunnableHigh`, `removeRunnableHigh`,
   `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`,
-  `cspaceMutateHigh`.
+  `cspaceMutateHigh`, `handleYield`, `timerTick`.
 - **Scheduler NI proofs (Part A):** `schedule_preserves_projection` (with
   high-current and all-runnable-high side conditions),
   `setCurrentThread_preserves_projection`,
   `ensureRunnable_preserves_projection`,
-  `removeRunnable_preserves_projection`.
+  `removeRunnable_preserves_projection`,
+  `rotateToBack_preserves_projection`,
+  `handleYield_preserves_projection` / `_lowEquivalent`,
+  `insert_tick_preserves_projection`,
+  `timerTick_preserves_projection` / `_lowEquivalent`.
 - **IPC NI proofs (Part B):** `endpointReply_preserves_projection` /
   `_lowEquivalent`, `storeTcbIpcStateAndMessage_preserves_projection`,
   `storeTcbQueueLinks_preserves_projection`,
