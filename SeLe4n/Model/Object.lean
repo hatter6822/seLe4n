@@ -1,4 +1,5 @@
 import SeLe4n.Prelude
+import SeLe4n.Machine
 
 namespace SeLe4n.Model
 
@@ -55,9 +56,21 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
+/-- WS-H12/A-09: Maximum number of message registers per IPC transfer.
+    seL4 standard configuration uses 120 message registers. -/
+def maxMessageRegisters : Nat := 120
+
+/-- WS-H12/A-09: Maximum number of extra capability slots per IPC transfer.
+    seL4 standard configuration uses 3 extra capability slots. -/
+def maxExtraCaps : Nat := 3
+
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
-Models seL4 message registers plus optional capability transfer and sender badge. -/
+Models seL4 message registers plus optional capability transfer and sender badge.
+
+WS-H12/A-09: Payload fields are bounded — `registers.length ≤ maxMessageRegisters`
+and `caps.length ≤ maxExtraCaps`. Bounds are enforced at the IPC send boundary
+via `IpcMessage.wellFormed`. -/
 structure IpcMessage where
   registers : List Nat
   caps : List Capability := []
@@ -67,6 +80,21 @@ structure IpcMessage where
 namespace IpcMessage
 
 def empty : IpcMessage := { registers := [], caps := [], badge := none }
+
+/-- WS-H12/A-09: Well-formedness predicate — message payload respects seL4 bounds. -/
+def wellFormed (msg : IpcMessage) : Prop :=
+  msg.registers.length ≤ maxMessageRegisters ∧ msg.caps.length ≤ maxExtraCaps
+
+/-- WS-H12/A-09: Decidable well-formedness check for runtime validation. -/
+def isWellFormed (msg : IpcMessage) : Bool :=
+  msg.registers.length ≤ maxMessageRegisters && msg.caps.length ≤ maxExtraCaps
+
+theorem wellFormed_iff_isWellFormed (msg : IpcMessage) :
+    msg.wellFormed ↔ msg.isWellFormed = true := by
+  simp [wellFormed, isWellFormed, Bool.and_eq_true]
+
+theorem empty_wellFormed : IpcMessage.empty.wellFormed := by
+  simp [empty, wellFormed, maxMessageRegisters, maxExtraCaps]
 
 end IpcMessage
 
@@ -126,8 +154,29 @@ structure TCB where
       Stored in the sender's TCB while blocked; transferred to the receiver
       on handshake/dequeue. `none` = no pending message. -/
   pendingMessage : Option IpcMessage := none
-  deriving Repr, DecidableEq
+  /-- WS-H12/H-03: Per-thread register save area for context switching.
+      Stores the thread's architectural register state (PC, SP, GPRs) when the
+      thread is not executing. `saveContext` saves the machine registers here
+      on dispatch-out; `restoreContext` loads them on dispatch-in. -/
+  registerContext : SeLe4n.RegisterFile := default
+  deriving Repr
 
+/-- WS-H12/H-03: Manual `BEq` for `TCB` since `RegisterFile` contains a function-typed
+    field (`gpr : RegName → RegValue`) that cannot derive `DecidableEq`. -/
+instance : BEq TCB where
+  beq a b :=
+    a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
+    a.cspaceRoot == b.cspaceRoot && a.vspaceRoot == b.vspaceRoot &&
+    a.ipcBuffer == b.ipcBuffer && a.ipcState == b.ipcState &&
+    a.timeSlice == b.timeSlice && a.deadline == b.deadline &&
+    a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
+    a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
+    a.registerContext == b.registerContext
+
+/-- WS-H12/A-08: Legacy endpoint state enum — deprecated.
+    New code should not use this enum. Endpoint state is determined by the
+    intrusive dual-queue structure (empty sendQ/receiveQ = idle).
+    Retained only for backward compatibility with existing legacy proofs. -/
 inductive EndpointState where
   | idle
   | send
@@ -145,13 +194,19 @@ structure IntrusiveQueue where
 
 /-- Endpoint object model.
 
-WS-E4/M-01: Dual-queue endpoint semantics are intrusive-list backed.
+WS-H12/A-08/M-01: Dual-queue endpoint semantics are the sole IPC data path.
 `sendQ`/`receiveQ` store queue boundaries, while per-thread links are kept in
-TCBs. Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) remain for
-backward compatibility with prior operations/proofs. -/
+TCBs.
+
+Legacy fields (`state`, `queue`, `waitingReceiver`) are deprecated as of WS-H12
+and retained only for backward compatibility with existing legacy proofs.
+New code must use only `sendQ`/`receiveQ`. -/
 structure Endpoint where
-  state : EndpointState
-  queue : List SeLe4n.ThreadId
+  /-- @[deprecated] Legacy endpoint state — use sendQ/receiveQ emptiness instead. -/
+  state : EndpointState := .idle
+  /-- @[deprecated] Legacy flat queue — use sendQ/receiveQ intrusive queues instead. -/
+  queue : List SeLe4n.ThreadId := []
+  /-- @[deprecated] Legacy waiting receiver — use receiveQ instead. -/
   waitingReceiver : Option SeLe4n.ThreadId := none
   sendQ : IntrusiveQueue := {}
   receiveQ : IntrusiveQueue := {}

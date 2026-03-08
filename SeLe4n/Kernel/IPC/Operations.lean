@@ -93,6 +93,7 @@ WS-E3/H-09: Thread IPC state transitions are now enforced:
   `.blockedOnSend endpointId` and the sender is removed from the runnable queue.
 - **Handshake path** (receive→idle): the waiting receiver is unblocked — IPC state
   set to `.ready` and added to the runnable queue. The sender does not block. -/
+@[deprecated "Use endpointSendDual (WS-H12/A-25)" (since := "2026-03-08")]
 def endpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[endpointId]? with
@@ -137,6 +138,7 @@ Register one waiting receiver on an idle endpoint.
 WS-E3/H-09: After registration, the receiver's IPC state is set to
 `.blockedOnReceive endpointId` and the receiver is removed from the runnable queue.
 This makes the `blockedOnReceiveNotRunnable` contract predicate non-vacuous. -/
+@[deprecated "Use endpointReceiveDual (WS-H12/A-25)" (since := "2026-03-08")]
 def endpointAwaitReceive (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[endpointId]? with
@@ -165,6 +167,7 @@ Consume one queued sender from an endpoint wait queue.
 WS-E3/H-09: After dequeuing a sender, the sender's IPC state is set to `.ready`
 and the sender is added to the runnable queue. This unblocks the sender that was
 previously blocked by `endpointSend`. -/
+@[deprecated "Use endpointReceiveDual (WS-H12/A-25)" (since := "2026-03-08")]
 def endpointReceive (endpointId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects[endpointId]? with

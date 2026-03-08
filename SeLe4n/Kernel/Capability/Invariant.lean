@@ -1990,7 +1990,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
-  unfold endpointReply at hStep
+  unfold endpointReply at hStep; have hStep := ipc_wf_elim hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>

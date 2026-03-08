@@ -1935,7 +1935,7 @@ private theorem endpointReply_preserves_projection
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointReply at hStep
+  unfold endpointReply at hStep; have hStep := ipc_wf_elim hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>

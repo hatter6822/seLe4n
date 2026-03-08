@@ -37,6 +37,24 @@ structure RegisterFile where
 instance : Inhabited RegisterFile where
   default := { pc := 0, sp := 0, gpr := fun _ => 0 }
 
+/-- WS-H12/H-03: Number of ARM64 general-purpose registers (x0-x30). -/
+def numGPR : Nat := 31
+
+/-- WS-H12/H-03: `BEq` for `RegisterFile` comparing PC, SP, and GPRs 0..30.
+    Function extensionality is checked only over the finite ARM64 GPR range. -/
+instance : BEq RegisterFile where
+  beq a b := a.pc == b.pc && a.sp == b.sp &&
+    (List.range numGPR).all (fun i => a.gpr i == b.gpr i)
+
+/-- WS-H12/H-03: `Repr` for `RegisterFile`. Shows PC, SP, and first 4 GPRs. -/
+instance : Repr RegisterFile where
+  reprPrec rf _ :=
+    "RegisterFile { pc := " ++ repr rf.pc ++ ", sp := " ++ repr rf.sp ++
+      ", gpr[0] := " ++ repr (rf.gpr 0) ++
+      ", gpr[1] := " ++ repr (rf.gpr 1) ++
+      ", gpr[2] := " ++ repr (rf.gpr 2) ++
+      ", gpr[3] := " ++ repr (rf.gpr 3) ++ " }"
+
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
   regs : RegisterFile
@@ -112,6 +130,36 @@ theorem tick_preserves_memory (ms : MachineState) :
 
 theorem tick_timer_succ (ms : MachineState) :
     (tick ms).timer = ms.timer + 1 := rfl
+
+-- ============================================================================
+-- WS-H12/H-03: Per-TCB context save/restore helpers
+-- ============================================================================
+
+/-- WS-H12/H-03: Save machine register state into a `RegisterFile` for per-TCB
+    context storage. Captures PC, SP, and all GPRs from the current machine
+    state. Called on dispatch-out (when the running thread is preempted, yields,
+    or blocks). -/
+@[inline] def saveContext (ms : MachineState) : RegisterFile :=
+  ms.regs
+
+/-- WS-H12/H-03: Restore a saved `RegisterFile` into the machine state. Loads
+    PC, SP, and all GPRs from the incoming thread's saved context. Called on
+    dispatch-in (when a new thread is selected by the scheduler). -/
+@[inline] def restoreContext (ms : MachineState) (ctx : RegisterFile) : MachineState :=
+  { ms with regs := ctx }
+
+theorem saveContext_restoreContext_roundtrip (ms : MachineState) :
+    restoreContext ms (saveContext ms) = ms := by
+  simp [saveContext, restoreContext]
+
+theorem restoreContext_preserves_memory (ms : MachineState) (ctx : RegisterFile) :
+    (restoreContext ms ctx).memory = ms.memory := rfl
+
+theorem restoreContext_preserves_timer (ms : MachineState) (ctx : RegisterFile) :
+    (restoreContext ms ctx).timer = ms.timer := rfl
+
+theorem restoreContext_sets_regs (ms : MachineState) (ctx : RegisterFile) :
+    (restoreContext ms ctx).regs = ctx := rfl
 
 -- ============================================================================
 -- L-02/WS-E6: Default memory zero-initialization proofs

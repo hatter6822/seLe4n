@@ -90,6 +90,19 @@ F2-07     | high     | retype-from-untyped wrong-authority branch: SeLe4n.Model.
 F2-08     | high     | retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
 F2-09     | critical | retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
 F2-10     | critical | retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
+H12-01a   | critical | H12 context save to TCB: true
+H12-01b   | critical | H12 context restore from TCB: true
+H12-01c   | high     | H12 scheduleWithContext current: some 1
+H12-02a   | high     | H12 valid message wellFormed: true
+H12-02b   | critical | H12 oversized registers wellFormed: false
+H12-02c   | critical | H12 oversized caps wellFormed: false
+H12-02d   | high     | H12 boundary message wellFormed: true
+H12-02e   | critical | H12 oversized send rejected: true
+H12-02f   | high     | H12 valid send accepted: true
+H12-03a   | critical | H12 dequeue-on-dispatch current: some 1
+H12-03b   | critical | H12 dequeue-on-dispatch not in queue: true
+H12-03c   | high     | H12 handleYieldDequeue current: some 1
+H12-03d   | high     | H12 timerTickDequeue expiry current: some 1
 TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

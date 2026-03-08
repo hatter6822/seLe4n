@@ -158,6 +158,34 @@ theorem schedulerInvariantBundleFull_to_base {st : SystemState}
   h.1
 
 -- ============================================================================
+-- WS-H12/H-04: Dequeue-on-dispatch scheduler semantics
+-- ============================================================================
+
+/-- WS-H12/H-04: Dequeue-on-dispatch scheduler invariant.
+
+Real seL4 dequeues the running thread on dispatch and re-enqueues on
+preemption/yield/block. This is the inverse of `queueCurrentConsistent`:
+when `current = some tid`, `tid` must NOT appear in the runnable queue.
+
+This predicate is designed to coexist with the legacy `queueCurrentConsistent`
+during the migration period. New scheduler operations (`scheduleDequeue`,
+`timerTickDequeue`, `handleYieldDequeue`) maintain this invariant. -/
+def dequeueOnDispatch (s : SchedulerState) : Prop :=
+  match s.current with
+  | none => True
+  | some tid => tid ∉ s.runnable
+
+/-- WS-H12/H-04: Dequeue-on-dispatch scheduler invariant bundle.
+Replaces `queueCurrentConsistent` with `dequeueOnDispatch`. -/
+def schedulerInvariantBundleDequeue (st : SystemState) : Prop :=
+  dequeueOnDispatch st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
+
+theorem dequeueOnDispatch_when_no_current
+    (s : SchedulerState) (h : s.current = none) :
+    dequeueOnDispatch s := by
+  simp [dequeueOnDispatch, h]
+
+-- ============================================================================
 -- WS-H6: RunQueue priority-match predicate
 -- ============================================================================
 

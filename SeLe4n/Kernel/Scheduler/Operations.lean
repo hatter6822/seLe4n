@@ -203,6 +203,28 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
 
+/-- WS-H12/H-03: Save current thread's machine registers to its TCB.
+Returns the updated state, or the original state unchanged if there is no
+current thread or the current thread's TCB is missing. -/
+def saveCurrentContext (st : SystemState) : SystemState :=
+  match st.scheduler.current with
+  | none => st
+  | some tid =>
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) =>
+          let tcb' := { tcb with registerContext := saveContext st.machine }
+          { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+      | _ => st
+
+/-- WS-H12/H-03: Restore the incoming thread's saved register context into the
+machine state. Returns the updated state, or the original state unchanged if
+there is no incoming thread or the TCB is missing. -/
+def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      { st with machine := restoreContext st.machine tcb.registerContext }
+  | _ => st
+
 /-- Scheduler step for the bootstrap model.
 
 Failure modes are explicit:
@@ -226,6 +248,25 @@ def schedule : Kernel Unit :=
             else
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation
+
+/-- WS-H12/H-03: Schedule with per-TCB context save/restore.
+
+Wraps `schedule` with context management: saves the outgoing thread's machine
+registers to its TCB, runs the scheduler, then restores the incoming thread's
+saved register context into the machine. This is the preferred entry point
+for context-switch-aware scheduling in the API layer. -/
+def scheduleWithContext : Kernel Unit :=
+  fun st =>
+    -- Save outgoing thread's context
+    let st' := saveCurrentContext st
+    -- Run the core scheduler
+    match schedule st' with
+    | .error e => .error e
+    | .ok ((), st'') =>
+        -- Restore incoming thread's context
+        match st''.scheduler.current with
+        | none => .ok ((), st'')
+        | some tid => .ok ((), restoreIncomingContext st'' tid)
 
 /-- WS-G4: Yield semantics: move the current thread to the end of its priority bucket
 and the flat list using `RunQueue.rotateToBack`, then schedule. -/
@@ -285,6 +326,126 @@ def timerTick : Kernel Unit :=
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
               .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
         | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- WS-H12/H-04: Dequeue-on-dispatch scheduler operations
+-- ============================================================================
+
+/-- WS-H12/H-04: Schedule with dequeue-on-dispatch semantics.
+
+Unlike the legacy `schedule` which keeps the current thread in the runnable
+queue, this variant removes the dispatched thread from the queue upon dispatch.
+The dispatched thread must be re-enqueued when it is preempted, yields, or blocks.
+
+This matches seL4's scheduling semantics where the running thread is not in
+the ready queue and is re-enqueued on preemption/yield/block. -/
+def scheduleDequeue : Kernel Unit :=
+  fun st =>
+    match chooseThread st with
+    | .error e => .error e
+    | .ok (none, st') => setCurrentThread none st'
+    | .ok (some tid, st') =>
+        match st'.objects[tid.toObjId]? with
+        | some (.tcb tcb) =>
+            if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
+              -- Dequeue the selected thread from the run queue
+              let st'' := { st' with scheduler := { st'.scheduler with
+                  runQueue := st'.scheduler.runQueue.remove tid } }
+              setCurrentThread (some tid) st''
+            else
+              .error .schedulerInvariantViolation
+        | _ => .error .schedulerInvariantViolation
+
+/-- WS-H12/H-04: Yield with dequeue-on-dispatch semantics.
+
+Re-enqueues the current thread (which is NOT in the runnable queue under
+dequeue-on-dispatch) before scheduling. -/
+def handleYieldDequeue : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none => scheduleDequeue st
+    | some tid =>
+        match st.objects[tid.toObjId]? with
+        | some (.tcb tcb) =>
+            -- Re-enqueue current thread (it was dequeued on dispatch)
+            let st' := { st with scheduler := { st.scheduler with
+                runQueue := st.scheduler.runQueue.insert tid tcb.priority } }
+            scheduleDequeue st'
+        | _ => .error .schedulerInvariantViolation
+
+/-- WS-H12/H-04: Timer tick with dequeue-on-dispatch semantics.
+
+On time-slice expiry, re-enqueues the current thread (which was dequeued on
+dispatch) at the back of its priority bucket, then reschedules. -/
+def timerTickDequeue : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none =>
+        .ok ((), { st with machine := tick st.machine })
+    | some tid =>
+        match st.objects[tid.toObjId]? with
+        | some (.tcb tcb) =>
+            if tcb.timeSlice ≤ 1 then
+              -- Time-slice expired: reset, re-enqueue, and reschedule
+              let tcb' := { tcb with timeSlice := defaultTimeSlice }
+              let objs := st.objects.insert tid.toObjId (.tcb tcb')
+              let st' := { st with objects := objs, machine := tick st.machine }
+              -- Re-enqueue the current thread (was dequeued on dispatch)
+              let st'' := { st' with scheduler := { st'.scheduler with
+                  runQueue := st'.scheduler.runQueue.insert tid tcb.priority } }
+              scheduleDequeue st''
+            else
+              let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+              let objs := st.objects.insert tid.toObjId (.tcb tcb')
+              .ok ((), { st with objects := objs, machine := tick st.machine })
+        | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- WS-H12/H-04: Dequeue-on-dispatch preservation theorems
+-- ============================================================================
+
+/-- WS-H12/H-04: `scheduleDequeue` establishes `dequeueOnDispatch`.
+When `scheduleDequeue` selects a thread, it removes it from the queue,
+so the dispatched thread is not in the runnable set. -/
+theorem scheduleDequeue_establishes_dequeueOnDispatch
+    (st st' : SystemState)
+    (hStep : scheduleDequeue st = .ok ((), st')) :
+    dequeueOnDispatch st'.scheduler := by
+  unfold scheduleDequeue at hStep
+  simp only [chooseThread] at hStep
+  cases hCIB : chooseBestInBucket st.objects.get? st.scheduler.runQueue
+      st.scheduler.activeDomain with
+  | error e => simp [hCIB] at hStep
+  | ok cibRes =>
+    simp only [hCIB] at hStep
+    cases cibRes with
+    | none =>
+      -- No thread selected → current = none → dequeueOnDispatch holds trivially
+      simp only [setCurrentThread] at hStep
+      cases hStep with
+      | refl => simp [dequeueOnDispatch]
+    | some triple =>
+      obtain ⟨tid, _, _⟩ := triple
+      simp at hStep
+      cases hObj : st.objects[tid.toObjId]? with
+      | none => simp [hObj] at hStep
+      | some obj =>
+        cases obj with
+        | tcb tcb =>
+          simp only [hObj] at hStep
+          by_cases hOk : st.scheduler.runQueue.contains tid = true ∧
+              tcb.domain = st.scheduler.activeDomain
+          · simp only [hOk, setCurrentThread] at hStep
+            cases hStep with
+            | refl =>
+              simp [dequeueOnDispatch, SchedulerState.runnable]
+              exact RunQueue.not_mem_remove_toList st.scheduler.runQueue tid
+          · have hOk' : ¬(st.scheduler.runQueue.contains tid = true ∧
+                tcb.domain = st.scheduler.activeDomain) := by
+              simpa [RunQueue.mem_iff_contains] using hOk
+            simp [hOk'] at hStep
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+          simp [hObj] at hStep
 
 -- ============================================================================
 -- M-05/WS-E6: Domain scheduling

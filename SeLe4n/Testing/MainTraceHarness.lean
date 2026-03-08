@@ -829,6 +829,120 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"retype-from-untyped childId collision guard: {reprStr err}"
   | .ok _ => IO.println "unexpected retype-from-untyped success with childId collision"
 
+-- ============================================================================
+-- WS-H12: Scheduler & IPC Semantic Alignment trace scenarios
+-- ============================================================================
+
+/-- WS-H12 test: per-TCB register context, IPC message bounds, dequeue-on-dispatch,
+legacy deprecation coverage. -/
+private def runSchedulerIpcAlignmentTrace (st1 : SystemState) : IO Unit := do
+  -- H12-01: Per-TCB register context save/restore via scheduleWithContext
+  -- Set up a machine state with known registers, schedule, verify roundtrip
+  let customRegs : SeLe4n.RegisterFile := { pc := 0x1000, sp := 0x2000, gpr := fun _ => 42 }
+  let stWithRegs : SystemState := { st1 with
+    machine := { st1.machine with regs := customRegs },
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1, 12], current := some 1 } }
+  -- Save context for thread 1 and verify it was stored in the TCB
+  let stSaved := SeLe4n.Kernel.saveCurrentContext stWithRegs
+  let savedRegsOk := match stSaved.objects[SeLe4n.ThreadId.toObjId 1]? with
+    | some (.tcb tcb) => tcb.registerContext.pc == 0x1000 && tcb.registerContext.sp == 0x2000
+    | _ => false
+  IO.println s!"H12 context save to TCB: {savedRegsOk}"
+
+  -- Restore context from thread 12's TCB (with different registers)
+  let t12Regs : SeLe4n.RegisterFile := { pc := 0x3000, sp := 0x4000, gpr := fun _ => 99 }
+  let t12Tcb : KernelObject := .tcb {
+    tid := 12, priority := 50, domain := 0,
+    cspaceRoot := 11, vspaceRoot := 20, ipcBuffer := 8192,
+    ipcState := .ready, registerContext := t12Regs }
+  let stForRestore : SystemState := { stSaved with objects := stSaved.objects.insert 12 t12Tcb }
+  let stRestored := SeLe4n.Kernel.restoreIncomingContext stForRestore 12
+  let restoredOk := stRestored.machine.regs.pc == 0x3000 && stRestored.machine.regs.sp == 0x4000
+  IO.println s!"H12 context restore from TCB: {restoredOk}"
+
+  -- scheduleWithContext full roundtrip
+  match SeLe4n.Kernel.scheduleWithContext stWithRegs with
+  | .error err => IO.println s!"H12 scheduleWithContext error: {reprStr err}"
+  | .ok ((), stCtx) =>
+      -- Verify a thread was selected and context was loaded
+      let ctxCurrent := stCtx.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12 scheduleWithContext current: {reprStr ctxCurrent}"
+
+  -- H12-02: IPC message bounds validation
+  -- Valid message (under limits)
+  let dummyCap : Capability := { target := .object 1, rights := [.read], badge := none }
+  let validMsg : IpcMessage := { registers := List.replicate 10 42, caps := [dummyCap, dummyCap], badge := none }
+  IO.println s!"H12 valid message wellFormed: {validMsg.isWellFormed}"
+
+  -- Oversized registers (> 120)
+  let oversizedMsg : IpcMessage := { registers := List.replicate 121 0, caps := [], badge := none }
+  IO.println s!"H12 oversized registers wellFormed: {oversizedMsg.isWellFormed}"
+
+  -- Oversized caps (> 3)
+  let overCapsMsg : IpcMessage := { registers := [], caps := [dummyCap, dummyCap, dummyCap, dummyCap], badge := none }
+  IO.println s!"H12 oversized caps wellFormed: {overCapsMsg.isWellFormed}"
+
+  -- Boundary: exactly at limit (120 regs, 3 caps)
+  let boundaryMsg : IpcMessage := { registers := List.replicate 120 1, caps := [dummyCap, dummyCap, dummyCap], badge := none }
+  IO.println s!"H12 boundary message wellFormed: {boundaryMsg.isWellFormed}"
+
+  -- Send with oversized message should fail with messageBoundsExceeded
+  let epId : SeLe4n.ObjId := demoEndpoint
+  let ep0 : KernelObject := .endpoint {
+    state := .idle, queue := [], waitingReceiver := none,
+    sendQ := {}, receiveQ := {} }
+  let stBounds : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  match SeLe4n.Kernel.endpointSendDual epId 1 oversizedMsg stBounds with
+  | .error .messageBoundsExceeded => IO.println s!"H12 oversized send rejected: true"
+  | .error err => IO.println s!"H12 oversized send unexpected error: {reprStr err}"
+  | .ok _ => IO.println s!"H12 oversized send rejected: false"
+
+  -- Send with valid message should succeed
+  match SeLe4n.Kernel.endpointSendDual epId 1 validMsg stBounds with
+  | .error err => IO.println s!"H12 valid send error: {reprStr err}"
+  | .ok _ => IO.println s!"H12 valid send accepted: true"
+
+  -- H12-03: Dequeue-on-dispatch via scheduleDequeue
+  let stDequeue : SystemState := { st1 with
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1, 12], current := none } }
+  match SeLe4n.Kernel.scheduleDequeue stDequeue with
+  | .error err => IO.println s!"H12 scheduleDequeue error: {reprStr err}"
+  | .ok ((), stDispatched) =>
+      -- Verify dispatched thread is NOT in the run queue (dequeue-on-dispatch)
+      let dispatched := stDispatched.scheduler.current
+      let notInQueue := match dispatched with
+        | some tid => !stDispatched.scheduler.runQueue.contains tid
+        | none => true
+      IO.println s!"H12 dequeue-on-dispatch current: {reprStr (dispatched.map SeLe4n.ThreadId.toNat)}"
+      IO.println s!"H12 dequeue-on-dispatch not in queue: {notInQueue}"
+
+  -- handleYieldDequeue: re-enqueues current then reschedules
+  let stYield : SystemState := { st1 with
+    scheduler := { st1.scheduler with
+      runQueue := mkRunQueue [12],  -- only thread 12 in queue
+      current := some 1 } }        -- thread 1 is current (dequeued)
+  match SeLe4n.Kernel.handleYieldDequeue stYield with
+  | .error err => IO.println s!"H12 handleYieldDequeue error: {reprStr err}"
+  | .ok ((), stYielded) =>
+      let yieldCurrent := stYielded.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12 handleYieldDequeue current: {reprStr yieldCurrent}"
+
+  -- timerTickDequeue: expiry path re-enqueues and reschedules
+  let tickTcb1 : KernelObject := .tcb {
+    tid := 1, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, timeSlice := 1 }
+  let stTickDequeue : SystemState := { st1 with
+    objects := st1.objects.insert 1 tickTcb1,
+    scheduler := { st1.scheduler with
+      runQueue := mkRunQueue [12],  -- thread 1 NOT in queue (was dequeued)
+      current := some 1 } }
+  match SeLe4n.Kernel.timerTickDequeue stTickDequeue with
+  | .error err => IO.println s!"H12 timerTickDequeue expiry error: {reprStr err}"
+  | .ok ((), stTickExpired) =>
+      let tickCurrent := stTickExpired.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12 timerTickDequeue expiry current: {reprStr tickCurrent}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -849,6 +963,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runIpcMessageTransferTrace st1
   runSchedulerTimingDomainTrace st1
   runUntypedMemoryTrace st1
+  runSchedulerIpcAlignmentTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

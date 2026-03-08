@@ -2,26 +2,28 @@
 
 ## Current state
 
-**Version:** 0.13.7 (Lean 4.28.0)
+**Version:** 0.13.8 (Lean 4.28.0)
 
 **Verified metrics snapshot (from `./scripts/report_current_state.py`):**
-- Production LoC: 29,985 across 41 files
+- Production LoC: 30,420 across 41 files
 - Test LoC: 2,255 across 3 suites
-- Proved declarations: 889 theorem/lemma declarations (zero sorry/axiom)
+- Proved declarations: 898 theorem/lemma declarations (zero sorry/axiom)
 - Build jobs: 86
 
 Four major portfolios are completed:
 
-- **WS-H Phase 1–11** (v0.12.16–v0.13.7): Critical correctness fixes,
-  security foundations, and VSpace enrichment — IPC call-path semantic fix
-  (WS-H1), lifecycle safety guards (WS-H2), build/CI infrastructure hardening
-  (WS-H3), capability invariant redesign (WS-H4), IPC dual-queue structural
-  invariant (WS-H5), scheduler proof completion (WS-H6), HashMap equality +
-  state-store migration (WS-H7), enforcement-NI bridge (WS-H8),
-  non-interference coverage extension >80% (WS-H9), security model foundations
-  including BIBA lattice, declassification model, and endpoint flow policy
-  (WS-H10), VSpace & architecture enrichment with PagePermissions, W^X, TLB
-  model, address bounds, and cross-ASID isolation (WS-H11).
+- **WS-H Phase 1–12** (v0.12.16–v0.13.8): Critical correctness fixes,
+  security foundations, VSpace enrichment, and scheduler/IPC alignment — IPC
+  call-path semantic fix (WS-H1), lifecycle safety guards (WS-H2), build/CI
+  infrastructure hardening (WS-H3), capability invariant redesign (WS-H4), IPC
+  dual-queue structural invariant (WS-H5), scheduler proof completion (WS-H6),
+  HashMap equality + state-store migration (WS-H7), enforcement-NI bridge
+  (WS-H8), non-interference coverage extension >80% (WS-H9), security model
+  foundations including BIBA lattice, declassification model, and endpoint flow
+  policy (WS-H10), VSpace & architecture enrichment with PagePermissions, W^X,
+  TLB model, address bounds, and cross-ASID isolation (WS-H11), scheduler/IPC
+  semantic alignment with dequeue-on-dispatch, per-TCB context, IPC bounds,
+  and legacy cleanup (WS-H12).
   See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G** (v0.12.6–v0.12.15): All 14 kernel performance findings closed.
   Every hot path migrated to O(1) hash-based structures. See

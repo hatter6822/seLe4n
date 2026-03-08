@@ -1,3 +1,33 @@
+## [0.13.8] - 2026-03-08
+
+### WS-H12: Scheduler & IPC Semantic Alignment
+
+- **Part 1 — Dequeue-on-dispatch (H-04):** `scheduleDequeue`, `handleYieldDequeue`,
+  `timerTickDequeue` operations implementing seL4's dequeue-on-dispatch semantics
+  where the running thread is removed from the ready queue on dispatch and
+  re-enqueued on preemption/yield/block. `dequeueOnDispatch` predicate and
+  `schedulerInvariantBundleDequeue` 3-conjunct bundle. Machine-checked proof
+  `scheduleDequeue_establishes_dequeueOnDispatch`.
+- **Part 2 — Per-TCB register context (H-03):** `RegisterFile` type in
+  `Machine.lean` with `BEq`/`Repr` instances. `registerContext` field added to
+  TCB. `saveCurrentContext`/`restoreIncomingContext` helpers with roundtrip proof
+  `saveContext_restoreContext_roundtrip`. `scheduleWithContext` wraps `schedule`
+  with context save/restore for the context-switch-aware API path.
+- **Part 3 — IPC message bounds (A-09):** `maxMessageRegisters` (120),
+  `maxExtraCaps` (3) constants matching seL4. `IpcMessage.wellFormed` predicate
+  and `isWellFormed` decision procedure with `wellFormed_iff_isWellFormed`
+  bridge. Runtime bounds checks added to `endpointSendDual`, `endpointCall`,
+  `endpointReply`, `endpointReplyRecv`. `messageBoundsExceeded` error variant.
+  `ipc_wf_elim` proof helper for bounds-check elimination across 17+ proof sites.
+- **Part 4 — Legacy cleanup (A-08/M-01/A-25):** Legacy `endpointSend`,
+  `endpointAwaitReceive`, `endpointReceive` deprecated via `@[deprecated]` with
+  migration guidance. Legacy `Endpoint` fields (`state`, `queue`,
+  `waitingReceiver`) given defaults to maintain proof compatibility.
+- **Testing:** 13 new trace scenarios (H12-01a..H12-03d) covering per-TCB
+  context save/restore, IPC message bounds validation, dequeue-on-dispatch
+  semantics, handleYieldDequeue, and timerTickDequeue.
+- **Metrics:** 30,420 production LoC, 898 proved declarations.
+
 ## [0.13.7] - 2026-03-08
 
 ### WS-H11: VSpace & Architecture Enrichment
