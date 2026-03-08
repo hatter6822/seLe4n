@@ -13,17 +13,17 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.13.6` |
+| Version | `0.13.7` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 29,351 across 40 files |
-| Test LoC | 2,063 across 3 suites |
-| Proved declarations | 866 theorem/lemma declarations (zero sorry/axiom) |
-| Build jobs | 84 |
+| Production LoC | 29,985 across 41 files |
+| Test LoC | 2,255 across 3 suites |
+| Proved declarations | 889 theorem/lemma declarations (zero sorry/axiom) |
+| Build jobs | 86 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| Recently completed | End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
-| Next workstream | WS-H11..H16 (remaining v0.12.15 audit remediation) |
+| Recently completed | WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
+| Next workstream | WS-H12..H16 (remaining v0.12.15 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |
 
 ## Milestone history
@@ -48,8 +48,9 @@ PagePermissions struct with W^X enforcement at insertion time. Address bounds
 checking via `vspaceMapPageChecked` (ARM64 52-bit PA bound). TLB/cache
 maintenance model with `TlbState`, `adapterFlushTlb`, and `adapterFlushTlbByAsid`.
 `VSpaceBackend` typeclass for platform-agnostic page table operations.
-`vspaceInvariantBundle` extended to 5-conjunct preservation across all VSpace
-transitions. 876 proved declarations, zero sorry/axiom.
+Per-VAddr TLB flush (`adapterFlushTlbByVAddr`) and cross-ASID TLB isolation
+theorem. `vspaceInvariantBundle` extended to 5-conjunct preservation across all
+VSpace transitions. 889 proved declarations, zero sorry/axiom.
 
 ## Completed: WS-H10 Security Model Foundations (v0.13.6)
 

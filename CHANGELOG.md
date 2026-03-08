@@ -24,12 +24,19 @@
 - **TLB selectivity:** `adapterFlushTlbByAsid_removes_matching` and
   `adapterFlushTlbByAsid_preserves_other` theorems proving per-ASID flush
   removes exactly matching entries and preserves all others.
-- **Testing:** 18+ new negative-state tests covering W^X, address bounds, ASID
-  errors, TLB flush, permission round-trip, cross-ASID isolation, multiple
-  concurrent mappings, and map-unmap-remap cycles; 3 new MainTraceHarness
-  traces (VSPACE-05..07).
-- **Metrics:** 881 proved declarations (zero sorry/axiom), 29,888 production
-  LoC across 41 files, 86 build jobs.
+- **Per-VAddr TLB flush:** `adapterFlushTlbByVAddr` operation (ARM64 `TLBI VAE1`)
+  with preservation, selectivity, and composition theorems; targeted flush for
+  single page table entry modifications.
+- **Cross-ASID TLB isolation:** `cross_asid_tlb_isolation` theorem proving
+  per-ASID flush on one ASID does not affect TLB entries belonging to a
+  different ASID — key security property for multi-address-space systems.
+- **Proof deduplication:** Extracted `VSpaceRoot.mapPage_mappings_insert`,
+  `VSpaceRoot.unmapPage_mappings_erase`, and `HashMap_lookup_of_erase_lookup`
+  helper lemmas, reducing duplicated proof code in VSpaceInvariant.lean.
+- **Testing:** 19+ new negative-state tests covering W^X, address bounds, ASID
+  errors, TLB flush (full, per-ASID, per-VAddr), permission round-trip,
+  cross-ASID isolation, multiple concurrent mappings, and map-unmap-remap
+  cycles; 3 new MainTraceHarness traces (VSPACE-05..07).
 
 ## [0.13.6] - 2026-03-08
 

@@ -178,6 +178,44 @@ theorem vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle
   exact hInv
 
 -- ============================================================================
+-- Helper lemmas for proof deduplication (WS-H11 audit refinement)
+-- ============================================================================
+
+/-- After a successful `mapPage`, the new root's mappings equal
+    the old root's mappings with the new entry inserted. -/
+private theorem VSpaceRoot.mapPage_mappings_insert
+    (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    root'.mappings = root.mappings.insert vaddr (paddr, perms) := by
+  unfold VSpaceRoot.mapPage at hMap
+  cases hOld : root.mappings[vaddr]? with
+  | some _ => simp [hOld] at hMap
+  | none => simp [hOld] at hMap; cases hMap; rfl
+
+/-- After a successful `unmapPage`, the new root's mappings equal
+    the old root's mappings with the target entry erased. -/
+private theorem VSpaceRoot.unmapPage_mappings_erase
+    (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.mappings = root.mappings.erase vaddr := by
+  unfold VSpaceRoot.unmapPage at hUnmap
+  cases hOld : root.mappings[vaddr]? with
+  | none => simp [hOld] at hUnmap
+  | some _ => simp [hOld] at hUnmap; cases hUnmap; rfl
+
+/-- Recover a pre-state mapping from a post-erase lookup (for unmap proofs). -/
+private theorem HashMap_lookup_of_erase_lookup
+    (mappings : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
+    (vaddr v : SeLe4n.VAddr) (p : SeLe4n.PAddr) (pm : PagePermissions)
+    (hErase : (mappings.erase vaddr)[v]? = some (p, pm)) :
+    mappings[v]? = some (p, pm) := by
+  by_cases hV : vaddr = v
+  · subst hV; simp at hErase
+  · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
+    simp only [Std.HashMap.getElem?_erase, hBeq] at hErase; exact hErase
+
+-- ============================================================================
 -- F-08 / TPI-D05: VSpace successful-operation invariant preservation
 -- ============================================================================
 
@@ -258,13 +296,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
             -- 4. wxExclusiveInvariant st'
             · intro oid r v p pm hObjR hMap
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
               by_cases hEq : oid = rootId
               · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-                have hInsert : root'.mappings = root.mappings.insert vaddr (paddr, perms) := by
-                  unfold VSpaceRoot.mapPage at hMapRoot
-                  cases hOld : root.mappings[vaddr]? with
-                  | some _ => simp [hOld] at hMapRoot
-                  | none => simp [hOld] at hMapRoot; cases hMapRoot; rfl
                 rw [hInsert] at hMap
                 by_cases hV : v = vaddr
                 · subst hV
@@ -277,13 +311,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 exact hWxInv oid r v p pm hObjR hMap
             -- 5. boundedAddressTranslation st'
             · intro oid r v p pm hObjR hMap
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
               by_cases hEq : oid = rootId
               · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-                have hInsert : root'.mappings = root.mappings.insert vaddr (paddr, perms) := by
-                  unfold VSpaceRoot.mapPage at hMapRoot
-                  cases hOld : root.mappings[vaddr]? with
-                  | some _ => simp [hOld] at hMapRoot
-                  | none => simp [hOld] at hMapRoot; cases hMapRoot; rfl
                 rw [hInsert] at hMap
                 by_cases hV : v = vaddr
                 · subst hV
@@ -364,37 +394,21 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
           -- 4. wxExclusiveInvariant st' (unmap only removes entries — subset of pre-state mappings)
           · intro oid r v p pm hObjR hMap
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-              have hRootMap : root.mappings[v]? = some (p, pm) := by
-                have hErase : root'.mappings = root.mappings.erase vaddr := by
-                  unfold VSpaceRoot.unmapPage at hUnmapRoot
-                  cases hOld : root.mappings[vaddr]? with
-                  | none => simp [hOld] at hUnmapRoot
-                  | some _ => simp [hOld] at hUnmapRoot; cases hUnmapRoot; rfl
-                rw [hErase] at hMap
-                by_cases hV : vaddr = v
-                · subst hV; simp at hMap
-                · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
-                  simp only [Std.HashMap.getElem?_erase, hBeq] at hMap; exact hMap
+              have hRootMap := HashMap_lookup_of_erase_lookup root.mappings vaddr v p pm
+                (hErase ▸ hMap)
               exact hWxInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hWxInv oid r v p pm hObjR hMap
           -- 5. boundedAddressTranslation st' (unmap only removes entries)
           · intro oid r v p pm hObjR hMap
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-              have hRootMap : root.mappings[v]? = some (p, pm) := by
-                have hErase : root'.mappings = root.mappings.erase vaddr := by
-                  unfold VSpaceRoot.unmapPage at hUnmapRoot
-                  cases hOld : root.mappings[vaddr]? with
-                  | none => simp [hOld] at hUnmapRoot
-                  | some _ => simp [hOld] at hUnmapRoot; cases hUnmapRoot; rfl
-                rw [hErase] at hMap
-                by_cases hV : vaddr = v
-                · subst hV; simp at hMap
-                · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
-                  simp only [Std.HashMap.getElem?_erase, hBeq] at hMap; exact hMap
+              have hRootMap := HashMap_lookup_of_erase_lookup root.mappings vaddr v p pm
+                (hErase ▸ hMap)
               exact hBoundInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hBoundInv oid r v p pm hObjR hMap

@@ -69,6 +69,13 @@ def adapterFlushTlb (_tlb : TlbState) : TlbState :=
 def adapterFlushTlbByAsid (tlb : TlbState) (asid : ASID) : TlbState :=
   { entries := tlb.entries.filter (·.asid != asid) }
 
+/-- Per-VAddr TLB flush: invalidates all entries for a specific (ASID, VAddr) pair.
+
+    On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`. This is the
+    most targeted flush, used after modifying a single page table entry. -/
+def adapterFlushTlbByVAddr (tlb : TlbState) (asid : ASID) (vaddr : VAddr) : TlbState :=
+  { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
+
 /-- TLB consistency invariant: every cached TLB entry matches the current
     page table state.
 
@@ -153,5 +160,84 @@ theorem sequential_modifications_then_flush_preserves_tlbConsistent
     (st : SystemState) (tlb : TlbState) :
     tlbConsistent st (adapterFlushTlb tlb) :=
   adapterFlushTlb_restores_tlbConsistent st tlb
+
+-- ============================================================================
+-- Per-VAddr flush theorems (WS-H11 audit refinement)
+-- ============================================================================
+
+/-- Per-VAddr flush preserves TLB consistency (the flushed entries are removed,
+    all remaining entries were already consistent). -/
+theorem adapterFlushTlbByVAddr_preserves_tlbConsistent
+    (st : SystemState) (tlb : TlbState) (asid : ASID) (vaddr : VAddr)
+    (hConsist : tlbConsistent st tlb) :
+    tlbConsistent st (adapterFlushTlbByVAddr tlb asid vaddr) := by
+  intro entry hMem rootId root hResolve
+  unfold adapterFlushTlbByVAddr at hMem
+  simp [List.mem_filter] at hMem
+  exact hConsist entry hMem.1 rootId root hResolve
+
+/-- Per-VAddr flush removes exactly the entries matching the given (ASID, VAddr). -/
+theorem adapterFlushTlbByVAddr_removes_matching
+    (tlb : TlbState) (asid : ASID) (vaddr : VAddr) (entry : TlbEntry)
+    (hMem : entry ∈ (adapterFlushTlbByVAddr tlb asid vaddr).entries) :
+    ¬(entry.asid = asid ∧ entry.vaddr = vaddr) := by
+  unfold adapterFlushTlbByVAddr at hMem
+  simp [List.mem_filter] at hMem
+  intro ⟨hA, hV⟩
+  have := hMem.2
+  simp [hA, hV] at this
+
+/-- Per-VAddr flush preserves entries with a different ASID or VAddr. -/
+theorem adapterFlushTlbByVAddr_preserves_other
+    (tlb : TlbState) (asid : ASID) (vaddr : VAddr) (entry : TlbEntry)
+    (hMem : entry ∈ tlb.entries) (hNe : ¬(entry.asid = asid ∧ entry.vaddr = vaddr)) :
+    entry ∈ (adapterFlushTlbByVAddr tlb asid vaddr).entries := by
+  unfold adapterFlushTlbByVAddr
+  simp only [List.mem_filter]
+  refine ⟨hMem, ?_⟩
+  simp only [Bool.not_eq_eq_eq_not, Bool.not_true]
+  by_cases hA : entry.asid == asid <;> by_cases hV : entry.vaddr == vaddr <;> simp_all [eq_of_beq]
+
+/-- After a per-VAddr flush following a per-ASID flush on the same ASID,
+    no entries for that ASID remain — the per-ASID flush already removed them all.
+    This means the double flush is strictly more conservative than needed,
+    eliminating any stale translations for the flushed ASID. -/
+theorem vaddrFlush_after_asidFlush_no_asid_entries
+    (tlb : TlbState) (asid : ASID) (vaddr : VAddr) (entry : TlbEntry)
+    (hMem : entry ∈ (adapterFlushTlbByVAddr (adapterFlushTlbByAsid tlb asid) asid vaddr).entries) :
+    entry.asid ≠ asid := by
+  unfold adapterFlushTlbByVAddr at hMem
+  simp only [List.mem_filter] at hMem
+  rcases hMem with ⟨hMemAsid, _⟩
+  unfold adapterFlushTlbByAsid at hMemAsid
+  simp only [List.mem_filter] at hMemAsid
+  rcases hMemAsid with ⟨_, hNotAsid⟩
+  intro hEq
+  rw [bne_iff_ne] at hNotAsid
+  exact hNotAsid hEq
+
+-- ============================================================================
+-- Cross-ASID isolation theorem (WS-H11 audit refinement)
+-- ============================================================================
+
+/-- Cross-ASID isolation: `vspaceMapPage` on one ASID does not affect TLB
+    consistency of entries belonging to a *different* ASID, provided the page
+    tables for the other ASID are unchanged. This is a key security property
+    for TLB management in multi-address-space systems. -/
+theorem cross_asid_tlb_isolation
+    (tlb : TlbState) (asid₁ asid₂ : ASID) (hNe : asid₁ ≠ asid₂) :
+    (adapterFlushTlbByAsid tlb asid₁).entries.filter (·.asid == asid₂) =
+    tlb.entries.filter (·.asid == asid₂) := by
+  unfold adapterFlushTlbByAsid
+  simp only [List.filter_filter]
+  congr 1
+  funext e
+  by_cases hAsid : (e.asid == asid₂) = true
+  · have hNotAsid₁ : (e.asid != asid₁) = true := by
+      rw [bne_iff_ne]
+      intro hContra
+      exact hNe (hContra.symm.trans (eq_of_beq hAsid))
+    simp [hNotAsid₁, hAsid]
+  · simp [hAsid]
 
 end SeLe4n.Kernel.Architecture

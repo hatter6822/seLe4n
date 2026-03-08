@@ -1174,6 +1174,20 @@ def runWSH11Checks : IO Unit := do
   else
     throw <| IO.userError s!"WS-H11 per-ASID flush: expected 1 entry, got {flushedAsid.entries.length}"
 
+  -- Per-VAddr flush removes only matching (ASID, VAddr) entries
+  let entry3 : SeLe4n.Kernel.Architecture.TlbEntry :=
+    { asid := 1, vaddr := 4096, paddr := 8192, perms := default }
+  let entry4 : SeLe4n.Kernel.Architecture.TlbEntry :=
+    { asid := 1, vaddr := 8192, paddr := 16384, perms := default }
+  let entry5 : SeLe4n.Kernel.Architecture.TlbEntry :=
+    { asid := 2, vaddr := 4096, paddr := 24576, perms := default }
+  let tlb3 : SeLe4n.Kernel.Architecture.TlbState := { entries := [entry3, entry4, entry5] }
+  let flushedVAddr := SeLe4n.Kernel.Architecture.adapterFlushTlbByVAddr tlb3 1 4096
+  if flushedVAddr.entries.length = 2 then
+    IO.println "positive check passed [WS-H11 per-VAddr TLB flush removes only matching (ASID,VAddr)]"
+  else
+    throw <| IO.userError s!"WS-H11 per-VAddr flush: expected 2 entries, got {flushedVAddr.entries.length}"
+
   -- vspaceLookupFull returns permissions
   let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 20480 32768 permsCheck) st with
