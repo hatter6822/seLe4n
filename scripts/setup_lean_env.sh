@@ -3,19 +3,76 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QUIET=0
+BUILD_REQUESTED=0
 for arg in "$@"; do
   case "${arg}" in
     --quiet|-q) QUIET=1 ;;
+    --build) BUILD_REQUESTED=1 ;;
   esac
 done
 log() { if [ "${QUIET}" -eq 0 ]; then echo "$@"; fi; }
+
 ELAN_HOME_DEFAULT="${HOME}/.elan"
-ELAN_ENV_FILE="${ELAN_HOME:-$ELAN_HOME_DEFAULT}/env"
+ELAN_HOME_DIR="${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
+ELAN_ENV_FILE="${ELAN_HOME_DIR}/env"
 LEAN_TOOLCHAIN_FILE="${ROOT_DIR}/lean-toolchain"
 ELAN_INSTALLER_URL="https://raw.githubusercontent.com/leanprover/elan/87f5ec2f5627dd3df16b346733147412c3ddeef1/elan-init.sh"
 # WS-B9 hardening anchor: commit-pinned installer URL + hash must be updated together intentionally.
 ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43eda9264"
 
+# -------- Parse toolchain spec early (needed by fast-path) --------
+if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
+  echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
+  exit 1
+fi
+TOOLCHAIN="$(tr -d '\n\r' < "${LEAN_TOOLCHAIN_FILE}")"
+if [ -z "${TOOLCHAIN}" ]; then
+  echo "error: ${LEAN_TOOLCHAIN_FILE} is empty" >&2
+  exit 1
+fi
+# Parse toolchain spec "org/repo:tag" into components for download URLs.
+TOOLCHAIN_ORG="$(echo "${TOOLCHAIN}" | cut -d/ -f1)"
+TOOLCHAIN_REPO="$(echo "${TOOLCHAIN}" | cut -d/ -f2 | cut -d: -f1)"
+TOOLCHAIN_TAG="$(echo "${TOOLCHAIN}" | cut -d: -f2)"
+# elan normalises "org/repo:tag" → "org-repo-tag" for directory names.
+TOOLCHAIN_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|-|g; s|:|-|g')"
+
+# -------- Fast-path: skip setup if everything is already ready --------
+# This avoids all package-manager and network operations on repeat sessions.
+fast_path_ready() {
+  # Source elan env if available (single source point for fast-path check).
+  if [ -f "${ELAN_ENV_FILE}" ]; then
+    # shellcheck disable=SC1090
+    source "${ELAN_ENV_FILE}"
+  fi
+  # Check 1: lake must be on PATH.
+  command -v lake >/dev/null 2>&1 || return 1
+  # Check 2: toolchain directory must exist with bin/lean.
+  local tc_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
+  [ -x "${tc_dir}/bin/lean" ] || return 1
+  # Check 3: CRT startup files must be present (linker sanity).
+  [ -f "${tc_dir}/lib/crti.o" ] || return 1
+  return 0
+}
+
+if fast_path_ready; then
+  log "[setup] Lean environment already configured (fast-path)"
+  if [ "${BUILD_REQUESTED}" -eq 1 ]; then
+    log "[setup] running lake build"
+    (cd "${ROOT_DIR}" && lake build)
+  fi
+  exit 0
+fi
+
+log "[setup] full environment setup required"
+
+# -------- Prerequisite check --------
+if ! command -v curl >/dev/null 2>&1; then
+  echo "error: curl is required to install elan" >&2
+  exit 1
+fi
+
+# -------- Package management helpers --------
 APT_UPDATE_DONE=0
 
 run_pkg_install() {
@@ -52,85 +109,73 @@ compute_sha256() {
   fi
 }
 
-ensure_shellcheck() {
-  if command -v shellcheck >/dev/null 2>&1; then
+# -------- Batched dependency installation --------
+# Collect all missing packages and install in a single transaction.
+install_missing_packages() {
+  local missing_apt=()
+  local missing_any=0
+
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    missing_apt+=("shellcheck")
+    missing_any=1
+  fi
+  if ! command -v rg >/dev/null 2>&1; then
+    missing_apt+=("ripgrep")
+    missing_any=1
+  fi
+  if ! command -v zstd >/dev/null 2>&1; then
+    missing_apt+=("zstd")
+    missing_any=1
+  fi
+
+  if [ "${missing_any}" -eq 0 ]; then
     return 0
   fi
 
-  log "[setup] shellcheck not found; attempting to install"
+  log "[setup] installing missing packages: ${missing_apt[*]}"
 
   if command -v apt-get >/dev/null 2>&1; then
     apt_update_once
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y shellcheck || true
+    # Single apt-get install for all missing packages (one dpkg transaction).
+    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_apt[@]}" || true
   elif command -v dnf >/dev/null 2>&1; then
-    run_pkg_install dnf install -y ShellCheck || true
+    # Map package names for dnf (ShellCheck has different case).
+    local dnf_pkgs=()
+    for pkg in "${missing_apt[@]}"; do
+      case "${pkg}" in
+        shellcheck) dnf_pkgs+=("ShellCheck") ;;
+        *) dnf_pkgs+=("${pkg}") ;;
+      esac
+    done
+    run_pkg_install dnf install -y "${dnf_pkgs[@]}" || true
   elif command -v yum >/dev/null 2>&1; then
-    { run_pkg_install yum install -y epel-release && \
-    run_pkg_install yum install -y ShellCheck; } || true
+    run_pkg_install yum install -y epel-release 2>/dev/null || true
+    local yum_pkgs=()
+    for pkg in "${missing_apt[@]}"; do
+      case "${pkg}" in
+        shellcheck) yum_pkgs+=("ShellCheck") ;;
+        *) yum_pkgs+=("${pkg}") ;;
+      esac
+    done
+    run_pkg_install yum install -y "${yum_pkgs[@]}" || true
   elif command -v pacman >/dev/null 2>&1; then
-    run_pkg_install pacman -Sy --noconfirm shellcheck || true
+    run_pkg_install pacman -Sy --noconfirm "${missing_apt[@]}" || true
   elif command -v brew >/dev/null 2>&1; then
-    brew install shellcheck || true
+    for pkg in "${missing_apt[@]}"; do
+      brew install "${pkg}" || true
+    done
   fi
 
+  # Log warnings for any packages that are still missing.
   if ! command -v shellcheck >/dev/null 2>&1; then
     log "[setup] warning: shellcheck is unavailable; shell linting will be skipped"
   fi
-}
-
-ensure_ripgrep() {
-  if command -v rg >/dev/null 2>&1; then
-    return 0
-  fi
-
-  log "[setup] ripgrep (rg) not found; attempting to install"
-
-  if command -v apt-get >/dev/null 2>&1; then
-    apt_update_once
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep || true
-  elif command -v dnf >/dev/null 2>&1; then
-    run_pkg_install dnf install -y ripgrep || true
-  elif command -v yum >/dev/null 2>&1; then
-    { run_pkg_install yum install -y epel-release && \
-    run_pkg_install yum install -y ripgrep; } || true
-  elif command -v pacman >/dev/null 2>&1; then
-    run_pkg_install pacman -Sy --noconfirm ripgrep || true
-  elif command -v brew >/dev/null 2>&1; then
-    brew install ripgrep || true
-  fi
-
   if ! command -v rg >/dev/null 2>&1; then
     log "[setup] warning: ripgrep (rg) is unavailable; tests will use grep fallback"
   fi
 }
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "error: curl is required to install elan" >&2
-  exit 1
-fi
-
-if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
-  echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
-  exit 1
-fi
-
-ensure_shellcheck
-ensure_ripgrep
-
-ELAN_HOME_DIR="${ELAN_HOME:-$ELAN_HOME_DEFAULT}"
-
-TOOLCHAIN="$(tr -d '\n\r' < "${LEAN_TOOLCHAIN_FILE}")"
-if [ -z "${TOOLCHAIN}" ]; then
-  echo "error: ${LEAN_TOOLCHAIN_FILE} is empty" >&2
-  exit 1
-fi
-
-# Parse toolchain spec "org/repo:tag" into components for download URLs.
-TOOLCHAIN_ORG="$(echo "${TOOLCHAIN}" | cut -d/ -f1)"
-TOOLCHAIN_REPO="$(echo "${TOOLCHAIN}" | cut -d/ -f2 | cut -d: -f1)"
-TOOLCHAIN_TAG="$(echo "${TOOLCHAIN}" | cut -d: -f2)"
-# elan normalises "org/repo:tag" → "org-repo-tag" for directory names.
-TOOLCHAIN_DIR_NAME="$(echo "${TOOLCHAIN}" | sed 's|/|-|g; s|:|-|g')"
+install_missing_packages
 
 # Detect architecture for download URL.
 detect_arch_suffix() {
@@ -160,25 +205,6 @@ case ":${PATH}:" in
         ;;
 esac
 ENVEOF
-}
-
-# Ensure zstd is available for extracting Lean toolchain archives.
-ensure_zstd() {
-  if command -v zstd >/dev/null 2>&1; then
-    return 0
-  fi
-  log "[setup] zstd not found; attempting to install"
-  if command -v apt-get >/dev/null 2>&1; then
-    apt_update_once
-    run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y zstd || true
-  elif command -v dnf >/dev/null 2>&1; then
-    run_pkg_install dnf install -y zstd || true
-  elif command -v brew >/dev/null 2>&1; then
-    brew install zstd || true
-  fi
-  if ! command -v zstd >/dev/null 2>&1; then
-    return 1
-  fi
 }
 
 # Fallback: manually download and install elan + Lean toolchain using curl.
@@ -227,7 +253,7 @@ SETTINGSEOF
     local version_number="${TOOLCHAIN_TAG#v}"
     local lean_archive_name="lean-${version_number}-linux${arch_suffix}"
 
-    if ensure_zstd; then
+    if command -v zstd >/dev/null 2>&1; then
       local lean_tar
       lean_tar="$(mktemp)"
       trap 'rm -f "${lean_tar}"' EXIT
@@ -279,13 +305,17 @@ SETTINGSEOF
 
 # -------- Main installation flow --------
 
-# If elan was previously installed with --no-modify-path, load it before probing.
-if [ -f "${ELAN_ENV_FILE}" ]; then
-  # shellcheck disable=SC1090
-  source "${ELAN_ENV_FILE}"
-fi
+# Source elan env once if it exists (single source point for main flow).
+source_elan_env() {
+  if [ -f "${ELAN_ENV_FILE}" ]; then
+    # shellcheck disable=SC1090
+    source "${ELAN_ENV_FILE}"
+  fi
+}
 
+source_elan_env
 ELAN_INSTALL_FAILED=0
+TOOLCHAIN_FRESHLY_INSTALLED=0
 
 if ! command -v elan >/dev/null 2>&1; then
   log "[setup] elan not found; installing to ${ELAN_HOME_DIR}"
@@ -312,26 +342,24 @@ fi
 # If elan standard install failed, fall back to manual curl-based install.
 if [ "${ELAN_INSTALL_FAILED}" -eq 1 ]; then
   manual_curl_install
+  TOOLCHAIN_FRESHLY_INSTALLED=1
 fi
 
 ensure_elan_env_file
-
-if [ -f "${ELAN_ENV_FILE}" ]; then
-  # shellcheck disable=SC1090
-  source "${ELAN_ENV_FILE}"
-fi
+source_elan_env
 
 # If elan is available and the toolchain isn't set up yet, try the standard path.
+# Use direct directory check instead of slow `elan toolchain list` command.
 if command -v elan >/dev/null 2>&1; then
-  log "[setup] ensuring Lean toolchain ${TOOLCHAIN} is installed"
-  if ! elan toolchain list | tr -d '\r' | grep -Fq "${TOOLCHAIN}"; then
+  local_tc_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
+  if [ ! -d "${local_tc_dir}/bin" ]; then
+    log "[setup] installing Lean toolchain ${TOOLCHAIN}"
     if ! elan toolchain install "${TOOLCHAIN}" 2>/dev/null; then
       echo "[setup] elan toolchain install failed; trying manual install" >&2
       manual_curl_install
-      # Re-source after manual install
-      # shellcheck disable=SC1090
-      source "${ELAN_ENV_FILE}"
+      source_elan_env
     fi
+    TOOLCHAIN_FRESHLY_INSTALLED=1
   else
     log "[setup] Lean toolchain ${TOOLCHAIN} is already installed"
   fi
@@ -341,8 +369,8 @@ fi
 if ! command -v lake >/dev/null 2>&1; then
   # Last resort: try manual install if we haven't already.
   manual_curl_install
-  # shellcheck disable=SC1090
-  source "${ELAN_ENV_FILE}"
+  TOOLCHAIN_FRESHLY_INSTALLED=1
+  source_elan_env
 fi
 
 if ! command -v lake >/dev/null 2>&1; then
@@ -351,44 +379,42 @@ if ! command -v lake >/dev/null 2>&1; then
 fi
 
 # -------- Linker sanity: verify CRT startup files exist (crti.o fix) --------
+# Only verify on fresh installs — cached toolchains already passed this check.
 # Lean's clang uses --sysroot to find crti.o/crt1.o inside the toolchain.
 # If the toolchain extraction was incomplete, linking will fail with
 # "ld: cannot find crti.o". Detect this early and attempt recovery.
-verify_crt_files() {
-  local tc_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
-  local missing=0
-  for crt_file in crti.o crt1.o Scrt1.o; do
-    if [ ! -f "${tc_dir}/lib/${crt_file}" ]; then
-      missing=1
-      break
-    fi
-  done
-  if [ "${missing}" -eq 1 ]; then
-    echo "[setup] warning: CRT startup files missing from toolchain (crti.o linker fix)" >&2
-    echo "[setup] re-downloading toolchain to restore linker prerequisites" >&2
-    # Remove the incomplete toolchain and re-install
-    rm -rf "${tc_dir}"
-    manual_curl_install
-    # shellcheck disable=SC1090
-    source "${ELAN_ENV_FILE}"
-    # Verify again after re-install
+if [ "${TOOLCHAIN_FRESHLY_INSTALLED}" -eq 1 ]; then
+  verify_crt_files() {
+    local tc_dir="${ELAN_HOME_DIR}/toolchains/${TOOLCHAIN_DIR_NAME}"
+    local missing=0
     for crt_file in crti.o crt1.o Scrt1.o; do
       if [ ! -f "${tc_dir}/lib/${crt_file}" ]; then
-        echo "[setup] warning: ${crt_file} still missing after re-install; linking may fail" >&2
-        # Fallback: try to install system libc-dev
-        if command -v apt-get >/dev/null 2>&1; then
-          apt_update_once
-          run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y libc-dev 2>/dev/null || true
-        fi
-        return 1
+        missing=1
+        break
       fi
     done
-    log "[setup] CRT files restored successfully"
-  fi
-  return 0
-}
-
-verify_crt_files
+    if [ "${missing}" -eq 1 ]; then
+      echo "[setup] warning: CRT startup files missing from toolchain (crti.o linker fix)" >&2
+      echo "[setup] re-downloading toolchain to restore linker prerequisites" >&2
+      rm -rf "${tc_dir}"
+      manual_curl_install
+      source_elan_env
+      for crt_file in crti.o crt1.o Scrt1.o; do
+        if [ ! -f "${tc_dir}/lib/${crt_file}" ]; then
+          echo "[setup] warning: ${crt_file} still missing after re-install; linking may fail" >&2
+          if command -v apt-get >/dev/null 2>&1; then
+            apt_update_once
+            run_pkg_install env DEBIAN_FRONTEND=noninteractive apt-get install -y libc-dev 2>/dev/null || true
+          fi
+          return 1
+        fi
+      done
+      log "[setup] CRT files restored successfully"
+    fi
+    return 0
+  }
+  verify_crt_files
+fi
 
 log "[setup] Lean environment is ready"
 log "[setup] lake version: $(lake --version)"
@@ -398,13 +424,6 @@ if [ "${QUIET}" -eq 0 ]; then
   echo "  source \"${ELAN_ENV_FILE}\""
   echo "  lake build"
 fi
-
-BUILD_REQUESTED=0
-for arg in "$@"; do
-  case "${arg}" in
-    --build) BUILD_REQUESTED=1 ;;
-  esac
-done
 
 if [ "${BUILD_REQUESTED}" -eq 1 ]; then
   log "[setup] running lake build"
