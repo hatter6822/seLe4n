@@ -64,7 +64,7 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 |----------------|------|--------|
 | Object store | Array indexed by ID | `HashMap ObjId KernelObject` |
 | CNode slots | Array indexed by slot | `HashMap Slot Capability` |
-| VSpace mappings | Page table tree | `HashMap VAddr PAddr` |
+| VSpace mappings | Page table tree | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement |
 | Run queue | Linked list | `HashMap Priority (List ThreadId)` + `HashSet ThreadId` |
 | CDT children | Linked list | `HashMap CdtNodeId (List CdtNodeId)` |
 

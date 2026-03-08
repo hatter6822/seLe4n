@@ -160,7 +160,7 @@ Authoritative detail:
 
 ### 5.4 Completed — VSpace Optimization
 
-- **WS-G6:** ~~VSpace mapping HashMap~~ **COMPLETED** — `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` replacing `List (VAddr × PAddr)`; `lookup`/`mapPage`/`unmapPage` all O(1) amortized; universal `noVirtualOverlap_trivial` theorem proves the property for all VSpaceRoots (HashMap key uniqueness); round-trip theorems re-proved with HashMap bridge lemmas; manual `BEq VSpaceRoot` instance; `boundedAddressTranslation` reformulated for HashMap; `hashMapVSpaceBackend` replaces `listVSpaceBackend`; 7 files modified; closes F-P05 (v0.12.11)
+- **WS-G6:** ~~VSpace mapping HashMap~~ **COMPLETED** — `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` replacing `List (VAddr × PAddr)` (enriched to `Std.HashMap VAddr (PAddr × PagePermissions)` by WS-H11); `lookup`/`mapPage`/`unmapPage` all O(1) amortized; universal `noVirtualOverlap_trivial` theorem proves the property for all VSpaceRoots (HashMap key uniqueness); round-trip theorems re-proved with HashMap bridge lemmas; manual `BEq VSpaceRoot` instance; `boundedAddressTranslation` reformulated for HashMap; `hashMapVSpaceBackend` replaces `listVSpaceBackend`; 7 files modified; closes F-P05 (v0.12.11)
 
 ### 5.5 Completed — IPC Queue & Notification Optimization
 
@@ -199,7 +199,19 @@ authorized replier via reply-target scoping.
 - **Part B (M-02 MEDIUM):** `endpointReply`/`endpointReplyRecv` validate `expectedReplier` field — only the designated receiver can complete the reply, preventing confused-deputy attacks.
 - **Part C (Invariant maintenance):** `ipcSchedulerContractPredicates` expanded from 3 to 5 conjuncts (added `blockedOnCallNotRunnable`, `blockedOnReplyNotRunnable`); all 62+ IPC invariant preservation theorems re-proved with zero sorry/axiom; 5 H1-series trace anchors added.
 
-### 5.10 Prior Portfolio: WS-F (completed, v0.12.2)
+### 5.10 WS-H11: VSpace & Architecture Enrichment (completed, v0.13.7)
+
+WS-H11 enriches the VSpace subsystem with per-page permissions, W^X enforcement,
+bounded address translation checks, and an abstract TLB maintenance model.
+
+- **Part A (H-02/A-32):** `PagePermissions` structure with `read`/`write`/`execute`/`user`/`cacheable` fields; `VSpaceRoot.mappings` enriched from `HashMap VAddr PAddr` to `HashMap VAddr (PAddr × PagePermissions)`; `vspaceMapPage` enforces W^X at insertion (returns `policyDenied` on violation); `vspaceLookupFull` returns `(PAddr × PagePermissions)`; `VSpaceBackend` typeclass enriched with permissions; all round-trip and preservation theorems re-proved.
+- **Part B (A-05/M-12/M-14):** `MemoryRegion.wellFormed` validates `endAddr ≤ 2^physicalAddressWidth`; `MachineConfig.wellFormed` extended with per-region overflow check; `boundedAddressTranslation` integrated into `vspaceInvariantBundle`.
+- **Part C (A-12):** Global ASID uniqueness via `vspaceAsidRootsUnique` and `asidTableConsistent` (already in bundle since WS-G3); preservation proven for all VSpace operations.
+- **Part D (H-10):** Abstract TLB model — `TlbEntry`/`TlbState` structures; `adapterFlushTlb` (full flush) and `adapterFlushTlbByAsid` (per-ASID flush); `tlbConsistent` invariant; flush-restoration and composition theorems.
+
+`vspaceInvariantBundle` now contains 5 conjuncts: `vspaceAsidRootsUnique`, `vspaceRootNonOverlap`, `asidTableConsistent`, `wxExclusiveInvariant`, `boundedAddressTranslation`.
+
+### 5.11 Prior Portfolio: WS-F (completed, v0.12.2)
 
 The WS-F portfolio addressed findings from two independent v0.12.2 codebase audits.
 Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
@@ -210,7 +222,7 @@ Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 - **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
 - **WS-F5–F8:** Medium/Low priority — immediate next steps (see below)
 
-### 5.11 Next Steps: Remaining WS-F Workstreams (F5–F8)
+### 5.12 Next Steps: Remaining WS-F Workstreams (F5–F8)
 
 The remaining WS-F workstreams address medium/low-priority findings:
 
@@ -251,7 +263,7 @@ organizational foundation for hardware binding:
 
 - `PlatformBinding` typeclass (`SeLe4n/Platform/Contract.lean`)
 - `MachineConfig` and `MemoryRegion` types (`SeLe4n/Machine.lean`)
-- `VSpaceBackend` abstraction with `hashMapVSpaceBackend` instance (WS-G6)
+- `VSpaceBackend` abstraction with permissions-enriched `hashMapVSpaceBackend` instance (WS-G6/WS-H11)
 - `ExtendedBootBoundaryContract` with platform boot fields
 - Simulation platform (`Platform/Sim/`) for testing
 - RPi5 stubs (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,

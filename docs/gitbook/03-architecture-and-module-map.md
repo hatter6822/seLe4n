@@ -53,7 +53,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - TCB structure + IPC state + intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`),
   - endpoint protocol fields,
   - CNode `Std.HashMap Slot Capability` slot store and local revoke helper (WS-G5),
-  - VSpaceRoot `Std.HashMap VAddr PAddr` mapping store with O(1) lookup/map/unmap (WS-G6),
+  - VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)` mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
   - `KernelObject` discriminated union.
 
 - `SeLe4n/Model/State.lean`
@@ -128,9 +128,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `VSpaceBackend` typeclass abstracting page map/unmap/lookup with round-trip obligations,
   - `hashMapVSpaceBackend` instance: the current `HashMap`-backed `VSpaceRoot` satisfying the interface.
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
-  - VSpace invariant bundle (3-conjunct: `vspaceAsidRootsUnique`, `vspaceRootNonOverlap`, `asidTableConsistent`),
+  - VSpace invariant bundle (5-conjunct: `vspaceAsidRootsUnique`, `vspaceRootNonOverlap`, `asidTableConsistent`, `wxExclusiveInvariant`, `boundedAddressTranslation`),
     success-path and error-path preservation theorems,
     round-trip correctness theorems (`vspaceLookup_after_map`, etc.).
+- `SeLe4n/Kernel/Architecture/TlbModel.lean`
+  - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`),
+    `tlbConsistent` invariant with flush-restoration theorems.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

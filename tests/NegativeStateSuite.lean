@@ -365,7 +365,7 @@ private def runNegativeChecks : IO Unit := do
 
   -- F-03 fix: VSpace map test — verify mapping was actually created via subsequent lookup
   let (_, stMapped) ← expectOkState "vspace map initial"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary baseState)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) baseState)
 
   -- Verify the mapping was actually created by looking it up
   match SeLe4n.Kernel.Architecture.vspaceLookup asidPrimary vaddrPrimary stMapped with
@@ -378,7 +378,7 @@ private def runNegativeChecks : IO Unit := do
       throw <| IO.userError s!"vspace lookup after map failed: {reprStr err} — mapping was not created"
 
   expectError "vspace duplicate map conflict"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
   let (_, stAwait) ← expectOkState "await receive handshake seed"
@@ -1018,10 +1018,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := 77
-      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 4096 8192).insert 12288 16384 }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert 4096 (8192, default)).insert 12288 (16384, default) }
   let vr2 : VSpaceRoot :=
     { asid := 77
-      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 12288 16384).insert 4096 8192 }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert 12288 (16384, default)).insert 4096 (8192, default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else

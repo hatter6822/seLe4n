@@ -241,12 +241,14 @@ VSpace invariant bundle preservation is now proven for both success and error pa
 
 Data structure (WS-G6 / F-P05):
 
-- `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` — O(1) amortized lookup/insert/erase replacing O(m) list scan. HashMap key uniqueness makes `noVirtualOverlap` trivially true via the universal `noVirtualOverlap_trivial` theorem (subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`, `unmapPage_noVirtualOverlap`). `BEq VSpaceRoot` uses size + fold containment (order-independent HashMap equality). `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
+- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). HashMap key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent HashMap equality). `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
 
-VSpace invariant bundle structure (3-conjunct, WS-G3):
+VSpace invariant bundle structure (5-conjunct, WS-G3/WS-H11):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID
 - `vspaceRootNonOverlap` — VSpaceRoot mapping ranges do not overlap (trivially true with HashMap, WS-G6)
 - `asidTableConsistent` — bidirectional soundness + completeness between `asidTable` HashMap and VSpaceRoot objects
+- `wxExclusiveInvariant` — no mapping is both writable and executable (W^X, WS-H11)
+- `boundedAddressTranslation` — all translated physical addresses are within `[0, bound)` (WS-H11)
 
 Supporting infrastructure in `VSpace.lean`:
 - `resolveAsidRoot_some_implies_obj` — extracts asidTable + object-store facts from successful ASID resolution (WS-G3: O(1) HashMap lookup)

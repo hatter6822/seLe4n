@@ -13,6 +13,8 @@ ARCH-04   | medium   | adapter read denied branch: SeLe4n.Model.KernelError.notI
 ARCH-05   | high     | adapter read success path byte: 0
 VSPACE-01 | high     | vspace lookup mapped paddr: 8192
 VSPACE-02 | high     | vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
+VSPACE-03 | critical | vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
+VSPACE-04 | high     | vspace lookupFull paddr: 8192, read=true, write=false, exec=false
 ARCH-06   | high     | adapter register write success path value: 99
 ARCH-07   | medium   | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
 SVC-01    | critical | service start api status: some (SeLe4n.Model.ServiceStatus.running)

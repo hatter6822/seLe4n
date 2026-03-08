@@ -47,8 +47,12 @@ provides the organizational infrastructure for hardware binding:
   declared register width, address width, page size, ASID limits, and physical
   memory map with RAM/device/reserved regions.
 - **`VSpaceBackend` class** (`SeLe4n/Kernel/Architecture/VSpaceBackend.lean`) —
-  abstract page map/unmap/lookup with round-trip correctness obligations.
-  The `VSpaceRoot` satisfies this via `hashMapVSpaceBackend` (WS-G6).
+  abstract page map/unmap/lookup with round-trip correctness obligations and
+  per-page permissions support (WS-H11).
+  The `VSpaceRoot` satisfies this via `hashMapVSpaceBackend` (WS-G6/WS-H11).
+- **TLB model** (`SeLe4n/Kernel/Architecture/TlbModel.lean`) —
+  abstract `TlbState` with `adapterFlushTlb`/`adapterFlushTlbByAsid` operations
+  and `tlbConsistent` invariant (WS-H11). Ready for ARM ISB/DSB barrier binding.
 - **`ExtendedBootBoundaryContract`** — adds entry exception level, MMU state,
   device tree location, entry point, and stack pointer to the base boot contract.
 - **Simulation platform** (`Platform/Sim/`) — `SimPlatform` with permissive
@@ -61,7 +65,7 @@ provides the organizational infrastructure for hardware binding:
 **Remaining H3 work** (critical proof gaps are now closed by WS-F1..F4):
 
 1. Populate RPi5 runtime contract with hardware-validated predicates.
-2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.
+2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance (with `PagePermissions` support from WS-H11).
 3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
 4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
 5. Define boot sequence as a verified initial state construction.

@@ -38,7 +38,7 @@ The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium |
+| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |

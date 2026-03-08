@@ -169,7 +169,7 @@ aggregates all subsystem invariants into a single proof obligation.
 | `SeLe4n/Kernel/IPC/Invariant.lean` | 95+ IPC invariant preservation theorems (largest proof module, ~6,600 LoC) |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
 | `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
-| `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr PAddr` map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
+| `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr (PAddr × PagePermissions)` map/unmap/lookup with W^X enforcement, `VSpaceBackend` class, TLB model, adapter contracts, boundary assumptions |
 | `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), BIBA lattice alternatives, `DeclassificationPolicy`, 69 NI theorems covering >80% of kernel operations, 31-constructor `NonInterferenceStep` |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface and `apiInvariantBundle` alias |
 | `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
@@ -208,7 +208,7 @@ All theorem/invariant declarations were re-verified with zero sorry/axiom after 
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph, DFS cycle detection, and deterministic partial-failure semantics |
 | **Capability derivation** | CDT with linked-list children | `childMap : HashMap CdtNodeId (List CdtNodeId)` for O(1) children lookup; `descendantsOf` in O(n+e) |
 | **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking, domain-aware EDF partitioning |
-| **VSpace** | Hardware page tables | `HashMap VAddr PAddr` with `VSpaceBackend` typeclass for platform-agnostic lookup |
+| **VSpace** | Hardware page tables | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement, `VSpaceBackend` typeclass, abstract TLB model |
 | **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (Operations/Invariant split) |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
 
@@ -224,7 +224,7 @@ the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium |
+| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |

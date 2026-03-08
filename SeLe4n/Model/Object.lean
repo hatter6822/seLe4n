@@ -434,55 +434,93 @@ theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
 
 end UntypedObject
 
+/-- WS-H11/H-02: Per-page permission attributes modeled after ARM64 page table descriptors.
+
+Each mapping carries read/write/execute/user-access and cacheability flags. The
+kernel enforces W^X (write XOR execute) as an invariant — no mapping may have both
+`write` and `execute` set simultaneously. -/
+structure PagePermissions where
+  read : Bool := true
+  write : Bool := false
+  execute : Bool := false
+  user : Bool := false
+  cacheable : Bool := true
+  deriving Repr, DecidableEq, Inhabited
+
+instance : BEq PagePermissions where
+  beq a b := a.read == b.read && a.write == b.write && a.execute == b.execute &&
+              a.user == b.user && a.cacheable == b.cacheable
+
+instance : Hashable PagePermissions where
+  hash p := mixHash (hash p.read) (mixHash (hash p.write) (mixHash (hash p.execute)
+            (mixHash (hash p.user) (hash p.cacheable))))
+
+/-- WS-H11/H-02: W^X policy — a page permission set must not have both write and execute. -/
+def PagePermissions.wxCompliant (p : PagePermissions) : Bool :=
+  !(p.write && p.execute)
+
+/-- WS-H11: Default permissions are W^X compliant (read-only, non-executable). -/
+theorem PagePermissions.default_wxCompliant : (default : PagePermissions).wxCompliant = true := by
+  rfl
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
 Hierarchical page-table levels are deferred behind this stable executable surface.
 
-`mappings` is backed by `Std.HashMap VAddr PAddr` for O(1) amortized lookup,
-insert, and erase — replacing the O(m) list-based representation. HashMap key
-uniqueness is structural, making `noVirtualOverlap` trivially true. -/
+`mappings` is backed by `Std.HashMap VAddr (PAddr × PagePermissions)` for O(1)
+amortized lookup, insert, and erase. HashMap key uniqueness is structural,
+making `noVirtualOverlap` trivially true.
+
+WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheable). -/
 structure VSpaceRoot where
   asid : SeLe4n.ASID
-  mappings : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr
+  mappings : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
   deriving Repr
 
 namespace VSpaceRoot
 
-/-- WS-G6/F-P05: O(1) amortized page lookup via `HashMap[vaddr]?`. -/
-def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
+/-- WS-G6/F-P05: O(1) amortized page lookup via `HashMap[vaddr]?`.
+WS-H11: Returns `(PAddr × PagePermissions)` pair. -/
+def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option (SeLe4n.PAddr × PagePermissions) :=
   root.mappings[vaddr]?
 
+/-- WS-H11: O(1) amortized physical-address-only lookup for backward compatibility. -/
+def lookupAddr (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
+  (root.lookup vaddr).map Prod.fst
+
 /-- WS-G6/F-P05: O(1) amortized page mapping via `HashMap.insert`.
-Returns `none` if a mapping for `vaddr` already exists (conflict). -/
-def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Option VSpaceRoot :=
-  match lookup root vaddr with
+Returns `none` if a mapping for `vaddr` already exists (conflict).
+WS-H11: Accepts permissions alongside the physical address. -/
+def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := default) : Option VSpaceRoot :=
+  match root.mappings[vaddr]? with
   | some _ => none
-  | none => some { root with mappings := root.mappings.insert vaddr paddr }
+  | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
 
 /-- WS-G6/F-P05: O(1) amortized page unmapping via `HashMap.erase`.
 Returns `none` if no mapping exists for `vaddr`. -/
 def unmapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option VSpaceRoot :=
-  match lookup root vaddr with
+  match root.mappings[vaddr]? with
   | none => none
   | some _ => some { root with mappings := root.mappings.erase vaddr }
 
 /-- WS-G6: No-virtual-overlap property. With HashMap-backed mappings, this is
-trivially true by key uniqueness: each VAddr maps to at most one PAddr.
+trivially true by key uniqueness: each VAddr maps to at most one entry.
 Uses `lookup` (which delegates to `HashMap[vaddr]?`) for type resolution. -/
 def noVirtualOverlap (root : VSpaceRoot) : Prop :=
-  ∀ v p₁ p₂,
-    root.lookup v = some p₁ →
-    root.lookup v = some p₂ →
-    p₁ = p₂
+  ∀ v e₁ e₂,
+    root.lookup v = some e₁ →
+    root.lookup v = some e₂ →
+    e₁ = e₂
 
 /-- WS-G6: With HashMap-backed mappings, `noVirtualOverlap` is trivially true
 for *every* `VSpaceRoot` — key uniqueness in the HashMap guarantees that a
-single `lookup` can return at most one value, so `p₁ = p₂` follows by
+single `lookup` can return at most one value, so `e₁ = e₂` follows by
 injection. This subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`,
 and `unmapPage_noVirtualOverlap`, which are retained for API compatibility. -/
 theorem noVirtualOverlap_trivial (root : VSpaceRoot) : noVirtualOverlap root := by
-  intro v p₁ p₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
+  intro v e₁ e₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
 
 /-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap.
 Follows directly from `noVirtualOverlap_trivial` but retained for API compatibility. -/
@@ -497,37 +535,50 @@ theorem lookup_unmapPage_eq_none
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.lookup vaddr = none := by
   unfold unmapPage at hUnmap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | none => simp [hLookup] at hUnmap
   | some p =>
       simp [hLookup] at hUnmap
       cases hUnmap
       simp [lookup]
 
-/-- WS-G6: After mapping vaddr→paddr, lookup returns paddr. Maps to `HashMap.getElem?_insert`. -/
+/-- WS-G6/WS-H11: After mapping vaddr→paddr with perms, lookup returns the entry.
+Maps to `HashMap.getElem?_insert`. -/
 theorem lookup_mapPage_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
-    (hMap : root.mapPage vaddr paddr = some root') :
-    root'.lookup vaddr = some paddr := by
+    (perms : PagePermissions)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    root'.lookup vaddr = some (paddr, perms) := by
   unfold mapPage at hMap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | some p => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap
       cases hMap
       simp [lookup]
 
+/-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr. -/
+theorem lookupAddr_mapPage_eq
+    (root root' : VSpaceRoot)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    root'.lookupAddr vaddr = some paddr := by
+  simp [lookupAddr, lookup_mapPage_eq root root' vaddr paddr perms hMap]
+
 /-- F-08 helper: `mapPage` preserves the VSpace root ASID. -/
 theorem mapPage_asid_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
-    (hMap : root.mapPage vaddr paddr = some root') :
+    (perms : PagePermissions := default)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.asid = root.asid := by
   unfold mapPage at hMap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | some _ => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap; cases hMap; rfl
@@ -539,7 +590,7 @@ theorem unmapPage_asid_eq
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.asid = root.asid := by
   unfold unmapPage at hUnmap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | none => simp [hLookup] at hUnmap
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap; rfl
@@ -548,7 +599,7 @@ theorem unmapPage_asid_eq
 theorem lookup_eq_none_iff
     (root : VSpaceRoot)
     (vaddr : SeLe4n.VAddr) :
-    lookup root vaddr = none ↔ vaddr ∉ root.mappings := by
+    root.lookup vaddr = none ↔ vaddr ∉ root.mappings := by
   simp [lookup]
 
 /-- WS-G6: A successful `mapPage` preserves the no-virtual-overlap invariant.
@@ -557,11 +608,12 @@ theorem mapPage_noVirtualOverlap
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
     (_hOverlap : noVirtualOverlap root)
-    (hMap : root.mapPage vaddr paddr = some root') :
+    (hMap : root.mapPage vaddr paddr perms = some root') :
     noVirtualOverlap root' := by
   unfold mapPage at hMap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | some _ => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap; cases hMap
@@ -576,7 +628,7 @@ theorem unmapPage_noVirtualOverlap
     (hUnmap : root.unmapPage vaddr = some root') :
     noVirtualOverlap root' := by
   unfold unmapPage at hUnmap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | none => simp [hLookup] at hUnmap
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap
@@ -588,11 +640,12 @@ theorem lookup_mapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
     (hNe : vaddr ≠ vaddr')
-    (hMap : root.mapPage vaddr paddr = some root') :
+    (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold mapPage at hMap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | some _ => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap; cases hMap
@@ -610,7 +663,7 @@ theorem lookup_unmapPage_ne
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold unmapPage at hUnmap
-  cases hLookup : lookup root vaddr with
+  cases hLookup : root.mappings[vaddr]? with
   | none => simp [hLookup] at hUnmap
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap
@@ -621,9 +674,10 @@ theorem lookup_unmapPage_ne
 
 end VSpaceRoot
 
-/-- WS-G6: `BEq` instance for `VSpaceRoot` using entry-wise comparison on the
+/-- WS-G6/WS-H7: `BEq` instance for `VSpaceRoot` using entry-wise comparison on the
 HashMap-backed mappings. Two VSpaceRoots are equal iff their ASID and all
-mapping entries agree (same size + every key maps to the same value). -/
+mapping entries agree (same size + every key maps to the same value).
+WS-H11: Updated for enriched `(PAddr × PagePermissions)` value type. -/
 instance : BEq VSpaceRoot where
   beq a b :=
     a.asid == b.asid &&
