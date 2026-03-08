@@ -1,3 +1,38 @@
+## [0.13.6] - 2026-03-08
+
+### WS-H10: Security Model Foundations
+
+- **C-05/A-38 (CRITICAL): MachineState projection in IF model.** Extended
+  `ObservableState` with `machineRegs : Option RegisterFile` — the machine
+  register file is projected through current-thread observability gating
+  (visible only when the executing thread is observable). Machine timer is
+  deliberately excluded to prevent covert timing channels. Machine memory
+  projection deferred to WS-H11 (VSpace domain ownership model required).
+  All 863 proved declarations updated — zero sorry/axiom.
+- **A-34 (CRITICAL): Security lattice resolution.** Added formal threat model
+  justification documenting the legacy integrity model as a valid "write-up"
+  policy. Introduced `bibaIntegrityFlowsTo`, `bibaSecurityFlowsTo`, and
+  `bibaPolicy` as standard BIBA alternatives with reflexivity/transitivity
+  proofs. Added `securityLattice_reflexive` and `securityLattice_transitive`
+  alias theorems confirming the legacy lattice forms a valid pre-order.
+- **A-39 (MEDIUM): Declassification model.** Added `DeclassificationPolicy`
+  structure with `canDeclassify` predicate, `DeclassificationPolicy.none`
+  (strictest policy), and `isDeclassificationAuthorized` (base policy denial +
+  declass authorization). Added `declassifyStore` operation in Enforcement.lean
+  with 5 theorems: authorization equivalence, normal-flow rejection,
+  declass-denied rejection, state preservation on denial, and enforcement
+  soundness.
+- **M-16 (MEDIUM): Endpoint flow policy well-formedness.** Added
+  `endpointFlowPolicyWellFormed` predicate requiring both global and per-
+  endpoint override policies to satisfy reflexivity + transitivity. Added
+  `endpointFlowPolicyWellFormed_no_overrides`, `endpointFlowCheck_reflexive`,
+  and `endpointFlowCheck_transitive` theorems.
+- **Version bump:** `lakefile.toml` version updated to 0.13.6.
+- **Documentation sync:** Updated README.md, SELE4N_SPEC.md, DEVELOPMENT.md,
+  CLAIM_EVIDENCE_INDEX.md, and GitBook chapters with current metrics and
+  WS-H10 completion.
+- **863 proved declarations. Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
+
 ## [0.13.5] - 2026-03-08
 
 ### Comprehensive Audit Remediation & WS-H Completion

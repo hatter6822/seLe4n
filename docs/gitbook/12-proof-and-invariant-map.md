@@ -519,6 +519,20 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `projectDomainTimeRemaining`, `projectDomainSchedule`, `projectDomainScheduleIndex` projection helpers,
 - All 19 NI theorems updated to handle new fields.
 
+**WS-H10/C-05/A-38 — MachineState projection & security lattice:**
+
+- `ObservableState` extended with `machineRegs : Option RegisterFile` (domain-gated via current thread observability),
+- Machine timer deliberately excluded (covert timing channel prevention),
+- `projectMachineRegs` projection helper with observability gating,
+- `bibaIntegrityFlowsTo` / `bibaSecurityFlowsTo` standard BIBA flow checks,
+- `bibaPolicy` generic `DomainFlowPolicy` with standard BIBA ordering,
+- `bibaPolicy_reflexive`, `bibaPolicy_transitive`, `bibaPolicy_wellFormed`,
+- `securityLattice_reflexive`, `securityLattice_transitive` — legacy lattice pre-order confirmation,
+- `DeclassificationPolicy` with `isDeclassificationAuthorized`, `isDeclassificationAuthorized_not_reflexive`,
+- `declassifyStore` operation with 5 theorems (authorization, rejection, state preservation, enforcement soundness),
+- `endpointFlowPolicyWellFormed` predicate with `endpointFlowCheck_reflexive`, `endpointFlowCheck_transitive`,
+- All NI theorems updated for `machineRegs` field.
+
 ## 12. Untyped memory invariants (WS-F2)
 
 Component level:

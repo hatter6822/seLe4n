@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 28,713 lines of production Lean across 40 modules, 2,063 lines across 3 Lean test suites,
-840 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
+Current state: 29,249 lines of production Lean across 40 modules, 2,063 lines across 3 Lean test suites,
+863 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
 
 ## 3. Architectural improvements over seL4
 
@@ -45,6 +45,7 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H10** (v0.13.6) | Security model foundations: MachineState in ObservableState, BIBA lattice alternatives, declassification model, endpoint flow policy well-formedness. Closes C-05/A-38, A-34, A-39, M-16 | Completed |
 | **WS-H7/H8/H9 gaps closed** (v0.13.5) | Comprehensive audit: BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, NonInterferenceStep extended to 31 constructors | Completed |
 | **WS-H9** (v0.13.4) | Non-interference coverage extension: 27 new NI theorems, NonInterferenceStep 28 constructors, >80% kernel operation coverage | Completed |
 | **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata, NI bridge theorems. Closes A-35/H-07, A-36/A-37/H-11 | Completed |

@@ -373,6 +373,16 @@ theorem storeCapabilityRef_preserves_objectIndex
   unfold storeCapabilityRef at hStep
   simp at hStep; cases hStep; rfl
 
+/-- storeCapabilityRef preserves machine state. -/
+theorem storeCapabilityRef_preserves_machine
+    (st st' : SystemState)
+    (ref : SlotRef)
+    (target : Option CapTarget)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold storeCapabilityRef at hStep
+  simp at hStep; cases hStep; rfl
+
 theorem clearCapabilityRefsState_preserves_objects
     (refs : List SlotRef)
     (st : SystemState) :
@@ -397,6 +407,17 @@ theorem clearCapabilityRefsState_preserves_scheduler
     (refs : List SlotRef)
     (st : SystemState) :
     (clearCapabilityRefsState refs st).scheduler = st.scheduler := by
+  induction refs generalizing st with
+  | nil => rfl
+  | cons ref refs ih =>
+      simp only [clearCapabilityRefsState]
+      exact ih _
+
+/-- WS-H10: clearCapabilityRefsState preserves machine state. -/
+theorem clearCapabilityRefsState_preserves_machine
+    (refs : List SlotRef)
+    (st : SystemState) :
+    (clearCapabilityRefsState refs st).machine = st.machine := by
   induction refs generalizing st with
   | nil => rfl
   | cons ref refs ih =>

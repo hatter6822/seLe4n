@@ -27,7 +27,12 @@ to cover all security-relevant scheduler, interrupt, and identity fields.
 WS-H8/A-36/H-11: Extended with `domainTimeRemaining`, `domainSchedule`, and
 `domainScheduleIndex` to prevent timing-channel attacks via domain scheduling
 metadata. All three are visible under scheduling transparency (same rationale
-as `activeDomain`). -/
+as `activeDomain`).
+
+WS-H10/C-05/A-38: Extended with `machineRegs` (domain-gated register file
+projection). Machine timer is deliberately excluded — it is a kernel-internal
+monotonic counter; projecting it unconditionally would create a covert timing
+channel. Memory projection deferred to WS-H11 (VSpace domain ownership). -/
 structure ObservableState where
   objects : SeLe4n.ObjId → Option KernelObject
   runnable : List SeLe4n.ThreadId
@@ -57,6 +62,14 @@ structure ObservableState where
   /-- WS-H8/A-36/H-11: Current index into domain schedule. Visible under
       scheduling transparency. -/
   domainScheduleIndex : Nat
+  /-- WS-H10/C-05/A-38: Machine register file, filtered by current thread
+      observability. The register file represents the currently-executing
+      thread's architectural context. Visible only when the current thread
+      is observable to the observer; `none` otherwise.
+      Note: Memory projection (`Memory = PAddr → UInt8`) is deferred to
+      WS-H11 (VSpace domain ownership model required for meaningful per-domain
+      memory partitioning in the abstract model). -/
+  machineRegs : Option RegisterFile
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -190,13 +203,29 @@ def projectDomainScheduleIndex (_ctx : LabelingContext) (_observer : IfObserver)
     Nat :=
   st.scheduler.domainScheduleIndex
 
+/-- WS-H10/C-05: Project machine register file, filtered by current thread
+observability. The register file is the architectural context of the currently-
+executing thread. Only visible when the current thread is observable. -/
+def projectMachineRegs (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    Option RegisterFile :=
+  match st.scheduler.current with
+  | some tid => if threadObservable ctx observer tid then some st.machine.regs else none
+  | none => none
+
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
 WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
 projections for complete security-relevant state coverage.
 
 WS-H8/A-36/H-11: Extended with domainTimeRemaining, domainSchedule, and
-domainScheduleIndex projections for timing-channel coverage. -/
+domainScheduleIndex projections for timing-channel coverage.
+
+WS-H10/C-05/A-38: Extended with machineRegs projection for MachineState
+coverage. Machine timer is excluded from ObservableState because it is a
+kernel-internal monotonic counter — projecting it unconditionally would
+create a covert timing channel (observers could infer other domains'
+execution by watching timer increments). Memory projection deferred to
+WS-H11 (VSpace domain ownership model required). -/
 def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   {
     objects := projectObjects ctx observer st
@@ -209,6 +238,7 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     domainTimeRemaining := projectDomainTimeRemaining ctx observer st
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
+    machineRegs := projectMachineRegs ctx observer st
   }
 
 -- ============================================================================
@@ -344,6 +374,7 @@ def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : Syste
     domainTimeRemaining := projectDomainTimeRemaining ctx observer st
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
+    machineRegs := projectMachineRegs ctx observer st
   }
 
 /-- WS-G9: `projectObjectsFast` with the precomputed set agrees with `projectObjects`

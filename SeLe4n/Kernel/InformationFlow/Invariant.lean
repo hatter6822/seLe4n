@@ -193,8 +193,15 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
     simp [projectDomainScheduleIndex, hSched₁, hSched₂]
     exact congrArg ObservableState.domainScheduleIndex hLow
+  have hMR : projectMachineRegs ctx observer s₁' = projectMachineRegs ctx observer s₂' := by
+    have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
+    have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
+    have hM₁ := storeObject_machine_eq s₁ s₁' targetId obj₁ hStore₁
+    have hM₂ := storeObject_machine_eq s₂ s₂' targetId obj₂ hStore₂
+    simp [projectMachineRegs, hSched₁, hSched₂, hM₁, hM₂]
+    exact congrArg ObservableState.machineRegs hLow
   unfold lowEquivalent
-  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI]
+  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR]
 
 -- ============================================================================
 -- WS-E5: clearCapabilityRefsState preserves projection (used by composed proofs)
@@ -217,6 +224,7 @@ private theorem clearCapabilityRefsState_preserves_projectState
   · simp [projectDomainTimeRemaining, clearCapabilityRefsState_preserves_scheduler]
   · simp [projectDomainSchedule, clearCapabilityRefsState_preserves_scheduler]
   · simp [projectDomainScheduleIndex, clearCapabilityRefsState_preserves_scheduler]
+  · simp [projectMachineRegs, clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_machine]
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -285,7 +293,16 @@ private theorem removeRunnable_preserves_projection
       projectDomainSchedule ctx observer st := rfl
   have hDSI : projectDomainScheduleIndex ctx observer (removeRunnable st tid) =
       projectDomainScheduleIndex ctx observer st := rfl
-  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI]
+  have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
+      projectMachineRegs ctx observer st := by
+    simp only [projectMachineRegs, removeRunnable]
+    cases hC : st.scheduler.current with
+    | none => simp
+    | some x =>
+      by_cases hEq : some x = some tid
+      · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
+      · rw [if_neg hEq]
+  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 private theorem ensureRunnable_preserves_projection
@@ -311,8 +328,7 @@ private theorem ensureRunnable_preserves_projection
               { st with scheduler := { st.scheduler with
                   runQueue := st.scheduler.runQueue.insert tid tcb.priority } } =
               projectState ctx observer st
-          unfold projectState
-          congr 1
+          simp only [projectState]; congr 1
           · -- projectRunnable
             simp only [projectRunnable, SchedulerState.runnable]
             exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
@@ -363,6 +379,9 @@ private theorem storeTcbIpcState_preserves_projection
         simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · -- WS-H8: domainScheduleIndex
         simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · -- WS-H10: machineRegs
+        simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
+              storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
 
 /-- WS-H9: storeTcbPendingMessage at a non-observable object preserves projection. -/
 private theorem storeTcbPendingMessage_preserves_projection
@@ -397,6 +416,8 @@ private theorem storeTcbPendingMessage_preserves_projection
       · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
+              storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
 
 /-- WS-H9: storeTcbIpcStateAndMessage at a non-observable object preserves projection. -/
 private theorem storeTcbIpcStateAndMessage_preserves_projection
@@ -433,6 +454,8 @@ private theorem storeTcbIpcStateAndMessage_preserves_projection
       · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
+              storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
 
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 private theorem storeObject_preserves_projection
@@ -459,6 +482,8 @@ private theorem storeObject_preserves_projection
   · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid obj hStore]
+  · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid obj hStore,
+          storeObject_machine_eq st st' oid obj hStore]
 
 /-- WS-E3/H-09: endpointSend at non-observable entities preserves projection (single execution). -/
 private theorem endpointSend_projection_preserved
@@ -652,6 +677,11 @@ theorem cspaceMint_preserves_lowEquivalent
         simpa [projectDomainSchedule, hSched₁, hSched₂] using congrArg ObservableState.domainSchedule hLow
       · -- domainScheduleIndex
         simpa [projectDomainScheduleIndex, hSched₁, hSched₂] using congrArg ObservableState.domainScheduleIndex hLow
+      · -- machineRegs
+        simp [projectMachineRegs, hSched₁, hSched₂,
+          cspaceInsertSlot_preserves_machine s₁ s₁' dst c₁ hInsert₁,
+          cspaceInsertSlot_preserves_machine s₂ s₂' dst c₂ hInsert₂]
+        exact congrArg ObservableState.machineRegs hLow
 
 -- ============================================================================
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
@@ -756,6 +786,11 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 simp only [projectDomainScheduleIndex]
                 rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainScheduleIndex hLow
+              · -- machineRegs
+                simp only [projectMachineRegs]
+                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler,
+                    clearCapabilityRefsState_preserves_machine, clearCapabilityRefsState_preserves_machine]
+                exact congrArg ObservableState.machineRegs hLow
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)
@@ -985,6 +1020,11 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     simpa [projectDomainSchedule, hSched₁, hSched₂] using congrArg ObservableState.domainSchedule hLow
   · -- domainScheduleIndex
     simpa [projectDomainScheduleIndex, hSched₁, hSched₂] using congrArg ObservableState.domainScheduleIndex hLow
+  · -- machineRegs
+    have hM₁ := cspaceInsertSlot_preserves_machine s₁ s₁' dst cap hStep₁
+    have hM₂ := cspaceInsertSlot_preserves_machine s₂ s₂' dst cap hStep₂
+    simp [projectMachineRegs, hSched₁, hSched₂, hM₁, hM₂]
+    exact congrArg ObservableState.machineRegs hLow
 
 /-! ### WS-F3: Capability CRUD operations — deferred proofs
 
@@ -1076,6 +1116,13 @@ theorem serviceStart_preserves_lowEquivalent
     have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
     have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
     simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
+  · -- machineRegs
+    have h₁ := serviceStart_preserves_machine s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStart_preserves_machine s₂ s₂' sid policy hStep₂
+    have hs₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have hs₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simp [projectMachineRegs, h₁, h₂, hs₁, hs₂]
+    exact congrArg ObservableState.machineRegs hLow
 
 /-- WS-F3: serviceStop at a non-observable service preserves low-equivalence. -/
 theorem serviceStop_preserves_lowEquivalent
@@ -1137,6 +1184,13 @@ theorem serviceStop_preserves_lowEquivalent
     have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
     have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
     simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
+  · -- machineRegs
+    have h₁ := serviceStop_preserves_machine s₁ s₁' sid policy hStep₁
+    have h₂ := serviceStop_preserves_machine s₂ s₂' sid policy hStep₂
+    have hs₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
+    have hs₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
+    simp [projectMachineRegs, h₁, h₂, hs₁, hs₂]
+    exact congrArg ObservableState.machineRegs hLow
 
 /-- WS-F3: serviceRestart at a non-observable service preserves low-equivalence. -/
 theorem serviceRestart_preserves_lowEquivalent
@@ -1383,6 +1437,18 @@ private theorem setCurrentThread_preserves_projection
       cases hTid : tid with
       | none => rfl
       | some t' => simp [hTidHigh t' hTid]
+  · -- machineRegs: both return none since non-observable
+    simp only [projectMachineRegs]
+    cases hCur : st.scheduler.current with
+    | none =>
+      cases hTid : tid with
+      | none => rfl
+      | some t => simp [hTidHigh t hTid]
+    | some t =>
+      have := hCurrentHigh t hCur; simp [this]
+      cases hTid : tid with
+      | none => rfl
+      | some t' => simp [hTidHigh t' hTid]
 
 /-- WS-H9: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread (read-only) >> setCurrentThread. Since chooseThread picks from
@@ -1471,6 +1537,7 @@ theorem switchDomain_preserves_lowEquivalent
         | exact congrArg ObservableState.services hLow
         | exact congrArg ObservableState.irqHandlers hLow
         | exact congrArg ObservableState.objectIndex hLow
+        | exact congrArg ObservableState.machineRegs hLow
         | rfl
 
 -- ============================================================================
@@ -1660,7 +1727,8 @@ private theorem cdt_only_preserves_projection
     (hScheduler : st'.scheduler = st.scheduler)
     (hServices : st'.services = st.services)
     (hIrq : st'.irqHandlers = st.irqHandlers)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hMachine : st'.machine = st.machine) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]; congr 1
   · funext oid; simp only [projectObjects, hObjects]
@@ -1673,6 +1741,7 @@ private theorem cdt_only_preserves_projection
   · simp [projectDomainTimeRemaining, hScheduler]
   · simp [projectDomainSchedule, hScheduler]
   · simp [projectDomainScheduleIndex, hScheduler]
+  · simp [projectMachineRegs, hScheduler, hMachine]
 
 /-- WS-H9: ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
 private theorem ensureCdtNodeForSlot_preserves_projection
@@ -1683,7 +1752,7 @@ private theorem ensureCdtNodeForSlot_preserves_projection
   unfold SystemState.ensureCdtNodeForSlot
   cases st.cdtSlotNode[ref]? with
   | some _ => rfl
-  | none => exact cdt_only_preserves_projection ctx observer st _ rfl rfl rfl rfl rfl
+  | none => exact cdt_only_preserves_projection ctx observer st _ rfl rfl rfl rfl rfl rfl
 
 /-- WS-H9: attachSlotToCdtNode preserves projection (modifies only CDT). -/
 private theorem attachSlotToCdtNode_preserves_projection
@@ -1692,7 +1761,7 @@ private theorem attachSlotToCdtNode_preserves_projection
     projectState ctx observer (SystemState.attachSlotToCdtNode st ref node) =
       projectState ctx observer st := by
   exact cdt_only_preserves_projection ctx observer st _
-    (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl rfl rfl
+    (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl rfl rfl rfl
 
 /-- WS-H9: cspaceInsertSlot at non-observable CNode preserves projection. -/
 private theorem cspaceInsertSlot_preserves_projection
@@ -1721,6 +1790,8 @@ private theorem cspaceInsertSlot_preserves_projection
   · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
+  · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep,
+      cspaceInsertSlot_preserves_machine st st' dst cap hStep]
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
@@ -2107,7 +2178,7 @@ private theorem timerTick_preserves_projection
   cases hCur : st.scheduler.current with
   | none =>
     simp [hCur] at hStep; subst hStep
-    simp only [projectState]; congr 1 <;> rfl
+    simp only [projectState]; congr 1
   | some tid =>
     simp only [hCur] at hStep
     have hTidHigh := hCurrentHigh tid hCur
@@ -2433,6 +2504,8 @@ theorem step_preserves_projection
       · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
+      · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert,
+              cspaceInsertSlot_preserves_machine st st' dst c hInsert]
   | cspaceRevoke addr hAddrH hOp =>
     unfold cspaceRevoke at hOp
     cases hL : cspaceLookupSlot addr st with
@@ -2489,6 +2562,8 @@ theorem step_preserves_projection
     · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
+    · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp,
+            cspaceInsertSlot_preserves_machine st st' dst cap hOp]
   | serviceStart sid policy hSH hOp =>
     simp only [projectState]; congr 1
     · funext oid; simp only [projectObjects]
@@ -2511,6 +2586,8 @@ theorem step_preserves_projection
     · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler st st' sid policy hOp]
     · simp [projectDomainSchedule, serviceStart_preserves_scheduler st st' sid policy hOp]
     · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler st st' sid policy hOp]
+    · simp [projectMachineRegs, serviceStart_preserves_scheduler st st' sid policy hOp,
+            serviceStart_preserves_machine st st' sid policy hOp]
   | serviceStop sid policy hSH hOp =>
     simp only [projectState]; congr 1
     · funext oid; simp only [projectObjects]
@@ -2533,6 +2610,8 @@ theorem step_preserves_projection
     · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st st' sid policy hOp]
     · simp [projectDomainSchedule, serviceStop_preserves_scheduler st st' sid policy hOp]
     · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st st' sid policy hOp]
+    · simp [projectMachineRegs, serviceStop_preserves_scheduler st st' sid policy hOp,
+            serviceStop_preserves_machine st st' sid policy hOp]
   | serviceRestart sid policyStop policyStart hSH hOp =>
     rcases serviceRestart_decompose st st' sid policyStop policyStart hOp with ⟨mid, hStop, hStart⟩
     have hMid : projectState ctx observer mid = projectState ctx observer st := by
@@ -2557,6 +2636,8 @@ theorem step_preserves_projection
       · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st mid sid policyStop hStop]
       · simp [projectDomainSchedule, serviceStop_preserves_scheduler st mid sid policyStop hStop]
       · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st mid sid policyStop hStop]
+      · simp [projectMachineRegs, serviceStop_preserves_scheduler st mid sid policyStop hStop,
+              serviceStop_preserves_machine st mid sid policyStop hStop]
     have hFinal : projectState ctx observer st' = projectState ctx observer mid := by
       simp only [projectState]; congr 1
       · funext oid; simp only [projectObjects]
@@ -2579,6 +2660,8 @@ theorem step_preserves_projection
       · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
       · simp [projectDomainSchedule, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
       · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
+      · simp [projectMachineRegs, serviceStart_preserves_scheduler mid st' sid policyStart hStart,
+              serviceStart_preserves_machine mid st' sid policyStart hStart]
     rw [hFinal, hMid]
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hOp
