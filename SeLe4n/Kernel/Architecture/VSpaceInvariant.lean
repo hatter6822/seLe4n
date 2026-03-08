@@ -294,9 +294,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                   exact hBoundInv _ root v p pm hObjRoot hMap
               · rw [hObjNe oid hEq] at hObjR
                 exact hBoundInv oid r v p pm hObjR hMap
-      · have hWxF : perms.wxCompliant = false := by cases perms.wxCompliant <;> simp_all
-        simp only [hWxF, Bool.not_false, ite_true] at hStep
-        exact nomatch hStep
+      · have hWxF : perms.wxCompliant = false := by
+          cases h : perms.wxCompliant <;> simp_all
+        simp [hWxF] at hStep
 
 /-- F-08/WS-G3/WS-H11: A successful `vspaceUnmapPage` preserves the VSpace invariant bundle.
 
@@ -557,5 +557,83 @@ theorem vspaceLookup_unmap_other
               VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hUnmapRoot]
           simp [vspaceLookup, hResolve', hResolve, hLookupNe, Except.map]
           cases root.lookupAddr vaddr' <;> rfl
+
+-- ============================================================================
+-- WS-H11/A-05: vspaceMapPageChecked preservation
+-- ============================================================================
+
+/-- WS-H11/A-05: `vspaceMapPageChecked` preserves the VSpace invariant bundle.
+    The bounds check is enforced at runtime, so no external `hBound` hypothesis is needed —
+    it is derived from the successful execution of the bounds guard. -/
+theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
+    (st st' : SystemState)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hInv : vspaceInvariantBundle st)
+    (hStep : vspaceMapPageChecked asid vaddr paddr perms st = .ok ((), st')) :
+    vspaceInvariantBundle st' := by
+  unfold vspaceMapPageChecked at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i hBoundNeg
+    have hBound : paddr.toNat < 2^52 := by
+      simp only [Bool.not_eq_true', decide_eq_false_iff_not] at hBoundNeg
+      unfold physicalAddressBound at hBoundNeg; omega
+    exact vspaceMapPage_success_preserves_vspaceInvariantBundle
+      st st' asid vaddr paddr perms hInv hBound hStep
+
+/-- WS-H11/A-05: `vspaceMapPageChecked` error on out-of-bounds preserves invariant trivially. -/
+theorem vspaceMapPageChecked_error_preserves_vspaceInvariantBundle
+    (st : SystemState)
+    (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (_hErr : vspaceMapPageChecked asid vaddr paddr perms st = .error .addressOutOfBounds) :
+    vspaceInvariantBundle st → vspaceInvariantBundle st := id
+
+-- ============================================================================
+-- WS-H11: vspaceLookupFull round-trip theorem
+-- ============================================================================
+
+/-- WS-H11: After a successful `vspaceMapPage`, `vspaceLookupFull` returns the full
+    `(paddr, perms)` entry. -/
+theorem vspaceLookupFull_after_map
+    (st st' : SystemState)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (_hInv : vspaceInvariantBundle st)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    vspaceLookupFull asid vaddr st' = .ok ((paddr, perms), st') := by
+  unfold vspaceMapPage at hStep
+  cases hResolve : resolveAsidRoot st asid with
+  | none => simp [hResolve] at hStep
+  | some pair =>
+      rcases pair with ⟨rootId, root⟩
+      simp only [hResolve] at hStep
+      by_cases hWx : perms.wxCompliant = true
+      · simp only [hWx, Bool.not_true] at hStep
+        cases hMapRoot : root.mapPage vaddr paddr perms with
+        | none => simp [hMapRoot] at hStep
+        | some root' =>
+            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+              simpa [hMapRoot] using hStep
+            rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
+            have hAsidPreserved : root'.asid = root.asid :=
+              VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
+            have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
+              storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
+            have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
+              storeObject_asidTable_vspaceRoot st st' rootId root' hStore
+            have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
+            have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
+              resolveAsidRoot_of_asidTable_entry st' asid rootId root'
+                (hAsidEq ▸ hTablePost) hObjEq hAsidEq
+            have hLookupRoot' : root'.lookup vaddr = some (paddr, perms) :=
+              VSpaceRoot.lookup_mapPage_eq root root' vaddr paddr perms hMapRoot
+            simp [vspaceLookupFull, hResolve', hLookupRoot']
+      · have hWxF : perms.wxCompliant = false := by cases perms.wxCompliant <;> simp_all
+        simp only [hWxF, Bool.not_false, ite_true] at hStep
+        exact nomatch hStep
 
 end SeLe4n.Kernel.Architecture

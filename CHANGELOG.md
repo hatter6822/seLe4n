@@ -1,3 +1,29 @@
+## [0.13.7] - 2026-03-08
+
+### WS-H11: VSpace & Architecture Enrichment
+
+- **Part A — PagePermissions & W^X enforcement:** `PagePermissions` struct with
+  `wxCompliant` predicate; W^X enforced at insertion time in `vspaceMapPage`;
+  enriched mappings `HashMap VAddr (PAddr × PagePermissions)` with
+  `vspaceLookupFull` returning permissions alongside physical address.
+- **Part B — Address bounds check:** `vspaceMapPageChecked` rejects physical
+  addresses ≥ 2^52 (ARM64 52-bit PA bound); `physicalAddressBound` constant;
+  `addressOutOfBounds` error variant; preservation theorem
+  `vspaceMapPageChecked_success_preserves_vspaceInvariantBundle`.
+- **Part C — ASID uniqueness & consistency:** `asidTableConsistent` and
+  `vspaceAsidRootsUnique` in the 5-conjunct `vspaceInvariantBundle`;
+  `resolveAsidRoot` extraction and characterization lemmas.
+- **Part D — TLB/cache maintenance model:** `TlbEntry`, `TlbState`,
+  `adapterFlushTlb`, `adapterFlushTlbByAsid`, `tlbConsistent`; abstract TLB
+  model with full and per-ASID flush operations proven correct.
+- **VSpaceBackend typeclass:** Platform-agnostic VSpace operations abstraction
+  with `hashMapVSpaceBackend` instance; prepares for ARM page table backend.
+- **Testing:** 15+ new negative-state tests covering W^X, address bounds, ASID
+  errors, TLB flush, and permission round-trip; 3 new MainTraceHarness traces
+  (VSPACE-05..07).
+- **Metrics:** 876 proved declarations (zero sorry/axiom), 29,780 production
+  LoC across 41 files, 86 build jobs.
+
 ## [0.13.6] - 2026-03-08
 
 ### End-to-End Codebase Audit

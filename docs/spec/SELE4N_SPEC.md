@@ -48,18 +48,18 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.13.6` (`lakefile.toml`) |
+| **Package version** | `0.13.7` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 29,351 across 40 Lean files |
-| **Test LoC** | 2,063 across 3 Lean test suites |
-| **Proved declarations** | 866 theorem/lemma declarations (zero sorry/axiom) |
-| **Build jobs** | 84 |
+| **Production LoC** | 29,780 across 41 Lean files |
+| **Test LoC** | 2,187 across 3 Lean test suites |
+| **Proved declarations** | 876 theorem/lemma declarations (zero sorry/axiom) |
+| **Build jobs** | 86 |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Next workstream** | WS-H11..H16 (remaining v0.12.15 audit remediation) |
-| **Recently completed** | End-to-end audit (v0.13.6, comprehensive codebase audit — zero critical issues, stale metrics fixed), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance) |
+| **Next workstream** | WS-H12..H16 (remaining v0.12.15 audit remediation) |
+| **Recently completed** | WS-H11 (v0.13.7, VSpace & architecture enrichment — PagePermissions with W^X, address bounds, TLB model, VSpaceBackend), End-to-end audit (v0.13.6, comprehensive codebase audit — zero critical issues, stale metrics fixed), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance) |
 | **Prior completed** | WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` |
 | **Codebase map feed** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`; includes `source_sync.source_digest` with branch/commit metadata preserved under `repository.head`; each declaration entry includes additive `called` references for internal declaration invocations; docs-sync checks compare the stable subset)) |
@@ -90,6 +90,7 @@ semantic and proof foundations of the previous one.
 
 | Portfolio | Scope | Workstreams |
 |-----------|-------|-------------|
+| **WS-H11** (v0.13.7) | VSpace & architecture enrichment: `PagePermissions` struct with `wxCompliant` and W^X enforcement at insertion, `vspaceMapPageChecked` with ARM64 52-bit physical address bounds, `vspaceInvariantBundle` 5-conjunct preservation proofs, TLB/cache maintenance model (`TlbState`, `adapterFlushTlb`, `adapterFlushTlbByAsid`, `tlbConsistent`), `VSpaceBackend` typeclass abstraction; 10 new theorems | WS-H11 completed |
 | **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: enforcement soundness meta-theorems, 4 new enforcement wrappers (`notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`), NI bridge theorems, projection hardening (domain timing metadata), `enforcementBoundaryExtended` (8 policy-gated ops); 26 new theorems | WS-H8 completed |
 | **WS-H6** (v0.13.1) | Scheduler proof-surface completion: RunQueue reverse bridge (`flat_wf_rev`, `membership_implies_flat`, `mem_toList_iff_mem`) and scheduler candidate-selection lemmas (`isBetterCandidate_transitive`, `bucketFirst_fullScan_equivalence`); schedule membership validation now uses O(1) runQueue membership checks | WS-H6 completed |
 | **WS-H5** (v0.12.19) | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations; closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | WS-H5 completed |

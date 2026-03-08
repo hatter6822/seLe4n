@@ -27,6 +27,9 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | _ => none
   | none => none
 
+/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit). -/
+def physicalAddressBound : Nat := 2^52
+
 /-- WS-H11: Deterministic VSpace map transition with explicit failures.
 Accepts per-page permissions; enforces W^X at insertion time. -/
 def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
@@ -41,6 +44,14 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
           | none => .error .mappingConflict
           | some root' =>
               storeObject rootId (.vspaceRoot root') st
+
+/-- WS-H11/A-05: Address-bounds-checked VSpace map — rejects physical addresses ≥ 2^52.
+This is the production entry point; `vspaceMapPage` is the core transition used by proofs. -/
+def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := default) : Kernel Unit :=
+  fun st =>
+    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    else vspaceMapPage asid vaddr paddr perms st
 
 /-- Deterministic VSpace unmap transition with explicit failures. -/
 def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=

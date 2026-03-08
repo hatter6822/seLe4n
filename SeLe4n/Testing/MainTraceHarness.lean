@@ -184,6 +184,19 @@ private def runCapabilityAndArchitectureTrace (st1 : SystemState) : IO Unit := d
       | .error err => IO.println s!"vspace lookupFull error: {reprStr err}"
       | .ok ((paddr, perms), _) =>
           IO.println s!"vspace lookupFull paddr: {paddr.toNat}, read={perms.read}, write={perms.write}, exec={perms.execute}"
+  -- WS-H11/A-05: Address bounds check — vspaceMapPageChecked rejects paddr ≥ 2^52
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked 1 4096 ⟨2^52⟩) st1 with
+  | .error err => IO.println s!"vspace mapChecked address out of bounds: {reprStr err}"
+  | .ok _ => IO.println "unexpected vspace mapChecked accepted out-of-bounds address"
+  -- WS-H11/A-05: Valid address (2^52 - 1) accepted through checked path
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked 1 4096 ⟨2^52 - 1⟩) st1 with
+  | .error err => IO.println s!"unexpected vspace mapChecked rejected valid address: {reprStr err}"
+  | .ok _ => IO.println "vspace mapChecked valid address accepted"
+  -- WS-H11/M-14: TLB full flush produces empty TLB
+  let tlbWithEntries : SeLe4n.Kernel.Architecture.TlbState :=
+    { entries := [{ asid := 1, vaddr := 4096, paddr := 8192, perms := default }] }
+  let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlbWithEntries
+  IO.println s!"TLB flush entry count: {flushed.entries.length}"
   match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll 7 99 st1 with
   | .error err => IO.println s!"adapter register write success path error: {reprStr err}"
   | .ok (_, stReg) =>

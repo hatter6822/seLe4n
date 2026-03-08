@@ -30,9 +30,9 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H11..H16 and WS-F5..F8
+## Immediate next: WS-H12..H16 and WS-F5..F8
 
-### WS-H11..H16 — Remaining v0.12.15 audit remediation
+### WS-H12..H16 — Remaining v0.12.15 audit remediation
 
 The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 

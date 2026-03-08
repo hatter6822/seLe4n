@@ -39,7 +39,17 @@ WS-H8 (enforcement-NI bridge & missing wrappers, completed) →
 WS-H9 (non-interference coverage extension, completed) →
 WS-H7/H8/H9 gap closure (comprehensive audit, v0.13.5) →
 WS-H10 (security model foundations, v0.13.6) →
-End-to-end codebase audit (v0.13.6).
+End-to-end codebase audit (v0.13.6) →
+WS-H11 (VSpace & architecture enrichment, v0.13.7).
+
+## Completed: WS-H11 VSpace & Architecture Enrichment (v0.13.7)
+
+PagePermissions struct with W^X enforcement at insertion time. Address bounds
+checking via `vspaceMapPageChecked` (ARM64 52-bit PA bound). TLB/cache
+maintenance model with `TlbState`, `adapterFlushTlb`, and `adapterFlushTlbByAsid`.
+`VSpaceBackend` typeclass for platform-agnostic page table operations.
+`vspaceInvariantBundle` extended to 5-conjunct preservation across all VSpace
+transitions. 876 proved declarations, zero sorry/axiom.
 
 ## Completed: WS-H10 Security Model Foundations (v0.13.6)
 

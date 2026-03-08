@@ -54,17 +54,17 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.13.6` |
+| **Version** | `0.13.7` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 29,351 across 40 files |
-| **Test Lean LoC** | 2,063 across 3 test suites |
-| **Proved declarations** | 866 theorem/lemma declarations (zero sorry/axiom) |
-| **Build jobs** | 84 |
+| **Production Lean LoC** | 29,780 across 41 files |
+| **Test Lean LoC** | 2,187 across 3 test suites |
+| **Proved declarations** | 876 theorem/lemma declarations (zero sorry/axiom) |
+| **Build jobs** | 86 |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Completed** | End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 All quantitative attributes above are generated from the codebase using
@@ -75,7 +75,7 @@ All quantitative attributes above are generated from the codebase using
 
 ```bash
 ./scripts/setup_lean_env.sh   # install Lean toolchain
-lake build                     # compile all 40 modules (84 jobs)
+lake build                     # compile all 41 modules (86 jobs)
 lake exe sele4n                # run trace harness
 ./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
@@ -261,6 +261,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H11** | v0.13.7 | VSpace & architecture enrichment: PagePermissions with W^X enforcement, `vspaceMapPageChecked` with ARM64 52-bit address bounds, `vspaceInvariantBundle` 5-conjunct preservation, TLB/cache maintenance model (`TlbState`, `adapterFlushTlb`), `VSpaceBackend` typeclass abstraction. 10 new theorems, 876 proved declarations | H11 |
 | **End-to-end audit** | v0.13.6 | Comprehensive codebase audit: zero critical issues, zero sorry/axiom, stale documentation metrics fixed (theorem counts, LoC), audit report produced. 866 proved declarations confirmed | Audit |
 | **WS-H10** | v0.13.6 | Security model foundations: `ObservableState` with `machineRegs`, BIBA lattice alternatives, `DeclassificationPolicy`, `endpointFlowPolicyWellFormed`, `InformationFlowConfigInvariant`. Closes C-05/A-38, A-34, A-39, M-16 | H10 |
 | **WS-H7/H8/H9 gaps** | v0.13.5 | BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, 31-constructor `NonInterferenceStep` | H7/H8/H9 gap closure |

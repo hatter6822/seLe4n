@@ -15,6 +15,9 @@ VSPACE-01 | high     | vspace lookup mapped paddr: 8192
 VSPACE-02 | high     | vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
 VSPACE-03 | critical | vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
 VSPACE-04 | high     | vspace lookupFull paddr: 8192, read=true, write=false, exec=false
+VSPACE-05 | critical | vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBounds
+VSPACE-06 | high     | vspace mapChecked valid address accepted
+VSPACE-07 | medium   | TLB flush entry count: 0
 ARCH-06   | high     | adapter register write success path value: 99
 ARCH-07   | medium   | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
 SVC-01    | critical | service start api status: some (SeLe4n.Model.ServiceStatus.running)
