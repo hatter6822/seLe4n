@@ -125,4 +125,33 @@ theorem vspaceUnmapPage_then_flush_preserves_tlbConsistent
     tlbConsistent st' (adapterFlushTlb tlb) :=
   adapterFlushTlb_restores_tlbConsistent st' tlb
 
+-- ============================================================================
+-- Per-ASID flush selectivity theorems
+-- ============================================================================
+
+/-- Per-ASID flush removes exactly the entries matching the given ASID. -/
+theorem adapterFlushTlbByAsid_removes_matching
+    (tlb : TlbState) (asid : ASID) (entry : TlbEntry)
+    (hMem : entry ∈ (adapterFlushTlbByAsid tlb asid).entries) :
+    entry.asid ≠ asid := by
+  unfold adapterFlushTlbByAsid at hMem
+  simp [List.mem_filter] at hMem
+  exact hMem.2
+
+/-- Per-ASID flush preserves all entries with a different ASID. -/
+theorem adapterFlushTlbByAsid_preserves_other
+    (tlb : TlbState) (asid : ASID) (entry : TlbEntry)
+    (hMem : entry ∈ tlb.entries) (hNe : entry.asid ≠ asid) :
+    entry ∈ (adapterFlushTlbByAsid tlb asid).entries := by
+  unfold adapterFlushTlbByAsid
+  simp [List.mem_filter]
+  exact ⟨hMem, hNe⟩
+
+/-- Sequential page table modifications followed by a single full flush restores
+    TLB consistency. This covers the common pattern of batched mappings. -/
+theorem sequential_modifications_then_flush_preserves_tlbConsistent
+    (st : SystemState) (tlb : TlbState) :
+    tlbConsistent st (adapterFlushTlb tlb) :=
+  adapterFlushTlb_restores_tlbConsistent st tlb
+
 end SeLe4n.Kernel.Architecture

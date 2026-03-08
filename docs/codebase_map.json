@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/vspace-architecture-enrichment-js63b",
-      "commit_sha": "0d4830aba8c3067faaedaa143746d383b2ff1881",
-      "tree_sha": "7cbfda5a902750a7e1502c84b790f0a363930868",
-      "committed_at_utc": "2026-03-08T08:53:14+00:00"
+      "commit_sha": "75986134d73126468309ec968f1f5b99bbc758bd",
+      "tree_sha": "20bb380884b8dde0b3e010d66e608852d1cc9b13",
+      "committed_at_utc": "2026-03-08T19:17:47+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "85845630e923934e3a87188736b88d7c1410e3a49d1809af1ae1f068a590d79c"
+    "source_digest": "573d6751ed16c9006e9b92b8b78532f9ee4c22f21a86c35b6aeee9c9ec411843"
   },
   "summary": {
     "module_count": 44,
-    "declaration_count": 1671
+    "declaration_count": 1676
   },
   "modules": [
     {
@@ -489,7 +489,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbModel",
       "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
-      "declaration_count": 13,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -597,6 +597,37 @@
           "kind": "theorem",
           "name": "vspaceUnmapPage_then_flush_preserves_tlbConsistent",
           "line": 121,
+          "called": [
+            "TlbState",
+            "adapterFlushTlb",
+            "adapterFlushTlb_restores_tlbConsistent",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByAsid_removes_matching",
+          "line": 133,
+          "called": [
+            "TlbEntry",
+            "TlbState",
+            "adapterFlushTlbByAsid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByAsid_preserves_other",
+          "line": 142,
+          "called": [
+            "TlbEntry",
+            "TlbState",
+            "adapterFlushTlbByAsid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sequential_modifications_then_flush_preserves_tlbConsistent",
+          "line": 152,
           "called": [
             "TlbState",
             "adapterFlushTlb",
@@ -720,13 +751,13 @@
         {
           "kind": "class",
           "name": "VSpaceBackend",
-          "line": 60,
+          "line": 67,
           "called": []
         },
         {
           "kind": "instance",
           "name": "hashMapVSpaceBackend",
-          "line": 116,
+          "line": 123,
           "called": [
             "VSpaceBackend"
           ]
@@ -736,7 +767,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceInvariant",
       "path": "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean",
-      "declaration_count": 18,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
@@ -877,6 +908,18 @@
           "called": [
             "vspaceInvariantBundle"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_resolveAsidRoot_agreement",
+          "line": 646,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_resolveAsidRoot_agreement",
+          "line": 683,
+          "called": []
         }
       ]
     },
@@ -14281,7 +14324,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1195,
+          "line": 1249,
           "called": []
         }
       ]

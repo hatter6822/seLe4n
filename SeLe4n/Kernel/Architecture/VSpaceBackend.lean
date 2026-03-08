@@ -56,7 +56,14 @@ open SeLe4n.Model
 
     **Type parameter `Root`:** The backing representation for a single
     address space (e.g., `VSpaceRoot` for the current HashMap-based model,
-    or a hierarchical page table for ARM64). -/
+    or a hierarchical page table for ARM64).
+
+    **H3 preparation:** This typeclass is currently unused — `VSpace.lean`
+    operates on the concrete `VSpaceRoot` directly. When hierarchical page
+    tables are implemented for ARM64, this typeclass will be instantiated
+    with the hardware-specific representation. The `hashMapVSpaceBackend`
+    instance below demonstrates that the current model satisfies all
+    obligations. -/
 class VSpaceBackend (Root : Type) where
   /-- Insert a virtual-to-physical mapping with permissions into the root.
       Returns `none` if the mapping conflicts with an existing entry. -/

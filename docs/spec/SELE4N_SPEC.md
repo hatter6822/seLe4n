@@ -50,9 +50,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.13.7` (`lakefile.toml`) |
 | **Lean toolchain** | `4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 29,780 across 41 Lean files |
-| **Test LoC** | 2,187 across 3 Lean test suites |
-| **Proved declarations** | 876 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 29,888 across 41 Lean files |
+| **Test LoC** | 2,241 across 3 Lean test suites |
+| **Proved declarations** | 881 theorem/lemma declarations (zero sorry/axiom) |
 | **Build jobs** | 86 |
 | **Target hardware** | Raspberry Pi 5 (ARM64) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |

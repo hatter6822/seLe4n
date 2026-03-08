@@ -1188,6 +1188,60 @@ def runWSH11Checks : IO Unit := do
           else
             throw <| IO.userError s!"WS-H11 lookupFull wrong result"
 
+  -- Cross-ASID isolation: mapping in ASID 1 must not be visible in ASID 2
+  let asid2 : SeLe4n.ASID := 2
+  let vspaceOid2 : SeLe4n.ObjId := 21
+  let st2Asid := (BootstrapBuilder.empty
+    |>.withObject vspaceOid (.vspaceRoot { asid := asid, mappings := {} })
+    |>.withLifecycleObjectType vspaceOid .vspaceRoot
+    |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
+    |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).build
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st2Asid with
+  | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {reprStr err}"
+  | .ok (_, stCross) =>
+      expectError "WS-H11 cross-ASID isolation"
+        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 4096 stCross)
+        .translationFault
+  IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
+
+  -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st with
+  | .error err => throw <| IO.userError s!"WS-H11 multi-map step 1 failed: {reprStr err}"
+  | .ok (_, stM1) =>
+      match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 8192 16384) stM1 with
+      | .error err => throw <| IO.userError s!"WS-H11 multi-map step 2 failed: {reprStr err}"
+      | .ok (_, stM2) =>
+          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 12288 24576) stM2 with
+          | .error err => throw <| IO.userError s!"WS-H11 multi-map step 3 failed: {reprStr err}"
+          | .ok (_, stM3) =>
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid 4096 stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid 8192 stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid 12288 stM3 with
+              | .ok (p1, _), .ok (p2, _), .ok (p3, _) =>
+                  if p1 = ⟨8192⟩ && p2 = ⟨16384⟩ && p3 = ⟨24576⟩ then
+                    IO.println "positive check passed [WS-H11 multiple concurrent mappings all retrievable]"
+                  else
+                    throw <| IO.userError "WS-H11 multi-map: wrong addresses returned"
+              | _, _, _ => throw <| IO.userError "WS-H11 multi-map: lookup failed"
+
+  -- Sequential map-unmap-map cycle: verify remapping works after unmap
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st with
+  | .error err => throw <| IO.userError s!"WS-H11 cycle map1 failed: {reprStr err}"
+  | .ok (_, stC1) =>
+      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid 4096) stC1 with
+      | .error err => throw <| IO.userError s!"WS-H11 cycle unmap failed: {reprStr err}"
+      | .ok (_, stC2) =>
+          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 16384) stC2 with
+          | .error err => throw <| IO.userError s!"WS-H11 cycle remap failed: {reprStr err}"
+          | .ok (_, stC3) =>
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid 4096 stC3 with
+              | .ok (pa, _) =>
+                  if pa = ⟨16384⟩ then
+                    IO.println "positive check passed [WS-H11 map-unmap-remap cycle works correctly]"
+                  else
+                    throw <| IO.userError s!"WS-H11 cycle: expected 16384, got {pa.toNat}"
+              | .error err => throw <| IO.userError s!"WS-H11 cycle lookup failed: {reprStr err}"
+
   IO.println "all WS-H11 VSpace & Architecture checks passed"
 
 end SeLe4n.Testing

@@ -18,10 +18,17 @@
   model with full and per-ASID flush operations proven correct.
 - **VSpaceBackend typeclass:** Platform-agnostic VSpace operations abstraction
   with `hashMapVSpaceBackend` instance; prepares for ARM page table backend.
-- **Testing:** 15+ new negative-state tests covering W^X, address bounds, ASID
-  errors, TLB flush, and permission round-trip; 3 new MainTraceHarness traces
-  (VSPACE-05..07).
-- **Metrics:** 876 proved declarations (zero sorry/axiom), 29,780 production
+- **ASID table composition:** Explicit `resolveAsidRoot` agreement theorems
+  for `vspaceMapPage` and `vspaceUnmapPage`, proving ASID table consistency
+  is preserved through page table modifications.
+- **TLB selectivity:** `adapterFlushTlbByAsid_removes_matching` and
+  `adapterFlushTlbByAsid_preserves_other` theorems proving per-ASID flush
+  removes exactly matching entries and preserves all others.
+- **Testing:** 18+ new negative-state tests covering W^X, address bounds, ASID
+  errors, TLB flush, permission round-trip, cross-ASID isolation, multiple
+  concurrent mappings, and map-unmap-remap cycles; 3 new MainTraceHarness
+  traces (VSPACE-05..07).
+- **Metrics:** 881 proved declarations (zero sorry/axiom), 29,888 production
   LoC across 41 files, 86 build jobs.
 
 ## [0.13.6] - 2026-03-08

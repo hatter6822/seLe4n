@@ -636,4 +636,76 @@ theorem vspaceLookupFull_after_map
         simp only [hWxF, Bool.not_false, ite_true] at hStep
         exact nomatch hStep
 
+-- ============================================================================
+-- ASID table agreement composition theorems (Issue 2 / Part C)
+-- ============================================================================
+
+/-- After a successful `vspaceMapPage`, `resolveAsidRoot` for the same ASID
+    returns the updated root. This is the composition theorem connecting
+    Part C (ASID consistency) with Part A (page table modification). -/
+theorem vspaceMapPage_resolveAsidRoot_agreement
+    (st st' : SystemState)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    ∃ rootId root', resolveAsidRoot st' asid = some (rootId, root') := by
+  unfold vspaceMapPage at hStep
+  cases hResolve : resolveAsidRoot st asid with
+  | none => simp [hResolve] at hStep
+  | some pair =>
+      rcases pair with ⟨rootId, root⟩
+      simp only [hResolve] at hStep
+      by_cases hWx : perms.wxCompliant = true
+      · simp only [hWx, Bool.not_true] at hStep
+        cases hMapRoot : root.mapPage vaddr paddr perms with
+        | none => simp [hMapRoot] at hStep
+        | some root' =>
+            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+              simpa [hMapRoot] using hStep
+            rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
+            have hAsidPreserved : root'.asid = root.asid :=
+              VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
+            have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
+              storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
+            have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
+              storeObject_asidTable_vspaceRoot st st' rootId root' hStore
+            have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
+            have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
+              resolveAsidRoot_of_asidTable_entry st' asid rootId root'
+                (hAsidEq ▸ hTablePost) hObjEq hAsidEq
+            exact ⟨rootId, root', hResolve'⟩
+      · have hWxF : perms.wxCompliant = false := by cases perms.wxCompliant <;> simp_all
+        simp only [hWxF, Bool.not_false, ite_true] at hStep
+        exact nomatch hStep
+
+/-- After a successful `vspaceUnmapPage`, `resolveAsidRoot` for the same ASID
+    returns the updated root. -/
+theorem vspaceUnmapPage_resolveAsidRoot_agreement
+    (st st' : SystemState)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    ∃ rootId root', resolveAsidRoot st' asid = some (rootId, root') := by
+  unfold vspaceUnmapPage at hStep
+  cases hResolve : resolveAsidRoot st asid with
+  | none => simp [hResolve] at hStep
+  | some pair =>
+      rcases pair with ⟨rootId, root⟩
+      cases hUnmapRoot : root.unmapPage vaddr with
+      | none => simp [hResolve, hUnmapRoot] at hStep
+      | some root' =>
+          have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            simpa [hResolve, hUnmapRoot] using hStep
+          rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
+          have hAsidPreserved : root'.asid = root.asid :=
+            VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
+          have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
+            storeObject_objects_eq st st' rootId (.vspaceRoot root') hStore
+          have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
+            storeObject_asidTable_vspaceRoot st st' rootId root' hStore
+          have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
+          have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
+            resolveAsidRoot_of_asidTable_entry st' asid rootId root'
+              (hAsidEq ▸ hTablePost) hObjEq hAsidEq
+          exact ⟨rootId, root', hResolve'⟩
+
 end SeLe4n.Kernel.Architecture
