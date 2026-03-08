@@ -929,16 +929,11 @@ partially overlap with WS-H9.
    or document as out-of-scope for the abstract model.
 
 *Part B — Security lattice resolution (A-34):*
-6. Produce a formal threat model document justifying the "both dimensions upward"
-   lattice semantics, OR correct the integrity dimension to standard BIBA:
-   - Option A (justify): document that seLe4n's integrity model permits
-     information flow from untrusted to trusted because trusted components are
-     assumed to validate input (the "robust safety" approach). This is valid but
-     requires explicit documentation.
-   - Option B (correct): flip the integrity comparison so that `integrityLevel a ≤
+6. Correct the integrity dimension to standard BIBA:
+   - Flip the integrity comparison so that `integrityLevel a ≤
      integrityLevel b` requires `a.integrity ≥ b.integrity` (standard BIBA).
      This affects all `securityFlowsTo` checks and downstream enforcement.
-7. Whichever option is chosen, add a theorem `securityLattice_reflexive` and
+7. Add a theorem `securityLattice_reflexive` and
    `securityLattice_transitive` proving the lattice properties.
 
 *Part C — Declassification model (A-39):*
