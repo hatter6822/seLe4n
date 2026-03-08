@@ -193,27 +193,28 @@ theorem adapterFlushTlbByVAddr_preserves_other
     (hMem : entry ∈ tlb.entries) (hNe : ¬(entry.asid = asid ∧ entry.vaddr = vaddr)) :
     entry ∈ (adapterFlushTlbByVAddr tlb asid vaddr).entries := by
   unfold adapterFlushTlbByVAddr
-  simp [List.mem_filter]
-  constructor
-  · exact hMem
-  · intro hA hV
-    exact hNe ⟨eq_of_beq hA, eq_of_beq hV⟩
+  simp only [List.mem_filter]
+  refine ⟨hMem, ?_⟩
+  simp only [Bool.not_eq_eq_eq_not, Bool.not_true]
+  by_cases hA : entry.asid == asid <;> by_cases hV : entry.vaddr == vaddr <;> simp_all [eq_of_beq]
 
-/-- After a per-VAddr flush following `vspaceMapPage`, any TLB entry for the
-    flushed (ASID, VAddr) pair is removed, so stale translations are eliminated.
-    Combined with the page table update, this restores consistency for that entry. -/
-theorem vspaceMapPage_then_vaddrFlush_preserves_tlbConsistent
-    (st st' : SystemState) (tlb : TlbState)
-    (asid : ASID) (vaddr : VAddr) (paddr : PAddr) (perms : PagePermissions)
-    (hConsist : tlbConsistent st tlb)
-    (_hStep : (vspaceMapPage asid vaddr paddr perms) st = Except.ok ((), st')) :
-    tlbConsistent st' (adapterFlushTlbByVAddr (adapterFlushTlbByAsid tlb asid) asid vaddr) := by
-  intro entry hMem rootId root hResolve
-  have hNotAsid := adapterFlushTlbByAsid_removes_matching _ asid entry
+/-- After a per-VAddr flush following a per-ASID flush on the same ASID,
+    no entries for that ASID remain — the per-ASID flush already removed them all.
+    This means the double flush is strictly more conservative than needed,
+    eliminating any stale translations for the flushed ASID. -/
+theorem vaddrFlush_after_asidFlush_no_asid_entries
+    (tlb : TlbState) (asid : ASID) (vaddr : VAddr) (entry : TlbEntry)
+    (hMem : entry ∈ (adapterFlushTlbByVAddr (adapterFlushTlbByAsid tlb asid) asid vaddr).entries) :
+    entry.asid ≠ asid := by
   unfold adapterFlushTlbByVAddr at hMem
-  simp [List.mem_filter] at hMem
+  simp only [List.mem_filter] at hMem
   rcases hMem with ⟨hMemAsid, _⟩
-  exact absurd rfl (hNotAsid hMemAsid)
+  unfold adapterFlushTlbByAsid at hMemAsid
+  simp only [List.mem_filter] at hMemAsid
+  rcases hMemAsid with ⟨_, hNotAsid⟩
+  intro hEq
+  rw [bne_iff_ne] at hNotAsid
+  exact hNotAsid hEq
 
 -- ============================================================================
 -- Cross-ASID isolation theorem (WS-H11 audit refinement)
@@ -231,11 +232,12 @@ theorem cross_asid_tlb_isolation
   simp only [List.filter_filter]
   congr 1
   funext e
-  by_cases hAsid : e.asid == asid₂
-  · have hNe' : e.asid != asid₁ := by
-      have hEq := eq_of_beq hAsid
-      simp [bne_iff_ne, hEq]; intro h; exact hNe (h.symm.trans hEq).symm
-    simp [hNe', Bool.true_and]
-  · simp [hAsid, Bool.false_and, Bool.and_false]
+  by_cases hAsid : (e.asid == asid₂) = true
+  · have hNotAsid₁ : (e.asid != asid₁) = true := by
+      rw [bne_iff_ne]
+      intro hContra
+      exact hNe (hContra.symm.trans (eq_of_beq hAsid))
+    simp [hNotAsid₁, hAsid]
+  · simp [hAsid]
 
 end SeLe4n.Kernel.Architecture

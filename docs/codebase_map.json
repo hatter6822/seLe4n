@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/vspace-architecture-enrichment-js63b",
-      "commit_sha": "75986134d73126468309ec968f1f5b99bbc758bd",
-      "tree_sha": "20bb380884b8dde0b3e010d66e608852d1cc9b13",
-      "committed_at_utc": "2026-03-08T19:17:47+00:00"
+      "branch": "claude/audit-pr-361-websocket-6Je7m",
+      "commit_sha": "1ee8f67fa00b9e253ebf19041af06c90f74f9560",
+      "tree_sha": "517f71924e271da49bf2c0e91c61681f48246cde",
+      "committed_at_utc": "2026-03-08T20:13:06+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "573d6751ed16c9006e9b92b8b78532f9ee4c22f21a86c35b6aeee9c9ec411843"
+    "source_digest": "895aa41dd0e7ca6cf4432dd32eb315e92326e30fd3969dbeec73fccd4ed018db"
   },
   "summary": {
     "module_count": 44,
-    "declaration_count": 1676
+    "declaration_count": 1685
   },
   "modules": [
     {
@@ -489,7 +489,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbModel",
       "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
-      "declaration_count": 16,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -546,8 +546,16 @@
         },
         {
           "kind": "def",
+          "name": "adapterFlushTlbByVAddr",
+          "line": 76,
+          "called": [
+            "TlbState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "tlbConsistent",
-          "line": 77,
+          "line": 84,
           "called": [
             "TlbState"
           ]
@@ -555,7 +563,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistent_empty",
-          "line": 88,
+          "line": 95,
           "called": [
             "TlbState.empty",
             "tlbConsistent"
@@ -564,7 +572,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlb_restores_tlbConsistent",
-          "line": 94,
+          "line": 101,
           "called": [
             "TlbState",
             "adapterFlushTlb",
@@ -575,7 +583,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_preserves_tlbConsistent",
-          "line": 100,
+          "line": 107,
           "called": [
             "TlbState",
             "adapterFlushTlbByAsid",
@@ -585,7 +593,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_then_flush_preserves_tlbConsistent",
-          "line": 113,
+          "line": 120,
           "called": [
             "TlbState",
             "adapterFlushTlb",
@@ -596,7 +604,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_then_flush_preserves_tlbConsistent",
-          "line": 121,
+          "line": 128,
           "called": [
             "TlbState",
             "adapterFlushTlb",
@@ -607,7 +615,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_removes_matching",
-          "line": 133,
+          "line": 140,
           "called": [
             "TlbEntry",
             "TlbState",
@@ -617,7 +625,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_preserves_other",
-          "line": 142,
+          "line": 149,
           "called": [
             "TlbEntry",
             "TlbState",
@@ -627,12 +635,62 @@
         {
           "kind": "theorem",
           "name": "sequential_modifications_then_flush_preserves_tlbConsistent",
-          "line": 152,
+          "line": 159,
           "called": [
             "TlbState",
             "adapterFlushTlb",
             "adapterFlushTlb_restores_tlbConsistent",
             "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByVAddr_preserves_tlbConsistent",
+          "line": 170,
+          "called": [
+            "TlbState",
+            "adapterFlushTlbByVAddr",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByVAddr_removes_matching",
+          "line": 180,
+          "called": [
+            "TlbEntry",
+            "TlbState",
+            "adapterFlushTlbByVAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByVAddr_preserves_other",
+          "line": 191,
+          "called": [
+            "TlbEntry",
+            "TlbState",
+            "adapterFlushTlbByVAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vaddrFlush_after_asidFlush_no_asid_entries",
+          "line": 205,
+          "called": [
+            "TlbEntry",
+            "TlbState",
+            "adapterFlushTlbByAsid",
+            "adapterFlushTlbByVAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cross_asid_tlb_isolation",
+          "line": 227,
+          "called": [
+            "TlbState",
+            "adapterFlushTlbByAsid"
           ]
         }
       ]
@@ -767,7 +825,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceInvariant",
       "path": "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean",
-      "declaration_count": 20,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -836,9 +894,28 @@
         },
         {
           "kind": "theorem",
+          "name": "VSpaceRoot.mapPage_mappings_insert",
+          "line": 186,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "VSpaceRoot.unmapPage_mappings_erase",
+          "line": 198,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "HashMap_lookup_of_erase_lookup",
+          "line": 208,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "vspaceMapPage_success_preserves_vspaceInvariantBundle",
-          "line": 194,
+          "line": 232,
           "called": [
+            "VSpaceRoot.mapPage_mappings_insert",
             "asidTableConsistent_of_storeObject_vspaceRoot",
             "vspaceInvariantBundle"
           ]
@@ -846,8 +923,10 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_success_preserves_vspaceInvariantBundle",
-          "line": 305,
+          "line": 335,
           "called": [
+            "HashMap_lookup_of_erase_lookup",
+            "VSpaceRoot.unmapPage_mappings_erase",
             "asidTableConsistent_of_storeObject_vspaceRoot",
             "vspaceInvariantBundle"
           ]
@@ -855,7 +934,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_after_map",
-          "line": 408,
+          "line": 422,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -863,7 +942,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_map_other",
-          "line": 448,
+          "line": 462,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -871,7 +950,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_after_unmap",
-          "line": 492,
+          "line": 506,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -879,7 +958,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_unmap_other",
-          "line": 527,
+          "line": 541,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -887,7 +966,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageChecked_success_preserves_vspaceInvariantBundle",
-          "line": 568,
+          "line": 582,
           "called": [
             "vspaceInvariantBundle",
             "vspaceMapPage_success_preserves_vspaceInvariantBundle"
@@ -896,7 +975,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageChecked_error_preserves_vspaceInvariantBundle",
-          "line": 586,
+          "line": 600,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -904,7 +983,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookupFull_after_map",
-          "line": 601,
+          "line": 615,
           "called": [
             "vspaceInvariantBundle"
           ]
@@ -912,13 +991,13 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_resolveAsidRoot_agreement",
-          "line": 646,
+          "line": 660,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_resolveAsidRoot_agreement",
-          "line": 683,
+          "line": 697,
           "called": []
         }
       ]
@@ -14324,7 +14403,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1249,
+          "line": 1263,
           "called": []
         }
       ]

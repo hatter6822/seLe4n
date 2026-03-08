@@ -294,9 +294,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
             -- 3. asidTableConsistent st' (via shared helper)
             · exact asidTableConsistent_of_storeObject_vspaceRoot
                 st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
-            have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
             -- 4. wxExclusiveInvariant st'
             · intro oid r v p pm hObjR hMap
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
               by_cases hEq : oid = rootId
               · subst hEq; rw [hObjEq] at hObjR; cases hObjR
                 rw [hInsert] at hMap
@@ -311,6 +311,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 exact hWxInv oid r v p pm hObjR hMap
             -- 5. boundedAddressTranslation st'
             · intro oid r v p pm hObjR hMap
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
               by_cases hEq : oid = rootId
               · subst hEq; rw [hObjEq] at hObjR; cases hObjR
                 rw [hInsert] at hMap
@@ -392,9 +393,8 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           · exact asidTableConsistent_of_storeObject_vspaceRoot
               st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
           -- 4. wxExclusiveInvariant st' (unmap only removes entries — subset of pre-state mappings)
-          have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
-          -- 4. wxExclusiveInvariant st' (unmap only removes entries — subset of pre-state mappings)
           · intro oid r v p pm hObjR hMap
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
               have hRootMap := HashMap_lookup_of_erase_lookup root.mappings vaddr v p pm
@@ -404,6 +404,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               exact hWxInv oid r v p pm hObjR hMap
           -- 5. boundedAddressTranslation st' (unmap only removes entries)
           · intro oid r v p pm hObjR hMap
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
               have hRootMap := HashMap_lookup_of_erase_lookup root.mappings vaddr v p pm
