@@ -15,9 +15,9 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.13.6` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 29,249 across 40 files |
+| Production LoC | 29,351 across 40 files |
 | Test LoC | 2,063 across 3 suites |
-| Proved declarations | 863 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 866 theorem/lemma declarations (zero sorry/axiom) |
 | Build jobs | 84 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
@@ -48,7 +48,9 @@ channels. Added standard BIBA security lattice alternatives (`bibaPolicy`,
 `DeclassificationPolicy` with `declassifyStore` enforcement operation (5
 theorems). Added `endpointFlowPolicyWellFormed` predicate with reflexivity and
 transitivity inheritance proofs. Closes C-05/A-38 (CRITICAL), A-34 (CRITICAL),
-A-39 (MEDIUM), M-16 (MEDIUM). 863 proved declarations.
+A-39 (MEDIUM), M-16 (MEDIUM). Added `declassifyStore_NI` (non-interference for
+controlled declassification) and `InformationFlowConfigInvariant` bundle. 866
+proved declarations.
 
 ## Completed: WS-H7/H8/H9 Audit Gap Closure (v0.13.5)
 

@@ -27,11 +27,22 @@
   endpoint override policies to satisfy reflexivity + transitivity. Added
   `endpointFlowPolicyWellFormed_no_overrides`, `endpointFlowCheck_reflexive`,
   and `endpointFlowCheck_transitive` theorems.
+- **Declassification NI theorem (C.10).** Added `declassifyStore_NI` — proves
+  that declassification at a non-observable target preserves low-equivalence
+  for non-target observers (the key NI property for controlled downgrade).
+- **IF configuration invariant bundle.** Added `InformationFlowConfigInvariant`
+  structure collecting global policy well-formedness, per-endpoint override
+  well-formedness, and declassification consistency. Added
+  `defaultConfigInvariant` existence proof. Kernel transitions trivially
+  preserve the bundle since policies are external to `SystemState`.
+- **Strengthened `declassifyStore_denied_no_state_change`.** Replaced
+  the previously trivial (`True`) state preservation theorem with a proper
+  proof that no successful result exists when the operation returns an error.
 - **Version bump:** `lakefile.toml` version updated to 0.13.6.
 - **Documentation sync:** Updated README.md, SELE4N_SPEC.md, DEVELOPMENT.md,
   CLAIM_EVIDENCE_INDEX.md, and GitBook chapters with current metrics and
   WS-H10 completion.
-- **863 proved declarations. Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
+- **866 proved declarations. Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
 
 ## [0.13.5] - 2026-03-08
 

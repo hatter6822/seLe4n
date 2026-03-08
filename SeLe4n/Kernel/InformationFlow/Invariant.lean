@@ -2777,6 +2777,42 @@ theorem composedNonInterference_trace
 -- Preservation framework (composition helper)
 -- ============================================================================
 
+-- ============================================================================
+-- WS-H10/A-39: Declassification non-interference (C.10)
+-- ============================================================================
+
+/-- WS-H10/A-39: Declassification at a non-observable target preserves
+low-equivalence for non-target observers. When declassification writes to
+a target object that the observer cannot see, the observer's projection is
+unchanged. This is the key NI property: declassification is visible ONLY
+to domains that can observe the target object.
+
+The proof delegates to `storeObject_at_unobservable_preserves_lowEquivalent`
+since `declassifyStore` reduces to `storeObject` on success, and storeObject
+at a non-observable ID preserves low-equivalence. -/
+theorem declassifyStore_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId)
+    (obj₁ obj₂ : KernelObject)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hTargetHigh : objectObservable ctx observer targetId = false)
+    (hStep₁ : declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₁ s₁ = .ok ((), s₁'))
+    (hStep₂ : declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₂ s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  -- Extract that declassifyStore delegates to storeObject on success
+  have ⟨hDenied₁, hAuth₁⟩ := enforcementSoundness_declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₁ s₁ s₁' hStep₁
+  have ⟨hDenied₂, hAuth₂⟩ := enforcementSoundness_declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₂ s₂ s₂' hStep₂
+  -- On success, declassifyStore = storeObject
+  have hStore₁ : storeObject targetId obj₁ s₁ = .ok ((), s₁') := by
+    simp [declassifyStore, hDenied₁, hAuth₁] at hStep₁; exact hStep₁
+  have hStore₂ : storeObject targetId obj₂ s₂ = .ok ((), s₂') := by
+    simp [declassifyStore, hDenied₂, hAuth₂] at hStep₂; exact hStep₂
+  exact storeObject_at_unobservable_preserves_lowEquivalent
+    ctx observer targetId obj₁ obj₂ s₁ s₂ s₁' s₂' hLow hTargetHigh hStore₁ hStore₂
+
 /-- WS-F3/H-05: Abstract non-interference predicate for a single kernel action. -/
 def preservesLowEquivalence
     (ctx : LabelingContext) (observer : IfObserver)

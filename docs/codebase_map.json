@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/security-model-foundations-jtjIq",
-      "commit_sha": "9ba62cf35f8466d24dfdf6cfafa034fb536570fc",
-      "tree_sha": "f2483e10f7d171f3844184893eeb2ee829885e3f",
-      "committed_at_utc": "2026-03-08T04:43:53+00:00"
+      "commit_sha": "dda194c6b160b134889fbf3898d2422e0c43979f",
+      "tree_sha": "76cae4f3409e39890a8e25760fb0db611c6f5802",
+      "committed_at_utc": "2026-03-08T05:45:21+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e02d99a6c669a78813600c40876d694862cecb0c851eaa171f1671d3d14db1fd"
+    "source_digest": "132bcbeb901e339e4e10a8444625be1876b4b401e2d067ca0d202592e8c3fed1"
   },
   "summary": {
     "module_count": 43,
-    "declaration_count": 1638
+    "declaration_count": 1642
   },
   "modules": [
     {
@@ -4206,7 +4206,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Enforcement",
       "path": "SeLe4n/Kernel/InformationFlow/Enforcement.lean",
-      "declaration_count": 54,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -4621,7 +4621,7 @@
         },
         {
           "kind": "theorem",
-          "name": "declassifyStore_denied_preserves_state",
+          "name": "declassifyStore_denied_no_state_change",
           "line": 890,
           "called": [
             "declassifyStore"
@@ -4630,9 +4630,31 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 901,
+          "line": 904,
           "called": [
             "declassifyStore"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "InformationFlowConfigInvariant",
+          "line": 951,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "defaultConfigInvariant",
+          "line": 962,
+          "called": [
+            "InformationFlowConfigInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelTransition_preserves_ifConfigInvariant",
+          "line": 979,
+          "called": [
+            "InformationFlowConfigInvariant"
           ]
         }
       ]
@@ -4640,7 +4662,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant.lean",
-      "declaration_count": 76,
+      "declaration_count": 77,
       "declarations": [
         {
           "kind": "namespace",
@@ -5217,15 +5239,23 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "declassifyStore_NI",
+          "line": 2793,
+          "called": [
+            "storeObject_at_unobservable_preserves_lowEquivalent"
+          ]
+        },
+        {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 2781,
+          "line": 2817,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 2791,
+          "line": 2827,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -5233,7 +5263,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 2810,
+          "line": 2846,
           "called": [
             "preservesLowEquivalence"
           ]
