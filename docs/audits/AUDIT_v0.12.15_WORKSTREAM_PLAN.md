@@ -971,7 +971,7 @@ partially overlap with WS-H9.
 
 ---
 
-### WS-H11: VSpace & Architecture Enrichment (HIGH)
+### WS-H11: VSpace & Architecture Enrichment (HIGH) — COMPLETED (v0.13.7)
 
 **Objective:** Enrich the VSpace model with page permissions, address bounds
 enforcement, and TLB/cache maintenance modeling to close the gap between the

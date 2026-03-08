@@ -254,6 +254,15 @@ Supporting infrastructure in `VSpace.lean`:
 - `resolveAsidRoot_some_implies_obj` — extracts asidTable + object-store facts from successful ASID resolution (WS-G3: O(1) HashMap lookup)
 - `resolveAsidRoot_of_asidTable_entry` — characterization lemma enabling round-trip proofs (WS-G3: no uniqueness/objectIndex needed)
 
+TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
+- `TlbEntry` — cached `(ASID, VAddr, PAddr, PagePermissions)` translation entry
+- `TlbState` — abstract collection of cached entries (list-backed)
+- `adapterFlushTlb` — full TLB invalidation (ARM64 `TLBI ALLE1`)
+- `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
+- `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
+- `tlbConsistent` — invariant: all TLB entries match current page tables
+- 10 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`
+
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 
 Badge-override safety in `cspaceMint` is now fully proven:

@@ -132,8 +132,8 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     success-path and error-path preservation theorems,
     round-trip correctness theorems (`vspaceLookup_after_map`, etc.).
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
-  - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`),
-    `tlbConsistent` invariant with flush-restoration theorems.
+  - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
+    `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.
