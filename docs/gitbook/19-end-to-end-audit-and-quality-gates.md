@@ -67,6 +67,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 
 | Version | Portfolio | Status |
 |---------|-----------|--------|
+| v0.13.6 | End-to-end audit | **Completed** — comprehensive codebase audit, zero critical issues, stale documentation metrics fixed. See [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) |
 | v0.12.15 | WS-H | Phase 1–4 **Completed** (WS-H1..H10: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge & missing wrappers, NI coverage extension to >80%, WS-H7/H8/H9 gap closure v0.13.5, security model foundations v0.13.6) |
 | v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
 | v0.12.2 | WS-F | WS-F1..F4 completed; **WS-F5..F8 remaining** |

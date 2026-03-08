@@ -21,7 +21,8 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Build jobs | 84 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
-| Recently completed | WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
+| Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
+| Recently completed | End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
 | Next workstream | WS-H11..H16 (remaining v0.12.15 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |
 
@@ -37,7 +38,8 @@ invariant, completed) → WS-H6 (scheduler proof completion, completed) →
 WS-H8 (enforcement-NI bridge & missing wrappers, completed) →
 WS-H9 (non-interference coverage extension, completed) →
 WS-H7/H8/H9 gap closure (comprehensive audit, v0.13.5) →
-WS-H10 (security model foundations, v0.13.6).
+WS-H10 (security model foundations, v0.13.6) →
+End-to-end codebase audit (v0.13.6).
 
 ## Completed: WS-H10 Security Model Foundations (v0.13.6)
 

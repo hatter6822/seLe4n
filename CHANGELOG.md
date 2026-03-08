@@ -1,5 +1,25 @@
 ## [0.13.6] - 2026-03-08
 
+### End-to-End Codebase Audit
+
+- **Comprehensive audit:** Full end-to-end audit of all 40 production Lean
+  files (29,351 LoC), 866 theorem/lemma declarations, 3 test suites (2,063
+  LoC), build scripts, platform bindings, and documentation. Zero critical
+  issues found. Zero sorry/axiom confirmed across the entire codebase.
+- **A-v13.6-01 (MEDIUM): Stale theorem count in spec.** Fixed
+  `docs/spec/SELE4N_SPEC.md` theorem count from 833 to 866.
+- **A-v13.6-02 (MEDIUM): Stale metrics in gitbook.** Fixed
+  `docs/gitbook/17-project-usage-value.md` LoC from 26,194 to 29,351 and
+  theorem count from 753 to 866.
+- **A-v13.6-06 (LOW): Stale milestone reference.** Fixed milestone
+  progression reference from "WS-B..F" to "WS-B..H" in gitbook.
+- **Documentation sync:** Updated README.md, SELE4N_SPEC.md, DEVELOPMENT.md,
+  CLAIM_EVIDENCE_INDEX.md, and 5 GitBook chapters with audit workstream
+  entry, latest audit reference, and corrected metrics.
+- **Audit report:** Created `docs/audits/AUDIT_CODEBASE_v0.13.6.md` with
+  detailed findings across all subsystems, security property verification,
+  performance characteristic confirmation, and test coverage assessment.
+
 ### WS-H10: Security Model Foundations
 
 - **C-05/A-38 (CRITICAL): MachineState projection in IF model.** Extended
