@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/non-interference-coverage-extension-NVB2o",
-      "commit_sha": "abe146cef7151fe77239b590d40f2df488013eca",
-      "tree_sha": "a1774f56f1ceba1464ddc2dd94e8847e36bbd41e",
-      "committed_at_utc": "2026-03-07T23:46:30+00:00"
+      "branch": "main",
+      "commit_sha": "f19a4df0e762f552e7b55713da1c216688440bec",
+      "tree_sha": "4e69b485c54cee0310d58ee12312a2b032345653",
+      "committed_at_utc": "2026-03-07T19:47:19-05:00"
     }
   },
   "source_sync": {
