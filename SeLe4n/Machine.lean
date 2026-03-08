@@ -180,6 +180,12 @@ theorem contains_iff (r : MemoryRegion) (addr : PAddr) :
     r.contains addr = true ↔ r.base.toNat ≤ addr.toNat ∧ addr.toNat < r.endAddr := by
   simp [contains, endAddr]
 
+/-- WS-H11/A-05: A memory region is well-formed when its end address does not overflow,
+    i.e., `endAddr ≤ 2^physicalAddressWidth` for the enclosing machine configuration.
+    This standalone check validates a single region against a given address width. -/
+def wellFormed (r : MemoryRegion) (physAddrWidth : Nat) : Bool :=
+  r.size > 0 && r.endAddr ≤ 2 ^ physAddrWidth
+
 end MemoryRegion
 
 /-- H3-prep: Platform-declared machine configuration parameters.
@@ -237,7 +243,8 @@ private def noOverlapAux : List MemoryRegion → Bool
     1. All regions have nonzero size.
     2. No two regions overlap.
     3. Page size is a positive power of two.
-    4. Register, virtual address, and physical address widths are positive. -/
+    4. Register, virtual address, and physical address widths are positive.
+    5. WS-H11/A-05: Every region's `endAddr` fits within the physical address space. -/
 def wellFormed (cfg : MachineConfig) : Bool :=
   cfg.memoryMap.all (·.size > 0)
   && noOverlapAux cfg.memoryMap
@@ -245,6 +252,7 @@ def wellFormed (cfg : MachineConfig) : Bool :=
   && cfg.registerWidth > 0
   && cfg.virtualAddressWidth > 0
   && cfg.physicalAddressWidth > 0
+  && cfg.memoryMap.all (·.endAddr ≤ 2 ^ cfg.physicalAddressWidth)
 
 end MachineConfig
 

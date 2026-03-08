@@ -120,7 +120,7 @@ instances added for runtime test support. Closes F-P03.
 ### WS-G6: VSpace mapping HashMap (v0.12.11)
 
 Migrated `VSpaceRoot.mappings` from `List (VAddr × PAddr)` to
-`Std.HashMap VAddr PAddr`. Page `lookup`/`mapPage`/`unmapPage` all O(1).
+`Std.HashMap VAddr PAddr` (subsequently enriched to `Std.HashMap VAddr (PAddr × PagePermissions)` by WS-H11). Page `lookup`/`mapPage`/`unmapPage` all O(1).
 
 The `noVirtualOverlap` property is now trivially true for all VSpaceRoots
 (HashMap key uniqueness guarantees no duplicate virtual addresses).

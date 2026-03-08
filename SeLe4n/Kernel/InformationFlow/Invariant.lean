@@ -1551,7 +1551,7 @@ private theorem vspaceMapPage_preserves_projection
     (st st' : SystemState)
     (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
-    (hStep : Architecture.vspaceMapPage asid vaddr paddr st = .ok ((), st')) :
+    (hStep : Architecture.vspaceMapPage asid vaddr paddr default st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold Architecture.vspaceMapPage at hStep
   cases hResolve : Architecture.resolveAsidRoot st asid with
@@ -1559,7 +1559,8 @@ private theorem vspaceMapPage_preserves_projection
   | some pair =>
     rcases pair with ⟨rootId, root⟩
     simp only [hResolve] at hStep
-    cases hMap : root.mapPage vaddr paddr with
+    simp only [PagePermissions.default_wxCompliant, Bool.not_true] at hStep
+    cases hMap : root.mapPage vaddr paddr default with
     | none => simp [hMap] at hStep
     | some root' =>
       simp only [hMap] at hStep
@@ -1576,8 +1577,8 @@ theorem vspaceMapPage_preserves_lowEquivalent
         objectObservable ctx observer rootId = false)
     (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
-    (hStep₁ : Architecture.vspaceMapPage asid vaddr paddr s₁ = .ok ((), s₁'))
-    (hStep₂ : Architecture.vspaceMapPage asid vaddr paddr s₂ = .ok ((), s₂')) :
+    (hStep₁ : Architecture.vspaceMapPage asid vaddr paddr default s₁ = .ok ((), s₁'))
+    (hStep₂ : Architecture.vspaceMapPage asid vaddr paddr default s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
     vspaceMapPage_preserves_projection ctx observer asid vaddr paddr s₁ s₁' hRootHigh₁ hStep₁,
@@ -1636,7 +1637,7 @@ theorem vspaceLookup_preserves_state
   | some pair =>
     rcases pair with ⟨_, root⟩
     simp only [hResolve] at hStep
-    cases hLookup : root.lookup vaddr with
+    cases hLookup : root.lookupAddr vaddr with
     | none => simp [hLookup] at hStep
     | some p =>
       simp only [hLookup, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -2357,7 +2358,7 @@ inductive NonInterferenceStep
       (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
       (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
           objectObservable ctx observer rootId = false)
-      (hStep : Architecture.vspaceMapPage asid vaddr paddr st = .ok ((), st'))
+      (hStep : Architecture.vspaceMapPage asid vaddr paddr default st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | vspaceUnmapPage
       (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)

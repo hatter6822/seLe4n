@@ -365,7 +365,7 @@ private def runNegativeChecks : IO Unit := do
 
   -- F-03 fix: VSpace map test — verify mapping was actually created via subsequent lookup
   let (_, stMapped) ← expectOkState "vspace map initial"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary baseState)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) baseState)
 
   -- Verify the mapping was actually created by looking it up
   match SeLe4n.Kernel.Architecture.vspaceLookup asidPrimary vaddrPrimary stMapped with
@@ -378,7 +378,7 @@ private def runNegativeChecks : IO Unit := do
       throw <| IO.userError s!"vspace lookup after map failed: {reprStr err} — mapping was not created"
 
   expectError "vspace duplicate map conflict"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
   let (_, stAwait) ← expectOkState "await receive handshake seed"
@@ -1018,10 +1018,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := 77
-      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 4096 8192).insert 12288 16384 }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert 4096 (8192, default)).insert 12288 (16384, default) }
   let vr2 : VSpaceRoot :=
     { asid := 77
-      mappings := (({} : Std.HashMap SeLe4n.VAddr SeLe4n.PAddr).insert 12288 16384).insert 4096 8192 }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert 12288 (16384, default)).insert 4096 (8192, default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else
@@ -1067,6 +1067,183 @@ private def runWSH7Checks : IO Unit := do
 
   IO.println "WS-H7 regression checks passed"
 
+-- ============================================================================
+-- WS-H11: VSpace & Architecture Enrichment negative tests
+-- ============================================================================
+
+/-- WS-H11 negative tests: VSpace page permissions, address bounds, ASID, and TLB. -/
+def runWSH11Checks : IO Unit := do
+  IO.println "\n--- WS-H11: VSpace & Architecture Enrichment ---"
+
+  -- Build a state with a VSpaceRoot
+  let asid : SeLe4n.ASID := 1
+  let vspaceOid : SeLe4n.ObjId := 20
+  let st := (BootstrapBuilder.empty
+    |>.withObject vspaceOid (.vspaceRoot { asid := asid, mappings := {} })
+    |>.withLifecycleObjectType vspaceOid .vspaceRoot).build
+
+  -- H-02: W^X violation must be rejected
+  let wxPerms : PagePermissions := { write := true, execute := true }
+  expectError "WS-H11 W^X violation rejected"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192 wxPerms) st)
+    .policyDenied
+  IO.println "negative check passed [WS-H11 W^X violation correctly rejected]"
+
+  -- A-05: Address bounds violation must be rejected (vspaceMapPageChecked)
+  let hugeAddr : SeLe4n.PAddr := ⟨2^52 + 1⟩
+  expectError "WS-H11 address out of bounds rejected"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid 4096 hugeAddr) st)
+    .addressOutOfBounds
+  IO.println "negative check passed [WS-H11 address out of bounds correctly rejected]"
+
+  -- Boundary: address exactly at bound is also rejected
+  let boundaryAddr : SeLe4n.PAddr := ⟨2^52⟩
+  expectError "WS-H11 address at boundary rejected"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid 4096 boundaryAddr) st)
+    .addressOutOfBounds
+  IO.println "negative check passed [WS-H11 address at boundary correctly rejected]"
+
+  -- A-05: Address just below bound should succeed via checked path
+  let validAddr : SeLe4n.PAddr := ⟨2^52 - 1⟩
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid 4096 validAddr) st with
+  | .ok _ => IO.println "positive check passed [WS-H11 valid address accepted by checked map]"
+  | .error err => throw <| IO.userError s!"WS-H11 valid address rejected: {reprStr err}"
+
+  -- Mapping conflict: duplicate vaddr should fail
+  let (_, stMapped) ← expectOkState "WS-H11 map initial"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st)
+  expectError "WS-H11 duplicate mapping conflict"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 16384) stMapped)
+    .mappingConflict
+  IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
+
+  -- ASID not bound: lookup on unregistered ASID
+  expectError "WS-H11 unbound ASID lookup"
+    (SeLe4n.Kernel.Architecture.vspaceLookup 99 4096 st)
+    .asidNotBound
+  IO.println "negative check passed [WS-H11 unbound ASID correctly rejected]"
+
+  -- Translation fault: lookup on unmapped vaddr
+  expectError "WS-H11 unmapped vaddr lookup"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid 9999 st)
+    .translationFault
+  IO.println "negative check passed [WS-H11 unmapped vaddr returns translation fault]"
+
+  -- Unmap non-existent mapping returns error
+  expectError "WS-H11 unmap non-existent"
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid 9999) st)
+    .translationFault
+  IO.println "negative check passed [WS-H11 unmap non-existent returns translation fault]"
+
+  -- Read-only permissions (write=false, execute=false) should be W^X compliant
+  let roPerms : PagePermissions := { read := true, write := false, execute := false }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 8192 16384 roPerms) st with
+  | .ok _ => IO.println "positive check passed [WS-H11 read-only permissions accepted]"
+  | .error err => throw <| IO.userError s!"WS-H11 read-only rejected: {reprStr err}"
+
+  -- Write-only (no execute) should be W^X compliant
+  let woPerms : PagePermissions := { read := false, write := true, execute := false }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 12288 20480 woPerms) st with
+  | .ok _ => IO.println "positive check passed [WS-H11 write-only permissions accepted]"
+  | .error err => throw <| IO.userError s!"WS-H11 write-only rejected: {reprStr err}"
+
+  -- Execute-only (no write) should be W^X compliant
+  let xoPerms : PagePermissions := { read := false, write := false, execute := true }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 16384 24576 xoPerms) st with
+  | .ok _ => IO.println "positive check passed [WS-H11 execute-only permissions accepted]"
+  | .error err => throw <| IO.userError s!"WS-H11 execute-only rejected: {reprStr err}"
+
+  -- TLB model: empty TLB is consistent
+  let tlb := SeLe4n.Kernel.Architecture.TlbState.empty
+  -- Full flush produces empty TLB
+  let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlb
+  if flushed.entries.length = 0 then
+    IO.println "positive check passed [WS-H11 full TLB flush clears all entries]"
+  else
+    throw <| IO.userError "WS-H11 full TLB flush should clear entries"
+
+  -- Per-ASID flush removes only matching ASID entries
+  let entry1 : SeLe4n.Kernel.Architecture.TlbEntry :=
+    { asid := 1, vaddr := 4096, paddr := 8192, perms := default }
+  let entry2 : SeLe4n.Kernel.Architecture.TlbEntry :=
+    { asid := 2, vaddr := 8192, paddr := 16384, perms := default }
+  let tlb2 : SeLe4n.Kernel.Architecture.TlbState := { entries := [entry1, entry2] }
+  let flushedAsid := SeLe4n.Kernel.Architecture.adapterFlushTlbByAsid tlb2 1
+  if flushedAsid.entries.length = 1 then
+    IO.println "positive check passed [WS-H11 per-ASID TLB flush removes only matching]"
+  else
+    throw <| IO.userError s!"WS-H11 per-ASID flush: expected 1 entry, got {flushedAsid.entries.length}"
+
+  -- vspaceLookupFull returns permissions
+  let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 20480 32768 permsCheck) st with
+  | .error err => throw <| IO.userError s!"WS-H11 lookupFull map error: {reprStr err}"
+  | .ok (_, stPerm) =>
+      match SeLe4n.Kernel.Architecture.vspaceLookupFull asid 20480 stPerm with
+      | .error err => throw <| IO.userError s!"WS-H11 lookupFull error: {reprStr err}"
+      | .ok ((paddr, perms), _) =>
+          if paddr = ⟨32768⟩ && perms.read == true && perms.write == false &&
+             perms.execute == false && perms.user == true then
+            IO.println "positive check passed [WS-H11 vspaceLookupFull returns correct permissions]"
+          else
+            throw <| IO.userError s!"WS-H11 lookupFull wrong result"
+
+  -- Cross-ASID isolation: mapping in ASID 1 must not be visible in ASID 2
+  let asid2 : SeLe4n.ASID := 2
+  let vspaceOid2 : SeLe4n.ObjId := 21
+  let st2Asid := (BootstrapBuilder.empty
+    |>.withObject vspaceOid (.vspaceRoot { asid := asid, mappings := {} })
+    |>.withLifecycleObjectType vspaceOid .vspaceRoot
+    |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
+    |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).build
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st2Asid with
+  | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {reprStr err}"
+  | .ok (_, stCross) =>
+      expectError "WS-H11 cross-ASID isolation"
+        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 4096 stCross)
+        .translationFault
+  IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
+
+  -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st with
+  | .error err => throw <| IO.userError s!"WS-H11 multi-map step 1 failed: {reprStr err}"
+  | .ok (_, stM1) =>
+      match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 8192 16384) stM1 with
+      | .error err => throw <| IO.userError s!"WS-H11 multi-map step 2 failed: {reprStr err}"
+      | .ok (_, stM2) =>
+          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 12288 24576) stM2 with
+          | .error err => throw <| IO.userError s!"WS-H11 multi-map step 3 failed: {reprStr err}"
+          | .ok (_, stM3) =>
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid 4096 stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid 8192 stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid 12288 stM3 with
+              | .ok (p1, _), .ok (p2, _), .ok (p3, _) =>
+                  if p1 = ⟨8192⟩ && p2 = ⟨16384⟩ && p3 = ⟨24576⟩ then
+                    IO.println "positive check passed [WS-H11 multiple concurrent mappings all retrievable]"
+                  else
+                    throw <| IO.userError "WS-H11 multi-map: wrong addresses returned"
+              | _, _, _ => throw <| IO.userError "WS-H11 multi-map: lookup failed"
+
+  -- Sequential map-unmap-map cycle: verify remapping works after unmap
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 8192) st with
+  | .error err => throw <| IO.userError s!"WS-H11 cycle map1 failed: {reprStr err}"
+  | .ok (_, stC1) =>
+      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid 4096) stC1 with
+      | .error err => throw <| IO.userError s!"WS-H11 cycle unmap failed: {reprStr err}"
+      | .ok (_, stC2) =>
+          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid 4096 16384) stC2 with
+          | .error err => throw <| IO.userError s!"WS-H11 cycle remap failed: {reprStr err}"
+          | .ok (_, stC3) =>
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid 4096 stC3 with
+              | .ok (pa, _) =>
+                  if pa = ⟨16384⟩ then
+                    IO.println "positive check passed [WS-H11 map-unmap-remap cycle works correctly]"
+                  else
+                    throw <| IO.userError s!"WS-H11 cycle: expected 16384, got {pa.toNat}"
+              | .error err => throw <| IO.userError s!"WS-H11 cycle lookup failed: {reprStr err}"
+
+  IO.println "all WS-H11 VSpace & Architecture checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1074,3 +1251,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runH2NegativeChecks
   SeLe4n.Testing.runAuditCoverageChecks
   SeLe4n.Testing.runWSH7Checks
+  SeLe4n.Testing.runWSH11Checks

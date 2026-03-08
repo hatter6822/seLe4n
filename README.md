@@ -54,17 +54,17 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.13.6` |
+| **Version** | `0.13.7` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 29,351 across 40 files |
-| **Test Lean LoC** | 2,063 across 3 test suites |
-| **Proved declarations** | 866 theorem/lemma declarations (zero sorry/axiom) |
-| **Build jobs** | 84 |
+| **Production Lean LoC** | 29,888 across 41 files |
+| **Test Lean LoC** | 2,241 across 3 test suites |
+| **Proved declarations** | 881 theorem/lemma declarations (zero sorry/axiom) |
+| **Build jobs** | 86 |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Completed** | End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 All quantitative attributes above are generated from the codebase using
@@ -75,7 +75,7 @@ All quantitative attributes above are generated from the codebase using
 
 ```bash
 ./scripts/setup_lean_env.sh   # install Lean toolchain
-lake build                     # compile all 40 modules (84 jobs)
+lake build                     # compile all 41 modules (86 jobs)
 lake exe sele4n                # run trace harness
 ./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
@@ -169,7 +169,7 @@ aggregates all subsystem invariants into a single proof obligation.
 | `SeLe4n/Kernel/IPC/Invariant.lean` | 95+ IPC invariant preservation theorems (largest proof module, ~6,600 LoC) |
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
 | `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
-| `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr PAddr` map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
+| `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr (PAddr × PagePermissions)` map/unmap/lookup with W^X enforcement, `VSpaceBackend` class, TLB model, adapter contracts, boundary assumptions |
 | `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), BIBA lattice alternatives, `DeclassificationPolicy`, 69 NI theorems covering >80% of kernel operations, 31-constructor `NonInterferenceStep` |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface and `apiInvariantBundle` alias |
 | `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
@@ -208,7 +208,7 @@ All theorem/invariant declarations were re-verified with zero sorry/axiom after 
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph, DFS cycle detection, and deterministic partial-failure semantics |
 | **Capability derivation** | CDT with linked-list children | `childMap : HashMap CdtNodeId (List CdtNodeId)` for O(1) children lookup; `descendantsOf` in O(n+e) |
 | **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking, domain-aware EDF partitioning |
-| **VSpace** | Hardware page tables | `HashMap VAddr PAddr` with `VSpaceBackend` typeclass for platform-agnostic lookup |
+| **VSpace** | Hardware page tables | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement, `VSpaceBackend` typeclass, abstract TLB model |
 | **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (Operations/Invariant split) |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
 
@@ -224,7 +224,7 @@ the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium |
+| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
@@ -261,6 +261,7 @@ See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.m
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H11** | v0.13.7 | VSpace & architecture enrichment: PagePermissions with W^X enforcement, `vspaceMapPageChecked` with ARM64 52-bit address bounds, `vspaceInvariantBundle` 5-conjunct preservation, TLB/cache maintenance model (`TlbState`, `adapterFlushTlb`), `VSpaceBackend` typeclass abstraction, ASID table composition theorems. 15 new theorems, 881 proved declarations | H11 |
 | **End-to-end audit** | v0.13.6 | Comprehensive codebase audit: zero critical issues, zero sorry/axiom, stale documentation metrics fixed (theorem counts, LoC), audit report produced. 866 proved declarations confirmed | Audit |
 | **WS-H10** | v0.13.6 | Security model foundations: `ObservableState` with `machineRegs`, BIBA lattice alternatives, `DeclassificationPolicy`, `endpointFlowPolicyWellFormed`, `InformationFlowConfigInvariant`. Closes C-05/A-38, A-34, A-39, M-16 | H10 |
 | **WS-H7/H8/H9 gaps** | v0.13.5 | BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, 31-constructor `NonInterferenceStep` | H7/H8/H9 gap closure |

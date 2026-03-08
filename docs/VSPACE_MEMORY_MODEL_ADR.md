@@ -33,6 +33,15 @@ proof-friendly and explicitly extensible.
 6. (WS-C7 amendment) Replace bounded numeric scanning with explicit object-index traversal
    (`SystemState.objectIndex`) for ASID-root discovery (`resolveAsidRoot`).
 
+## Evolution through subsequent workstreams
+
+| Workstream | Change |
+|------------|--------|
+| WS-C7 | Replaced bounded numeric scanning with explicit object-index traversal for ASID discovery. |
+| WS-G6 | Migrated `VSpaceRoot.mappings` from `List (VAddr × PAddr)` to `Std.HashMap VAddr PAddr` for O(1) operations. |
+| WS-G3 | Added `asidTable : Std.HashMap ASID ObjId` for O(1) ASID resolution; `asidTableConsistent` invariant; `vspaceInvariantBundle` extended to 3 conjuncts. |
+| WS-H11 | Enriched mappings to `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement; `vspaceInvariantBundle` extended to 5 conjuncts (+ `wxExclusiveInvariant` + `boundedAddressTranslation`); `VSpaceBackend` enriched with permissions; `MachineConfig.wellFormed` enforces `endAddr ≤ 2^physicalAddressWidth`; abstract TLB model (`TlbState`, `adapterFlushTlb`, `tlbConsistent`). |
+
 ## Consequences
 
 ### Positive
@@ -40,11 +49,13 @@ proof-friendly and explicitly extensible.
 - Removes VSpace placeholder status from the executable model.
 - Enables deterministic map→lookup→unmap trace evidence.
 - Provides a stable proof and API surface for WS-B5/WS-B6/WS-B7 follow-on work.
+- (WS-H11) Per-page permissions with W^X enforcement at insertion time.
+- (WS-H11) Abstract TLB model enables reasoning about cache maintenance sequences.
 
 ### Deferred
 
 - Multi-level page-table walk semantics.
-- Hardware-precise MMU/TLB invalidation behavior.
+- ~~Hardware-precise MMU/TLB invalidation behavior.~~ Partially addressed: abstract `TlbState` model added (WS-H11); hardware-specific TLB ISB/DSB barrier integration deferred to H3 platform bring-up.
 - Tight coupling to physical memory frame allocator semantics.
 
 These remain tracked as post-WS-B1 expansions; WS-C7 has already removed the bounded
@@ -53,8 +64,12 @@ remains future work.
 
 ## Verification evidence
 
+- `SeLe4n/Model/Object.lean` (PagePermissions, VSpaceRoot)
+- `SeLe4n/Machine.lean` (MachineConfig.wellFormed, MemoryRegion.wellFormed)
 - `SeLe4n/Kernel/Architecture/VSpace.lean`
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
+- `SeLe4n/Kernel/Architecture/VSpaceBackend.lean`
+- `SeLe4n/Kernel/Architecture/TlbModel.lean`
 - `docs/FINITE_OBJECT_STORE_ADR.md` (WS-C7 object-index staging ADR)
 - `Main.lean` VSpace trace steps
 - `tests/fixtures/main_trace_smoke.expected`

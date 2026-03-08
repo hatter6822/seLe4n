@@ -27,16 +27,31 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | _ => none
   | none => none
 
-/-- Deterministic VSpace map transition with explicit failures. -/
-def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Kernel Unit :=
+/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit). -/
+def physicalAddressBound : Nat := 2^52
+
+/-- WS-H11: Deterministic VSpace map transition with explicit failures.
+Accepts per-page permissions; enforces W^X at insertion time. -/
+def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := default) : Kernel Unit :=
   fun st =>
     match resolveAsidRoot st asid with
     | none => .error .asidNotBound
     | some (rootId, root) =>
-        match root.mapPage vaddr paddr with
-        | none => .error .mappingConflict
-        | some root' =>
-            storeObject rootId (.vspaceRoot root') st
+        if !perms.wxCompliant then .error .policyDenied
+        else
+          match root.mapPage vaddr paddr perms with
+          | none => .error .mappingConflict
+          | some root' =>
+              storeObject rootId (.vspaceRoot root') st
+
+/-- WS-H11/A-05: Address-bounds-checked VSpace map — rejects physical addresses ≥ 2^52.
+This is the production entry point; `vspaceMapPage` is the core transition used by proofs. -/
+def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := default) : Kernel Unit :=
+  fun st =>
+    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    else vspaceMapPage asid vaddr paddr perms st
 
 /-- Deterministic VSpace unmap transition with explicit failures. -/
 def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
@@ -49,13 +64,25 @@ def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
         | some root' =>
             storeObject rootId (.vspaceRoot root') st
 
-/-- Deterministic VSpace translation helper with explicit failure on unresolved mappings. -/
-def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAddr :=
+/-- WS-H11: Deterministic VSpace translation helper returning physical address and permissions. -/
+def vspaceLookupFull (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    Kernel (SeLe4n.PAddr × PagePermissions) :=
   fun st =>
     match resolveAsidRoot st asid with
     | none => .error .asidNotBound
     | some (_, root) =>
         match root.lookup vaddr with
+        | none => .error .translationFault
+        | some entry => .ok (entry, st)
+
+/-- Deterministic VSpace translation helper with explicit failure on unresolved mappings.
+Returns only the physical address for backward compatibility. -/
+def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAddr :=
+  fun st =>
+    match resolveAsidRoot st asid with
+    | none => .error .asidNotBound
+    | some (_, root) =>
+        match root.lookupAddr vaddr with
         | none => .error .translationFault
         | some paddr => .ok (paddr, st)
 

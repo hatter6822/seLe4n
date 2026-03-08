@@ -1,3 +1,36 @@
+## [0.13.7] - 2026-03-08
+
+### WS-H11: VSpace & Architecture Enrichment
+
+- **Part A — PagePermissions & W^X enforcement:** `PagePermissions` struct with
+  `wxCompliant` predicate; W^X enforced at insertion time in `vspaceMapPage`;
+  enriched mappings `HashMap VAddr (PAddr × PagePermissions)` with
+  `vspaceLookupFull` returning permissions alongside physical address.
+- **Part B — Address bounds check:** `vspaceMapPageChecked` rejects physical
+  addresses ≥ 2^52 (ARM64 52-bit PA bound); `physicalAddressBound` constant;
+  `addressOutOfBounds` error variant; preservation theorem
+  `vspaceMapPageChecked_success_preserves_vspaceInvariantBundle`.
+- **Part C — ASID uniqueness & consistency:** `asidTableConsistent` and
+  `vspaceAsidRootsUnique` in the 5-conjunct `vspaceInvariantBundle`;
+  `resolveAsidRoot` extraction and characterization lemmas.
+- **Part D — TLB/cache maintenance model:** `TlbEntry`, `TlbState`,
+  `adapterFlushTlb`, `adapterFlushTlbByAsid`, `tlbConsistent`; abstract TLB
+  model with full and per-ASID flush operations proven correct.
+- **VSpaceBackend typeclass:** Platform-agnostic VSpace operations abstraction
+  with `hashMapVSpaceBackend` instance; prepares for ARM page table backend.
+- **ASID table composition:** Explicit `resolveAsidRoot` agreement theorems
+  for `vspaceMapPage` and `vspaceUnmapPage`, proving ASID table consistency
+  is preserved through page table modifications.
+- **TLB selectivity:** `adapterFlushTlbByAsid_removes_matching` and
+  `adapterFlushTlbByAsid_preserves_other` theorems proving per-ASID flush
+  removes exactly matching entries and preserves all others.
+- **Testing:** 18+ new negative-state tests covering W^X, address bounds, ASID
+  errors, TLB flush, permission round-trip, cross-ASID isolation, multiple
+  concurrent mappings, and map-unmap-remap cycles; 3 new MainTraceHarness
+  traces (VSPACE-05..07).
+- **Metrics:** 881 proved declarations (zero sorry/axiom), 29,888 production
+  LoC across 41 files, 86 build jobs.
+
 ## [0.13.6] - 2026-03-08
 
 ### End-to-End Codebase Audit

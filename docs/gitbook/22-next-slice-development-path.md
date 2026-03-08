@@ -30,15 +30,15 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H11..H16 and WS-F5..F8
+## Immediate next: WS-H12..H16 and WS-F5..F8
 
-### WS-H11..H16 — Remaining v0.12.15 audit remediation
+### WS-H12..H16 — Remaining v0.12.15 audit remediation
 
 The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium |
+| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |

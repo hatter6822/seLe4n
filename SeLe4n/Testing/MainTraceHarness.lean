@@ -157,7 +157,7 @@ private def runCapabilityAndArchitectureTrace (st1 : SystemState) : IO Unit := d
   | .error err => IO.println s!"adapter read success path error: {reprStr err}"
   | .ok (byte, _) =>
       IO.println s!"adapter read success path byte: {reprStr byte}"
-  match SeLe4n.Kernel.Architecture.vspaceMapPage 1 4096 8192 st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage 1 4096 8192) st1 with
   | .error err => IO.println s!"vspace map error: {reprStr err}"
   | .ok (_, stV1) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup 1 4096 stV1 with
@@ -170,6 +170,33 @@ private def runCapabilityAndArchitectureTrace (st1 : SystemState) : IO Unit := d
               match SeLe4n.Kernel.Architecture.vspaceLookup 1 4096 stV3 with
               | .error err => IO.println s!"vspace lookup after unmap branch: {reprStr err}"
               | .ok (resolved, _) => IO.println s!"unexpected vspace lookup after unmap: {reprStr resolved}"
+  -- WS-H11: W^X violation test — write+execute permissions must be rejected
+  let wxViolation : SeLe4n.Model.PagePermissions := { write := true, execute := true }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage 1 4096 8192 wxViolation) st1 with
+  | .error err => IO.println s!"vspace map W^X violation correctly rejected: {reprStr err}"
+  | .ok _ => IO.println "unexpected vspace map W^X violation accepted"
+  -- WS-H11: Explicit read-only permissions test
+  let readOnly : SeLe4n.Model.PagePermissions := { read := true }
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage 1 4096 8192 readOnly) st1 with
+  | .error err => IO.println s!"vspace map read-only error: {reprStr err}"
+  | .ok (_, stPerm) =>
+      match SeLe4n.Kernel.Architecture.vspaceLookupFull 1 4096 stPerm with
+      | .error err => IO.println s!"vspace lookupFull error: {reprStr err}"
+      | .ok ((paddr, perms), _) =>
+          IO.println s!"vspace lookupFull paddr: {paddr.toNat}, read={perms.read}, write={perms.write}, exec={perms.execute}"
+  -- WS-H11/A-05: Address bounds check — vspaceMapPageChecked rejects paddr ≥ 2^52
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked 1 4096 ⟨2^52⟩) st1 with
+  | .error err => IO.println s!"vspace mapChecked address out of bounds: {reprStr err}"
+  | .ok _ => IO.println "unexpected vspace mapChecked accepted out-of-bounds address"
+  -- WS-H11/A-05: Valid address (2^52 - 1) accepted through checked path
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked 1 4096 ⟨2^52 - 1⟩) st1 with
+  | .error err => IO.println s!"unexpected vspace mapChecked rejected valid address: {reprStr err}"
+  | .ok _ => IO.println "vspace mapChecked valid address accepted"
+  -- WS-H11/M-14: TLB full flush produces empty TLB
+  let tlbWithEntries : SeLe4n.Kernel.Architecture.TlbState :=
+    { entries := [{ asid := 1, vaddr := 4096, paddr := 8192, perms := default }] }
+  let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlbWithEntries
+  IO.println s!"TLB flush entry count: {flushed.entries.length}"
   match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll 7 99 st1 with
   | .error err => IO.println s!"adapter register write success path error: {reprStr err}"
   | .ok (_, stReg) =>

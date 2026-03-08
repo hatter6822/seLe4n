@@ -39,7 +39,17 @@ WS-H8 (enforcement-NI bridge & missing wrappers, completed) →
 WS-H9 (non-interference coverage extension, completed) →
 WS-H7/H8/H9 gap closure (comprehensive audit, v0.13.5) →
 WS-H10 (security model foundations, v0.13.6) →
-End-to-end codebase audit (v0.13.6).
+End-to-end codebase audit (v0.13.6) →
+WS-H11 (VSpace & architecture enrichment, v0.13.7).
+
+## Completed: WS-H11 VSpace & Architecture Enrichment (v0.13.7)
+
+PagePermissions struct with W^X enforcement at insertion time. Address bounds
+checking via `vspaceMapPageChecked` (ARM64 52-bit PA bound). TLB/cache
+maintenance model with `TlbState`, `adapterFlushTlb`, and `adapterFlushTlbByAsid`.
+`VSpaceBackend` typeclass for platform-agnostic page table operations.
+`vspaceInvariantBundle` extended to 5-conjunct preservation across all VSpace
+transitions. 876 proved declarations, zero sorry/axiom.
 
 ## Completed: WS-H10 Security Model Foundations (v0.13.6)
 
@@ -120,10 +130,12 @@ for the full technical breakdown.
 
 ### Remaining v0.12.15 audit remediation (WS-H11..H16)
 
-WS-H1..H10 are completed. The remaining workstreams address Phases 4–5:
-VSpace enrichment (H11), scheduler/IPC alignment (H12), CSpace/service
+WS-H1..H11 are completed. The remaining workstreams address Phases 4–5:
+scheduler/IPC alignment (H12), CSpace/service
 enrichment (H13), type safety (H14), platform hardening (H15), and
-testing/docs expansion (H16).
+testing/docs expansion (H16). WS-H11 added `PagePermissions` with W^X enforcement,
+abstract TLB model, bounded address translation checks, and extended
+`vspaceInvariantBundle` to 5 conjuncts.
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 and [Next Development Path](22-next-slice-development-path.md).
