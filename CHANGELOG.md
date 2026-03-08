@@ -1,3 +1,54 @@
+## [0.13.4] - 2026-03-07
+
+### WS-H9: Non-Interference Coverage Extension
+
+- **NI coverage extended from ~25% to >80% (C-02/A-40 CRITICAL):** Added 27
+  new non-interference preservation theorems covering scheduler, IPC, CSpace,
+  VSpace, and observable-state operations. Total NI theorems in
+  `Invariant.lean`: 69 (up from ~19). Proof surface covers all kernel
+  transitions that modify security-relevant state.
+- **NonInterferenceStep inductive extended to 28 constructors (M-15 MEDIUM):**
+  Up from 11 constructors. Covers: `chooseThread`, `endpointSend`,
+  `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`,
+  `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`,
+  `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`,
+  `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`,
+  `endpointReply`, `storeObjectHigh`, `setCurrentThread`,
+  `ensureRunnableHigh`, `removeRunnableHigh`,
+  `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`,
+  `cspaceMutateHigh`, `handleYield`, `timerTick`.
+- **Scheduler NI proofs (Part A):** `schedule_preserves_projection` (with
+  high-current and all-runnable-high side conditions),
+  `setCurrentThread_preserves_projection`,
+  `ensureRunnable_preserves_projection`,
+  `removeRunnable_preserves_projection`,
+  `rotateToBack_preserves_projection`,
+  `handleYield_preserves_projection` / `_lowEquivalent`,
+  `insert_tick_preserves_projection`,
+  `timerTick_preserves_projection` / `_lowEquivalent`.
+- **IPC NI proofs (Part B):** `endpointReply_preserves_projection` /
+  `_lowEquivalent`, `storeTcbIpcStateAndMessage_preserves_projection`,
+  `storeTcbQueueLinks_preserves_projection`,
+  `storeTcbPendingMessage_preserves_projection`.
+- **CSpace NI proofs (Part C):** `cspaceCopy_preserves_projection` /
+  `_lowEquivalent`, `cspaceMove_preserves_projection` / `_lowEquivalent`,
+  `cspaceDeleteSlot_preserves_projection` / `_lowEquivalent`,
+  `cspaceMutate` handled via `cspaceMutateHigh` constructor.
+- **VSpace NI proofs (Part D):** `vspaceMapPage_preserves_projection` /
+  `_lowEquivalent`, `vspaceUnmapPage_preserves_projection` /
+  `_lowEquivalent`, `vspaceLookup_preserves_state` / `_lowEquivalent`.
+- **Observable-state NI (Part E):** `storeObject_preserves_projection`,
+  `storeCapabilityRef_preserves_projection`, CDT-only helpers
+  (`cdt_only_preserves_projection`, `ensureCdtNodeForSlot_preserves_projection`,
+  `attachSlotToCdtNode_preserves_projection`).
+- **switchDomain two-sided NI (Part A supplement):**
+  `switchDomain_preserves_lowEquivalent` — domain switching modifies scheduler
+  globals so one-sided projection is NOT preserved, but two-sided
+  low-equivalence IS preserved since both states see the same domain change.
+- **RunQueue filter_erase_of_false fix:** Corrected Bool/Prop coercion in
+  `SeLe4n/Kernel/Scheduler/RunQueue.lean`.
+- **827 proved declarations. Zero sorry/axiom. `test_full.sh` passes.**
+
 ## [0.13.3] - 2026-03-07
 
 ### WS-H6: EDF Scheduler Proof Completion

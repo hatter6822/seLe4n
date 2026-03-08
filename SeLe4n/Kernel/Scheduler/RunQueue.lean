@@ -359,6 +359,35 @@ theorem mem_toList_rotateToBack_ne (rq : RunQueue) (tid x : ThreadId)
       exact Or.inl (List.mem_erase_of_ne hne |>.mpr h)
   · exact Iff.rfl
 
+/-- WS-H9: Erasing an element with `p a = false` preserves the filtered list. -/
+private theorem filter_erase_of_false {α : Type} [DecidableEq α] [BEq α] [LawfulBEq α]
+    (xs : List α) (a : α) (p : α → Bool) (hp : p a = false) :
+    (xs.erase a).filter p = xs.filter p := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    by_cases hxa : x = a
+    · subst hxa; simp [List.erase_cons_head, List.filter, hp]
+    · have hBeq : (x == a) = false := by
+        exact beq_false_of_ne hxa
+      simp [hBeq, List.filter]
+      cases hpx : p x <;> simp_all
+
+/-- WS-H9: rotateToBack preserves filtered list when the rotated element is filtered out.
+Since `p tid = false`, rotating `tid` to the back doesn't change the filtered result. -/
+theorem toList_filter_rotateToBack_neg (rq : RunQueue) (tid : ThreadId)
+    (p : ThreadId → Bool) (hp : p tid = false) :
+    (rq.rotateToBack tid).toList.filter p = rq.toList.filter p := by
+  simp only [toList]
+  unfold rotateToBack
+  split
+  · -- tid ∈ rq: flat becomes flat.erase tid ++ [tid]
+    rw [List.filter_append]
+    simp [List.filter, hp]
+    exact filter_erase_of_false rq.flat tid p hp
+  · -- tid ∉ rq: no change
+    rfl
+
 -- ============================================================================
 -- WS-H6: RunQueue well-formedness predicate
 -- ============================================================================

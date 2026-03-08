@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.13.2-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.13.4-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -54,16 +54,16 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.13.3` |
+| **Version** | `0.13.4` |
 | **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 27,580 across 40 files |
+| **Production Lean LoC** | 27,338 across 40 files |
 | **Test Lean LoC** | 2,063 across 3 test suites |
-| **Proved declarations** | 800 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 833 theorem/lemma declarations (zero sorry/axiom) |
 | **Build jobs** | 84 |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
-| **Completed** | WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 All quantitative attributes above are generated from the codebase using
@@ -169,7 +169,7 @@ aggregates all subsystem invariants into a single proof obligation.
 | `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
 | `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
 | `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr PAddr` map/unmap/lookup, `VSpaceBackend` class, adapter contracts, boundary assumptions |
-| `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), `computeObservableSet` with `HashSet`, 15+ non-interference theorems |
+| `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), `computeObservableSet` with `HashSet`, 69 non-interference theorems covering >80% of kernel operations |
 | `SeLe4n/Kernel/API.lean` | Unified public API surface and `apiInvariantBundle` alias |
 | `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
 | `SeLe4n/Platform/Sim/*` | Simulation platform binding (permissive contracts for testing) |

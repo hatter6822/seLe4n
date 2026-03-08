@@ -794,7 +794,7 @@ WS-H5 (IPC invariants for IPC enforcement bridge).
 
 ---
 
-### WS-H9: Non-Interference Coverage Extension (CRITICAL)
+### WS-H9: Non-Interference Coverage Extension (CRITICAL) — COMPLETED (v0.13.4)
 
 **Objective:** Extend non-interference proofs from ~25% to >80% of kernel
 operations, prioritizing scheduler operations (which modify globally-visible
