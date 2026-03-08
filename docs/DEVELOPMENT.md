@@ -32,16 +32,30 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 3) Next workstream: remaining WS-F (F5–F8)
+## 3) Next workstreams
 
-The critical WS-F workstreams (F1–F4) and the WS-G performance optimization
-portfolio are completed. The next focus is the remaining medium/low-priority
-WS-F workstreams.
+Two workstream portfolios remain active. The primary focus is the remaining
+WS-H workstreams from the v0.12.15 audit (Phases 4–5), with secondary focus
+on the remaining WS-F workstreams from the v0.12.2 audit.
+
+### 3.1 WS-H11..H16 — Remaining v0.12.15 audit remediation
+
+See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
+for the full execution plan.
+
+| ID | Focus | Priority | Status |
+|----|-------|----------|--------|
+| **WS-H11** | VSpace enrichment (multi-level page walk, ASID lifecycle) | Medium | Next |
+| **WS-H12** | Scheduler/IPC semantic alignment (MCS contexts, budget tracking) | Medium | Next |
+| **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium | Planned |
+| **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low | Planned |
+| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low | Planned |
+| **WS-H16** | Testing and documentation expansion | Low | Planned |
+
+### 3.2 WS-F5..F8 — Remaining v0.12.2 audit remediation
 
 See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
 for the full execution plan.
-
-### 3.1 Remaining workstreams
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
@@ -50,7 +64,7 @@ for the full execution plan.
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
 
-### 3.2 Completed portfolios
+### 3.3 Completed portfolios
 
 - **WS-H10:** completed (v0.13.6). Security model foundations — `ObservableState` extended with `machineRegs` (domain-gated register file projection); machine timer excluded as covert timing channel; `bibaIntegrityFlowsTo`/`bibaSecurityFlowsTo`/`bibaPolicy` standard BIBA alternatives with refl/trans proofs; `DeclassificationPolicy` with `declassifyStore` enforcement operation (5 theorems) and `declassifyStore_NI` non-interference proof; `endpointFlowPolicyWellFormed` predicate with reflexivity/transitivity inheritance proofs; `InformationFlowConfigInvariant` bundle. Closes C-05/A-38 (CRITICAL), A-34 (CRITICAL), A-39 (MEDIUM), M-16 (MEDIUM). 866 proved declarations.
 - **WS-H7/H8/H9 gap closure:** completed (v0.13.5). Comprehensive audit remediation — `VSpaceRoot.beq_sound`/`CNode.beq_sound` BEq soundness lemmas (WS-H7), `endpointReceiveDualChecked_NI` enforcement bridge (WS-H8), `endpointReceiveDual_preserves_lowEquivalent`/`endpointCall_preserves_lowEquivalent`/`endpointReplyRecv_preserves_lowEquivalent` hypothesis-based IPC NI theorems (WS-H9), `NonInterferenceStep` extended to 31 constructors with `endpointReceiveDualHigh`/`endpointCallHigh`/`endpointReplyRecvHigh`. 840 proved declarations.
@@ -69,7 +83,7 @@ for the full execution plan.
 - **WS-D1..D4:** completed (historical archive).
 - **WS-C1..C8:** completed (historical archive).
 
-### 3.3 PR-to-workstream discipline
+### 3.4 PR-to-workstream discipline
 
 Every milestone-moving PR should include:
 
@@ -91,7 +105,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent WS-F5..F8 slice (prefer next priority in the active plan, starting with P3 targets).
+1. Sync branch and choose one coherent slice from the active plans (WS-H11..H16 or WS-F5..F8; prefer the highest-priority pending item).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

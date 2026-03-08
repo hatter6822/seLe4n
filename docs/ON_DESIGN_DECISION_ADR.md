@@ -1,9 +1,19 @@
 # ADR: F-17 O(n) List-Based Data Structure Design Decision
 
 ## Status
-Accepted (WS-E6 / F-17) — **Superseded by WS-G (v0.12.6–v0.12.15)**
+**Superseded** (WS-G completed, v0.12.6–v0.12.15)
 
-> **Note:** WS-G completed the migration from List-based to `Std.HashMap`/`Std.HashSet`-based data structures for all kernel hot paths. The "Migration path" section below describes the strategy that was executed. See [Kernel Performance Optimization](gitbook/08-kernel-performance-optimization.md) and [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) for the completed execution record.
+> **This ADR is historical.** WS-G (v0.12.6–v0.12.15) completed the full
+> migration from `List`-based to `Std.HashMap`/`Std.HashSet`-based data
+> structures for all kernel hot paths. Every collection listed in the "Context"
+> table below has been migrated to O(1) hash-based structures. The "Decision"
+> and "Migration path" sections describe the rationale and strategy that were
+> followed during execution. This document is retained for architectural
+> traceability — it is not active guidance.
+>
+> See [Kernel Performance Optimization](gitbook/08-kernel-performance-optimization.md)
+> and [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
+> for the completed execution record.
 
 ## Context
 

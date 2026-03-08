@@ -155,16 +155,21 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Kernel/InformationFlow/Policy.lean`
   - security label type (`Confidentiality`, `Integrity`, `SecurityLabel`),
-    policy lattice (`securityFlowsTo`) with algebraic lemmas (refl, trans).
+    policy lattice (`securityFlowsTo`) with algebraic lemmas (refl, trans),
+    N-domain `SecurityDomain`/`DomainFlowPolicy`, BIBA lattice alternatives,
+    `DeclassificationPolicy` with enforcement operation (WS-H10).
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
-  - observer projection helpers (`projectState`, `projectObjects`, `projectRunnable`, `projectCurrent`),
+  - observer projection helpers, `ObservableState` with 9 fields including
+    domain-gated `machineRegs` (WS-H10), domain timing metadata (WS-H8),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean`
-  - checked kernel operations (`endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked`)
+  - 8 policy-checked wrappers (WS-H8 additions: `notificationSignalChecked`,
+    `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`)
     that wire `securityFlowsTo` policy into enforcement boundaries.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean`
-  - non-interference preservation theorems across scheduler, capability, lifecycle, and IPC operations
-    (`chooseThread_preserves_lowEquivalent`, `cspaceMint_preserves_lowEquivalent`, etc.).
+  - 69 NI preservation theorems covering >80% of kernel operations (WS-H9/H10);
+    31-constructor `NonInterferenceStep` inductive; `composedNonInterference_trace`;
+    `declassifyStore_NI`; `InformationFlowConfigInvariant` bundle.
 
 ### Testing modules
 

@@ -10,10 +10,17 @@ seLe4n proves capability, scheduler, IPC, lifecycle, service, and
 architecture-boundary invariants. The v0.12.2 audits identified that information-flow
 coverage was at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
 
-**Current state (post WS-F3):** NI coverage now stands at 12 standalone
-`_preserves_lowEquivalent` theorems + 3 enforcement-NI bridges = **15 total NI
-proofs**. IF-M1 through IF-M4 and WS-F3 are all completed. The remaining
-milestone is IF-M5 (platform-facing integration readiness).
+**Current state (post WS-H10, v0.13.6):** NI coverage now exceeds **80%** of
+kernel operations. The proof surface includes 69 NI preservation theorems
+(standalone `_preserves_lowEquivalent` + enforcement-NI bridges), a 31-constructor
+`NonInterferenceStep` inductive, `composedNonInterference_trace` covering all
+constructors, BIBA lattice alternatives with refl/trans proofs,
+`DeclassificationPolicy` with `declassifyStore_NI`, and
+`InformationFlowConfigInvariant` bundle. IF-M1 through IF-M4 and WS-F3 are all
+completed. WS-H8 (enforcement-NI bridge), WS-H9 (NI coverage extension), and
+WS-H10 (security model foundations) substantially advanced the proof surface
+beyond the original IF-M4 exit criteria. The remaining milestone is IF-M5
+(platform-facing integration readiness).
 
 ## 2. Scope and assumptions
 
@@ -195,6 +202,40 @@ Delivered (WS-F3 closeout):
 - `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
 
 **Testing:** 39 WS-F3 tests in `InformationFlowSuite.lean`, 22 Tier-3 anchors.
+
+## WS-H8 — Enforcement-NI bridge and missing wrappers ✅ completed (v0.13.2)
+
+- 5 enforcement soundness meta-theorems connecting `securityFlowsTo` to NI.
+- 4 new policy-checked wrappers: `notificationSignalChecked`, `cspaceCopyChecked`,
+  `cspaceMoveChecked`, `endpointReceiveDualChecked`.
+- `ObservableState` extended with domain timing metadata (`domainTimeRemaining`,
+  `domainSchedule`, `domainScheduleIndex`).
+- NI bridge theorems for all new wrappers.
+- Closes A-35/H-07 (CRITICAL), H-07 (HIGH), A-36/A-37/H-11 (HIGH).
+
+## WS-H9 — Non-interference coverage extension ✅ completed (v0.13.4)
+
+- 27 new NI preservation theorems across scheduler, IPC, CSpace, VSpace, and
+  observable-state operations.
+- `NonInterferenceStep` extended from 11 to 28 constructors (then to 31 in
+  v0.13.5 gap closure).
+- `switchDomain_preserves_lowEquivalent` two-sided proof.
+- `composedNonInterference_trace` covers all constructors.
+- NI coverage exceeds >80% of kernel operations.
+- Closes C-02/A-40 (CRITICAL), M-15 (MEDIUM).
+
+## WS-H10 — Security model foundations ✅ completed (v0.13.6)
+
+- `ObservableState` extended with domain-gated machine register file projection
+  (`machineRegs`); machine timer excluded as covert timing channel.
+- BIBA lattice alternatives: `bibaIntegrityFlowsTo`, `bibaSecurityFlowsTo`,
+  `bibaPolicy` with reflexivity/transitivity proofs.
+- `DeclassificationPolicy` with `declassifyStore` enforcement operation
+  (5 theorems) and `declassifyStore_NI` non-interference proof.
+- `endpointFlowPolicyWellFormed` predicate with reflexivity/transitivity
+  inheritance proofs.
+- `InformationFlowConfigInvariant` bundle.
+- Closes C-05/A-38 (CRITICAL), A-34 (CRITICAL), A-39 (MEDIUM), M-16 (MEDIUM).
 
 ## IF-M5 — Platform-facing integration readiness
 
