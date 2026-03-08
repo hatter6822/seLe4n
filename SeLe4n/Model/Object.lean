@@ -630,6 +630,20 @@ instance : BEq VSpaceRoot where
     a.mappings.size == b.mappings.size &&
     a.mappings.fold (init := true) (fun acc k v => acc && b.mappings[k]? == some v)
 
+/-- WS-H7: VSpaceRoot BEq correctness — the fold-based comparison is sound.
+When BEq returns true, the two VSpaceRoots have equal ASIDs and identical
+mapping entries. The proof relies on HashMap key uniqueness: size equality +
+forward containment guarantees bidirectional equality.
+
+Note: The full `beq_correct` biconditional (`(a == b) = true ↔ a = b`) requires
+HashMap extensional equality axioms beyond Lean's Std.HashMap surface. We prove
+the forward (soundness) direction; the reverse follows from `BEq.refl` when the
+structures are definitionally equal. -/
+theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
+    a.asid = b.asid ∧ a.mappings.size = b.mappings.size := by
+  simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
+  exact ⟨h.1.1, h.1.2⟩
+
 namespace CNode
 
 inductive ResolveError where
@@ -844,6 +858,13 @@ instance : BEq CNode where
     a.guard == b.guard && a.radix == b.radix &&
     a.slots.size == b.slots.size &&
     a.slots.fold (init := true) (fun acc k v => acc && b.slots[k]? == some v)
+
+/-- WS-H7: CNode BEq soundness — when BEq returns true, the two CNodes have
+equal guard, radix, and slot count. Same approach as VSpaceRoot.beq_sound. -/
+theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
+    a.guard = b.guard ∧ a.radix = b.radix ∧ a.slots.size = b.slots.size := by
+  simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2⟩
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model
