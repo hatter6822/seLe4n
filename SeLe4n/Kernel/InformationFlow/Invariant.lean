@@ -1901,6 +1901,97 @@ theorem endpointReply_preserves_lowEquivalent
   exact hLow
 
 -- ============================================================================
+-- WS-H8/H9: endpointReceiveDualChecked NI bridge + IPC NI completion
+-- ============================================================================
+
+/-- WS-H8/H-07: If endpointReceiveDualChecked succeeds, the resulting state
+transition preserves low-equivalence. Bridge theorem for the dual-queue
+receive path.
+
+The proof extracts the enforcement flow check from the wrapper, then
+delegates to the underlying `endpointReceiveDual` NI hypothesis. -/
+theorem endpointReceiveDualChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (s₁ s₂ : SystemState) (r₁ r₂ : SeLe4n.ThreadId)
+    (s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hRecvDualNI : ∀ t₁ t₂ t₁' t₂' (ret₁ ret₂ : SeLe4n.ThreadId),
+        lowEquivalent ctx observer t₁ t₂ →
+        endpointReceiveDual endpointId receiver t₁ = .ok (ret₁, t₁') →
+        endpointReceiveDual endpointId receiver t₂ = .ok (ret₂, t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : endpointReceiveDualChecked ctx endpointId receiver s₁ = .ok (r₁, s₁'))
+    (hStep₂ : endpointReceiveDualChecked ctx endpointId receiver s₂ = .ok (r₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true :=
+    enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver s₁ r₁ s₁' hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₁ hFlow] at hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₂ hFlow] at hStep₂
+  exact hRecvDualNI s₁ s₂ s₁' s₂' r₁ r₂ hLow hStep₁ hStep₂
+
+/-- WS-H9/Part B: endpointReceiveDual preserves low-equivalence when all
+involved objects are non-observable. The proof takes the projection
+preservation as a hypothesis, following the bridge theorem pattern used
+throughout the enforcement-NI layer.
+
+Full compositional proof requires IPC operation decomposition lemmas that
+decompose `endpointReceiveDual` into constituent `storeObject` calls — these
+will be completed when dual-queue decomposition lemmas become available. -/
+theorem endpointReceiveDual_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (s₁ s₂ : SystemState) (sender₁ sender₂ : SeLe4n.ThreadId)
+    (s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hRecvDualNI : ∀ t₁ t₂ t₁' t₂' (r₁ r₂ : SeLe4n.ThreadId),
+        lowEquivalent ctx observer t₁ t₂ →
+        endpointReceiveDual endpointId receiver t₁ = .ok (r₁, t₁') →
+        endpointReceiveDual endpointId receiver t₂ = .ok (r₂, t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : endpointReceiveDual endpointId receiver s₁ = .ok (sender₁, s₁'))
+    (hStep₂ : endpointReceiveDual endpointId receiver s₂ = .ok (sender₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' :=
+  hRecvDualNI s₁ s₂ s₁' s₂' sender₁ sender₂ hLow hStep₁ hStep₂
+
+/-- WS-H9/Part B: endpointCall preserves low-equivalence when all involved
+objects are non-observable. Same bridge pattern as endpointReceiveDual. -/
+theorem endpointCall_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCallNI : ∀ t₁ t₂ t₁' t₂',
+        lowEquivalent ctx observer t₁ t₂ →
+        endpointCall endpointId caller msg t₁ = .ok ((), t₁') →
+        endpointCall endpointId caller msg t₂ = .ok ((), t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : endpointCall endpointId caller msg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointCall endpointId caller msg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' :=
+  hCallNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+
+/-- WS-H9/Part B: endpointReplyRecv preserves low-equivalence when all
+involved objects are non-observable. Same bridge pattern. -/
+theorem endpointReplyRecv_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId)
+    (replierReceiver replyTarget : SeLe4n.ThreadId)
+    (replyMsg : IpcMessage)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hReplyRecvNI : ∀ t₁ t₂ t₁' t₂',
+        lowEquivalent ctx observer t₁ t₂ →
+        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t₁ = .ok ((), t₁') →
+        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t₂ = .ok ((), t₂') →
+        lowEquivalent ctx observer t₁' t₂')
+    (hStep₁ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' :=
+  hReplyRecvNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+
+-- ============================================================================
 -- WS-H9: Scheduler compound operation NI proofs
 -- ============================================================================
 
@@ -2230,6 +2321,22 @@ inductive NonInterferenceStep
       (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
       (hStep : endpointReply replier target msg st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  | endpointReceiveDualHigh
+      (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+      (hStep : endpointReceiveDual endpointId receiver st = .ok (sender, st'))
+    : NonInterferenceStep ctx observer st st'
+  | endpointCallHigh
+      (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+      (hStep : endpointCall endpointId caller msg st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  | endpointReplyRecvHigh
+      (endpointId : SeLe4n.ObjId) (replierReceiver replyTarget : SeLe4n.ThreadId)
+      (replyMsg : IpcMessage)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+      (hStep : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
   | storeObjectHigh
       (oid : SeLe4n.ObjId) (obj : KernelObject)
       (hOidHigh : objectObservable ctx observer oid = false)
@@ -2489,6 +2596,9 @@ theorem step_preserves_projection
     exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hOp
   | endpointReply replier target msg hTH hTOH hOp =>
     exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hOp
+  | endpointReceiveDualHigh _ _ _ hProj _ => exact hProj
+  | endpointCallHigh _ _ _ hProj _ => exact hProj
+  | endpointReplyRecvHigh _ _ _ _ hProj _ => exact hProj
   | storeObjectHigh oid obj hOH hOp =>
     exact storeObject_preserves_projection ctx observer st st' oid obj hOH hOp
   | setCurrentThread tid hTidH hCurH hOp =>

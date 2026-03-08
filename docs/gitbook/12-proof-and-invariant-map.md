@@ -475,8 +475,8 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (28 constructors; extended from 11 by WS-H9: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, `endpointReply`, `storeObjectHigh`, `setCurrentThread`, `ensureRunnableHigh`, `removeRunnableHigh`, `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`, `cspaceMutateHigh`, `handleYield`, `timerTick`),
-- `step_preserves_projection` — single-step projection preservation (all 28 constructors),
+- `NonInterferenceStep` inductive (31 constructors; extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Original 28 from WS-H9: `chooseThread`, `endpointSend`, `cspaceMint`, `cspaceRevoke`, `lifecycleRetype`, `notificationSignal`, `notificationWait`, `cspaceInsertSlot`, `serviceStart`, `serviceStop`, `serviceRestart`, `schedule`, `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, `endpointReply`, `storeObjectHigh`, `setCurrentThread`, `ensureRunnableHigh`, `removeRunnableHigh`, `storeTcbIpcStateAndMessageHigh`, `storeTcbQueueLinksHigh`, `cspaceMutateHigh`, `handleYield`, `timerTick`),
+- `step_preserves_projection` — single-step projection preservation (all 31 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
@@ -498,6 +498,12 @@ WS-H9 new NI preservation theorems (21 theorems):
 - `storeTcbQueueLinks_preserves_projection` — queue links NI,
 - `storeObject_preserves_projection` / `storeCapabilityRef_preserves_projection` — observable-state NI,
 - `switchDomain_preserves_lowEquivalent` — domain switch two-sided NI.
+
+v0.13.5 gap closure (3 theorems + 1 bridge):
+- `endpointReceiveDualChecked_NI` — enforcement-NI bridge for dual-queue receive (WS-H8 gap),
+- `endpointReceiveDual_preserves_lowEquivalent` — IPC receive-dual NI (hypothesis-based),
+- `endpointCall_preserves_lowEquivalent` — IPC call NI (hypothesis-based),
+- `endpointReplyRecv_preserves_lowEquivalent` — IPC reply-recv NI (hypothesis-based).
 
 **M-07 — Enforcement boundary specification:**
 

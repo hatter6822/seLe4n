@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 26,861 lines of production Lean across 40 modules, 2,063 lines across 3 Lean test suites,
-800 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
+Current state: 28,713 lines of production Lean across 40 modules, 2,063 lines across 3 Lean test suites,
+840 theorem/lemma declarations, zero unsound constructs, and a deterministic build surface of 84 jobs.
 
 ## 3. Architectural improvements over seL4
 
@@ -45,6 +45,8 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H7/H8/H9 gaps closed** (v0.13.5) | Comprehensive audit: BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, NonInterferenceStep extended to 31 constructors | Completed |
+| **WS-H9** (v0.13.4) | Non-interference coverage extension: 27 new NI theorems, NonInterferenceStep 28 constructors, >80% kernel operation coverage | Completed |
 | **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata, NI bridge theorems. Closes A-35/H-07, A-36/A-37/H-11 | Completed |
 | **WS-H6** (v0.13.1) | Scheduler proof completion: `timeSlicePositive` preservation for all 6 scheduler ops, EDF invariant domain-fix, candidate optimality, `schedulerInvariantBundleFull` 5-tuple bundle | Completed |
 | **WS-H5** (v0.12.19) | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems. Closes C-04/A-22, A-23, A-24 | Completed |
@@ -59,19 +61,15 @@ M7 (audit remediation).
 
 ### What's next
 
-The immediate next steps are completing the remaining WS-F workstreams (F5–F8),
-which address medium/low-priority findings from the v0.12.2 audits:
+The immediate next steps are:
 
-| ID | Focus | Priority |
-|----|-------|----------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
+1. **WS-H10..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4-5):
+   security model foundations, VSpace enrichment, scheduler/IPC semantic alignment,
+   CSpace/service model enrichment, type safety, platform hardening, testing expansion.
+2. **Raspberry Pi 5 hardware binding** — ARM64 code generation and hardware bring-up.
 
-After WS-F: Raspberry Pi 5 hardware binding (H3).
 See [Next Development Path](22-next-slice-development-path.md) and
-[v0.12.2 Audit Remediation](24-comprehensive-audit-2026-workstream-planning.md).
+[v0.12.15 Audit Workstream Plan](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
@@ -113,5 +111,5 @@ For milestone-moving changes:
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 - Audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
-- Next workstream plan: [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) (WS-F5..F8)
+- Active workstream plan: [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) (WS-H10..H16)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

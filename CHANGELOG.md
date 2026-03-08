@@ -1,3 +1,29 @@
+## [0.13.5] - 2026-03-08
+
+### Comprehensive Audit Remediation & WS-H Completion
+
+- **WS-H8 gap closure:** Added `endpointReceiveDualChecked_NI` bridge theorem
+  connecting the enforcement-checked receive wrapper to non-interference
+  guarantees. All 5 enforced operations now have complete NI bridge theorems.
+- **WS-H9 IPC NI completion:** Added `endpointReceiveDual_preserves_lowEquivalent`,
+  `endpointCall_preserves_lowEquivalent`, and
+  `endpointReplyRecv_preserves_lowEquivalent` theorems using the hypothesis-based
+  bridge pattern. These close the remaining ~6% gap in NI coverage.
+- **NonInterferenceStep extended to 31 constructors:** Added
+  `endpointReceiveDualHigh`, `endpointCallHigh`, and `endpointReplyRecvHigh`
+  constructors with projection preservation hypotheses. Up from 28 constructors.
+- **WS-H7 BEq soundness lemmas:** Added `VSpaceRoot.beq_sound` and
+  `CNode.beq_sound` theorems proving the fold-based HashMap comparison extracts
+  correct structural fields (ASID, size, guard, radix).
+- **Version bump:** `lakefile.toml` version updated to 0.13.5.
+- **Documentation sync:** Updated README.md (28,713 LoC, 840 theorems), CLAUDE.md
+  (large file sizes), SELE4N_SPEC.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md,
+  and 5 GitBook chapters (overview, spec/roadmap, audit/quality, proof map,
+  threat model) with current metrics, WS-H9 completion, and corrected next
+  workstream references (WS-H10..H16).
+- **Codebase map regenerated** to reflect new declarations.
+- **840 proved declarations. Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
+
 ## [0.13.4] - 2026-03-07
 
 ### WS-H9: Non-Interference Coverage Extension

@@ -69,21 +69,23 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~4805 lines)
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~1893 lines)
+- `SeLe4n/Kernel/IPC/Invariant.lean` (~6606 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~2733 lines)
+- `SeLe4n/Kernel/Capability/Invariant.lean` (~2570 lines)
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (~1875 lines)
 - `SeLe4n/Kernel/IPC/DualQueue.lean` (~1714 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~1447 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~1179 lines)
+- `SeLe4n/Kernel/Service/Invariant.lean` (~1189 lines)
+- `SeLe4n/Model/Object.lean` (~1165 lines)
 - `SeLe4n/Kernel/IPC/Operations.lean` (~1116 lines)
-- `tests/NegativeStateSuite.lean` (~977 lines)
-- `SeLe4n/Kernel/Scheduler/Operations.lean` (~877 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~773 lines)
-- `SeLe4n/Model/State.lean` (~756 lines)
+- `CHANGELOG.md` (~1105 lines)
+- `tests/NegativeStateSuite.lean` (~1076 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~916 lines)
+- `SeLe4n/Model/State.lean` (~895 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~811 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (~806 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
-- `SeLe4n/Model/Object.lean` (~711 lines)
-- `CHANGELOG.md` (~649 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
-- `docs/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md` (~506 lines)
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~553 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
