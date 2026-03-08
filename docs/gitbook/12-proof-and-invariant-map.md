@@ -519,6 +519,20 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `projectDomainTimeRemaining`, `projectDomainSchedule`, `projectDomainScheduleIndex` projection helpers,
 - All 19 NI theorems updated to handle new fields.
 
+**WS-H10/C-05/A-38 — MachineState projection & security lattice:**
+
+- `ObservableState` extended with `machineRegs : Option RegisterFile` (domain-gated via current thread observability),
+- Machine timer deliberately excluded (covert timing channel prevention),
+- `projectMachineRegs` projection helper with observability gating,
+- `bibaIntegrityFlowsTo` / `bibaSecurityFlowsTo` standard BIBA flow checks,
+- `bibaPolicy` generic `DomainFlowPolicy` with standard BIBA ordering,
+- `bibaPolicy_reflexive`, `bibaPolicy_transitive`, `bibaPolicy_wellFormed`,
+- `securityLattice_reflexive`, `securityLattice_transitive` — legacy lattice pre-order confirmation,
+- `DeclassificationPolicy` with `isDeclassificationAuthorized`, `isDeclassificationAuthorized_not_reflexive`,
+- `declassifyStore` operation with 5 theorems (authorization, rejection, state preservation, enforcement soundness),
+- `endpointFlowPolicyWellFormed` predicate with `endpointFlowCheck_reflexive`, `endpointFlowCheck_transitive`,
+- All NI theorems updated for `machineRegs` field.
+
 ## 12. Untyped memory invariants (WS-F2)
 
 Component level:
@@ -678,3 +692,33 @@ Supporting infrastructure:
 - `List.foldl_preserves_when_pred_false` — elements with false predicate are unaffected by foldl.
 
 **Design invariant:** Original `projectState` definition is unchanged — all existing NI theorems in `Invariant.lean` (1448 lines) remain untouched. `projectStateFast` provides the performance path with proven equivalence.
+
+## 20. WS-H10 security model foundations
+
+**MachineState projection (C-05/A-38):**
+
+- `ObservableState.machineRegs : Option RegisterFile` — domain-gated register file projection, visible only when the current thread is observable.
+- `projectMachineRegs` — projects register file through current-thread observability gate. Machine timer deliberately excluded (covert timing channel).
+- All existing NI theorems updated with `machineRegs` branch proofs.
+
+**Security lattice (A-34):**
+
+- `securityLattice_reflexive` / `securityLattice_transitive` — legacy lattice forms a valid pre-order.
+- `bibaIntegrityFlowsTo` / `bibaSecurityFlowsTo` / `bibaPolicy` — standard BIBA alternatives with reflexivity/transitivity proofs.
+
+**Declassification model (A-39):**
+
+- `DeclassificationPolicy` — authorized downgrade paths with `isDeclassificationAuthorized` gate.
+- `declassifyStore` — enforcement operation gating on base-policy denial + declassification authorization.
+- `enforcementSoundness_declassifyStore` — if operation succeeds, both authorization checks passed.
+- `declassifyStore_NI` — declassification at a non-observable target preserves low-equivalence for non-target observers. Delegates to `storeObject_at_unobservable_preserves_lowEquivalent`.
+
+**Endpoint policy well-formedness (M-16):**
+
+- `endpointFlowPolicyWellFormed` — global + per-endpoint override policies must be reflexive + transitive.
+- `endpointFlowCheck_reflexive` / `endpointFlowCheck_transitive` — well-formedness inheritance proofs.
+
+**IF configuration invariant bundle:**
+
+- `InformationFlowConfigInvariant` — structure collecting global policy WF, endpoint policy WF, and declassification consistency. Trivially preserved by kernel transitions (policies are external to `SystemState`).
+- `defaultConfigInvariant` — existence proof for the default configuration.
