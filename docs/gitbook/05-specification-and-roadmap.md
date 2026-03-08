@@ -13,16 +13,16 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.13.3` |
+| Version | `0.13.5` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 26,861 across 40 files |
+| Production LoC | 28,713 across 40 files |
 | Test LoC | 2,063 across 3 suites |
-| Proved declarations | 800 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 840 theorem/lemma declarations (zero sorry/axiom) |
 | Build jobs | 84 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
-| Recently completed | WS-H8 (enforcement-NI bridge & missing wrappers, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16), WS-G (kernel performance optimization) |
-| Next workstream | WS-F5..F8 (remaining v0.12.2 audit remediation) |
+| Recently completed | WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
+| Next workstream | WS-H10..H16 (remaining v0.12.15 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |
 
 ## Milestone history
@@ -34,7 +34,26 @@ remediation) → WS-B..F1-F4 (5 audit portfolios, all completed) → WS-G
 WS-H2 (lifecycle safety guards, completed) → WS-H3 (build/CI infrastructure, completed) →
 WS-H4 (capability invariant redesign, completed) → WS-H5 (IPC dual-queue structural
 invariant, completed) → WS-H6 (scheduler proof completion, completed) →
-WS-H8 (enforcement-NI bridge & missing wrappers, completed).
+WS-H8 (enforcement-NI bridge & missing wrappers, completed) →
+WS-H9 (non-interference coverage extension, completed) →
+WS-H7/H8/H9 gap closure (comprehensive audit, v0.13.5).
+
+## Completed: WS-H7/H8/H9 Audit Gap Closure (v0.13.5)
+
+Comprehensive codebase audit identified and closed remaining gaps in WS-H7, WS-H8,
+and WS-H9: BEq soundness lemmas (`VSpaceRoot.beq_sound`, `CNode.beq_sound`),
+`endpointReceiveDualChecked_NI` enforcement bridge theorem, 3 IPC NI theorems
+(`endpointReceiveDual_preserves_lowEquivalent`, `endpointCall_preserves_lowEquivalent`,
+`endpointReplyRecv_preserves_lowEquivalent`), and `NonInterferenceStep` extended
+to 31 constructors. Zero sorry/axiom. All tests pass.
+
+## Completed: WS-H9 Non-Interference Coverage Extension (v0.13.4)
+
+WS-H9 extends NI coverage from ~25% to >80% of kernel operations (C-02/A-40 CRITICAL),
+adding 27 new NI preservation theorems across scheduler, IPC, CSpace, VSpace, and
+observable-state operations. `NonInterferenceStep` inductive extended from 11 to 28
+constructors. `composedNonInterference_trace` covers all constructors. See
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H5 IPC Dual-Queue Structural Invariant (v0.12.19)
 

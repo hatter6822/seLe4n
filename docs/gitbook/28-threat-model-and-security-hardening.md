@@ -13,7 +13,7 @@ The threat model covers:
 - Documentation and release metadata integrity
 - Automated security scanning posture
 
-Out of scope for the current phase: hardware runtime exploit mitigation, cryptographic attestation of generated machine code, and full noninterference theorem closure.
+Out of scope for the current phase: hardware runtime exploit mitigation and cryptographic attestation of generated machine code. Non-interference coverage is >80% of kernel operations (WS-H9, v0.13.4) with 31 `NonInterferenceStep` constructors; remaining operations are documented for future workstreams.
 
 ## Assets and security goals
 

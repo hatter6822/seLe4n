@@ -77,12 +77,15 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Service/Invariant.lean` (~1189 lines)
 - `SeLe4n/Model/Object.lean` (~1165 lines)
 - `SeLe4n/Kernel/IPC/Operations.lean` (~1116 lines)
-- `CHANGELOG.md` (~1083 lines)
+- `CHANGELOG.md` (~1105 lines)
 - `tests/NegativeStateSuite.lean` (~1076 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~916 lines)
 - `SeLe4n/Model/State.lean` (~895 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~811 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (~806 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~553 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids

@@ -15,10 +15,14 @@
 - **WS-H7 BEq soundness lemmas:** Added `VSpaceRoot.beq_sound` and
   `CNode.beq_sound` theorems proving the fold-based HashMap comparison extracts
   correct structural fields (ASID, size, guard, radix).
-- **Documentation sync:** Updated CLAUDE.md large file sizes to match actual
-  line counts. Updated CHANGELOG.md with audit remediation section.
+- **Version bump:** `lakefile.toml` version updated to 0.13.5.
+- **Documentation sync:** Updated README.md (28,713 LoC, 840 theorems), CLAUDE.md
+  (large file sizes), SELE4N_SPEC.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md,
+  and 5 GitBook chapters (overview, spec/roadmap, audit/quality, proof map,
+  threat model) with current metrics, WS-H9 completion, and corrected next
+  workstream references (WS-H10..H16).
 - **Codebase map regenerated** to reflect new declarations.
-- **Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
+- **840 proved declarations. Zero sorry/axiom. Zero warnings. `test_full.sh` passes.**
 
 ## [0.13.4] - 2026-03-07
 
