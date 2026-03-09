@@ -4,17 +4,6 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
-private def endpointQueueWellFormedB (ep : Endpoint) : Bool :=
-  match ep.state with
-  | .idle => ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .send => !ep.queue.isEmpty && !ep.waitingReceiver.isSome
-  | .receive => ep.queue.isEmpty && ep.waitingReceiver.isSome
-
-private def endpointObjectValidB (ep : Endpoint) : Bool :=
-  match ep.waitingReceiver with
-  | none => ep.state != .receive
-  | some _ => ep.state == .receive
-
 private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) => some tcb
@@ -62,6 +51,11 @@ private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : 
             && intrusiveQueueReachable st tail none (some .endpointHead) (some head) [] (st.objectIndex.length + 1)
       | _, _ => false
   | _, _ => false
+
+/-- WS-H12a: Dual-queue endpoint well-formedness check (Boolean).
+Verifies head/tail consistency for both sendQ and receiveQ. -/
+private def endpointDualQueueWellFormedB (st : SystemState) (ep : Endpoint) : Bool :=
+  intrusiveQueueWellFormedB st ep.sendQ && intrusiveQueueWellFormedB st ep.receiveQ
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
@@ -240,10 +234,9 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     objectIds.foldr (fun oid acc =>
       match (st.objects[oid]? : Option KernelObject) with
       | some (.endpoint ep) =>
-          (s!"endpoint queue/state invariant: oid={oid}", endpointQueueWellFormedB ep) ::
+          (s!"endpoint dual-queue invariant: oid={oid}", endpointDualQueueWellFormedB st ep) ::
           (s!"endpoint intrusive sendQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.sendQ) ::
-          (s!"endpoint intrusive receiveQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.receiveQ) ::
-          (s!"endpoint waiter/state invariant: oid={oid}", endpointObjectValidB ep) :: acc
+          (s!"endpoint intrusive receiveQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.receiveQ) :: acc
       | some (.notification ntfn) =>
           (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
       | _ => acc) []

@@ -1,95 +1,91 @@
-# Structured trace fixture: scenario_id | risk_class | expected_fragment
-# Format is backward-compatible: lines without '|' are matched as plain fragments.
-# Risk classes: critical, high, medium, low, info
-
-SCHED-01  | critical | scheduled thread: some 1
-CSPACE-01 | high     | source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-CSPACE-02 | high     | source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-CSPACE-03 | medium   | source path alias lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-ARCH-01   | high     | adapter timer success path value: 2
-ARCH-02   | high     | adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
-ARCH-03   | medium   | adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
-ARCH-04   | medium   | adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
-ARCH-05   | high     | adapter read success path byte: 0
-VSPACE-01 | high     | vspace lookup mapped paddr: 8192
-VSPACE-02 | high     | vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
-VSPACE-03 | critical | vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
-VSPACE-04 | high     | vspace lookupFull paddr: 8192, read=true, write=false, exec=false
-VSPACE-05 | critical | vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBounds
-VSPACE-06 | high     | vspace mapChecked valid address accepted
-VSPACE-07 | medium   | TLB flush entry count: 0
-ARCH-06   | high     | adapter register write success path value: 99
-ARCH-07   | medium   | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
-SVC-01    | critical | service start api status: some (SeLe4n.Model.ServiceStatus.running)
-SVC-02    | critical | service start denied branch: SeLe4n.Model.KernelError.policyDenied
-SVC-03    | critical | service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
-SVC-04    | high     | service restart status: some (SeLe4n.Model.ServiceStatus.running)
-SVC-05    | critical | service stop denied branch: SeLe4n.Model.KernelError.policyDenied
-SVC-06    | high     | service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
-SVC-07    | high     | service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
-SVC-08    | high     | service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
-SVC-09    | critical | service isolation api↔denied: true
-SVC-10    | high     | service isolation api↔db: false
-CSPACE-04 | medium   | deep cnode radix fixture: some 12
-CSPACE-05 | high     | deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
-CSPACE-06 | high     | deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
-CSPACE-07 | high     | deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
-SCHED-02  | medium   | large runnable queue length: 2
-SCHED-03  | medium   | large queue scheduled current: some 1
-IPC-01    | high     | multi-endpoint receive senders: 1, 12
-SVC-11    | medium   | service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
-ARCH-08   | low      | boundary memory low-address byte: 0
-ARCH-09   | low      | boundary memory high-address byte: 0
-LIFE-01   | critical | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-LIFE-02   | critical | lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
-LIFE-03   | critical | lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-LIFE-10   | critical | lifecycle retype-with-cleanup old tid removed: true
-LIFE-04   | high     | created sibling cap with the same target
-LIFE-05   | high     | composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
-LIFE-06   | high     | composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-LIFE-07   | critical | composed revoke/delete/retype success
-LIFE-08   | high     | post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
-LIFE-09   | high     | post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
-IPC-02    | critical | handshake send matched waiting receiver
-IPC-03    | high     | queued sender on endpoint
-IPC-04    | high     | endpoint receive #1 sender: 1
-IPC-07    | high     | notification wait #1 result: none
-IPC-08    | high     | notification wait #2 result: some { val := 123 }
-CSPACE-08 | high     | minted cap rights: [SeLe4n.Model.AccessRight.read]
-E4-H02    | critical | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
-E4-C02    | high     | cspaceCopy target matches: true
-E4-M01    | high     | dual-queue sender blocked on sendQ non-empty: true
-E4-M12    | high     | endpointReply unblocked target: true
-F1-01a    | critical | message sender has pending: true
-F1-01b    | critical | message transfer registers: [42, 7]
-F1-01c    | critical | message transfer badge: some { val := 123 }
-F1-01d    | high     | message sender cleared after transfer: true
-F1-02     | critical | rendezvous delivery registers: [99]
-F1-03a    | high     | call/reply caller blocked: true
-F1-03b    | critical | call/reply response registers: [100, 200]
-H1-01     | critical | H1 caller blockedOnCall: true
-H1-02     | critical | H1 caller blockedOnReply after dequeue: true
-H1-03     | critical | H1 caller not ready after dequeue: true
-H1-04     | critical | H1 caller ready after reply: true
-H1-05     | high     | H1 unauthorized reply rejected: true
-E6-M03    | high     | EDF tie-break chosen thread: some 12
-E6-M04a   | high     | timer tick remaining slice: 1
-E6-M04b   | high     | timer tick expiry rescheduled current: some 1
-E6-M04c   | medium   | timer tick expiry reset slice: 5
-E6-M05a   | high     | domain switch active domain: 1
-E6-M05b   | medium   | domain switch time remaining: 5
-F2-01     | critical | retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-F2-02a    | high     | untyped watermark after retype: 64
-F2-02b    | high     | untyped children count: 1
-F2-02c    | high     | untyped watermark after second retype: 1088
-F2-03     | critical | retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
-F2-04     | critical | retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
-F2-05     | high     | retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
-F2-06     | critical | retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
-F2-07     | high     | retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
-F2-08     | high     | retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
-F2-09     | critical | retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
-F2-10     | critical | retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
-TOPO-01   | medium   | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
-TOPO-02   | medium   | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
-TOPO-03   | medium   | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
+scheduled thread: some 1
+source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+source path alias lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+adapter timer success path value: 2
+adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
+adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
+adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
+adapter read success path byte: 0
+vspace lookup mapped paddr: 8192
+vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
+vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
+vspace lookupFull paddr: 8192, read=true, write=false, exec=false
+vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBounds
+vspace mapChecked valid address accepted
+TLB flush entry count: 0
+adapter register write success path value: 99
+adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
+service start api status: some (SeLe4n.Model.ServiceStatus.running)
+service start denied branch: SeLe4n.Model.KernelError.policyDenied
+service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
+service restart status: some (SeLe4n.Model.ServiceStatus.running)
+service stop denied branch: SeLe4n.Model.KernelError.policyDenied
+service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
+service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
+service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
+service isolation api↔denied: true
+service isolation api↔db: false
+deep cnode radix fixture: some 12
+deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
+deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
+deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
+large runnable queue length: 2
+large queue scheduled current: some 1
+multi-endpoint receive senders: 1, 12
+service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
+boundary memory low-address byte: 0
+boundary memory high-address byte: 0
+lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
+lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+lifecycle retype-with-cleanup old tid removed: true
+created sibling cap with the same target
+composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
+composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+composed revoke/delete/retype success
+post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
+post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
+handshake send matched waiting receiver
+queued sender on endpoint
+endpoint receive #1 sender: 1
+notification wait #1 result: none
+notification wait #2 result: some { val := 123 }
+minted cap rights: [SeLe4n.Model.AccessRight.read]
+H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
+cspaceCopy target matches: true
+dual-queue sender blocked on sendQ non-empty: true
+endpointReply unblocked target: true
+message sender has pending: true
+message transfer registers: [42, 7]
+message transfer badge: some { val := 123 }
+message sender cleared after transfer: true
+rendezvous delivery registers: [99]
+call/reply caller blocked: true
+call/reply response registers: [100, 200]
+H1 caller blockedOnCall: true
+H1 caller blockedOnReply after dequeue: true
+H1 caller not ready after dequeue: true
+H1 caller ready after reply: true
+H1 unauthorized reply rejected: true
+EDF tie-break chosen thread: some 12
+timer tick remaining slice: 1
+timer tick expiry rescheduled current: some 1
+timer tick expiry reset slice: 5
+domain switch active domain: 1
+domain switch time remaining: 5
+retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+untyped watermark after retype: 64
+untyped children count: 1
+untyped watermark after second retype: 1088
+retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
+retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
+retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
+retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
+retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
+retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
+retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
+retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
+parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
+parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
+parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

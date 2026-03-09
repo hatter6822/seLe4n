@@ -25,7 +25,6 @@ operations do not leak information to low-clearance observers.
 - F-22: CNode projection leak → projectKernelObject filtering
 
 **Non-interference theorems (two-sided low-equivalence preservation):**
-- `endpointSend_preserves_lowEquivalent`
 - `chooseThread_preserves_lowEquivalent` (WS-D2 / TPI-D01)
 - `cspaceMint_preserves_lowEquivalent` (WS-D2 / TPI-D02)
 - `cspaceRevoke_preserves_lowEquivalent` (WS-D2 / TPI-D02)
@@ -45,7 +44,7 @@ operations do not leak information to low-clearance observers.
   `vspaceMapPage`, `vspaceUnmapPage`, adapter operations.
 
 **Enforcement-NI bridge theorems** (WS-F3 / F-20):
-- `endpointSendChecked_NI`
+- `endpointSendDualChecked_NI`
 - `cspaceMintChecked_NI`
 - `serviceRestartChecked_NI`
 
@@ -485,104 +484,8 @@ private theorem storeObject_preserves_projection
   · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid obj hStore,
           storeObject_machine_eq st st' oid obj hStore]
 
-/-- WS-E3/H-09: endpointSend at non-observable entities preserves projection (single execution). -/
-private theorem endpointSend_projection_preserved
-    (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (hEndpointHigh : objectObservable ctx observer endpointId = false)
-    (hSenderHigh : threadObservable ctx observer sender = false)
-    (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
-    (hCoherent : ∀ tid : SeLe4n.ThreadId,
-        threadObservable ctx observer tid = false →
-        objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain : ∀ ep tid, st.objects[endpointId]? = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hStep : endpointSend endpointId sender st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨ep, hObj⟩ := endpointSend_ok_implies_endpoint_object st st' endpointId sender hStep
-  cases hState : ep.state with
-  | idle =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
-            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
-            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | send =>
-    simp [endpointSend, hObj, hState] at hStep; revert hStep
-    cases hStore : storeObject endpointId _ st with
-    | error e => simp
-    | ok pair =>
-      simp only []
-      cases hTcb : storeTcbIpcState pair.2 sender _ with
-      | error e => simp
-      | ok st2 =>
-        simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-        rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
-            storeTcbIpcState_preserves_projection ctx observer pair.2 st2 sender _ hSenderObjHigh hTcb,
-            storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-  | receive =>
-    simp [endpointSend, hObj, hState] at hStep
-    cases hQueue : ep.queue <;> cases hWait : ep.waitingReceiver <;> simp [hQueue, hWait] at hStep
-    case nil.some receiver =>
-      have hRecvHigh := hRecvDomain ep receiver hObj hWait
-      have hRecvObjHigh := hCoherent receiver hRecvHigh
-      revert hStep
-      cases hStore : storeObject endpointId _ st with
-      | error e => simp
-      | ok pair =>
-        simp only []
-        cases hTcb : storeTcbIpcState pair.2 receiver _ with
-        | error e => simp
-        | ok st2 =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-          rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
-              storeTcbIpcState_preserves_projection ctx observer pair.2 st2 receiver _ hRecvObjHigh hTcb,
-              storeObject_preserves_projection ctx observer st pair.2 endpointId _ hEndpointHigh hStore]
-
 -- ============================================================================
--- Non-interference theorem #1: endpointSend (existing, retained)
--- ============================================================================
-
-/-- A successful endpoint send preserves low-equivalence for observers that cannot
-see the sender thread and cannot observe the endpoint object itself. -/
-theorem endpointSend_preserves_lowEquivalent
-    (ctx : LabelingContext)
-    (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSenderHigh : threadObservable ctx observer sender = false)
-    (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
-    (hEndpointHigh : objectObservable ctx observer endpointId = false)
-    (hCoherent : ∀ tid : SeLe4n.ThreadId,
-        threadObservable ctx observer tid = false →
-        objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain₁ : ∀ ep tid, s₁.objects[endpointId]? = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hRecvDomain₂ : ∀ ep tid, s₂.objects[endpointId]? = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hStep₁ : endpointSend endpointId sender s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointSend endpointId sender s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  suffices h₁ : projectState ctx observer s₁' = projectState ctx observer s₁ by
-    suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
-      unfold lowEquivalent; rw [h₁, h₂]; exact hLow
-    exact endpointSend_projection_preserved ctx observer endpointId sender s₂ s₂'
-      hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hRecvDomain₂ hStep₂
-  exact endpointSend_projection_preserved ctx observer endpointId sender s₁ s₁'
-    hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hRecvDomain₁ hStep₁
-
--- ============================================================================
--- Non-interference theorem #2: chooseThread (WS-D2, F-05, TPI-D01)
+-- Non-interference theorem #1: chooseThread (WS-D2, F-05, TPI-D01)
 -- ============================================================================
 
 /-- Choosing the next thread does not leak high-domain scheduling decisions. -/
@@ -1215,41 +1118,6 @@ theorem serviceRestart_preserves_lowEquivalent
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
-/-- WS-F3/F-20: If endpointSendChecked succeeds (policy allows flow), the
-resulting state transition preserves low-equivalence under the appropriate
-domain-separation hypotheses. This connects the enforcement layer to the
-non-interference layer. -/
-theorem endpointSendChecked_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSenderHigh : threadObservable ctx observer sender = false)
-    (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
-    (hEndpointHigh : objectObservable ctx observer endpointId = false)
-    (hCoherent : ∀ tid : SeLe4n.ThreadId,
-        threadObservable ctx observer tid = false →
-        objectObservable ctx observer tid.toObjId = false)
-    (hRecvDomain₁ : ∀ ep tid, s₁.objects[endpointId]? = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hRecvDomain₂ : ∀ ep tid, s₂.objects[endpointId]? = some (.endpoint ep) →
-        ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-    (hStep₁ : endpointSendChecked ctx endpointId sender s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointSendChecked ctx endpointId sender s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  -- Extract the underlying endpointSend from the checked wrapper
-  have hFlow₁ : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
-    cases h : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
-    | false =>
-      have := endpointSendChecked_flowDenied ctx endpointId sender s₁ h
-      rw [this] at hStep₁; simp at hStep₁
-    | true => rfl
-  rw [endpointSendChecked_eq_endpointSend_when_allowed ctx endpointId sender s₁ hFlow₁] at hStep₁
-  rw [endpointSendChecked_eq_endpointSend_when_allowed ctx endpointId sender s₂ hFlow₁] at hStep₂
-  exact endpointSend_preserves_lowEquivalent ctx observer endpointId sender
-    s₁ s₂ s₁' s₂' hLow hSenderHigh hSenderObjHigh hEndpointHigh hCoherent
-    hRecvDomain₁ hRecvDomain₂ hStep₁ hStep₂
-
 /-- WS-F3/F-20: If cspaceMintChecked succeeds, the resulting state transition
 preserves low-equivalence. -/
 theorem cspaceMintChecked_NI
@@ -1304,9 +1172,9 @@ theorem serviceRestartChecked_NI
 transition preserves low-equivalence. Bridge theorem for the recommended
 dual-queue IPC path.
 
-The proof reduces the dual-queue checked wrapper to the legacy `endpointSend`
-NI theorem via the enforcement flow extraction + `endpointSendDual_as_send`
-bisimulation bridge. -/
+The proof reduces the dual-queue checked wrapper to `endpointSendDual`
+via the enforcement flow extraction. The NI property for the underlying
+`endpointSendDual` is taken as a hypothesis. -/
 theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
@@ -2281,17 +2149,16 @@ inductive NonInterferenceStep
       (next : Option SeLe4n.ThreadId)
       (hStep : chooseThread st = .ok (next, st'))
     : NonInterferenceStep ctx observer st st'
-  | endpointSend
-      (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+  | endpointSendDual
+      (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
       (hEndpointHigh : objectObservable ctx observer eid = false)
       (hSenderHigh : threadObservable ctx observer sender = false)
       (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
       (hCoherent : ∀ tid : SeLe4n.ThreadId,
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
-      (hRecvDomain : ∀ ep tid, st.objects[eid]? = some (.endpoint ep) →
-          ep.waitingReceiver = some tid → threadObservable ctx observer tid = false)
-      (hStep : endpointSend eid sender st = .ok ((), st'))
+      (hStep : endpointSendDual eid sender msg st = .ok ((), st'))
+      (hProjection : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
   | cspaceMint
       (src dst : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
@@ -2474,9 +2341,7 @@ theorem step_preserves_projection
   cases hStep with
   | chooseThread next hOp =>
     have := chooseThread_preserves_state st st' next hOp; subst this; rfl
-  | endpointSend eid sender hEH hSH hSOH hCo hRD hOp =>
-    exact endpointSend_projection_preserved ctx observer eid sender st st'
-      hEH hSH hSOH hCo hRD hOp
+  | endpointSendDual _ _ _ _ _ _ _ _ hProj => exact hProj
   | cspaceMint src dst rights badge hSrcH hDstH hOp =>
     rcases cspaceMint_child_attenuates st st' src dst rights badge hOp with
       ⟨parent, child, hLookup, _, _⟩

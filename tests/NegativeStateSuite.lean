@@ -24,7 +24,7 @@ private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := gua
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject endpointId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject endpointId (.endpoint {})
     |>.withObject cnodeId (.cnode {
       guard := 0
       radix := 0
@@ -36,7 +36,7 @@ private def baseState : SystemState :=
         })
       ]
     })
-    |>.withObject wrongTypeId (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject wrongTypeId (.endpoint {})
     |>.withObject guardedCnodeId (.cnode {
       guard := 1
       radix := 2
@@ -106,7 +106,7 @@ private def invariantObjectIds : List SeLe4n.ObjId :=
 private def sendEmptyEndpointState : SystemState :=
   { baseState with
     objects := baseState.objects.insert sendEmptyEndpointId
-      (.endpoint { state := .send, queue := [], waitingReceiver := none })
+      (.endpoint {})
   }
 
 private def expectError
@@ -351,13 +351,13 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceRevokeCdtStrict should detach successful descendant slot mapping"
 
-  expectError "endpoint receive idle-state mismatch"
-    (SeLe4n.Kernel.endpointReceive endpointId baseState)
-    .endpointStateMismatch
+  expectError "dual-queue receive on non-endpoint object"
+    (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) baseState)
+    .invalidCapability
 
-  expectError "endpoint receive send-state empty queue"
-    (SeLe4n.Kernel.endpointReceive sendEmptyEndpointId sendEmptyEndpointState)
-    .endpointQueueEmpty
+  expectError "dual-queue receive on missing object"
+    (SeLe4n.Kernel.endpointReceiveDual (SeLe4n.ObjId.ofNat 9999) (SeLe4n.ThreadId.ofNat 1) baseState)
+    .objectNotFound
 
   expectError "vspace lookup missing asid"
     (SeLe4n.Kernel.Architecture.vspaceLookup 99 vaddrPrimary baseState)
@@ -381,8 +381,8 @@ private def runNegativeChecks : IO Unit := do
     ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
-  let (_, stAwait) ← expectOkState "await receive handshake seed"
-    (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
+  let (_, stAwait) ← expectOkState "dual-queue receive enqueue seed"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
   -- F-03 fix: Notification wait — consistently check TCB ipcState across ALL variants
   let (waitBadge, stN1) ← expectOkState "notification wait blocks with none"
@@ -457,9 +457,10 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
 
-  expectError "await receive second waiter mismatch"
-    (SeLe4n.Kernel.endpointAwaitReceive endpointId (SeLe4n.ThreadId.ofNat 8) stAwait)
-    .endpointStateMismatch
+  expectError "dual-queue send on missing object"
+    (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
+      { registers := [], caps := [], badge := none } baseState)
+    .objectNotFound
 
   -- ==========================================================================
   -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage
@@ -848,37 +849,37 @@ private def runNegativeChecks : IO Unit := do
   -- F2-NEG-01: retype from non-existent object
   expectError "F2 retype from non-existent object"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot 999 f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+      (.endpoint {}) 64 f2UntypedState)
     .objectNotFound
 
   -- F2-NEG-02: retype from non-untyped object (type mismatch)
   expectError "F2 retype from cnode (type mismatch)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedAuthCnode f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+      (.endpoint {}) 64 f2UntypedState)
     .untypedTypeMismatch
 
   -- F2-NEG-03: retype exhausts region
   expectError "F2 retype region exhausted (oversized)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 512 f2UntypedState)
+      (.endpoint {}) 512 f2UntypedState)
     .untypedRegionExhausted
 
   -- F2-NEG-04: device restriction (non-untyped child from device untyped)
   expectError "F2 device untyped restricts non-untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2DeviceState)
+      (.endpoint {}) 64 f2DeviceState)
     .untypedDeviceRestriction
 
   -- F2-NEG-05: wrong authority (lookup from bad slot)
   expectError "F2 retype wrong authority"
     (SeLe4n.Kernel.retypeFromUntyped { cnode := 999, slot := 0 } f2UntypedObjId f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+      (.endpoint {}) 64 f2UntypedState)
     .objectNotFound
 
   -- F2-NEG-06: allocSize too small for object type (endpoint needs 64, giving 1)
   expectError "F2 retype allocSize too small"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 1 f2UntypedState)
+      (.endpoint {}) 1 f2UntypedState)
     .untypedAllocSizeTooSmall
 
   IO.println "WS-F2 untyped memory negative checks passed"
@@ -889,13 +890,13 @@ private def runH2NegativeChecks : IO Unit := do
   -- H2-NEG-01: childId self-overwrite — childId = untypedId
   expectError "H2 childId self-overwrite guard"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedObjId
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+      (.endpoint {}) 64 f2UntypedState)
     .childIdSelfOverwrite
 
   -- H2-NEG-02: childId collision with existing object
   expectError "H2 childId collision with existing object"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedAuthCnode
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 f2UntypedState)
+      (.endpoint {}) 64 f2UntypedState)
     .childIdCollision
 
   -- H2-NEG-03: childId collision with existing untyped child
@@ -925,7 +926,7 @@ private def runH2NegativeChecks : IO Unit := do
       |>.build)
   expectError "H2 childId collision with untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId 60
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) 64 h2UntypedWithChild)
+      (.endpoint {}) 64 h2UntypedWithChild)
     .childIdCollision
 
   IO.println "WS-H2 lifecycle safety guards negative checks passed"
@@ -1041,7 +1042,7 @@ private def runWSH7Checks : IO Unit := do
     throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
 
   let lifecycleCnode : KernelObject := .cnode { guard := 0, radix := 1, slots := Std.HashMap.ofList [(0, capA)] }
-  let lifecycleEndpoint : KernelObject := .endpoint { state := .idle, queue := [], waitingReceiver := none }
+  let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
     match storeObject 500 lifecycleCnode baseState with

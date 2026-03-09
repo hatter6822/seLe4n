@@ -1677,12 +1677,10 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
-/-- WS-F1/WS-E4/M-12: Reply to a caller, then await receive on the endpoint.
-
-Combines reply + receive in a single atomic operation, matching seL4_ReplyRecv.
-The reply delivers `msg` to the target and unblocks it, then the receiver waits
-on the endpoint for incoming messages.
-WS-H1/M-02: Validates the receiver (replier) is the authorized `replyTarget`. -/
+/-- WS-H12a: endpointReplyRecv now uses endpointReceiveDual instead of legacy
+endpointAwaitReceive. After completing the reply, the receiver enters the
+dual-queue receive path: if a sender is already waiting, an immediate
+rendezvous occurs; otherwise the receiver enqueues on receiveQ. -/
 def endpointReplyRecv
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
@@ -1704,9 +1702,10 @@ def endpointReplyRecv
               | .error e => .error e
               | .ok st' =>
                   let st'' := ensureRunnable st' replyTarget
-                  match endpointAwaitReceive endpointId receiver st'' with
+                  -- WS-H12a: Full dual-queue receive path after reply
+                  match endpointReceiveDual endpointId receiver st'' with
                   | .error e => .error e
-                  | .ok result => .ok result
+                  | .ok (_, st''') => .ok ((), st''')
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
