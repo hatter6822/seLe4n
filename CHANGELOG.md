@@ -1,3 +1,44 @@
+## [0.14.0] - 2026-03-09
+
+### WS-H12c: Per-TCB Register Context with Inline Context Switch
+
+- **Per-TCB register save area:** Added `registerContext : RegisterFile`
+  field to TCB structure (`Model/Object.lean`), with `default` initialization.
+  Each thread now carries its own register file, matching seL4's per-TCB
+  `tcbContext` (ARM `user_context_t`).
+- **Inline context save/restore in `schedule`:** `schedule` now performs
+  `saveOutgoingContext` (saves `machine.regs` into the outgoing TCB's
+  `registerContext`) and `restoreIncomingContext` (loads the incoming TCB's
+  `registerContext` into `machine.regs`) directly inline, matching seL4's
+  `switchToThread` → `Arch_switchToThread` → `vcpu_switch`/`setVMRoot`
+  context-switch path.
+- **`saveOutgoingContext`/`restoreIncomingContext` functions:** Public
+  definitions with `@[simp]` frame lemmas proving scheduler/objects
+  preservation, enabling downstream proof automation.
+- **`contextMatchesCurrent` invariant:** Added to `Scheduler/Invariant.lean`
+  — states that `st.machine.regs = tcb.registerContext` when a thread is
+  current, formalizing the register-context coherence property.
+- **`endpointInvariant` removal:** Completely removed the deprecated
+  `endpointInvariant` predicate and all references from `IPC/Invariant.lean`,
+  `Capability/Invariant.lean`, and `Architecture/Invariant.lean`. Simplifies
+  `ipcInvariant` to its essential predicates.
+- **Information-flow projection update:** Modified `projectKernelObject` in
+  `Projection.lean` to strip `registerContext` from TCBs (replacing with
+  `default`), ensuring register contents don't leak through the information-flow
+  projection.
+- **Projection preservation proofs:** Added `saveOutgoingContext_preserves_projection`,
+  `restoreIncomingContext_preserves_projection`, and
+  `saveOutgoingContext_with_sched_preserves_projection` theorems in
+  `InformationFlow/Invariant.lean`, proving context switch preserves
+  low-equivalence.
+- **Frame lemma suite:** Added `saveOutgoingContext_preserves_tcb`,
+  `saveOutgoingContext_tcb_fields`, `saveOutgoingContext_preserves_non_tcb_lookup`,
+  `saveOutgoingContext_preserves_timeSlicePositive`, and
+  `restoreIncomingContext_preserves_timeSlicePositive`.
+- **Zero sorry/axiom, zero warnings:** Full production proof surface verified
+  clean. Build produces zero errors and zero warnings.
+- **Finding closed:** H-03 (HIGH, no per-TCB register context).
+
 ## [0.13.9] - 2026-03-09
 
 ### WS-H12b: Dequeue-on-Dispatch Scheduler Semantics

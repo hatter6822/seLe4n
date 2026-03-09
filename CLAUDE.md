@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.13.9.
+Lean 4.28.0 toolchain, Lake build system, version 0.14.0.
 
 ## Build and run
 
@@ -313,7 +313,7 @@ under `docs/` and `docs/gitbook/`.
 - **Active portfolio**: WS-G (kernel performance optimization) — WS-G1..G9 completed
 - **Active findings baseline**: `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`
 - **Planning backbone**: `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`
-- **Completed**: WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), WS-H10 (v0.13.6), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G1..G9 + refinement (v0.12.15), WS-F1..F4 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Completed**: WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), WS-H10 (v0.13.6), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G1..G9 + refinement (v0.12.15), WS-F1..F4 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

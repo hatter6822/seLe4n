@@ -196,4 +196,23 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
         st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
     | _ => True
 
+-- ============================================================================
+-- WS-H12c/H-03: Per-TCB register context invariant
+-- ============================================================================
+
+/-- WS-H12c/H-03: When a thread is current, the machine's register file
+matches that thread's saved register context. This is established atomically
+by the inline context restore step in `schedule`.
+
+When `current = none` (idle), the invariant is vacuously satisfied.
+When the current thread's object is not a TCB (impossible under
+`currentThreadValid`), the invariant is vacuously satisfied. -/
+def contextMatchesCurrent (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | some tid =>
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => st.machine.regs = tcb.registerContext
+      | _ => True
+  | none => True
+
 end SeLe4n.Kernel

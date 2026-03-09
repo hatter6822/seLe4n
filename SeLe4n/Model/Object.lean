@@ -1,4 +1,5 @@
 import SeLe4n.Prelude
+import SeLe4n.Machine
 
 namespace SeLe4n.Model
 
@@ -126,7 +127,25 @@ structure TCB where
       Stored in the sender's TCB while blocked; transferred to the receiver
       on handshake/dequeue. `none` = no pending message. -/
   pendingMessage : Option IpcMessage := none
-  deriving Repr, DecidableEq
+  /-- WS-H12c/H-03: Per-TCB register save area. The scheduler saves the
+      outgoing thread's machine registers here on dispatch and restores
+      the incoming thread's context from here. Zero-initialized by default.
+      See `contextMatchesCurrent` in `Scheduler/Invariant.lean`. -/
+  registerContext : SeLe4n.RegisterFile := default
+  deriving Repr
+
+/-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
+`RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
+comparison uses the `BEq RegisterFile` instance from `Machine.lean`. -/
+instance : BEq TCB where
+  beq a b :=
+    a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
+    a.cspaceRoot == b.cspaceRoot && a.vspaceRoot == b.vspaceRoot &&
+    a.ipcBuffer == b.ipcBuffer && a.ipcState == b.ipcState &&
+    a.timeSlice == b.timeSlice && a.deadline == b.deadline &&
+    a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
+    a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
+    a.registerContext == b.registerContext
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

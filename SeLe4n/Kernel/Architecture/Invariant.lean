@@ -205,9 +205,7 @@ private theorem default_schedulerInvariantBundle :
 
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
-  constructor
-  · intro oid ep hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro oid ntfn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  intro oid ntfn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
 private theorem default_lifecycleInvariantBundle :
     lifecycleInvariantBundle (default : SystemState) :=
