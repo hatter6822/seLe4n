@@ -136,7 +136,7 @@ install_missing_packages() {
   local missing_apt=()
   local missing_any=0
 
-  # shellcheck and ripgrep are only needed for test/lint — skip during build-only setup.
+  # Shell-checker and ripgrep are only needed for test/lint — skip during build-only setup.
   if [ "${SKIP_TEST_DEPS}" -eq 0 ]; then
     if ! command -v shellcheck >/dev/null 2>&1; then
       missing_apt+=("shellcheck")
