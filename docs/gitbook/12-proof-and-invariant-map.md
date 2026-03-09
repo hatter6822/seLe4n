@@ -18,7 +18,9 @@ Component level:
 
 - `runQueueUnique`
 - `currentThreadValid`
-- `queueCurrentConsistent`
+- `queueCurrentConsistent` (WS-H12b: inverted to `current ∉ runnable`, matching seL4 dequeue-on-dispatch)
+- `currentTimeSlicePositive` (WS-H12b: current thread time slice positive, since current is not in run queue)
+- `schedulerPriorityMatch` (WS-H12b: priority consistency for run queue threads)
 
 Data structure:
 

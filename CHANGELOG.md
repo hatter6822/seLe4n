@@ -1,3 +1,50 @@
+## [0.13.9] - 2026-03-09
+
+### WS-H12b: Dequeue-on-Dispatch Scheduler Semantics
+
+- **Scheduler invariant inversion:** Changed `queueCurrentConsistent` from
+  `current = some tid → tid ∈ runnable` to `current = some tid → tid ∉ runnable`,
+  matching seL4's `switchToThread`/`tcbSchedDequeue` dequeue-on-dispatch
+  semantics where the running thread is removed from the ready queue at
+  dispatch time.
+- **`schedule` dequeue-on-dispatch:** `schedule` now dequeues the chosen
+  thread from the run queue before dispatching via `setCurrentThread`,
+  mirroring seL4's `switchToThread` → `tcbSchedDequeue` path.
+- **`handleYield` re-enqueue:** Since the current thread is not in the run
+  queue, `handleYield` now inserts the current thread and rotates to back
+  before calling `schedule`, matching seL4's `handleYield` →
+  `tcbSchedDequeue` + `tcbSchedAppend` path.
+- **`timerTick` re-enqueue on preemption:** On time-slice expiry,
+  `timerTick` inserts the current thread back into the run queue before
+  scheduling, mirroring seL4's `timerInterrupt` → `rescheduleRequired` →
+  `tcbSchedEnqueue` → `schedule` path.
+- **`switchDomain` re-enqueue:** `switchDomain` re-enqueues the current
+  thread before the domain switch so the outgoing thread returns to the
+  runnable pool for its next domain slot.
+- **`currentTimeSlicePositive` predicate:** Added predicate to ensure the
+  current thread's time slice is positive (not covered by `timeSlicePositive`
+  since the current thread is no longer in the run queue).
+  `schedulerInvariantBundleFull` extended to include `currentTimeSlicePositive`.
+- **`schedulerPriorityMatch` predicate:** Added predicate and supporting
+  theorems `RunQueue.insert_preserves_wellFormed` and
+  `insert_threadPriority` for priority consistency.
+- **IPC invariant updates:** Added `currentThreadIpcReady`,
+  `currentNotEndpointQueueHead`, `currentNotOnNotificationWaitList`, and
+  `currentThreadDequeueCoherent` predicates to `IPC/Invariant.lean`.
+  Updated 23 cross-subsystem proof sites.
+- **Information-flow invariant updates:** Updated 5 error sites in
+  `InformationFlow/Invariant.lean` with new helper theorems for the
+  inverted scheduler semantics.
+- **Helper lemmas:** Added `ensureRunnable_not_mem_of_not_mem` and
+  `removeRunnable_not_mem_of_not_mem` to `Scheduler/Operations.lean`;
+  added `ThreadId.ext` theorem to `Prelude.lean`.
+- **Test invariant checker:** Updated `Testing/InvariantChecks.lean` to
+  verify dequeue-on-dispatch semantics at runtime.
+- **~1800 lines of preservation proofs** re-proved across
+  `Scheduler/Operations.lean`, `IPC/Invariant.lean`, and
+  `InformationFlow/Invariant.lean`.
+- **Finding closed:** H-04 (HIGH, running thread stays in ready queue).
+
 ## [0.13.8] - 2026-03-09
 
 ### WS-H12a: Legacy Endpoint Field & Operation Removal

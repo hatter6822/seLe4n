@@ -1318,6 +1318,34 @@ private theorem setCurrentThread_preserves_projection
       | none => rfl
       | some t' => simp [hTidHigh t' hTid]
 
+/-- WS-H12b: Removing a non-observable thread from the run queue preserves projection.
+The `RunQueue.remove` operation only drops the given thread; since it's non-observable,
+the filtered `projectRunnable` list is unchanged. -/
+private theorem remove_rq_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+        { st with scheduler := { st.scheduler with
+            runQueue := st.scheduler.runQueue.remove tid } }
+      = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_remove_neg _ _ _ hTidHigh]
+
+/-- WS-H12b: Inserting a non-observable thread into the run queue preserves projection,
+provided the thread was not already in the queue. -/
+private theorem insert_rq_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (prio : Priority)
+    (hTidHigh : threadObservable ctx observer tid = false)
+    (hNotMem : ¬(tid ∈ st.scheduler.runQueue)) :
+    projectState ctx observer
+        { st with scheduler := { st.scheduler with
+            runQueue := st.scheduler.runQueue.insert tid prio } }
+      = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem]
+
 /-- WS-H9: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread (read-only) >> setCurrentThread. Since chooseThread picks from
 the runQueue and all runnable threads are non-observable, the result is non-observable. -/
@@ -1350,23 +1378,42 @@ private theorem schedule_preserves_projection
           simp only [hObj] at hStep
           split at hStep
           · next hCond =>
-            exact setCurrentThread_preserves_projection ctx observer (some tid) st st'
-              (fun t h => by
-                cases h
-                exact hAllRunnable tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hCond.1))
-              hCurrentHigh hStep
+            -- WS-H12b: schedule now dequeues before dispatch
+            -- hStep : setCurrentThread (some tid) stDequeued = .ok ((), st')
+            -- where stDequeued = { st with scheduler.runQueue := st.scheduler.runQueue.remove tid }
+            have hTidHigh : threadObservable ctx observer tid = false :=
+              hAllRunnable tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hCond.1)
+            let stDequeued : SystemState :=
+              { st with scheduler := { st.scheduler with
+                  runQueue := st.scheduler.runQueue.remove tid } }
+            have hRemoveProj := remove_rq_preserves_projection ctx observer st tid hTidHigh
+            have hAllRunnableDeq : ∀ t, t ∈ stDequeued.scheduler.runnable →
+                threadObservable ctx observer t = false := by
+              intro t hMem'
+              simp only [SchedulerState.runnable] at hMem'
+              have hMemOrig := (RunQueue.mem_remove _ tid t).mp
+                ((RunQueue.mem_toList_iff_mem _ t).mp hMem')
+              exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hMemOrig.1)
+            exact (setCurrentThread_preserves_projection ctx observer (some tid) stDequeued st'
+              (fun t h => by cases h; exact hTidHigh)
+              (fun t hc => hCurrentHigh t (by simpa [stDequeued] using hc))
+              hStep).trans hRemoveProj
           · simp at hStep
         | _ => simp [hObj] at hStep
 
-/-- WS-H9: switchDomain preserves low-equivalence (deterministic on scheduler fields).
+/-- WS-H9/H12b: switchDomain preserves low-equivalence (deterministic on scheduler fields).
 switchDomain only modifies scheduler fields (current, activeDomain, domainTimeRemaining,
-domainScheduleIndex) and all computations depend only on fields that are in the
-observable projection (domainSchedule, domainScheduleIndex), which are identical
-in low-equivalent states. -/
+domainScheduleIndex) and optionally re-enqueues a non-observable current thread.
+All computations depend only on fields that are in the observable projection
+(domainSchedule, domainScheduleIndex), which are identical in low-equivalent states.
+WS-H12b: requires current threads to be non-observable so the re-enqueue
+does not affect the projected runnable list. -/
 theorem switchDomain_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t → threadObservable ctx observer t = false)
     (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
     (hStep₂ : switchDomain s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -1398,9 +1445,37 @@ theorem switchDomain_preserves_lowEquivalent
       simp only [hEntry, Except.ok.injEq, Prod.mk.injEq] at hStep₁ hStep₂
       have hEq₁ := hStep₁.2.symm; have hEq₂ := hStep₂.2.symm
       subst hEq₁; subst hEq₂
+      -- WS-H12b: Helper to reduce the match-based runQueue to the original runQueue
+      -- in the filtered (projected) list. Non-observable current thread's insert is invisible.
+      have rq_filter_reduce : ∀ (s : SystemState),
+          (∀ t, s.scheduler.current = some t → threadObservable ctx observer t = false) →
+          (match s.scheduler.current with
+            | none => s.scheduler.runQueue
+            | some tid => match s.objects[tid.toObjId]? with
+              | some (KernelObject.tcb tcb) => s.scheduler.runQueue.insert tid tcb.priority
+              | _ => s.scheduler.runQueue).toList.filter (threadObservable ctx observer)
+          = s.scheduler.runQueue.toList.filter (threadObservable ctx observer) := by
+        intro s hCurH
+        split
+        · -- current = none
+          rfl
+        · -- current = some tid, split on objects lookup
+          next tid hCur =>
+          have hH := hCurH tid hCur
+          split
+          · -- objects = some (.tcb tcb)
+            next tcb _ => exact RunQueue.toList_filter_insert_neg' _ _ _ _ hH
+          · -- objects = not tcb (catch-all)
+            rfl
       simp only [projectState]; congr 1
       · exact congrArg ObservableState.objects hLow
-      · exact congrArg ObservableState.runnable hLow
+      · -- WS-H12b: runnable field uses rq_filter_reduce
+        simp only [projectRunnable, SchedulerState.runnable]
+        have h₁ := rq_filter_reduce s₁ hCurrentHigh₁
+        have h₂ := rq_filter_reduce s₂ hCurrentHigh₂
+        have hBase := congrArg ObservableState.runnable hLow
+        simp only [projectState, projectRunnable, SchedulerState.runnable] at hBase
+        exact h₁.trans (hBase.trans h₂.symm)
       all_goals first
         | exact congrArg ObservableState.services hLow
         | exact congrArg ObservableState.irqHandlers hLow
@@ -1966,32 +2041,38 @@ private theorem handleYield_preserves_projection
       (fun _ h => by simp [hCur] at h) hAllRunnable hStep
   | some tid =>
     have hTidHigh := hCurrentHigh tid hCur
-    -- Do NOT simp [hCur] into hStep — it breaks struct matching for `set`
-    -- The unfolded handleYield at hStep has: match st.scheduler.current with | some tid => if tid ∈ ... then schedule {st with ...} else .error ...
-    -- After `cases hCur`, the match resolved, leaving the if-then-else
     simp only [hCur] at hStep
-    by_cases hMem : tid ∈ st.scheduler.runQueue
-    · -- tid ∈ runQueue: rotate + schedule
-      simp only [hMem, ite_true] at hStep
-      have hRotProj := rotateToBack_preserves_projection ctx observer st tid hTidHigh
-      have hAllRunnableRot : ∀ t, t ∈ ({ st with scheduler := { st.scheduler with
-              runQueue := st.scheduler.runQueue.rotateToBack tid } } : SystemState).scheduler.runnable →
+    -- WS-H12b: new handleYield does match on objects, then insert + rotateToBack + schedule
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        -- hStep : schedule { st with scheduler.runQueue := (rq.insert tid prio).rotateToBack tid } = .ok ((), st')
+        let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+        let stIR : SystemState :=
+          { st with scheduler := { st.scheduler with runQueue := rq' } }
+        -- Show insert + rotateToBack preserves projection
+        have hInsertRotProj : projectState ctx observer stIR = projectState ctx observer st := by
+          simp only [projectState]; congr 1
+          · simp only [projectRunnable, SchedulerState.runnable]
+            rw [RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh,
+                RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh]
+        have hAllRunnableIR : ∀ t, t ∈ stIR.scheduler.runnable →
             threadObservable ctx observer t = false := by
-        intro t hMem'; simp only [SchedulerState.runnable] at hMem'
-        exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr
-          ((RunQueue.rotateToBack_mem_iff _ _ t).mp
-            ((RunQueue.mem_toList_iff_mem _ t).mp hMem')))
-      have hSchedStep : schedule { st with scheduler := { st.scheduler with
-          runQueue := st.scheduler.runQueue.rotateToBack tid } } = .ok ((), st') := by
-        simpa [hCur] using hStep
-      exact (schedule_preserves_projection ctx observer
-        { st with scheduler := { st.scheduler with
-            runQueue := st.scheduler.runQueue.rotateToBack tid } }
-        st'
-        (fun t hc => hCurrentHigh t (by simpa using hc))
-        hAllRunnableRot hSchedStep).trans hRotProj
-    · -- tid ∉ runQueue: error — contradiction with hStep
-      simp [hMem] at hStep
+          intro t hMem'; simp only [SchedulerState.runnable] at hMem'
+          have hMemRot := (RunQueue.rotateToBack_mem_iff _ _ t).mp
+            ((RunQueue.mem_toList_iff_mem _ t).mp hMem')
+          rcases (RunQueue.mem_insert _ _ _ t).mp hMemRot with hOrig | hEq
+          · exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hOrig)
+          · subst hEq; exact hTidHigh
+        have hSchedStep : schedule stIR = .ok ((), st') := by
+          simpa [stIR, rq', hCur] using hStep
+        exact (schedule_preserves_projection ctx observer stIR st'
+          (fun t hc => hCurrentHigh t (by simpa [stIR] using hc))
+          hAllRunnableIR hSchedStep).trans hInsertRotProj
+      | _ => simp [hObj] at hStep
 
 /-- WS-H9: handleYield preserves low-equivalence. -/
 theorem handleYield_preserves_lowEquivalent
@@ -2058,37 +2139,36 @@ private theorem timerTick_preserves_projection
       next tcb hTcbEq =>
       -- Split on timeSlice ≤ 1
       split at hStep
-      · -- Time-slice expired
-        -- Split on tid ∈ runQueue (inside the expired branch)
-        split at hStep
-        · -- tid ∈ runQueue: rotateToBack + schedule
-          next hMem =>
-          -- Name the reset TCB object to avoid struct-parsing issues
-          let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }
-          have hInsertProj := insert_tick_preserves_projection ctx observer st
-            tid.toObjId tcbReset hTidObjHigh
-          let stIT : SystemState :=
-            { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
-          let stRot : SystemState :=
-            { stIT with scheduler := { stIT.scheduler with
-                runQueue := stIT.scheduler.runQueue.rotateToBack tid } }
-          have hRotProj := rotateToBack_preserves_projection ctx observer stIT tid hTidHigh
-          have hCurSched : ∀ t, stRot.scheduler.current = some t →
-              threadObservable ctx observer t = false :=
-            fun t hc => hCurrentHigh t (by simpa [stRot, stIT] using hc)
-          have hAllRunnableSched : ∀ t, t ∈ stRot.scheduler.runnable →
-              threadObservable ctx observer t = false := by
-            intro t hMem'; simp only [show stRot.scheduler.runnable =
-              (st.scheduler.runQueue.rotateToBack tid).toList from rfl] at hMem'
-            exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr
-              ((RunQueue.rotateToBack_mem_iff _ _ t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp hMem')))
-          have hSchedStep : schedule stRot = .ok ((), st') := by
-            simpa [stRot, stIT, hCur] using hStep
-          rw [schedule_preserves_projection ctx observer stRot st' hCurSched hAllRunnableSched hSchedStep,
-              hRotProj, hInsertProj]
-        · -- tid ∉ runQueue: error
-          simp at hStep
+      · -- Time-slice expired: insert back into runQueue + schedule
+        -- WS-H12b: new timerTick does insert (re-enqueue) then schedule, no if-then-else
+        let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }
+        have hInsertTickProj := insert_tick_preserves_projection ctx observer st
+          tid.toObjId tcbReset hTidObjHigh
+        let stIT : SystemState :=
+          { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
+        -- stIT has the same runQueue as st
+        let stInsert : SystemState :=
+          { stIT with scheduler := { stIT.scheduler with
+              runQueue := stIT.scheduler.runQueue.insert tid tcb.priority } }
+        -- Show insert preserves projection (non-observable thread)
+        have hInsertRqProj : projectState ctx observer stInsert = projectState ctx observer stIT := by
+          simp only [projectState]; congr 1
+          · simp only [projectRunnable, SchedulerState.runnable]
+            exact RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh
+        have hCurSched : ∀ t, stInsert.scheduler.current = some t →
+            threadObservable ctx observer t = false :=
+          fun t hc => hCurrentHigh t (by simpa [stInsert, stIT] using hc)
+        have hAllRunnableSched : ∀ t, t ∈ stInsert.scheduler.runnable →
+            threadObservable ctx observer t = false := by
+          intro t hMem'; simp only [SchedulerState.runnable] at hMem'
+          rcases (RunQueue.mem_insert _ _ _ t).mp
+            ((RunQueue.mem_toList_iff_mem _ t).mp hMem') with hOrig | hEq
+          · exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hOrig)
+          · subst hEq; exact hTidHigh
+        have hSchedStep : schedule stInsert = .ok ((), st') := by
+          simpa [stInsert, stIT, hCur] using hStep
+        rw [schedule_preserves_projection ctx observer stInsert st' hCurSched hAllRunnableSched hSchedStep,
+            hInsertRqProj, hInsertTickProj]
       · -- Time-slice not expired: insert + tick
         next hSliceNot =>
         have hEq := Except.ok.inj hStep

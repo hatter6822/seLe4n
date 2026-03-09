@@ -698,6 +698,26 @@ theorem removeRunnable_not_mem_self
   simp only [SchedulerState.runnable, removeRunnable]
   exact RunQueue.not_mem_remove_toList st.scheduler.runQueue tid
 
+/-- WS-H12b: If a thread is not in the runnable queue, it remains absent after
+    `ensureRunnable` on a *different* thread. Contrapositive of `ensureRunnable_mem_reverse`. -/
+theorem ensureRunnable_not_mem_of_not_mem
+    (st : SystemState) (tid x : SeLe4n.ThreadId)
+    (hNotMem : x ∉ st.scheduler.runnable) (hNe : x ≠ tid) :
+    x ∉ (ensureRunnable st tid).scheduler.runnable := by
+  intro hContra
+  rcases ensureRunnable_mem_reverse st tid x hContra with hOld | hEq
+  · exact hNotMem hOld
+  · exact hNe hEq
+
+/-- WS-H12b: If a thread is not in the runnable queue, it remains absent after
+    `removeRunnable` (which only removes threads). -/
+theorem removeRunnable_not_mem_of_not_mem
+    (st : SystemState) (tid x : SeLe4n.ThreadId)
+    (hNotMem : x ∉ st.scheduler.runnable) :
+    x ∉ (removeRunnable st tid).scheduler.runnable := by
+  intro hContra
+  exact hNotMem ((removeRunnable_runnable_mem st tid x).mp hContra).1
+
 /-- WS-E3/H-09: If a TCB exists at `tid.toObjId` in the pre-state, then a TCB still
     exists there after `storeTcbIpcState` (though the ipcState may have changed). -/
 theorem storeTcbIpcState_tcb_exists_at_target

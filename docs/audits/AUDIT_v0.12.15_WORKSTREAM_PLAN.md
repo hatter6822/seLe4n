@@ -81,7 +81,7 @@ Phases 4-5 (model fidelity, quality) advance toward hardware deployment readines
 | A-05 | M-12 | HIGH | endAddr overflow / physical width unchecked | WS-H11 |
 | A-12 | — | HIGH | No global ASID uniqueness invariant | WS-H11 |
 | — | M-14 | MEDIUM | boundedAddressTranslation not integrated | WS-H11 |
-| — | H-04 | HIGH | Running thread stays in ready queue | WS-H12 |
+| — | H-04 | HIGH | Running thread stays in ready queue | WS-H12 — **CLOSED (WS-H12b, v0.13.9)** |
 | A-08 | M-01 | HIGH | Redundant legacy endpoint fields | WS-H12 |
 | A-09 | — | HIGH | IpcMessage unbounded payload | WS-H12 |
 | A-25 | — | MEDIUM | Legacy O(n) IPC retained without path | WS-H12 |
@@ -1266,14 +1266,14 @@ to be re-proved when subsequent sub-workstreams change scheduler invariants.
 
 ---
 
-#### WS-H12b: Dequeue-on-Dispatch Scheduler Semantics (H-04)
+#### WS-H12b: Dequeue-on-Dispatch Scheduler Semantics (H-04) — **COMPLETED (v0.13.9)**
 
 **Objective:** Invert the scheduler's current-thread membership invariant from
 `current ∈ runnable` to `current ∉ runnable`, matching seL4's dequeue-on-dispatch
 semantics where the running thread is removed from the ready queue at dispatch
 time and re-enqueued only on preemption, yield, or blocking.
 
-**Findings addressed:** H-04
+**Findings addressed:** H-04 — **CLOSED**
 
 **Deliverables:**
 
@@ -1722,7 +1722,7 @@ switching, bounded messages, and dual-queue-only endpoints.
 | Sub-workstream | Findings | Estimated Theorems | Risk |
 |----------------|----------|--------------------|------|
 | **WS-H12a** | A-08, M-01, A-25 | -60 (deletion), +10 (migration) | Low — removes dead code |
-| **WS-H12b** | H-04 | ~20 re-proofs | High — invariant inversion |
+| **WS-H12b** | H-04 | ~20 re-proofs | **COMPLETED (v0.13.9)** |
 | **WS-H12c** | H-03 | ~5 new proofs | Medium — new field + inline logic |
 | **WS-H12d** | A-09 | ~5 updates | Low — mechanical type change |
 | **WS-H12e** | (systemic) | ~15 re-compositions | Medium — cross-cutting |
@@ -2145,7 +2145,7 @@ Documentation sync should wait until other workstreams stabilize.
 | H-01 | HIGH | WS-H13 | Covered |
 | H-02 | HIGH | WS-H11 | Covered |
 | H-03 | HIGH | WS-H12 | Covered |
-| H-04 | HIGH | WS-H12 | Covered |
+| H-04 | HIGH | WS-H12 | **CLOSED (WS-H12b, v0.13.9)** |
 | H-05 | HIGH | WS-H2 | Covered |
 | H-06 | HIGH | WS-H2 | Covered |
 | H-07 | HIGH | WS-H8 | Covered |

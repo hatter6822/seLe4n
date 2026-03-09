@@ -66,7 +66,7 @@ private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
 private def schedulerQueueCurrentConsistentB (st : SystemState) : Bool :=
   match st.scheduler.current with
   | none => true
-  | some tid => tid ∈ st.scheduler.runnable
+  | some tid => !(tid ∈ st.scheduler.runnable)
 
 private def schedulerRunQueueUniqueB (st : SystemState) : Bool :=
   st.scheduler.runnable.Nodup

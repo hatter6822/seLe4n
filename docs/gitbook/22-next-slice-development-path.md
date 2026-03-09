@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Version:** 0.13.8 (Lean 4.28.0)
+**Version:** 0.13.9 (Lean 4.28.0)
 
 **Verified metrics snapshot (from `./scripts/report_current_state.py`):**
 - Production LoC: 28,083 across 41 files
@@ -12,17 +12,19 @@
 
 Four major portfolios are completed:
 
-- **WS-H Phase 1–12a** (v0.12.16–v0.13.8): Critical correctness fixes,
-  security foundations, VSpace enrichment, and legacy cleanup — IPC call-path
-  semantic fix (WS-H1), lifecycle safety guards (WS-H2), build/CI
-  infrastructure hardening (WS-H3), capability invariant redesign (WS-H4),
-  IPC dual-queue structural invariant (WS-H5), scheduler proof completion
-  (WS-H6), HashMap equality + state-store migration (WS-H7), enforcement-NI
-  bridge (WS-H8), non-interference coverage extension >80% (WS-H9), security
-  model foundations including BIBA lattice, declassification model, and
-  endpoint flow policy (WS-H10), VSpace & architecture enrichment with
-  PagePermissions, W^X, TLB model, address bounds, and cross-ASID isolation
-  (WS-H11), legacy endpoint field and operation removal (WS-H12a).
+- **WS-H Phase 1–12b** (v0.12.16–v0.13.9): Critical correctness fixes,
+  security foundations, VSpace enrichment, legacy cleanup, and scheduler
+  semantic alignment — IPC call-path semantic fix (WS-H1), lifecycle safety
+  guards (WS-H2), build/CI infrastructure hardening (WS-H3), capability
+  invariant redesign (WS-H4), IPC dual-queue structural invariant (WS-H5),
+  scheduler proof completion (WS-H6), HashMap equality + state-store
+  migration (WS-H7), enforcement-NI bridge (WS-H8), non-interference
+  coverage extension >80% (WS-H9), security model foundations including BIBA
+  lattice, declassification model, and endpoint flow policy (WS-H10), VSpace
+  & architecture enrichment with PagePermissions, W^X, TLB model, address
+  bounds, and cross-ASID isolation (WS-H11), legacy endpoint field and
+  operation removal (WS-H12a), dequeue-on-dispatch scheduler semantics
+  matching seL4's `switchToThread`/`tcbSchedDequeue` (WS-H12b).
   See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G** (v0.12.6–v0.12.15): All 14 kernel performance findings closed.
   Every hot path migrated to O(1) hash-based structures. See
@@ -33,7 +35,7 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H12b–f, H13..H16 and WS-F5..F8
+## Immediate next: WS-H12c–f, H13..H16 and WS-F5..F8
 
 ### Remaining WS-H workstreams — v0.12.15 audit remediation
 
@@ -43,7 +45,8 @@ The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 |----|-------|----------|
 | **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12a** | Legacy endpoint field & operation removal | Medium — **Completed** |
-| **WS-H12b–f** | Scheduler/IPC semantic alignment (dequeue-on-dispatch, register context, message bounds) | Medium |
+| **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium — **Completed** |
+| **WS-H12c–f** | Scheduler/IPC semantic alignment (register context, message bounds, reconciliation) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |

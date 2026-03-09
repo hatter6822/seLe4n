@@ -64,6 +64,10 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace ThreadId
 
+/-- WS-H12b: Extensionality theorem for ThreadId. -/
+theorem ext {a b : ThreadId} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
 /-- Constructor helper kept explicit for migration ergonomics. -/
 @[inline] def ofNat (n : Nat) : ThreadId := ⟨n⟩
 

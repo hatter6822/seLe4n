@@ -297,6 +297,51 @@ theorem toList_filter_insert_neg (rq : RunQueue) (tid : ThreadId) (prio : Priori
   rw [List.filter_append]
   simp [List.filter, hp]
 
+/-- WS-H12b: Like `toList_filter_insert_neg` but without the `hNotMem` assumption.
+When `tid ∈ rq`, `insert` is a no-op, so the filter result is unchanged regardless. -/
+theorem toList_filter_insert_neg' (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (p : ThreadId → Bool) (hp : p tid = false) :
+    (rq.insert tid prio).toList.filter p = rq.toList.filter p := by
+  by_cases hMem : tid ∈ rq
+  · -- tid already in rq: insert is a no-op
+    have hContains : rq.contains tid = true := by rwa [mem_iff_contains] at hMem
+    simp only [insert, hContains, ite_true]
+  · exact toList_filter_insert_neg rq tid prio p hp hMem
+
+/-- WS-H12b: Inserting the same thread (possibly at different priorities) into two
+run queues preserves filter equality, provided the thread passes the predicate
+and both queues already have equal filtered lists.
+When `tid ∈ rq`, insert is a no-op. When `tid ∉ rq`, insert appends tid. -/
+theorem toList_filter_insert_congr (rq₁ rq₂ : RunQueue) (tid : ThreadId)
+    (prio₁ prio₂ : Priority) (p : ThreadId → Bool) (hp : p tid = true)
+    (hBase : rq₁.toList.filter p = rq₂.toList.filter p) :
+    (rq₁.insert tid prio₁).toList.filter p = (rq₂.insert tid prio₂).toList.filter p := by
+  -- Determine membership of tid in both queues
+  -- From hBase and hp: tid ∈ rq₁ ↔ tid ∈ rq₂
+  have hMem_iff : tid ∈ rq₁ ↔ tid ∈ rq₂ := by
+    constructor
+    · intro h
+      have h1 : tid ∈ rq₁.toList := (mem_toList_iff_mem rq₁ tid).mpr h
+      have h2 : tid ∈ rq₁.toList.filter p := List.mem_filter.mpr ⟨h1, by simp [hp]⟩
+      rw [hBase] at h2
+      exact (mem_toList_iff_mem rq₂ tid).mp (List.mem_filter.mp h2).1
+    · intro h
+      have h1 : tid ∈ rq₂.toList := (mem_toList_iff_mem rq₂ tid).mpr h
+      have h2 : tid ∈ rq₂.toList.filter p := List.mem_filter.mpr ⟨h1, by simp [hp]⟩
+      rw [← hBase] at h2
+      exact (mem_toList_iff_mem rq₁ tid).mp (List.mem_filter.mp h2).1
+  by_cases hMem₁ : tid ∈ rq₁
+  · -- Both in: insert is no-op on both sides
+    have hMem₂ := hMem_iff.mp hMem₁
+    have hc₁ : rq₁.contains tid = true := by rwa [mem_iff_contains] at hMem₁
+    have hc₂ : rq₂.contains tid = true := by rwa [mem_iff_contains] at hMem₂
+    simp only [insert, hc₁, hc₂, ite_true]; exact hBase
+  · -- Both not in: insert appends tid
+    have hMem₂ : ¬(tid ∈ rq₂) := fun h => hMem₁ (hMem_iff.mpr h)
+    rw [toList_insert_not_mem _ _ _ hMem₁, toList_insert_not_mem _ _ _ hMem₂]
+    simp only [List.filter_append, List.filter, hp]
+    exact congrArg (· ++ [tid]) hBase
+
 theorem toList_filter_remove_neg (rq : RunQueue) (tid : ThreadId)
     (p : ThreadId → Bool) (hp : p tid = false) :
     (rq.remove tid).toList.filter p = rq.toList.filter p := by
@@ -548,6 +593,83 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
       · exact hBucket
   · -- tid not in run queue; rotateToBack is identity
     simp only [rotateToBack, show ¬(rq.contains tid = true) from hc]; exact hwf
+
+-- ============================================================================
+-- WS-H12b: insert field-preservation and wellFormed lemmas
+-- ============================================================================
+
+/-- `insert` sets `threadPriority` to `rq.threadPriority.insert tid prio`
+when `tid` is not already a member (identity otherwise). -/
+theorem insert_threadPriority (rq : RunQueue) (tid : ThreadId) (prio : Priority) :
+    (rq.insert tid prio).threadPriority =
+      if rq.contains tid then rq.threadPriority
+      else rq.threadPriority.insert tid prio := by
+  unfold insert
+  split
+  · simp
+  · simp
+
+/-- `insert` preserves `wellFormed`. -/
+theorem insert_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
+    (tid : ThreadId) (prio : Priority) :
+    (rq.insert tid prio).wellFormed := by
+  unfold insert
+  split
+  · exact hwf  -- contains = true: identity
+  · -- contains = false: prove for the new struct
+    rename_i hNotContains
+    have hNotMem : ¬(rq.membership.contains tid = true) := hNotContains
+    unfold wellFormed; dsimp
+    constructor
+    · -- Forward: bucket member → membership ∧ threadPriority
+      intro p t hMem
+      rw [HashMap_getElem?_insert] at hMem
+      split at hMem
+      · -- prio == p: t is in the modified bucket
+        rename_i hPEq
+        simp only [Option.getD, List.mem_append, List.mem_singleton] at hMem
+        rcases hMem with hOrig | rfl
+        · -- t was in original bucket at priority prio
+          have hFwd := hwf.1 prio t hOrig
+          constructor
+          · simp [Std.HashSet.contains_insert, hFwd.1]
+          · rw [Std.HashMap.getElem?_insert,
+                show (tid == t) = false from by
+                  simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
+            rw [← eq_of_beq hPEq]; exact hFwd.2
+        · -- t = tid (newly inserted)
+          exact ⟨by simp [Std.HashSet.contains_insert],
+                 by rw [Std.HashMap.getElem?_insert]; simp [eq_of_beq hPEq]⟩
+      · -- prio ≠ p: bucket unchanged
+        have hFwd := hwf.1 p t hMem
+        exact ⟨by simp [Std.HashSet.contains_insert, hFwd.1],
+               by rw [Std.HashMap.getElem?_insert,
+                    show (tid == t) = false from by
+                      simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
+                  exact hFwd.2⟩
+    · -- Reverse: membership → ∃ prio with bucket entry
+      intro t hMem
+      have hMemOr : tid = t ∨ rq.membership.contains t = true := by
+        simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hMem
+      rcases hMemOr with rfl | hOld
+      · -- t = tid: use prio
+        refine ⟨prio, ?_, ?_⟩
+        · rw [Std.HashMap.getElem?_insert]; simp
+        · rw [HashMap_getElem?_insert]; simp [Option.getD, List.mem_append]
+      · -- t ≠ tid (old member)
+        obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hOld
+        have hNe : tid ≠ t := fun hEq => by subst hEq; exact hNotMem hOld
+        refine ⟨p, ?_, ?_⟩
+        · rw [Std.HashMap.getElem?_insert,
+              show (tid == t) = false from by simp [hNe]]
+          exact hTP
+        · rw [HashMap_getElem?_insert]
+          split
+          · rename_i hPEq
+            simp only [Option.getD, List.mem_append, List.mem_singleton]
+            have hPrioEq := eq_of_beq hPEq
+            exact Or.inl (hPrioEq ▸ hBucket)
+          · exact hBucket
 
 end RunQueue
 end SeLe4n.Kernel

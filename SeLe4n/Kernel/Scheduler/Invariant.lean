@@ -22,20 +22,22 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Scheduler invariant component #3 (M1 bundle v1): queue/current consistency.
+/-- WS-H12b/H-04: Dequeue-on-dispatch queue/current consistency.
 
-Policy choice for this model is **strict**: when `current = some tid`, `tid` must appear in the
-runnable queue. The relaxed policy (allowing absence while blocked/idle) is intentionally deferred
-until explicit blocked/idle scheduler state is modeled. -/
+seL4 semantics: the running thread is **removed** from the ready queue at
+dispatch time and re-enqueued only on preemption, yield, or blocking.
+When `current = some tid`, `tid` must **not** appear in the runnable queue.
+
+This inverts the pre-H12b "strict" policy (`tid ∈ runnable`) to match seL4's
+`switchToThread` which calls `tcbSchedDequeue` before setting `ksCurThread`. -/
 def queueCurrentConsistent (s : SchedulerState) : Prop :=
   match s.current with
   | none => True
-  | some tid => tid ∈ s.runnable
+  | some tid => tid ∉ s.runnable
 
-/-- Minimal scheduling well-formedness condition for the bootstrap model.
+/-- Minimal scheduling well-formedness condition.
 
-At this stage the condition is intentionally identical to `queueCurrentConsistent` and is kept as
-an alias so milestone wording can evolve without duplicating theorem maintenance. -/
+Alias for `queueCurrentConsistent` (dequeue-on-dispatch semantics since WS-H12b). -/
 abbrev schedulerWellFormed (s : SchedulerState) : Prop :=
   queueCurrentConsistent s
 
@@ -109,6 +111,20 @@ def timeSlicePositive (st : SystemState) : Prop :=
     | some (.tcb tcb) => tcb.timeSlice > 0
     | _ => True
 
+/-- WS-H12b: The current thread (if any) has a positive time-slice remaining.
+
+Under dequeue-on-dispatch semantics, the current thread is removed from the
+run queue at dispatch time, so `timeSlicePositive` (which quantifies over
+runnable threads) no longer covers it. This companion predicate closes the gap
+and is included in `schedulerInvariantBundleFull`. -/
+def currentTimeSlicePositive (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.timeSlice > 0
+    | _ => True
+
 -- ============================================================================
 -- M-03/WS-E6: EDF scheduling invariant
 -- ============================================================================
@@ -143,14 +159,18 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
 -- ============================================================================
 
 /-- Full Scheduler Invariant Bundle — extends the structural triad with
-`timeSlicePositive` and `edfCurrentHasEarliestDeadline`.
+`timeSlicePositive`, `currentTimeSlicePositive`, and
+`edfCurrentHasEarliestDeadline`.
 
 WS-H6: Promotes the previously orphaned time-slice and EDF invariants into a
 composed bundle with preservation theorems for all scheduler operations.
+WS-H12b: Adds `currentTimeSlicePositive` to cover the dispatched thread which
+is no longer in the run queue under dequeue-on-dispatch semantics.
 Cross-subsystem consumers that only need the structural triad should continue
 using `schedulerInvariantBundle` (the 3-component version). -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
-  schedulerInvariantBundle st ∧ timeSlicePositive st ∧ edfCurrentHasEarliestDeadline st
+  schedulerInvariantBundle st ∧ timeSlicePositive st ∧
+  currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st
 
 /-- Project the structural triad from the full bundle. -/
 theorem schedulerInvariantBundleFull_to_base {st : SystemState}

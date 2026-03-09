@@ -205,6 +205,89 @@ def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
   runnableThreadIpcReady st ∧ blockedOnSendNotRunnable st ∧ blockedOnReceiveNotRunnable st ∧
   blockedOnCallNotRunnable st ∧ blockedOnReplyNotRunnable st
 
+/-- Under dequeue-on-dispatch QCC, the current thread (if any) has ipcState = .ready.
+This is needed because ensureRunnable adds the woken target to the run queue, and
+QCC requires the current thread to NOT be in the run queue. We must therefore show
+current ≠ target, which follows from their differing ipcState. -/
+def currentThreadIpcReady (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid => ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .ready
+
+/-- Under dequeue-on-dispatch QCC, the current thread must not appear as the
+head of any endpoint queue (send or receive). This ensures that when
+endpointQueuePopHead pops a thread, it differs from the current thread. -/
+def currentNotEndpointQueueHead (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+    ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[oid]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid
+
+/-- Under dequeue-on-dispatch QCC, the current thread must not appear on any
+notification wait list. This ensures ensureRunnable on a signaled waiter
+does not conflict with the current thread. -/
+def currentNotOnNotificationWaitList (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+    ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
+      st.objects[oid]? = some (.notification ntfn) →
+      tid ∉ ntfn.waitingThreads
+
+/-- Combined dequeue-on-dispatch coherence predicate: the current thread
+has ready ipcState, is not an endpoint queue head, and is not on any
+notification wait list. -/
+def currentThreadDequeueCoherent (st : SystemState) : Prop :=
+  currentThreadIpcReady st ∧ currentNotEndpointQueueHead st ∧ currentNotOnNotificationWaitList st
+
+/-- Helper: endpointQueuePopHead returns the head of the relevant queue. -/
+private theorem endpointQueuePopHead_returns_head
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st : SystemState)
+    (ep : Endpoint) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st')) :
+    (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid := by
+  unfold endpointQueuePopHead at hPop
+  rw [hObj] at hPop; simp only at hPop
+  cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+  | none => simp [hHead] at hPop
+  | some headTid =>
+    simp only [hHead] at hPop
+    cases hLk : lookupTcb st headTid with
+    | none => simp [hLk] at hPop
+    | some headTcb =>
+      simp only [hLk] at hPop
+      revert hPop
+      cases hStore : storeObject endpointId _ st with
+      | error e => simp
+      | ok pair =>
+        simp only []
+        cases headTcb.queueNext with
+        | none =>
+          simp only []
+          cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+          | error e => simp
+          | ok st3 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            rintro ⟨rfl, _⟩; rfl
+        | some nextTid =>
+          simp only []
+          cases hLkNext : lookupTcb pair.2 nextTid with
+          | none => simp
+          | some nextTcb =>
+            simp only []
+            cases hLink : storeTcbQueueLinks pair.2 nextTid _ _ _ with
+            | error e => simp
+            | ok st2 =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                rintro ⟨rfl, _⟩; rfl
+
 
 -- ============================================================================
 -- Scheduler invariant bundle preservation
@@ -471,6 +554,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
     (replier target : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (hInv : schedulerInvariantBundle st)
+    (hCurrReady : currentThreadIpcReady st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReply at hStep
@@ -505,9 +589,16 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                     cases hCurr : st.scheduler.current with
                     | none => trivial
                     | some x =>
-                      have hMem : x ∈ st.scheduler.runnable := by
+                      have hNotMem : x ∉ st.scheduler.runnable := by
                         have := hQueue; simp [queueCurrentConsistent, hCurr] at this; exact this
-                      exact ensureRunnable_runnable_mem_old st1 target x (hSchedEq ▸ hMem)
+                      have hNe : x ≠ target := by
+                        intro hEq
+                        have hObj := lookupTcb_some_objects st target tcb hLookup
+                        rw [hEq] at hCurr
+                        have hReady : tcb.ipcState = .ready := by
+                          simp [currentThreadIpcReady, hCurr] at hCurrReady; exact hCurrReady tcb hObj
+                        simp [hIpc] at hReady
+                      exact ensureRunnable_not_mem_of_not_mem st1 target x (hSchedEq ▸ hNotMem) hNe
                   · exact ensureRunnable_nodup st1 target (hSchedEq ▸ hRunUnique)
                   · show currentThreadValid (ensureRunnable st1 target)
                     unfold currentThreadValid
@@ -543,9 +634,16 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                   cases hCurr : st.scheduler.current with
                   | none => trivial
                   | some x =>
-                    have hMem : x ∈ st.scheduler.runnable := by
+                    have hNotMem : x ∉ st.scheduler.runnable := by
                       have := hQueue; simp [queueCurrentConsistent, hCurr] at this; exact this
-                    exact ensureRunnable_runnable_mem_old st1 target x (hSchedEq ▸ hMem)
+                    have hNe : x ≠ target := by
+                      intro hEq
+                      have hObj := lookupTcb_some_objects st target tcb hLookup
+                      rw [hEq] at hCurr
+                      have hReady : tcb.ipcState = .ready := by
+                        simp [currentThreadIpcReady, hCurr] at hCurrReady; exact hCurrReady tcb hObj
+                      simp [hIpc] at hReady
+                    exact ensureRunnable_not_mem_of_not_mem st1 target x (hSchedEq ▸ hNotMem) hNe
                 · exact ensureRunnable_nodup st1 target (hSchedEq ▸ hRunUnique)
                 · show currentThreadValid (ensureRunnable st1 target)
                   unfold currentThreadValid
@@ -969,6 +1067,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : schedulerInvariantBundle st)
+    (hCurrNotHead : currentNotEndpointQueueHead st)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
@@ -1000,9 +1099,15 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
               cases hCurr : st.scheduler.current with
               | none => trivial
               | some x =>
-                have hMem : x ∈ st.scheduler.runnable := by
+                have hNotMem : x ∉ st.scheduler.runnable := by
                   have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                exact ensureRunnable_runnable_mem_old st2 pair.1 x (hSchedEq ▸ hMem)
+                have hNe : x ≠ pair.1 := by
+                  have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2 hObj hPop
+                  simp at hHeadEq
+                  intro hEq; rw [hEq] at hCurr
+                  have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr] at this
+                  exact (this endpointId ep hObj).1 hHeadEq
+                exact ensureRunnable_not_mem_of_not_mem st2 pair.1 x (hSchedEq ▸ hNotMem) hNe
             · exact ensureRunnable_nodup st2 pair.1 (hSchedEq ▸ hRQU)
             · show currentThreadValid (ensureRunnable st2 pair.1)
               unfold currentThreadValid
@@ -1043,11 +1148,10 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = sender
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some sender) from fun h => hEq' (Option.some.inj h))]
-                  show x ∈ (removeRunnable st2 sender).scheduler.runnable
-                  rw [removeRunnable_runnable_mem]
-                  have hMem : x ∈ st.scheduler.runnable := by
+                  show x ∉ (removeRunnable st2 sender).scheduler.runnable
+                  have hNotMem : x ∉ st.scheduler.runnable := by
                     have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                  exact ⟨hSchedEq ▸ hMem, hEq'⟩
+                  exact removeRunnable_not_mem_of_not_mem st2 sender x (hSchedEq ▸ hNotMem)
             · exact removeRunnable_nodup st2 sender (hSchedEq ▸ hRQU)
             · unfold currentThreadValid
               rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
@@ -1324,6 +1428,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
     (hInv : schedulerInvariantBundle st)
+    (hCurrNotHead : currentNotEndpointQueueHead st)
     (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
@@ -1358,7 +1463,16 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 · unfold queueCurrentConsistent; rw [ensureRunnable_scheduler_current, hSchedEq]
                   cases hCurr : st.scheduler.current with
                   | none => trivial
-                  | some x => exact ensureRunnable_runnable_mem_old st2 pair.1 x (hSchedEq ▸ (by have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this))
+                  | some x =>
+                    have hNotMem : x ∉ st.scheduler.runnable := by
+                      have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
+                    have hNe : x ≠ pair.1 := by
+                      have hHeadEq := endpointQueuePopHead_returns_head endpointId false st ep pair.1 pair.2 hObj hPop
+                      simp at hHeadEq
+                      intro hEq; rw [hEq] at hCurr
+                      have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr] at this
+                      exact (this endpointId ep hObj).2 hHeadEq
+                    exact ensureRunnable_not_mem_of_not_mem st2 pair.1 x (hSchedEq ▸ hNotMem) hNe
                 · exact ensureRunnable_nodup st2 pair.1 (hSchedEq ▸ hRQU)
                 · show currentThreadValid (ensureRunnable st2 pair.1)
                   unfold currentThreadValid
@@ -1442,7 +1556,16 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                   · unfold queueCurrentConsistent; rw [ensureRunnable_scheduler_current, hSchedEq]
                     cases hCurr : st.scheduler.current with
                     | none => trivial
-                    | some x => exact ensureRunnable_runnable_mem_old st2 pair.1 x (hSchedEq ▸ (by have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this))
+                    | some x =>
+                      have hNotMem : x ∉ st.scheduler.runnable := by
+                        have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
+                      have hNe : x ≠ pair.1 := by
+                        have hHeadEq := endpointQueuePopHead_returns_head endpointId false st ep pair.1 pair.2 hObj hPop
+                        simp at hHeadEq
+                        intro hEq; rw [hEq] at hCurr
+                        have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr] at this
+                        exact (this endpointId ep hObj).2 hHeadEq
+                      exact ensureRunnable_not_mem_of_not_mem st2 pair.1 x (hSchedEq ▸ hNotMem) hNe
                   · exact ensureRunnable_nodup st2 pair.1 (hSchedEq ▸ hRQU)
                   · show currentThreadValid (ensureRunnable st2 pair.1)
                     unfold currentThreadValid
@@ -1498,11 +1621,10 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = receiver
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some receiver) from fun h => hEq' (Option.some.inj h))]
-                  show x ∈ (removeRunnable st2 receiver).scheduler.runnable
-                  rw [removeRunnable_runnable_mem]
-                  have hMem : x ∈ st.scheduler.runnable := by
+                  show x ∉ (removeRunnable st2 receiver).scheduler.runnable
+                  have hNotMem : x ∉ st.scheduler.runnable := by
                     have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                  exact ⟨hSchedEq ▸ hMem, hEq'⟩
+                  exact removeRunnable_not_mem_of_not_mem st2 receiver x (hSchedEq ▸ hNotMem)
             · exact removeRunnable_nodup st2 receiver (hSchedEq ▸ hRQU)
             · unfold currentThreadValid
               rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
@@ -2071,6 +2193,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : schedulerInvariantBundle st)
+    (hCurrNotHead : currentNotEndpointQueueHead st)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
@@ -2112,14 +2235,20 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                   by_cases hEq' : x = caller
                   · subst hEq'; simp
                   · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
-                    show x ∈ (removeRunnable st4 caller).scheduler.runnable
-                    rw [removeRunnable_runnable_mem]
-                    constructor
-                    · rw [congrArg SchedulerState.runnable hSchedIpc]
-                      apply ensureRunnable_runnable_mem_old
-                      rw [congrArg SchedulerState.runnable hSchedMsg, congrArg SchedulerState.runnable hSchedPop]
+                    show x ∉ (removeRunnable st4 caller).scheduler.runnable
+                    have hNotMem : x ∉ st.scheduler.runnable := by
                       have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                    · exact hEq'
+                    have hNePair : x ≠ pair.1 := by
+                      have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2 hObj hPop
+                      simp at hHeadEq
+                      intro hEq; rw [hEq] at hCurr
+                      have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr] at this
+                      exact (this endpointId ep hObj).1 hHeadEq
+                    apply removeRunnable_not_mem_of_not_mem
+                    rw [congrArg SchedulerState.runnable hSchedIpc]
+                    exact ensureRunnable_not_mem_of_not_mem _ pair.1 x
+                      (by rw [congrArg SchedulerState.runnable hSchedMsg, congrArg SchedulerState.runnable hSchedPop]; exact hNotMem)
+                      hNePair
               · apply removeRunnable_nodup
                 rw [congrArg SchedulerState.runnable hSchedIpc]
                 apply ensureRunnable_nodup
@@ -2170,11 +2299,10 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                 by_cases hEq' : x = caller
                 · subst hEq'; simp
                 · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
-                  show x ∈ (removeRunnable st2 caller).scheduler.runnable
-                  rw [removeRunnable_runnable_mem]
-                  have hMem : x ∈ st.scheduler.runnable := by
+                  show x ∉ (removeRunnable st2 caller).scheduler.runnable
+                  have hNotMem : x ∉ st.scheduler.runnable := by
                     have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                  exact ⟨hSchedEq ▸ hMem, hEq'⟩
+                  exact removeRunnable_not_mem_of_not_mem st2 caller x (hSchedEq ▸ hNotMem)
             · exact removeRunnable_nodup st2 caller (hSchedEq ▸ hRQU)
             · unfold currentThreadValid
               rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
@@ -2492,6 +2620,8 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : schedulerInvariantBundle st)
+    (hCurrReady : currentThreadIpcReady st)
+    (hCurrNotHead : currentNotEndpointQueueHead st)
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReplyRecv at hStep
@@ -2542,9 +2672,16 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
           cases hCurr : st.scheduler.current with
           | none => trivial
           | some x =>
-            have hMem : x ∈ st.scheduler.runnable := by
+            have hNotMem : x ∉ st.scheduler.runnable := by
               have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-            exact ensureRunnable_runnable_mem_old st1 replyTarget x (hSchedEq ▸ hMem)
+            have hNe : x ≠ replyTarget := by
+              intro hEq
+              have hObj := lookupTcb_some_objects st replyTarget tcb hLookup
+              rw [hEq] at hCurr
+              have hReady : tcb.ipcState = .ready := by
+                simp [currentThreadIpcReady, hCurr] at hCurrReady; exact hCurrReady tcb hObj
+              simp [hIpc] at hReady
+            exact ensureRunnable_not_mem_of_not_mem st1 replyTarget x (hSchedEq ▸ hNotMem) hNe
         · exact ensureRunnable_nodup st1 replyTarget (hSchedEq ▸ hRQU)
         · show currentThreadValid (ensureRunnable st1 replyTarget)
           unfold currentThreadValid
@@ -2561,8 +2698,25 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
               rwa [← hNeTid] at h
             · rcases hCTV' with ⟨tcb', hTcbObj⟩
               exact ⟨tcb', (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) x.toObjId hNeTid hMsg) ▸ hTcbObj⟩
-      exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 hInvMid (by
-        have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
+      have hTargetTcbObj := lookupTcb_some_objects st replyTarget tcb hLookup
+      exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 hInvMid
+        (by
+          unfold currentNotEndpointQueueHead
+          rw [ensureRunnable_scheduler_current, congrArg SchedulerState.current hSchedEq]
+          cases hCurr' : st.scheduler.current with
+          | none => trivial
+          | some tid =>
+            intro oid ep' hEp'
+            rw [ensureRunnable_preserves_objects] at hEp'
+            have hOidNe : oid ≠ replyTarget.toObjId := by
+              intro h; subst h
+              obtain ⟨tcb', hTcb'⟩ := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hMsg ⟨tcb, hTargetTcbObj⟩
+              rw [hTcb'] at hEp'; cases hEp'
+            have hEp'' : st.objects[oid]? = some (.endpoint ep') := by
+              rwa [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) oid hOidNe hMsg] at hEp'
+            have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr'] at this
+            exact this oid ep' hEp'')
+        (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 /-- WS-H12a: endpointReplyRecv preserves ipcSchedulerContractPredicates.
 Chains storeTcbIpcStateAndMessage + ensureRunnable + endpointReceiveDual preservation. -/
@@ -2863,6 +3017,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : schedulerInvariantBundle st)
+    (hCurrNotWait : currentNotOnNotificationWaitList st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
@@ -2897,9 +3052,14 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
               cases hCurr : st.scheduler.current with
               | none => trivial
               | some x =>
-                have hMem : x ∈ st.scheduler.runnable := by
+                have hNotMem : x ∉ st.scheduler.runnable := by
                   have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                exact ensureRunnable_runnable_mem_old st'' waiter x (hSchedEq ▸ hMem)
+                have hNe : x ≠ waiter := by
+                  intro hEq; rw [hEq] at hCurr
+                  have hNoWait := hCurrNotWait; simp [currentNotOnNotificationWaitList, hCurr] at hNoWait
+                  have hInWait : waiter ∈ ntfn.waitingThreads := by rw [hWaiters]; exact List.mem_cons_self
+                  exact hNoWait notificationId ntfn hObj hInWait
+                exact ensureRunnable_not_mem_of_not_mem st'' waiter x (hSchedEq ▸ hNotMem) hNe
             · exact ensureRunnable_nodup st'' waiter (hSchedEq ▸ hRQU)
             · show currentThreadValid (ensureRunnable st'' waiter)
               unfold currentThreadValid
@@ -2931,7 +3091,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
           cases hCurr : st.scheduler.current with
           | none => trivial
           | some x =>
-            show x ∈ st'.scheduler.runnable; rw [hRunEq]
+            show x ∉ st'.scheduler.runnable; rw [hRunEq]
             have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
         · show st'.scheduler.runnable.Nodup; rw [hRunEq]; exact hRQU
         · unfold currentThreadValid; rw [hCurrEq]
@@ -3053,7 +3213,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
               cases hCurr : st.scheduler.current with
               | none => trivial
               | some x =>
-                show x ∈ st''.scheduler.runnable; rw [hRunEq]
+                show x ∉ st''.scheduler.runnable; rw [hRunEq]
                 have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
             · show st''.scheduler.runnable.Nodup; rw [hRunEq]; exact hRQU
             · unfold currentThreadValid; rw [hCurrEq]
@@ -3107,11 +3267,10 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                     by_cases hEq' : x = waiter
                     · subst hEq'; simp
                     · rw [if_neg (show ¬(some x = some waiter) from fun h => hEq' (Option.some.inj h))]
-                      show x ∈ (removeRunnable st'' waiter).scheduler.runnable
-                      rw [removeRunnable_runnable_mem]
-                      have hMem : x ∈ st.scheduler.runnable := by
+                      show x ∉ (removeRunnable st'' waiter).scheduler.runnable
+                      have hNotMem : x ∉ st.scheduler.runnable := by
                         have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                      exact ⟨hSchedEq ▸ hMem, hEq'⟩
+                      exact removeRunnable_not_mem_of_not_mem st'' waiter x (hSchedEq ▸ hNotMem)
                 · exact removeRunnable_nodup st'' waiter (hSchedEq ▸ hRQU)
                 · unfold currentThreadValid
                   rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current, hCurrEq]
