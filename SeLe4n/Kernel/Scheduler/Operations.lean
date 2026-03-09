@@ -203,7 +203,200 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
 
-/-- WS-H12b/H-04: Scheduler step with dequeue-on-dispatch semantics.
+/-- WS-H12c/H-03: Save the outgoing (current) thread's machine registers into
+its TCB `registerContext` field. If no thread is current, returns the state
+unchanged. This is an internal helper used inline by `schedule`. -/
+def saveOutgoingContext (st : SystemState) : SystemState :=
+  match st.scheduler.current with
+  | none => st
+  | some outTid =>
+      match st.objects[outTid.toObjId]? with
+      | some (.tcb outTcb) =>
+          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
+          { st with objects := st.objects.insert outTid.toObjId obj }
+      | _ => st
+
+/-- WS-H12c/H-03: Restore the incoming thread's register context into the
+machine register file. If the incoming TCB is not found, returns the state
+unchanged (unreachable under `currentThreadValid`). -/
+def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb inTcb) =>
+      { st with machine := { st.machine with regs := inTcb.registerContext } }
+  | _ => st
+
+-- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
+
+@[simp] theorem saveOutgoingContext_scheduler (st : SystemState) :
+    (saveOutgoingContext st).scheduler = st.scheduler := by
+  simp only [saveOutgoingContext]
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj =>
+          revert h
+          cases obj <;> intro h <;> simp_all
+
+@[simp] theorem restoreIncomingContext_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).scheduler = st.scheduler := by
+  simp only [restoreIncomingContext]
+  cases h : st.objects[tid.toObjId]? with
+  | none => simp_all
+  | some obj =>
+      revert h
+      cases obj <;> intro h <;> simp_all
+
+@[simp] theorem restoreIncomingContext_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).objects = st.objects := by
+  simp only [restoreIncomingContext]
+  cases h : st.objects[tid.toObjId]? with
+  | none => simp_all
+  | some obj =>
+      revert h
+      cases obj <;> intro h <;> simp_all
+
+/-- `saveOutgoingContext` preserves the existence of a TCB at any object ID.
+If `st.objects[oid]? = some (.tcb tcb)`, then there exists a TCB at `oid`
+in `(saveOutgoingContext st).objects` as well. -/
+private theorem saveOutgoingContext_preserves_tcb
+    (st : SystemState) (oid : SeLe4n.ObjId) (tcb : TCB)
+    (h : st.objects[oid]? = some (.tcb tcb)) :
+    ∃ tcb', (saveOutgoingContext st).objects[oid]? = some (.tcb tcb') := by
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => exact ⟨tcb, h⟩
+  | some outTid =>
+      simp only [hCur]
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp [hOut]; exact ⟨tcb, h⟩
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              rw [HashMap_getElem?_insert]
+              by_cases hEq : outTid.toObjId == oid
+              · simp [hEq]
+              · simp [hEq]; exact ⟨tcb, h⟩
+          | endpoint _ => simp [hOut]; exact ⟨tcb, h⟩
+          | notification _ => simp [hOut]; exact ⟨tcb, h⟩
+          | cnode _ => simp [hOut]; exact ⟨tcb, h⟩
+          | vspaceRoot _ => simp [hOut]; exact ⟨tcb, h⟩
+          | untyped _ => simp [hOut]; exact ⟨tcb, h⟩
+
+/-- `saveOutgoingContext` preserves all TCB fields except `registerContext`. -/
+private theorem saveOutgoingContext_tcb_fields
+    (st : SystemState) (oid : SeLe4n.ObjId) (tcb : TCB)
+    (h : st.objects[oid]? = some (.tcb tcb)) :
+    ∃ tcb', (saveOutgoingContext st).objects[oid]? = some (.tcb tcb') ∧
+      tcb'.domain = tcb.domain ∧
+      tcb'.priority = tcb.priority ∧
+      tcb'.deadline = tcb.deadline ∧
+      tcb'.timeSlice = tcb.timeSlice := by
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+  | some outTid =>
+      simp only [hCur]
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              rw [HashMap_getElem?_insert]
+              by_cases hEq : outTid.toObjId == oid
+              · simp only [hEq, ite_true]
+                have hEq' := beq_iff_eq.mp hEq
+                subst hEq'
+                rw [hOut] at h; cases h
+                exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
+              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | endpoint _ => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | notification _ => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | cnode _ => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | vspaceRoot _ => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | untyped _ => simp [hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+
+/-- When `st.objects[oid]?` is not a TCB (i.e., `none` or a non-TCB object),
+`saveOutgoingContext` preserves the lookup unchanged. This is because the only
+insert targets `outTid.toObjId` where a TCB exists — if `oid` had no TCB, it
+cannot be that key. -/
+private theorem saveOutgoingContext_preserves_non_tcb_lookup
+    (st : SystemState) (oid : SeLe4n.ObjId)
+    (hNonTcb : ∀ tcb, st.objects[oid]? ≠ some (.tcb tcb)) :
+    (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
+  simp only [saveOutgoingContext]
+  cases hCur : st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      simp only [hCur]
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp [hOut]
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              rw [HashMap_getElem?_insert]
+              have hNe : ¬(outTid.toObjId == oid) := by
+                intro hEq
+                have hEq' := beq_iff_eq.mp hEq
+                subst hEq'; exact hNonTcb outTcb hOut
+              simp [hNe]
+          | endpoint _ => simp [hOut]
+          | notification _ => simp [hOut]
+          | cnode _ => simp [hOut]
+          | vspaceRoot _ => simp [hOut]
+          | untyped _ => simp [hOut]
+
+/-- `saveOutgoingContext` preserves `timeSlicePositive`. The context save only
+changes `registerContext` on the outgoing TCB — no scheduler or time-slice
+field is modified. -/
+private theorem saveOutgoingContext_preserves_timeSlicePositive
+    (st : SystemState) (hInv : timeSlicePositive st) :
+    timeSlicePositive (saveOutgoingContext st) := by
+  intro tid hMem
+  have hSched : (saveOutgoingContext st).scheduler = st.scheduler := saveOutgoingContext_scheduler st
+  have hMemOrig : tid ∈ st.scheduler.runnable := by rwa [← hSched]
+  have hOrig := hInv tid hMemOrig
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => exact hOrig
+  | some outTid =>
+      simp only [hCur]
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp [hOut]; exact hOrig
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              rw [HashMap_getElem?_insert]
+              by_cases hEq : outTid.toObjId == tid.toObjId
+              · -- Same key: inserted TCB has same timeSlice as original
+                simp [hEq]
+                have hEq' := beq_iff_eq.mp hEq
+                rw [hEq'] at hOut; simp [hOut] at hOrig; exact hOrig
+              · simp [hEq]; exact hOrig
+          | endpoint _ => simp [hOut]; exact hOrig
+          | notification _ => simp [hOut]; exact hOrig
+          | cnode _ => simp [hOut]; exact hOrig
+          | vspaceRoot _ => simp [hOut]; exact hOrig
+          | untyped _ => simp [hOut]; exact hOrig
+
+/-- `restoreIncomingContext` preserves `timeSlicePositive`. The context restore
+only changes `machine.regs` — objects and scheduler state are unchanged. -/
+private theorem restoreIncomingContext_preserves_timeSlicePositive
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : timeSlicePositive st) :
+    timeSlicePositive (restoreIncomingContext st tid) := by
+  intro t hMem
+  have hSched : (restoreIncomingContext st tid).scheduler = st.scheduler := restoreIncomingContext_scheduler st tid
+  have hMemOrig : t ∈ st.scheduler.runnable := by rwa [← hSched]
+  have hOrig := hInv t hMemOrig
+  simp only [restoreIncomingContext_objects]; exact hOrig
+
+/-- WS-H12b/H-04 + WS-H12c/H-03: Scheduler step with dequeue-on-dispatch and
+inline context switch semantics.
 
 Failure modes are explicit:
 - malformed runnable entries (non-TCB object IDs) surface as `schedulerInvariantViolation`,
@@ -215,30 +408,54 @@ removed from the run queue before being set as current. This matches seL4's
 re-enqueued only on preemption (`timerTick`), yield (`handleYield`), or
 domain switch (`switchDomain`).
 
+**Inline context switch (H-03):** The context switch is performed directly
+inside `schedule` rather than as separate save/restore helpers. This matches
+seL4's `switchToThread` design where the context switch is an integral part
+of thread dispatch. The transition:
+1. Save outgoing: if `current = some outTid`, store `machine.regs` into
+   the outgoing TCB's `registerContext`.
+2. Dequeue incoming thread from the run queue.
+3. Restore incoming: load `inTcb.registerContext` into `machine.regs`.
+4. Set `current` to the incoming thread.
+
+This ensures `contextMatchesCurrent` (machine.regs = currentThread.registerContext)
+is established atomically by `schedule` itself.
+
 **Performance note:** Membership validation uses O(1) HashSet-backed
 `tid ∈ st'.scheduler.runQueue`. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
     | .error e => .error e
-    | .ok (none, st') => setCurrentThread none st'
+    | .ok (none, st') =>
+        -- WS-H12c: save outgoing context before going idle
+        let stSaved := saveOutgoingContext st'
+        setCurrentThread none stSaved
     | .ok (some tid, st') =>
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
+              -- WS-H12c: save outgoing thread's register context
+              let stSaved := saveOutgoingContext st'
               -- WS-H12b: dequeue before dispatch (seL4 tcbSchedDequeue)
-              let stDequeued := { st' with scheduler := { st'.scheduler with
-                  runQueue := st'.scheduler.runQueue.remove tid } }
-              setCurrentThread (some tid) stDequeued
+              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
+                  runQueue := stSaved.scheduler.runQueue.remove tid } }
+              -- WS-H12c: restore incoming thread's register context
+              let stRestored := restoreIncomingContext stDequeued tid
+              setCurrentThread (some tid) stRestored
             else
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation
 
-/-- WS-H12b/H-04: Yield semantics with dequeue-on-dispatch.
+/-- WS-H12b/H-04 + WS-H12c/H-03: Yield semantics with dequeue-on-dispatch.
 
 Under dequeue-on-dispatch, the current thread is NOT in the run queue.
 Yield re-enqueues the current thread at the back of its priority bucket
 (insert + rotateToBack), then calls schedule to select a new thread.
+
+Context save/restore is handled inline by `schedule`: the outgoing thread's
+registers are saved to its TCB and the incoming thread's registers are
+restored from its TCB, establishing `contextMatchesCurrent` atomically.
 
 This mirrors seL4's `handleYield` → `tcbSchedDequeue` + `tcbSchedAppend`
 (append = enqueue at tail) → `rescheduleRequired` → `schedule()`. -/
@@ -264,7 +481,8 @@ Factored into a named constant so the reset value in `timerTick` stays
 synchronized with `TCB.timeSlice` default. -/
 def defaultTimeSlice : Nat := 5
 
-/-- WS-H12b/H-04: Handle a timer tick with dequeue-on-dispatch semantics.
+/-- WS-H12b/H-04 + WS-H12c/H-03: Handle a timer tick with dequeue-on-dispatch
+and inline context switch semantics.
 
 Behavior:
 1. If no thread is current, advance the machine timer only.
@@ -275,7 +493,10 @@ Behavior:
 
 Under dequeue-on-dispatch, the current thread is NOT in the run queue.
 On preemption, we insert it back (seL4's `tcbSchedEnqueue(current)`)
-before calling `schedule()`. -/
+before calling `schedule()`. Context save/restore is handled inline by
+`schedule`: the outgoing thread's registers are saved to its TCB and
+the incoming thread's registers are restored, establishing
+`contextMatchesCurrent` atomically. -/
 def timerTick : Kernel Unit :=
   fun st =>
     match st.scheduler.current with
@@ -439,10 +660,10 @@ theorem schedule_preserves_queueCurrentConsistent
       | mk next stChoose =>
           cases next with
           | none =>
-              have hSet : setCurrentThread none stChoose = .ok ((), st') := by
-                simpa [hChoose] using hStep
+              simp only [hChoose] at hStep
+              have hSet : setCurrentThread none (saveOutgoingContext stChoose) = .ok ((), st') := hStep
               simp [setCurrentThread] at hSet
-              cases hSet
+              subst hSet
               simp [queueCurrentConsistent]
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
@@ -451,12 +672,12 @@ theorem schedule_preserves_queueCurrentConsistent
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · simp [hChoose, hObj, hSchedOk] at hStep
-                        have hSet : setCurrentThread (some tid) { stChoose with scheduler := { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } } = .ok ((), st') := by
-                          simpa [hChoose, hObj, hSchedOk] using hStep
+                      · simp only [hChoose, hObj, hSchedOk, ite_true] at hStep
+                        have hSet := hStep
                         simp [setCurrentThread] at hSet
-                        cases hSet
-                        simp [queueCurrentConsistent, SchedulerState.runnable]
+                        subst hSet
+                        simp only [queueCurrentConsistent, SchedulerState.runnable,
+                          restoreIncomingContext_scheduler, saveOutgoingContext_scheduler]
                         exact RunQueue.not_mem_remove_toList stChoose.scheduler.runQueue tid
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
@@ -535,8 +756,11 @@ theorem schedule_preserves_runQueueUnique
             simpa [hChooseState] using hUnique
           cases next with
           | none =>
-              exact setCurrentThread_preserves_runQueueUnique stChoose st' none hUniqueChoose (by
-                simpa [hChoose] using hStep)
+              simp only [hChoose] at hStep
+              have hSaveUnique : runQueueUnique (saveOutgoingContext stChoose).scheduler := by
+                rw [saveOutgoingContext_scheduler]; exact hUniqueChoose
+              exact setCurrentThread_preserves_runQueueUnique
+                (saveOutgoingContext stChoose) st' none hSaveUnique hStep
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
@@ -544,12 +768,16 @@ theorem schedule_preserves_runQueueUnique
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · have hRemovedUnique : runQueueUnique { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } := by
+                      · simp only [hChoose, hObj, hSchedOk, ite_true] at hStep
+                        have hRemovedUnique : runQueueUnique { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } := by
                           simp only [runQueueUnique, SchedulerState.runnable]
                           exact remove_preserves_nodup stChoose.scheduler.runQueue tid hUniqueChoose
-                        exact setCurrentThread_preserves_runQueueUnique
-                          { stChoose with scheduler := { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } }
-                          st' (some tid) hRemovedUnique (by simpa [hChoose, hObj, hSchedOk] using hStep)
+                        have hSet := hStep
+                        simp [setCurrentThread] at hSet
+                        subst hSet
+                        simp only [runQueueUnique, restoreIncomingContext_scheduler,
+                          saveOutgoingContext_scheduler] at hRemovedUnique ⊢
+                        exact hRemovedUnique
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
@@ -571,8 +799,9 @@ theorem schedule_preserves_currentThreadValid
       | mk next stChoose =>
           cases next with
           | none =>
-              exact setCurrentThread_none_preserves_currentThreadValid stChoose st' (by
-                simpa [hChoose] using hStep)
+              simp only [hChoose] at hStep
+              exact setCurrentThread_none_preserves_currentThreadValid
+                (saveOutgoingContext stChoose) st' hStep
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
@@ -580,10 +809,13 @@ theorem schedule_preserves_currentThreadValid
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · exact setCurrentThread_some_preserves_currentThreadValid
-                          { stChoose with scheduler := { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } }
-                          st' tid ⟨tcb, by simp [hObj]⟩
-                          (by simpa [hChoose, hObj, hSchedOk] using hStep)
+                      · simp only [hChoose, hObj, hSchedOk, ite_true] at hStep
+                        have hSet := hStep
+                        simp [setCurrentThread] at hSet
+                        subst hSet
+                        show currentThreadValid _
+                        simp only [currentThreadValid, restoreIncomingContext_objects]
+                        exact saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
@@ -605,9 +837,10 @@ theorem schedule_preserves_currentThreadInActiveDomain
       | mk next stChoose =>
           cases next with
           | none =>
-              have hSet : setCurrentThread none stChoose = .ok ((), st') := by
-                simpa [hChoose] using hStep
-              cases hSet
+              simp only [hChoose] at hStep
+              have hSet : setCurrentThread none (saveOutgoingContext stChoose) = .ok ((), st') := hStep
+              simp [setCurrentThread] at hSet
+              subst hSet
               simp [currentThreadInActiveDomain]
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
@@ -616,10 +849,47 @@ theorem schedule_preserves_currentThreadInActiveDomain
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · have hSet : setCurrentThread (some tid) { stChoose with scheduler := { stChoose.scheduler with runQueue := stChoose.scheduler.runQueue.remove tid } } = .ok ((), st') := by
-                          simpa [hChoose, hObj, hSchedOk] using hStep
-                        cases hSet
-                        simp [currentThreadInActiveDomain, hObj, hSchedOk.2]
+                      · simp only [hChoose, hObj, hSchedOk, ite_true] at hStep
+                        have hSet := hStep
+                        simp [setCurrentThread] at hSet
+                        subst hSet
+                        simp only [currentThreadInActiveDomain, restoreIncomingContext_objects,
+                          restoreIncomingContext_scheduler, saveOutgoingContext_scheduler]
+                        -- Need: (saveOutgoingContext stChoose).objects[tid.toObjId]? has same domain
+                        obtain ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj
+                        rw [hTcb']
+                        -- Show tcb'.domain = tcb.domain by unfolding saveOutgoingContext
+                        simp only [saveOutgoingContext] at hTcb'
+                        cases hCur : stChoose.scheduler.current with
+                        | none =>
+                            simp only [hCur, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                        | some outTid =>
+                            simp only [hCur] at hTcb'
+                            cases hOutObj : stChoose.objects[outTid.toObjId]? with
+                            | none =>
+                                simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                            | some outObj =>
+                                cases outObj with
+                                | tcb outTcb =>
+                                    simp only [hOutObj] at hTcb'
+                                    rw [HashMap_getElem?_insert] at hTcb'
+                                    by_cases hEq : outTid.toObjId == tid.toObjId
+                                    · simp only [hEq, ↓reduceIte] at hTcb'; cases hTcb'
+                                      have hEq' := beq_iff_eq.mp hEq
+                                      rw [hEq'] at hOutObj; rw [hOutObj] at hObj; cases hObj
+                                      exact hSchedOk.2
+                                    · simp only [hEq, Bool.false_eq_true, ↓reduceIte, hObj] at hTcb'
+                                      cases hTcb'; exact hSchedOk.2
+                                | endpoint _ =>
+                                    simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                                | notification _ =>
+                                    simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                                | cnode _ =>
+                                    simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                                | vspaceRoot _ =>
+                                    simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
+                                | untyped _ =>
+                                    simp only [hOutObj, hObj] at hTcb'; cases hTcb'; exact hSchedOk.2
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
@@ -1195,8 +1465,10 @@ theorem schedule_preserves_timeSlicePositive
           have hInvC : timeSlicePositive stChoose := by rw [hState]; exact hInv
           cases next with
           | none =>
-              exact setCurrentThread_preserves_timeSlicePositive stChoose st' none hInvC
-                (by simpa [hChoose] using hStep)
+              simp only [hChoose] at hStep
+              have hInvSave := saveOutgoingContext_preserves_timeSlicePositive stChoose hInvC
+              exact setCurrentThread_preserves_timeSlicePositive
+                (saveOutgoingContext stChoose) st' none hInvSave hStep
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
@@ -1205,12 +1477,24 @@ theorem schedule_preserves_timeSlicePositive
                   | tcb tcb =>
                       by_cases hOk : tid ∈ stChoose.scheduler.runQueue ∧
                           tcb.domain = stChoose.scheduler.activeDomain
-                      · -- Dequeue then setCurrentThread: timeSlicePositive transfers through remove
-                        have hInvDq : timeSlicePositive { stChoose with scheduler := { stChoose.scheduler with
-                            runQueue := stChoose.scheduler.runQueue.remove tid } } :=
-                          remove_preserves_timeSlicePositive stChoose tid hInvC
-                        exact setCurrentThread_preserves_timeSlicePositive _ st' (some tid) hInvDq
-                          (by simpa [hChoose, hObj, hOk] using hStep)
+                      · simp only [hChoose, hObj, hOk, ite_true] at hStep
+                        have hSet := hStep
+                        simp [setCurrentThread] at hSet
+                        subst hSet
+                        -- timeSlicePositive only depends on scheduler.runnable and objects
+                        -- After setCurrentThread, scheduler.current changes but runnable doesn't
+                        -- After restoreIncomingContext, only machine.regs changes
+                        -- After dequeue, runQueue loses tid (subset of original)
+                        -- After saveOutgoingContext, only registerContext changes in objects
+                        have hInvSave := saveOutgoingContext_preserves_timeSlicePositive stChoose hInvC
+                        have hInvDq := remove_preserves_timeSlicePositive (saveOutgoingContext stChoose) tid hInvSave
+                        intro t hMem
+                        -- setCurrentThread only changes current, so runnable is from dequeued state
+                        -- restoreIncomingContext preserves objects
+                        simp only [SchedulerState.runnable, restoreIncomingContext_objects,
+                          restoreIncomingContext_scheduler, saveOutgoingContext_scheduler] at hMem ⊢
+                        exact hInvDq t (by simpa [SchedulerState.runnable,
+                          saveOutgoingContext_scheduler] using hMem)
                       · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
                             tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hOk
@@ -1426,8 +1710,9 @@ theorem schedule_preserves_currentTimeSlicePositive
           have hState : stChoose = st := chooseThread_preserves_state st stChoose next hChoose
           cases next with
           | none =>
-              exact setCurrentThread_none_preserves_currentTimeSlicePositive stChoose st'
-                (by simpa [hChoose] using hStep)
+              simp only [hChoose] at hStep
+              exact setCurrentThread_none_preserves_currentTimeSlicePositive
+                (saveOutgoingContext stChoose) st' hStep
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
@@ -1443,10 +1728,46 @@ theorem schedule_preserves_currentTimeSlicePositive
                           have hInvC := hTS; rw [← hState] at hInvC
                           have := hInvC tid hMemRunnable
                           simp [hObj] at this; exact this
-                        -- After dequeue, objects unchanged → same timeSlice
-                        have hSet := by simpa [hChoose, hObj, hOk] using hStep
-                        simp [setCurrentThread] at hSet; cases hSet
-                        simp [currentTimeSlicePositive, hObj, hTidTS]
+                        simp only [hChoose, hObj, hOk, ite_true] at hStep
+                        have hSet := hStep
+                        simp [setCurrentThread] at hSet
+                        subst hSet
+                        -- currentTimeSlicePositive checks objects[tid.toObjId]?.timeSlice
+                        -- objects went through saveOutgoingContext + restoreIncomingContext
+                        -- but timeSlice is preserved by both
+                        simp only [currentTimeSlicePositive, restoreIncomingContext_objects]
+                        -- Now need: match (saveOutgoingContext stChoose).objects[tid.toObjId]? ...
+                        -- saveOutgoingContext preserves tcb existence:
+                        have ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj
+                        simp [hTcb']
+                        -- tcb'.timeSlice = tcb.timeSlice because saveOutgoingContext only changes registerContext
+                        -- We need to show tcb'.timeSlice > 0
+                        -- Since saveOutgoingContext either doesn't change the tcb at tid.toObjId
+                        -- or replaces it with { outTcb with registerContext := ... } which has same timeSlice
+                        unfold saveOutgoingContext at hTcb'
+                        cases hCur : stChoose.scheduler.current with
+                        | none =>
+                            simp [hCur] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                        | some outTid =>
+                            simp only [hCur] at hTcb'
+                            cases hOutObj : stChoose.objects[outTid.toObjId]? with
+                            | none => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                            | some outObj =>
+                                cases outObj with
+                                | tcb outTcb =>
+                                    simp only [hOutObj] at hTcb'
+                                    rw [HashMap_getElem?_insert] at hTcb'
+                                    by_cases hEq : outTid.toObjId == tid.toObjId
+                                    · simp [hEq] at hTcb'; cases hTcb'
+                                      have hEq' := beq_iff_eq.mp hEq
+                                      rw [hEq'] at hOutObj; rw [hOutObj] at hObj; cases hObj
+                                      exact hTidTS
+                                    · simp [hEq] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                                | endpoint _ => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                                | notification _ => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                                | cnode _ => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                                | vspaceRoot _ => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
+                                | untyped _ => simp [hOutObj] at hTcb'; rw [hTcb'] at hObj; cases hObj; exact hTidTS
                       · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
                             tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hOk
@@ -1939,7 +2260,8 @@ theorem schedule_preserves_edfCurrentHasEarliestDeadline
     simp only [hCIB] at hStep
     cases cibRes with
     | none =>
-      exact setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline st st' hStep
+      exact setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline
+        (saveOutgoingContext st) st' hStep
     | some triple =>
       obtain ⟨tid, resPrio, resDl⟩ := triple
       simp at hStep
@@ -1952,14 +2274,55 @@ theorem schedule_preserves_edfCurrentHasEarliestDeadline
           by_cases hSchedOk : st.scheduler.runQueue.contains tid = true ∧
               tcbSel.domain = st.scheduler.activeDomain
           · simp only [hSchedOk] at hStep
-            -- After dequeue: setCurrentThread (some tid) on state with tid removed
-            -- The EDF bridge gives us optimality over the dequeued runnable set
-            exact setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
-              { st with scheduler := { st.scheduler with runQueue := st.scheduler.runQueue.remove tid } }
-              st' tid tcbSel (by simp [hObj])
-              (chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
-                hwf hpm hSchedOk.2 hAllTcb hCIB hObj)
-              hStep
+            -- After dequeue + context switch, use the subst approach
+            have hSet := hStep
+            simp [setCurrentThread] at hSet
+            subst hSet
+            -- edfCurrentHasEarliestDeadline unfolds to check current/runnable/objects
+            have hBridge := chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
+              hwf hpm hSchedOk.2 hAllTcb hCIB hObj
+            simp only [edfCurrentHasEarliestDeadline, restoreIncomingContext_objects]
+            -- Get the saved TCB and its field preservation
+            have ⟨tcbSel', hTcbSel', hDomSel, hPriSel, hDlSel, _⟩ :=
+              saveOutgoingContext_tcb_fields st tid.toObjId tcbSel hObj
+            simp [hTcbSel']
+            intro t hMem
+            -- Simplify hMem: scheduler went through restoreIncomingContext + saveOutgoingContext
+            -- but both preserve scheduler, so reduce to st.scheduler.runQueue.remove tid
+            simp only [SchedulerState.runnable, restoreIncomingContext_scheduler,
+              saveOutgoingContext_scheduler] at hMem
+            have hMemOrig : t ∈ { st.scheduler with runQueue := st.scheduler.runQueue.remove tid }.runnable := by
+              simpa [SchedulerState.runnable] using hMem
+            have hBridgeT := hBridge t hMemOrig
+            -- Case split on whether t has a TCB in original state
+            -- For non-TCB cases, we show saveOutgoingContext preserves the lookup:
+            -- saveOutgoingContext only inserts at outTid.toObjId where st.objects has a TCB,
+            -- so if st.objects[t.toObjId]? has no TCB, neither does the saved state.
+            cases hObjT : st.objects[t.toObjId]? with
+            | none =>
+                -- No TCB at t.toObjId → saveOutgoingContext preserves the lookup
+                have hSame := saveOutgoingContext_preserves_non_tcb_lookup st t.toObjId
+                  (fun tcb h => by simp [hObjT] at h)
+                simp [hSame, hObjT]
+            | some objT =>
+                cases objT with
+                | tcb tcbT =>
+                    have ⟨tcbT', hTcbT', hDomT, hPriT, hDlT, _⟩ :=
+                      saveOutgoingContext_tcb_fields st t.toObjId tcbT hObjT
+                    simp [hTcbT']
+                    simp [hObjT] at hBridgeT
+                    intro hDomEq hPriEq
+                    have hDomOrig : tcbT.domain = tcbSel.domain := by
+                      rw [← hDomSel, ← hDomT]; exact hDomEq
+                    have hPriOrig : tcbT.priority = tcbSel.priority := by
+                      rw [← hPriSel, ← hPriT]; exact hPriEq
+                    have hB := hBridgeT hDomOrig hPriOrig
+                    rw [hDlSel, hDlT]; exact hB
+                | _ =>
+                    -- Non-TCB at t.toObjId → saveOutgoingContext preserves the lookup
+                    have hSame := saveOutgoingContext_preserves_non_tcb_lookup st t.toObjId
+                      (fun tcb h => by rw [hObjT] at h; cases h)
+                    rw [hSame, hObjT]; simp [hObjT] at hBridgeT ⊢
           · exfalso; simp [hSchedOk] at hStep
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
           simp [hObj] at hStep

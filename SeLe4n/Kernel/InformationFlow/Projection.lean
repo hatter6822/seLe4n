@@ -116,6 +116,14 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   | .cnode cn =>
       .cnode { cn with slots := cn.slots.filter (fun _ cap =>
         capTargetObservable ctx observer cap.target) }
+  | .tcb tcb =>
+      -- WS-H12c: Strip registerContext from projected TCBs. Register context
+      -- is saved/restored by schedule's inline context switch and is an
+      -- implementation detail of the scheduler, not a security-relevant
+      -- kernel object property. Projecting it away ensures that
+      -- saveOutgoingContext/restoreIncomingContext do not affect the
+      -- information-flow projection.
+      .tcb { tcb with registerContext := default }
   | other => other
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
@@ -203,9 +211,16 @@ def projectDomainScheduleIndex (_ctx : LabelingContext) (_observer : IfObserver)
     Nat :=
   st.scheduler.domainScheduleIndex
 
-/-- WS-H10/C-05: Project machine register file, filtered by current thread
-observability. The register file is the architectural context of the currently-
-executing thread. Only visible when the current thread is observable. -/
+/-- WS-H10/C-05 + WS-H12c/H-03: Project machine register file, filtered by
+current thread observability. The register file is the architectural context
+of the currently-executing thread. Only visible when the current thread is
+observable.
+
+Under `contextMatchesCurrent` (established by `schedule`), the machine
+register file is guaranteed to equal `currentThread.registerContext` when
+a thread is dispatched. The projection reads `st.machine.regs` which is
+synchronized with the current TCB's `registerContext` by the inline
+context switch in `schedule`. -/
 def projectMachineRegs (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     Option RegisterFile :=
   match st.scheduler.current with

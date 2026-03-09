@@ -1346,9 +1346,196 @@ private theorem insert_rq_preserves_projection
   simp only [projectState]; congr 1
   · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem]
 
-/-- WS-H9: schedule when all schedulable threads are non-observable preserves projection.
-schedule = chooseThread (read-only) >> setCurrentThread. Since chooseThread picks from
-the runQueue and all runnable threads are non-observable, the result is non-observable. -/
+
+/-- WS-H12c: saveOutgoingContext produces a state whose non-objects, non-scheduler
+fields are identical to the original. -/
+private theorem saveOutgoingContext_machine (st : SystemState) :
+    (saveOutgoingContext st).machine = st.machine := by
+  simp only [saveOutgoingContext]
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj => cases obj <;> simp_all
+
+private theorem saveOutgoingContext_services (st : SystemState) :
+    (saveOutgoingContext st).services = st.services := by
+  simp only [saveOutgoingContext]
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj => cases obj <;> simp_all
+
+private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
+    (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
+  simp only [saveOutgoingContext]
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj => cases obj <;> simp_all
+
+private theorem saveOutgoingContext_objectIndex (st : SystemState) :
+    (saveOutgoingContext st).objectIndex = st.objectIndex := by
+  simp only [saveOutgoingContext]
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj => cases obj <;> simp_all
+
+/-- WS-H12c: saveOutgoingContext preserves projectObjects because
+projectKernelObject strips registerContext from TCBs. -/
+private theorem saveOutgoingContext_preserves_projectObjects
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (oid : SeLe4n.ObjId) :
+    projectObjects ctx observer (saveOutgoingContext st) oid =
+    projectObjects ctx observer st oid := by
+  simp only [projectObjects]
+  split
+  · next hObs =>
+      simp only [saveOutgoingContext]
+      cases hCur : st.scheduler.current with
+      | none => rfl
+      | some outTid =>
+          cases hOut : st.objects[outTid.toObjId]? with
+          | none => simp_all
+          | some outObj =>
+              cases outObj with
+              | tcb outTcb =>
+                  simp only [hOut, Option.map]
+                  rw [HashMap_getElem?_insert]
+                  by_cases hEq : outTid.toObjId == oid
+                  · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                    have hEq' := beq_iff_eq.mp hEq
+                    subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                  · simp [hEq]
+              | endpoint _ => simp_all
+              | notification _ => simp_all
+              | cnode _ => simp_all
+              | vspaceRoot _ => simp_all
+              | untyped _ => simp_all
+  · rfl
+
+/-- WS-H12c: saveOutgoingContext preserves the information-flow projection.
+The context save only modifies `registerContext` in one TCB. Since
+`projectKernelObject` strips `registerContext` (replacing it with `default`),
+this does not change the projected objects. -/
+private theorem saveOutgoingContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
+  simp only [saveOutgoingContext]
+  cases hCur : st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              -- Now: projectState ctx observer { st with objects := st.objects.insert ... } = projectState ctx observer st
+              simp only [projectState]
+              congr 1
+              · -- objects field
+                exact funext (fun oid => by
+                  simp only [projectObjects]
+                  split
+                  · rw [HashMap_getElem?_insert]
+                    by_cases hEq : outTid.toObjId == oid
+                    · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                      have hEq' := beq_iff_eq.mp hEq
+                      subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                    · simp [hEq]
+                  · rfl)
+          | endpoint _ => simp_all
+          | notification _ => simp_all
+          | cnode _ => simp_all
+          | vspaceRoot _ => simp_all
+          | untyped _ => simp_all
+
+/-- WS-H12c: restoreIncomingContext preserves the information-flow projection
+when the current thread is non-observable. -/
+private theorem restoreIncomingContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false) :
+    projectState ctx observer (restoreIncomingContext st tid) = projectState ctx observer st := by
+  simp only [restoreIncomingContext]
+  cases hTcb : st.objects[tid.toObjId]? with
+  | none => simp_all
+  | some obj =>
+      cases obj with
+      | tcb inTcb =>
+          simp only [hTcb]
+          -- Goal: projectState ctx observer { st with machine := { st.machine with regs := inTcb.registerContext } } = projectState ctx observer st
+          -- Only machine.regs changes; all other projection fields are unchanged
+          simp only [projectState]
+          congr 1
+          · -- machineRegs: current is non-observable, so regs projected as none regardless
+            simp only [projectMachineRegs]
+            cases hCur : st.scheduler.current with
+            | none => rfl
+            | some t => simp [hCurrentHigh t hCur]
+      | endpoint _ => simp_all
+      | notification _ => simp_all
+      | cnode _ => simp_all
+      | vspaceRoot _ => simp_all
+      | untyped _ => simp_all
+
+/-- WS-H12c: projectObjects depends only on the objects field. -/
+private theorem projectObjects_ext_objects
+    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
+    (hObjs : s₁.objects = s₂.objects) :
+    (fun oid => projectObjects ctx observer s₁ oid) =
+    (fun oid => projectObjects ctx observer s₂ oid) := by
+  ext oid; simp only [projectObjects, hObjs]
+
+/-- WS-H12c: saveOutgoingContext with a scheduler override preserves projection
+relative to the same scheduler override on the original state. -/
+private theorem saveOutgoingContext_with_sched_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (sched : SchedulerState) :
+    projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
+    = projectState ctx observer { st with scheduler := sched } := by
+  simp only [saveOutgoingContext]
+  cases hCur : st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              simp only [hOut]
+              -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
+              --     = projectState ctx observer { st with scheduler := sched }
+              -- The LHS has objects changed, everything else (incl. scheduler override) same
+              simp only [projectState]
+              congr 1
+              · -- objects field: same proof as saveOutgoingContext_preserves_projection
+                exact funext (fun oid => by
+                  simp only [projectObjects]
+                  split
+                  · rw [HashMap_getElem?_insert]
+                    by_cases hEq : outTid.toObjId == oid
+                    · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                      have hEq' := beq_iff_eq.mp hEq
+                      subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                    · simp [hEq]
+                  · rfl)
+          | endpoint _ => simp_all
+          | notification _ => simp_all
+          | cnode _ => simp_all
+          | vspaceRoot _ => simp_all
+          | untyped _ => simp_all
+
+/-- WS-H9/H12c: schedule when all schedulable threads are non-observable preserves projection.
+schedule = chooseThread >> save >> dequeue >> restore >> setCurrentThread.
+Context save/restore and dequeue preserve the projection. -/
 private theorem schedule_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
@@ -1366,8 +1553,10 @@ private theorem schedule_preserves_projection
     cases next with
     | none =>
       rw [hPres] at hStep
-      exact setCurrentThread_preserves_projection ctx observer none st st'
-        (fun _ h => by cases h) hCurrentHigh hStep
+      exact (setCurrentThread_preserves_projection ctx observer none (saveOutgoingContext st) st'
+        (fun _ h => by cases h)
+        (fun t h => by rw [saveOutgoingContext_scheduler] at h; exact hCurrentHigh t h)
+        hStep).trans (saveOutgoingContext_preserves_projection ctx observer st)
     | some tid =>
       rw [hPres] at hStep
       cases hObj : st.objects[tid.toObjId]? with
@@ -1378,26 +1567,34 @@ private theorem schedule_preserves_projection
           simp only [hObj] at hStep
           split at hStep
           · next hCond =>
-            -- WS-H12b: schedule now dequeues before dispatch
-            -- hStep : setCurrentThread (some tid) stDequeued = .ok ((), st')
-            -- where stDequeued = { st with scheduler.runQueue := st.scheduler.runQueue.remove tid }
             have hTidHigh : threadObservable ctx observer tid = false :=
               hAllRunnable tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hCond.1)
-            let stDequeued : SystemState :=
-              { st with scheduler := { st.scheduler with
-                  runQueue := st.scheduler.runQueue.remove tid } }
-            have hRemoveProj := remove_rq_preserves_projection ctx observer st tid hTidHigh
-            have hAllRunnableDeq : ∀ t, t ∈ stDequeued.scheduler.runnable →
-                threadObservable ctx observer t = false := by
-              intro t hMem'
-              simp only [SchedulerState.runnable] at hMem'
-              have hMemOrig := (RunQueue.mem_remove _ tid t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp hMem')
-              exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hMemOrig.1)
-            exact (setCurrentThread_preserves_projection ctx observer (some tid) stDequeued st'
+            have hSavedSched : (saveOutgoingContext st).scheduler = st.scheduler :=
+              saveOutgoingContext_scheduler st
+            let stSaved := saveOutgoingContext st
+            let stDequeued := { stSaved with scheduler :=
+                { stSaved.scheduler with runQueue := stSaved.scheduler.runQueue.remove tid } }
+            let stRestored := restoreIncomingContext stDequeued tid
+            have hSetProj := setCurrentThread_preserves_projection ctx observer (some tid) stRestored st'
               (fun t h => by cases h; exact hTidHigh)
-              (fun t hc => hCurrentHigh t (by simpa [stDequeued] using hc))
-              hStep).trans hRemoveProj
+              (fun t hc => by
+                simp only [stRestored, restoreIncomingContext_scheduler, stDequeued] at hc
+                rw [hSavedSched] at hc
+                exact hCurrentHigh t hc)
+              hStep
+            have hRestoreProj := restoreIncomingContext_preserves_projection ctx observer stDequeued tid
+              (fun t h => by
+                simp only [stDequeued] at h
+                rw [hSavedSched] at h
+                exact hCurrentHigh t h)
+            have hDeqProj : projectState ctx observer stDequeued = projectState ctx observer st := by
+              have hDeqEq : stDequeued = { saveOutgoingContext st with scheduler :=
+                  { st.scheduler with runQueue := st.scheduler.runQueue.remove tid } } := by
+                simp only [stDequeued, stSaved, hSavedSched]
+              rw [hDeqEq]
+              exact (saveOutgoingContext_with_sched_preserves_projection ctx observer st _).trans
+                (remove_rq_preserves_projection ctx observer st tid hTidHigh)
+            exact hSetProj.trans (hRestoreProj.trans hDeqProj)
           · simp at hStep
         | _ => simp [hObj] at hStep
 

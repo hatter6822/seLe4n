@@ -37,6 +37,18 @@ structure RegisterFile where
 instance : Inhabited RegisterFile where
   default := { pc := 0, sp := 0, gpr := fun _ => 0 }
 
+/-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
+(`Nat → Nat`), only `pc` and `sp` are shown in trace output. -/
+instance : Repr RegisterFile where
+  reprPrec rf _ := s!"RegisterFile(pc={rf.pc}, sp={rf.sp})"
+
+/-- WS-H12c: Manual `BEq` for `RegisterFile`. Compares `pc`, `sp`, and the
+first 32 GPRs (standard ARM64 register count). This is sufficient for the
+abstract kernel model where GPR indices are bounded by architecture. -/
+instance : BEq RegisterFile where
+  beq a b := a.pc == b.pc && a.sp == b.sp &&
+    (List.range 32).all fun i => a.gpr i == b.gpr i
+
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
   regs : RegisterFile
