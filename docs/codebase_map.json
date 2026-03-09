@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/dequeue-dispatch-scheduler-Lty5W",
-      "commit_sha": "fcdd25ca545130fad28ab84ed24cc569abcc23ec",
-      "tree_sha": "edd46d9d7a8b041d990f7a479b4755b0fa172035",
-      "committed_at_utc": "2026-03-09T08:54:31+00:00"
+      "branch": "main",
+      "commit_sha": "99474b8eb3dff1b09765a712ff869781d26feedc",
+      "tree_sha": "229b0cc35be4d057040d8f12bc5ce9e896f9a9ec",
+      "committed_at_utc": "2026-03-09T05:17:19-04:00"
     }
   },
   "source_sync": {
