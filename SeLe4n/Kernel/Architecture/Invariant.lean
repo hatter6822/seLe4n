@@ -36,9 +36,16 @@ open SeLe4n.Kernel
 
 H-07 (WS-E3): `vspaceInvariantBundle` added to the composition, closing the gap
 where VSpace ASID-uniqueness and non-overlap invariants were proven in isolation
-but not included in the top-level composed bundle. -/
+but not included in the top-level composed bundle.
+
+WS-H12e: Cross-subsystem invariant reconciliation — uses `schedulerInvariantBundleFull`
+(which now includes `contextMatchesCurrent`) instead of the bare `schedulerInvariantBundle`,
+and `coreIpcInvariantBundle` now subsumes `ipcInvariantFull` (including
+`dualQueueSystemInvariant` and `allPendingMessagesBounded`). The
+`ipcSchedulerCouplingInvariantBundle` now includes `contextMatchesCurrent` and
+`currentThreadDequeueCoherent`. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
-  schedulerInvariantBundle st ∧
+  schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
     coreIpcInvariantBundle st ∧
     ipcSchedulerCouplingInvariantBundle st ∧
@@ -234,19 +241,64 @@ private theorem default_capabilityInvariantBundle :
    by intro _ _ h; simp [default] at h,
    by exact CapDerivationTree.empty_edgeWellFounded⟩
 
+-- WS-H12e: Default-state proofs for new invariant components
+
+private theorem default_dualQueueSystemInvariant :
+    dualQueueSystemInvariant (default : SystemState) := by
+  constructor
+  · intro epId ep hObj; have h : (default : SystemState).objects[epId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · constructor
+    · intro a tcbA hObj; have h : (default : SystemState).objects[a.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+    · intro b tcbB hObj; have h : (default : SystemState).objects[b.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+
+private theorem default_allPendingMessagesBounded :
+    allPendingMessagesBounded (default : SystemState) := by
+  intro tid tcb msg hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+
+private theorem default_ipcInvariantFull :
+    ipcInvariantFull (default : SystemState) :=
+  ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded⟩
+
+private theorem default_contextMatchesCurrent :
+    contextMatchesCurrent (default : SystemState) := by
+  simp [contextMatchesCurrent]
+
+private theorem default_currentThreadDequeueCoherent :
+    currentThreadDequeueCoherent (default : SystemState) := by
+  refine ⟨?_, ?_, ?_⟩
+  · -- currentThreadIpcReady: current = none → True
+    simp [currentThreadIpcReady]
+  · -- currentNotEndpointQueueHead: current = none → True
+    unfold currentNotEndpointQueueHead; simp
+  · -- currentNotOnNotificationWaitList: current = none → True
+    unfold currentNotOnNotificationWaitList; simp
+
+private theorem default_schedulerInvariantBundleFull :
+    schedulerInvariantBundleFull (default : SystemState) :=
+  ⟨default_schedulerInvariantBundle,
+   by
+    unfold timeSlicePositive
+    intro tid hMem
+    have : (default : SystemState).scheduler.runnable = [] := by native_decide
+    rw [this] at hMem; simp at hMem,
+   by unfold currentTimeSlicePositive; simp,
+   by unfold edfCurrentHasEarliestDeadline; simp,
+   default_contextMatchesCurrent⟩
+
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- 1. schedulerInvariantBundle
-  · exact default_schedulerInvariantBundle
+  -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
+  · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (7-tuple: unique, sound, attenuation, lifecycle, bounded, completeness, acyclicity)
   · exact default_capabilityInvariantBundle
-  -- 3. coreIpcInvariantBundle
-  · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariant⟩
-  -- 4. ipcSchedulerCouplingInvariantBundle
-  · exact ⟨⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariant⟩,
-           default_ipcSchedulerContractPredicates.1,
-           default_ipcSchedulerContractPredicates.2⟩
+  -- 3. coreIpcInvariantBundle (WS-H12e: now uses ipcInvariantFull)
+  · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩
+  -- 4. ipcSchedulerCouplingInvariantBundle (WS-H12e: now includes contextMatchesCurrent + dequeueCoherent)
+  · exact ⟨⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩,
+           default_ipcSchedulerContractPredicates,
+           default_contextMatchesCurrent,
+           default_currentThreadDequeueCoherent⟩
   -- 5. lifecycleInvariantBundle
   · exact default_lifecycleInvariantBundle
   -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability

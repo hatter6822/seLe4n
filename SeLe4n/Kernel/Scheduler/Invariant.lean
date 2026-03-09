@@ -155,27 +155,55 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
       | _ => True
 
 -- ============================================================================
+-- WS-H12c/H-03: Per-TCB register context invariant
+-- ============================================================================
+
+/-- WS-H12c/H-03: When a thread is current, the machine's register file
+matches that thread's saved register context. This is established atomically
+by the inline context restore step in `schedule`.
+
+When `current = none` (idle), the invariant is vacuously satisfied.
+When the current thread's object is not a TCB (impossible under
+`currentThreadValid`), the invariant is vacuously satisfied. -/
+def contextMatchesCurrent (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | some tid =>
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => st.machine.regs = tcb.registerContext
+      | _ => True
+  | none => True
+
+-- ============================================================================
 -- WS-H6: Full scheduler invariant bundle
 -- ============================================================================
 
 /-- Full Scheduler Invariant Bundle — extends the structural triad with
-`timeSlicePositive`, `currentTimeSlicePositive`, and
-`edfCurrentHasEarliestDeadline`.
+`timeSlicePositive`, `currentTimeSlicePositive`,
+`edfCurrentHasEarliestDeadline`, and `contextMatchesCurrent`.
 
 WS-H6: Promotes the previously orphaned time-slice and EDF invariants into a
 composed bundle with preservation theorems for all scheduler operations.
 WS-H12b: Adds `currentTimeSlicePositive` to cover the dispatched thread which
 is no longer in the run queue under dequeue-on-dispatch semantics.
+WS-H12e: Adds `contextMatchesCurrent` (from WS-H12c) to the full bundle,
+ensuring the register-context coherence invariant is composed into the
+cross-subsystem proof surface rather than remaining orphaned.
 Cross-subsystem consumers that only need the structural triad should continue
 using `schedulerInvariantBundle` (the 3-component version). -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ timeSlicePositive st ∧
-  currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st
+  currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
+  contextMatchesCurrent st
 
 /-- Project the structural triad from the full bundle. -/
 theorem schedulerInvariantBundleFull_to_base {st : SystemState}
     (h : schedulerInvariantBundleFull st) : schedulerInvariantBundle st :=
   h.1
+
+/-- WS-H12e: Project `contextMatchesCurrent` from the full scheduler bundle. -/
+theorem schedulerInvariantBundleFull_to_contextMatchesCurrent {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : contextMatchesCurrent st :=
+  h.2.2.2.2
 
 -- ============================================================================
 -- WS-H6: RunQueue priority-match predicate
@@ -195,24 +223,5 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
     | some (.tcb tcb) =>
         st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
     | _ => True
-
--- ============================================================================
--- WS-H12c/H-03: Per-TCB register context invariant
--- ============================================================================
-
-/-- WS-H12c/H-03: When a thread is current, the machine's register file
-matches that thread's saved register context. This is established atomically
-by the inline context restore step in `schedule`.
-
-When `current = none` (idle), the invariant is vacuously satisfied.
-When the current thread's object is not a TCB (impossible under
-`currentThreadValid`), the invariant is vacuously satisfied. -/
-def contextMatchesCurrent (st : SystemState) : Prop :=
-  match st.scheduler.current with
-  | some tid =>
-      match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) => st.machine.regs = tcb.registerContext
-      | _ => True
-  | none => True
 
 end SeLe4n.Kernel

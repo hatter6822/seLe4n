@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "928d1e669ca5467fcc5376c2bb4d60704566cb23",
-      "tree_sha": "43cda9a898f7ebe6555af0a51232f54b42b200b3",
-      "committed_at_utc": "2026-03-09T16:26:05-04:00"
+      "branch": "claude/cross-subsystem-invariant-reconciliation-wQotZ",
+      "commit_sha": "9e9ad89b6b84380a9b83a91f976cf8eafb1be03f",
+      "tree_sha": "2aeef5344783eee243035cbdf4aba129dc5b3570",
+      "committed_at_utc": "2026-03-09T20:26:14+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6e3ef6c4356d9afd5e4153d82697de8c14eefd2df069c1450dfb92595fd60c04"
+    "source_digest": "c8df6165ba5b2e3431b23c882021695ec974f1fdc7112f95ea178b4b5c4a3cbe"
   },
   "summary": {
     "module_count": 44,
-    "declaration_count": 1695
+    "declaration_count": 1706
   },
   "modules": [
     {
@@ -322,7 +322,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 21,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -333,13 +333,13 @@
         {
           "kind": "def",
           "name": "proofLayerInvariantBundle",
-          "line": 40,
+          "line": 47,
           "called": []
         },
         {
           "kind": "structure",
           "name": "AdapterProofHooks",
-          "line": 50,
+          "line": 57,
           "called": [
             "proofLayerInvariantBundle"
           ]
@@ -347,7 +347,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
-          "line": 68,
+          "line": 75,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -356,7 +356,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
-          "line": 90,
+          "line": 97,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -365,7 +365,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
-          "line": 108,
+          "line": 115,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -374,7 +374,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle",
-          "line": 127,
+          "line": 134,
           "called": [
             "proofLayerInvariantBundle"
           ]
@@ -382,7 +382,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 135,
+          "line": 142,
           "called": [
             "proofLayerInvariantBundle"
           ]
@@ -390,7 +390,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 146,
+          "line": 153,
           "called": [
             "proofLayerInvariantBundle"
           ]
@@ -398,7 +398,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 157,
+          "line": 164,
           "called": [
             "proofLayerInvariantBundle"
           ]
@@ -406,61 +406,108 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_vspaceInvariantBundle",
-          "line": 169,
+          "line": 176,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_vspaceInvariantBundle",
-          "line": 178,
+          "line": 185,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundle",
-          "line": 194,
+          "line": 201,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_ipcInvariant",
-          "line": 206,
+          "line": 213,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_lifecycleInvariantBundle",
-          "line": 210,
+          "line": 217,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_ipcSchedulerContractPredicates",
-          "line": 214,
+          "line": 221,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_capabilityInvariantBundle",
-          "line": 227,
+          "line": 234,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "default_dualQueueSystemInvariant",
+          "line": 246,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "default_allPendingMessagesBounded",
+          "line": 254,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "default_ipcInvariantFull",
+          "line": 258,
+          "called": [
+            "default_allPendingMessagesBounded",
+            "default_dualQueueSystemInvariant",
+            "default_ipcInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_contextMatchesCurrent",
+          "line": 262,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentThreadDequeueCoherent",
+          "line": 266,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariantBundleFull",
+          "line": 276,
+          "called": [
+            "default_contextMatchesCurrent",
+            "default_schedulerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "default_system_state_proofLayerInvariantBundle",
-          "line": 237,
+          "line": 288,
           "called": [
             "default_capabilityInvariantBundle",
-            "default_ipcInvariant",
+            "default_contextMatchesCurrent",
+            "default_currentThreadDequeueCoherent",
+            "default_ipcInvariantFull",
+            "default_ipcSchedulerContractPredicates",
             "default_lifecycleInvariantBundle",
             "default_schedulerInvariantBundle",
+            "default_schedulerInvariantBundleFull",
             "proofLayerInvariantBundle"
           ]
         },
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 299,
+          "line": 351,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -469,7 +516,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 312,
+          "line": 364,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -478,7 +525,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 325,
+          "line": 377,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -1005,7 +1052,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant",
       "path": "SeLe4n/Kernel/Capability/Invariant.lean",
-      "declaration_count": 102,
+      "declaration_count": 105,
       "declarations": [
         {
           "kind": "namespace",
@@ -1804,45 +1851,69 @@
         {
           "kind": "def",
           "name": "coreIpcInvariantBundle",
-          "line": 2063,
+          "line": 2069,
           "called": [
             "capabilityInvariantBundle"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "coreIpcInvariantBundle_to_ipcInvariant",
+          "line": 2074,
+          "called": [
+            "coreIpcInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "coreIpcInvariantBundle_to_dualQueueSystemInvariant",
+          "line": 2079,
+          "called": [
+            "coreIpcInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "coreIpcInvariantBundle_to_allPendingMessagesBounded",
+          "line": 2084,
+          "called": [
+            "coreIpcInvariantBundle"
+          ]
+        },
+        {
           "kind": "def",
           "name": "ipcSchedulerRunnableReadyComponent",
-          "line": 2067,
+          "line": 2089,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedSendComponent",
-          "line": 2071,
+          "line": 2093,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReceiveComponent",
-          "line": 2075,
+          "line": 2097,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedCallComponent",
-          "line": 2079,
+          "line": 2101,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReplyComponent",
-          "line": 2083,
+          "line": 2105,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerCoherenceComponent",
-          "line": 2087,
+          "line": 2109,
           "called": [
             "ipcSchedulerBlockedCallComponent",
             "ipcSchedulerBlockedReceiveComponent",
@@ -1854,7 +1925,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
-          "line": 2094,
+          "line": 2116,
           "called": [
             "ipcSchedulerCoherenceComponent"
           ]
@@ -1862,7 +1933,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerCouplingInvariantBundle",
-          "line": 2101,
+          "line": 2126,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent"
@@ -1871,7 +1942,7 @@
         {
           "kind": "def",
           "name": "lifecycleCompositionInvariantBundle",
-          "line": 2106,
+          "line": 2132,
           "called": [
             "ipcSchedulerCouplingInvariantBundle"
           ]
@@ -1879,13 +1950,13 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
-          "line": 2109,
+          "line": 2135,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
-          "line": 2128,
+          "line": 2154,
           "called": [
             "capabilityInvariantBundle",
             "cdtAcyclicity",
@@ -1902,13 +1973,13 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_ipcInvariant",
-          "line": 2173,
+          "line": 2199,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
-          "line": 2199,
+          "line": 2225,
           "called": [
             "coreIpcInvariantBundle",
             "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
@@ -1919,7 +1990,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
-          "line": 2219,
+          "line": 2248,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent",
@@ -1930,7 +2001,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
-          "line": 2243,
+          "line": 2276,
           "called": [
             "capabilityInvariantBundle",
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
@@ -1941,7 +2012,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 2262,
+          "line": 2295,
           "called": [
             "capabilityInvariantBundle",
             "lifecycleCapabilityStaleAuthorityInvariant",
@@ -1952,7 +2023,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
-          "line": 2290,
+          "line": 2323,
           "called": [
             "lifecycleCompositionInvariantBundle"
           ]
@@ -1960,7 +2031,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeTcbIpcState",
-          "line": 2303,
+          "line": 2336,
           "called": [
             "cspaceSlotUnique",
             "cspaceSlotUnique_of_storeObject_nonCNode"
@@ -1969,7 +2040,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_blocking_path",
-          "line": 2322,
+          "line": 2355,
           "called": [
             "cspaceSlotUnique",
             "cspaceSlotUnique_of_endpoint_store",
@@ -1980,7 +2051,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_handshake_path",
-          "line": 2335,
+          "line": 2368,
           "called": [
             "cspaceSlotUnique",
             "cspaceSlotUnique_of_endpoint_store",
@@ -6901,7 +6972,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -7007,9 +7078,16 @@
         },
         {
           "kind": "def",
+          "name": "contextMatchesCurrent",
+          "line": 168,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 171,
+          "line": 193,
           "called": [
+            "contextMatchesCurrent",
             "currentTimeSlicePositive",
             "edfCurrentHasEarliestDeadline",
             "schedulerInvariantBundle",
@@ -7019,22 +7097,25 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 176,
+          "line": 199,
           "called": [
             "schedulerInvariantBundle",
             "schedulerInvariantBundleFull"
           ]
         },
         {
-          "kind": "def",
-          "name": "schedulerPriorityMatch",
-          "line": 192,
-          "called": []
+          "kind": "theorem",
+          "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
+          "line": 204,
+          "called": [
+            "contextMatchesCurrent",
+            "schedulerInvariantBundleFull"
+          ]
         },
         {
           "kind": "def",
-          "name": "contextMatchesCurrent",
-          "line": 210,
+          "name": "schedulerPriorityMatch",
+          "line": 220,
           "called": []
         }
       ]
@@ -7042,7 +7123,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations",
       "path": "SeLe4n/Kernel/Scheduler/Operations.lean",
-      "declaration_count": 98,
+      "declaration_count": 99,
       "declarations": [
         {
           "kind": "namespace",
@@ -7766,10 +7847,19 @@
         },
         {
           "kind": "theorem",
+          "name": "switchDomain_preserves_contextMatchesCurrent",
+          "line": 1938,
+          "called": [
+            "switchDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 1936,
+          "line": 1963,
           "called": [
             "switchDomain",
+            "switchDomain_preserves_contextMatchesCurrent",
             "switchDomain_preserves_currentTimeSlicePositive",
             "switchDomain_preserves_edfCurrentHasEarliestDeadline",
             "switchDomain_preserves_schedulerInvariantBundle",
@@ -7779,13 +7869,13 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1949,
+          "line": 1977,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_fields",
-          "line": 1972,
+          "line": 2000,
           "called": [
             "chooseBestRunnableBy",
             "isBetterCandidate"
@@ -7794,7 +7884,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 2028,
+          "line": 2056,
           "called": [
             "chooseBestRunnableBy",
             "isBetterCandidate"
@@ -7803,7 +7893,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 2085,
+          "line": 2113,
           "called": [
             "chooseBestRunnableBy",
             "chooseBestRunnableBy_result_mem_aux"
@@ -7812,7 +7902,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_edf_bridge",
-          "line": 2110,
+          "line": 2138,
           "called": [
             "chooseBestInBucket",
             "chooseBestRunnableBy_optimal",
@@ -7825,7 +7915,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2257,
+          "line": 2285,
           "called": [
             "chooseBestInBucket",
             "chooseBestInBucket_edf_bridge",
@@ -7840,7 +7930,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2347,
+          "line": 2375,
           "called": [
             "handleYield",
             "schedule_preserves_edfCurrentHasEarliestDeadline"
@@ -7849,7 +7939,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2425,
+          "line": 2453,
           "called": [
             "defaultTimeSlice",
             "schedule_preserves_edfCurrentHasEarliestDeadline",
@@ -7860,7 +7950,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_contextMatchesCurrent",
-          "line": 2531,
+          "line": 2559,
           "called": [
             "chooseThread",
             "chooseThread_preserves_state",
@@ -7873,7 +7963,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_contextMatchesCurrent",
-          "line": 2579,
+          "line": 2607,
           "called": [
             "handleYield",
             "schedule_preserves_contextMatchesCurrent"
@@ -7882,7 +7972,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_contextMatchesCurrent",
-          "line": 2608,
+          "line": 2636,
           "called": [
             "schedule_preserves_contextMatchesCurrent",
             "timerTick"
@@ -7891,15 +7981,16 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_frame",
-          "line": 2650,
+          "line": 2678,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 2685,
+          "line": 2713,
           "called": [
             "schedule",
+            "schedule_preserves_contextMatchesCurrent",
             "schedule_preserves_currentTimeSlicePositive",
             "schedule_preserves_edfCurrentHasEarliestDeadline",
             "schedule_preserves_schedulerInvariantBundle",
@@ -7909,9 +8000,10 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 2701,
+          "line": 2730,
           "called": [
             "handleYield",
+            "handleYield_preserves_contextMatchesCurrent",
             "handleYield_preserves_currentTimeSlicePositive",
             "handleYield_preserves_edfCurrentHasEarliestDeadline",
             "handleYield_preserves_schedulerInvariantBundle",
@@ -7921,9 +8013,10 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 2717,
+          "line": 2747,
           "called": [
             "timerTick",
+            "timerTick_preserves_contextMatchesCurrent",
             "timerTick_preserves_currentTimeSlicePositive",
             "timerTick_preserves_edfCurrentHasEarliestDeadline",
             "timerTick_preserves_schedulerInvariantBundle",

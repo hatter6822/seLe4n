@@ -1932,17 +1932,45 @@ theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
 -- WS-H12b: Updated bundle includes currentTimeSlicePositive.
 -- ============================================================================
 
-/-- WS-H6/WS-H12b: `switchDomain` preserves the full scheduler invariant bundle. -/
+/-- WS-H12e: `switchDomain` preserves `contextMatchesCurrent`.
+In the no-op case (empty schedule), state is unchanged.
+In the active case, `current = none`, so the invariant holds vacuously. -/
+theorem switchDomain_preserves_contextMatchesCurrent
+    (st st' : SystemState)
+    (hInv : contextMatchesCurrent st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    contextMatchesCurrent st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+    rw [hSched] at hStep
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, hStEq⟩ := hStep; subst hStEq; exact hInv
+  | cons hd tl =>
+    rw [hSched] at hStep; simp only at hStep
+    cases hIdx : (hd :: tl)[((st.scheduler.domainScheduleIndex + 1) % (hd :: tl).length)]? with
+    | none =>
+      rw [hIdx] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, hStEq⟩ := hStep; subst hStEq; exact hInv
+    | some entry =>
+      rw [hIdx] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+      simp [contextMatchesCurrent]
+
+/-- WS-H6/WS-H12b/WS-H12e: `switchDomain` preserves the full scheduler invariant bundle. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx⟩
   exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
          switchDomain_preserves_timeSlicePositive st st' hTS hCurTS hStep,
          switchDomain_preserves_currentTimeSlicePositive st st' hCurTS hStep,
-         switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep⟩
+         switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep,
+         switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep⟩
 
 /-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
 satisfies the EDF deadline ordering among same-domain/same-priority candidates. -/
@@ -2691,11 +2719,12 @@ theorem schedule_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx⟩
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hStep,
          schedule_preserves_timeSlicePositive st st' hTS hStep,
          schedule_preserves_currentTimeSlicePositive st st' hTS hStep,
-         schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep⟩
+         schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep,
+         schedule_preserves_contextMatchesCurrent st st' hStep⟩
 
 /-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle. -/
 theorem handleYield_preserves_schedulerInvariantBundleFull
@@ -2707,11 +2736,12 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx⟩
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hStep,
          handleYield_preserves_currentTimeSlicePositive st st' hTS hCurTS hStep,
-         handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hStep⟩
+         handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hStep,
+         handleYield_preserves_contextMatchesCurrent st st' hStep⟩
 
 /-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle. -/
 theorem timerTick_preserves_schedulerInvariantBundleFull
@@ -2723,8 +2753,9 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx⟩
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hStep,
          timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hStep,
-         timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hStep⟩
+         timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hStep,
+         timerTick_preserves_contextMatchesCurrent st st' hCtx hStep⟩

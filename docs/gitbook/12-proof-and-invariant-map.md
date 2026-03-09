@@ -30,6 +30,11 @@ Data structure:
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
+- `schedulerInvariantBundleFull` (5-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent`, WS-H12b + WS-H12e)
+
+Extraction theorem:
+
+- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 5-conjunct bundle (WS-H12e)
 
 Preservation shape:
 
@@ -128,6 +133,11 @@ Bundle level:
 
 - `ipcInvariantFull` (3-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded`, WS-H12c + WS-H12d)
 
+Cross-subsystem composition (WS-H12e):
+
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (3-conjunct), closing the gap where `dualQueueSystemInvariant` and `allPendingMessagesBounded` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`
+
 Component level:
 
 - endpoint queue/object validity,
@@ -184,7 +194,7 @@ Bundle level:
 
 - `ipcSchedulerContractPredicates` (5 conjuncts: ready, send, receive, call, reply)
 - `ipcSchedulerCoherenceComponent`
-- `ipcSchedulerCouplingInvariantBundle`
+- `ipcSchedulerCouplingInvariantBundle` (WS-H12e: extended from 2 to 4 conjuncts — `coreIpcInvariantBundle ∧ ipcSchedulerCoherenceComponent ∧ contextMatchesCurrent ∧ currentThreadDequeueCoherent`)
 
 Preservation shape:
 
@@ -766,3 +776,34 @@ Supporting infrastructure:
 
 - `InformationFlowConfigInvariant` — structure collecting global policy WF, endpoint policy WF, and declassification consistency. Trivially preserved by kernel transitions (policies are external to `SystemState`).
 - `defaultConfigInvariant` — existence proof for the default configuration.
+
+## 22. Cross-subsystem invariant reconciliation (WS-H12e)
+
+WS-H12e reconciles all subsystem invariant compositions after WS-H12a–d changes,
+closing gaps where invariants were defined but not composed into the top-level proof surface.
+
+### Changes to bundle compositions
+
+| Bundle | Change | Effect |
+|---|---|---|
+| `schedulerInvariantBundleFull` | Extended from 4 to 5 conjuncts (+ `contextMatchesCurrent`) | Machine registers match current thread's saved context at all scheduler exit points |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` | `dualQueueSystemInvariant` and `allPendingMessagesBounded` now composed into cross-subsystem proof surface |
+| `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
+| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 5 scheduler conjuncts |
+
+### New proofs and definitions
+
+Scheduler preservation (4 updated theorems):
+- `schedule_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
+- `handleYield_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
+- `timerTick_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
+- `switchDomain_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation (+ new `switchDomain_preserves_contextMatchesCurrent`)
+
+Backward-compatible extraction theorems (3):
+- `coreIpcInvariantBundle_to_ipcInvariant`
+- `coreIpcInvariantBundle_to_dualQueueSystemInvariant`
+- `coreIpcInvariantBundle_to_allPendingMessagesBounded`
+
+Default-state proofs (6):
+- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_ipcInvariantFull`
+- `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
