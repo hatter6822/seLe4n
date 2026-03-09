@@ -756,9 +756,8 @@ private theorem scheduler_unchanged_through_store_tcb_msg
 -- Structural argument (verified by construction):
 -- 1. endpointQueuePopHead/Enqueue modify ONLY sendQ/receiveQ intrusive fields
 --    on the target endpoint (using `{ ep with sendQ := q' }` / `{ ep with receiveQ := q' }`).
---    The legacy fields (state, queue, waitingReceiver) checked by
---    endpointQueueWellFormed are UNCHANGED. Therefore the target endpoint's
---    well-formedness is preserved.
+--    Notification objects are UNCHANGED. Therefore ipcInvariant
+--    (notification well-formedness) is preserved.
 -- 2. All intermediate storeObject calls target either the endpoint ID or
 --    thread TCBs. Objects at other IDs are backward-preserved through
 --    storeObject_objects_ne / storeTcbQueueLinks_*_backward chains.
@@ -823,8 +822,8 @@ private theorem storeTcbPendingMessage_preserves_ipcInvariant
   exact fun oid ntfn h => hInv oid ntfn (storeTcbPendingMessage_notification_backward st st' tid msg oid ntfn hStep h)
 
 /-- endpointQueuePopHead preserves ipcInvariant. PopHead modifies only sendQ/receiveQ
-    on the target endpoint and stores TCBs via storeTcbQueueLinks. endpointInvariant only
-    checks state/queue/waitingReceiver, which are unchanged by sendQ/receiveQ updates. -/
+    on the target endpoint and stores TCBs via storeTcbQueueLinks. ipcInvariant checks
+    notification well-formedness, which is unchanged by sendQ/receiveQ updates. -/
 private theorem endpointQueuePopHead_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcInvariant st)
@@ -887,8 +886,8 @@ private theorem contracts_of_same_scheduler_ipcState
 
 /-- WS-F1/TPI-D08: endpointSendDual preserves ipcInvariant.
 Dual-queue operations modify only sendQ/receiveQ intrusive queue pointers
-and TCB queue links; legacy endpoint fields (state, queue, waitingReceiver)
-are unchanged. See TPI-D08 structural argument above. -/
+and TCB queue links; notification objects are unchanged. See TPI-D08
+structural argument above. -/
 theorem endpointSendDual_preserves_ipcInvariant
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -1887,8 +1886,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
 
 /-- WS-F1/TPI-D08: endpointQueueRemoveDual preserves ipcInvariant.
 Arbitrary O(1) removal only modifies TCB queue links and endpoint head/tail pointers
-(sendQ/receiveQ); it does not change endpoint state, queue, waitingReceiver, or
-notification objects. -/
+(sendQ/receiveQ); it does not change notification objects. -/
 theorem endpointQueueRemoveDual_preserves_ipcInvariant
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (isSendQ : Bool) (tid : SeLe4n.ThreadId)

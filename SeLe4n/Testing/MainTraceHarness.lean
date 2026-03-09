@@ -911,6 +911,148 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"retype-from-untyped childId collision guard: {reprStr err}"
   | .ok _ => IO.println "unexpected retype-from-untyped success with childId collision"
 
+-- ============================================================================
+-- WS-H12f: Dequeue-on-dispatch trace scenario
+-- ============================================================================
+
+/-- WS-H12f/H-04: Verify dequeue-on-dispatch semantics — the scheduled thread
+is removed from the run queue upon dispatch and reappears after preemption. -/
+private def runDequeueOnDispatchTrace (st1 : SystemState) : IO Unit := do
+  -- H12f-D01: Create two runnable threads at different priorities
+  let highPrio : SeLe4n.Priority := 200
+  let lowPrio : SeLe4n.Priority := 50
+  let highTcb : KernelObject := .tcb {
+    tid := 1, priority := highPrio, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, timeSlice := 2 }
+  let lowTcb : KernelObject := .tcb {
+    tid := 12, priority := lowPrio, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 8192,
+    ipcState := .ready }
+  let stDispatch : SystemState := { st1 with
+    objects := st1.objects.insert 1 highTcb |>.insert 12 lowTcb,
+    scheduler := { st1.scheduler with
+      runQueue := SeLe4n.Kernel.RunQueue.ofList [(1, highPrio), (12, lowPrio)],
+      current := none } }
+  -- Schedule — higher-priority thread (1) should become current
+  match SeLe4n.Kernel.schedule stDispatch with
+  | .error err => IO.println s!"H12f dequeue-on-dispatch schedule error: {reprStr err}"
+  | .ok (_, stScheduled) =>
+      let currentTid := stScheduled.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12f dequeue-on-dispatch current: {reprStr currentTid}"
+      -- Verify the dispatched thread is NOT in the run queue
+      let dispatchedInQueue := stScheduled.scheduler.runQueue.toList.any (· == (SeLe4n.ThreadId.ofNat 1))
+      IO.println s!"H12f dispatched thread absent from runQueue: {!dispatchedInQueue}"
+      -- Verify the other thread IS still in the run queue
+      let otherInQueue := stScheduled.scheduler.runQueue.toList.any (· == (SeLe4n.ThreadId.ofNat 12))
+      IO.println s!"H12f non-dispatched thread in runQueue: {otherInQueue}"
+  -- H12f-D02: Preemption test — low-priority current thread gets preempted,
+  -- then re-enqueued. After reschedule, higher-priority thread takes over and
+  -- the preempted thread remains in the runQueue.
+  let preemptLow : KernelObject := .tcb {
+    tid := 12, priority := lowPrio, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 8192,
+    ipcState := .ready, timeSlice := 1 }
+  let stPreempt : SystemState := { st1 with
+    objects := st1.objects.insert 1 highTcb |>.insert 12 preemptLow,
+    scheduler := { st1.scheduler with
+      runQueue := SeLe4n.Kernel.RunQueue.ofList [(1, highPrio)],
+      current := some 12 } }
+  -- Thread 12 is current (low priority, timeSlice=1). Thread 1 in queue (high priority).
+  -- Tick → expires → re-enqueue 12 → schedule picks thread 1 → 12 stays in queue.
+  match SeLe4n.Kernel.timerTick stPreempt with
+  | .error err => IO.println s!"H12f preemption tick error: {reprStr err}"
+  | .ok (_, stPreempted) =>
+      let preemptedInQueue := stPreempted.scheduler.runQueue.toList.any (· == (SeLe4n.ThreadId.ofNat 12))
+      IO.println s!"H12f preempted thread back in runQueue: {preemptedInQueue}"
+      let newCurrent := stPreempted.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12f preemption new current: {reprStr newCurrent}"
+
+-- ============================================================================
+-- WS-H12f: Inline context switch trace scenario
+-- ============================================================================
+
+/-- WS-H12f/H-03: Verify inline context save/restore — schedule saves the
+outgoing thread's registers and restores the incoming thread's registers. -/
+private def runInlineContextSwitchTrace (st1 : SystemState) : IO Unit := do
+  -- Set up two threads with distinctive register contexts
+  let outgoingRegs : SeLe4n.RegisterFile := { pc := 100, sp := 2048, gpr := fun i => i + 10 }
+  let incomingRegs : SeLe4n.RegisterFile := { pc := 500, sp := 4096, gpr := fun i => i * 3 }
+  let outPrio : SeLe4n.Priority := 50
+  let inPrio : SeLe4n.Priority := 100
+  let outgoingTcb : KernelObject := .tcb {
+    tid := 1, priority := outPrio, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, registerContext := outgoingRegs }
+  let incomingTcb : KernelObject := .tcb {
+    tid := 12, priority := inPrio, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 8192,
+    ipcState := .ready, registerContext := incomingRegs }
+  -- Thread 1 is current, thread 12 is in run queue — schedule should switch to 12
+  let stCtx : SystemState := { st1 with
+    objects := st1.objects.insert 1 outgoingTcb |>.insert 12 incomingTcb,
+    machine := { st1.machine with regs := outgoingRegs },
+    scheduler := { st1.scheduler with
+      runQueue := SeLe4n.Kernel.RunQueue.ofList [(12, inPrio)],
+      current := some 1 } }
+  -- Yield triggers re-enqueue + schedule
+  match SeLe4n.Kernel.handleYield stCtx with
+  | .error err => IO.println s!"H12f context switch yield error: {reprStr err}"
+  | .ok (_, stSwitched) =>
+      -- Verify machine.regs now matches incoming thread's registerContext
+      let regsMatchIncoming := stSwitched.machine.regs == incomingRegs
+      IO.println s!"H12f context switch regs match incoming: {regsMatchIncoming}"
+      -- Verify outgoing thread's registerContext was saved
+      let outgoingSaved := match stSwitched.objects[(1 : SeLe4n.ObjId)]? with
+        | some (.tcb tcb) => tcb.registerContext == outgoingRegs
+        | _ => false
+      IO.println s!"H12f outgoing context saved: {outgoingSaved}"
+      -- Verify current is now the incoming thread
+      let newCurrent := stSwitched.scheduler.current.map SeLe4n.ThreadId.toNat
+      IO.println s!"H12f context switch new current: {reprStr newCurrent}"
+
+-- ============================================================================
+-- WS-H12f: Bounded message extended trace scenario
+-- ============================================================================
+
+/-- WS-H12f/A-09: Extended bounded message test — verify exact boundary
+behavior for register count and cap count limits. -/
+private def runBoundedMessageExtendedTrace (st1 : SystemState) : IO Unit := do
+  let epId : SeLe4n.ObjId := demoEndpoint
+  let senderId : SeLe4n.ThreadId := 1
+  -- H12f-B01: Zero-length message (empty registers and caps) — should succeed
+  let emptyMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
+  let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  match SeLe4n.Kernel.endpointSendDual epId senderId emptyMsg stFresh with
+  | .error err =>
+      IO.println s!"H12f empty message accepted: false (error: {reprStr err})"
+  | .ok _ =>
+      IO.println s!"H12f empty message accepted: true"
+  -- H12f-B02: Message at register boundary minus one (119 regs) — should succeed
+  let subBoundaryMsg : IpcMessage := {
+    registers := Array.mk (List.replicate 119 1), caps := #[], badge := none }
+  let stFresh2 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  match SeLe4n.Kernel.endpointSendDual epId senderId subBoundaryMsg stFresh2 with
+  | .error err =>
+      IO.println s!"H12f sub-boundary message accepted: false (error: {reprStr err})"
+  | .ok _ =>
+      IO.println s!"H12f sub-boundary message accepted: true"
+  -- H12f-B03: Message with exactly maxExtraCaps (3 caps, 0 regs) — should succeed
+  let maxCapsMsg : IpcMessage := {
+    registers := #[],
+    caps := #[
+      { target := .object 1, rights := [.read] },
+      { target := .object 2, rights := [.write] },
+      { target := .object 3, rights := [.grant] }],
+    badge := some ⟨42⟩ }
+  let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
+  | .error err =>
+      IO.println s!"H12f max caps message accepted: false (error: {reprStr err})"
+  | .ok _ =>
+      IO.println s!"H12f max caps message accepted: true"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -930,6 +1072,9 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runCapabilityIpcTrace st1
   runIpcMessageTransferTrace st1
   runIpcMessageBoundsTrace st1
+  runDequeueOnDispatchTrace st1
+  runInlineContextSwitchTrace st1
+  runBoundedMessageExtendedTrace st1
   runSchedulerTimingDomainTrace st1
   runUntypedMemoryTrace st1
 
