@@ -43,7 +43,6 @@ components compositionally):
 - `cspaceRevoke_preserves_capabilityInvariantBundle`
 - `lifecycleRetypeObject_preserves_capabilityInvariantBundle`
 - `lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle`
-- all `endpointSend/AwaitReceive/Receive_preserves_capabilityInvariantBundle`
 - composed bundle preservation theorems (`m3IpcSeed`, `m35`, `m4a`)
 
 **Badge-override safety theorems** (high assurance — F-06 / TPI-D04):

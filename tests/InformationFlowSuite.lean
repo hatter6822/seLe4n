@@ -44,7 +44,7 @@ private def publicServiceEntry : ServiceGraphEntry :=
 
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject 1 (.endpoint {})
     |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
     |>.withService 1 sampleServiceEntry
     |>.withService 2 publicServiceEntry
@@ -71,7 +71,7 @@ Key differences from sampleState:
 - current thread: none (vs some tid=2, which is secret and projected to none anyway) -/
 private def altState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject 1 (.endpoint {})
     -- Secret object differs: different notification state and no pending badge
     |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withService 1 sampleServiceEntry
@@ -221,10 +221,10 @@ def runInformationFlowChecks : IO Unit := do
 
   -- === WS-D2 enforcement boundary checks (F-02) ===
 
-  -- endpointSendChecked: public sender to public endpoint should succeed (same-domain flow)
+  -- endpointSendDualChecked: public sender to public endpoint should succeed (same-domain flow)
   let publicEndpointState :=
     (BootstrapBuilder.empty
-      |>.withObject 10 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 10 (.endpoint {})
       |>.withRunnable [1]
       |>.withCurrent (some 1)
       |>.build)
@@ -236,9 +236,10 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
-  let checkedResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
-  let uncheckedResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
-  expect "same-domain endpointSendChecked equals unchecked send"
+  let testMsg : SeLe4n.Kernel.IpcMessage := { registers := [], caps := [], badge := none }
+  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
+  expect "same-domain endpointSendDualChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
       | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(10 : SeLe4n.ObjId)]? == s₂.objects[(10 : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
@@ -251,8 +252,8 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
-  expect "secret-to-public endpointSendChecked returns flowDenied"
+  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx 10 1 testMsg publicEndpointState
+  expect "secret-to-public endpointSendDualChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true
       | _ => false)
@@ -400,16 +401,16 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.enforcementBoundary.length == 17)
 
   -- Verify enforcement boundary: denied flows produce errors
-  let deniedSendResult := SeLe4n.Kernel.endpointSendChecked secretSenderCtx 10 1 publicEndpointState
-  expect "M-07: enforcement boundary blocks cross-domain endpointSend"
+  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx 10 1 testMsg publicEndpointState
+  expect "M-07: enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
 
   -- Verify that same-domain operations pass through unchecked
-  let allowedSendResult := SeLe4n.Kernel.endpointSendChecked publicCtx 10 1 publicEndpointState
-  let uncheckedSendResult := SeLe4n.Kernel.endpointSend 10 1 publicEndpointState
-  expect "M-07: same-domain endpointSendChecked matches unchecked"
+  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
+  expect "M-07: same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
       | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(10 : SeLe4n.ObjId)]? == s₂.objects[(10 : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
@@ -440,7 +441,7 @@ def runInformationFlowChecks : IO Unit := do
   -- Build a state with IRQ handlers pointing to both public and secret objects.
   let irqState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 1 (.endpoint {})
       |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
       |>.withIrqHandler 0 1   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler 1 2   -- IRQ 1 → oid 2 (secret object)
@@ -499,7 +500,7 @@ def runInformationFlowChecks : IO Unit := do
   -- Build a CNode with caps targeting both public and secret objects.
   let cnodeState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
+      |>.withObject 1 (.endpoint {})  -- public target
       |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject 50 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList
           [ (0, { target := .object 1, rights := [.read], badge := none })
@@ -555,7 +556,7 @@ def runInformationFlowChecks : IO Unit := do
   -- CNode slot filtering for .cnodeSlot target variant
   let cnodeSlotState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint { state := .idle, queue := [], waitingReceiver := none })  -- public target
+      |>.withObject 1 (.endpoint {})  -- public target
       |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject 60 (.cnode { guard := 0, radix := 8, slots := (Std.HashMap.ofList
           [ (0, { target := .cnodeSlot 1 0, rights := [.read], badge := none })
@@ -605,7 +606,7 @@ def runInformationFlowChecks : IO Unit := do
 
   let restartState :=
     (BootstrapBuilder.empty
-      |>.withObject 20 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 20 (.endpoint {})
       |>.withService 10 restartServiceEntry
       |>.withService 5 { identity := { sid := 5, backingObject := 25, owner := 1 }
                          status := .running, dependencies := [], isolatedFrom := [] }
@@ -744,7 +745,7 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-H8: endpointReceiveDualChecked tests
   let recvEpState :=
     (BootstrapBuilder.empty
-      |>.withObject 50 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      |>.withObject 50 (.endpoint {})
       |>.build)
 
   -- Cross-domain receive (secret endpoint → public receiver) should be denied

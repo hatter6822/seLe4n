@@ -1172,9 +1172,9 @@ theorem serviceRestartChecked_NI
 transition preserves low-equivalence. Bridge theorem for the recommended
 dual-queue IPC path.
 
-The proof reduces the dual-queue checked wrapper to the legacy `endpointSend`
-NI theorem via the enforcement flow extraction + `endpointSendDual_as_send`
-bisimulation bridge. -/
+The proof reduces the dual-queue checked wrapper to `endpointSendDual`
+via the enforcement flow extraction. The NI property for the underlying
+`endpointSendDual` is taken as a hypothesis. -/
 theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)

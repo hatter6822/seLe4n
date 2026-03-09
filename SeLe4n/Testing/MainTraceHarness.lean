@@ -77,7 +77,7 @@ def bootstrapState : SystemState :=
     })
     |>.withObject 11 (.cnode CNode.empty)
     |>.withObject 20 (.vspaceRoot { asid := 1, mappings := {} })
-    |>.withObject demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+    |>.withObject demoEndpoint (.endpoint {})
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject demoUntyped (.untyped {
       regionBase := 0x100000
@@ -280,8 +280,8 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   -- WS-G7: multi-endpoint test migrated to dual-queue operations
   let stMultiEndpoint : SystemState :=
     { st1 with
-      objects := st1.objects.insert demoEndpoint (.endpoint { state := .idle, queue := [], waitingReceiver := none })
-        |>.insert 31 (.endpoint { state := .idle, queue := [], waitingReceiver := none })
+      objects := st1.objects.insert demoEndpoint (.endpoint {})
+        |>.insert 31 (.endpoint {})
     }
   match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint 1 .empty stMultiEndpoint with
   | .error err => IO.println s!"multi-endpoint send A error: {reprStr err}"
@@ -357,7 +357,7 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
 
 private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.lifecycleRetypeObject rootSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      (.endpoint {}) st1 with
   | .error err =>
       IO.println s!"lifecycle retype unauthorized branch: {reprStr err}"
   | .ok _ =>
@@ -370,18 +370,18 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       }
     }
   match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) stIllegalState with
+      (.endpoint {}) stIllegalState with
   | .error err => IO.println s!"lifecycle retype illegal-state branch: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected lifecycle retype success under stale metadata"
   match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      (.endpoint {}) st1 with
   | .error err => IO.println s!"lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
       IO.println s!"lifecycle retype success object kind: {reprStr <| (stLifecycle.objects[(12 : SeLe4n.ObjId)]?).map KernelObject.objectType}"
   -- LIFE-10: WS-H2/H-05 lifecycleRetypeWithCleanup removes old TCB tid from run queue
   match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot 12
-      (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st1 with
+      (.endpoint {}) st1 with
   | .error err => IO.println s!"lifecycle retype-with-cleanup error: {reprStr err}"
   | .ok (_, stCleaned) =>
       let tid12InQueue := stCleaned.scheduler.runQueue.flat.any (· == (SeLe4n.ThreadId.ofNat 12))
@@ -394,19 +394,19 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
       | .ok (_, st3) =>
           IO.println "created sibling cap with the same target"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype mintedSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint {}) st3 with
           | .error err =>
               IO.println s!"composed transition alias guard (expected error): {reprStr err}"
           | .ok _ =>
               IO.println "unexpected composed transition success with aliased authority/cleanup"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype rootSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint {}) st3 with
           | .error err =>
               IO.println s!"composed transition unauthorized branch: {reprStr err}"
           | .ok _ =>
               IO.println "unexpected composed transition success with wrong authority"
           match SeLe4n.Kernel.lifecycleRevokeDeleteRetype lifecycleAuthSlot mintedSlot 12
-              (.endpoint { state := .idle, queue := [], waitingReceiver := none }) st3 with
+              (.endpoint {}) st3 with
           | .error err => IO.println s!"composed transition error: {reprStr err}"
           | .ok (_, st5) =>
               IO.println "composed revoke/delete/retype success"
@@ -480,7 +480,6 @@ private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   let dualEpId : SeLe4n.ObjId := demoEndpoint
   -- Set up fresh state with idle endpoint for dual-queue test
   let dualEp : KernelObject := .endpoint {
-    state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
   let stDual : SystemState := { st1 with objects := st1.objects.insert dualEpId dualEp }
   match SeLe4n.Kernel.endpointSendDual dualEpId 1 .empty stDual with
@@ -590,7 +589,6 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let testMsg : IpcMessage := { registers := [42, 7], caps := [], badge := some ⟨123⟩ }
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
-    state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
   let st0 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   -- Sender sends (no receiver queued → sender blocks with message)
@@ -624,7 +622,6 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"message sender cleared after transfer: {senderCleared}"
   -- F1-02: Rendezvous path — receiver waits first, then send delivers directly
   let ep1 : KernelObject := .endpoint {
-    state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
   let stR : SystemState := { st1 with objects := st1.objects.insert epId ep1 }
   -- Receiver blocks first (no sender waiting → receiver enqueued)
@@ -645,7 +642,6 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"rendezvous delivery registers: {reprStr rendRegs}"
   -- F1-03: Call + Reply roundtrip with message payload
   let ep2 : KernelObject := .endpoint {
-    state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
   let stC : SystemState := { st1 with objects := st1.objects.insert epId ep2 }
   -- Receiver waits first
@@ -680,7 +676,6 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
   -- caller transitions to blockedOnReply (not .ready), then explicit Reply unblocks.
   let ep3 : KernelObject := .endpoint {
-    state := .idle, queue := [], waitingReceiver := none,
     sendQ := {}, receiveQ := {} }
   let callerId : SeLe4n.ThreadId := senderId    -- reuse thread 1
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
@@ -751,7 +746,7 @@ type-mismatch error, device restriction error. -/
 private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
   -- F2-01: Successful retype from untyped — carve a new endpoint from the untyped region
   let childEp : SeLe4n.ObjId := 50
-  let newEp : KernelObject := .endpoint { state := .idle, queue := [], waitingReceiver := none }
+  let newEp : KernelObject := .endpoint {}
   let epAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp newEp epAllocSize st1 with
   | .error err => IO.println s!"retype-from-untyped success path error: {reprStr err}"
@@ -882,7 +877,7 @@ private def buildParameterizedTopology
       (oid, .vspaceRoot { asid := ⟨i + 1⟩, mappings := {} })
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
-    [ (⟨4000⟩, .endpoint { state := .idle, queue := [], waitingReceiver := none })
+    [ (⟨4000⟩, .endpoint {})
     , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := none })
     ]
   let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects

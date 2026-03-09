@@ -16,7 +16,7 @@ The seLe4n information-flow enforcement boundary follows a two-layer design:
 1. **Policy-checked operations** (this module): operations that cross domain boundaries
    and carry explicit information flow risk receive a `securityFlowsTo` gate that returns
    `flowDenied` when the labeling context forbids the flow. These are:
-   - `endpointSendChecked` — sender→endpoint flow (IPC channel boundary),
+   - `endpointSendDualChecked` — sender→endpoint flow (IPC channel boundary),
    - `cspaceMintChecked` — source CNode→destination CNode flow (authority derivation boundary),
    - `serviceRestartChecked` — orchestrator→service flow (service lifecycle boundary).
 
@@ -35,33 +35,12 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Policy-checked endpoint send (legacy): verifies that information may flow
-from the sender's security domain to the endpoint's security domain before
-delegating to the underlying `endpointSend` operation.
-
-WS-G7: Deprecated in favor of `endpointSendDualChecked` which uses O(1)
-intrusive dual-queue operations. Retained for backward compatibility of
-existing invariant proofs.
-
-Returns `flowDenied` when `securityFlowsTo senderLabel endpointLabel = false`. -/
-def endpointSendChecked
-    (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) : Kernel Unit :=
-  fun st =>
-    let senderLabel := ctx.threadLabelOf sender
-    let endpointLabel := ctx.endpointLabelOf endpointId
-    if securityFlowsTo senderLabel endpointLabel then
-      endpointSend endpointId sender st
-    else
-      .error .flowDenied
-
 /-- WS-G7/F-P04: Policy-checked endpoint send using O(1) dual-queue.
 
 Verifies that information may flow from the sender's security domain to the
 endpoint's security domain, then delegates to `endpointSendDual`.
 
-This is the recommended replacement for `endpointSendChecked` as part of the
+This replaced the legacy `endpointSendChecked` (removed in WS-H12a) as part of the
 legacy-to-dual-queue migration (WS-G7).
 
 Returns `flowDenied` when `securityFlowsTo senderLabel endpointLabel = false`. -/
@@ -119,20 +98,6 @@ def serviceRestartChecked
 -- Enforcement correctness theorems
 -- ============================================================================
 
-/-- When the policy allows flow, the checked send behaves identically to the
-unchecked send. -/
-theorem endpointSendChecked_eq_endpointSend_when_allowed
-    (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (st : SystemState)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
-               (ctx.endpointLabelOf endpointId) = true) :
-    endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
-  unfold endpointSendChecked
-  simp [hFlow]
-
 /-- WS-G7: When the policy allows flow, the dual-queue checked send behaves
 identically to the unchecked dual-queue send. -/
 theorem endpointSendDualChecked_eq_endpointSendDual_when_allowed
@@ -161,20 +126,6 @@ theorem endpointSendDualChecked_flowDenied
     endpointSendDualChecked ctx endpointId sender msg st =
       .error .flowDenied := by
   unfold endpointSendDualChecked
-  simp [hDeny]
-
-/-- When the policy denies flow, the checked send returns `flowDenied`
-without modifying state. -/
-theorem endpointSendChecked_flowDenied
-    (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
-               (ctx.endpointLabelOf endpointId) = false) :
-    endpointSendChecked ctx endpointId sender st =
-      .error .flowDenied := by
-  unfold endpointSendChecked
   simp [hDeny]
 
 /-- When the policy allows flow, the checked mint behaves identically to the
@@ -237,19 +188,6 @@ theorem serviceRestartChecked_flowDenied
   unfold serviceRestartChecked
   simp [hDeny]
 
-/-- Reflexive flow always allows: self-domain operations are never denied. -/
-theorem endpointSendChecked_self_domain_allowed
-    (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId)
-    (st : SystemState)
-    (hSameLabel : ctx.threadLabelOf sender = ctx.endpointLabelOf endpointId) :
-    endpointSendChecked ctx endpointId sender st =
-      endpointSend endpointId sender st := by
-  apply endpointSendChecked_eq_endpointSend_when_allowed
-  rw [hSameLabel]
-  exact securityFlowsTo_refl _
-
 -- ============================================================================
 -- WS-E5/M-07: Enforcement boundary specification
 -- ============================================================================
@@ -264,7 +202,7 @@ enforcement boundary.
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (3) | `endpointSendChecked`, `cspaceMintChecked`, `serviceRestartChecked` |
+| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `serviceRestartChecked` |
 | **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
 | **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
@@ -288,7 +226,7 @@ inductive EnforcementClass where
 
 /-- WS-E5/M-07: Canonical enforcement boundary classification table (17 entries). -/
 def enforcementBoundary : List EnforcementClass :=
-  [ .policyGated "endpointSendChecked"
+  [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
   , .policyGated "serviceRestartChecked"
   , .capabilityOnly "cspaceLookupSlot"
@@ -311,15 +249,15 @@ def enforcementBoundary : List EnforcementClass :=
 -- WS-E5/M-07: Denied-preserves-state theorems
 -- ============================================================================
 
-/-- When the policy denies flow, `endpointSendChecked` produces no state change. -/
-theorem endpointSendChecked_denied_preserves_state
+/-- When the policy denies flow, `endpointSendDualChecked` produces no state change. -/
+theorem endpointSendDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (st : SystemState)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
-    ¬∃ st', endpointSendChecked ctx endpointId sender st = .ok ((), st') := by
+    ¬∃ st', endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st') := by
   intro ⟨st', h⟩
-  simp [endpointSendChecked, hDeny] at h
+  simp [endpointSendDualChecked, hDeny] at h
 
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
@@ -348,17 +286,17 @@ theorem serviceRestartChecked_denied_preserves_state
 -- WS-E5/M-07: Enforcement sufficiency theorems (complete disjunction)
 -- ============================================================================
 
-/-- `endpointSendChecked` either delegates to unchecked or returns `flowDenied`. -/
-theorem enforcement_sufficiency_endpointSend
+/-- `endpointSendDualChecked` either delegates to unchecked or returns `flowDenied`. -/
+theorem enforcement_sufficiency_endpointSendDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (st : SystemState) :
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState) :
     (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true ∧
-       endpointSendChecked ctx endpointId sender st = endpointSend endpointId sender st) ∨
+       endpointSendDualChecked ctx endpointId sender msg st = endpointSendDual endpointId sender msg st) ∨
     (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = false ∧
-       endpointSendChecked ctx endpointId sender st = .error .flowDenied) := by
+       endpointSendDualChecked ctx endpointId sender msg st = .error .flowDenied) := by
   cases hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
-  | true => left; exact ⟨rfl, by simp [endpointSendChecked, hFlow]⟩
-  | false => right; exact ⟨rfl, by simp [endpointSendChecked, hFlow]⟩
+  | true => left; exact ⟨rfl, by simp [endpointSendDualChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [endpointSendDualChecked, hFlow]⟩
 
 /-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
@@ -709,8 +647,7 @@ Extends the canonical classification with 4 new policy-gated wrappers:
 - `cspaceMoveChecked` — source CNode→destination CNode flow
 - `endpointReceiveDualChecked` — endpoint→receiver flow -/
 def enforcementBoundaryExtended : List EnforcementClass :=
-  [ .policyGated "endpointSendChecked"
-  , .policyGated "endpointSendDualChecked"
+  [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
   , .policyGated "serviceRestartChecked"
   , .policyGated "notificationSignalChecked"
