@@ -381,7 +381,7 @@ private def runNegativeChecks : IO Unit := do
     ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
-  let (_, stAwait) ← expectOkState "dual-queue receive enqueue seed"
+  let (_, _stAwait) ← expectOkState "dual-queue receive enqueue seed"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
   -- F-03 fix: Notification wait — consistently check TCB ipcState across ALL variants

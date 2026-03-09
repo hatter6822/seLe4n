@@ -1,3 +1,40 @@
+## [0.13.8] - 2026-03-09
+
+### WS-H12a: Legacy Endpoint Field & Operation Removal
+
+- **Legacy endpoint fields removed:** Deleted `EndpointState` inductive type
+  and three legacy fields (`state`, `queue`, `waitingReceiver`) from the
+  `Endpoint` structure. Endpoint now contains only `sendQ`/`receiveQ`
+  intrusive queues.
+- **Legacy IPC operations deleted:** Removed `endpointSend`,
+  `endpointAwaitReceive`, `endpointReceive` from `IPC/Operations.lean` and
+  `endpointSendChecked` from `InformationFlow/Enforcement.lean`. All IPC now
+  uses exclusively the O(1) dual-queue path (`endpointSendDual`/
+  `endpointReceiveDual`).
+- **Legacy KernelOperation entries removed:** Deleted `endpointSend`,
+  `endpointAwaitReceive`, `endpointReceive` from `KernelOperation` inductive
+  and `TransitionSurface` in `Architecture/Assumptions.lean`.
+- **Legacy theorem cleanup:** Deleted ~60 legacy preservation theorems from
+  `IPC/Invariant.lean`, `Capability/Invariant.lean`,
+  `InformationFlow/Invariant.lean`, and `InformationFlow/Enforcement.lean`
+  that proved preservation for deleted operations.
+- **endpointInvariant rewrite:** Redefined `endpointInvariant` as vacuous
+  (`True`) for structural compatibility. Actual dual-queue well-formedness
+  is enforced system-wide via `dualQueueSystemInvariant` (per-endpoint
+  `dualQueueEndpointWellFormed` + `tcbQueueLinkIntegrity`).
+- **endpointReplyRecv fix:** Migrated `endpointReplyRecv` from legacy
+  `endpointAwaitReceive` to `endpointReceiveDual`, completing the dual-queue
+  transition for all compound IPC operations.
+- **Test migration:** `NegativeStateSuite`, `InformationFlowSuite`, and
+  `TraceSequenceProbe` updated to use dual-queue operations exclusively.
+  All endpoint fixtures use only `sendQ`/`receiveQ` fields.
+- **Tier-3 anchor updates:** Removed stale legacy anchors from
+  `test_tier3_invariant_surface.sh`; updated counts and added new
+  dual-queue-only anchors.
+- **Findings closed:** A-08 (HIGH, redundant legacy endpoint fields), M-01
+  (MEDIUM, redundant legacy endpoint fields), A-25 (MEDIUM, legacy O(n) IPC
+  retained without deprecation path).
+
 ## [0.13.7] - 2026-03-08
 
 ### WS-H11: VSpace & Architecture Enrichment
