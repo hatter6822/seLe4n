@@ -6,7 +6,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 
 ## Current project state
 - **Version:** 0.13.9 (Lean 4.28.0).
-- **Codebase metrics:** 28,083 production LoC across 41 files; 2,257 test LoC across 3 suites; 838 theorem/lemma declarations (zero sorry/axiom); 86 build jobs.
+- **Codebase metrics:** 28,813 production LoC across 41 files; 2,265 test LoC across 3 suites; 855 theorem/lemma declarations (zero sorry/axiom); 86 build jobs.
 - **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md).
 - **Active audit:** [`docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G).
 - **Recently completed:** WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).

@@ -16,14 +16,14 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.13.8 has:
+seLe4n v0.13.9 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **838 theorem/lemma declarations** across 7 kernel subsystems.
+- **855 theorem/lemma declarations** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
-- **Phase 1–4 correctness fixes** (WS-H1..H11): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge with 4 new enforcement wrappers and projection hardening, non-interference coverage extended to >80% of kernel operations with 31 NonInterferenceStep constructors, security model foundations (BIBA, declassification, endpoint flow policy), VSpace & architecture enrichment (PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation).
+- **Phase 1–4 correctness fixes** (WS-H1..H12b): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge with 4 new enforcement wrappers and projection hardening, non-interference coverage extended to >80% of kernel operations with 31 NonInterferenceStep constructors, security model foundations (BIBA, declassification, endpoint flow policy), VSpace & architecture enrichment (PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation), legacy endpoint removal, dequeue-on-dispatch scheduler semantics.
 
 Critical audit gaps (all resolved by WS-F1..F4):
 
