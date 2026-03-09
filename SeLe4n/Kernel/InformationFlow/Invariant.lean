@@ -1460,10 +1460,44 @@ Scheduler state is unchanged. -/
 private theorem contextSwitchState_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
-    (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false) :
+    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false) :
     projectState ctx observer (contextSwitchState st tid) = projectState ctx observer st := by
-  sorry
+  simp only [projectState]; congr 1
+  · -- objects: saveContext only changes outTid.toObjId (non-observable via coherence)
+    funext oid; simp only [projectObjects]
+    by_cases hObs : objectObservable ctx observer oid
+    · simp only [hObs, ite_true]
+      congr 1
+      exact contextSwitchState_preserves_objects_at st tid oid (fun outTid hCur => by
+        have hThreadHigh := hCurrentHigh outTid hCur
+        have hObjHigh : objectObservable ctx observer outTid.toObjId = false := by
+          rw [← threadObservable_eq_objectObservable]; exact hThreadHigh
+        exact fun h => by rw [h] at hObs; simp [hObs] at hObjHigh)
+    · simp [hObs]
+  · -- runnable: scheduler unchanged
+    simp only [projectRunnable, contextSwitchState_preserves_scheduler]
+  · -- current: scheduler unchanged
+    simp only [projectCurrent, contextSwitchState_preserves_scheduler]
+  · -- services: unchanged by context switch
+    funext sid; simp only [projectServiceStatus]
+    congr 1; simp only [lookupService, contextSwitchState_preserves_services]
+  · -- activeDomain: scheduler unchanged
+    simp only [projectActiveDomain, contextSwitchState_preserves_scheduler]
+  · -- irqHandlers: unchanged by context switch
+    funext irq; simp only [projectIrqHandlers, contextSwitchState_preserves_irqHandlers]
+  · -- objectIndex: unchanged by context switch
+    simp only [projectObjectIndex, contextSwitchState_preserves_objectIndex]
+  · -- domainTimeRemaining: scheduler unchanged
+    simp only [projectDomainTimeRemaining, contextSwitchState_preserves_scheduler]
+  · -- domainSchedule: scheduler unchanged
+    simp only [projectDomainSchedule, contextSwitchState_preserves_scheduler]
+  · -- domainScheduleIndex: scheduler unchanged
+    simp only [projectDomainScheduleIndex, contextSwitchState_preserves_scheduler]
+  · -- machineRegs: projectMachineRegs returns none when current is non-observable
+    simp only [projectMachineRegs, contextSwitchState_preserves_scheduler]
+    cases hCur : st.scheduler.current with
+    | none => rfl
+    | some t => simp [hCurrentHigh t hCur]
 
 /-- WS-H9: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread (read-only) >> setCurrentThread. Since chooseThread picks from
@@ -1504,7 +1538,7 @@ private theorem schedule_preserves_projection
                 threadObservable ctx observer t = false := by
               intro t hCur; rw [hCtxSched] at hCur; exact hCurrentHigh t hCur
             have hCtxProj : projectState ctx observer (contextSwitchState st tid) = projectState ctx observer st := by
-              exact contextSwitchState_preserves_projection ctx observer st tid hCurrentHigh hAllRunnable
+              exact contextSwitchState_preserves_projection ctx observer st tid hCurrentHigh
             rw [← hCtxProj]
             exact setCurrentThread_preserves_projection ctx observer (some tid) (contextSwitchState st tid) st'
               (fun t h => by

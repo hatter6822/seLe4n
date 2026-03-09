@@ -63,6 +63,12 @@ structure LabelingContext where
   threadLabelOf : SeLe4n.ThreadId → SecurityLabel
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
   serviceLabelOf : ServiceId → SecurityLabel
+  /-- Thread label coherence: a thread's security label equals the label of its
+      backing TCB object. Required for context-switch projection preservation
+      (H-03): saveContext modifies the TCB at `tid.toObjId`, and projection
+      invisibility requires `objectObservable` to agree with `threadObservable`. -/
+  threadObjectCoherent : ∀ tid : SeLe4n.ThreadId,
+    threadLabelOf tid = objectLabelOf tid.toObjId
 
 /-- Minimal default labeling: everything is publicly observable and untrusted. -/
 def defaultLabelingContext : LabelingContext :=
@@ -71,6 +77,7 @@ def defaultLabelingContext : LabelingContext :=
     threadLabelOf := fun _ => SecurityLabel.publicLabel
     endpointLabelOf := fun _ => SecurityLabel.publicLabel
     serviceLabelOf := fun _ => SecurityLabel.publicLabel
+    threadObjectCoherent := fun _ => rfl
   }
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :

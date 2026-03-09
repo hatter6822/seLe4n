@@ -79,6 +79,13 @@ def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe
 def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) observer.clearance
 
+/-- Thread–object observability coherence: `threadObservable` and `objectObservable`
+agree for a thread's backing TCB object, via `LabelingContext.threadObjectCoherent`. -/
+theorem threadObservable_eq_objectObservable (ctx : LabelingContext) (observer : IfObserver)
+    (tid : SeLe4n.ThreadId) :
+    threadObservable ctx observer tid = objectObservable ctx observer tid.toObjId := by
+  simp only [threadObservable, objectObservable, ctx.threadObjectCoherent]
+
 /-- Service projection keeps only status because service identity is carried by `ServiceId`. -/
 def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
   securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance

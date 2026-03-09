@@ -419,6 +419,60 @@ theorem restoreContext_preserves_objects (st : SystemState) (tid : SeLe4n.Thread
   | none => rfl
   | some obj => cases obj <;> rfl
 
+theorem saveContext_preserves_services (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (saveContext st tid).services = st.services := by
+  unfold saveContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem restoreContext_preserves_services (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreContext st tid).services = st.services := by
+  unfold restoreContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem saveContext_preserves_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (saveContext st tid).irqHandlers = st.irqHandlers := by
+  unfold saveContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem restoreContext_preserves_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreContext st tid).irqHandlers = st.irqHandlers := by
+  unfold restoreContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem saveContext_preserves_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (saveContext st tid).objectIndex = st.objectIndex := by
+  unfold saveContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem restoreContext_preserves_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreContext st tid).objectIndex = st.objectIndex := by
+  unfold restoreContext; cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem contextSwitchState_preserves_services (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (contextSwitchState st tid).services = st.services := by
+  unfold contextSwitchState; cases st.scheduler.current with
+  | none => exact restoreContext_preserves_services st tid
+  | some outTid => rw [restoreContext_preserves_services, saveContext_preserves_services]
+
+theorem contextSwitchState_preserves_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (contextSwitchState st tid).irqHandlers = st.irqHandlers := by
+  unfold contextSwitchState; cases st.scheduler.current with
+  | none => exact restoreContext_preserves_irqHandlers st tid
+  | some outTid => rw [restoreContext_preserves_irqHandlers, saveContext_preserves_irqHandlers]
+
+theorem contextSwitchState_preserves_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (contextSwitchState st tid).objectIndex = st.objectIndex := by
+  unfold contextSwitchState; cases st.scheduler.current with
+  | none => exact restoreContext_preserves_objectIndex st tid
+  | some outTid => rw [restoreContext_preserves_objectIndex, saveContext_preserves_objectIndex]
+
 theorem contextSwitchState_preserves_objects_at (st : SystemState)
     (tid : SeLe4n.ThreadId) (k : ObjId)
     (hk : ∀ outTid, st.scheduler.current = some outTid → k ≠ outTid.toObjId) :
