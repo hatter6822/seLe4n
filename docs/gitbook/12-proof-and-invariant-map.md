@@ -804,6 +804,22 @@ Backward-compatible extraction theorems (3):
 - `coreIpcInvariantBundle_to_dualQueueSystemInvariant`
 - `coreIpcInvariantBundle_to_allPendingMessagesBounded`
 
+Frame lemmas for `allPendingMessagesBounded` (8):
+- `ensureRunnable_preserves_allPendingMessagesBounded`, `removeRunnable_preserves_allPendingMessagesBounded`
+- `storeTcbIpcState_preserves_allPendingMessagesBounded`, `storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded`
+- `storeTcbPendingMessage_preserves_allPendingMessagesBounded`, `storeObject_endpoint_preserves_allPendingMessagesBounded`
+- `storeTcbQueueLinks_preserves_allPendingMessagesBounded`, `storeObject_notification_preserves_allPendingMessagesBounded`
+
+Compound `allPendingMessagesBounded` preservation (3):
+- `notificationSignal_preserves_allPendingMessagesBounded`, `notificationWait_preserves_allPendingMessagesBounded`
+- `endpointReply_preserves_allPendingMessagesBounded`
+
+Composed `ipcInvariantFull` preservation (7):
+- `notificationSignal_preserves_ipcInvariantFull`, `notificationWait_preserves_ipcInvariantFull`
+- `endpointReply_preserves_ipcInvariantFull`, `endpointSendDual_preserves_ipcInvariantFull`
+- `endpointReceiveDual_preserves_ipcInvariantFull`, `endpointCall_preserves_ipcInvariantFull`
+- `endpointReplyRecv_preserves_ipcInvariantFull`
+
 Default-state proofs (6):
 - `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`

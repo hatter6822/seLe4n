@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/cross-subsystem-invariant-reconciliation-wQotZ",
-      "commit_sha": "9e9ad89b6b84380a9b83a91f976cf8eafb1be03f",
-      "tree_sha": "2aeef5344783eee243035cbdf4aba129dc5b3570",
-      "committed_at_utc": "2026-03-09T20:26:14+00:00"
+      "commit_sha": "b19ea6dfe7a7e66f739dc445a2e16a06e9dbda10",
+      "tree_sha": "2b0fd15c20a1ccc7340d49c235cf89f504e1df23",
+      "committed_at_utc": "2026-03-09T20:51:16+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c8df6165ba5b2e3431b23c882021695ec974f1fdc7112f95ea178b4b5c4a3cbe"
+    "source_digest": "b3a2415d954d2fde9e298047e10adc10516ce964c65ce3eae6c6f6547ae7dc62"
   },
   "summary": {
     "module_count": 44,
-    "declaration_count": 1706
+    "declaration_count": 1724
   },
   "modules": [
     {
@@ -2632,7 +2632,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant",
       "path": "SeLe4n/Kernel/IPC/Invariant.lean",
-      "declaration_count": 120,
+      "declaration_count": 138,
       "declarations": [
         {
           "kind": "namespace",
@@ -3677,6 +3677,191 @@
           "name": "removeRunnable_preserves_contextMatchesCurrent",
           "line": 5399,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_allPendingMessagesBounded",
+          "line": 5419,
+          "called": [
+            "allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_allPendingMessagesBounded",
+          "line": 5429,
+          "called": [
+            "allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_allPendingMessagesBounded",
+          "line": 5439,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded",
+          "line": 5466,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_allPendingMessagesBounded",
+          "line": 5494,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_preserves_allPendingMessagesBounded",
+          "line": 5520,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_preserves_allPendingMessagesBounded",
+          "line": 5535,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_notification_preserves_allPendingMessagesBounded",
+          "line": 5565,
+          "called": [
+            "allPendingMessagesBounded",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_allPendingMessagesBounded",
+          "line": 5584,
+          "called": [
+            "allPendingMessagesBounded",
+            "ensureRunnable_preserves_allPendingMessagesBounded",
+            "storeObject_notification_preserves_allPendingMessagesBounded",
+            "storeTcbIpcState_preserves_allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_allPendingMessagesBounded",
+          "line": 5625,
+          "called": [
+            "allPendingMessagesBounded",
+            "removeRunnable_preserves_allPendingMessagesBounded",
+            "storeObject_notification_preserves_allPendingMessagesBounded",
+            "storeTcbIpcState_preserves_allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_allPendingMessagesBounded",
+          "line": 5688,
+          "called": [
+            "allPendingMessagesBounded",
+            "ensureRunnable_preserves_allPendingMessagesBounded",
+            "storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcInvariantFull",
+          "line": 5750,
+          "called": [
+            "dualQueueSystemInvariant",
+            "ipcInvariantFull",
+            "notificationSignal_preserves_allPendingMessagesBounded",
+            "notificationSignal_preserves_ipcInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcInvariantFull",
+          "line": 5763,
+          "called": [
+            "dualQueueSystemInvariant",
+            "ipcInvariantFull",
+            "notificationWait_preserves_allPendingMessagesBounded",
+            "notificationWait_preserves_ipcInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcInvariantFull",
+          "line": 5780,
+          "called": [
+            "dualQueueSystemInvariant",
+            "endpointReply_preserves_allPendingMessagesBounded",
+            "endpointReply_preserves_ipcInvariant",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_ipcInvariantFull",
+          "line": 5796,
+          "called": [
+            "allPendingMessagesBounded",
+            "dualQueueSystemInvariant",
+            "endpointSendDual_preserves_ipcInvariant",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_ipcInvariantFull",
+          "line": 5808,
+          "called": [
+            "allPendingMessagesBounded",
+            "dualQueueSystemInvariant",
+            "endpointReceiveDual_preserves_ipcInvariant",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_ipcInvariantFull",
+          "line": 5820,
+          "called": [
+            "allPendingMessagesBounded",
+            "dualQueueSystemInvariant",
+            "endpointCall_preserves_ipcInvariant",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_ipcInvariantFull",
+          "line": 5832,
+          "called": [
+            "allPendingMessagesBounded",
+            "dualQueueSystemInvariant",
+            "endpointReplyRecv_preserves_ipcInvariant",
+            "ipcInvariantFull"
+          ]
         }
       ]
     },

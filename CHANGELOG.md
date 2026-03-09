@@ -40,13 +40,30 @@
   Updated `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` and
   `lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle` for
   the enriched bundle signatures.
+- **`allPendingMessagesBounded` frame lemmas:** Added 8 primitive-operation
+  frame lemmas (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`,
+  `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`, `storeObject_endpoint`,
+  `storeTcbQueueLinks`, `storeObject_notification`) proving each operation
+  preserves the `allPendingMessagesBounded` system invariant.
+- **Compound `allPendingMessagesBounded` preservation:** Added
+  `notificationSignal_preserves_allPendingMessagesBounded`,
+  `notificationWait_preserves_allPendingMessagesBounded`, and
+  `endpointReply_preserves_allPendingMessagesBounded` — full proofs composing
+  frame lemmas for multi-step IPC operations.
+- **Composed `ipcInvariantFull` preservation theorems:** Added 7 theorems
+  (`notificationSignal`, `notificationWait`, `endpointReply`,
+  `endpointSendDual`, `endpointReceiveDual`, `endpointCall`,
+  `endpointReplyRecv`) each proving preservation of the full 3-conjunct
+  `ipcInvariantFull` bundle.
 - **Tier 3 invariant surface anchors:** Updated `coreIpcInvariantBundle` body
-  anchor from `ipcInvariant` to `ipcInvariantFull`. Added 12 new anchors for
-  WS-H12e invariant definitions, extraction theorems, and preservation proofs.
+  anchor from `ipcInvariant` to `ipcInvariantFull`. Added 30 new anchors for
+  WS-H12e invariant definitions, extraction theorems, frame lemmas, compound
+  preservation theorems, and composed `ipcInvariantFull` preservation proofs.
 - **`docs/codebase_map.json` regenerated.**
 - **Zero sorry/axiom, zero warnings:** Full production proof surface verified
   clean. Build produces 86 jobs, zero errors and zero warnings.
 - **Findings addressed:** Systemic invariant composition gaps from WS-H12a–d.
+  Completed deferred `allPendingMessagesBounded` preservation from WS-H12d.
 
 ## [0.14.1] - 2026-03-09
 
@@ -74,7 +91,7 @@
 - **`allPendingMessagesBounded` system invariant:** Added to `IPC/Invariant.lean`,
   asserting all pending messages in TCBs satisfy payload bounds. Integrated into
   `ipcInvariantFull` 3-conjunct bundle (ipcInvariant ∧ dualQueueSystemInvariant ∧
-  allPendingMessagesBounded) — preservation theorems deferred to WS-H12e.
+  allPendingMessagesBounded) — preservation theorems implemented in WS-H12e.
 - **Enforcement theorem updates:** Updated `endpointSendDualChecked_flowDenied`
   to require `msg.checkBounds = true` (bounds checks precede flow checks).
   Updated `enforcement_sufficiency_endpointSendDual` to include bounds-error

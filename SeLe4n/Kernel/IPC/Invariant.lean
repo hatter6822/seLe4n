@@ -5409,4 +5409,435 @@ private theorem removeRunnable_preserves_contextMatchesCurrent
   · simp only [hEq, ite_true]
   · simp only [hEq, ite_false]; exact hInv
 
+-- ============================================================================
+-- WS-H12e: allPendingMessagesBounded preservation (frame lemmas)
+-- Deferred from WS-H12d — see CHANGELOG v0.14.1 line 77.
+-- ============================================================================
+
+/-- WS-H12e: ensureRunnable preserves allPendingMessagesBounded.
+ensureRunnable only modifies scheduler state; the object store is unchanged. -/
+theorem ensureRunnable_preserves_allPendingMessagesBounded
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (ensureRunnable st tid) := by
+  intro t tcb msg hObj hMsg
+  rw [ensureRunnable_preserves_objects] at hObj
+  exact hInv t tcb msg hObj hMsg
+
+/-- WS-H12e: removeRunnable preserves allPendingMessagesBounded.
+removeRunnable only modifies scheduler state; the object store is unchanged. -/
+theorem removeRunnable_preserves_allPendingMessagesBounded
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (removeRunnable st tid) := by
+  intro t tcb msg hObj hMsg
+  rw [removeRunnable_preserves_objects] at hObj
+  exact hInv t tcb msg hObj hMsg
+
+/-- WS-H12e: storeTcbIpcState preserves allPendingMessagesBounded.
+storeTcbIpcState only changes `ipcState`, not `pendingMessage`. -/
+theorem storeTcbIpcState_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          have hTcbPre := lookupTcb_some_objects st tid tcb hLookup
+          intro t tcb' msg hObj hMsg
+          by_cases hEq : t.toObjId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hObj
+            cases hObj; simp at hMsg
+            -- pendingMessage is preserved: { tcb with ipcState := ipc }.pendingMessage = tcb.pendingMessage
+            exact hInv t tcb msg (by rw [hEq]; exact hTcbPre) hMsg
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hStore] at hObj
+            exact hInv t tcb' msg hObjPre hMsg
+
+/-- WS-H12e: storeTcbIpcStateAndMessage preserves allPendingMessagesBounded
+when the new pending message (if any) satisfies `bounded`. -/
+theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hMsgBounded : ∀ m, msg = some m → m.bounded)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          intro t tcb' m hObj hPend
+          by_cases hEq : t.toObjId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hObj
+            cases hObj; simp at hPend
+            exact hMsgBounded m hPend
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hStore] at hObj
+            exact hInv t tcb' m hObjPre hPend
+
+/-- WS-H12e: storeTcbPendingMessage preserves allPendingMessagesBounded
+when the new pending message (if any) satisfies `bounded`. -/
+theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hMsgBounded : ∀ m, msg = some m → m.bounded)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  unfold storeTcbPendingMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          intro t tcb' m hObj hPend
+          by_cases hEq : t.toObjId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hObj
+            cases hObj; simp at hPend
+            exact hMsgBounded m hPend
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hStore] at hObj
+            exact hInv t tcb' m hObjPre hPend
+
+/-- WS-H12e: storeObject for endpoint preserves allPendingMessagesBounded.
+Endpoints don't carry pending messages, so the TCB predicate is unaffected. -/
+theorem storeObject_endpoint_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStore : storeObject oid (.endpoint ep) st = .ok ((), st'))
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  intro t tcb msg hObj hMsg
+  by_cases hEq : t.toObjId = oid
+  · rw [hEq, storeObject_objects_eq st st' oid _ hStore] at hObj; cases hObj
+  · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb) := by
+      rwa [storeObject_objects_ne st st' oid t.toObjId _ hEq hStore] at hObj
+    exact hInv t tcb msg hObjPre hMsg
+
+/-- WS-H12e: storeTcbQueueLinks preserves allPendingMessagesBounded.
+Queue link updates only change `queuePrev`/`queueNext`/`queuePPrev`,
+not `pendingMessage`. -/
+theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId
+        (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          have hTcbPre := lookupTcb_some_objects st tid tcb hLookup
+          intro t tcb' msg hObj hMsg
+          by_cases hEq : t.toObjId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hObj
+            cases hObj; simp [tcbWithQueueLinks] at hMsg
+            -- pendingMessage is preserved: queue link updates don't change pendingMessage
+            exact hInv t tcb msg (by rw [hEq]; exact hTcbPre) hMsg
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hStore] at hObj
+            exact hInv t tcb' msg hObjPre hMsg
+
+/-- WS-H12e: storeObject for notification preserves allPendingMessagesBounded.
+Notifications are not TCBs, so no TCB's pendingMessage is affected. -/
+theorem storeObject_notification_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStore : storeObject oid (.notification ntfn) st = .ok ((), st'))
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  intro t tcb msg hObj hMsg
+  by_cases hEq : t.toObjId = oid
+  · rw [hEq, storeObject_objects_eq st st' oid _ hStore] at hObj; cases hObj
+  · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb) := by
+      rwa [storeObject_objects_ne st st' oid t.toObjId _ hEq hStore] at hObj
+    exact hInv t tcb msg hObjPre hMsg
+
+-- ============================================================================
+-- WS-H12e: Compound operation allPendingMessagesBounded preservation
+-- ============================================================================
+
+/-- WS-H12e: notificationSignal preserves allPendingMessagesBounded.
+notificationSignal stores a notification object and calls storeTcbIpcState +
+ensureRunnable. None of these modify any TCB's pendingMessage. -/
+theorem notificationSignal_preserves_allPendingMessagesBounded
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : allPendingMessagesBounded st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    allPendingMessagesBounded st' := by
+  unfold notificationSignal at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hWaiters : ntfn.waitingThreads with
+      | cons waiter rest =>
+          simp only [hWaiters] at hStep
+          revert hStep
+          cases hStore : storeObject notificationId
+              (.notification { state := if rest.isEmpty then .idle else .waiting,
+                               waitingThreads := rest, pendingBadge := none }) st with
+          | error e => simp
+          | ok pair =>
+              simp only []
+              have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
+                st pair.2 notificationId _ hStore hInv
+              cases hIpc : storeTcbIpcState pair.2 waiter .ready with
+              | error e => simp
+              | ok st'' =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  have hInv2 := storeTcbIpcState_preserves_allPendingMessagesBounded
+                    pair.2 st'' waiter _ hIpc hInv1
+                  exact ensureRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
+      | nil =>
+          simp only [hWaiters] at hStep
+          exact storeObject_notification_preserves_allPendingMessagesBounded
+            st st' notificationId _ hStep hInv
+
+/-- WS-H12e: notificationWait preserves allPendingMessagesBounded.
+notificationWait stores a notification object and calls storeTcbIpcState +
+ensureRunnable/removeRunnable. None of these modify any TCB's pendingMessage. -/
+theorem notificationWait_preserves_allPendingMessagesBounded
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : allPendingMessagesBounded st)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    allPendingMessagesBounded st' := by
+  unfold notificationWait at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hBadge : ntfn.pendingBadge with
+      | some badge =>
+          simp only [hBadge] at hStep
+          revert hStep
+          cases hStore : storeObject notificationId
+              (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+          | error e => simp
+          | ok pair =>
+              simp only []
+              have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
+                st pair.2 notificationId _ hStore hInv
+              cases hIpc : storeTcbIpcState pair.2 waiter .ready with
+              | error e => simp
+              | ok st'' =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  exact storeTcbIpcState_preserves_allPendingMessagesBounded
+                    pair.2 st'' waiter _ hIpc hInv1
+      | none =>
+          simp only [hBadge] at hStep
+          cases hLk : lookupTcb st waiter with
+          | none => simp [hLk] at hStep
+          | some tcb =>
+              simp only [hLk] at hStep
+              split at hStep
+              · simp at hStep
+              · revert hStep
+                cases hStore : storeObject notificationId
+                    (.notification { state := .waiting,
+                                     waitingThreads := waiter :: ntfn.waitingThreads,
+                                     pendingBadge := none }) st with
+                | error e => simp
+                | ok pair =>
+                    simp only []
+                    have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
+                      st pair.2 notificationId _ hStore hInv
+                    cases hIpc : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
+                    | error e => simp
+                    | ok st'' =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨_, hEq⟩; subst hEq
+                        have hInv2 := storeTcbIpcState_preserves_allPendingMessagesBounded
+                          pair.2 st'' waiter _ hIpc hInv1
+                        exact removeRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
+
+/-- WS-H12e: endpointReply preserves allPendingMessagesBounded.
+endpointReply bounds-checks the message at entry, then stores it in the target
+TCB via storeTcbIpcStateAndMessage with (some msg) where msg.bounded follows
+from the entry-point bounds check. -/
+theorem endpointReply_preserves_allPendingMessagesBounded
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (hInv : allPendingMessagesBounded st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    allPendingMessagesBounded st' := by
+  unfold endpointReply at hStep
+  -- WS-H12d: Extract bounds facts, then eliminate branches
+  have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
+  simp only [hReg, ↓reduceIte] at hStep
+  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
+  simp only [hCap, ↓reduceIte] at hStep
+  have hMsgBounded : msg.bounded := ⟨by omega, by omega⟩
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hIpc] at hStep
+      | blockedOnSend _ => simp [hIpc] at hStep
+      | blockedOnReceive _ => simp [hIpc] at hStep
+      | blockedOnNotification _ => simp [hIpc] at hStep
+      | blockedOnCall _ => simp [hIpc] at hStep
+      | blockedOnReply epId _ =>
+          simp only [hIpc] at hStep
+          -- Split on replyTarget: some expected vs none
+          split at hStep
+          · -- some expected: split on replier == expected
+            split at hStep
+            · -- authorized = true
+              revert hStep
+              cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | error e => simp
+              | ok st1 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hStEq⟩; subst hStEq
+                  exact ensureRunnable_preserves_allPendingMessagesBounded st1 target
+                    (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                      st st1 target _ _ (by intro m hm; cases hm; exact hMsgBounded) hStore hInv)
+            · -- authorized = false
+              simp_all
+          · -- none: no replyTarget constraint → authorized = true
+            dsimp only at hStep
+            revert hStep
+            cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+            | error e => simp
+            | ok st1 =>
+                simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hStEq⟩; subst hStEq
+                exact ensureRunnable_preserves_allPendingMessagesBounded st1 target
+                  (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                    st st1 target _ _ (by intro m hm; cases hm; exact hMsgBounded) hStore hInv)
+
+-- ============================================================================
+-- WS-H12e: Composed ipcInvariantFull preservation theorems
+-- ============================================================================
+
+/-- WS-H12e: notificationSignal preserves the full IPC invariant.
+The `dualQueueSystemInvariant` post-state is a hypothesis because notification
+operations store notification objects (not endpoint/TCB queue links) and the
+dual-queue frame lemma for notification stores is independently derivable. -/
+theorem notificationSignal_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hStep,
+   hDualQueue',
+   notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2 hStep⟩
+
+/-- WS-H12e: notificationWait preserves the full IPC invariant.
+See `notificationSignal_preserves_ipcInvariantFull` for hypothesis rationale. -/
+theorem notificationWait_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcInvariantFull st' :=
+  ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hStep,
+   hDualQueue',
+   notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2 hStep⟩
+
+/-- WS-H12e: endpointReply preserves the full IPC invariant.
+The `dualQueueSystemInvariant` post-state hypothesis is needed because
+`endpointReply` modifies TCB queue links via `storeTcbIpcStateAndMessage`;
+the dual-queue preservation follows from `endpointReply_preserves_dualQueueSystemInvariant`
+(which requires additional freshness hypotheses). -/
+theorem endpointReply_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hStep,
+   hDualQueue',
+   endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2 hStep⟩
+
+/-- WS-H12e: endpointSendDual preserves the full IPC invariant.
+Composes `endpointSendDual_preserves_ipcInvariant` (from existing proof surface),
+`dualQueueSystemInvariant` (from caller — requires freshness hypotheses), and
+`allPendingMessagesBounded` (from caller — the bounds check at entry ensures
+any stored message satisfies `bounded`; see `endpointSendDual_message_bounded`). -/
+theorem endpointSendDual_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hStep,
+   hDualQueue', hBounded'⟩
+
+/-- WS-H12e: endpointReceiveDual preserves the full IPC invariant. -/
+theorem endpointReceiveDual_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId hInv.1 hStep,
+   hDualQueue', hBounded'⟩
+
+/-- WS-H12e: endpointCall preserves the full IPC invariant. -/
+theorem endpointCall_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hStep,
+   hDualQueue', hBounded'⟩
+
+/-- WS-H12e: endpointReplyRecv preserves the full IPC invariant. -/
+theorem endpointReplyRecv_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hStep,
+   hDualQueue', hBounded'⟩
+
 end SeLe4n.Kernel

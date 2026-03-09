@@ -663,5 +663,26 @@ run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_dualQueueSystemI
 run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_allPendingMessagesBounded' SeLe4n/Kernel/Capability/Invariant.lean
 # switchDomain preserves contextMatchesCurrent (new for WS-H12e).
 run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_contextMatchesCurrent' SeLe4n/Kernel/Scheduler/Operations.lean
+# WS-H12e: allPendingMessagesBounded frame lemmas for primitive ops.
+run_check "INVARIANT" rg -n '^theorem ensureRunnable_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnable_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_endpoint_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_notification_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-H12e: Compound allPendingMessagesBounded preservation theorems.
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-H12e: Composed ipcInvariantFull preservation theorems.
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
 
 finalize_report
