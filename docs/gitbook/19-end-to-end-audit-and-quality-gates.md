@@ -16,10 +16,10 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.13.7 has:
+seLe4n v0.13.8 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **889 theorem/lemma declarations** across 7 kernel subsystems.
+- **838 theorem/lemma declarations** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
@@ -68,8 +68,9 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 | Version | Portfolio | Status |
 |---------|-----------|--------|
 | v0.13.6 | End-to-end audit | **Completed** — comprehensive codebase audit, zero critical issues, stale documentation metrics fixed. See [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) |
+| v0.13.8 | WS-H12a | **Completed** — Legacy endpoint removal: EndpointState deleted, legacy IPC ops removed, ~60 dead theorems cleaned. 838 proved declarations |
 | v0.13.7 | WS-H11 | **Completed** — VSpace & architecture enrichment: PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation. 889 proved declarations |
-| v0.12.15 | WS-H | Phase 1–4 **Completed** (WS-H1..H11: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge & missing wrappers, NI coverage extension to >80%, WS-H7/H8/H9 gap closure v0.13.5, security model foundations v0.13.6, VSpace enrichment v0.13.7) |
+| v0.12.15 | WS-H | Phase 1–4 **Completed** (WS-H1..H12a: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge & missing wrappers, NI coverage extension to >80%, WS-H7/H8/H9 gap closure v0.13.5, security model foundations v0.13.6, VSpace enrichment v0.13.7, legacy endpoint removal v0.13.8) |
 | v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
 | v0.12.2 | WS-F | WS-F1..F4 completed; **WS-F5..F8 remaining** |
 | v0.11.6 | WS-E | Completed (WS-E1..E6) |

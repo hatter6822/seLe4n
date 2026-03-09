@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/remove-legacy-endpoints-CUNIf",
-      "commit_sha": "5d88c7cd705f90b68c3b7d431a7fe7f591b8fe65",
-      "tree_sha": "2fb36b033d0c1ee8cd68a5ded3b54200b4ed9f8c",
-      "committed_at_utc": "2026-03-09T04:40:53+00:00"
+      "branch": "claude/audit-pr-368-02UuP",
+      "commit_sha": "dc1528d7d219b156b09d3673f12324cfc55eca68",
+      "tree_sha": "358e0d93ef38c811e07ee332314b51a893e64e09",
+      "committed_at_utc": "2026-03-09T04:49:08+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8260406ae3dde596ea50a1ce6fb6289c330ab90abfd2f8247bb9959fc77f7352"
+    "source_digest": "f832f5ec26707e025bcc00d82ab47037aba4a12674d6dfd7ac28ae1d8a68cd43"
   },
   "summary": {
     "module_count": 44,

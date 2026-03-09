@@ -131,7 +131,8 @@ Closes F-P05.
 ### WS-G7: IPC queue + notification optimization (v0.12.12)
 
 Deprecated legacy endpoint operations (`endpointSend`/`endpointReceive`/
-`endpointAwaitReceive`) in favor of O(1) dual-queue operations.
+`endpointAwaitReceive`) in favor of O(1) dual-queue operations (fully removed
+in WS-H12a v0.13.8).
 
 `notificationWait` O(n) duplicate check replaced with O(1) TCB `ipcState`
 inspection. O(n) append replaced with O(1) prepend. New

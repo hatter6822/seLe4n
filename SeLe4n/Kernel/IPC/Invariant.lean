@@ -164,10 +164,10 @@ def ipcInvariant (st : SystemState) : Prop :=
   (∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → notificationInvariant ntfn)
 
 /-- WS-H12a: Full IPC invariant including system-level dual-queue structural
-well-formedness and TCB link integrity. Since `endpointInvariant` now delegates
-to `dualQueueEndpointWellFormed`, `ipcInvariant` subsumes per-endpoint
-well-formedness. The `dualQueueSystemInvariant` adds the system-level TCB link
-integrity property. -/
+well-formedness and TCB link integrity. `endpointInvariant` is vacuous (`True`)
+for structural compatibility — actual dual-queue well-formedness is enforced at
+the system level via `dualQueueSystemInvariant`, which checks both per-endpoint
+`dualQueueEndpointWellFormed` and system-wide `tcbQueueLinkIntegrity`. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st
 
