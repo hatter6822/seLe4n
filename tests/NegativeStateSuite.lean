@@ -2,6 +2,8 @@ import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
 
+set_option maxRecDepth 1024
+
 open SeLe4n.Model
 
 namespace SeLe4n.Testing
@@ -459,8 +461,101 @@ private def runNegativeChecks : IO Unit := do
 
   expectError "dual-queue send on missing object"
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
-      { registers := [], caps := [], badge := none } baseState)
+      { registers := #[], caps := #[], badge := none } baseState)
     .objectNotFound
+
+  -- ==========================================================================
+  -- WS-H12d/A-09: IPC message payload bounds enforcement
+  -- ==========================================================================
+
+  -- Oversized registers (> 120) rejected
+  expectError "endpointSendDual rejects oversized registers"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
+      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+    .ipcMessageTooLarge
+
+  -- Oversized caps (> 3) rejected
+  expectError "endpointSendDual rejects oversized caps"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
+  -- endpointCall rejects oversized registers
+  expectError "endpointCall rejects oversized registers"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
+      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+    .ipcMessageTooLarge
+
+  -- endpointCall rejects oversized caps
+  expectError "endpointCall rejects oversized caps"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
+  -- endpointReply rejects oversized registers
+  expectError "endpointReply rejects oversized registers"
+    (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+    .ipcMessageTooLarge
+
+  -- endpointReply rejects oversized caps
+  expectError "endpointReply rejects oversized caps"
+    (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
+  -- endpointReplyRecv rejects oversized registers
+  expectError "endpointReplyRecv rejects oversized registers"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+    .ipcMessageTooLarge
+
+  -- endpointReplyRecv rejects oversized caps
+  expectError "endpointReplyRecv rejects oversized caps"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
+  -- Boundary message (exactly 120 regs, 3 caps) should NOT be rejected by bounds check
+  -- (may still fail due to other reasons like endpoint state)
+  let boundaryMsg : SeLe4n.Model.IpcMessage := {
+    registers := Array.mk (List.replicate 120 42),
+    caps := #[{ target := .object 1, rights := [] },
+              { target := .object 2, rights := [] },
+              { target := .object 3, rights := [] }],
+    badge := none }
+  let boundaryResult := SeLe4n.Kernel.endpointSendDual endpointId
+    (SeLe4n.ThreadId.ofNat 1) boundaryMsg baseState
+  match boundaryResult with
+  | .error .ipcMessageTooLarge =>
+    throw <| IO.userError "boundary message (120 regs, 3 caps) incorrectly rejected as too large"
+  | .error .ipcMessageTooManyCaps =>
+    throw <| IO.userError "boundary message (120 regs, 3 caps) incorrectly rejected as too many caps"
+  | _ => IO.println "positive check passed [boundary message not rejected by bounds]"
 
   -- ==========================================================================
   -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage

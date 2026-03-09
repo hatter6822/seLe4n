@@ -624,4 +624,25 @@ run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_dualQueueSystemInva
 run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 
+# WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
+run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def bounded' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def checkBounds' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem empty_bounded' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^theorem checkBounds_iff_bounded' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^def allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_message_bounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_message_bounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_message_bounded' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_message_bounded' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-H12d: KernelError variants for bounds enforcement.
+run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/State.lean
+# WS-H12d: Trace harness and fixture anchors.
+run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'H12d oversized registers rejected' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12d oversized caps rejected' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12d boundary message accepted' tests/fixtures/main_trace_smoke.expected
+
 finalize_report

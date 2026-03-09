@@ -601,7 +601,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let epId : SeLe4n.ObjId := demoEndpoint
   let senderId : SeLe4n.ThreadId := 1
   let receiverId : SeLe4n.ThreadId := 12
-  let testMsg : IpcMessage := { registers := [42, 7], caps := [], badge := some ⟨123⟩ }
+  let testMsg : IpcMessage := { registers := #[42, 7], caps := #[], badge := some ⟨123⟩ }
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
@@ -623,7 +623,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | some tcb => tcb.pendingMessage
             | none => none
           let msgRegs := match recvMsg with
-            | some m => m.registers
+            | some m => m.registers.toList
             | none => []
           IO.println s!"message transfer registers: {reprStr msgRegs}"
           let msgBadge := match recvMsg with
@@ -644,7 +644,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"F1-02 receive-first error: {reprStr err}"
   | .ok (_, stWait) =>
       -- Sender sends with message (receiver queued → rendezvous)
-      let rendezvousMsg : IpcMessage := { registers := [99], caps := [], badge := none }
+      let rendezvousMsg : IpcMessage := { registers := #[99], caps := #[], badge := none }
       match SeLe4n.Kernel.endpointSendDual epId senderId rendezvousMsg stWait with
       | .error err => IO.println s!"F1-02 send error: {reprStr err}"
       | .ok (_, stRend) =>
@@ -652,7 +652,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | some tcb => tcb.pendingMessage
             | none => none
           let rendRegs := match rendMsg with
-            | some m => m.registers
+            | some m => m.registers.toList
             | none => []
           IO.println s!"rendezvous delivery registers: {reprStr rendRegs}"
   -- F1-03: Call + Reply roundtrip with message payload
@@ -664,7 +664,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message
-      let callMsg : IpcMessage := { registers := [10, 20, 30], caps := [], badge := some ⟨456⟩ }
+      let callMsg : IpcMessage := { registers := #[10, 20, 30], caps := #[], badge := some ⟨456⟩ }
       match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
       | .error err => IO.println s!"F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
@@ -677,7 +677,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | none => false
           IO.println s!"call/reply caller blocked: {callerBlocked}"
           -- WS-H1/M-02: Reply with response message — receiverId is the authorized replier
-          let replyMsg : IpcMessage := { registers := [100, 200], caps := [], badge := none }
+          let replyMsg : IpcMessage := { registers := #[100, 200], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply receiverId senderId replyMsg stCalled with
           | .error err => IO.println s!"F1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
@@ -685,7 +685,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
                 | some tcb => tcb.pendingMessage
                 | none => none
               let replyRegs := match replyResult with
-                | some m => m.registers
+                | some m => m.registers.toList
                 | none => []
               IO.println s!"call/reply response registers: {reprStr replyRegs}"
   -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
@@ -696,7 +696,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
   let stH1 : SystemState := { st1 with objects := st1.objects.insert epId ep3 }
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
-  let h1CallMsg : IpcMessage := { registers := [77], caps := [], badge := none }
+  let h1CallMsg : IpcMessage := { registers := #[77], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
   | .error err => IO.println s!"H1-01 call error: {reprStr err}"
   | .ok (_, stBlocked) =>
@@ -725,7 +725,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"H1 caller blockedOnReply after dequeue: {isBlockedOnReply}"
           IO.println s!"H1 caller not ready after dequeue: {callerNotReady}"
           -- Explicit Reply from the authorized server unblocks the caller
-          let h1ReplyMsg : IpcMessage := { registers := [88], caps := [], badge := none }
+          let h1ReplyMsg : IpcMessage := { registers := #[88], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply serverId callerId h1ReplyMsg stDequeued with
           | .error err => IO.println s!"H1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
@@ -751,6 +751,78 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
                           IO.println s!"H1 unauthorized reply unexpected error: {reprStr err}"
                       | .ok _ =>
                           IO.println s!"H1 unauthorized reply rejected: false"
+
+-- ============================================================================
+-- WS-H12d: IPC message payload bounds trace scenarios
+-- ============================================================================
+
+/-- WS-H12d/A-09 test: bounded message rejection and acceptance. -/
+private def runIpcMessageBoundsTrace (st1 : SystemState) : IO Unit := do
+  let epId : SeLe4n.ObjId := demoEndpoint
+  let senderId : SeLe4n.ThreadId := 1
+
+  -- H12d-01: Message with too many registers (> 120) should be rejected
+  let oversizedRegs : IpcMessage := {
+    registers := Array.mk (List.replicate 121 0), caps := #[], badge := none }
+  match SeLe4n.Kernel.endpointSendDual epId senderId oversizedRegs st1 with
+  | .error .ipcMessageTooLarge =>
+      IO.println s!"H12d oversized registers rejected: true"
+  | .error err =>
+      IO.println s!"H12d oversized registers unexpected error: {reprStr err}"
+  | .ok _ =>
+      IO.println s!"H12d oversized registers rejected: false"
+
+  -- H12d-02: Message with too many caps (> 3) should be rejected
+  let oversizedCaps : IpcMessage := {
+    registers := #[],
+    caps := #[
+      { target := .object 1, rights := [] },
+      { target := .object 2, rights := [] },
+      { target := .object 3, rights := [] },
+      { target := .object 4, rights := [] }],
+    badge := none }
+  match SeLe4n.Kernel.endpointSendDual epId senderId oversizedCaps st1 with
+  | .error .ipcMessageTooManyCaps =>
+      IO.println s!"H12d oversized caps rejected: true"
+  | .error err =>
+      IO.println s!"H12d oversized caps unexpected error: {reprStr err}"
+  | .ok _ =>
+      IO.println s!"H12d oversized caps rejected: false"
+
+  -- H12d-03: Message at exact boundary (120 regs, 3 caps) should be accepted
+  let boundaryMsg : IpcMessage := {
+    registers := Array.mk (List.replicate 120 42),
+    caps := #[
+      { target := .object 1, rights := [] },
+      { target := .object 2, rights := [] },
+      { target := .object 3, rights := [] }],
+    badge := some ⟨999⟩ }
+  -- Create a fresh endpoint for this test
+  let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  match SeLe4n.Kernel.endpointSendDual epId senderId boundaryMsg stFresh with
+  | .error err =>
+      IO.println s!"H12d boundary message accepted: false (error: {reprStr err})"
+  | .ok _ =>
+      IO.println s!"H12d boundary message accepted: true"
+
+  -- H12d-04: endpointCall with oversized message should be rejected
+  match SeLe4n.Kernel.endpointCall epId senderId oversizedRegs st1 with
+  | .error .ipcMessageTooLarge =>
+      IO.println s!"H12d call oversized rejected: true"
+  | .error err =>
+      IO.println s!"H12d call oversized unexpected error: {reprStr err}"
+  | .ok _ =>
+      IO.println s!"H12d call oversized rejected: false"
+
+  -- H12d-05: endpointReply with oversized message should be rejected
+  match SeLe4n.Kernel.endpointReply senderId 12 oversizedRegs st1 with
+  | .error .ipcMessageTooLarge =>
+      IO.println s!"H12d reply oversized rejected: true"
+  | .error err =>
+      IO.println s!"H12d reply oversized unexpected error: {reprStr err}"
+  | .ok _ =>
+      IO.println s!"H12d reply oversized rejected: false"
 
 -- ============================================================================
 -- WS-F2: Untyped memory model trace scenarios
@@ -857,6 +929,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runLifecycleAndEndpointTrace st1
   runCapabilityIpcTrace st1
   runIpcMessageTransferTrace st1
+  runIpcMessageBoundsTrace st1
   runSchedulerTimingDomainTrace st1
   runUntypedMemoryTrace st1
 

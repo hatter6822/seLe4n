@@ -69,6 +69,11 @@ H1 caller blockedOnReply after dequeue: true
 H1 caller not ready after dequeue: true
 H1 caller ready after reply: true
 H1 unauthorized reply rejected: true
+H12d oversized registers rejected: true
+H12d oversized caps rejected: true
+H12d boundary message accepted: true
+H12d call oversized rejected: true
+H12d reply oversized rejected: true
 EDF tie-break chosen thread: some 12
 timer tick remaining slice: 1
 timer tick expiry rescheduled current: some 1

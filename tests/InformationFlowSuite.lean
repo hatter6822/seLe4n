@@ -236,7 +236,7 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
-  let testMsg : IpcMessage := { registers := [], caps := [], badge := none }
+  let testMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
   let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
   let uncheckedResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"

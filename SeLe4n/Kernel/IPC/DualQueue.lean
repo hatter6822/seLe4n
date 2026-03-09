@@ -1522,6 +1522,10 @@ receiver, modeling seL4 badge delivery through endpoint capabilities. -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
+    -- WS-H12d/A-09: Enforce message payload bounds at send boundary
+    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+    else
     match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
@@ -1622,6 +1626,10 @@ when a receiver later dequeues, the caller transitions to `blockedOnReply` inste
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
+    -- WS-H12d/A-09: Enforce message payload bounds at send boundary
+    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+    else
     match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
@@ -1661,6 +1669,10 @@ confused-deputy attacks where unauthorized threads reply to blocked callers. -/
 def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
+    -- WS-H12d/A-09: Enforce message payload bounds at send boundary
+    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+    else
     match lookupTcb st target with
     | none => .error .objectNotFound
     | some tcb =>
@@ -1687,6 +1699,10 @@ def endpointReplyRecv
     (replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
+    -- WS-H12d/A-09: Enforce message payload bounds at send boundary
+    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+    else
     match lookupTcb st replyTarget with
     | none => .error .objectNotFound
     | some tcb =>
