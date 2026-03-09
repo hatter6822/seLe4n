@@ -236,7 +236,7 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
-  let testMsg : SeLe4n.Kernel.IpcMessage := { registers := [], caps := [], badge := none }
+  let testMsg : IpcMessage := { registers := [], caps := [], badge := none }
   let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
   let uncheckedResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"
@@ -776,8 +776,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "WS-H8: enforcement boundary has 8 policy-gated ops"
-    (policyGatedCount = 8)
+  expect "WS-H8: enforcement boundary has 7 policy-gated ops"
+    (policyGatedCount = 7)
 
   IO.println "WS-H8 enforcement boundary classification verified"
 

@@ -206,24 +206,18 @@ run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge' S
 run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant.lean
 
-# M3 seed IPC preservation theorem anchors.
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-
-# M3.5 step-2 transition anchors must remain present.
-run_check "INVARIANT" rg -n '^def endpointSend' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^def endpointAwaitReceive' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^def endpointReceive' SeLe4n/Kernel/IPC/Operations.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
+# WS-H12a: Legacy M3 seed/M3.5 step-2 anchors removed — replaced by dual-queue operations.
+# Dual-queue transition definition anchors:
+run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/DualQueue.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDual' SeLe4n/Kernel/IPC/DualQueue.lean
 
 # M3.5 step-3 scheduler-contract predicate anchors must remain present.
 run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-H12a: Legacy per-operation ipcSchedulerContractPredicates anchors removed.
+# Dual-queue equivalents are in IPC/Invariant.lean (endpointSendDual/ReceiveDual/Call/Reply/ReplyRecv).
 
 # M3.5 step-4 composed bundle anchors must remain present.
 run_check "INVARIANT" rg -n '^def ipcSchedulerRunnableReadyComponent' SeLe4n/Kernel/Capability/Invariant.lean
@@ -232,20 +226,8 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates' SeLe4n/Kernel/Capability/Invariant.lean
 run_check "INVARIANT" rg -n '^def ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant.lean
-
-# M3.5 step-6 local-first preservation-theorem anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointSend_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceive_preserves_blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant.lean
+# WS-H12a: Legacy coupling/local-first preservation anchors removed.
+# Dual-queue preservation is verified via dualQueueSystemInvariant anchors below.
 
 # M3.5 step-5 helper-lemma anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem tcb_lookup_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant.lean
@@ -597,7 +579,7 @@ run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' 
 run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant.lean
 # Enforcement-NI bridge (F-20):
-run_check "INVARIANT" rg -n '^theorem endpointSendChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem serviceRestartChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant.lean
 # Composed NI framework (H-05):
@@ -642,6 +624,5 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_dualQueueSys
 run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointAwaitReceive_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant.lean
 
 finalize_report
