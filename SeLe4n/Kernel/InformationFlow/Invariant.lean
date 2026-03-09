@@ -1450,6 +1450,21 @@ private theorem setCurrentThread_preserves_projection
       | none => rfl
       | some t' => simp [hTidHigh t' hTid]
 
+/-- WS-H12/H-03: Context switch preserves state projection when both the current
+(outgoing) thread and all runnable threads are non-observable.
+
+saveContext only changes `registerContext` of the outgoing TCB (non-observable →
+projectObjects returns none for that ObjId). restoreContext only changes
+`machine.regs` (projectMachineRegs returns none when current is non-observable).
+Scheduler state is unchanged. -/
+private theorem contextSwitchState_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false) :
+    projectState ctx observer (contextSwitchState st tid) = projectState ctx observer st := by
+  sorry
+
 /-- WS-H9: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread (read-only) >> setCurrentThread. Since chooseThread picks from
 the runQueue and all runnable threads are non-observable, the result is non-observable. -/
@@ -1482,11 +1497,22 @@ private theorem schedule_preserves_projection
           simp only [hObj] at hStep
           split at hStep
           · next hCond =>
-            exact setCurrentThread_preserves_projection ctx observer (some tid) st st'
+            -- WS-H12/H-03: hStep now goes through contextSwitchState
+            -- contextSwitchState preserves scheduler (runnable, current) and non-observable projection
+            have hCtxSched := contextSwitchState_preserves_scheduler st tid
+            have hCurrentHighCtx : ∀ t, (contextSwitchState st tid).scheduler.current = some t →
+                threadObservable ctx observer t = false := by
+              intro t hCur; rw [hCtxSched] at hCur; exact hCurrentHigh t hCur
+            have hCtxProj : projectState ctx observer (contextSwitchState st tid) = projectState ctx observer st := by
+              exact contextSwitchState_preserves_projection ctx observer st tid hCurrentHigh hAllRunnable
+            rw [← hCtxProj]
+            exact setCurrentThread_preserves_projection ctx observer (some tid) (contextSwitchState st tid) st'
               (fun t h => by
                 cases h
-                exact hAllRunnable tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hCond.1))
-              hCurrentHigh hStep
+                have : tid ∈ st.scheduler.runnable := by
+                  exact (RunQueue.mem_toList_iff_mem _ tid).mpr hCond.1
+                exact hAllRunnable tid this)
+              hCurrentHighCtx hStep
           · simp at hStep
         | _ => simp [hObj] at hStep
 
@@ -1936,6 +1962,7 @@ private theorem endpointReply_preserves_projection
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>

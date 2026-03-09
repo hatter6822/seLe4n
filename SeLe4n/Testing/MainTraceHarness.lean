@@ -587,7 +587,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let epId : SeLe4n.ObjId := demoEndpoint
   let senderId : SeLe4n.ThreadId := 1
   let receiverId : SeLe4n.ThreadId := 12
-  let testMsg : IpcMessage := { registers := [42, 7], caps := [], badge := some ⟨123⟩ }
+  let testMsg : IpcMessage := { registers := #[42, 7], caps := #[], badge := some ⟨123⟩ }
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
     state := .idle, queue := [], waitingReceiver := none,
@@ -611,7 +611,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | none => none
           let msgRegs := match recvMsg with
             | some m => m.registers
-            | none => []
+            | none => #[]
           IO.println s!"message transfer registers: {reprStr msgRegs}"
           let msgBadge := match recvMsg with
             | some m => m.badge
@@ -632,7 +632,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"F1-02 receive-first error: {reprStr err}"
   | .ok (_, stWait) =>
       -- Sender sends with message (receiver queued → rendezvous)
-      let rendezvousMsg : IpcMessage := { registers := [99], caps := [], badge := none }
+      let rendezvousMsg : IpcMessage := { registers := #[99], caps := #[], badge := none }
       match SeLe4n.Kernel.endpointSendDual epId senderId rendezvousMsg stWait with
       | .error err => IO.println s!"F1-02 send error: {reprStr err}"
       | .ok (_, stRend) =>
@@ -641,7 +641,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | none => none
           let rendRegs := match rendMsg with
             | some m => m.registers
-            | none => []
+            | none => #[]
           IO.println s!"rendezvous delivery registers: {reprStr rendRegs}"
   -- F1-03: Call + Reply roundtrip with message payload
   let ep2 : KernelObject := .endpoint {
@@ -653,7 +653,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message
-      let callMsg : IpcMessage := { registers := [10, 20, 30], caps := [], badge := some ⟨456⟩ }
+      let callMsg : IpcMessage := { registers := #[10, 20, 30], caps := #[], badge := some ⟨456⟩ }
       match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
       | .error err => IO.println s!"F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
@@ -666,7 +666,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
             | none => false
           IO.println s!"call/reply caller blocked: {callerBlocked}"
           -- WS-H1/M-02: Reply with response message — receiverId is the authorized replier
-          let replyMsg : IpcMessage := { registers := [100, 200], caps := [], badge := none }
+          let replyMsg : IpcMessage := { registers := #[100, 200], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply receiverId senderId replyMsg stCalled with
           | .error err => IO.println s!"F1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
@@ -675,7 +675,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
                 | none => none
               let replyRegs := match replyResult with
                 | some m => m.registers
-                | none => []
+                | none => #[]
               IO.println s!"call/reply response registers: {reprStr replyRegs}"
   -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
   -- caller transitions to blockedOnReply (not .ready), then explicit Reply unblocks.
@@ -686,7 +686,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
   let stH1 : SystemState := { st1 with objects := st1.objects.insert epId ep3 }
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
-  let h1CallMsg : IpcMessage := { registers := [77], caps := [], badge := none }
+  let h1CallMsg : IpcMessage := { registers := #[77], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
   | .error err => IO.println s!"H1-01 call error: {reprStr err}"
   | .ok (_, stBlocked) =>
@@ -715,7 +715,7 @@ private def runIpcMessageTransferTrace (st1 : SystemState) : IO Unit := do
           IO.println s!"H1 caller blockedOnReply after dequeue: {isBlockedOnReply}"
           IO.println s!"H1 caller not ready after dequeue: {callerNotReady}"
           -- Explicit Reply from the authorized server unblocks the caller
-          let h1ReplyMsg : IpcMessage := { registers := [88], caps := [], badge := none }
+          let h1ReplyMsg : IpcMessage := { registers := #[88], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply serverId callerId h1ReplyMsg stDequeued with
           | .error err => IO.println s!"H1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>

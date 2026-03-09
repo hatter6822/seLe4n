@@ -31,6 +31,7 @@ inductive KernelError where
   | childIdSelfOverwrite    -- WS-H2/H-06: childId = untypedId in retypeFromUntyped
   | childIdCollision        -- WS-H2/A-26: childId collides with existing object or untyped child
   | addressOutOfBounds      -- WS-H11/A-05: physical address exceeds machine address width
+  | invalidArgument         -- WS-H12/A-09: generic invalid argument (e.g., IPC message exceeds payload bounds)
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.

@@ -1708,6 +1708,19 @@ theorem notificationWait_result_wellFormed_wait
   · rfl
 
 -- ============================================================================
+-- WS-H12/A-09: Helper for eliminating message bounds check in proofs
+-- ============================================================================
+
+/-- WS-H12/A-09: When a function guarded by `if !msg.wellFormed then .error .invalidArgument else f`
+succeeds with `.ok`, the bounds check must have passed. This eliminates the `if` branch in proofs. -/
+theorem ipcBoundsCheck_ok {α : Type} {msg : IpcMessage} {f : Except KernelError α} {r : α}
+    (h : (if !msg.wellFormed then .error .invalidArgument else f) = .ok r) :
+    f = .ok r := by
+  split at h
+  · simp at h
+  · exact h
+
+-- ============================================================================
 -- WS-E4/M-12: Preservation theorems for endpointReply
 -- ============================================================================
 
@@ -1722,6 +1735,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1823,6 +1837,7 @@ theorem endpointReply_preserves_ipcInvariant
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2172,6 +2187,7 @@ theorem endpointSendDual_preserves_ipcInvariant
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointSendDual at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2221,6 +2237,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointSendDual at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2323,6 +2340,7 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointSendDual at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3265,6 +3283,7 @@ theorem endpointCall_preserves_ipcInvariant
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointCall at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3323,6 +3342,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointCall at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3450,6 +3470,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointCall at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3641,6 +3662,7 @@ theorem endpointCall_blocked_stays_blocked
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     caller ∉ st'.scheduler.runnable := by
   unfold endpointCall at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3688,6 +3710,7 @@ theorem endpointReplyRecv_preserves_ipcInvariant
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointReplyRecv at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -3753,6 +3776,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReplyRecv at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -3866,6 +3890,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointReplyRecv at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -4045,6 +4070,7 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -5341,6 +5367,7 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -5444,6 +5471,7 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   unfold endpointReplyRecv at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st replyTgt with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -6384,6 +6412,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointSendDual at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -6553,6 +6582,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointCall at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>

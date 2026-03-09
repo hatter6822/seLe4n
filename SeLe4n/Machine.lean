@@ -28,14 +28,21 @@ The `RuntimeBoundaryContract.memoryAccessAllowed` predicate already provides
 the extension point for this transition. -/
 abbrev Memory := PAddr → UInt8
 
-/-- Pure register file state used by scheduler/context-switch modeling. -/
+/-- WS-H12/H-03: Number of general-purpose registers in the ARM64 model (x0-x30). -/
+def numGPR : Nat := 31
+
+/-- Pure register file state used by scheduler/context-switch modeling.
+
+WS-H12/H-03: `gpr` changed from function type to `Array` with fixed size `numGPR`
+to support `DecidableEq` for `TCB` (needed for per-TCB register context). -/
 structure RegisterFile where
   pc : RegValue
   sp : RegValue
-  gpr : RegName → RegValue
+  gpr : Array RegValue := Array.replicate numGPR 0
+  deriving Repr, DecidableEq
 
 instance : Inhabited RegisterFile where
-  default := { pc := 0, sp := 0, gpr := fun _ => 0 }
+  default := { pc := 0, sp := 0, gpr := Array.replicate numGPR 0 }
 
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
@@ -47,10 +54,11 @@ instance : Inhabited MachineState where
   default := { regs := default, memory := fun _ => 0, timer := 0 }
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
-  rf.gpr r
+  if h : r < rf.gpr.size then rf.gpr[r] else 0
 
 def writeReg (rf : RegisterFile) (r : RegName) (v : RegValue) : RegisterFile :=
-  { rf with gpr := fun r' => if r' = r then v else rf.gpr r' }
+  if h : r < rf.gpr.size then { rf with gpr := rf.gpr.set r v }
+  else rf
 
 def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
   ms.memory addr
@@ -68,14 +76,26 @@ def tick (ms : MachineState) : MachineState :=
 -- Register read-after-write and frame lemmas (WS-E4 preparation)
 -- ============================================================================
 
-theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : RegValue) :
+theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : RegValue)
+    (hBound : r < rf.gpr.size) :
     readReg (writeReg rf r v) r = v := by
-  simp [readReg, writeReg]
+  simp only [readReg, writeReg, hBound, dite_true, Array.size_set]
+  exact Array.getElem_set_self ..
 
 theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : RegValue)
     (hNe : r' ≠ r) :
     readReg (writeReg rf r v) r' = readReg rf r' := by
-  simp [readReg, writeReg, hNe]
+  simp only [readReg, writeReg]
+  split
+  · rename_i hr
+    simp only [Array.size_set] at *
+    split
+    · rename_i hr'
+      rw [Array.getElem_set_ne]
+      exact fun h => hNe h.symm
+    · rename_i hr'
+      simp [hr'] at *
+  · rfl
 
 theorem readMem_writeMem_eq (ms : MachineState) (addr : PAddr) (value : UInt8) :
     readMem (writeMem ms addr value) addr = value := by
@@ -87,10 +107,12 @@ theorem readMem_writeMem_ne (ms : MachineState) (addr addr' : PAddr) (value : UI
   simp [readMem, writeMem, hNe]
 
 theorem writeReg_preserves_pc (rf : RegisterFile) (r : RegName) (v : RegValue) :
-    (writeReg rf r v).pc = rf.pc := rfl
+    (writeReg rf r v).pc = rf.pc := by
+  simp [writeReg]; split <;> rfl
 
 theorem writeReg_preserves_sp (rf : RegisterFile) (r : RegName) (v : RegValue) :
-    (writeReg rf r v).sp = rf.sp := rfl
+    (writeReg rf r v).sp = rf.sp := by
+  simp [writeReg]; split <;> rfl
 
 theorem writeMem_preserves_regs (ms : MachineState) (addr : PAddr) (value : UInt8) :
     (writeMem ms addr value).regs = ms.regs := rfl

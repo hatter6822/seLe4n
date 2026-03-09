@@ -1,4 +1,5 @@
 import SeLe4n.Prelude
+import SeLe4n.Machine
 
 namespace SeLe4n.Model
 
@@ -55,18 +56,34 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
+/-- WS-H12/A-09: Maximum number of message registers in an IPC payload.
+Matches seL4 MCS standard configuration (120 message registers). -/
+def maxMessageRegisters : Nat := 120
+
+/-- WS-H12/A-09: Maximum number of extra capability slots in an IPC payload.
+Matches seL4 standard configuration (3 extra caps). -/
+def maxExtraCaps : Nat := 3
+
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
-Models seL4 message registers plus optional capability transfer and sender badge. -/
+Models seL4 message registers plus optional capability transfer and sender badge.
+
+WS-H12/A-09: Changed from unbounded `List` to bounded `Array` with
+`maxMessageRegisters` and `maxExtraCaps` limits matching seL4 MCS configuration. -/
 structure IpcMessage where
-  registers : List Nat
-  caps : List Capability := []
+  registers : Array Nat := #[]
+  caps : Array Capability := #[]
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 namespace IpcMessage
 
-def empty : IpcMessage := { registers := [], caps := [], badge := none }
+def empty : IpcMessage := { registers := #[], caps := #[], badge := none }
+
+/-- WS-H12/A-09: An IPC message is well-formed when its payload sizes
+do not exceed the seL4-aligned limits. -/
+def wellFormed (msg : IpcMessage) : Bool :=
+  msg.registers.size ≤ maxMessageRegisters && msg.caps.size ≤ maxExtraCaps
 
 end IpcMessage
 
@@ -126,6 +143,10 @@ structure TCB where
       Stored in the sender's TCB while blocked; transferred to the receiver
       on handshake/dequeue. `none` = no pending message. -/
   pendingMessage : Option IpcMessage := none
+  /-- WS-H12/H-03: Per-thread register save area for context switching.
+      Stores the full ARM64 general-purpose register set (x0-x30, sp, pc, pstate).
+      Saved on dispatch-out, restored on dispatch-in by `schedule`. -/
+  registerContext : SeLe4n.RegisterFile := default
   deriving Repr, DecidableEq
 
 inductive EndpointState where

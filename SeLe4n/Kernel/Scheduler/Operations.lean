@@ -203,6 +203,34 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
 
+/-- WS-H12/H-03: Save machine registers into the outgoing thread's TCB register context.
+Returns the updated state with the outgoing thread's `registerContext` set to the
+current machine register file. -/
+def saveContext (st : SystemState) (outTid : SeLe4n.ThreadId) : SystemState :=
+  match st.objects[outTid.toObjId]? with
+  | some (.tcb tcb) =>
+      let tcb' := { tcb with registerContext := st.machine.regs }
+      { st with objects := st.objects.insert outTid.toObjId (.tcb tcb') }
+  | _ => st
+
+/-- WS-H12/H-03: Restore machine registers from the incoming thread's TCB register context.
+Returns the updated state with the machine register file set to the incoming
+thread's saved `registerContext`. -/
+def restoreContext (st : SystemState) (inTid : SeLe4n.ThreadId) : SystemState :=
+  match st.objects[inTid.toObjId]? with
+  | some (.tcb tcb) =>
+      { st with machine := { st.machine with regs := tcb.registerContext } }
+  | _ => st
+
+/-- WS-H12/H-03: Context save/restore step factored from `schedule`.
+Computes the state after saving outgoing context and restoring incoming context.
+The key property is that this preserves the scheduler state. -/
+def contextSwitchState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let stSaved := match st.scheduler.current with
+    | some outTid => saveContext st outTid
+    | none => st
+  restoreContext stSaved tid
+
 /-- Scheduler step for the bootstrap model.
 
 Failure modes are explicit:
@@ -212,7 +240,12 @@ Failure modes are explicit:
 **Performance note:** Membership validation uses O(1) HashSet-backed
 `tid ∈ st'.scheduler.runQueue`. WS-H6 also provides a bidirectional bridge
 (`RunQueue.mem_toList_iff_mem`) for any proof obligations phrased over
-`st'.scheduler.runnable` (`rq.toList`). -/
+`st'.scheduler.runnable` (`rq.toList`).
+
+WS-H12/H-03: Context save/restore is performed inline during dispatch:
+- Save the outgoing thread's registers into its TCB (`saveContext`)
+- Restore the incoming thread's registers from its TCB (`restoreContext`)
+This models the per-TCB register save area used by seL4 for context switches. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
@@ -222,7 +255,9 @@ def schedule : Kernel Unit :=
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
-              setCurrentThread (some tid) st'
+              -- WS-H12/H-03: Inline context save/restore
+              let stCtx := contextSwitchState st' tid
+              setCurrentThread (some tid) stCtx
             else
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation
@@ -335,6 +370,202 @@ def scheduleDomain : Kernel Unit :=
       .ok ((), { st with scheduler := sched' })
 
 -- ============================================================================
+-- WS-H12/H-03: Context save/restore preservation lemmas
+-- ============================================================================
+
+theorem saveContext_preserves_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (saveContext st tid).scheduler = st.scheduler := by
+  unfold saveContext
+  cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj =>
+      cases obj with
+      | tcb _ => rfl
+      | _ => rfl
+
+theorem restoreContext_preserves_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreContext st tid).scheduler = st.scheduler := by
+  unfold restoreContext
+  cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj =>
+      cases obj with
+      | tcb _ => rfl
+      | _ => rfl
+
+theorem saveContext_preserves_objects_keys (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : ObjId) (hk : k ≠ tid.toObjId) :
+    (saveContext st tid).objects[k]? = st.objects[k]? := by
+  unfold saveContext
+  cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj =>
+      cases obj with
+      | tcb _ => simp [HashMap_getElem?_insert, Ne.symm hk]
+      | _ => rfl
+
+theorem contextSwitchState_preserves_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (contextSwitchState st tid).scheduler = st.scheduler := by
+  unfold contextSwitchState
+  cases st.scheduler.current with
+  | none => exact restoreContext_preserves_scheduler st tid
+  | some outTid =>
+      rw [restoreContext_preserves_scheduler, saveContext_preserves_scheduler]
+
+theorem restoreContext_preserves_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreContext st tid).objects = st.objects := by
+  unfold restoreContext
+  cases st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> rfl
+
+theorem contextSwitchState_preserves_objects_at (st : SystemState)
+    (tid : SeLe4n.ThreadId) (k : ObjId)
+    (hk : ∀ outTid, st.scheduler.current = some outTid → k ≠ outTid.toObjId) :
+    (contextSwitchState st tid).objects[k]? = st.objects[k]? := by
+  unfold contextSwitchState
+  cases hCur : st.scheduler.current with
+  | none =>
+      show (restoreContext st tid).objects[k]? = st.objects[k]?
+      rw [restoreContext_preserves_objects]
+  | some outTid =>
+      show (restoreContext (saveContext st outTid) tid).objects[k]? = st.objects[k]?
+      rw [restoreContext_preserves_objects]
+      exact saveContext_preserves_objects_keys st outTid k (hk outTid hCur)
+
+/-- WS-H12/H-03: If a TCB exists in `st.objects` for the incoming thread,
+a TCB still exists at that position after context switch, with the same domain. -/
+theorem contextSwitchState_preserves_tcb (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb' : TCB, (contextSwitchState st tid).objects[tid.toObjId]? = some (.tcb tcb')
+      ∧ tcb'.domain = tcb.domain
+      ∧ tcb'.priority = tcb.priority
+      ∧ tcb'.deadline = tcb.deadline
+      ∧ tcb'.timeSlice = tcb.timeSlice := by
+  unfold contextSwitchState
+  cases hCur : st.scheduler.current with
+  | none =>
+      show ∃ tcb', (restoreContext st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧ _
+      rw [restoreContext_preserves_objects]; exact ⟨tcb, hObj, rfl, rfl, rfl, rfl⟩
+  | some outTid =>
+      show ∃ tcb', (restoreContext (saveContext st outTid) tid).objects[tid.toObjId]? = some (.tcb tcb') ∧ _
+      rw [restoreContext_preserves_objects]
+      unfold saveContext
+      cases hS : st.objects[outTid.toObjId]? with
+      | none => exact ⟨tcb, hObj, rfl, rfl, rfl, rfl⟩
+      | some obj =>
+          cases obj with
+          | tcb tcbOut =>
+              by_cases hEq : tid.toObjId = outTid.toObjId
+              · -- tid is the outgoing thread — saveContext updates registerContext only
+                have hBEq : (outTid.toObjId == tid.toObjId) = true := by simp [hEq]
+                simp only [HashMap_getElem?_insert, hBEq, ite_true]
+                -- tcbOut and tcb are the same TCB
+                have hSame : tcbOut = tcb := by
+                  have h := hObj; rw [hEq] at h; simp only [hS, Option.some.injEq, KernelObject.tcb.injEq] at h; exact h
+                exact ⟨{ tcbOut with registerContext := st.machine.regs }, rfl, by rw [hSame], by rw [hSame], by rw [hSame], by rw [hSame]⟩
+              · simp only [HashMap_getElem?_insert, show ¬(outTid.toObjId == tid.toObjId) = true from by simp; exact Ne.symm hEq, ite_false]
+                exact ⟨tcb, hObj, rfl, rfl, rfl, rfl⟩
+          | _ => exact ⟨tcb, hObj, rfl, rfl, rfl, rfl⟩
+
+/-- Convenience wrapper: TCB existence after context switch. -/
+theorem contextSwitchState_preserves_tcb_exists (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hObj : ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb : TCB, (contextSwitchState st tid).objects[tid.toObjId]? = some (.tcb tcb) := by
+  obtain ⟨tcb, hTcb⟩ := hObj
+  obtain ⟨tcb', hTcb', _, _, _, _⟩ := contextSwitchState_preserves_tcb st tid tcb hTcb
+  exact ⟨tcb', hTcb'⟩
+
+/-- WS-H12/H-03: Context switch preserves timeSlice for all TCBs.
+saveContext only updates registerContext; restoreContext only changes machine.regs. -/
+theorem contextSwitchState_preserves_timeSlicePositive (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hInv : timeSlicePositive st) :
+    timeSlicePositive (contextSwitchState st tid) := by
+  intro t hMem
+  have hCtxSched := contextSwitchState_preserves_scheduler st tid
+  have hMemOrig : t ∈ st.scheduler.runnable := by
+    simp [SchedulerState.runnable] at hMem ⊢
+    rwa [hCtxSched] at hMem
+  have hOrig := hInv t hMemOrig
+  unfold contextSwitchState
+  cases hCur : st.scheduler.current with
+  | none =>
+      show match (restoreContext st tid).objects[t.toObjId]? with | some (.tcb tcb) => _ | _ => _
+      rw [restoreContext_preserves_objects]
+      exact hOrig
+  | some outTid =>
+      show match (restoreContext (saveContext st outTid) tid).objects[t.toObjId]? with | some (.tcb tcb) => _ | _ => _
+      rw [restoreContext_preserves_objects]
+      unfold saveContext
+      cases hS : st.objects[outTid.toObjId]? with
+      | none => exact hOrig
+      | some obj =>
+          cases obj with
+          | tcb tcbOut =>
+              by_cases hEq : t.toObjId = outTid.toObjId
+              · have hBEq : (outTid.toObjId == t.toObjId) = true := by simp [hEq]
+                simp only [HashMap_getElem?_insert, hBEq, ite_true]
+                rw [hEq, hS] at hOrig
+                exact hOrig
+              · simp only [HashMap_getElem?_insert, show ¬(outTid.toObjId == t.toObjId) = true from by simp; exact Ne.symm hEq, ite_false]
+                exact hOrig
+          | _ => exact hOrig
+
+/-- WS-H12/H-03: Context switch preserves EDF-local property.
+The EDF comparison only uses `domain`, `priority`, and `deadline` fields — all
+of which are unchanged by saveContext (registerContext only) and restoreContext
+(machine.regs only). -/
+theorem contextSwitchState_preserves_edf_local (st : SystemState) (inTid : SeLe4n.ThreadId)
+    (tcbSel : TCB)
+    (hLocal : ∀ t, t ∈ st.scheduler.runnable →
+      match st.objects[t.toObjId]? with
+      | some (.tcb tcb) =>
+          tcb.domain = tcbSel.domain →
+          tcb.priority = tcbSel.priority →
+          tcbSel.deadline.toNat = 0 ∨
+            (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
+      | _ => True) :
+    ∀ t, t ∈ (contextSwitchState st inTid).scheduler.runnable →
+      match (contextSwitchState st inTid).objects[t.toObjId]? with
+      | some (.tcb tcb) =>
+          tcb.domain = tcbSel.domain →
+          tcb.priority = tcbSel.priority →
+          tcbSel.deadline.toNat = 0 ∨
+            (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
+      | _ => True := by
+  intro t hMem
+  have hCtxSched := contextSwitchState_preserves_scheduler st inTid
+  have hMemOrig : t ∈ st.scheduler.runnable := by
+    simp [SchedulerState.runnable] at hMem ⊢; rwa [hCtxSched] at hMem
+  have hOrig := hLocal t hMemOrig
+  unfold contextSwitchState
+  cases hCur : st.scheduler.current with
+  | none =>
+      show match (restoreContext st inTid).objects[t.toObjId]? with | some (.tcb tcb) => _ | _ => _
+      rw [restoreContext_preserves_objects]; exact hOrig
+  | some outTid =>
+      show match (restoreContext (saveContext st outTid) inTid).objects[t.toObjId]? with | some (.tcb tcb) => _ | _ => _
+      rw [restoreContext_preserves_objects]
+      unfold saveContext
+      cases hS : st.objects[outTid.toObjId]? with
+      | none => exact hOrig
+      | some obj =>
+          cases obj with
+          | tcb tcbOut =>
+              by_cases hEq : t.toObjId = outTid.toObjId
+              · -- t is the outgoing thread — domain/priority/deadline preserved
+                have hBEq : (outTid.toObjId == t.toObjId) = true := by simp [hEq]
+                simp only [HashMap_getElem?_insert, hBEq, ite_true]
+                rw [hEq, hS] at hOrig
+                exact hOrig
+              · simp only [HashMap_getElem?_insert, show ¬(outTid.toObjId == t.toObjId) = true from by simp; exact Ne.symm hEq, ite_false]
+                exact hOrig
+          | _ => exact hOrig
+
+-- ============================================================================
 -- Preservation theorems
 -- ============================================================================
 
@@ -349,7 +580,7 @@ theorem schedule_eq_chooseThread_then_setCurrent :
               match st'.objects[tid.toObjId]? with
               | some (.tcb tcb) =>
                   if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
-                    setCurrentThread (some tid) st'
+                    setCurrentThread (some tid) (contextSwitchState st' tid)
                   else
                     .error .schedulerInvariantViolation
               | _ => .error .schedulerInvariantViolation) := by
@@ -452,12 +683,15 @@ theorem schedule_preserves_wellFormed
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · simp [hChoose, hObj, hSchedOk] at hStep
-                        have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
-                          simpa [hChoose, hObj, hSchedOk] using hStep
+                      · have hCtxSched : (contextSwitchState stChoose tid).scheduler = stChoose.scheduler :=
+                          contextSwitchState_preserves_scheduler stChoose tid
                         have hMemRunnable : tid ∈ stChoose.scheduler.runnable := by
                           simpa [SchedulerState.runnable] using (RunQueue.mem_toList_iff_mem stChoose.scheduler.runQueue tid).2 hSchedOk.1
-                        exact setCurrentThread_preserves_wellFormed stChoose st' tid hMemRunnable hSet
+                        have hMemCtx : tid ∈ (contextSwitchState stChoose tid).scheduler.runnable := by
+                          rw [hCtxSched]; exact hMemRunnable
+                        have hSet : setCurrentThread (some tid) (contextSwitchState stChoose tid) = .ok ((), st') := by
+                          simpa [hChoose, hObj, hSchedOk] using hStep
+                        exact setCurrentThread_preserves_wellFormed (contextSwitchState stChoose tid) st' tid hMemCtx hSet
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
@@ -535,7 +769,11 @@ theorem schedule_preserves_runQueueUnique
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · exact setCurrentThread_preserves_runQueueUnique stChoose st' (some tid) hUniqueChoose (by
+                      · have hCtxSched : (contextSwitchState stChoose tid).scheduler = stChoose.scheduler :=
+                          contextSwitchState_preserves_scheduler stChoose tid
+                        have hUniqueCtx : runQueueUnique (contextSwitchState stChoose tid).scheduler := by
+                          rw [hCtxSched]; exact hUniqueChoose
+                        exact setCurrentThread_preserves_runQueueUnique (contextSwitchState stChoose tid) st' (some tid) hUniqueCtx (by
                           simpa [hChoose, hObj, hSchedOk] using hStep)
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
@@ -569,8 +807,9 @@ theorem schedule_preserves_currentThreadValid
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · exact setCurrentThread_some_preserves_currentThreadValid stChoose st' tid
-                          ⟨tcb, hObj⟩
+                      · have hCtxTcb := contextSwitchState_preserves_tcb_exists stChoose tid ⟨tcb, hObj⟩
+                        exact setCurrentThread_some_preserves_currentThreadValid (contextSwitchState stChoose tid) st' tid
+                          hCtxTcb
                           (by simpa [hChoose, hObj, hSchedOk] using hStep)
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
@@ -646,10 +885,13 @@ theorem schedule_preserves_currentThreadInActiveDomain
                   cases obj with
                   | tcb tcb =>
                       by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
-                      · have hSet : setCurrentThread (some tid) stChoose = .ok ((), st') := by
+                      · have hSet : setCurrentThread (some tid) (contextSwitchState stChoose tid) = .ok ((), st') := by
                           simpa [hChoose, hObj, hSchedOk] using hStep
+                        simp [setCurrentThread] at hSet
                         cases hSet
-                        simp [currentThreadInActiveDomain, hObj, hSchedOk.2]
+                        have hCtxSched := contextSwitchState_preserves_scheduler stChoose tid
+                        obtain ⟨tcb', hTcb', hDom, _, _, _⟩ := contextSwitchState_preserves_tcb stChoose tid tcb hObj
+                        simp [currentThreadInActiveDomain, hTcb', hCtxSched, hDom, hSchedOk.2]
                       · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
@@ -1154,7 +1396,9 @@ theorem schedule_preserves_timeSlicePositive
                   | tcb tcb =>
                       by_cases hOk : tid ∈ stChoose.scheduler.runQueue ∧
                           tcb.domain = stChoose.scheduler.activeDomain
-                      · exact setCurrentThread_preserves_timeSlicePositive stChoose st' (some tid) hInvC
+                      · have hInvCtx : timeSlicePositive (contextSwitchState stChoose tid) :=
+                          contextSwitchState_preserves_timeSlicePositive stChoose tid hInvC
+                        exact setCurrentThread_preserves_timeSlicePositive (contextSwitchState stChoose tid) st' (some tid) hInvCtx
                           (by simpa [hChoose, hObj, hOk] using hStep)
                       · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
                             tcb.domain = stChoose.scheduler.activeDomain) := by
@@ -1689,11 +1933,23 @@ theorem schedule_preserves_edfCurrentHasEarliestDeadline
           by_cases hSchedOk : st.scheduler.runQueue.contains tid = true ∧
               tcbSel.domain = st.scheduler.activeDomain
           · simp only [hSchedOk] at hStep
+            have hEdfOrig := chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
+              hwf hpm hSchedOk.2 hAllTcb hCIB hObj
+            obtain ⟨tcbSel', hObjCtx, hDomSel, hPrioSel, hDlSel, _⟩ :=
+              contextSwitchState_preserves_tcb st tid tcbSel hObj
+            -- Bridge EDF local property: replace tcbSel fields with tcbSel' fields
+            have hEdfCtx : ∀ t, t ∈ (contextSwitchState st tid).scheduler.runnable →
+                match (contextSwitchState st tid).objects[t.toObjId]? with
+                | some (.tcb tcb) =>
+                    tcb.domain = tcbSel'.domain →
+                    tcb.priority = tcbSel'.priority →
+                    tcbSel'.deadline.toNat = 0 ∨
+                      (tcb.deadline.toNat = 0 ∨ tcbSel'.deadline.toNat ≤ tcb.deadline.toNat)
+                | _ => True := by
+              rw [hDomSel, hPrioSel, hDlSel]
+              exact contextSwitchState_preserves_edf_local st tid tcbSel hEdfOrig
             exact setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
-              st st' tid tcbSel hObj
-              (chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
-                hwf hpm hSchedOk.2 hAllTcb hCIB hObj)
-              hStep
+              (contextSwitchState st tid) st' tid tcbSel' hObjCtx hEdfCtx hStep
           · exfalso; simp [hSchedOk] at hStep
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
           simp [hObj] at hStep

@@ -1522,7 +1522,9 @@ receiver, modeling seL4 badge delivery through endpoint capabilities. -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    match st.objects[endpointId]? with
+    -- WS-H12/A-09: Validate message payload bounds before any state mutation
+    if !msg.wellFormed then .error .invalidArgument
+    else match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
@@ -1622,7 +1624,9 @@ when a receiver later dequeues, the caller transitions to `blockedOnReply` inste
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    match st.objects[endpointId]? with
+    -- WS-H12/A-09: Validate message payload bounds before any state mutation
+    if !msg.wellFormed then .error .invalidArgument
+    else match st.objects[endpointId]? with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
@@ -1661,7 +1665,9 @@ confused-deputy attacks where unauthorized threads reply to blocked callers. -/
 def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    match lookupTcb st target with
+    -- WS-H12/A-09: Validate message payload bounds before any state mutation
+    if !msg.wellFormed then .error .invalidArgument
+    else match lookupTcb st target with
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with
@@ -1689,7 +1695,9 @@ def endpointReplyRecv
     (replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    match lookupTcb st replyTarget with
+    -- WS-H12/A-09: Validate message payload bounds before any state mutation
+    if !msg.wellFormed then .error .invalidArgument
+    else match lookupTcb st replyTarget with
     | none => .error .objectNotFound
     | some tcb =>
         match tcb.ipcState with

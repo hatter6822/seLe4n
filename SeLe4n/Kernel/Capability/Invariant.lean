@@ -1991,6 +1991,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
   unfold endpointReply at hStep
+  have hStep := ipcBoundsCheck_ok hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
