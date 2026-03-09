@@ -45,6 +45,7 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H12c** (v0.14.0) | Per-TCB register context with inline context switch: `registerContext` field on TCB, inline `saveOutgoingContext`/`restoreIncomingContext` in `schedule`, `contextMatchesCurrent` invariant with preservation proofs for scheduler and IPC operations, IF projection stripping. Closes H-03 | Completed |
 | **WS-H12b** (v0.13.9) | Dequeue-on-dispatch scheduler semantics: `queueCurrentConsistent` inverted to `current ∉ runnable` matching seL4's `switchToThread`/`tcbSchedDequeue`; schedule/handleYield/timerTick/switchDomain updated; `currentTimeSlicePositive` and `schedulerPriorityMatch` predicates; IPC coherence predicates; ~1800 lines of proofs re-proved. Closes H-04 | Completed |
 | **WS-H12a** (v0.13.8) | Legacy endpoint removal: `EndpointState` deleted, legacy IPC ops removed, ~60 dead theorems cleaned, `endpointReplyRecv` migrated to dual-queue. Closes A-08, M-01, A-25 | Completed |
 | **WS-H11** (v0.13.7) | VSpace & architecture enrichment: PagePermissions with W^X enforcement, ARM64 52-bit address bounds, TLB model with per-VAddr flush and cross-ASID isolation, VSpaceBackend typeclass. Closes H-02/A-32, H-10, A-05/M-12, A-12, M-14 | Completed |
@@ -67,8 +68,8 @@ M7 (audit remediation).
 
 The immediate next steps are:
 
-1. **WS-H12c–f, H13..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4–5):
-   register context, message bounds, cross-subsystem reconciliation, CSpace/service model
+1. **WS-H12d–f, H13..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4–5):
+   message bounds, cross-subsystem reconciliation, CSpace/service model
    enrichment, type safety, platform hardening, testing expansion.
 2. **WS-F5..F8** — Remaining v0.12.2 audit remediation (medium/low priority):
    model fidelity, invariant quality, testing expansion, cleanup.

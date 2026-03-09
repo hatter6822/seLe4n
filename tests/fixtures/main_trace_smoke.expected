@@ -32,6 +32,7 @@ deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
 deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
 large runnable queue length: 2
 large queue scheduled current: some 1
+context switch regs match incoming: true
 multi-endpoint receive senders: 1, 12
 service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
 boundary memory low-address byte: 0

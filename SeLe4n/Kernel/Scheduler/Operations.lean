@@ -395,6 +395,28 @@ private theorem restoreIncomingContext_preserves_timeSlicePositive
   have hOrig := hInv t hMemOrig
   simp only [restoreIncomingContext_objects]; exact hOrig
 
+/-- WS-H12c: After `restoreIncomingContext st tid`, when `st.objects[tid.toObjId]?`
+is a TCB, the machine register file equals that TCB's `registerContext`. -/
+theorem restoreIncomingContext_establishes_context
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    (restoreIncomingContext st tid).machine.regs = tcb.registerContext := by
+  simp only [restoreIncomingContext, hTcb]
+
+/-- WS-H12c: `restoreIncomingContext` does not change the machine state when
+the given thread ID does not correspond to a TCB in the object store. -/
+@[simp] theorem restoreIncomingContext_machine_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : ∀ tcb, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
+    (restoreIncomingContext st tid).machine = st.machine := by
+  unfold restoreIncomingContext
+  cases hObj : st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj =>
+      cases obj with
+      | tcb t => exact absurd hObj (h t)
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => rfl
+
 /-- WS-H12b/H-04 + WS-H12c/H-03: Scheduler step with dequeue-on-dispatch and
 inline context switch semantics.
 
@@ -2497,6 +2519,163 @@ theorem timerTick_preserves_edfCurrentHasEarliestDeadline
           · simp only [hEq]; exact hEdf
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
         simp [hObj] at hStep
+
+-- ============================================================================
+-- WS-H12c/H-03: contextMatchesCurrent preservation proofs
+-- ============================================================================
+
+/-- WS-H12c/H-03: `schedule` establishes (and therefore preserves)
+`contextMatchesCurrent`. The inline context switch in `schedule` atomically
+saves the outgoing thread's registers and restores the incoming thread's
+registers, ensuring machine.regs = currentThread.registerContext. -/
+theorem schedule_preserves_contextMatchesCurrent
+    (st st' : SystemState)
+    (hStep : schedule st = .ok ((), st')) :
+    contextMatchesCurrent st' := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+    cases pick with
+    | mk next stChoose =>
+      cases next with
+      | none =>
+        simp only [hChoose] at hStep
+        have hSet : setCurrentThread none (saveOutgoingContext stChoose) = .ok ((), st') := hStep
+        simp [setCurrentThread] at hSet
+        subst hSet
+        simp [contextMatchesCurrent]
+      | some tid =>
+        cases hObj : stChoose.objects[tid.toObjId]? with
+        | none => simp [hChoose, hObj] at hStep
+        | some obj =>
+          cases obj with
+          | tcb tcb =>
+            by_cases hOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
+            · simp only [hChoose, hObj, hOk] at hStep
+              have hSet := hStep
+              simp [setCurrentThread] at hSet
+              subst hSet
+              -- After setCurrentThread: current = some tid
+              -- objects = stRestored.objects = (restoreIncomingContext stDequeued tid).objects
+              -- = stDequeued.objects = (saveOutgoingContext stChoose).objects
+              -- machine = stRestored.machine = (restoreIncomingContext stDequeued tid).machine
+              simp only [contextMatchesCurrent]
+              -- Need: objects[tid.toObjId]? has a TCB and machine.regs = tcb'.registerContext
+              -- chooseThread preserves state, so stChoose.objects = st.objects
+              have hState := chooseThread_preserves_state st stChoose (some tid) hChoose
+              have ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj
+              -- restoreIncomingContext reads from stDequeued.objects = (saveOutgoingContext stChoose).objects
+              simp only [restoreIncomingContext, hTcb']
+            · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
+                  tcb.domain = stChoose.scheduler.activeDomain) := by
+                simpa [RunQueue.mem_iff_contains] using hOk
+              simp [hChoose, hObj, hOk'] at hStep
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+            simp [hChoose, hObj] at hStep
+
+/-- WS-H12c/H-03: `handleYield` preserves `contextMatchesCurrent`.
+`handleYield` calls `schedule` which re-establishes the invariant. -/
+theorem handleYield_preserves_contextMatchesCurrent
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    contextMatchesCurrent st' := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    -- No current thread → directly calls schedule
+    simp only [hCur] at hStep
+    exact schedule_preserves_contextMatchesCurrent st st' hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        -- handleYield re-enqueues then calls schedule
+        -- The schedule call at the end establishes contextMatchesCurrent
+        exact schedule_preserves_contextMatchesCurrent _ st' hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+        simp [hObj] at hStep
+
+/-- WS-H12c/H-03: `timerTick` preserves `contextMatchesCurrent`.
+- When no thread is current: only advances machine timer, current remains none → vacuous.
+- When time slice doesn't expire: decrements timeSlice via storeObject, machine.regs and
+  current are unchanged → invariant preserved.
+- When time slice expires: re-enqueues + calls `schedule` → invariant re-established. -/
+theorem timerTick_preserves_contextMatchesCurrent
+    (st st' : SystemState)
+    (hInv : contextMatchesCurrent st)
+    (hStep : timerTick st = .ok ((), st')) :
+    contextMatchesCurrent st' := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    -- No current thread → just advance timer → current = none → vacuous
+    simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+    simp [contextMatchesCurrent, hCur]
+  | some curTid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[curTid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        by_cases hExpire : tcb.timeSlice ≤ 1
+        · -- Time slice expired → re-enqueue + schedule
+          simp only [hExpire, ite_true] at hStep
+          exact schedule_preserves_contextMatchesCurrent _ st' hStep
+        · -- Time slice not expired → inline state construction
+          simp only [hExpire, ite_false, Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+          -- st' = { st with objects := ..insert.., machine := tick st.machine }
+          -- current unchanged (= some curTid), machine.regs unchanged (tick only changes timer)
+          simp only [contextMatchesCurrent, hCur]
+          rw [HashMap_getElem?_insert, beq_self_eq_true]; simp
+          -- Goal: (tick st.machine).regs = tcb.registerContext
+          simp only [contextMatchesCurrent, hCur, hObj] at hInv
+          simp only [tick]; exact hInv
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+        simp [hObj] at hStep
+
+/-- WS-H12c: Frame theorem for `contextMatchesCurrent`. If a state transition
+preserves `machine.regs`, `scheduler.current`, and the object at the current
+thread's ID, then `contextMatchesCurrent` is preserved. This is the primary
+mechanism for proving IPC and capability operations preserve the invariant:
+they never modify register context or machine registers. -/
+theorem contextMatchesCurrent_frame
+    (st st' : SystemState)
+    (hInv : contextMatchesCurrent st)
+    (hMachine : st'.machine.regs = st.machine.regs)
+    (hCurrent : st'.scheduler.current = st.scheduler.current)
+    (hObjects : ∀ tid, st.scheduler.current = some tid →
+      st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?) :
+    contextMatchesCurrent st' := by
+  simp only [contextMatchesCurrent]
+  cases hCur : st.scheduler.current with
+  | none =>
+    have : st'.scheduler.current = none := by rw [hCurrent, hCur]
+    simp [this]
+  | some tid =>
+    have hCur' : st'.scheduler.current = some tid := by rw [hCurrent, hCur]
+    have hObjEq := hObjects tid hCur
+    -- Extract the content of hInv before simp modifies it
+    simp only [contextMatchesCurrent, hCur] at hInv
+    simp only [hCur']
+    rw [hObjEq]
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hInv
+        simp only []
+        rw [hMachine]; exact hInv
+      | _ => simp
 
 -- ============================================================================
 -- WS-H6/WS-H12b: Full scheduler invariant bundle composition theorems

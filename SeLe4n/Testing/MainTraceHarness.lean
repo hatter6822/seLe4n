@@ -277,6 +277,21 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stLargeScheduled) =>
       IO.println s!"large queue scheduled current: {reprStr (stLargeScheduled.scheduler.current.map SeLe4n.ThreadId.toNat)}"
 
+  -- WS-H12c: Context switch — verify machine.regs matches incoming thread's registerContext
+  let ctxRegFile : SeLe4n.RegisterFile := { pc := 42, sp := 1024, gpr := fun _ => 0 }
+  let ctxTcb1 : KernelObject := .tcb {
+    tid := 1, priority := 100, domain := 0,
+    cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+    ipcState := .ready, registerContext := ctxRegFile }
+  let stCtx : SystemState := { st1 with
+    objects := st1.objects.insert 1 ctxTcb1,
+    scheduler := { st1.scheduler with runQueue := mkRunQueue [1], current := none } }
+  match SeLe4n.Kernel.schedule stCtx with
+  | .error err => IO.println s!"context switch schedule error: {reprStr err}"
+  | .ok (_, stCtxSched) =>
+      let regsMatch := stCtxSched.machine.regs == ctxRegFile
+      IO.println s!"context switch regs match incoming: {regsMatch}"
+
   -- WS-G7: multi-endpoint test migrated to dual-queue operations
   let stMultiEndpoint : SystemState :=
     { st1 with

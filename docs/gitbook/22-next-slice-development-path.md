@@ -35,7 +35,7 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H12c–f, H13..H16 and WS-F5..F8
+## Immediate next: WS-H12d–f, H13..H16 and WS-F5..F8
 
 ### Remaining WS-H workstreams — v0.12.15 audit remediation
 
@@ -46,7 +46,8 @@ The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 | **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12a** | Legacy endpoint field & operation removal | Medium — **Completed** |
 | **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium — **Completed** |
-| **WS-H12c–f** | Scheduler/IPC semantic alignment (register context, message bounds, reconciliation) | Medium |
+| **WS-H12c** | Per-TCB register context with inline context switch (H-03) | Medium — **Completed** |
+| **WS-H12d–f** | Scheduler/IPC semantic alignment (message bounds, reconciliation) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
