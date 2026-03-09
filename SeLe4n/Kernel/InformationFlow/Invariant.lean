@@ -1410,9 +1410,9 @@ private theorem saveOutgoingContext_preserves_projectObjects
                   simp only [hOut, Option.map]
                   rw [HashMap_getElem?_insert]
                   by_cases hEq : outTid.toObjId == oid
-                  · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                  · simp only [hEq, ↓reduceIte, projectKernelObject]
                     have hEq' := beq_iff_eq.mp hEq
-                    subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                    subst hEq'; simp only [hOut]
                   · simp [hEq]
               | endpoint _ => simp_all
               | notification _ => simp_all
@@ -1445,11 +1445,12 @@ private theorem saveOutgoingContext_preserves_projection
                 exact funext (fun oid => by
                   simp only [projectObjects]
                   split
-                  · rw [HashMap_getElem?_insert]
+                  · simp only [Option.map]
+                    rw [HashMap_getElem?_insert]
                     by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                    · simp only [hEq, ↓reduceIte, projectKernelObject]
                       have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                      subst hEq'; simp only [hOut]
                     · simp [hEq]
                   · rfl)
           | endpoint _ => simp_all
@@ -1470,7 +1471,7 @@ private theorem restoreIncomingContext_preserves_projection
   | some obj =>
       cases obj with
       | tcb inTcb =>
-          simp only [hTcb]
+          simp only []
           -- Goal: projectState ctx observer { st with machine := { st.machine with regs := inTcb.registerContext } } = projectState ctx observer st
           -- Only machine.regs changes; all other projection fields are unchanged
           simp only [projectState]
@@ -1520,11 +1521,12 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
                 exact funext (fun oid => by
                   simp only [projectObjects]
                   split
-                  · rw [HashMap_getElem?_insert]
+                  · simp only [Option.map]
+                    rw [HashMap_getElem?_insert]
                     by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, Option.map, projectKernelObject]
+                    · simp only [hEq, ↓reduceIte, projectKernelObject]
                       have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; simp only [hOut, Option.map, projectKernelObject]
+                      subst hEq'; simp only [hOut]
                     · simp [hEq]
                   · rfl)
           | endpoint _ => simp_all
