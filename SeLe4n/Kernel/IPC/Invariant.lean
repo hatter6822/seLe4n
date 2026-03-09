@@ -1,4 +1,5 @@
 import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 
 /-!
@@ -5092,5 +5093,167 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
               (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant _ _ _ _ _ hStore
                 (endpointQueueEnqueue_preserves_dualQueueSystemInvariant _ _ _ _ _ hEnq hInv
                   hFreshCaller hSendTailFresh))
+
+-- ============================================================================
+-- WS-H12c/H-03: contextMatchesCurrent preservation for IPC operations
+-- ============================================================================
+
+/-- WS-H12c: `storeObject` preserves `contextMatchesCurrent` when the stored
+object at the current thread's ID preserves `registerContext`.
+
+Requires `currentThreadValid` to exclude the impossible case where the current
+thread has no TCB in the object store. -/
+private theorem storeObject_preserves_contextMatchesCurrent
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : contextMatchesCurrent st)
+    (hValid : currentThreadValid st)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hRegCtx : ∀ tid tcb, st.scheduler.current = some tid → tid.toObjId = oid →
+      st.objects[oid]? = some (.tcb tcb) →
+      ∃ tcb', obj = .tcb tcb' ∧ tcb'.registerContext = tcb.registerContext) :
+    contextMatchesCurrent st' := by
+  simp only [storeObject] at hStore
+  obtain ⟨_, rfl⟩ := hStore
+  simp only [contextMatchesCurrent] at hInv ⊢
+  cases hCur : st.scheduler.current with
+  | none => trivial
+  | some tid =>
+    simp only [hCur] at hInv ⊢
+    -- currentThreadValid guarantees the current thread has a TCB
+    simp only [currentThreadValid, hCur] at hValid
+    obtain ⟨curTcb, hCurTcb⟩ := hValid
+    rw [HashMap_getElem?_insert]
+    by_cases hEq : oid == tid.toObjId
+    · have hEq' : oid = tid.toObjId := beq_iff_eq.mp hEq
+      simp only [hEq, ite_true]
+      -- Current thread has a TCB, so use hRegCtx
+      have hCurTcb' : st.objects[oid]? = some (.tcb curTcb) := hEq' ▸ hCurTcb
+      obtain ⟨tcb', hNew, hReg⟩ := hRegCtx tid curTcb hCur hEq'.symm hCurTcb'
+      rw [hNew]; simp only []; rw [hReg]
+      simp only [hCurTcb] at hInv; exact hInv
+    · simp only [hEq]; exact hInv
+
+/-- WS-H12c: IPC TCB stores preserve `contextMatchesCurrent`. -/
+private theorem storeTcbIpcState_preserves_contextMatchesCurrent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hInv : contextMatchesCurrent st)
+    (hValid : currentThreadValid st)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    contextMatchesCurrent st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_contextMatchesCurrent st pair.2 tid.toObjId _ hInv hValid hStore
+        (fun tid' tcb' hCur hEq hObj => by
+          have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+          rw [hTcbObj] at hObj; cases hObj
+          exact ⟨{ tcb with ipcState := ipc }, rfl, rfl⟩)
+
+private theorem storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : contextMatchesCurrent st)
+    (hValid : currentThreadValid st)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    contextMatchesCurrent st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_contextMatchesCurrent st pair.2 tid.toObjId _ hInv hValid hStore
+        (fun tid' tcb' hCur hEq hObj => by
+          have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+          rw [hTcbObj] at hObj; cases hObj
+          exact ⟨{ tcb with ipcState := ipc, pendingMessage := msg }, rfl, rfl⟩)
+
+private theorem storeTcbPendingMessage_preserves_contextMatchesCurrent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : contextMatchesCurrent st)
+    (hValid : currentThreadValid st)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    contextMatchesCurrent st' := by
+  unfold storeTcbPendingMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_contextMatchesCurrent st pair.2 tid.toObjId _ hInv hValid hStore
+        (fun tid' tcb' hCur hEq hObj => by
+          have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+          rw [hTcbObj] at hObj; cases hObj
+          exact ⟨{ tcb with pendingMessage := msg }, rfl, rfl⟩)
+
+private theorem storeTcbQueueLinks_preserves_contextMatchesCurrent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : contextMatchesCurrent st)
+    (hValid : currentThreadValid st)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    contextMatchesCurrent st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    simp only [tcbWithQueueLinks] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_contextMatchesCurrent st pair.2 tid.toObjId _ hInv hValid hStore
+        (fun tid' tcb' hCur hEq hObj => by
+          have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+          rw [hTcbObj] at hObj; cases hObj
+          exact ⟨{ tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }, rfl, rfl⟩)
+
+/-- WS-H12c: `ensureRunnable` preserves `contextMatchesCurrent`. -/
+private theorem ensureRunnable_preserves_contextMatchesCurrent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : contextMatchesCurrent st) :
+    contextMatchesCurrent (ensureRunnable st tid) := by
+  unfold ensureRunnable
+  split
+  · exact hInv
+  · cases hObj : st.objects[tid.toObjId]? with
+    | none => exact hInv
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [contextMatchesCurrent]
+        cases hCur : st.scheduler.current with
+        | none => trivial
+        | some curTid =>
+          simp only [contextMatchesCurrent, hCur] at hInv
+          exact hInv
+      | _ => exact hInv
+
+/-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
+private theorem removeRunnable_preserves_contextMatchesCurrent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : contextMatchesCurrent st) :
+    contextMatchesCurrent (removeRunnable st tid) := by
+  simp only [removeRunnable]
+  show contextMatchesCurrent { st with scheduler := { st.scheduler with
+    runQueue := st.scheduler.runQueue.remove tid,
+    current := if st.scheduler.current = some tid then none else st.scheduler.current } }
+  simp only [contextMatchesCurrent]
+  by_cases hEq : st.scheduler.current = some tid
+  · simp only [hEq, ite_true]
+  · simp only [hEq, ite_false]; exact hInv
 
 end SeLe4n.Kernel

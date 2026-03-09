@@ -35,6 +35,19 @@
   `saveOutgoingContext_tcb_fields`, `saveOutgoingContext_preserves_non_tcb_lookup`,
   `saveOutgoingContext_preserves_timeSlicePositive`, and
   `restoreIncomingContext_preserves_timeSlicePositive`.
+- **Scheduler preservation proofs:** Added `schedule_preserves_contextMatchesCurrent`,
+  `handleYield_preserves_contextMatchesCurrent`, `timerTick_preserves_contextMatchesCurrent`,
+  and `contextMatchesCurrent_frame` general frame theorem to `Scheduler/Operations.lean`.
+- **IPC preservation proofs:** Added `storeObject_preserves_contextMatchesCurrent`,
+  `storeTcbIpcState_preserves_contextMatchesCurrent`,
+  `storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent`,
+  `storeTcbPendingMessage_preserves_contextMatchesCurrent`,
+  `storeTcbQueueLinks_preserves_contextMatchesCurrent`,
+  `ensureRunnable_preserves_contextMatchesCurrent`, and
+  `removeRunnable_preserves_contextMatchesCurrent` to `IPC/Invariant.lean`.
+- **Trace verification:** Added context switch trace scenario to `MainTraceHarness`
+  verifying `machine.regs` matches the incoming thread's `registerContext` after
+  `schedule`.
 - **Zero sorry/axiom, zero warnings:** Full production proof surface verified
   clean. Build produces zero errors and zero warnings.
 - **Finding closed:** H-03 (HIGH, no per-TCB register context).

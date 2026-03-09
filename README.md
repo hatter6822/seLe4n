@@ -227,7 +227,8 @@ the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
 | **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
 | **WS-H12a** | Legacy endpoint field & operation removal | Medium — **Completed** |
 | **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium — **Completed** |
-| **WS-H12c–f** | Scheduler/IPC semantic alignment (register context, message bounds, reconciliation) | Medium |
+| **WS-H12c** | Per-TCB register context with inline context switch (H-03) | Medium — **Completed** |
+| **WS-H12d–f** | Scheduler/IPC semantic alignment (message bounds, reconciliation) | Medium |
 | **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
