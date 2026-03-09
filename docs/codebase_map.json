@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/ws-h12c-register-context-qDqXZ",
-      "commit_sha": "17291e950e41265bf122483c312a4331d0bf497a",
-      "tree_sha": "a4ce5df7fec27bc820e7e3ce4426b565d1064579",
-      "committed_at_utc": "2026-03-09T18:06:06+00:00"
+      "branch": "main",
+      "commit_sha": "96c7adb11f72a021f9574af76159aa66941b3cfd",
+      "tree_sha": "38229ff96ac20e53be70a03e31084612c5a50c1d",
+      "committed_at_utc": "2026-03-09T15:23:49-04:00"
     }
   },
   "source_sync": {
