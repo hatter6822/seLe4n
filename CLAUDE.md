@@ -10,10 +10,13 @@ Lean 4.28.0 toolchain, Lake build system, version 0.13.7.
 ## Build and run
 
 ```bash
-# Environment setup (runs automatically via SessionStart hook)
-./scripts/setup_lean_env.sh --build
+# Environment setup (runs automatically via SessionStart hook — no build)
+./scripts/setup_lean_env.sh --skip-test-deps
 
-# Manual build
+# Full setup including test dependencies (shellcheck, ripgrep)
+./scripts/setup_lean_env.sh
+
+# Manual build (run separately after setup)
 source ~/.elan/env && lake build
 
 # Run executable trace harness
