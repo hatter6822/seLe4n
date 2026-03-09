@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.13.9-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.14.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -48,13 +48,13 @@ introducing substantial architectural improvements:
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Parameterized N-domain information-flow** framework with two-dimensional confidentiality/integrity labels (beyond seL4's binary partition)
-- **EDF + priority scheduling** with dequeue-on-dispatch semantics (matching seL4's `switchToThread`/`tcbSchedDequeue`), priority-bucketed `RunQueue`, domain-aware partitioning, inline `maxPriority` tracking, and bidirectional membership/list consistency (`flat_wf`, `flat_wf_rev`, `mem_toList_iff_mem`)
+- **EDF + priority scheduling** with dequeue-on-dispatch semantics (matching seL4's `switchToThread`/`tcbSchedDequeue`), per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning, inline `maxPriority` tracking, and bidirectional membership/list consistency (`flat_wf`, `flat_wf_rev`, `mem_toList_iff_mem`)
 
 ## Current state
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.13.9` |
+| **Version** | `0.14.0` |
 | **Lean toolchain** | `4.28.0` |
 | **Production Lean LoC** | 28,813 across 41 files |
 | **Test Lean LoC** | 2,265 across 3 test suites |
@@ -64,7 +64,7 @@ introducing substantial architectural improvements:
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Completed** | WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 All quantitative attributes above are generated from the codebase using
