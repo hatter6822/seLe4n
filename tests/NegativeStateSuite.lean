@@ -584,6 +584,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError s!"dual queue fifo expected empty intrusive sendQ, got {reprStr ep.sendQ}"
   | _ => throw <| IO.userError "dual queue fifo expected endpoint object"
 
+  -- WS-H12b: dequeue-on-dispatch — current thread 7 is NOT in the runnable queue
   let schedPriorityState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject 7 (.tcb {
@@ -604,7 +605,7 @@ private def runNegativeChecks : IO Unit := do
         ipcBuffer := 8192
         ipcState := .ready
       })
-      |>.withRunnable [7, 8]
+      |>.withRunnable [8]
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
       |>.build)
   let (_, stPriorityScheduled) ← expectOkState "schedule chooses highest-priority runnable"
@@ -614,6 +615,7 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
+  -- WS-H12b: current=none so both threads can be in runnable; re-add thread 7
   let crossDomainState : SystemState :=
     { schedPriorityState with
       objects := schedPriorityState.objects.insert (SeLe4n.ThreadId.ofNat 7).toObjId (.tcb {
@@ -625,7 +627,10 @@ private def runNegativeChecks : IO Unit := do
             ipcBuffer := 4096
             ipcState := .ready
           })
-      scheduler := { schedPriorityState.scheduler with activeDomain := 0, current := none } }
+      scheduler := { schedPriorityState.scheduler with
+        runQueue := schedPriorityState.scheduler.runQueue.insert (SeLe4n.ThreadId.ofNat 7) 80
+        activeDomain := 0
+        current := none } }
   let (_, stCrossDomainScheduled) ← expectOkState "schedule filters runnable set to active domain"
     (SeLe4n.Kernel.schedule crossDomainState)
   if stCrossDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
@@ -734,11 +739,13 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "scheduleDomain reschedule expected current = tid 10"
 
+  -- WS-H12b: dequeue-on-dispatch — current thread must NOT be in runnable queue
   let scheduleDomainTickOnlyState : SystemState :=
     { scheduleDomainSwitchState with
       scheduler := { scheduleDomainSwitchState.scheduler with
         activeDomain := 1
         current := some (SeLe4n.ThreadId.ofNat 10)
+        runQueue := scheduleDomainSwitchState.scheduler.runQueue.remove (SeLe4n.ThreadId.ofNat 10)
         domainTimeRemaining := 3
         domainScheduleIndex := 1
       } }
@@ -760,10 +767,11 @@ private def runNegativeChecks : IO Unit := do
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
-  if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 8, SeLe4n.ThreadId.ofNat 7] then
-    IO.println "positive check passed [yield runnable rotation]: [8,7]"
+  -- WS-H12b: after yield, schedule dequeues the dispatched thread (8) from runnable
+  if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 7] then
+    IO.println "positive check passed [yield runnable rotation]: [7] (8 dequeued as current)"
   else
-    throw <| IO.userError "yield runnable rotation expected [8,7]"
+    throw <| IO.userError s!"yield runnable rotation expected [7], got {reprStr stYielded.scheduler.runnable}"
 
   -- Verify which thread is current after yield (should be tid 8, the highest priority)
   if stYielded.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then

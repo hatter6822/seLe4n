@@ -840,7 +840,7 @@ theorem switchDomain_preserves_schedulerInvariantBundle
           cases hCur : st.scheduler.current with
           | none => exact hRQU
           | some curTid =>
-            simp only [hCur]
+            simp only []
             cases hObj : st.objects[curTid.toObjId]? with
             | none => exact hRQU
             | some obj =>
@@ -1516,7 +1516,7 @@ theorem switchDomain_preserves_currentTimeSlicePositive
 theorem timerTick_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hTS : timeSlicePositive st)
-    (hCurTS : currentTimeSlicePositive st)
+    (_ : currentTimeSlicePositive st)
     (hStep : timerTick st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
   unfold timerTick at hStep
@@ -1561,7 +1561,6 @@ theorem timerTick_preserves_currentTimeSlicePositive
           rw [if_neg hExpire] at hStep
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          simp only [currentTimeSlicePositive, hCur, hObj] at hCurTS
           unfold currentTimeSlicePositive; simp only [hCur, HashMap_getElem?_insert, beq_self_eq_true, ite_true]
           omega
 
@@ -2105,10 +2104,10 @@ theorem timerTick_preserves_edfCurrentHasEarliestDeadline
                 cases h : (curTid.toObjId == t.toObjId) with
                 | false => rfl
                 | true => exact absurd (ThreadId.toObjId_injective curTid t (eq_of_beq h)) hNeq
-              simp only [HashMap_getElem?_insert, hObjBEq, Bool.false_eq_true, ↓reduceIte]
+              simp only [hObjBEq, Bool.false_eq_true, ↓reduceIte]
               exact hpm t hOld
             | inr hEq =>
-              subst hEq; simp only [HashMap_getElem?_insert, beq_self_eq_true, ↓reduceIte, hObj]
+              subst hEq; simp only [HashMap_getElem?_insert, beq_self_eq_true, ↓reduceIte]
           have hAllTcb' : ∀ t, t ∈ { st with
               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := defaultTimeSlice })
               machine := tick st.machine

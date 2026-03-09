@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "c8a0f2b1c5b9c0a57e430fa13f9995a09658a42f",
-      "tree_sha": "6922e9f925f9623880c3c24a43d917cb54d88817",
-      "committed_at_utc": "2026-03-09T04:55:15-04:00"
+      "branch": "claude/dequeue-dispatch-scheduler-Lty5W",
+      "commit_sha": "fcdd25ca545130fad28ab84ed24cc569abcc23ec",
+      "tree_sha": "edd46d9d7a8b041d990f7a479b4755b0fa172035",
+      "committed_at_utc": "2026-03-09T08:54:31+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b47ad3fb7ab0cac7f28d9f594005a98af993fcf2c62ee0f81227dbb7ac0186f9"
+    "source_digest": "6af200df0281db06cb9ceb4aeb398d1a7d401bfa37cfd430dd66cd4e285743f9"
   },
   "summary": {
     "module_count": 44,
@@ -7513,13 +7513,13 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1574,
+          "line": 1573,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1584,
+          "line": 1583,
           "called": [
             "switchDomain"
           ]
@@ -7527,7 +7527,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 1605,
+          "line": 1604,
           "called": [
             "switchDomain",
             "switchDomain_preserves_currentTimeSlicePositive",
@@ -7539,13 +7539,13 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1618,
+          "line": 1617,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_fields",
-          "line": 1641,
+          "line": 1640,
           "called": [
             "chooseBestRunnableBy",
             "isBetterCandidate"
@@ -7554,7 +7554,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 1697,
+          "line": 1696,
           "called": [
             "chooseBestRunnableBy",
             "isBetterCandidate"
@@ -7563,7 +7563,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 1754,
+          "line": 1753,
           "called": [
             "chooseBestRunnableBy",
             "chooseBestRunnableBy_result_mem_aux"
@@ -7572,7 +7572,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_edf_bridge",
-          "line": 1779,
+          "line": 1778,
           "called": [
             "chooseBestInBucket",
             "chooseBestRunnableBy_optimal",
@@ -7585,7 +7585,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1926,
+          "line": 1925,
           "called": [
             "chooseBestInBucket",
             "chooseBestInBucket_edf_bridge",
@@ -7598,7 +7598,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1975,
+          "line": 1974,
           "called": [
             "handleYield",
             "schedule_preserves_edfCurrentHasEarliestDeadline"
@@ -7607,7 +7607,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2053,
+          "line": 2052,
           "called": [
             "defaultTimeSlice",
             "schedule_preserves_edfCurrentHasEarliestDeadline",
@@ -7618,7 +7618,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 2156,
+          "line": 2155,
           "called": [
             "schedule",
             "schedule_preserves_currentTimeSlicePositive",
@@ -7630,7 +7630,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 2172,
+          "line": 2171,
           "called": [
             "handleYield",
             "handleYield_preserves_currentTimeSlicePositive",
@@ -7642,7 +7642,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 2188,
+          "line": 2187,
           "called": [
             "timerTick",
             "timerTick_preserves_currentTimeSlicePositive",
@@ -13950,7 +13950,7 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 889,
+          "line": 897,
           "called": [
             "expectError",
             "f2UntypedAuthCnode",
@@ -13962,7 +13962,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 936,
+          "line": 944,
           "called": [
             "baseState",
             "endpointId",
@@ -13974,7 +13974,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1019,
+          "line": 1027,
           "called": [
             "baseState",
             "endpointId",
@@ -13984,7 +13984,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1076,
+          "line": 1084,
           "called": [
             "expectError",
             "expectOkState"
@@ -13993,7 +13993,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1264,
+          "line": 1272,
           "called": []
         }
       ]
