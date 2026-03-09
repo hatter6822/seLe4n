@@ -2059,9 +2059,31 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
             lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
 
-/-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC. -/
+/-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
+
+WS-H12e: Updated to use `ipcInvariantFull` (which composes `ipcInvariant`,
+`dualQueueSystemInvariant`, and `allPendingMessagesBounded`) instead of
+the bare `ipcInvariant`. This closes the gap where dual-queue structural
+well-formedness and message payload bounds were defined but not composed
+into the cross-subsystem proof surface. -/
 def coreIpcInvariantBundle (st : SystemState) : Prop :=
-  schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st
+  schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariantFull st
+
+/-- WS-H12e: Extract the bare `ipcInvariant` from the core bundle for
+backward-compatible proof composition. -/
+theorem coreIpcInvariantBundle_to_ipcInvariant {st : SystemState}
+    (h : coreIpcInvariantBundle st) : ipcInvariant st :=
+  h.2.2.1
+
+/-- WS-H12e: Extract `dualQueueSystemInvariant` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_dualQueueSystemInvariant {st : SystemState}
+    (h : coreIpcInvariantBundle st) : dualQueueSystemInvariant st :=
+  h.2.2.2.1
+
+/-- WS-H12e: Extract `allPendingMessagesBounded` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_allPendingMessagesBounded {st : SystemState}
+    (h : coreIpcInvariantBundle st) : allPendingMessagesBounded st :=
+  h.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -2097,9 +2119,13 @@ theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState)
 
 /-- M3.5 composed bundle entrypoint layered over the M3 IPC seed bundle.
 
-This is the step-4 composition target for active-slice endpoint/scheduler coupling. -/
+This is the step-4 composition target for active-slice endpoint/scheduler coupling.
+WS-H12e: Adds `contextMatchesCurrent` and `currentThreadDequeueCoherent` to the
+coupling bundle, ensuring register-context coherence and dequeue-on-dispatch
+coherence predicates are part of the cross-subsystem proof surface. -/
 def ipcSchedulerCouplingInvariantBundle (st : SystemState) : Prop :=
-  coreIpcInvariantBundle st ∧ ipcSchedulerCoherenceComponent st
+  coreIpcInvariantBundle st ∧ ipcSchedulerCoherenceComponent st ∧
+  contextMatchesCurrent st ∧ currentThreadDequeueCoherent st
 
 /-- M4-A composed bundle entrypoint:
 M3.5 IPC+scheduler composition plus lifecycle metadata/invariant obligations. -/
@@ -2206,15 +2232,18 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
     (hCurrentValid : currentThreadValid st')
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
-  rcases hInv with ⟨hSched, hCap, hIpc⟩
+  rcases hInv with ⟨hSched, hCap, hIpcFull⟩
   refine ⟨?_, ?_, ?_⟩
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
       hNewObjCNodeUniq hNewObjCNodeBounded hStep
-  · exact lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpc hNewObjNotificationInv hStep
+  · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv hStep,
+           hDualQueue', hBounded'⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
@@ -2227,17 +2256,21 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
+    (hCtxMatch' : contextMatchesCurrent st')
+    (hDeqCoherent' : currentThreadDequeueCoherent st')
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleCompositionInvariantBundle st' := by
   rcases hInv with ⟨hM35, hLifecycle⟩
-  rcases hM35 with ⟨hM3, _hCoherence⟩
+  rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hCurrentValid hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hCurrentValid hDualQueue' hBounded' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle hStep
-  exact ⟨⟨hM3', hCoherence'⟩, hLifecycle'⟩
+  exact ⟨⟨hM3', hCoherence', hCtxMatch', hDeqCoherent'⟩, hLifecycle'⟩
 
 
 theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle

@@ -1,3 +1,70 @@
+## [0.14.2] - 2026-03-09
+
+### WS-H12e: Cross-Subsystem Invariant Reconciliation
+
+- **`schedulerInvariantBundleFull` expanded:** Added `contextMatchesCurrent`
+  (from WS-H12c) as the 5th conjunct to the full scheduler invariant bundle.
+  Previously the register-context coherence invariant was defined and preserved
+  but orphaned from all composition bundles.
+- **`coreIpcInvariantBundle` strengthened:** Updated from `ipcInvariant` to
+  `ipcInvariantFull` (which composes `ipcInvariant ∧ dualQueueSystemInvariant ∧
+  allPendingMessagesBounded`). The M3 seed bundle now includes dual-queue
+  structural well-formedness and message payload bounds in the cross-subsystem
+  proof surface.
+- **`ipcSchedulerCouplingInvariantBundle` extended:** Added
+  `contextMatchesCurrent` and `currentThreadDequeueCoherent` to the M3.5
+  coupling bundle, ensuring register-context coherence and dequeue-on-dispatch
+  predicates are composed into the cross-subsystem invariant.
+- **`proofLayerInvariantBundle` upgraded:** Uses `schedulerInvariantBundleFull`
+  (5-conjunct, with `contextMatchesCurrent`) instead of the bare
+  `schedulerInvariantBundle` (3-conjunct). The top-level architecture proof
+  surface now includes all WS-H12a–d invariant additions.
+- **Extraction theorems:** Added `coreIpcInvariantBundle_to_ipcInvariant`,
+  `coreIpcInvariantBundle_to_dualQueueSystemInvariant`,
+  `coreIpcInvariantBundle_to_allPendingMessagesBounded`, and
+  `schedulerInvariantBundleFull_to_contextMatchesCurrent` for backward-compatible
+  proof composition.
+- **`switchDomain_preserves_contextMatchesCurrent`:** New preservation theorem
+  for `contextMatchesCurrent` through domain switches (vacuous when
+  `current = none` after switch, unchanged in single-domain no-op).
+- **Default state proof updated:** `default_system_state_proofLayerInvariantBundle`
+  extended with proofs for `dualQueueSystemInvariant`, `allPendingMessagesBounded`,
+  `contextMatchesCurrent`, `currentThreadDequeueCoherent`, and
+  `schedulerInvariantBundleFull` on the default (empty) system state.
+- **`contextMatchesCurrent` relocated:** Moved definition before
+  `schedulerInvariantBundleFull` in `Scheduler/Invariant.lean` to resolve
+  forward-reference issue in bundle composition.
+- **Preservation theorem updates:** Updated all 4 `*_preserves_schedulerInvariantBundleFull`
+  theorems (`schedule`, `handleYield`, `timerTick`, `switchDomain`) to include
+  `contextMatchesCurrent` in destructuring and construction.
+  Updated `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` and
+  `lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle` for
+  the enriched bundle signatures.
+- **`allPendingMessagesBounded` frame lemmas:** Added 8 primitive-operation
+  frame lemmas (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`,
+  `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`, `storeObject_endpoint`,
+  `storeTcbQueueLinks`, `storeObject_notification`) proving each operation
+  preserves the `allPendingMessagesBounded` system invariant.
+- **Compound `allPendingMessagesBounded` preservation:** Added
+  `notificationSignal_preserves_allPendingMessagesBounded`,
+  `notificationWait_preserves_allPendingMessagesBounded`, and
+  `endpointReply_preserves_allPendingMessagesBounded` — full proofs composing
+  frame lemmas for multi-step IPC operations.
+- **Composed `ipcInvariantFull` preservation theorems:** Added 7 theorems
+  (`notificationSignal`, `notificationWait`, `endpointReply`,
+  `endpointSendDual`, `endpointReceiveDual`, `endpointCall`,
+  `endpointReplyRecv`) each proving preservation of the full 3-conjunct
+  `ipcInvariantFull` bundle.
+- **Tier 3 invariant surface anchors:** Updated `coreIpcInvariantBundle` body
+  anchor from `ipcInvariant` to `ipcInvariantFull`. Added 30 new anchors for
+  WS-H12e invariant definitions, extraction theorems, frame lemmas, compound
+  preservation theorems, and composed `ipcInvariantFull` preservation proofs.
+- **`docs/codebase_map.json` regenerated.**
+- **Zero sorry/axiom, zero warnings:** Full production proof surface verified
+  clean. Build produces 86 jobs, zero errors and zero warnings.
+- **Findings addressed:** Systemic invariant composition gaps from WS-H12a–d.
+  Completed deferred `allPendingMessagesBounded` preservation from WS-H12d.
+
 ## [0.14.1] - 2026-03-09
 
 ### WS-H12d: IPC Message Payload Bounds
@@ -24,7 +91,7 @@
 - **`allPendingMessagesBounded` system invariant:** Added to `IPC/Invariant.lean`,
   asserting all pending messages in TCBs satisfy payload bounds. Integrated into
   `ipcInvariantFull` 3-conjunct bundle (ipcInvariant ∧ dualQueueSystemInvariant ∧
-  allPendingMessagesBounded) — preservation theorems deferred to WS-H12e.
+  allPendingMessagesBounded) — preservation theorems implemented in WS-H12e.
 - **Enforcement theorem updates:** Updated `endpointSendDualChecked_flowDenied`
   to require `msg.checkBounds = true` (bounds checks precede flow checks).
   Updated `enforcement_sufficiency_endpointSendDual` to include bounds-error
