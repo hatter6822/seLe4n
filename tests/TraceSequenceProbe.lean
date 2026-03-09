@@ -24,7 +24,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
       cspaceRoot := default, vspaceRoot := default, ipcBuffer := default,
       ipcState := .ready })
   let allEntries := (probeEndpointId, KernelObject.endpoint {
-    state := .idle, queue := [], waitingReceiver := none }) :: threadEntries
+}) :: threadEntries
   { (default : SystemState) with
     objects := Std.HashMap.ofList allEntries
     objectIndex := allEntries.map Prod.fst
@@ -43,12 +43,12 @@ def pickOp (x : Nat) : ProbeOp :=
 def pickThreadId (threadCount : Nat) (x : Nat) : SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofNat ((x % threadCount) + 1)
 
+/-- WS-H12a: Endpoint consistency check using dual-queue fields only.
+An endpoint is consistent if sendQ and receiveQ have matching head/tail emptiness. -/
 def endpointConsistencyHolds (ep : Endpoint) : Bool :=
-  match ep.state, ep.queue.isEmpty, ep.waitingReceiver.isSome with
-  | .idle, true, false => true
-  | .send, false, false => true
-  | .receive, true, true => true
-  | _, _, _ => false
+  -- Head and tail agree on emptiness for both queues
+  (ep.sendQ.head.isNone == ep.sendQ.tail.isNone) &&
+  (ep.receiveQ.head.isNone == ep.receiveQ.tail.isNone)
 
 def probeInvariantObjectIds (threadCount : Nat) : List SeLe4n.ObjId :=
   probeThreadIds threadCount ++ [probeEndpointId]
@@ -66,7 +66,7 @@ def checkEndpointConsistency (st : SystemState) : Except String Unit :=
       if endpointConsistencyHolds ep then
         .ok ()
       else
-        .error s!"endpoint invariant mismatch: state={reprStr ep.state}, queue={reprStr ep.queue}, waitingReceiver={reprStr ep.waitingReceiver}"
+        .error s!"endpoint invariant mismatch: sendQ={reprStr ep.sendQ}, receiveQ={reprStr ep.receiveQ}"
   | some obj => .error s!"probe endpoint object changed unexpectedly: {reprStr obj}"
   | none => .error "probe endpoint object missing"
 

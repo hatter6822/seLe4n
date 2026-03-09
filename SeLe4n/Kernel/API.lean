@@ -44,16 +44,14 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
 | `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (M-08/A-20: `cspaceMint` does not record CDT edges — capabilities created via this path are untracked by CDT-based revocation; prefer `cspaceMintWithCdt` for tracked derivation) |
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
-| `endpointSend`, `endpointReceive`, `endpointAwaitReceive` | IPC (legacy) | Deprecated (WS-G7) |
-| `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
+| `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
 | `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `serviceStart`, `serviceStop`, `serviceRestart` | Service | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
-| `endpointSendChecked` | Info-flow (legacy) | Deprecated (WS-G7) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
 -/

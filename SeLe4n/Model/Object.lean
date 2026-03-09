@@ -128,12 +128,6 @@ structure TCB where
   pendingMessage : Option IpcMessage := none
   deriving Repr, DecidableEq
 
-inductive EndpointState where
-  | idle
-  | send
-  | receive
-  deriving Repr, DecidableEq
-
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
 Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
@@ -145,14 +139,11 @@ structure IntrusiveQueue where
 
 /-- Endpoint object model.
 
-WS-E4/M-01: Dual-queue endpoint semantics are intrusive-list backed.
-`sendQ`/`receiveQ` store queue boundaries, while per-thread links are kept in
-TCBs. Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) remain for
-backward compatibility with prior operations/proofs. -/
+WS-H12a: Endpoint structure uses only intrusive dual-queue fields.
+Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) and the
+`EndpointState` type have been removed — all IPC operations use the O(1)
+dual-queue path (`endpointSendDual`/`endpointReceiveDual`). -/
 structure Endpoint where
-  state : EndpointState
-  queue : List SeLe4n.ThreadId
-  waitingReceiver : Option SeLe4n.ThreadId := none
   sendQ : IntrusiveQueue := {}
   receiveQ : IntrusiveQueue := {}
   deriving Repr, DecidableEq

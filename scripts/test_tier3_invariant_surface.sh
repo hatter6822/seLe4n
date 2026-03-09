@@ -238,11 +238,12 @@ run_check "INVARIANT" rg -n '^theorem not_runnable_membership_of_endpoint_store'
 run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariant st' SeLe4n/Kernel/Capability/Invariant.lean
 
 # M3.5 step-1 state-model anchors must remain present.
+# WS-H12a: waitingReceiver removed from Endpoint (dual-queue uses sendQ/receiveQ).
+# WS-H12a: endpointQueueWellFormed/endpointObjectValid removed (subsumed by dualQueueSystemInvariant).
 run_check "INVARIANT" rg -n '^inductive ThreadIpcState' SeLe4n/Model/Object.lean
 run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object.lean
-run_check "INVARIANT" rg -n '^\s*waitingReceiver\s*:\s*Option SeLe4n\.ThreadId' SeLe4n/Model/Object.lean
-run_check "INVARIANT" rg -n '^def endpointQueueWellFormed' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^def endpointObjectValid' SeLe4n/Kernel/IPC/Invariant.lean
+run_check "INVARIANT" rg -n '^\s*sendQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object.lean
+run_check "INVARIANT" rg -n '^\s*receiveQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object.lean
 
 
 # M4-A step-1 lifecycle metadata anchors must remain present.
@@ -526,9 +527,7 @@ run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTrac
 run_check "INVARIANT" rg -n 'runParameterizedTopologies' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'parameterized topology ok' tests/fixtures/main_trace_smoke.expected
 
-# WS-E1 L-07 structured trace format anchors.
-run_check "TRACE" rg -n 'scenario_id \| risk_class \| expected_fragment' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n '^[A-Z]+-[0-9]+\s+\|' tests/fixtures/main_trace_smoke.expected
+# WS-H12a: L-07 structured trace format anchors removed (scenario_id format retired).
 
 # WS-E1 L-08 theorem-body validation anchors.
 run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hygiene.sh

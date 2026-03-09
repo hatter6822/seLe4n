@@ -18,9 +18,8 @@ inductive TransitionSurface where
   | chooseThread
   | schedule
   | handleYield
-  | endpointSend
-  | endpointAwaitReceive
-  | endpointReceive
+  | endpointSendDual
+  | endpointReceiveDual
   | lifecycleRetype
   deriving Repr, DecidableEq
 
@@ -76,7 +75,7 @@ def assumptionContractMap : ArchAssumption → List ContractRef
 def assumptionTransitionMap : ArchAssumption → List TransitionSurface
   | .deterministicTimerProgress => [.chooseThread, .schedule, .handleYield]
   | .deterministicRegisterContext => [.chooseThread, .schedule, .handleYield]
-  | .memoryAccessSafety => [.endpointSend, .endpointAwaitReceive, .endpointReceive]
+  | .memoryAccessSafety => [.endpointSendDual, .endpointReceiveDual]
   | .bootObjectTyping => [.lifecycleRetype]
   | .irqRoutingTotality => [.handleYield]
 
