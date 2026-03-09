@@ -131,8 +131,11 @@ Phase 2:             WS-H7 ──→ WS-H4, WS-H5, WS-H6  (H7 foundation-first)
 Phase 3:             WS-H6 ──→ WS-H9  (scheduler proofs needed for scheduler NI)
                      WS-H5 ──→ WS-H9  (IPC invariants needed for IPC NI)
                      WS-H8, WS-H9 ──→ WS-H10  (bridge + coverage before model)
-Phase 4:             WS-H7 ──→ WS-H11, WS-H12  (HashMap state needed)
-                     WS-H1 ──→ WS-H12  (IPC bug fix before IPC model enrichment)
+Phase 4:             WS-H7 ──→ WS-H11, WS-H12a  (HashMap state needed)
+                     WS-H1, WS-H5 ──→ WS-H12a  (IPC fix + dual-queue invariant before legacy removal)
+                     WS-H12a ──→ WS-H12b ──→ WS-H12c  (sequential: cleanup → dispatch → context)
+                     WS-H12a ──→ WS-H12d  (parallel with H12b/c: message bounds)
+                     WS-H12b, WS-H12c, WS-H12d ──→ WS-H12e ──→ WS-H12f
 Phase 5:             Independent — can interleave with Phases 2-4
 ```
 
@@ -1053,11 +1056,12 @@ abstract flat-HashMap translation model and real ARM64 hardware requirements.
 
 ---
 
-### WS-H12: Scheduler & IPC Semantic Alignment (HIGH)
+### WS-H12: Scheduler & IPC Semantic Alignment (HIGH) — Refined Breakdown
 
 **Objective:** Align the scheduler and IPC model with real seL4 semantics:
-implement dequeue-on-dispatch scheduling, add per-TCB register context, bound
-IPC message payloads, and establish a legacy-to-dual-queue migration path.
+implement dequeue-on-dispatch scheduling with inline context save/restore,
+bound IPC message payloads, and complete the legacy-to-dual-queue migration by
+removing all deprecated endpoint fields and operations.
 
 **Entry criteria:** WS-H1 completed (IPC bug fix), WS-H7 completed (state field
 migration). Phase 2 completed.
@@ -1075,72 +1079,682 @@ migration). Phase 2 completed.
 - **A-25** (MEDIUM): Legacy O(n) IPC operations retained without deprecation or
   migration path documentation.
 
+**Rationale for refined decomposition:** The original 17-deliverable monolithic
+workstream touches scheduler invariants, IPC invariants, model structures, and
+information-flow projections simultaneously. A single change that inverts a core
+scheduler invariant while also removing legacy IPC fields creates an
+un-bisectable proof failure surface. The refined breakdown below sequences each
+concern so that at every sub-workstream boundary the kernel builds with zero
+sorry and `test_full.sh` passes, enabling independent review, revert, and
+bisection.
+
+**Execution order:** WS-H12a → WS-H12b → WS-H12c → WS-H12d → WS-H12e → WS-H12f
+
+---
+
+#### WS-H12a: Legacy Endpoint Field & Operation Removal (A-08/M-01/A-25)
+
+**Objective:** Remove the deprecated WS-E3 legacy fields (`state`, `queue`,
+`waitingReceiver`) from the `Endpoint` structure and delete all legacy O(n) IPC
+operations and their associated invariant proofs. This is sequenced first because
+it eliminates ~60 theorems and 3 deprecated operations that would otherwise need
+to be re-proved when subsequent sub-workstreams change scheduler invariants.
+
+**Findings addressed:** A-08, M-01, A-25
+
 **Deliverables:**
 
-*Part A — Dequeue-on-dispatch (H-04):*
-1. Modify `schedule` to dequeue the selected thread from the run queue upon
-   dispatch (set as `currentThread` but remove from `runnable`).
-2. Add re-enqueue logic to `timerTick` (preemption), `handleYield`, and IPC
-   blocking operations — when the current thread is preempted or blocks, it is
-   re-enqueued in the appropriate position.
-3. Update `schedulerInvariantBundle` to reflect the new invariant:
-   `currentThread ∉ runnable` (the inverse of the current invariant).
-4. Re-prove all scheduler preservation theorems.
-5. Re-prove IPC invariants that depend on scheduler membership predicates
-   (e.g., `runnableThreadIpcReady`).
+*Part 1 — Remove legacy Endpoint fields from the model:*
+1. Delete the `EndpointState` inductive type (`.idle`, `.send`, `.receive`)
+   from `Model/Object.lean` (lines 131-135). This type exists solely to
+   support the legacy three-state endpoint model.
+2. Remove the three legacy fields from the `Endpoint` structure
+   (`Model/Object.lean` lines 152-158):
+   - `state : EndpointState` — delete
+   - `queue : List SeLe4n.ThreadId` — delete
+   - `waitingReceiver : Option SeLe4n.ThreadId` — delete
+   The structure retains only `sendQ : IntrusiveQueue` and
+   `receiveQ : IntrusiveQueue`.
+3. Update all `Endpoint` construction sites across the codebase to remove
+   the deleted fields. Affected files:
+   - `SeLe4n/Kernel/IPC/Operations.lean` — endpoint construction in legacy ops
+     (will be deleted in Part 2)
+   - `SeLe4n/Testing/MainTraceHarness.lean` — fixture endpoint creation
+   - `tests/NegativeStateSuite.lean` — test endpoint construction
+   - `tests/InformationFlowSuite.lean` — test endpoint construction
+   - Any other file that constructs an `Endpoint` value
+4. Fix all pattern matches and field accesses (`ep.state`, `ep.queue`,
+   `ep.waitingReceiver`) that no longer compile. Exhaustive match compilation
+   will guide this.
 
-*Part B — Per-TCB register context (H-03):*
-6. Add `registerContext : RegisterFile` field to the `TCB` structure, where
-   `RegisterFile` is a fixed-size array of register values matching the ARM64
-   general-purpose register set (x0-x30, sp, pc, pstate).
-7. Add `saveContext` and `restoreContext` helpers that transfer between the
-   `MachineState` register file and the per-TCB context.
-8. Wire `saveContext`/`restoreContext` into the `schedule` transition: save the
-   outgoing thread's registers, restore the incoming thread's registers.
-9. Update the projection to include per-TCB register context in the observable
-   state (filtered by domain).
+*Part 2 — Delete legacy IPC operations:*
+5. Delete the three deprecated O(n) IPC operations from
+   `SeLe4n/Kernel/IPC/Operations.lean`:
+   - `endpointSend` (lines 96-129)
+   - `endpointAwaitReceive` (lines 140-157)
+   - `endpointReceive` (lines 168-189)
+   These are fully superseded by `endpointSendDual`/`endpointReceiveDual`
+   in `IPC/DualQueue.lean` (WS-E4/WS-G7). Production trace code
+   (`MainTraceHarness.lean`) already uses exclusively dual-queue operations.
+6. Delete `endpointSendChecked` from
+   `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (line 47-55) — the legacy
+   information-flow wrapper over `endpointSend`. The modern
+   `endpointSendDualChecked` (line 68+) is the sole enforcement path.
+7. Remove the legacy operation entries from the `KernelOperation` inductive
+   type in `SeLe4n/Kernel/Architecture/Assumptions.lean` (lines 21-23):
+   `endpointSend`, `endpointAwaitReceive`, `endpointReceive`. Update any
+   exhaustive matches on `KernelOperation`.
+8. Remove the deprecated entries from the API stability table in
+   `SeLe4n/Kernel/API.lean` (line 47, line 56).
 
-*Part C — IPC message bounds (A-09):*
-10. Replace `IpcMessage.registers : List Nat` with a bounded type:
-    `registers : Array Nat` with a `registers.size ≤ maxMessageRegisters` guard
-    (seL4 uses 120 message registers in standard configurations).
-11. Replace `IpcMessage.caps : List Capability` with a bounded type:
-    `caps : Array Capability` with `caps.size ≤ maxExtraCaps` guard
-    (seL4 uses 3 extra capability slots).
-12. Add the bounds as preconditions to IPC send operations. Return error if
-    payload exceeds limits.
-13. Re-prove IPC invariants with bounded message types.
+*Part 3 — Rewrite `endpointInvariant` to reference only dual-queue fields:*
+9. Delete `endpointQueueWellFormed` and `endpointObjectValid` from
+   `SeLe4n/Kernel/IPC/Invariant.lean` (lines 71-83). These predicates check
+   `ep.state`, `ep.queue`, and `ep.waitingReceiver` — fields that no longer
+   exist.
+10. Redefine `endpointInvariant` to compose only dual-queue well-formedness:
+    ```lean
+    def endpointInvariant (epId : ObjId) (st : SystemState) : Prop :=
+      dualQueueEndpointWellFormed epId st
+    ```
+    This makes the intrusive-queue structural invariant (`sendQ`/`receiveQ`
+    head/tail consistency, TCB link integrity) the sole endpoint correctness
+    predicate.
+11. Update `ipcInvariant` (lines 164-166) to use the new `endpointInvariant`
+    signature. Since `endpointInvariant` now takes `(epId : ObjId)` and
+    `(st : SystemState)` (to access TCB links), the quantifier changes from
+    `∀ ep, ... → endpointInvariant ep` to
+    `∀ epId, ... → endpointInvariant epId st`.
+12. Delete all legacy-only preservation theorems from
+    `SeLe4n/Kernel/IPC/Invariant.lean`. These theorems prove invariant
+    preservation for the deleted legacy operations and reference deleted
+    fields. Identified theorems to delete (~26):
+    - `endpointObjectValid_of_queueWellFormed`
+    - `endpointSend_ok_implies_endpoint_object`
+    - `endpointAwaitReceive_ok_implies_endpoint_object`
+    - `endpointReceive_ok_implies_endpoint_object`
+    - `endpointSend_result_wellFormed`
+    - `endpointAwaitReceive_result_wellFormed`
+    - `endpointReceive_result_wellFormed`
+    - `endpointSend_preserves_cnode` / `_notification` / `_other_endpoint`
+    - `endpointAwaitReceive_preserves_cnode` / `_notification` / `_other_endpoint`
+    - `endpointReceive_preserves_cnode` / `_notification` / `_other_endpoint`
+    - `endpointSend_preserves_ipcInvariant`
+    - `endpointAwaitReceive_preserves_ipcInvariant`
+    - `endpointReceive_preserves_ipcInvariant`
+    - `endpointSend_preserves_schedulerInvariantBundle`
+    - `endpointAwaitReceive_preserves_schedulerInvariantBundle`
+    - `endpointReceive_preserves_schedulerInvariantBundle`
+    - `endpointSend_preserves_ipcSchedulerContractPredicates`
+    - `endpointAwaitReceive_preserves_ipcSchedulerContractPredicates`
+    - `endpointReceive_preserves_ipcSchedulerContractPredicates`
+    - `endpointAwaitReceive_preserves_runnableThreadIpcReady`
+    - `endpointAwaitReceive_preserves_blockedOnSendNotRunnable`
+    - `endpointAwaitReceive_preserves_blockedOnReceiveNotRunnable`
+    - `endpointAwaitReceive_preserves_dualQueueSystemInvariant`
+    - Any remaining lemmas solely supporting the above
+13. Delete legacy preservation theorems from
+    `SeLe4n/Kernel/Capability/Invariant.lean`:
+    - `endpointSend_preserves_capabilityInvariantBundle` (line 2367)
+    - `endpointAwaitReceive_preserves_capabilityInvariantBundle` (line 2421)
+    - `endpointReceive_preserves_capabilityInvariantBundle` (line 2451)
+    - `endpointSend_preserves_coreIpcInvariantBundle` (line 2486)
+    - `endpointAwaitReceive_preserves_coreIpcInvariantBundle` (line 2499)
+    - `endpointReceive_preserves_coreIpcInvariantBundle` (line 2512)
+    - `endpointSend_preserves_ipcSchedulerCouplingInvariantBundle` (line 2525)
+14. Delete legacy non-interference theorems from
+    `SeLe4n/Kernel/InformationFlow/Invariant.lean`:
+    - `endpointSend_projection_preserved` (line 489)
+    - `endpointSend_preserves_lowEquivalent` (line 556)
+    - `endpointSendChecked_NI` (line 1222)
+15. Delete the `endpointSendChecked_eq_endpointSend_when_allowed` theorem
+    from `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (line 124).
 
-*Part D — Legacy endpoint cleanup (A-08/M-01/A-25):*
-14. Remove legacy endpoint fields (`state`, `queue`, `waitingReceiver`) from the
-    `Endpoint` structure. The dual-queue representation (`sendQ`, `receiveQ`) is
-    the sole IPC data path after WS-H1/H5.
-15. Remove legacy IPC operations from `IPC/Operations.lean` or mark as deprecated
-    with `@[deprecated]` annotation.
-16. Update `endpointInvariant` to only reference dual-queue fields (removing the
-    legacy-only predicates that C-04/A-22 identified as incomplete).
-17. Document the migration in `CHANGELOG.md`: legacy operations are deprecated
-    in favor of dual-queue operations as of this workstream.
+*Part 4 — Update dual-queue invariant proofs for new `endpointInvariant`:*
+16. Update all existing `*_preserves_ipcInvariant` theorems for dual-queue
+    operations (`endpointQueuePopHead`, `endpointQueueEnqueue`,
+    `endpointQueueRemoveDual`, `endpointSendDual`, `endpointReceiveDual`,
+    `endpointReply`, `endpointReplyRecv`, `notificationSignal`,
+    `notificationWait`) to use the new `endpointInvariant` definition.
+    Since the new definition delegates to `dualQueueEndpointWellFormed`,
+    these proofs should simplify — the prior proofs already showed that
+    dual-queue operations preserve legacy fields unchanged (comments at
+    lines 1989-1991, 3079-3081 of `IPC/Invariant.lean`), which is now moot.
+17. Verify that `ipcInvariantFull` (line 170-171) still composes correctly
+    with the redefined `ipcInvariant`. Since `ipcInvariantFull` is
+    `ipcInvariant ∧ dualQueueSystemInvariant`, and the new `ipcInvariant`
+    subsumes `dualQueueEndpointWellFormed`, evaluate whether
+    `ipcInvariantFull` should be simplified to avoid redundancy.
+
+*Part 5 — Migrate affected tests:*
+18. Rewrite test cases in `tests/NegativeStateSuite.lean` (lines 355, 359,
+    385, 461) to use `endpointReceiveDual` and `endpointSendDual` instead
+    of the deleted legacy operations. Preserve the negative-test intent
+    (testing error paths).
+19. Rewrite test cases in `tests/InformationFlowSuite.lean` (lines 239-254,
+    403-411) to use `endpointSendDualChecked` instead of the deleted
+    `endpointSendChecked` and `endpointSend`. The dual-queue information-flow
+    path is `endpointSendDualChecked` (already defined).
+20. Update `tests/fixtures/main_trace_smoke.expected` if endpoint creation
+    output changes due to removed fields.
 
 **Files modified:**
-- `SeLe4n/Kernel/Scheduler/Operations.lean` — dequeue-on-dispatch
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` — updated invariants
-- `SeLe4n/Model/Object.lean` — TCB register context, IpcMessage bounds, Endpoint cleanup
-- `SeLe4n/Machine.lean` — `RegisterFile` type
-- `SeLe4n/Kernel/IPC/Operations.lean` — legacy deprecation
-- `SeLe4n/Kernel/IPC/DualQueue.lean` — bounded message handling
-- `SeLe4n/Kernel/IPC/Invariant.lean` — updated invariants
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` — register context projection
+- `SeLe4n/Model/Object.lean` — Endpoint structure, EndpointState deletion
+- `SeLe4n/Kernel/IPC/Operations.lean` — legacy operation deletion
+- `SeLe4n/Kernel/IPC/Invariant.lean` — endpointInvariant rewrite, theorem deletion
+- `SeLe4n/Kernel/Capability/Invariant.lean` — legacy theorem deletion
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` — legacy wrapper deletion
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` — legacy NI theorem deletion
+- `SeLe4n/Kernel/Architecture/Assumptions.lean` — KernelOperation cleanup
+- `SeLe4n/Kernel/API.lean` — stability table update
+- `SeLe4n/Testing/MainTraceHarness.lean` — endpoint fixture update
+- `tests/NegativeStateSuite.lean` — test migration
+- `tests/InformationFlowSuite.lean` — test migration
 
 **Exit evidence:**
 - `lake build` passes with zero errors/warnings and zero sorry.
 - `test_full.sh` passes (Tier 0-3).
-- `schedule` dequeues selected thread (verified by trace scenario).
-- `TCB.registerContext` field exists with `saveContext`/`restoreContext` helpers.
-- `IpcMessage.registers.size ≤ maxMessageRegisters` check in send operations.
-- Legacy endpoint fields removed from `Endpoint` structure.
+- `Endpoint` structure contains only `sendQ` and `receiveQ` fields.
+- `EndpointState` type deleted from codebase.
+- No references to `endpointSend`, `endpointAwaitReceive`, `endpointReceive`
+  remain in `.lean` source files.
+- `endpointInvariant` references only dual-queue well-formedness.
+- Grep verification: `grep -r 'endpointSend[^D]' SeLe4n/ tests/` returns
+  zero matches.
 
-**Dependencies:** WS-H1 (IPC fix), WS-H7 (state migration), Phase 2 completed.
+**Dependencies:** WS-H1 (IPC bug fix), WS-H5 (dual-queue invariant).
+
+---
+
+#### WS-H12b: Dequeue-on-Dispatch Scheduler Semantics (H-04)
+
+**Objective:** Invert the scheduler's current-thread membership invariant from
+`current ∈ runnable` to `current ∉ runnable`, matching seL4's dequeue-on-dispatch
+semantics where the running thread is removed from the ready queue at dispatch
+time and re-enqueued only on preemption, yield, or blocking.
+
+**Findings addressed:** H-04
+
+**Deliverables:**
+
+*Part 1 — Core scheduler transition changes:*
+1. Modify `schedule` in `Scheduler/Operations.lean` (line 216-228) to dequeue
+   the selected thread from `runQueue` after validation succeeds and before
+   setting it as `currentThread`. The transition becomes:
+   ```
+   chooseThread → validate membership + domain → runQueue.remove tid →
+   setCurrentThread (some tid)
+   ```
+   The thread is dispatched (set as current) but no longer in the runnable
+   queue, matching seL4's `switchToThread` which calls `tcbSchedDequeue`.
+2. Modify `timerTick` (line 264-287) to re-enqueue the current thread before
+   calling `schedule` when the time-slice expires. On preemption:
+   ```
+   reset timeSlice → runQueue.insert current priority → schedule
+   ```
+   This mirrors seL4's `timerInterrupt` → `rescheduleRequired` →
+   `tcbSchedEnqueue(current)` → `schedule()` path.
+3. Modify `handleYield` (line 232-242) to re-enqueue the current thread at
+   the back of its priority bucket before calling `schedule`:
+   ```
+   runQueue.insert current priority → runQueue.rotateToBack current →
+   schedule
+   ```
+   This mirrors seL4's `handleYield` which calls `tcbSchedDequeue` +
+   `tcbSchedAppend` (append = enqueue at tail).
+4. Modify `switchDomain` (line 305-321) to re-enqueue the current thread (if
+   any) before clearing `current` and advancing the domain schedule. The
+   outgoing thread must return to the runnable pool for its next domain slot.
+
+*Part 2 — Invariant inversion:*
+5. Replace the `queueCurrentConsistent` invariant in
+   `Scheduler/Invariant.lean` (line 30-33):
+   - **Old:** `current = some tid → tid ∈ runnable`
+   - **New:** `current = some tid → tid ∉ runnable`
+   This is the semantic inversion that aligns with seL4.
+6. Verify that `runQueueUnique` (line 43-44) remains unchanged — the
+   dequeued current thread trivially satisfies uniqueness (it's not in the
+   queue at all).
+7. Verify that `currentThreadValid` (line 48-51) remains unchanged — it
+   checks TCB existence in the object store, not run-queue membership.
+8. Verify that `currentThreadInActiveDomain` (line 56-62) remains unchanged
+   — it checks TCB domain, not run-queue membership.
+9. Update `timeSlicePositive` (line 106-110) to exclude the current thread
+   from the "all runnable threads" quantifier (since the current thread is
+   no longer in the runnable set).
+10. Update `edfCurrentHasEarliestDeadline` (line 125-139) — the current
+    thread is compared against runnable threads, which no longer includes
+    itself. Verify the deadline comparison remains meaningful.
+
+*Part 3 — Re-prove scheduler preservation theorems:*
+11. Re-prove `schedule_preserves_queueCurrentConsistent` (line 479-483)
+    with the inverted invariant. The key proof step changes: previously,
+    membership was assumed; now, the `runQueue.remove` call in `schedule`
+    establishes non-membership.
+12. Re-prove `schedule_preserves_runQueueUnique`. After `remove`, the
+    dequeued thread cannot duplicate.
+13. Re-prove `schedule_preserves_currentThreadValid`.
+14. Re-prove `schedule_preserves_currentThreadInActiveDomain`.
+15. Re-prove `schedule_preserves_kernelInvariant` (composes 11-14).
+16. Re-prove `handleYield_preserves_*` (5 theorems). The re-enqueue +
+    schedule sequence must preserve all invariant components.
+17. Re-prove `timerTick_preserves_schedulerInvariantBundleFull`. The
+    preemption path (re-enqueue + schedule) and the non-preemption path
+    (decrement only, current unchanged) both preserve invariants.
+18. Re-prove `switchDomain_preserves_schedulerInvariantBundle`.
+
+*Part 4 — Update cross-subsystem invariant dependencies:*
+19. Update IPC invariant theorems in `IPC/Invariant.lean` that reference
+    `runnableThreadIpcReady` or assume `current ∈ runnable`. The
+    `removeRunnable` helper is unchanged (it removes from the queue), but
+    `ensureRunnable` callers must account for the possibility that the
+    unblocked thread becomes current without being in the queue.
+20. Update capability invariant theorems in `Capability/Invariant.lean` that
+    compose scheduler invariants. These should need only signature updates,
+    not structural proof changes, since capability operations do not modify
+    scheduler membership.
+21. Update service invariant theorems in `Service/Invariant.lean` if any
+    compose `schedulerInvariantBundle`. Service operations do not touch
+    scheduler state, so these should be trivial.
+
+**Files modified:**
+- `SeLe4n/Kernel/Scheduler/Operations.lean` — `schedule`, `timerTick`,
+  `handleYield`, `switchDomain`, all preservation theorems
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` — `queueCurrentConsistent` inversion,
+  `timeSlicePositive`, `edfCurrentHasEarliestDeadline`
+- `SeLe4n/Kernel/IPC/Invariant.lean` — cross-subsystem theorem updates
+- `SeLe4n/Kernel/Capability/Invariant.lean` — composition updates
+- `SeLe4n/Kernel/Service/Invariant.lean` — composition updates (if applicable)
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- `queueCurrentConsistent` states `current = some tid → tid ∉ runnable`.
+- Trace scenario: after `schedule`, the dispatched thread is absent from
+  `runQueue.toList` but present as `scheduler.current`.
+- After `timerTick` preemption, the preempted thread reappears in
+  `runQueue.toList`.
+
+**Dependencies:** WS-H12a (legacy cleanup — eliminates ~60 dead theorems that
+would otherwise need re-proving under the inverted invariant).
+
+---
+
+#### WS-H12c: Per-TCB Register Context with Inline Context Switch (H-03)
+
+**Objective:** Add a per-TCB register save area (`registerContext`) and implement
+context save/restore directly inline within the `schedule` transition, so that
+dispatching a new thread atomically saves the outgoing thread's registers and
+restores the incoming thread's registers in a single pure-functional state step.
+
+**Design rationale — inline over separate helpers:** The context switch is
+implemented directly inside `schedule` rather than as separate `saveContext`/
+`restoreContext` helper functions called before and after `schedule`. This
+matches seL4's `switchToThread` design where the context switch is an integral
+part of thread dispatch, not a caller responsibility. Inlining ensures:
+(a) no caller can forget to save/restore, (b) the invariant
+"MachineState.regs = currentThread.registerContext" is established atomically
+by `schedule` itself, and (c) preservation proofs compose locally within the
+single transition rather than requiring cross-call composition.
+
+**Findings addressed:** H-03
+
+**Deliverables:**
+
+*Part 1 — TCB register context field:*
+1. Add `registerContext : RegisterFile := default` to the `TCB` structure in
+   `Model/Object.lean` (after line 128). The `RegisterFile` type already
+   exists in `Machine.lean` (line 32-35) with `pc`, `sp`, and `gpr` fields.
+   Default is zero-initialized (`Inhabited RegisterFile` instance at line 37).
+2. Update all TCB construction sites to include the new field (or rely on
+   the `default` value). Affected files:
+   - `SeLe4n/Testing/MainTraceHarness.lean` — fixture TCB creation
+   - `tests/NegativeStateSuite.lean` — test TCB construction
+   - Any other file that constructs a `TCB` value
+
+*Part 2 — Inline context switch in `schedule`:*
+3. Modify `schedule` in `Scheduler/Operations.lean` to perform inline context
+   save/restore as part of the dispatch transition. The updated transition:
+   ```
+   chooseThread → validate → dequeue (WS-H12b) →
+   save outgoing: if current = some outTid, store machine.regs into
+                  outTid.tcb.registerContext →
+   restore incoming: load inTid.tcb.registerContext into machine.regs →
+   setCurrentThread (some inTid)
+   ```
+   When `current = none` (no outgoing thread), the save step is skipped.
+   When `chooseThread` returns `none` (no eligible thread), both save and
+   restore are skipped and `current` is set to `none`.
+4. The save operation is a `storeObject` call that updates the outgoing TCB's
+   `registerContext` field:
+   ```lean
+   let outTcb' := { outTcb with registerContext := st.machine.regs }
+   storeObject outTid.toObjId (.tcb outTcb') st
+   ```
+5. The restore operation updates `MachineState.regs` from the incoming TCB:
+   ```lean
+   { st with machine := { st.machine with regs := inTcb.registerContext } }
+   ```
+6. Add the invariant `contextMatchesCurrent` to `Scheduler/Invariant.lean`:
+   ```lean
+   def contextMatchesCurrent (st : SystemState) : Prop :=
+     match st.scheduler.current with
+     | some tid =>
+         match st.objects[tid.toObjId]? with
+         | some (.tcb tcb) => st.machine.regs = tcb.registerContext
+         | _ => True
+     | none => True
+   ```
+   This states: when a thread is current, the machine's register file
+   matches that thread's saved context. Established by the restore step in
+   `schedule`.
+7. Prove `schedule_preserves_contextMatchesCurrent`. The proof follows
+   directly from the inline restore step.
+
+*Part 3 — Update information-flow projection:*
+8. Add per-TCB register context to the `ObservableState` in
+   `InformationFlow/Projection.lean`. The existing `machineRegs` field
+   (line 72) already projects the machine register file gated by current-
+   thread observability. With the inline context switch, this projection
+   remains correct: `machineRegs` reflects the current thread's context
+   because `schedule` synchronizes them.
+9. Verify that `projectState` / `projectStateFast` correctly handle the new
+   TCB field. Since `projectObjects` projects full `KernelObject` values
+   (including TCBs), the `registerContext` field is automatically included
+   in object projections. No additional projection logic is needed — the
+   existing object observability gate provides domain filtering.
+10. Update `projectMachineRegs` documentation to note that the machine
+    register file is guaranteed to equal `currentThread.registerContext`
+    when `contextMatchesCurrent` holds.
+
+*Part 4 — Preservation proofs:*
+11. Prove that `handleYield` preserves `contextMatchesCurrent`. Since
+    `handleYield` calls `schedule` (which re-establishes the invariant),
+    this follows transitively.
+12. Prove that `timerTick` preserves `contextMatchesCurrent`. The preemption
+    path calls `schedule`; the non-preemption path does not change `current`
+    or `machine.regs`, so the invariant holds trivially.
+13. Prove that IPC operations preserve `contextMatchesCurrent`. IPC
+    operations modify TCB IPC state and queue links but do not modify
+    `registerContext` or `machine.regs`. The invariant holds by frame
+    reasoning (fields unchanged → predicate unchanged).
+
+**Files modified:**
+- `SeLe4n/Model/Object.lean` — TCB `registerContext` field
+- `SeLe4n/Kernel/Scheduler/Operations.lean` — inline context switch in
+  `schedule`, preservation proofs
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` — `contextMatchesCurrent` invariant
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` — documentation update
+- `SeLe4n/Testing/MainTraceHarness.lean` — trace verification of context switch
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- `TCB.registerContext` field exists with `RegisterFile` type.
+- `schedule` performs inline save/restore (no separate helper functions).
+- `contextMatchesCurrent` invariant defined and preserved by `schedule`,
+  `handleYield`, `timerTick`.
+- Trace scenario: after `schedule` with a thread switch, `machine.regs`
+  equals the incoming thread's `registerContext`.
+
+**Dependencies:** WS-H12b (dequeue-on-dispatch — `schedule` body is modified
+in H12b; context switch is added on top of the dequeue-on-dispatch version).
+
+---
+
+#### WS-H12d: IPC Message Payload Bounds (A-09)
+
+**Objective:** Replace the unbounded `List` types in `IpcMessage` with bounded
+`Array` types and enforce payload size limits at IPC send boundaries, matching
+seL4's fixed message-register and extra-capability limits.
+
+**Findings addressed:** A-09
+
+**Deliverables:**
+
+*Part 1 — Bounded message type:*
+1. Define message size constants in `Model/Object.lean`:
+   ```lean
+   def maxMessageRegisters : Nat := 120
+   def maxExtraCaps : Nat := 3
+   ```
+   These match seL4's standard configuration (`seL4_MsgMaxLength = 120`,
+   `seL4_MsgMaxExtraCaps = 3`).
+2. Replace `IpcMessage.registers : List Nat` with `registers : Array Nat`.
+3. Replace `IpcMessage.caps : List Capability` with `caps : Array Capability`.
+4. Update `IpcMessage.empty` to use `#[]` (empty array) instead of `[]`.
+5. Update all `IpcMessage` construction sites across the codebase. Affected:
+   - `SeLe4n/Kernel/IPC/DualQueue.lean` — message construction in send/receive
+   - `SeLe4n/Testing/MainTraceHarness.lean` — test message creation
+   - `tests/InformationFlowSuite.lean` — test message creation
+
+*Part 2 — Bounds enforcement at send boundary:*
+6. Add a bounds-check guard to `endpointSendDual` in `IPC/DualQueue.lean`.
+   Before enqueuing or performing a handshake, validate:
+   ```lean
+   if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+   else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+   else <proceed with send>
+   ```
+7. Add `ipcMessageTooLarge` and `ipcMessageTooManyCaps` variants to the
+   `KernelError` type (or reuse an existing error variant if semantically
+   appropriate).
+8. Add the same bounds check to `endpointSendDualChecked` in
+   `InformationFlow/Enforcement.lean`.
+9. Add the same bounds check to `endpointCall` and `endpointReplyRecv` in
+   `IPC/DualQueue.lean` — these also carry message payloads.
+
+*Part 3 — Invariant and proof updates:*
+10. Add `ipcMessageBounded` predicate:
+    ```lean
+    def ipcMessageBounded (msg : IpcMessage) : Prop :=
+      msg.registers.size ≤ maxMessageRegisters ∧
+      msg.caps.size ≤ maxExtraCaps
+    ```
+11. Prove that all IPC send operations produce only bounded messages:
+    `endpointSendDual_message_bounded` — if the operation succeeds, the
+    staged message satisfies `ipcMessageBounded`.
+12. Update IPC invariant preservation theorems to account for the `Array`
+    type change. Since proofs reference `IpcMessage` structurally (not by
+    list length), most updates should be mechanical type changes.
+13. Update `pendingMessage` handling in `storeTcbPendingMessage` and
+    `storeTcbIpcStateAndMessage` — no semantic change, just `List` → `Array`
+    type propagation.
+
+**Files modified:**
+- `SeLe4n/Model/Object.lean` — `IpcMessage` type, size constants
+- `SeLe4n/Kernel/IPC/DualQueue.lean` — bounds checks in send operations
+- `SeLe4n/Kernel/IPC/Invariant.lean` — `ipcMessageBounded` predicate
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` — bounds check in checked send
+- `SeLe4n/Testing/MainTraceHarness.lean` — message fixture update
+- `tests/InformationFlowSuite.lean` — test message update
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes (Tier 0-2).
+- `IpcMessage.registers` has type `Array Nat`.
+- `IpcMessage.caps` has type `Array Capability`.
+- Sending a message with > 120 registers returns `ipcMessageTooLarge` error.
+- Sending a message with > 3 caps returns `ipcMessageTooManyCaps` error.
+- `ipcMessageBounded` predicate defined and proven for send operations.
+
+**Dependencies:** WS-H12a (legacy cleanup — avoids needing to update legacy
+`endpointSend` with bounded types).
+
+---
+
+#### WS-H12e: Cross-Subsystem Invariant Reconciliation
+
+**Objective:** Reconcile all cross-subsystem invariant compositions after the
+changes in WS-H12a–d. Verify that the full invariant bundle (`ipcInvariantFull`,
+`coreIpcInvariantBundle`, `schedulerInvariantBundleFull`, and information-flow
+invariants) composes correctly with the updated definitions.
+
+**Findings addressed:** Systemic — ensures no invariant gaps from H12a–d changes.
+
+**Deliverables:**
+
+1. Verify and re-prove `ipcInvariantFull` (IPC/Invariant.lean line 170-171).
+   After WS-H12a, `ipcInvariant` subsumes `dualQueueEndpointWellFormed`.
+   If `dualQueueSystemInvariant` adds only `tcbQueueLinkIntegrity` beyond
+   per-endpoint well-formedness, simplify `ipcInvariantFull` to avoid
+   redundant sub-proofs.
+2. Re-prove all `*_preserves_ipcInvariantFull` theorems for dual-queue
+   operations. These compose `ipcInvariant` and `dualQueueSystemInvariant`
+   preservation — both of which were updated in WS-H12a.
+3. Re-prove `coreIpcInvariantBundle` compositions in
+   `Capability/Invariant.lean` for dual-queue operations. The bundle
+   composes scheduler + capability + IPC invariants; verify all three
+   components are updated.
+4. Verify `schedulerInvariantBundleFull` in `Scheduler/Invariant.lean`
+   composes correctly with `contextMatchesCurrent` (WS-H12c) and the
+   inverted `queueCurrentConsistent` (WS-H12b). Add
+   `contextMatchesCurrent` to the full bundle if appropriate.
+5. Re-prove information-flow non-interference theorems in
+   `InformationFlow/Invariant.lean` that compose IPC and scheduler
+   invariants. The dual-queue NI theorems (`endpointSendDual_NI`,
+   `endpointSendDualChecked_NI`, etc.) should only need signature updates.
+6. Verify that `schedulerPriorityMatch` (Scheduler/Invariant.lean line
+   172-177) is unaffected by dequeue-on-dispatch. The priority mapping
+   covers run-queue members; the current thread is no longer a member,
+   so the quantifier range shrinks. Verify this is semantically correct.
+
+**Files modified:**
+- `SeLe4n/Kernel/IPC/Invariant.lean` — `ipcInvariantFull` reconciliation
+- `SeLe4n/Kernel/Capability/Invariant.lean` — bundle compositions
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` — full bundle update
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` — NI theorem updates
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- All `*InvariantBundle*` definitions compile and compose.
+- All `*_preserves_*InvariantBundle*` theorems compile.
+- No theorem references deleted definitions from WS-H12a.
+
+**Dependencies:** WS-H12a, WS-H12b, WS-H12c, WS-H12d (all prior sub-workstreams).
+
+---
+
+#### WS-H12f: Test Harness Update & Documentation Sync
+
+**Objective:** Update the executable trace harness, test fixtures, and all
+project documentation to reflect the WS-H12 changes. Verify end-to-end
+correctness through trace scenarios that exercise dequeue-on-dispatch, context
+switching, bounded messages, and dual-queue-only endpoints.
+
+**Findings addressed:** Documentation component of all H12 findings.
+
+**Deliverables:**
+
+*Part 1 — Trace harness updates:*
+1. Add a trace scenario to `SeLe4n/Testing/MainTraceHarness.lean` that
+   demonstrates dequeue-on-dispatch:
+   - Create two runnable threads at different priorities.
+   - Call `schedule` — verify the higher-priority thread becomes `current`
+     and is absent from `runQueue.toList`.
+   - Call `timerTick` until preemption — verify the preempted thread
+     reappears in `runQueue.toList`.
+2. Add a trace scenario demonstrating inline context switch:
+   - Set `machine.regs` to a distinctive register file.
+   - Call `schedule` to switch threads — verify the outgoing thread's
+     `registerContext` was saved and the incoming thread's `registerContext`
+     was restored into `machine.regs`.
+3. Add a trace scenario demonstrating bounded message rejection:
+   - Attempt `endpointSendDual` with > 120 registers — verify error.
+   - Attempt `endpointSendDual` with > 3 caps — verify error.
+   - Attempt `endpointSendDual` with valid payload — verify success.
+4. Update `tests/fixtures/main_trace_smoke.expected` to match all new
+   trace output.
+
+*Part 2 — Documentation sync:*
+5. Update `CHANGELOG.md` with a WS-H12 entry documenting:
+   - Legacy endpoint fields and operations removed (A-08/M-01/A-25)
+   - Dequeue-on-dispatch scheduler semantics (H-04)
+   - Per-TCB register context with inline context switch (H-03)
+   - Bounded IPC message payloads (A-09)
+6. Update `docs/spec/SELE4N_SPEC.md`:
+   - Scheduler section: dequeue-on-dispatch semantics
+   - IPC section: bounded message payloads, dual-queue-only endpoints
+   - TCB section: register context field
+7. Update `docs/DEVELOPMENT.md`:
+   - Migration note: legacy `endpointSend`/`endpointReceive`/
+     `endpointAwaitReceive` deleted — use `endpointSendDual`/
+     `endpointReceiveDual`
+8. Update `docs/CLAIM_EVIDENCE_INDEX.md` if claims about scheduler
+   semantics or IPC invariants change.
+9. Update `docs/codebase_map.json` if file-level descriptions change.
+10. Update affected GitBook chapters:
+    - `docs/gitbook/11-codebase-reference.md` — remove legacy IPC references
+    - `docs/gitbook/12-proof-and-invariant-map.md` — update invariant names
+    - `docs/gitbook/08-kernel-performance-optimization.md` — if applicable
+11. Update `scripts/test_tier3_invariant_surface.sh` to remove anchors for
+    deleted legacy theorems and add anchors for new invariants
+    (`contextMatchesCurrent`, bounded message predicates).
+
+**Files modified:**
+- `SeLe4n/Testing/MainTraceHarness.lean` — new trace scenarios
+- `tests/fixtures/main_trace_smoke.expected` — expected output update
+- `CHANGELOG.md` — WS-H12 entry
+- `docs/spec/SELE4N_SPEC.md` — spec updates
+- `docs/DEVELOPMENT.md` — migration guide
+- `docs/CLAIM_EVIDENCE_INDEX.md` — claim updates
+- `docs/codebase_map.json` — description updates
+- `docs/gitbook/11-codebase-reference.md` — legacy reference removal
+- `docs/gitbook/12-proof-and-invariant-map.md` — invariant map update
+- `scripts/test_tier3_invariant_surface.sh` — anchor updates
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- Trace harness exercises dequeue-on-dispatch, context switch, and bounded
+  messages.
+- `main_trace_smoke.expected` fixture matches `lake exe sele4n` output.
+- All documentation files updated per PR checklist.
+- `scripts/test_tier3_invariant_surface.sh` anchors match current codebase.
+
+**Dependencies:** WS-H12a–e (all implementation sub-workstreams complete).
+
+---
+
+#### WS-H12 Composite Summary
+
+| Sub-workstream | Findings | Estimated Theorems | Risk |
+|----------------|----------|--------------------|------|
+| **WS-H12a** | A-08, M-01, A-25 | -60 (deletion), +10 (migration) | Low — removes dead code |
+| **WS-H12b** | H-04 | ~20 re-proofs | High — invariant inversion |
+| **WS-H12c** | H-03 | ~5 new proofs | Medium — new field + inline logic |
+| **WS-H12d** | A-09 | ~5 updates | Low — mechanical type change |
+| **WS-H12e** | (systemic) | ~15 re-compositions | Medium — cross-cutting |
+| **WS-H12f** | (docs/tests) | 0 | Low — documentation only |
+
+**Total execution order:** H12a → H12b → H12c → H12d → H12e → H12f
+
+**Rationale for ordering:**
+- **H12a first:** Eliminates ~60 dead legacy theorems before the invariant
+  inversion in H12b. Without this, H12b would need to re-prove all 60
+  theorems under the new invariant, only to delete them in H12a — wasted work.
+- **H12b before H12c:** The `schedule` function body changes in H12b
+  (dequeue-on-dispatch). H12c adds inline context switch on top of the H12b
+  version. Reversing this order would require modifying `schedule` twice.
+- **H12d independent of H12b/c:** Message bounds are orthogonal to scheduler
+  changes. Sequenced after H12a (avoids updating deleted legacy operations)
+  but could theoretically run in parallel with H12b/c.
+- **H12e after all implementation:** Cross-subsystem reconciliation requires
+  all individual changes to be in place.
+- **H12f last:** Documentation and test fixtures depend on final behavior.
+
+**Composite dependencies:** WS-H1 (IPC bug fix), WS-H5 (dual-queue invariant),
+WS-H7 (state field migration). Phase 2 completed.
+
+**Composite exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- `Endpoint` structure contains only `sendQ`/`receiveQ`.
+- `schedule` dequeues on dispatch with inline context save/restore.
+- `IpcMessage` payload bounded by `maxMessageRegisters`/`maxExtraCaps`.
+- All invariant bundles compose correctly.
+- Documentation and trace fixtures synchronized.
 
 ---
 
@@ -1571,7 +2185,7 @@ Documentation sync should wait until other workstreams stabilize.
 | Risk | Mitigation |
 |------|------------|
 | WS-H4 capability invariant redesign invalidates many existing proofs | Use incremental approach: add new predicates alongside existing ones, prove preservation, then remove trivial predicates. Never break the build. |
-| WS-H12 dequeue-on-dispatch inverts a core scheduler invariant | Implement behind a feature boundary. Prove the new invariant alongside the old one before removing the old. |
+| WS-H12b dequeue-on-dispatch inverts a core scheduler invariant | Sequenced after WS-H12a (legacy removal) so ~60 dead theorems are deleted before the inversion, avoiding wasted re-proof work. The inverted invariant is proven in isolation within WS-H12b before cross-subsystem reconciliation in WS-H12e. |
 | WS-H9 NI coverage is a large proof surface (~18 new theorems) | Prioritize scheduler NI first (highest security impact). Ship in incremental batches rather than one monolithic PR. |
 | WS-H7 state field migration touches many downstream proofs | Reuse bisimulation bridge pattern from WS-G2. Bridge first, migrate proofs incrementally. |
 | WS-H1 introduces a new IPC state variant affecting all pattern matches | Lean 4's exhaustive match checking will identify all affected locations. Mechanical update. |
