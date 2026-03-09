@@ -50,6 +50,10 @@ def endpointSendDualChecked
     (sender : SeLe4n.ThreadId)
     (msg : IpcMessage := IpcMessage.empty) : Kernel Unit :=
   fun st =>
+    -- WS-H12d/A-09: Enforce message payload bounds before flow check
+    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
+    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
+    else
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     if securityFlowsTo senderLabel endpointLabel then
@@ -111,21 +115,36 @@ theorem endpointSendDualChecked_eq_endpointSendDual_when_allowed
     endpointSendDualChecked ctx endpointId sender msg st =
       endpointSendDual endpointId sender msg st := by
   unfold endpointSendDualChecked
-  simp [hFlow]
+  -- WS-H12d: Bounds checks are first; when both fail, we reach the flow check
+  -- which succeeds (hFlow), delegating to endpointSendDual unchanged
+  simp only []
+  split
+  · -- bounds1 fails: LHS = .error .ipcMessageTooLarge
+    -- But endpointSendDual also checks bounds, producing the same error
+    unfold endpointSendDual; simp [*]
+  · split
+    · unfold endpointSendDual; simp [*]
+    · simp
 
-/-- WS-G7: When the policy denies flow, the dual-queue checked send returns
-`flowDenied` without modifying state. -/
+/-- WS-G7/WS-H12d: When the policy denies flow and the message is within bounds,
+the dual-queue checked send returns `flowDenied` without modifying state.
+WS-H12d: Bounds checks precede the flow check, so the theorem requires
+`msg.checkBounds = true` to guarantee the flow-denied path is reached. -/
 theorem endpointSendDualChecked_flowDenied
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (st : SystemState)
+    (hBounds : msg.checkBounds = true)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
     endpointSendDualChecked ctx endpointId sender msg st =
       .error .flowDenied := by
   unfold endpointSendDualChecked
+  have ⟨hR, hC⟩ := (IpcMessage.checkBounds_iff_bounded msg).mp hBounds
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from Nat.not_lt.mpr hR, ite_false]
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from Nat.not_lt.mpr hC, ite_false]
   simp [hDeny]
 
 /-- When the policy allows flow, the checked mint behaves identically to the
@@ -249,7 +268,9 @@ def enforcementBoundary : List EnforcementClass :=
 -- WS-E5/M-07: Denied-preserves-state theorems
 -- ============================================================================
 
-/-- When the policy denies flow, `endpointSendDualChecked` produces no state change. -/
+/-- When the policy denies flow, `endpointSendDualChecked` produces no state change.
+WS-H12d: Bounds checks precede the flow check but also produce errors, so the
+conclusion ¬∃ st' still holds unconditionally. -/
 theorem endpointSendDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
@@ -257,7 +278,13 @@ theorem endpointSendDualChecked_denied_preserves_state
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ st', endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st') := by
   intro ⟨st', h⟩
-  simp [endpointSendDualChecked, hDeny] at h
+  unfold endpointSendDualChecked at h
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict h : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro hc; simp [hc] at h, ↓reduceIte] at h
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro hc; simp [hc] at h, ↓reduceIte] at h
+  simp [hDeny] at h
 
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
@@ -286,17 +313,28 @@ theorem serviceRestartChecked_denied_preserves_state
 -- WS-E5/M-07: Enforcement sufficiency theorems (complete disjunction)
 -- ============================================================================
 
-/-- `endpointSendDualChecked` either delegates to unchecked or returns `flowDenied`. -/
+/-- WS-H12d: `endpointSendDualChecked` either returns a bounds error,
+delegates to unchecked (when flow allowed), or returns `flowDenied` (when denied).
+This is the complete disjunction of enforcement outcomes. -/
 theorem enforcement_sufficiency_endpointSendDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState) :
+    (msg.registers.size > maxMessageRegisters ∧
+       endpointSendDualChecked ctx endpointId sender msg st = .error .ipcMessageTooLarge) ∨
+    (msg.caps.size > maxExtraCaps ∧
+       endpointSendDualChecked ctx endpointId sender msg st = .error .ipcMessageTooManyCaps) ∨
     (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true ∧
        endpointSendDualChecked ctx endpointId sender msg st = endpointSendDual endpointId sender msg st) ∨
     (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = false ∧
        endpointSendDualChecked ctx endpointId sender msg st = .error .flowDenied) := by
-  cases hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
-  | true => left; exact ⟨rfl, by simp [endpointSendDualChecked, hFlow]⟩
-  | false => right; exact ⟨rfl, by simp [endpointSendDualChecked, hFlow]⟩
+  unfold endpointSendDualChecked endpointSendDual
+  by_cases hR : maxMessageRegisters < msg.registers.size
+  · left; exact ⟨hR, by simp [hR]⟩
+  · by_cases hC : maxExtraCaps < msg.caps.size
+    · right; left; exact ⟨hC, by simp [hR, hC]⟩
+    · cases hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
+      | true => right; right; left; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
+      | false => right; right; right; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
 
 /-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
@@ -684,11 +722,15 @@ theorem enforcementSoundness_endpointSendDualChecked
     (msg : IpcMessage) (st st' : SystemState)
     (hStep : endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st')) :
     securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
+  unfold endpointSendDualChecked at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases h : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
   | true => rfl
-  | false =>
-    have := endpointSendDualChecked_flowDenied ctx endpointId sender msg st h
-    rw [this] at hStep; simp at hStep
+  | false => simp [h] at hStep
 
 /-- WS-H8/A-35: Enforcement soundness for notificationSignalChecked. -/
 theorem enforcementSoundness_notificationSignalChecked

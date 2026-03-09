@@ -56,18 +56,50 @@ def hasRight (cap : Capability) (right : AccessRight) : Bool :=
 
 end Capability
 
+/-- WS-H12d/A-09: Maximum number of message registers per IPC message.
+Matches seL4's `seL4_MsgMaxLength` (120 words). -/
+def maxMessageRegisters : Nat := 120
+
+/-- WS-H12d/A-09: Maximum number of extra capabilities per IPC message.
+Matches seL4's `seL4_MsgMaxExtraCaps` (3 extra caps). -/
+def maxExtraCaps : Nat := 3
+
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
-Models seL4 message registers plus optional capability transfer and sender badge. -/
+Models seL4 message registers plus optional capability transfer and sender badge.
+WS-H12d/A-09: Registers and caps are bounded `Array` types matching seL4's
+`seL4_MsgMaxLength` (120) and `seL4_MsgMaxExtraCaps` (3). Bounds are enforced
+at IPC send boundaries. -/
 structure IpcMessage where
-  registers : List Nat
-  caps : List Capability := []
+  registers : Array Nat
+  caps : Array Capability := #[]
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 namespace IpcMessage
 
-def empty : IpcMessage := { registers := [], caps := [], badge := none }
+def empty : IpcMessage := { registers := #[], caps := #[], badge := none }
+
+/-- WS-H12d/A-09: Predicate asserting that a message's payload respects
+seL4 message-register and extra-capability bounds. -/
+def bounded (msg : IpcMessage) : Prop :=
+  msg.registers.size ≤ maxMessageRegisters ∧
+  msg.caps.size ≤ maxExtraCaps
+
+/-- WS-H12d/A-09: Decidable bounds check for runtime enforcement at IPC
+send boundaries. Returns `true` iff the message satisfies payload bounds. -/
+def checkBounds (msg : IpcMessage) : Bool :=
+  msg.registers.size ≤ maxMessageRegisters &&
+  msg.caps.size ≤ maxExtraCaps
+
+theorem empty_bounded : IpcMessage.empty.bounded := by
+  unfold bounded empty maxMessageRegisters maxExtraCaps
+  simp [Array.size]
+
+theorem checkBounds_iff_bounded (msg : IpcMessage) :
+    msg.checkBounds = true ↔ msg.bounded := by
+  unfold checkBounds bounded maxMessageRegisters maxExtraCaps
+  simp [Bool.and_eq_true]
 
 end IpcMessage
 

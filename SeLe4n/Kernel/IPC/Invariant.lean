@@ -163,6 +163,16 @@ per-endpoint `dualQueueEndpointWellFormed` and system-wide
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st
 
+/-- WS-H12d/A-09: All pending IPC messages stored in TCBs satisfy payload bounds.
+This is a system-level invariant maintained by the bounds checks at every IPC
+send boundary (`endpointSendDual`, `endpointCall`, `endpointReply`,
+`endpointReplyRecv`). -/
+def allPendingMessagesBounded (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.pendingMessage = some msg →
+    msg.bounded
+
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
 -- ============================================================================
@@ -550,6 +560,11 @@ theorem endpointReply_preserves_schedulerInvariantBundle
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReply at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -665,6 +680,11 @@ theorem endpointReply_preserves_ipcInvariant
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointReply at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -874,6 +894,11 @@ theorem endpointSendDual_preserves_ipcInvariant
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointSendDual at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -910,6 +935,62 @@ theorem endpointSendDual_preserves_ipcInvariant
             have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st1 st2 sender (.blockedOnSend endpointId) (some msg) hInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn (by rwa [removeRunnable_preserves_objects] at h)
 
+/-- WS-H12d/A-09: If `endpointSendDual` succeeds, the message satisfies payload bounds.
+The bounds check at the top of `endpointSendDual` ensures that only bounded
+messages pass through to the state-modifying paths. -/
+theorem endpointSendDual_message_bounded
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    msg.bounded := by
+  unfold endpointSendDual at hStep
+  -- If bounds checks fail, hStep contradicts .ok
+  by_cases hR : maxMessageRegisters < msg.registers.size
+  · simp [hR] at hStep
+  · by_cases hC : maxExtraCaps < msg.caps.size
+    · simp [hR, hC] at hStep
+    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+
+/-- WS-H12d/A-09: If `endpointCall` succeeds, the message satisfies payload bounds. -/
+theorem endpointCall_message_bounded
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    msg.bounded := by
+  unfold endpointCall at hStep
+  by_cases hR : maxMessageRegisters < msg.registers.size
+  · simp [hR] at hStep
+  · by_cases hC : maxExtraCaps < msg.caps.size
+    · simp [hR, hC] at hStep
+    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+
+/-- WS-H12d/A-09: If `endpointReply` succeeds, the reply message satisfies payload bounds. -/
+theorem endpointReply_message_bounded
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    msg.bounded := by
+  unfold endpointReply at hStep
+  by_cases hR : maxMessageRegisters < msg.registers.size
+  · simp [hR] at hStep
+  · by_cases hC : maxExtraCaps < msg.caps.size
+    · simp [hR, hC] at hStep
+    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+
+/-- WS-H12d/A-09: If `endpointReplyRecv` succeeds, the reply message satisfies payload bounds. -/
+theorem endpointReplyRecv_message_bounded
+    (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    msg.bounded := by
+  unfold endpointReplyRecv at hStep
+  by_cases hR : maxMessageRegisters < msg.registers.size
+  · simp [hR] at hStep
+  · by_cases hC : maxExtraCaps < msg.caps.size
+    · simp [hR, hC] at hStep
+    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+
 /-- WS-F1/TPI-D08: endpointSendDual preserves schedulerInvariantBundle. -/
 theorem endpointSendDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -920,6 +1001,11 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointSendDual at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1027,6 +1113,11 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointSendDual at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1861,6 +1952,11 @@ theorem endpointCall_preserves_ipcInvariant
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointCall at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1914,6 +2010,11 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointCall at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2046,6 +2147,11 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointCall at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2237,6 +2343,11 @@ theorem endpointCall_blocked_stays_blocked
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     caller ∉ st'.scheduler.runnable := by
   unfold endpointCall at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2283,6 +2394,11 @@ theorem endpointReplyRecv_preserves_ipcInvariant
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointReplyRecv at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2339,6 +2455,11 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReplyRecv at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2442,6 +2563,11 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointReplyRecv at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2552,6 +2678,11 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
   unfold endpointReply at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -3842,6 +3973,11 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   unfold endpointReply at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -4779,6 +4915,11 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointSendDual at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -4950,6 +5091,11 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
           ep'.sendQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointReplyRecv at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -5044,6 +5190,11 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointCall at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>

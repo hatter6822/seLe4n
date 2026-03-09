@@ -1,3 +1,44 @@
+## [0.14.1] - 2026-03-09
+
+### WS-H12d: IPC Message Payload Bounds
+
+- **Bounded IPC message type:** Replaced unbounded `List Nat` / `List Capability`
+  in `IpcMessage` with bounded `Array Nat` / `Array Capability`, matching seL4's
+  `seL4_MsgMaxLength` (120) and `seL4_MsgMaxExtraCaps` (3) limits.
+- **Message size constants:** Added `maxMessageRegisters` (120) and `maxExtraCaps`
+  (3) to `Model/Object.lean`, matching seL4's standard configuration.
+- **Bounds enforcement at send boundaries:** All four IPC send operations
+  (`endpointSendDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`)
+  and the policy-checked `endpointSendDualChecked` now validate payload size
+  before proceeding. Oversized payloads return `ipcMessageTooLarge` or
+  `ipcMessageTooManyCaps` errors.
+- **New error variants:** Added `KernelError.ipcMessageTooLarge` and
+  `KernelError.ipcMessageTooManyCaps` for bounds violation reporting.
+- **`IpcMessage.bounded` predicate:** Formal proposition asserting registers
+  and caps satisfy seL4 bounds. `IpcMessage.checkBounds` provides decidable
+  runtime checking. `checkBounds_iff_bounded` bridges the two.
+- **Send-produces-bounded-message theorems:** Proved `endpointSendDual_message_bounded`,
+  `endpointCall_message_bounded`, `endpointReply_message_bounded`, and
+  `endpointReplyRecv_message_bounded` — if the operation succeeds, the message
+  satisfies `IpcMessage.bounded`.
+- **`allPendingMessagesBounded` system invariant:** Added to `IPC/Invariant.lean`,
+  asserting all pending messages in TCBs satisfy payload bounds.
+- **Enforcement theorem updates:** Updated `endpointSendDualChecked_flowDenied`
+  to require `msg.checkBounds = true` (bounds checks precede flow checks).
+  Updated `enforcement_sufficiency_endpointSendDual` to include bounds-error
+  cases in the complete disjunction. Updated `enforcementSoundness_endpointSendDualChecked`
+  with bounds-check elimination.
+- **~40 invariant preservation proofs updated:** All IPC/capability/info-flow
+  preservation theorems that unfold send operations now handle the new
+  bounds-check if-branches via contradiction (error ≠ ok).
+- **Trace verification:** Added 5 H12d trace scenarios verifying oversized
+  registers/caps rejection, boundary acceptance, and cross-operation coverage.
+- **Negative tests:** Added 7 negative tests in `NegativeStateSuite` for all
+  four IPC send operations with oversized payloads and boundary-exact messages.
+- **Zero sorry/axiom, zero warnings:** Full production proof surface verified
+  clean. Build produces zero errors and zero warnings.
+- **Finding closed:** A-09 (HIGH, IpcMessage unbounded payload).
+
 ## [0.14.0] - 2026-03-09
 
 ### WS-H12c: Per-TCB Register Context with Inline Context Switch
