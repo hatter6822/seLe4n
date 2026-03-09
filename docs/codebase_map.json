@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/ipc-message-payload-bounds-UE3n0",
-      "commit_sha": "638032a96fc164fcec82f7d583adb87a9c1588e5",
-      "tree_sha": "7d52495279ca5083f91592f7686ff31eba60f9db",
-      "committed_at_utc": "2026-03-09T20:10:04+00:00"
+      "branch": "main",
+      "commit_sha": "928d1e669ca5467fcc5376c2bb4d60704566cb23",
+      "tree_sha": "43cda9a898f7ebe6555af0a51232f54b42b200b3",
+      "committed_at_utc": "2026-03-09T16:26:05-04:00"
     }
   },
   "source_sync": {
