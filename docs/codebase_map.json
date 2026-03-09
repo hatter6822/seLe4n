@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/remove-legacy-endpoints-CUNIf",
-      "commit_sha": "5d88c7cd705f90b68c3b7d431a7fe7f591b8fe65",
-      "tree_sha": "2fb36b033d0c1ee8cd68a5ded3b54200b4ed9f8c",
-      "committed_at_utc": "2026-03-09T04:40:53+00:00"
+      "branch": "main",
+      "commit_sha": "96398336bb794c7d89097ebf95c45f869159db53",
+      "tree_sha": "358e0d93ef38c811e07ee332314b51a893e64e09",
+      "committed_at_utc": "2026-03-09T01:11:39-04:00"
     }
   },
   "source_sync": {
