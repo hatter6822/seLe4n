@@ -45,6 +45,8 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H12e** (v0.14.2) | Cross-subsystem invariant reconciliation: `coreIpcInvariantBundle` upgraded to `ipcInvariantFull`, `schedulerInvariantBundleFull` extended with `contextMatchesCurrent`, `ipcSchedulerCouplingInvariantBundle` extended with register-context and dequeue coherence, `proofLayerInvariantBundle` uses full scheduler bundle, all preservation proofs updated. Closes systemic invariant composition gaps from WS-H12a–d | Completed |
+| **WS-H12d** (v0.14.1) | IPC message payload bounds: `IpcMessage` registers/caps migrated to `Array` with `maxMessageRegisters`(120)/`maxExtraCaps`(3), bounds enforcement at all 4 send boundaries, `allPendingMessagesBounded` system invariant. Closes A-09 | Completed |
 | **WS-H12c** (v0.14.0) | Per-TCB register context with inline context switch: `registerContext` field on TCB, inline `saveOutgoingContext`/`restoreIncomingContext` in `schedule`, `contextMatchesCurrent` invariant with preservation proofs for scheduler and IPC operations, IF projection stripping. Closes H-03 | Completed |
 | **WS-H12b** (v0.13.9) | Dequeue-on-dispatch scheduler semantics: `queueCurrentConsistent` inverted to `current ∉ runnable` matching seL4's `switchToThread`/`tcbSchedDequeue`; schedule/handleYield/timerTick/switchDomain updated; `currentTimeSlicePositive` and `schedulerPriorityMatch` predicates; IPC coherence predicates; ~1800 lines of proofs re-proved. Closes H-04 | Completed |
 | **WS-H12a** (v0.13.8) | Legacy endpoint removal: `EndpointState` deleted, legacy IPC ops removed, ~60 dead theorems cleaned, `endpointReplyRecv` migrated to dual-queue. Closes A-08, M-01, A-25 | Completed |

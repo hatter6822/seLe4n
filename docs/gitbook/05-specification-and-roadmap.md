@@ -13,17 +13,17 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.13.9` |
+| Version | `0.14.2` |
 | Lean toolchain | `4.28.0` |
-| Production LoC | 28,813 across 41 files |
-| Test LoC | 2,265 across 3 suites |
-| Proved declarations | 855 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 30,348 across 41 files |
+| Test LoC | 2,360 across 3 suites |
+| Proved declarations | 920 theorem/lemma declarations (zero sorry/axiom) |
 | Build jobs | 86 |
 | Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| Recently completed | WS-H12c (v0.14.0, per-TCB register context with inline context switch), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
-| Next workstream | WS-H12d–f, H13..H16 (remaining v0.12.15 audit remediation) |
+| Recently completed | WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds), WS-H12c (v0.14.0, per-TCB register context with inline context switch), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
+| Next workstream | WS-H12f, H13..H16 (remaining v0.12.15 audit remediation) |
 | Metrics source of truth | `./scripts/report_current_state.py` |
 
 ## Milestone history
@@ -42,7 +42,40 @@ WS-H10 (security model foundations, v0.13.6) →
 End-to-end codebase audit (v0.13.6) →
 WS-H11 (VSpace & architecture enrichment, v0.13.7) →
 WS-H12a (legacy endpoint removal, v0.13.8) →
-WS-H12b (dequeue-on-dispatch scheduler semantics, v0.13.9).
+WS-H12b (dequeue-on-dispatch scheduler semantics, v0.13.9) →
+WS-H12c (per-TCB register context, v0.14.0) →
+WS-H12d (IPC message payload bounds, v0.14.1) →
+WS-H12e (cross-subsystem invariant reconciliation, v0.14.2).
+
+## Completed: WS-H12e Cross-Subsystem Invariant Reconciliation (v0.14.2)
+
+Reconciled all subsystem invariant compositions after WS-H12a–d changes.
+`coreIpcInvariantBundle` upgraded from `ipcInvariant` to `ipcInvariantFull`
+(3-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded`);
+`schedulerInvariantBundleFull` extended from 4 to 5 conjuncts (+ `contextMatchesCurrent`);
+`ipcSchedulerCouplingInvariantBundle` extended with `contextMatchesCurrent` and
+`currentThreadDequeueCoherent`; `proofLayerInvariantBundle` uses full scheduler bundle;
+8 frame lemmas + 3 compound preservation theorems + 7 composed `ipcInvariantFull`
+preservation theorems; all `*_preserves_schedulerInvariantBundleFull` theorems updated;
+default state proofs extended. Closes systemic invariant composition gaps from WS-H12a–d.
+
+## Completed: WS-H12d IPC Message Payload Bounds (v0.14.1)
+
+`IpcMessage` registers/caps migrated from `List` to `Array` with
+`maxMessageRegisters`(120)/`maxExtraCaps`(3). Bounds enforcement at all 4 send
+boundaries (`endpointSendDual`/`endpointCall`/`endpointReply`/`endpointReplyRecv`).
+4 `*_message_bounded` theorems. `allPendingMessagesBounded` system invariant
+integrated into `ipcInvariantFull` 3-conjunct bundle. `checkBounds_iff_bounded`
+decidability bridge. Information-flow enforcement updated with bounds-before-flow
+ordering. Closes A-09 (HIGH).
+
+## Completed: WS-H12c Per-TCB Register Context (v0.14.0)
+
+Per-TCB `registerContext` field on TCB with inline `saveOutgoingContext`/
+`restoreIncomingContext` in `schedule`. `contextMatchesCurrent` invariant with
+preservation proofs for all scheduler and IPC operations. Information-flow
+projection strips register context. `endpointInvariant` removed (vacuous since
+WS-H12a). Closes H-03 (HIGH).
 
 ## Completed: WS-H12b Dequeue-on-Dispatch Scheduler Semantics (v0.13.9)
 
