@@ -155,14 +155,6 @@ lives in `dualQueueSystemInvariant`. -/
 def ipcInvariant (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → notificationInvariant ntfn
 
-/-- WS-H12c: Full IPC invariant including system-level dual-queue structural
-well-formedness and TCB link integrity. Dual-queue well-formedness is enforced
-at the system level via `dualQueueSystemInvariant`, which checks both
-per-endpoint `dualQueueEndpointWellFormed` and system-wide
-`tcbQueueLinkIntegrity`. -/
-def ipcInvariantFull (st : SystemState) : Prop :=
-  ipcInvariant st ∧ dualQueueSystemInvariant st
-
 /-- WS-H12d/A-09: All pending IPC messages stored in TCBs satisfy payload bounds.
 This is a system-level invariant maintained by the bounds checks at every IPC
 send boundary (`endpointSendDual`, `endpointCall`, `endpointReply`,
@@ -172,6 +164,16 @@ def allPendingMessagesBounded (st : SystemState) : Prop :=
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.pendingMessage = some msg →
     msg.bounded
+
+/-- Full IPC invariant including system-level dual-queue structural
+well-formedness, TCB link integrity, and message payload bounds.
+WS-H12c: Dual-queue well-formedness is enforced at the system level via
+`dualQueueSystemInvariant` (per-endpoint `dualQueueEndpointWellFormed` +
+system-wide `tcbQueueLinkIntegrity`).
+WS-H12d: `allPendingMessagesBounded` ensures every pending message stored in
+a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds. -/
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)

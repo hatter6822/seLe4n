@@ -22,7 +22,9 @@
   `endpointReplyRecv_message_bounded` — if the operation succeeds, the message
   satisfies `IpcMessage.bounded`.
 - **`allPendingMessagesBounded` system invariant:** Added to `IPC/Invariant.lean`,
-  asserting all pending messages in TCBs satisfy payload bounds.
+  asserting all pending messages in TCBs satisfy payload bounds. Integrated into
+  `ipcInvariantFull` 3-conjunct bundle (ipcInvariant ∧ dualQueueSystemInvariant ∧
+  allPendingMessagesBounded) — preservation theorems deferred to WS-H12e.
 - **Enforcement theorem updates:** Updated `endpointSendDualChecked_flowDenied`
   to require `msg.checkBounds = true` (bounds checks precede flow checks).
   Updated `enforcement_sufficiency_endpointSendDual` to include bounds-error
@@ -33,8 +35,9 @@
   bounds-check if-branches via contradiction (error ≠ ok).
 - **Trace verification:** Added 5 H12d trace scenarios verifying oversized
   registers/caps rejection, boundary acceptance, and cross-operation coverage.
-- **Negative tests:** Added 7 negative tests in `NegativeStateSuite` for all
-  four IPC send operations with oversized payloads and boundary-exact messages.
+- **Negative tests:** Added 10 negative tests in `NegativeStateSuite` for all
+  four IPC send operations with oversized registers and oversized caps, plus
+  boundary-exact message acceptance.
 - **Zero sorry/axiom, zero warnings:** Full production proof surface verified
   clean. Build produces zero errors and zero warnings.
 - **Finding closed:** A-09 (HIGH, IpcMessage unbounded payload).

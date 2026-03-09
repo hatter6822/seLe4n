@@ -124,6 +124,10 @@ Composite preservation (all 6 compound IPC operations):
 
 Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQueueLinks_append_tail_preserves_linkInteg`, `storeTcbQueueLinks_endpoint_backward`.
 
+Bundle level:
+
+- `ipcInvariantFull` (3-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded`, WS-H12c + WS-H12d)
+
 Component level:
 
 - endpoint queue/object validity,

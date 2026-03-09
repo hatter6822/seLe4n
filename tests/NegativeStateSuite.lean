@@ -491,6 +491,17 @@ private def runNegativeChecks : IO Unit := do
       { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
+  -- endpointCall rejects oversized caps
+  expectError "endpointCall rejects oversized caps"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
   -- endpointReply rejects oversized registers
   expectError "endpointReply rejects oversized registers"
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
@@ -498,12 +509,36 @@ private def runNegativeChecks : IO Unit := do
       { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
+  -- endpointReply rejects oversized caps
+  expectError "endpointReply rejects oversized caps"
+    (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
+
   -- endpointReplyRecv rejects oversized registers
   expectError "endpointReplyRecv rejects oversized registers"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
+
+  -- endpointReplyRecv rejects oversized caps
+  expectError "endpointReplyRecv rejects oversized caps"
+    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
+      (SeLe4n.ThreadId.ofNat 2)
+      { registers := #[],
+        caps := #[{ target := .object 1, rights := [] },
+                  { target := .object 2, rights := [] },
+                  { target := .object 3, rights := [] },
+                  { target := .object 4, rights := [] }],
+        badge := none } baseState)
+    .ipcMessageTooManyCaps
 
   -- Boundary message (exactly 120 regs, 3 caps) should NOT be rejected by bounds check
   -- (may still fail due to other reasons like endpoint state)
