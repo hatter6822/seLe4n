@@ -13,12 +13,12 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.14.4` |
+| Version | `0.14.5` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 31,268 across 41 files |
+| Production LoC | 31,295 across 65 files |
 | Test LoC | 2,413 across 3 suites |
 | Proved declarations | 958 theorem/lemma declarations (zero sorry/axiom) |
-| Total declarations | 1,777 across 44 modules |
+| Total declarations | 1,792 across 68 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | Next workstreams | WS-H14..H16, WS-F5..F8 |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
@@ -43,7 +43,10 @@ WS-H12a (legacy endpoint removal, v0.13.8) →
 WS-H12b (dequeue-on-dispatch scheduler semantics, v0.13.9) →
 WS-H12c (per-TCB register context, v0.14.0) →
 WS-H12d (IPC message payload bounds, v0.14.1) →
-WS-H12e (cross-subsystem invariant reconciliation, v0.14.2).
+WS-H12e (cross-subsystem invariant reconciliation, v0.14.2) →
+WS-H12f (test harness & docs sync, v0.14.3) →
+WS-H13 (CSpace/service enrichment, v0.14.4) →
+Module restructuring (24 focused submodules, v0.14.5).
 
 ## Completed: WS-H12e Cross-Subsystem Invariant Reconciliation (v0.14.2)
 
