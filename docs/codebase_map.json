@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/test-harness-documentation-sync-udlO1",
-      "commit_sha": "983039f24b672f77ec603cccfe4933316a76f52b",
-      "tree_sha": "923a8a0fd79d49c45bf2bf8895b20a0f0ab905bb",
-      "committed_at_utc": "2026-03-09T23:09:30+00:00"
+      "branch": "main",
+      "commit_sha": "39b0c272385c41eb518c01eaeb4f6fc765f1fc0e",
+      "tree_sha": "0a575c28d88f4fe0b41dc8a30d2186ab7b42b286",
+      "committed_at_utc": "2026-03-09T20:07:03-04:00"
     }
   },
   "source_sync": {
