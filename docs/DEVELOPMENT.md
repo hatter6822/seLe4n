@@ -54,7 +54,7 @@ for the full execution plan.
 | **WS-H12e** | Cross-subsystem invariant reconciliation | Medium | **Completed** |
 | **WS-H12f** | Test harness update & documentation sync | Medium | **Completed** |
 | **WS-H13** | CSpace/service model enrichment (multi-level resolution, backing-object verification, serviceCountBounded) | Medium | **Completed** |
-| **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low | Planned |
+| **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **Completed** |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low | Planned |
 | **WS-H16** | Testing and documentation expansion | Low | Planned |
 
