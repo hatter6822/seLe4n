@@ -1760,8 +1760,9 @@ WS-H7 (state field migration). Phase 2 completed.
 
 ### WS-H13: CSpace, Lifecycle & Service Model Enrichment (HIGH)
 
-**Objective:** Add multi-level CSpace resolution, atomic capability move,
-service backing-object verification, and establish the `serviceCountBounded`
+**Objective:** Replace single-level CSpace resolution with type-indexed,
+compressed-path multi-level resolution; add atomic capability move; add
+service backing-object verification; establish the `serviceCountBounded`
 invariant.
 
 **Entry criteria:** WS-H4 completed (capability invariant redesign provides the
@@ -1783,23 +1784,155 @@ foundation for multi-level CSpace reasoning). Phase 2 completed.
 
 **Deliverables:**
 
-*Part A — Multi-level CSpace resolution (H-01):*
-1. Implement `cspaceResolvePath` — a recursive resolution function that follows
-   CNode capabilities through multiple levels, with a fuel parameter to bound
-   recursion depth (matching seL4's configurable CSpace depth limit).
-2. At each level, extract the guard and radix bits from the CNode capability,
-   validate the guard match, and use the radix bits to index into the CNode's
-   slot table.
-3. If the resolved capability points to another CNode, recurse with remaining
-   address bits and decremented fuel.
-4. Replace single-level `cspaceLookupSlot` in the API with `cspaceResolvePath`.
-5. Prove `cspaceResolvePath_terminates` — resolution terminates within fuel
-   steps (trivial from fuel parameter).
-6. Prove `cspaceResolvePath_deterministic` — the same path always resolves to
-   the same capability.
-7. Add guard-bit manipulation validation: prove that guard bits are correctly
-   matched during resolution (this is the primary CSpace attack surface in
-   real kernels).
+*Part A — Type-indexed CSpace with compressed-path CNodes (H-01):*
+
+**Design rationale.** seL4 CSpaces are directed acyclic graphs of CNode objects.
+Each CNode edge consumes bits from a capability address: first a *guard prefix*
+(which must match exactly), then *radix bits* (which index into the slot table).
+A CNode with a long guard compresses an entire unbranched region of authority
+space into a single comparison — a Patricia-trie optimisation that avoids chains
+of trivial intermediate CNodes. seLe4n's current model resolves exactly one
+CNode level with no recursion. This workstream replaces it with a multi-level
+resolver that carries an explicit depth bound in the type.
+
+**CNode type change.** The existing flat `CNode` structure is replaced by a
+depth-indexed type `CNode (d : Nat)` where `d` is the maximum remaining
+CSpace depth in bits from this node to any reachable leaf slot:
+
+```lean
+/-- Maximum CSpace address width (matching ARM64 word size). -/
+def maxCSpaceDepth : Nat := 64
+
+/-- Depth-indexed CNode with compressed-path guard.
+    `d` = maximum remaining depth in bits from this node to any leaf.
+    Each resolution step consumes `guardWidth + radixWidth` bits.
+    A large `guardWidth` compresses an unbranched path prefix into
+    a single guard comparison, avoiding chains of intermediate nodes. -/
+structure CNode (d : Nat) where
+  guardWidth : Nat          -- width of guard field in bits
+  guardValue : Nat          -- expected guard value to match
+  radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
+  hConsumed  : guardWidth + radixWidth ≤ d   -- consumed bits fit in remaining depth
+  hProgress  : 0 < guardWidth + radixWidth   -- must consume ≥ 1 bit (ensures termination)
+  slots      : Std.HashMap Slot Capability
+```
+
+The two proof fields are key:
+- `hConsumed` prevents a CNode from consuming more bits than remain.
+- `hProgress` prevents zero-width CNodes that would cause infinite loops.
+
+Together with the depth-consistency invariant (below), these guarantee that
+resolution terminates by structural recursion on the remaining bit count.
+
+**KernelObject update.** CNodes are stored with an existentially packed depth:
+```lean
+inductive KernelObject where
+  | tcb (t : TCB)
+  | endpoint (e : Endpoint)
+  | notification (n : Notification)
+  | cnode (d : Nat) (c : CNode d)   -- depth is part of the constructor
+  | vspaceRoot (v : VSpaceRoot)
+  | untyped (u : UntypedObject)
+```
+
+**Depth-consistency invariant.** A new predicate ensures child CNodes have
+strictly smaller depth than their parents:
+```lean
+def cspaceDepthConsistent (st : SystemState) : Prop :=
+  ∀ (parentId : ObjId) (d : Nat) (cn : CNode d),
+    st.objects[parentId]? = some (.cnode d cn) →
+    ∀ (slot : Slot) (cap : Capability),
+      cn.slots[slot]? = some cap →
+      ∀ (childId : ObjId),
+        cap.target = .object childId →
+        ∀ (d' : Nat) (cn' : CNode d'),
+          st.objects[childId]? = some (.cnode d' cn') →
+          d' ≤ d - (cn.guardWidth + cn.radixWidth)
+```
+This predicate is added to `capabilityInvariantBundle`.
+
+**Multi-level resolution function.** The new `resolveCapAddress` replaces
+single-level `cspaceResolvePath`. It walks the CNode graph, consuming
+`guardWidth + radixWidth` bits per hop:
+
+```lean
+def resolveCapAddress (rootId : ObjId) (addr : CPtr) (bitsRemaining : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  match bitsRemaining with
+  | 0 => .error .depthMismatch        -- no bits to consume
+  | _ + 1 =>
+    match st.objects[rootId]? with
+    | some (.cnode d cn) =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if bitsRemaining < consumed then .error .depthMismatch
+      else
+        -- Shift address right to align the current level's bits
+        let shiftedAddr := addr.toNat >>> (bitsRemaining - consumed)
+        let radixMask := 2 ^ cn.radixWidth
+        let slotIndex := shiftedAddr % radixMask
+        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        if guardExtracted ≠ cn.guardValue then .error .guardMismatch
+        else
+          let slot := Slot.ofNat slotIndex
+          let remaining := bitsRemaining - consumed
+          if remaining = 0 then
+            .ok { cnode := rootId, slot := slot }   -- leaf: all bits consumed
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                resolveCapAddress childId addr remaining st   -- recurse
+              | _ => .error .invalidCapability
+            | none => .error .invalidCapability
+    | _ => .error .objectNotFound
+  termination_by bitsRemaining
+```
+
+Termination is trivially proven: `remaining = bitsRemaining - consumed` where
+`consumed ≥ 1` (from `hProgress`), so `remaining < bitsRemaining`.
+
+**Deliverable list:**
+
+1. Replace `structure CNode` in `Model/Object.lean` with `structure CNode (d : Nat)`
+   carrying `guardWidth`, `guardValue`, `radixWidth`, `hConsumed`, `hProgress`,
+   and `slots`. Migrate all existing CNode construction sites to supply the new
+   proof fields (existing CNodes have `guard`/`radix` which map directly to
+   `guardValue`/`radixWidth`; `guardWidth` is a new field; depth `d` is computed
+   from context).
+2. Update `KernelObject.cnode` to carry `(d : Nat) (c : CNode d)`.
+3. Add `maxCSpaceDepth : Nat := 64` constant.
+4. Define `resolveCapAddress` in `Capability/Operations.lean` as above.
+   Replace single-level `cspaceResolvePath` and `cspaceLookupPath` with
+   multi-level `resolveCapAddress`-based versions.
+5. Update `CSpacePathAddr` to remove the `depth` field (resolution uses the
+   root CNode's `d` parameter) or replace it with a `bitsRemaining` field
+   that defaults to the root's depth.
+6. Add `cspaceDepthConsistent` predicate to `Model/Object.lean` or
+   `Capability/Invariant.lean` and add it as a conjunct to
+   `capabilityInvariantBundle`.
+7. Prove `resolveCapAddress_terminates` — trivial by `bitsRemaining` descent.
+8. Prove `resolveCapAddress_deterministic` — same inputs produce same output
+   (follows from the function being pure with no state mutation).
+9. Prove `resolveCapAddress_depth_bounded` — resolution makes at most
+   `bitsRemaining` recursive calls (follows from `consumed ≥ 1` per hop).
+10. Prove `resolveCapAddress_guard_correct` — if resolution returns `.ok ref`,
+    then every guard along the path was validated (the primary CSpace attack
+    surface in real kernels).
+11. Prove `cspaceDepthConsistent_retypeFromUntyped` — retype operations that
+    create CNodes must supply a depth ≤ parent CNode depth minus consumed bits
+    (or ≤ `maxCSpaceDepth` for root CNodes).
+12. Update `CNode.resolveSlot` to work on `CNode d` (single-level resolution
+    becomes a special case of `resolveCapAddress` with one hop).
+13. Update all CNode construction sites in `Testing/MainTraceHarness.lean`,
+    `tests/NegativeStateSuite.lean`, and other test files to supply depth
+    parameters and proof witnesses.
+
+**Compressed-path benefit.** A CNode with `guardWidth = 48, radixWidth = 8`
+at depth `d = 56` consumes all 56 bits in one hop — a scenario that would
+require 7 separate 8-bit CNodes without guard compression. This directly
+models seL4's Patricia-trie CSpace optimisation where long sparse authority
+regions are collapsed into a single guard comparison.
 
 *Part B — Atomic capability move (A-21):*
 8. Refactor `cspaceMove` to compute the final state (source empty, destination
@@ -1829,16 +1962,34 @@ foundation for multi-level CSpace reasoning). Phase 2 completed.
 18. This closes the gap in the acyclicity preservation proof chain.
 
 **Files modified:**
-- `SeLe4n/Kernel/Capability/Operations.lean` — multi-level resolution, atomic move
-- `SeLe4n/Kernel/Capability/Invariant.lean` — resolution proofs
+- `SeLe4n/Model/Object.lean` — `CNode d` type change, `KernelObject.cnode` update,
+  `maxCSpaceDepth` constant, `cspaceDepthConsistent` predicate, `resolveSlot`
+  migration to `CNode d`, `CNode.empty` / `CNode.insert` / `CNode.remove` etc.
+  updated for parametric depth
+- `SeLe4n/Kernel/Capability/Operations.lean` — `resolveCapAddress` multi-level
+  resolver, `cspaceResolvePath` / `cspaceLookupPath` replaced, atomic move
+- `SeLe4n/Kernel/Capability/Invariant.lean` — `cspaceDepthConsistent` preservation
+  proofs, resolution termination/determinism/guard-correctness theorems
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — `retypeFromUntyped` updated to
+  supply depth parameter and proof witness when creating CNode objects
 - `SeLe4n/Kernel/Service/Operations.lean` — backing-object check, restart atomicity
 - `SeLe4n/Kernel/Service/Invariant.lean` — `serviceCountBounded` invariant
-- `SeLe4n/Kernel/API.lean` — replace single-level lookup with resolution path
+- `SeLe4n/Kernel/API.lean` — replace single-level lookup with `resolveCapAddress`
+- `SeLe4n/Testing/MainTraceHarness.lean` — CNode construction sites updated with
+  depth parameters; multi-level resolution trace scenarios
+- `tests/NegativeStateSuite.lean` — negative tests for depth mismatch, guard
+  mismatch at intermediate levels, backing-object missing
 
 **Exit evidence:**
 - `lake build` passes with zero errors/warnings and zero sorry.
 - `test_full.sh` passes (Tier 0-3).
-- `cspaceResolvePath` handles multi-level resolution (trace scenario with 2+ levels).
+- `CNode` is parametric: `structure CNode (d : Nat)` with `hConsumed` and
+  `hProgress` proof fields.
+- `resolveCapAddress` handles multi-level resolution (trace scenario with 2+
+  CNode levels, demonstrating compressed-path guard skipping).
+- `resolveCapAddress_terminates`, `resolveCapAddress_deterministic`, and
+  `resolveCapAddress_guard_correct` theorems compile.
+- `cspaceDepthConsistent` appears as conjunct in `capabilityInvariantBundle`.
 - `cspaceMove` atomicity theorem compiles.
 - `serviceStart` fails with error when backing object is missing (negative test).
 - `serviceCountBounded` appears as conjunct in service invariant bundle.
@@ -1923,7 +2074,7 @@ Phase 2 to avoid churn on Prelude during active proof work.
 validators and add capability-checking wrappers at the kernel API boundary.
 
 **Entry criteria:** WS-H4 completed (capability invariant redesign for capability
-checking), WS-H13 completed (multi-level CSpace for resolution).
+checking), WS-H13 completed (type-indexed multi-level CSpace resolution).
 
 **Findings addressed:**
 - **A-41** (MEDIUM): RPi5 platform stubs are minimal. Boot and runtime contracts
@@ -1942,7 +2093,7 @@ checking), WS-H13 completed (multi-level CSpace for resolution).
 1. Define a `SyscallWrapper` that takes a caller ThreadId, an operation, and the
    required capability type, and:
    - Resolves the caller's CSpace root capability.
-   - Looks up the required capability via `cspaceResolvePath` (from WS-H13).
+   - Looks up the required capability via `resolveCapAddress` (from WS-H13).
    - Validates that the capability has sufficient rights for the operation.
    - Invokes the underlying kernel operation only if all checks pass.
 2. Wrap all public API operations in `API.lean` with `SyscallWrapper`.
@@ -2189,7 +2340,7 @@ Documentation sync should wait until other workstreams stabilize.
 | WS-H9 NI coverage is a large proof surface (~18 new theorems) | Prioritize scheduler NI first (highest security impact). Ship in incremental batches rather than one monolithic PR. |
 | WS-H7 state field migration touches many downstream proofs | Reuse bisimulation bridge pattern from WS-G2. Bridge first, migrate proofs incrementally. |
 | WS-H1 introduces a new IPC state variant affecting all pattern matches | Lean 4's exhaustive match checking will identify all affected locations. Mechanical update. |
-| WS-H13 multi-level CSpace resolution introduces recursion | Bound by fuel parameter (matching seL4). Termination is trivially proven by fuel decrement. |
+| WS-H13 type-indexed CSpace introduces `CNode d` parametric depth into `KernelObject` | `d` is existentially packed. Resolution terminates by structural recursion on `bitsRemaining` (decreased by `guardWidth + radixWidth ≥ 1` per hop via `hProgress`). All existing CNode sites receive computed depth + proof witnesses. |
 | Phase 5 Prelude changes (WS-H14) cause codebase-wide churn | Schedule after Phases 2-3 stabilize. The derive macro change is mechanical but high-touch. |
 
 ---
