@@ -49,8 +49,13 @@ def serviceStart
 Deterministic check ordering:
 1. service lookup (`objectNotFound`),
 2. service must be `running` (`illegalState`),
-3. policy predicate must allow stop (`policyDenied`),
-4. status changes to `stopped` on success. -/
+3. backing object must exist (`backingObjectMissing`),
+4. policy predicate must allow stop (`policyDenied`),
+5. status changes to `stopped` on success.
+
+WS-H13/A-29: Verifies that the service's backing object exists in the
+object store before allowing the transition. This prevents stopping a service
+whose backing object was deleted, maintaining backing-object consistency. -/
 def serviceStop
     (sid : ServiceId)
     (policyAllowsStop : ServicePolicy) : Kernel Unit :=
@@ -59,7 +64,9 @@ def serviceStop
     | none => .error .objectNotFound
     | some svc =>
         if svc.status = .running then
-          if policyAllowsStop svc then
+          if st.objects[svc.identity.backingObject]? = none then
+            .error .backingObjectMissing
+          else if policyAllowsStop svc then
             storeServiceEntry sid { svc with status := .stopped } st
           else
             .error .policyDenied
@@ -234,6 +241,18 @@ theorem serviceStart_error_dependencyViolation
   unfold serviceStart
   simp [hSvc, hStopped, hBacking, hPolicy, hDeps]
 
+theorem serviceStop_error_backingObjectMissing
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (svc : ServiceGraphEntry)
+    (hSvc : lookupService st sid = some svc)
+    (hRunning : svc.status = .running)
+    (hBacking : st.objects[svc.identity.backingObject]? = none) :
+    serviceStop sid policyAllowsStop st = .error .backingObjectMissing := by
+  unfold serviceStop
+  simp [hSvc, hRunning, hBacking]
+
 theorem serviceStop_error_policyDenied
     (st : SystemState)
     (sid : ServiceId)
@@ -241,10 +260,11 @@ theorem serviceStop_error_policyDenied
     (svc : ServiceGraphEntry)
     (hSvc : lookupService st sid = some svc)
     (hRunning : svc.status = .running)
+    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
     (hPolicy : policyAllowsStop svc = false) :
     serviceStop sid policyAllowsStop st = .error .policyDenied := by
   unfold serviceStop
-  simp [hSvc, hRunning, hPolicy]
+  simp [hSvc, hRunning, hBacking, hPolicy]
 
 theorem serviceStop_error_illegalState
     (st : SystemState)

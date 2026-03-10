@@ -239,7 +239,8 @@ private theorem default_capabilityInvariantBundle :
    by exact lifecycleAuthorityMonotonicity_holds _,
    by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
    by intro _ _ h; simp [default] at h,
-   by exact CapDerivationTree.empty_edgeWellFounded⟩
+   by exact CapDerivationTree.empty_edgeWellFounded,
+   by intro cnodeId cn hObj; have h : (default : SystemState).objects[cnodeId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 
