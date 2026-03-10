@@ -514,16 +514,16 @@ theorem cspaceDepthConsistent_of_detachSlotFromCdt
     (SystemState.detachSlotFromCdt_objects_eq st ref)
 
 /-- WS-H13: CNode.remove preserves depth/guardWidth/radixWidth and has slot subset. -/
-theorem CNode.remove_depth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+private theorem CNode.remove_depth_eq (cn : CNode) (slot : SeLe4n.Slot) :
     (cn.remove slot).depth = cn.depth := rfl
 
-theorem CNode.remove_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+private theorem CNode.remove_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
     (cn.remove slot).guardWidth = cn.guardWidth := rfl
 
-theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+private theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
     (cn.remove slot).radixWidth = cn.radixWidth := rfl
 
-theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
+private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
     ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.remove slot).slots[s]? = some cap → cn.slots[s]? = some cap := by
   intro s cap hLookup
   simp [CNode.remove] at hLookup
@@ -533,16 +533,16 @@ theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
   · simp [h] at hLookup; exact hLookup
 
 /-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/
-theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+private theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
     (cn.revokeTargetLocal slot target).depth = cn.depth := rfl
 
-theorem CNode.revokeTargetLocal_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+private theorem CNode.revokeTargetLocal_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
     (cn.revokeTargetLocal slot target).guardWidth = cn.guardWidth := rfl
 
-theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+private theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
     (cn.revokeTargetLocal slot target).radixWidth = cn.radixWidth := rfl
 
-theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.revokeTargetLocal sourceSlot target).slots[s]? = some cap → cn.slots[s]? = some cap := by
   intro s cap hLookup
   simp only [CNode.revokeTargetLocal] at hLookup
@@ -562,18 +562,18 @@ theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot
   exact h2
 
 /-- WS-H13: CNode.insert preserves depth/guardWidth/radixWidth. -/
-theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+private theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
     (cn.insert slot cap).depth = cn.depth := rfl
 
-theorem CNode.insert_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+private theorem CNode.insert_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
     (cn.insert slot cap).guardWidth = cn.guardWidth := rfl
 
-theorem CNode.insert_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+private theorem CNode.insert_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
     (cn.insert slot cap).radixWidth = cn.radixWidth := rfl
 
 /-- WS-H4: CDT-only state update preserves cspaceSlotCountBounded and cdtCompleteness.
 Used for `{ st with cdt := cdt' }` where objects and cdtNodeSlot are unchanged. -/
-theorem boundedCompleteness_of_cdt_only_update
+private theorem boundedCompleteness_of_cdt_only_update
     (st : SystemState) (cdt' : CapDerivationTree)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) :

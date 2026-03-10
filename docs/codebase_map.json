@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/restructure-codebase-modules-QF5qz",
-      "commit_sha": "e0dabe51a85e3fdc26d663de334084e4233a8d71",
-      "tree_sha": "00f512fc198042ed81c82890d3691f247e3112c6",
-      "committed_at_utc": "2026-03-10T07:09:36+00:00"
+      "commit_sha": "25168ab4094079989ee0c18632f6df46e538a0ae",
+      "tree_sha": "b6a4208b0a371387a5fbc4745058ae0229638d5d",
+      "committed_at_utc": "2026-03-10T08:05:25+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "54069318a433180afbbb6f9ca331ca930637775cc56c95899ca5b7497bb4e058"
+    "source_digest": "d2677fec2f09ab658ed5a5943dcc6c58b6b63ef63c8aad6a904d9bea9d55c3ef"
   },
   "summary": {
     "module_count": 68,

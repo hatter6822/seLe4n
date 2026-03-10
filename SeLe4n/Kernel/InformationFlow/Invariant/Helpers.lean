@@ -287,7 +287,7 @@ theorem ensureRunnable_preserves_projection
             exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
-theorem storeTcbIpcState_preserves_projection
+private theorem storeTcbIpcState_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
@@ -337,7 +337,7 @@ theorem storeTcbIpcState_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
 
 /-- WS-H9: storeTcbPendingMessage at a non-observable object preserves projection. -/
-theorem storeTcbPendingMessage_preserves_projection
+private theorem storeTcbPendingMessage_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)

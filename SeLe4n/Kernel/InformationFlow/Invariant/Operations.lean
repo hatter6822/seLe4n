@@ -982,7 +982,7 @@ private theorem attachSlotToCdtNode_preserves_projection
     (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl rfl rfl rfl
 
 /-- WS-H9: cspaceInsertSlot at non-observable CNode preserves projection. -/
-theorem cspaceInsertSlot_preserves_projection
+private theorem cspaceInsertSlot_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (dst : CSpaceAddr) (cap : Capability)
     (st st' : SystemState)

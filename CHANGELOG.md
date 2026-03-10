@@ -24,8 +24,11 @@
 - **InformationFlow/Enforcement.lean** → `Enforcement/Wrappers.lean` +
   `Enforcement/Soundness.lean`.
 - **Service/Invariant.lean** → `Invariant/Policy.lean` + `Invariant/Acyclicity.lean`.
-- **Private definition visibility:** ~50+ cross-module `private` definitions
+- **Private definition visibility:** ~53 cross-module `private` definitions
   made non-private to support submodule access across file boundaries.
+  Post-decomposition audit re-privatized 15 definitions that were only used
+  within their own submodule file (11 CNode helper theorems, 4 projection
+  preservation lemmas), tightening the API surface.
 - **Tier 3 invariant surface tests:** Updated 209 anchor checks to reference
   new submodule file paths.
 - **Build jobs:** Increased from 86 to 134 (finer-grained parallelism).
