@@ -185,16 +185,21 @@ At minimum keep these attributes synchronized across all three surfaces: version
 Lean toolchain, production/test LoC, theorem+lemma count, build jobs, active
 findings/audit references, and completed/next workstream status.
 
-For website codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
+For codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
 whenever Lean module/declaration surfaces change, then validate with
 `./scripts/generate_codebase_map.py --pretty --check`. The generated
-`docs/codebase_map.json` contains stable `source_sync.source_digest`
-(sha256 over Lean source paths + contents) plus volatile `repository.head` git
-metadata. Each declaration record includes an additive `called` array
-listing in-module declaration references (or `[]` when none are detected), which
-preserves backward compatibility for consumers that ignore unknown keys. Website
-clients should invalidate local cache entries on `source_sync.source_digest`
-changes. `--check` compares only the stable subset,
+`docs/codebase_map.json` contains:
+
+- **`readme_sync`** — project-level metrics (version, LoC, theorem count,
+  hardware target) used by README.md, SELE4N_SPEC.md, and GitBook chapters.
+- **`source_sync`** — stable `source_digest` (SHA256 over Lean source paths +
+  contents) plus volatile `repository.head` git metadata.
+- **`modules`** — per-module declaration inventory. Each declaration record
+  includes an additive `called` array listing in-module declaration references
+  (or `[]` when none are detected).
+
+Website clients should invalidate local cache entries on
+`source_sync.source_digest` changes. `--check` compares only the stable subset,
 keeping CI robust across branch/merge-only commits while still detecting real
 declaration-surface drift. Post-merge enforcement runs in
 `.github/workflows/codebase_map_sync.yml`, which auto-regenerates and commits

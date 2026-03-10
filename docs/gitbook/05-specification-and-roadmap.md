@@ -13,18 +13,16 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.14.3` |
-| Lean toolchain | `4.28.0` |
-| Production LoC | 30,491 across 41 files |
-| Test LoC | 2,360 across 3 suites |
-| Proved declarations | 920 theorem/lemma declarations (zero sorry/axiom) |
-| Build jobs | 86 |
-| Active findings | [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| Active audit | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G) |
-| Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| Recently completed | WS-H12f (v0.14.3, test harness update & documentation sync), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds), WS-H12c (v0.14.0, per-TCB register context with inline context switch), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage extension, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path fix, v0.12.16), WS-G (kernel performance) |
-| Next workstream | WS-H13..H16 (remaining v0.12.15 audit remediation) |
-| Metrics source of truth | `./scripts/report_current_state.py` |
+| Version | `0.14.4` |
+| Lean toolchain | `v4.28.0` |
+| Production LoC | 31,268 across 41 files |
+| Test LoC | 2,413 across 3 suites |
+| Proved declarations | 958 theorem/lemma declarations (zero sorry/axiom) |
+| Total declarations | 1,777 across 44 modules |
+| Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
+| Next workstreams | WS-H14..H16, WS-F5..F8 |
+| Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
+| Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
 ## Milestone history
 

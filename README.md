@@ -37,58 +37,73 @@
 seLe4n is a microkernel built from the ground up in Lean 4. Every kernel
 transition is an executable pure function. Every invariant is machine-checked
 by the Lean type-checker — zero `sorry`, zero `axiom`. The entire proof surface
-compiles to native code via 86 build jobs with no admitted proofs.
+compiles to native code with no admitted proofs.
 
 The project began as a formalization of seL4 semantics and has evolved into a
 novel kernel that preserves seL4's capability-based security model while
 introducing substantial architectural improvements:
 
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use `Std.HashMap`/`Std.HashSet` 
+- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use `Std.HashMap`/`Std.HashSet`
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Parameterized N-domain information-flow** framework with two-dimensional confidentiality/integrity labels (beyond seL4's binary partition)
-- **EDF + priority scheduling** with dequeue-on-dispatch semantics (matching seL4's `switchToThread`/`tcbSchedDequeue`), per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning, inline `maxPriority` tracking, and bidirectional membership/list consistency (`flat_wf`, `flat_wf_rev`, `mem_toList_iff_mem`)
+- **EDF + priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning
 
 ## Current state
+
+<!-- Metrics below are synced from docs/codebase_map.json → readme_sync section.
+     Regenerate with: ./scripts/generate_codebase_map.py --pretty
+     Source of truth: docs/codebase_map.json (readme_sync) -->
 
 | Attribute | Value |
 |-----------|-------|
 | **Version** | `0.14.4` |
-| **Lean toolchain** | `4.28.0` |
-| **Production Lean LoC** | 30,491 across 41 files |
-| **Test Lean LoC** | 2,360 across 3 test suites |
-| **Proved declarations** | 920 theorem/lemma declarations (zero sorry/axiom) |
-| **Build jobs** | 86 |
+| **Lean toolchain** | `v4.28.0` |
+| **Production Lean LoC** | 31,268 across 41 files |
+| **Test Lean LoC** | 2,413 across 3 test suites |
+| **Proved declarations** | 958 theorem/lemma declarations (zero sorry/axiom) |
+| **Total declarations** | 1,777 across 44 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
-| **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Completed** | WS-H13 (v0.14.4), WS-H12f (v0.14.3), WS-H12e (v0.14.2), WS-H12d (v0.14.1), WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
-| **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
+| **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
+| **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
-All quantitative attributes above are generated from the codebase using
-`./scripts/report_current_state.py` and should be updated in README +
-`docs/spec/SELE4N_SPEC.md` + GitBook in the same PR.
+Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
+and stored in [`docs/codebase_map.json`](docs/codebase_map.json) under the
+`readme_sync` key. Update all documentation together using
+`./scripts/report_current_state.py` as a cross-check.
 
 ## Quick start
 
 ```bash
 ./scripts/setup_lean_env.sh   # install Lean toolchain
-lake build                     # compile all 41 modules (86 jobs)
+lake build                     # compile all modules
 lake exe sele4n                # run trace harness
 ./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
+
+## Onboarding path
+
+New to the project? Follow this reading order:
+
+1. **This README** — project identity, architecture, and source layout
+2. [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — day-to-day workflow, validation loop, PR checklist
+3. [`docs/gitbook/README.md`](docs/gitbook/README.md) — full handbook (architecture deep dives, proofs, hardware path)
+4. [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable module and declaration inventory
+
+For workstream planning and history, see [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 ## Project documentation
 
 | Document | Purpose |
 |----------|---------|
-| [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project specification, milestones, and active workstreams |
-| [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) | seL4 reference semantics that seLe4n builds on |
+| [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project specification and milestones |
+| [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) | seL4 reference semantics |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Day-to-day workflow, validation loop, PR checklist |
 | [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md) | Tiered test gates and CI contract |
+| [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) | Complete workstream history, roadmap, and audit plan index |
 | [`docs/gitbook/README.md`](docs/gitbook/README.md) | Full handbook (architecture, design, proofs, hardware path) |
+| [`docs/codebase_map.json`](docs/codebase_map.json) | Machine-readable codebase inventory (synced with README) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution mechanics and PR requirements |
 | [`CHANGELOG.md`](CHANGELOG.md) | Version history |
 
@@ -104,29 +119,25 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly det
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
 
-## Website codebase map feed
+## Codebase map
 
-Generate the canonical machine-readable codebase map with:
-
-```bash
-./scripts/generate_codebase_map.py --pretty
-```
-
-Validate that the committed file is in sync without writing:
+[`docs/codebase_map.json`](docs/codebase_map.json) is the machine-readable
+inventory of every module and declaration in the project. It feeds the
+[seLe4n.org](https://github.com/hatter6822/hatter6822.github.io) website and
+serves as the unified source of truth for project metrics.
 
 ```bash
-./scripts/generate_codebase_map.py --pretty --check
+./scripts/generate_codebase_map.py --pretty          # regenerate
+./scripts/generate_codebase_map.py --pretty --check   # validate without writing
 ```
 
-`docs/codebase_map.json` carries both: a deterministic `source_sync.source_digest`
-(sha256 over Lean source paths + contents) and volatile `repository.head` git
-metadata for observability. Each declaration entry now also includes an additive
-`called` array that enumerates in-module declaration references for that
-declaration (empty when none are detected). `--check` compares only the stable
-declaration-surface subset, so it is branch/merge-robust and fails only when Lean
-inputs drift.
-The post-merge `.github/workflows/codebase_map_sync.yml` job remains as a
-backstop for drift.
+The map includes:
+- **`readme_sync`** — project-level metrics (version, LoC, theorem count) used by README and docs
+- **`source_sync`** — deterministic SHA256 digest of all Lean sources for cache invalidation
+- **`modules`** — per-module declaration inventory with `called` arrays for internal references
+
+The post-merge `.github/workflows/codebase_map_sync.yml` job auto-refreshes the
+map on main as a backstop for drift.
 
 ## Architecture
 
@@ -156,133 +167,52 @@ Each kernel subsystem follows the **Operations/Invariant split**: transitions in
 `Operations.lean`, proofs in `Invariant.lean`. The unified `apiInvariantBundle`
 aggregates all subsystem invariants into a single proof obligation.
 
-| Module | Purpose |
-|--------|---------|
-| `SeLe4n/Prelude.lean` | Typed identifiers (`ThreadId`, `ObjId`, `CPtr`, etc.), `KernelM` monad, `Hashable`/`BEq` instances for all 13 typed IDs |
-| `SeLe4n/Machine.lean` | Register file, memory, timer, `MachineConfig` (with `isPowerOfTwo` page-size validation), `MemoryRegion` |
-| `SeLe4n/Model/Object.lean` | `TCB` (with intrusive queue links), `Endpoint`, `Notification`, `CNode`, `VSpaceRoot`, CDT |
-| `SeLe4n/Model/State.lean` | `SystemState` with `Std.HashMap`-backed object store, lifecycle metadata, CDT `childMap` index |
-| `SeLe4n/Kernel/Scheduler/*` | Priority-bucketed `RunQueue` with `HashMap`+`HashSet`, EDF scheduling, domain partitioning, timer tick |
-| `SeLe4n/Kernel/Capability/*` | CSpace lookup/mint/copy/move/delete/revoke with CDT tracking, guard/radix path resolution |
-| `SeLe4n/Kernel/IPC/Operations.lean` | Core endpoint send/receive, notification signal/wait (legacy, deprecated in favor of DualQueue) |
-| `SeLe4n/Kernel/IPC/DualQueue.lean` | Intrusive dual-queue IPC: send/receive/call/reply with `queuePPrev` back-pointers for O(1) removal |
-| `SeLe4n/Kernel/IPC/Invariant.lean` | 95+ IPC invariant preservation theorems (largest proof module, ~6,600 LoC) |
-| `SeLe4n/Kernel/Lifecycle/*` | Object retype with lifecycle metadata preservation, watermark-tracked untyped memory |
-| `SeLe4n/Kernel/Service/*` | Service graph with `HashSet`-backed DFS cycle detection, dependency tracking, deterministic partial-failure policy |
-| `SeLe4n/Kernel/Architecture/*` | VSpace `HashMap VAddr (PAddr × PagePermissions)` map/unmap/lookup with W^X enforcement, `VSpaceBackend` class, TLB model, adapter contracts, boundary assumptions |
-| `SeLe4n/Kernel/InformationFlow/*` | Two-dimensional security labels (confidentiality/integrity), BIBA lattice alternatives, `DeclassificationPolicy`, 69 NI theorems covering >80% of kernel operations, 31-constructor `NonInterferenceStep` |
-| `SeLe4n/Kernel/API.lean` | Unified public API surface and `apiInvariantBundle` alias |
-| `SeLe4n/Platform/Contract.lean` | `PlatformBinding` typeclass — `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
-| `SeLe4n/Platform/Sim/*` | Simulation platform binding (permissive contracts for testing) |
-| `SeLe4n/Platform/RPi5/*` | Raspberry Pi 5 platform binding — BCM2712 address map, GIC-400, ARM Cortex-A76 config |
-| `Main.lean` | Executable trace harness |
-| `tests/` | Negative-state suite, information-flow suite, trace sequence probe |
+## Source layout
 
-## Kernel optimizations and improvements over seL4
+```
+SeLe4n/Prelude.lean              Typed identifiers, KernelM monad, Hashable instances
+SeLe4n/Machine.lean              Register file, memory, timer, MachineConfig
+SeLe4n/Model/Object.lean         TCB, Endpoint, Notification, CNode, VSpaceRoot, CDT
+SeLe4n/Model/State.lean          SystemState with HashMap-backed stores
+SeLe4n/Kernel/Scheduler/*        Priority-bucketed RunQueue, EDF scheduling, domain partitioning
+SeLe4n/Kernel/Capability/*       CSpace lookup/mint/copy/move/delete/revoke with CDT tracking
+SeLe4n/Kernel/IPC/Operations.lean  Core endpoint/notification legacy ops
+SeLe4n/Kernel/IPC/DualQueue.lean   Intrusive dual-queue IPC with O(1) removal
+SeLe4n/Kernel/IPC/Invariant.lean   95+ IPC invariant preservation theorems
+SeLe4n/Kernel/Lifecycle/*        Object retype with lifecycle metadata preservation
+SeLe4n/Kernel/Service/*          Service graph with HashSet-backed DFS cycle detection
+SeLe4n/Kernel/Architecture/*     VSpace HashMap map/unmap/lookup, W^X, TLB model, VSpaceBackend
+SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorems, 31-constructor NonInterferenceStep
+SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
+SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
+SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
+SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
+SeLe4n/Testing/*                 Test harness, state builder, fixtures
+Main.lean                        Executable entry point
+tests/                           Negative-state suite, information-flow suite, trace probe
+```
 
-### Performance: O(1) hash-based hot paths (WS-G, v0.12.6–v0.12.15)
-
-The WS-G portfolio migrated every kernel hot path from linear data structures
-to O(1) hash-based alternatives — eliminating all 14 findings from the
-[v0.12.5 performance audit](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
-All theorem/invariant declarations were re-verified with zero sorry/axiom after each migration.
-
-| Workstream | Data structure change | Complexity |
-|------------|----------------------|------------|
-| **WS-G1** | `Hashable`/`BEq` instances for all 13 typed identifiers + `SlotRef` | Foundation for all hash structures |
-| **WS-G2** | Object store → `Std.HashMap ObjId KernelObject` | O(n) → O(1) lookup |
-| **WS-G3** | ASID table → `Std.HashMap ASID ObjId` | O(n) → O(1) VSpace resolution |
-| **WS-G4** | Run queue → priority-bucketed `RunQueue` with `HashMap` + `HashSet` | O(t) → O(1) scheduler ops |
-| **WS-G5** | CNode slots → `Std.HashMap Slot Capability` | O(m) → O(1) capability ops |
-| **WS-G6** | VSpace mappings → `Std.HashMap VAddr PAddr` | O(m) → O(1) page lookup |
-| **WS-G7** | IPC queues → O(1) `ipcState` duplicate check + list prepend | O(n) → O(1) |
-| **WS-G8** | Service graph → `HashSet`-backed DFS; CDT → `childMap` HashMap index | O(n^2) → O(n+e) |
-| **WS-G9** | Info-flow → `computeObservableSet` with precomputed `HashSet ObjId` | O(n) repeated → O(1) contains |
-
-### Architectural innovations beyond seL4
+## Architectural innovations beyond seL4
 
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
-| **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal (Linux-style `**pprev`) |
-| **Information flow** | Binary high/low partition | N-domain two-dimensional labels (confidentiality lattice + integrity lattice) with per-entity labeling context |
-| **Service management** | Not in kernel | First-class service orchestration with dependency graph, DFS cycle detection, and deterministic partial-failure semantics |
-| **Capability derivation** | CDT with linked-list children | `childMap : HashMap CdtNodeId (List CdtNodeId)` for O(1) children lookup; `descendantsOf` in O(n+e) |
-| **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking, domain-aware EDF partitioning |
-| **VSpace** | Hardware page tables | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement, `VSpaceBackend` typeclass, abstract TLB model |
-| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (Operations/Invariant split) |
-| **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with `RuntimeBoundaryContract`, `BootBoundaryContract`, `InterruptBoundaryContract` |
-
-See [Kernel Performance Optimization](docs/gitbook/08-kernel-performance-optimization.md)
-for the full technical breakdown.
+| **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
+| **Information flow** | Binary high/low partition | N-domain two-dimensional labels (confidentiality + integrity lattice) |
+| **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
+| **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
+| **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
+| **VSpace** | Hardware page tables | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
+| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions |
+| **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next
 
-### Remaining WS-H workstreams (H11–H16)
+Current priorities and the full workstream history are maintained in
+[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-WS-H1..H10 are all completed. The remaining workstreams address Phases 4–5 of
-the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
+- **WS-H14..H16** — Type safety hardening, platform hardening, testing expansion (Low priority)
+- **WS-F5..F8** — Model fidelity, invariant quality, testing, cleanup (Medium/Low priority)
+- **Raspberry Pi 5 hardware binding** — populate RPi5 platform stubs with hardware-validated contracts
 
-| ID | Focus | Priority |
-|----|-------|----------|
-| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium — **Completed** |
-| **WS-H12a** | Legacy endpoint field & operation removal | Medium — **Completed** |
-| **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium — **Completed** |
-| **WS-H12c** | Per-TCB register context with inline context switch (H-03) | Medium — **Completed** |
-| **WS-H12d–f** | Scheduler/IPC semantic alignment (message bounds, reconciliation) | Medium |
-| **WS-H13** | CSpace/service model enrichment (multi-level resolution, backing-object verification, serviceCountBounded) | Medium — **Completed** |
-| **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
-| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
-| **WS-H16** | Testing and documentation expansion | Low |
-
-### Remaining WS-F workstreams (F5–F8)
-
-The critical WS-F workstreams (F1–F4) are all completed. The remaining
-medium/low-priority workstreams close model fidelity and testing gaps identified
-by the [v0.12.2 audits](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
-
-| ID | Focus | Priority |
-|----|-------|----------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
-
-### Raspberry Pi 5 hardware binding (H3)
-
-After the remaining workstreams, the next major milestone is populating the RPi5
-platform stubs with hardware-validated contracts. The `Platform/` directory
-already provides:
-
-- **`PlatformBinding` typeclass** with `RuntimeBoundaryContract`, `BootBoundaryContract`, and `InterruptBoundaryContract`
-- **RPi5 board definition** — BCM2712 SoC address map, GIC-400 distributor/CPU interface, PL011 UART, 4 GB memory layout
-- **`rpi5MachineConfig`** — 64-bit registers, 48-bit VA / 44-bit PA, 4 KiB granule, 16-bit ASID (65,536 address spaces)
-- **`VSpaceBackend` abstraction** — platform-agnostic VSpace operations that H3 will bind to ARM page tables
-
-See [Path to Real Hardware](docs/gitbook/10-path-to-real-hardware-mobile-first.md).
-
-## Completed workstreams
-
-| Portfolio | Version | Scope | Workstreams |
-|-----------|---------|-------|-------------|
-| **WS-H11** | v0.13.7 | VSpace & architecture enrichment: PagePermissions with W^X enforcement, `vspaceMapPageChecked` with ARM64 52-bit address bounds, `vspaceInvariantBundle` 5-conjunct preservation, TLB/cache maintenance model (`TlbState`, `adapterFlushTlb`, per-VAddr flush), `VSpaceBackend` typeclass abstraction, ASID table composition theorems, cross-ASID TLB isolation. 23 new theorems, 889 proved declarations | H11 |
-| **End-to-end audit** | v0.13.6 | Comprehensive codebase audit: zero critical issues, zero sorry/axiom, stale documentation metrics fixed (theorem counts, LoC), audit report produced. 866 proved declarations confirmed | Audit |
-| **WS-H10** | v0.13.6 | Security model foundations: `ObservableState` with `machineRegs`, BIBA lattice alternatives, `DeclassificationPolicy`, `endpointFlowPolicyWellFormed`, `InformationFlowConfigInvariant`. Closes C-05/A-38, A-34, A-39, M-16 | H10 |
-| **WS-H7/H8/H9 gaps** | v0.13.5 | BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, 31-constructor `NonInterferenceStep` | H7/H8/H9 gap closure |
-| **WS-H9** | v0.13.4 | Non-interference coverage >80%: 27 new NI theorems, 28-constructor `NonInterferenceStep`, `composedNonInterference_trace`. Closes C-02/A-40 (CRITICAL) | H9 |
-| **WS-H8** | v0.13.2 | Enforcement-NI bridge: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata. Closes A-35/H-07, A-36/A-37/H-11 | H8 |
-| **WS-H6** | v0.13.1 | Scheduler proof completion: `timeSlicePositive` fully proven, EDF domain-aware fix, `schedulerInvariantBundleFull` 5-tuple | H6 |
-| **WS-H7** | v0.12.21 | HashMap equality + state-store migration: order-independent `BEq`, closure→HashMap migration for 5 state fields | H7 |
-| **WS-H5** | v0.12.19 | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems. Closes C-04/A-22, A-23, A-24 | H5 |
-| **WS-H4** | v0.12.18 | Capability invariant redesign: `capabilityInvariantBundle` 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity` | H4 |
-| **WS-H3** | v0.12.17 | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | H3 |
-| **WS-H2** | v0.12.16 | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | H2 |
-| **WS-H1** | v0.12.16 | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | H1 |
-| **WS-G** | v0.12.6–v0.12.15 | Kernel performance: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | G1–G9 + refinement |
-| **WS-F1..F4** | v0.12.2–v0.12.5 | Critical audit remediation: IPC message transfer (14 theorems), untyped memory (watermark tracking), info-flow completeness (15 NI theorems), proof gap closure | F1–F4 |
-| **WS-E** | v0.11.0–v0.11.6 | Test/CI hardening, proof quality, kernel hardening, capability/IPC, info-flow enforcement, completeness | E1–E6 |
-| **WS-D** | v0.11.0 | Test validity, info-flow enforcement, proof gaps, kernel design | D1–D4 |
-| **WS-C** | v0.9.32 | Model structure, documentation, maintainability | C1–C8 |
-| **WS-B** | v0.9.0 | Comprehensive audit (2026-02) | B1–B11 |
-
-Prior audits (v0.8.0–v0.9.32), milestone closeouts, and legacy GitBook chapters
+Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters
 are archived in [`docs/dev_history/`](docs/dev_history/README.md).
