@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-386-vEFvV",
-      "commit_sha": "a284bab93cb5f828fbd6eda51631fbf9889d1fa7",
-      "tree_sha": "c5838842acb495a0a94f099b98b240fb5d7d63c0",
-      "committed_at_utc": "2026-03-10T08:18:50+00:00"
+      "commit_sha": "b2b3b3b88f72cb6cb91272ade8b097deb2ac72ed",
+      "tree_sha": "19a1dc0682ea5562df4b820361b28b870904f965",
+      "committed_at_utc": "2026-03-10T08:40:53+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d2677fec2f09ab658ed5a5943dcc6c58b6b63ef63c8aad6a904d9bea9d55c3ef"
+    "source_digest": "1413ab6def0040b50201bc8aab25245ea496e88c346518bf3ca0f7f6983f8ff1"
   },
   "summary": {
     "module_count": 68,

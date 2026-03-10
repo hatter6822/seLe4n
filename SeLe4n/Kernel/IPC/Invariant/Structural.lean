@@ -108,7 +108,7 @@ theorem endpointQueuePopHead_link_safe (q : IntrusiveQueue) (st : SystemState)
 -- ---- Frame lemmas: ensureRunnable / removeRunnable ----
 
 /-- WS-H5: ensureRunnable preserves intrusiveQueueWellFormed. -/
-theorem ensureRunnable_preserves_intrusiveQueueWellFormed
+private theorem ensureRunnable_preserves_intrusiveQueueWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (q : IntrusiveQueue) (hWf : intrusiveQueueWellFormed q st) :
     intrusiveQueueWellFormed q (ensureRunnable st tid) := by
@@ -118,7 +118,7 @@ theorem ensureRunnable_preserves_intrusiveQueueWellFormed
     fun tl h => let ⟨t, ht, hn⟩ := hTail tl h; ⟨t, by rwa [ensureRunnable_preserves_objects], hn⟩⟩
 
 /-- WS-H5: removeRunnable preserves intrusiveQueueWellFormed. -/
-theorem removeRunnable_preserves_intrusiveQueueWellFormed
+private theorem removeRunnable_preserves_intrusiveQueueWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (q : IntrusiveQueue) (hWf : intrusiveQueueWellFormed q st) :
     intrusiveQueueWellFormed q (removeRunnable st tid) := by
@@ -128,7 +128,7 @@ theorem removeRunnable_preserves_intrusiveQueueWellFormed
     fun tl h => let ⟨t, ht, hn⟩ := hTail tl h; ⟨t, by rwa [removeRunnable_preserves_objects], hn⟩⟩
 
 /-- WS-H5: ensureRunnable preserves tcbQueueLinkIntegrity. -/
-theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
+private theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
     (st : SystemState) (tid : SeLe4n.ThreadId) (h : tcbQueueLinkIntegrity st) :
     tcbQueueLinkIntegrity (ensureRunnable st tid) := by
   constructor
@@ -140,7 +140,7 @@ theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
     exact ⟨tA, by rw [ensureRunnable_preserves_objects]; exact hA, hN⟩
 
 /-- WS-H5: removeRunnable preserves tcbQueueLinkIntegrity. -/
-theorem removeRunnable_preserves_tcbQueueLinkIntegrity
+private theorem removeRunnable_preserves_tcbQueueLinkIntegrity
     (st : SystemState) (tid : SeLe4n.ThreadId) (h : tcbQueueLinkIntegrity st) :
     tcbQueueLinkIntegrity (removeRunnable st tid) := by
   constructor
@@ -152,7 +152,7 @@ theorem removeRunnable_preserves_tcbQueueLinkIntegrity
     exact ⟨tA, by rw [removeRunnable_preserves_objects]; exact hA, hN⟩
 
 /-- WS-H5: ensureRunnable preserves dualQueueEndpointWellFormed. -/
-theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
+private theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hWf : dualQueueEndpointWellFormed epId st) :
     dualQueueEndpointWellFormed epId (ensureRunnable st tid) := by
@@ -167,7 +167,7 @@ theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
                ensureRunnable_preserves_intrusiveQueueWellFormed st tid ep.receiveQ hWf.2⟩
 
 /-- WS-H5: removeRunnable preserves dualQueueEndpointWellFormed. -/
-theorem removeRunnable_preserves_dualQueueEndpointWellFormed
+private theorem removeRunnable_preserves_dualQueueEndpointWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hWf : dualQueueEndpointWellFormed epId st) :
     dualQueueEndpointWellFormed epId (removeRunnable st tid) := by
@@ -182,7 +182,7 @@ theorem removeRunnable_preserves_dualQueueEndpointWellFormed
                removeRunnable_preserves_intrusiveQueueWellFormed st tid ep.receiveQ hWf.2⟩
 
 /-- WS-H5: ensureRunnable preserves dualQueueSystemInvariant. -/
-theorem ensureRunnable_preserves_dualQueueSystemInvariant
+private theorem ensureRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (ensureRunnable st tid) := by
@@ -192,7 +192,7 @@ theorem ensureRunnable_preserves_dualQueueSystemInvariant
   exact ensureRunnable_preserves_dualQueueEndpointWellFormed st tid epId (hEp epId ep hObj)
 
 /-- WS-H5: removeRunnable preserves dualQueueSystemInvariant. -/
-theorem removeRunnable_preserves_dualQueueSystemInvariant
+private theorem removeRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (removeRunnable st tid) := by
@@ -210,7 +210,7 @@ theorem removeRunnable_preserves_dualQueueSystemInvariant
 intrusiveQueueWellFormed for queues whose boundary TCBs either:
 (a) are at different ObjIds (unchanged), or
 (b) are the modified TCB (queue links preserved by with-syntax). -/
-theorem storeObject_tcb_preserves_intrusiveQueueWellFormed
+private theorem storeObject_tcb_preserves_intrusiveQueueWellFormed
     (st st' : SystemState) (tid : SeLe4n.ObjId) (tcb tcb' : TCB)
     (hPrevEq : tcb'.queuePrev = tcb.queuePrev)
     (hNextEq : tcb'.queueNext = tcb.queueNext)
@@ -237,7 +237,7 @@ theorem storeObject_tcb_preserves_intrusiveQueueWellFormed
 
 /-- WS-H5: storeObject of a TCB-variant with preserved queue links maintains
 tcbQueueLinkIntegrity. -/
-theorem storeObject_tcb_preserves_tcbQueueLinkIntegrity
+private theorem storeObject_tcb_preserves_tcbQueueLinkIntegrity
     (st st' : SystemState) (tid : SeLe4n.ObjId) (tcb tcb' : TCB)
     (hPrevEq : tcb'.queuePrev = tcb.queuePrev)
     (hNextEq : tcb'.queueNext = tcb.queueNext)
@@ -285,7 +285,7 @@ theorem storeObject_tcb_preserves_tcbQueueLinkIntegrity
 -- ---- Helper: storeObject endpoint preserves queue invariant properties ----
 
 /-- WS-H5: Storing an endpoint preserves tcbQueueLinkIntegrity (no TCB is modified). -/
-theorem storeObject_endpoint_preserves_tcbQueueLinkIntegrity
+private theorem storeObject_endpoint_preserves_tcbQueueLinkIntegrity
     (st st' : SystemState) (epId : SeLe4n.ObjId) (epNew : Endpoint)
     (hStore : storeObject epId (.endpoint epNew) st = .ok ((), st'))
     (hPreEp : ∀ tcb : TCB, st.objects[epId]? ≠ some (.tcb tcb))
@@ -305,7 +305,7 @@ theorem storeObject_endpoint_preserves_tcbQueueLinkIntegrity
 
 /-- WS-H5: Storing an endpoint preserves intrusiveQueueWellFormed.
 Boundary TCBs can't be at the endpoint ObjId (they are TCBs, not endpoints). -/
-theorem storeObject_endpoint_preserves_intrusiveQueueWellFormed
+private theorem storeObject_endpoint_preserves_intrusiveQueueWellFormed
     (st st' : SystemState) (epId : SeLe4n.ObjId) (epNew : Endpoint)
     (hStore : storeObject epId (.endpoint epNew) st = .ok ((), st'))
     (hPreEp : ∀ tcb : TCB, st.objects[epId]? ≠ some (.tcb tcb))
@@ -324,7 +324,7 @@ theorem storeObject_endpoint_preserves_intrusiveQueueWellFormed
 
 /-- WS-H5: storeTcbIpcState preserves dualQueueSystemInvariant.
 storeTcbIpcState uses { tcb with ipcState := ipc }, preserving queue links. -/
-theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
+private theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hInv : dualQueueSystemInvariant st) :
@@ -367,7 +367,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
                      tid.toObjId tcb _ hPrev hNext hTcbPre hStore ep.receiveQ hWfPre.2⟩
 
 /-- WS-H5: storeTcbIpcStateAndMessage preserves dualQueueSystemInvariant. -/
-theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+private theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
@@ -411,7 +411,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                      tid.toObjId tcb _ hPrev hNext hTcbPre hStore ep.receiveQ hWfPre.2⟩
 
 /-- WS-H5: storeTcbPendingMessage preserves dualQueueSystemInvariant. -/
-theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
+private theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
     (hInv : dualQueueSystemInvariant st) :
