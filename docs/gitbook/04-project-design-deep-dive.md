@@ -94,14 +94,14 @@ seL4's CDT uses mutable doubly-linked lists. seLe4n replaces this with a node-st
 
 This eliminates dangling-pointer hazards and makes revocation semantics cleaner: `cspaceRevokeCdtStrict` reports the first descendant deletion failure with offending slot context.
 
-## 5. Information flow: N-domain two-dimensional labels
+## 5. Information flow: N-domain configurable flow policy
 
-seL4 uses a binary high/low partition. seLe4n generalizes to a parameterized N-domain framework with two dimensions:
+seL4 uses a binary high/low partition. seLe4n generalizes to a parameterized N-domain framework with two complementary systems:
 
-- **Confidentiality lattice** — controls which domains can read which state.
-- **Integrity lattice** — controls which domains can modify which state.
+- **Legacy `SecurityLabel`** — two-dimensional product label (confidentiality × integrity) with four fixed security classes, providing backward-compatible Bell-LaPadula/Biba semantics.
+- **Generic `SecurityDomain`** — Nat-indexed domain identifier with pluggable `DomainFlowPolicy` supporting arbitrary domain counts and custom flow relations (linear order, flat lattice, or application-specific policies).
 
-Each entity carries a label in this two-dimensional space. `computeObservableSet` precomputes visible objects using `HashSet ObjId`, and `projectStateFast` uses O(1) membership checks. The `projectStateFast_eq` theorem proves equivalence with the naive projection.
+The legacy 2D system embeds into the generic N-domain system via `embedLegacyLabel` with a proven flow-preservation theorem. `computeObservableSet` precomputes visible objects using `HashSet ObjId`, and `projectStateFast` uses O(1) membership checks. The `projectStateFast_eq` theorem proves equivalence with the naive projection.
 
 ## 6. Milestone slicing strategy
 
