@@ -28,8 +28,10 @@ private def baseState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject endpointId (.endpoint {})
     |>.withObject cnodeId (.cnode {
-      guard := 0
-      radix := 0
+      depth := 0
+      guardWidth := 0
+      guardValue := 0
+      radixWidth := 0
       slots := Std.HashMap.ofList [
         (0, {
           target := .object endpointId
@@ -40,8 +42,10 @@ private def baseState : SystemState :=
     })
     |>.withObject wrongTypeId (.endpoint {})
     |>.withObject guardedCnodeId (.cnode {
-      guard := 1
-      radix := 2
+      depth := 0
+      guardWidth := 1
+      guardValue := 1
+      radixWidth := 2
       slots := Std.HashMap.ofList [
         (1, {
           target := .object endpointId
@@ -195,8 +199,10 @@ private def f2UntypedState : SystemState :=
       isDevice := false
     })
     |>.withObject f2UntypedAuthCnode (.cnode {
-      guard := 0
-      radix := 0
+      depth := 0
+      guardWidth := 0
+      guardValue := 0
+      radixWidth := 0
       slots := Std.HashMap.ofList [
         (0, {
           target := .object f2UntypedObjId
@@ -222,8 +228,10 @@ private def f2DeviceState : SystemState :=
       isDevice := true
     })
     |>.withObject f2UntypedAuthCnode (.cnode {
-      guard := 0
-      radix := 0
+      depth := 0
+      guardWidth := 0
+      guardValue := 0
+      radixWidth := 0
       slots := Std.HashMap.ofList [
         (0, {
           target := .object f2DeviceUntypedId
@@ -301,8 +309,10 @@ private def runNegativeChecks : IO Unit := do
   let strictSeed : SystemState :=
     { baseState with
       objects := baseState.objects.insert cnodeId (.cnode {
-            guard := 0
-            radix := 0
+            depth := 0
+            guardWidth := 0
+            guardValue := 0
+            radixWidth := 0
             slots := Std.HashMap.ofList [
               (strictRootSlot.slot, {
                 target := .object endpointId
@@ -1013,8 +1023,10 @@ private def runH2NegativeChecks : IO Unit := do
         isDevice := false
       })
       |>.withObject f2UntypedAuthCnode (.cnode {
-        guard := 0
-        radix := 0
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
         slots := Std.HashMap.ofList [
           (0, {
             target := .object f2UntypedObjId
@@ -1134,17 +1146,17 @@ private def runWSH7Checks : IO Unit := do
   let capA : Capability := { target := .object endpointId, rights := [.read], badge := none }
   let capB : Capability := { target := .object notificationId, rights := [.read, .write], badge := none }
   let cn1 : CNode :=
-    { guard := 0, radix := 2
+    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
       slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 1 capA).insert 2 capB }
   let cn2 : CNode :=
-    { guard := 0, radix := 2
+    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
       slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 2 capB).insert 1 capA }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { guard := 0, radix := 1, slots := Std.HashMap.ofList [(0, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := Std.HashMap.ofList [(0, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=

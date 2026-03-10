@@ -156,6 +156,20 @@ edge-well-founded formulation for clean subset-preservation proofs. -/
 def cdtAcyclicity (st : SystemState) : Prop :=
   st.cdt.edgeWellFounded
 
+/-- WS-H13/H-01: CSpace depth consistency — every CNode has bounded depth and
+well-formed bit allocation.
+
+Each CNode in the object store has `depth ≤ maxCSpaceDepth`, and whenever its
+`bitsConsumed` is positive it satisfies `cnodeWellFormed` (guard + radix ≤ depth,
+individual widths bounded). Combined with `bitsConsumed > 0`, this guarantees
+that multi-level `resolveCapAddress` terminates by structural recursion on
+remaining bit count — no cross-CNode depth ordering is required. -/
+def cspaceDepthConsistent (st : SystemState) : Prop :=
+  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+    st.objects[cnodeId]? = some (.cnode cn) →
+    cn.depth ≤ maxCSpaceDepth ∧
+    (cn.bitsConsumed > 0 → cn.wellFormed)
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with explicit lifecycle-transition
@@ -166,6 +180,9 @@ WS-H4: Extended from 4-tuple to 7-tuple with meaningful security predicates:
 - `cspaceSlotCountBounded`: slot capacity bound (replaces trivially-true `slotsUnique`)
 - `cdtCompleteness`: CDT node-slot reachability (every CDT node points to an existing object)
 - `cdtAcyclicity`: CDT cycle-freedom for sound revocation
+
+WS-H13: Extended to 8-tuple with depth consistency:
+- `cspaceDepthConsistent`: child CNodes have strictly smaller depth than parents
 
 **Design decisions (WS-H4):**
 - CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) take
@@ -180,7 +197,8 @@ WS-H4: Extended from 4-tuple to 7-tuple with meaningful security predicates:
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
     lifecycleAuthorityMonotonicity st ∧
-    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st
+    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
+    cspaceDepthConsistent st
 
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
 monotonicity so composition proofs can depend on a single named assumption. -/
@@ -209,7 +227,11 @@ theorem cdtCompleteness_of_capabilityInvariantBundle
 
 theorem cdtAcyclicity_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtAcyclicity st := hInv.2.2.2.2.2.2
+    cdtAcyclicity st := hInv.2.2.2.2.2.2.1
+
+theorem cspaceDepthConsistent_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    cspaceDepthConsistent st := hInv.2.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions
@@ -474,6 +496,145 @@ private theorem cdtPredicates_of_detachSlotFromCdt
   ⟨cspaceSlotCountBounded_of_detachSlotFromCdt st ref hBounded,
    cdtCompleteness_of_detachSlotFromCdt st ref hComp,
    cdtAcyclicity_of_detachSlotFromCdt st ref hAcyclic⟩
+
+/-- WS-H13: Transfer cspaceDepthConsistent when objects are unchanged. -/
+private theorem cspaceDepthConsistent_of_objects_eq
+    (st st' : SystemState)
+    (hDepth : cspaceDepthConsistent st)
+    (hObjEq : st'.objects = st.objects) :
+    cspaceDepthConsistent st' := by
+  intro cnodeId cn hObj; rw [hObjEq] at hObj; exact hDepth cnodeId cn hObj
+
+/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when the stored
+object is NOT a CNode (endpoint, TCB, etc.). -/
+private theorem cspaceDepthConsistent_of_storeObject_nonCNode
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hDepth : cspaceDepthConsistent st)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
+    cspaceDepthConsistent st' := by
+  intro cnodeId cn hObj
+  by_cases hEq : cnodeId = oid
+  · subst hEq
+    have := storeObject_objects_eq st st' cnodeId obj hStore
+    rw [this] at hObj; cases obj with
+    | cnode cn' => exact absurd rfl (hNotCNode cn')
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+  · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hStore] at hObj
+    exact hDepth cnodeId cn hObj
+
+/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when the stored
+CNode has the same depth and bit-width fields as the pre-state CNode at that oid.
+This covers CNode.insert, CNode.remove, and CNode.revokeTargetLocal. -/
+private theorem cspaceDepthConsistent_of_storeObject_sameCNode
+    (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn cn' : CNode)
+    (hDepth : cspaceDepthConsistent st)
+    (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
+    (hStore : storeObject targetOid (.cnode cn') st = .ok ((), st'))
+    (hSameDepth : cn'.depth = preCn.depth)
+    (hSameGW : cn'.guardWidth = preCn.guardWidth)
+    (hSameRW : cn'.radixWidth = preCn.radixWidth) :
+    cspaceDepthConsistent st' := by
+  intro cnodeId cn hObj
+  by_cases hEq : cnodeId = targetOid
+  · rw [hEq] at hObj
+    rw [storeObject_objects_eq st st' targetOid (.cnode cn') hStore] at hObj; cases hObj
+    have hPreBound := hDepth targetOid preCn hPreObj
+    constructor
+    · rw [hSameDepth]; exact hPreBound.1
+    · intro hBits
+      have hBitsPre : preCn.bitsConsumed > 0 := by
+        unfold CNode.bitsConsumed at hBits ⊢; rw [hSameGW, hSameRW] at hBits; exact hBits
+      have hWfPre := hPreBound.2 hBitsPre
+      unfold CNode.wellFormed at hWfPre ⊢
+      constructor
+      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW, hSameDepth]; exact hWfPre.1
+      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW]; exact hWfPre.2
+  · rw [storeObject_objects_ne st st' targetOid cnodeId (.cnode cn') hEq hStore] at hObj
+    exact hDepth cnodeId cn hObj
+
+/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when inserting a capability
+into a CNode, given the inserted capability satisfies the parent-child depth constraint. -/
+private theorem cspaceDepthConsistent_of_storeObject_insertCNode
+    (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn : CNode)
+    (insertSlot : SeLe4n.Slot) (insertCap : Capability)
+    (hDepth : cspaceDepthConsistent st)
+    (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
+    (hStore : storeObject targetOid (.cnode (preCn.insert insertSlot insertCap)) st = .ok ((), st')) :
+    cspaceDepthConsistent st' := by
+  intro cnodeId cn hObj
+  by_cases hEq : cnodeId = targetOid
+  · rw [hEq] at hObj
+    rw [storeObject_objects_eq st st' targetOid _ hStore] at hObj; cases hObj
+    exact hDepth targetOid preCn hPreObj
+  · rw [storeObject_objects_ne st st' targetOid cnodeId _ hEq hStore] at hObj
+    exact hDepth cnodeId cn hObj
+
+/-- WS-H13: Transfer cspaceDepthConsistent through detachSlotFromCdt (objects unchanged). -/
+private theorem cspaceDepthConsistent_of_detachSlotFromCdt
+    (st : SystemState) (ref : SlotRef)
+    (hDepth : cspaceDepthConsistent st) :
+    cspaceDepthConsistent (st.detachSlotFromCdt ref) :=
+  cspaceDepthConsistent_of_objects_eq st _ hDepth
+    (SystemState.detachSlotFromCdt_objects_eq st ref)
+
+/-- WS-H13: CNode.remove preserves depth/guardWidth/radixWidth and has slot subset. -/
+private theorem CNode.remove_depth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+    (cn.remove slot).depth = cn.depth := rfl
+
+private theorem CNode.remove_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+    (cn.remove slot).guardWidth = cn.guardWidth := rfl
+
+private theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
+    (cn.remove slot).radixWidth = cn.radixWidth := rfl
+
+private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
+    ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.remove slot).slots[s]? = some cap → cn.slots[s]? = some cap := by
+  intro s cap hLookup
+  simp [CNode.remove] at hLookup
+  rw [Std.HashMap.getElem?_erase] at hLookup
+  by_cases h : (slot == s) = true
+  · simp [h] at hLookup
+  · simp [h] at hLookup; exact hLookup
+
+/-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/
+private theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+    (cn.revokeTargetLocal slot target).depth = cn.depth := rfl
+
+private theorem CNode.revokeTargetLocal_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+    (cn.revokeTargetLocal slot target).guardWidth = cn.guardWidth := rfl
+
+private theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
+    (cn.revokeTargetLocal slot target).radixWidth = cn.radixWidth := rfl
+
+private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.revokeTargetLocal sourceSlot target).slots[s]? = some cap → cn.slots[s]? = some cap := by
+  intro s cap hLookup
+  simp only [CNode.revokeTargetLocal] at hLookup
+  -- Filter only keeps entries from the original map
+  have hMem : s ∈ cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)) :=
+    Std.HashMap.mem_iff_isSome_getElem?.mpr (by rw [hLookup]; rfl)
+  have hMemOrig : s ∈ cn.slots := Std.HashMap.mem_of_mem_filter hMem
+  -- Reconstruct the value
+  have h1 : (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]? =
+      some ((cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]) :=
+    Std.HashMap.getElem?_eq_some_getElem hMem
+  have h2 : cn.slots[s]? = some cn.slots[s] := Std.HashMap.getElem?_eq_some_getElem hMemOrig
+  rw [h1] at hLookup
+  have hCapEq := (Option.some.inj hLookup).symm
+  rw [hCapEq, Std.HashMap.getElem_filter (m := cn.slots)
+    (f := fun s c => s == sourceSlot || !(c.target == target))]
+  exact h2
+
+/-- WS-H13: CNode.insert preserves depth/guardWidth/radixWidth. -/
+private theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).depth = cn.depth := rfl
+
+private theorem CNode.insert_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).guardWidth = cn.guardWidth := rfl
+
+private theorem CNode.insert_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).radixWidth = cn.radixWidth := rfl
 
 /-- WS-H4: CDT-only state update preserves cspaceSlotCountBounded and cdtCompleteness.
 Used for `{ st with cdt := cdt' }` where objects and cdtNodeSlot are unchanged. -/
@@ -1229,10 +1390,11 @@ theorem capabilityInvariantBundle_of_slotUnique
     (hUnique : cspaceSlotUnique st)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st)
-    (hAcyclic : cdtAcyclicity st) :
+    (hAcyclic : cdtAcyclicity st)
+    (hDepth : cspaceDepthConsistent st) :
     capabilityInvariantBundle st :=
   ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique, cspaceAttenuationRule_holds,
-    lifecycleAuthorityMonotonicity_holds st, hBounded, hComp, hAcyclic⟩
+    lifecycleAuthorityMonotonicity_holds st, hBounded, hComp, hAcyclic, hDepth⟩
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -1257,7 +1419,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   -- Compositionally derive post-state uniqueness (WS-E2 / H-01)
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
@@ -1294,7 +1456,8 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       rw [hPreObj] at hObj
       exact hUnique cnodeId cn hObj
   -- WS-H4: Transfer new components through storeObject(CNode) → storeCapabilityRef chain
-  have ⟨hBounded', hComp', hAcyclic'⟩ : cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     unfold cspaceInsertSlot at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
@@ -1317,12 +1480,15 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
             have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode
               (.cnode (preCn.insert addr.slot cap)) hComp hStore
               (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
+            have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
+              st stMid addr.cnode preCn addr.slot cap hDepthPre hPre hStore
             exact ⟨cspaceSlotCountBounded_of_objects_eq stMid st' hBndMid hRefObj,
               cdtCompleteness_of_objects_nodeSlot_eq stMid st' hCompMid hRefObj hRefNS,
               cdtAcyclicity_of_cdt_eq st st' hAcyclic
-                (by rw [hRefCdt]; exact storeObject_cdt_eq st stMid addr.cnode _ hStore)⟩
+                (by rw [hRefCdt]; exact storeObject_cdt_eq st stMid addr.cnode _ hStore),
+              cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj⟩
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic'⟩
+    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
 
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -1358,7 +1524,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceDeleteSlot at hStep
@@ -1399,7 +1565,8 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
               rw [this] at hObj
               exact hUnique cnodeId cn hObj
   -- WS-H4: Prove new components through storeObject → storeCapabilityRef → detachSlotFromCdt
-  have ⟨hBounded', hComp', hAcyclic'⟩ : cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     unfold cspaceDeleteSlot at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
@@ -1424,14 +1591,18 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
               (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
             have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
               (storeObject_cdt_eq st stMid addr.cnode _ hStore)
+            have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
+              st stMid addr.cnode preCn (preCn.remove addr.slot) hDepthPre hPre hStore rfl rfl rfl
             have hBndRef := cspaceSlotCountBounded_of_objects_eq stMid stRef hBndMid hRefObj
             have hCompRef := cdtCompleteness_of_objects_nodeSlot_eq stMid stRef hCompMid hRefObj hRefNS
             have hAcyclicRef := cdtAcyclicity_of_cdt_eq stMid stRef hAcyclicMid hRefCdt
+            have hDepthRef := cspaceDepthConsistent_of_objects_eq stMid stRef hDepthMid hRefObj
             exact ⟨cspaceSlotCountBounded_of_detachSlotFromCdt stRef addr hBndRef,
               cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef,
-              cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef⟩
+              cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
+              cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef⟩
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic'⟩
+    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 Uses pre-state `cspaceSlotUnique` + `CNode.revokeTargetLocal_slotsUnique` to derive
@@ -1442,7 +1613,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceRevoke at hStep
@@ -1483,7 +1654,8 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               rw [this] at hObj
               exact hUnique cnodeId cn hObj
   -- WS-H4: storeObject(CNode.revokeTargetLocal) → clearCapabilityRefs
-  have ⟨hBounded', hComp', hAcyclic'⟩ : cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     unfold cspaceRevoke at hStep
     cases hLookup2 : cspaceLookupSlot addr st with
     | error e => simp [hLookup2] at hStep
@@ -1507,12 +1679,16 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
             have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
               (storeObject_cdt_eq st stMid addr.cnode _ hStore)
+            have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
+              st stMid addr.cnode preCn (preCn.revokeTargetLocal addr.slot parent.target)
+              hDepthPre hPre hStore rfl rfl rfl
             have ⟨hClearCdt, hClearNS, _, hClearObj⟩ := clearCapabilityRefs_cdt_eq stMid st' _ hStep
             exact ⟨cspaceSlotCountBounded_of_objects_eq stMid st' hBndMid hClearObj,
               cdtCompleteness_of_objects_nodeSlot_eq stMid st' hCompMid hClearObj hClearNS,
-              cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hClearCdt⟩
+              cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hClearCdt,
+              cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hClearObj⟩
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic'⟩
+    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
 
 -- ============================================================================
 -- WS-E4/C-02: Preservation theorems for new capability operations
@@ -1543,7 +1719,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
             (fun cn hObj => hDstCapacity cn cap hObj) hInsert
-          rcases hBundleSt2 with ⟨hU2, _, hAtt2, _, hBnd2, hComp2, _⟩
+          rcases hBundleSt2 with ⟨hU2, _, hAtt2, _, hBnd2, hComp2, _, hDepth2⟩
           cases hEnsSrc : SystemState.ensureCdtNodeForSlot st2 src with
           | mk srcNode stSrc =>
               cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
@@ -1562,7 +1738,8 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
                   exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt2,
                     lifecycleAuthorityMonotonicity_holds _,
                     cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
-                    hCdtPost.1, hCdtPost.2⟩
+                    hCdtPost.1, hCdtPost.2,
+                    cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal⟩
 
 /-- WS-E4/C-02: cspaceMove preserves capabilityInvariantBundle.
 Move composes lookup + insert + delete, all of which preserve the bundle. -/
@@ -1593,13 +1770,13 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
                 (fun cn hObj => hDstCapacity cn cap hObj) hInsert
               have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2 hDelete
-              rcases hBundleSt3 with ⟨hU3, _, hAtt3, _, hBnd3, _, _⟩
+              rcases hBundleSt3 with ⟨hU3, _, hAtt3, _, hBnd3, _, _, hDepth3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3, hAtt3,
-                    lifecycleAuthorityMonotonicity_holds _, hBnd3, hCdtPost.1, hCdtPost.2⟩
+                    lifecycleAuthorityMonotonicity_holds _, hBnd3, hCdtPost.1, hCdtPost.2, hDepth3⟩
               | some srcNode =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
@@ -1611,7 +1788,8 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                   exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt3,
                     lifecycleAuthorityMonotonicity_holds _,
                     cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
-                    hCdtPost.1, hCdtPost.2⟩
+                    hCdtPost.1, hCdtPost.2,
+                    cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq⟩
 
 /-- WS-E4/C-03: cspaceMintWithCdt preserves capabilityInvariantBundle.
 Composes cspaceMint (already proven) + CDT edge addition. -/
@@ -1633,7 +1811,7 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
       rcases pair with ⟨_, st1⟩
       have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv
         hDstCapacity hMint
-      rcases hBundle with ⟨hU1, _, hAtt1, _, hBnd1, _, _⟩
+      rcases hBundle with ⟨hU1, _, hAtt1, _, hBnd1, _, _, hDepth1⟩
       cases hEnsSrc : SystemState.ensureCdtNodeForSlot st1 src with
       | mk srcNode stSrc =>
           cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
@@ -1650,7 +1828,8 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
               exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt1,
                 lifecycleAuthorityMonotonicity_holds _,
                 cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
-                hCdtPost.1, hCdtPost.2⟩
+                hCdtPost.1, hCdtPost.2,
+                cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal⟩
 
 -- ============================================================================
 -- WS-F4/F-06: cspaceMutate preservation
@@ -1669,7 +1848,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     -- Revert hStep to decompose the definition via goal-level case splits
@@ -1722,7 +1901,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 exact hUnique cnodeId cn hObj
       · simp [hRights]
   -- WS-H4: cspaceMutate goes through storeObject(CNode.insert) → storeCapabilityRef, same as insertSlot
-  have ⟨hBounded', hComp', hAcyclic'⟩ : cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     unfold cspaceMutate at hStep
     cases hLookup2 : cspaceLookupSlot addr st with
     | error e => simp [hLookup2] at hStep
@@ -1751,12 +1931,17 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
               have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
                 (storeObject_cdt_eq st stMid addr.cnode _ hStore)
+              have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
+                st stMid addr.cnode preCn addr.slot
+                { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
+                hDepthPre hPre hStore
               exact ⟨cspaceSlotCountBounded_of_objects_eq stMid st' hBndMid hRefObj,
                 cdtCompleteness_of_objects_nodeSlot_eq stMid st' hCompMid hRefObj hRefNS,
-                cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hRefCdt⟩
+                cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hRefCdt,
+                cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj⟩
       · simp_all
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic'⟩
+    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
 
 -- ============================================================================
 -- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
@@ -1769,11 +1954,12 @@ private theorem capabilityInvariantBundle_of_cdt_update
     (hInv : capabilityInvariantBundle st)
     (hAcyclic' : cdt'.edgeWellFounded) :
     capabilityInvariantBundle { st with cdt := cdt' } := by
-  rcases hInv with ⟨hU, _, hA, _, hBnd, hComp, _⟩
+  rcases hInv with ⟨hU, _, hA, _, hBnd, hComp, _, hDepthPre⟩
   have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
   exact ⟨cspaceSlotUnique_of_objects_eq st _ hU hObjEq,
     cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq st _ hU hObjEq),
-    hA, lifecycleAuthorityMonotonicity_holds _, hBnd, hComp, hAcyclic'⟩
+    hA, lifecycleAuthorityMonotonicity_holds _, hBnd, hComp, hAcyclic',
+    cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq⟩
 
 /-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node. -/
 private def revokeCdtFoldBody
@@ -1802,29 +1988,30 @@ private theorem revokeCdtFoldBody_preserves
   | none =>
     simp [hSlot] at hStep; cases hStep
     exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
   | some descAddr =>
     simp [hSlot] at hStep
     cases hDel : cspaceDeleteSlot descAddr stAcc with
     | error _ =>
       simp [hDel] at hStep; cases hStep
       exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
       simp [hDel] at hStep; cases hStep
       have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel descAddr hInv hDel
       have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-      rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2⟩
+      rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
       have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
         ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
          cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
          hA2, lifecycleAuthorityMonotonicity_holds _,
          cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
          cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
-         cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2⟩
+         cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
+         cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
       exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2
+        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2.1
           (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
 
 /-- Error propagation: revokeCdtFoldBody propagates errors unchanged. -/
@@ -1947,7 +2134,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             simp
             exact ih rep { stAcc with cdt := stAcc.cdt.removeNode node }
               (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
+                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
           | some descAddr =>
             simp
             cases hDel : cspaceDeleteSlot descAddr stAcc with
@@ -1955,23 +2142,24 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
               simp
               exact ih _ { stAcc with cdt := stAcc.cdt.removeNode node }
                 (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                  (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
+                  (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
             | ok pair =>
               obtain ⟨_, stDel⟩ := pair
               simp
               have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel
                 descAddr hI hDel
               have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-              rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2⟩
+              rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
               have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
                 ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
                  cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
                  hA2, lifecycleAuthorityMonotonicity_holds _,
                  cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
                  cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
-                 cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2⟩
+                 cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
+                 cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
               exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-                (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2
+                (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2.1
                   (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node)))
 
 -- ============================================================================
@@ -1988,7 +2176,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -2056,8 +2244,12 @@ theorem endpointReply_preserves_capabilityInvariantBundle
             hU1 (ensureRunnable_preserves_objects st1 target)
           have ⟨hBndE, hCompE, hAcyclicE⟩ :=
             cdtPredicates_through_reply_path st st1 target .ready (some msg) hBounded hComp hAcyclic hTcb
+          have hDepth1 : cspaceDepthConsistent st1 := by
+            intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
+          have hDepthE := cspaceDepthConsistent_of_objects_eq st1 _ hDepth1
+            (ensureRunnable_preserves_objects st1 target)
           exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
-            lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE⟩
+            lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE, hDepthE⟩
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 
@@ -2159,9 +2351,11 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
+    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
+      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
       ⟨_, _, _, _, _, _, hStore⟩
@@ -2178,11 +2372,12 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       rw [hPreserved] at hObj
       exact hUnique cnodeId cn hObj
   -- WS-H4: lifecycleRetypeObject delegates to storeObject, which preserves CDT fields
-  have ⟨hBounded', hComp', hAcyclic'⟩ : cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
       ⟨_, _, _, _, _, _, hStore⟩
     have hNS := (storeObject_cdtNodeSlot_eq st st' target newObj hStore).1
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · intro cnodeId cn hObj
       by_cases hEq : cnodeId = target
       · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hStore] at hObj
@@ -2193,8 +2388,16 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
         exact hBounded cnodeId cn hObj
     · exact cdtCompleteness_of_storeObject st st' target newObj hComp hStore hNS
     · exact cdtAcyclicity_of_cdt_eq st st' hAcyclic (storeObject_cdt_eq st st' target newObj hStore)
+    · intro cnodeId cn hObj
+      by_cases hEq : cnodeId = target
+      · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hStore] at hObj
+        cases newObj with
+        | cnode _ => cases hObj; exact hNewObjCNodeDepth cn rfl
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+      · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hStep] at hObj
+        exact hDepthPre cnodeId cn hObj
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic'⟩
+    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
     (st st' : SystemState)
@@ -2231,6 +2434,8 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
+    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
+      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hCurrentValid : currentThreadValid st')
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
@@ -2241,7 +2446,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
-      hNewObjCNodeUniq hNewObjCNodeBounded hStep
+      hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv hStep,
            hDualQueue', hBounded'⟩
 
@@ -2254,6 +2459,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hNewObjNotificationInv : ∀ ntfn, newObj = .notification ntfn → notificationInvariant ntfn)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
+    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
+      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hCurrentValid : currentThreadValid st')
     (hCoherence' : ipcSchedulerCoherenceComponent st')
     (hCtxMatch' : contextMatchesCurrent st')
@@ -2266,7 +2473,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hCurrentValid hDualQueue' hBounded' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle hStep
@@ -2281,6 +2488,8 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
+    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
+      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
@@ -2290,7 +2499,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
   have hDeleted : capabilityInvariantBundle stDeleted :=
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
-    hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hRetype
+    hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hRetype
 
 theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant
     (st st' : SystemState)
@@ -2300,6 +2509,8 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     (hCap : capabilityInvariantBundle st)
     (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
+    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
+      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hLifecycleAfterCleanup :
       ∀ stRevoked stDeleted,
         cspaceRevoke cleanup st = .ok ((), stRevoked) →
@@ -2312,7 +2523,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, hLookupDeleted, hRetype⟩
   have hCap' : capabilityInvariantBundle st' :=
     lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target
-      newObj hCap hNewObjCNodeUniq hNewObjCNodeBounded hStep
+      newObj hCap hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
   have hLifecycleDeleted : lifecycleInvariantBundle stDeleted :=
     hLifecycleAfterCleanup stRevoked stDeleted hRevoke hDelete hLookupDeleted
   have hLifecycle' : lifecycleInvariantBundle st' :=

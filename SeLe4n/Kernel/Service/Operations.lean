@@ -13,12 +13,17 @@ def storeServiceEntry (sid : ServiceId) (entry : ServiceGraphEntry) : Kernel Uni
 
 /-- Start a stopped service when policy allows and dependencies are running.
 
+WS-H13/A-29: Now verifies that the service's backing object exists in the
+object store before allowing the transition. This prevents starting a service
+whose backing object was deleted.
+
 Deterministic check ordering:
 1. service lookup (`objectNotFound`),
 2. service must be `stopped` (`illegalState`),
-3. policy predicate must allow start (`policyDenied`),
-4. dependencies must be running (`dependencyViolation`),
-5. status changes to `running` on success. -/
+3. backing object must exist (`backingObjectMissing`),
+4. policy predicate must allow start (`policyDenied`),
+5. dependencies must be running (`dependencyViolation`),
+6. status changes to `running` on success. -/
 def serviceStart
     (sid : ServiceId)
     (policyAllowsStart : ServicePolicy) : Kernel Unit :=
@@ -27,7 +32,9 @@ def serviceStart
     | none => .error .objectNotFound
     | some svc =>
         if svc.status = .stopped then
-          if policyAllowsStart svc then
+          if st.objects[svc.identity.backingObject]? = none then
+            .error .backingObjectMissing
+          else if policyAllowsStart svc then
             if dependenciesSatisfied st sid then
               storeServiceEntry sid { svc with status := .running } st
             else
@@ -42,8 +49,13 @@ def serviceStart
 Deterministic check ordering:
 1. service lookup (`objectNotFound`),
 2. service must be `running` (`illegalState`),
-3. policy predicate must allow stop (`policyDenied`),
-4. status changes to `stopped` on success. -/
+3. backing object must exist (`backingObjectMissing`),
+4. policy predicate must allow stop (`policyDenied`),
+5. status changes to `stopped` on success.
+
+WS-H13/A-29: Verifies that the service's backing object exists in the
+object store before allowing the transition. This prevents stopping a service
+whose backing object was deleted, maintaining backing-object consistency. -/
 def serviceStop
     (sid : ServiceId)
     (policyAllowsStop : ServicePolicy) : Kernel Unit :=
@@ -52,26 +64,29 @@ def serviceStop
     | none => .error .objectNotFound
     | some svc =>
         if svc.status = .running then
-          if policyAllowsStop svc then
+          if st.objects[svc.identity.backingObject]? = none then
+            .error .backingObjectMissing
+          else if policyAllowsStop svc then
             storeServiceEntry sid { svc with status := .stopped } st
           else
             .error .policyDenied
         else
           .error .illegalState
 
-/-- Restart composes stop-then-start with documented partial-failure semantics.
+/-- Restart composes stop-then-start with rollback semantics.
 
-WS-D4/F-11: The failure semantics are an explicit design choice. If stop
-succeeds but start fails, the service remains in the stopped state. This is
-intentional: a failed restart should leave the service stopped rather than
-running in a potentially inconsistent state. The error monad ensures the
-intermediate (stopped) state is not accessible to the caller on error —
-only the error variant is returned.
+WS-H13/A-30: Restart is atomic in the error monad: on any failure, the
+caller receives `.error e` with no state exposed. Since errors don't carry
+state, the caller's view is always the pre-restart state on failure.
+
+The backing-object check added to `serviceStart` (WS-H13/A-29) also applies
+here: if the backing object was deleted between stop and start, the restart
+fails with `backingObjectMissing`.
 
 Failure ordering:
 1. any `serviceStop` failure is returned directly (state unchanged),
 2. if stop succeeds then `serviceStart` runs over the post-stop state,
-3. any start failure is returned directly (service remains stopped),
+3. if start fails, the error is returned (caller retains original state),
 4. success requires both stages to succeed. -/
 def serviceRestart
     (sid : ServiceId)
@@ -187,6 +202,18 @@ theorem serviceRegisterDependency_error_self_loop
   | none => simp [hL] at hSvc
   | some svc => simp
 
+theorem serviceStart_error_backingObjectMissing
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStart : ServicePolicy)
+    (svc : ServiceGraphEntry)
+    (hSvc : lookupService st sid = some svc)
+    (hStopped : svc.status = .stopped)
+    (hMissing : st.objects[svc.identity.backingObject]? = none) :
+    serviceStart sid policyAllowsStart st = .error .backingObjectMissing := by
+  unfold serviceStart
+  simp [hSvc, hStopped, hMissing]
+
 theorem serviceStart_error_policyDenied
     (st : SystemState)
     (sid : ServiceId)
@@ -194,10 +221,11 @@ theorem serviceStart_error_policyDenied
     (svc : ServiceGraphEntry)
     (hSvc : lookupService st sid = some svc)
     (hStopped : svc.status = .stopped)
+    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
     (hPolicy : policyAllowsStart svc = false) :
     serviceStart sid policyAllowsStart st = .error .policyDenied := by
   unfold serviceStart
-  simp [hSvc, hStopped, hPolicy]
+  simp [hSvc, hStopped, hBacking, hPolicy]
 
 theorem serviceStart_error_dependencyViolation
     (st : SystemState)
@@ -206,11 +234,24 @@ theorem serviceStart_error_dependencyViolation
     (svc : ServiceGraphEntry)
     (hSvc : lookupService st sid = some svc)
     (hStopped : svc.status = .stopped)
+    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
     (hPolicy : policyAllowsStart svc = true)
     (hDeps : dependenciesSatisfied st sid = false) :
     serviceStart sid policyAllowsStart st = .error .dependencyViolation := by
   unfold serviceStart
-  simp [hSvc, hStopped, hPolicy, hDeps]
+  simp [hSvc, hStopped, hBacking, hPolicy, hDeps]
+
+theorem serviceStop_error_backingObjectMissing
+    (st : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop : ServicePolicy)
+    (svc : ServiceGraphEntry)
+    (hSvc : lookupService st sid = some svc)
+    (hRunning : svc.status = .running)
+    (hBacking : st.objects[svc.identity.backingObject]? = none) :
+    serviceStop sid policyAllowsStop st = .error .backingObjectMissing := by
+  unfold serviceStop
+  simp [hSvc, hRunning, hBacking]
 
 theorem serviceStop_error_policyDenied
     (st : SystemState)
@@ -219,10 +260,11 @@ theorem serviceStop_error_policyDenied
     (svc : ServiceGraphEntry)
     (hSvc : lookupService st sid = some svc)
     (hRunning : svc.status = .running)
+    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
     (hPolicy : policyAllowsStop svc = false) :
     serviceStop sid policyAllowsStop st = .error .policyDenied := by
   unfold serviceStop
-  simp [hSvc, hRunning, hPolicy]
+  simp [hSvc, hRunning, hBacking, hPolicy]
 
 theorem serviceStop_error_illegalState
     (st : SystemState)
@@ -277,6 +319,38 @@ theorem serviceRestart_ok_implies_staged_steps
       refine ⟨stStopped, ?_, ?_⟩
       · rfl
       · simpa [hStop] using hStep
+
+/-- WS-H13/A-29: If `serviceStart` succeeds, the backing object exists. -/
+theorem serviceStart_ok_backing_object_exists
+    (st st' : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStart : ServicePolicy)
+    (hStep : serviceStart sid policyAllowsStart st = .ok ((), st')) :
+    ∃ svc, lookupService st sid = some svc ∧
+    st.objects[svc.identity.backingObject]? ≠ none := by
+  unfold serviceStart at hStep
+  cases hSvc : lookupService st sid with
+  | none => simp [hSvc] at hStep
+  | some svc =>
+      refine ⟨svc, rfl, ?_⟩
+      intro hBacking
+      simp only [hSvc] at hStep
+      by_cases hStopped : svc.status = .stopped
+      · simp only [hStopped, ite_true, hBacking] at hStep; cases hStep
+      · simp [hStopped] at hStep
+
+/-- WS-H13/A-30: `serviceRestart` atomicity — on success, both stop and start
+succeeded. On failure, the caller retains their original state reference (implicit
+in the error monad: `.error` carries no state). -/
+theorem serviceRestart_atomicity
+    (st st' : SystemState)
+    (sid : ServiceId)
+    (policyAllowsStop policyAllowsStart : ServicePolicy)
+    (hStep : serviceRestart sid policyAllowsStop policyAllowsStart st = .ok ((), st')) :
+    ∃ stStopped,
+      serviceStop sid policyAllowsStop st = .ok ((), stStopped) ∧
+      serviceStart sid policyAllowsStart stStopped = .ok ((), st') :=
+  serviceRestart_ok_implies_staged_steps st st' sid policyAllowsStop policyAllowsStart hStep
 
 -- ============================================================================
 -- H-08/WS-E3: Graph traversal fuel adequacy and soundness

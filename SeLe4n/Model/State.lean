@@ -33,6 +33,7 @@ inductive KernelError where
   | addressOutOfBounds      -- WS-H11/A-05: physical address exceeds machine address width
   | ipcMessageTooLarge      -- WS-H12d/A-09: IPC message registers exceed maxMessageRegisters (120)
   | ipcMessageTooManyCaps   -- WS-H12d/A-09: IPC message caps exceed maxExtraCaps (3)
+  | backingObjectMissing    -- WS-H13/A-29: service backing object not in object store
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.

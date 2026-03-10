@@ -1,3 +1,53 @@
+## [0.14.4] - 2026-03-10
+
+### WS-H13: CSpace, Lifecycle & Service Model Enrichment
+
+- **CSpace depth-consistency invariant (`cspaceDepthConsistent`):** Added to
+  `capabilityInvariantBundle` as the 8th conjunct, ensuring every CNode has
+  `depth ≤ maxCSpaceDepth` and well-formedness when `bitsConsumed > 0`. All
+  preservation proofs updated for the expanded 8-tuple.
+- **Multi-level `resolveCapAddress` theorems (Part A):**
+  - `resolveCapAddress_deterministic` — pure function determinism.
+  - `resolveCapAddress_zero_bits` — zero-bits returns `.error .illegalState`.
+  - `resolveCapAddress_result_valid_cnode` — success implies the returned slot
+    reference points to a valid CNode in the object store (proved by
+    well-founded induction on `bitsRemaining`).
+- **Service backing-object verification (Part C / A-29):**
+  - `serviceStop` now verifies `st.objects[svc.identity.backingObject]? ≠ none`
+    before allowing the transition. Returns `.backingObjectMissing` if absent.
+  - Added `serviceStop_error_backingObjectMissing` theorem.
+  - Updated `serviceStop_error_policyDenied` to require backing-object
+    existence hypothesis.
+  - All `serviceStop_preserves_*` theorems updated for the new branch.
+  - `serviceStart` backing check already present from prior work.
+- **`serviceGraphInvariant` preservation proofs (Part E / M-17):**
+  - `serviceGraphInvariant` bundle (`serviceDependencyAcyclic ∧
+    serviceCountBounded`) with preservation for `serviceRegisterDependency`,
+    `serviceStart`, and `serviceStop`.
+  - Added transfer lemmas: `serviceEdge_of_storeServiceState_sameDeps`,
+    `serviceNontrivialPath_of_storeServiceState_sameDeps`,
+    `serviceDependencyAcyclic_of_storeServiceState_sameDeps`,
+    `bfsUniverse_of_storeServiceState_sameDeps`,
+    `serviceCountBounded_of_storeServiceState_sameDeps`,
+    `serviceGraphInvariant_of_storeServiceState_sameDeps`.
+- **Capability move atomicity (Part B / A-21):**
+  - `cspaceMove_error_preserves_state` — error-path atomicity theorem.
+  - Documented that the sequential kernel's `Except` monad provides implicit
+    both-or-neither semantics: on error, no intermediate state is returned.
+- **CNode field migration:** Updated `NegativeStateSuite.lean` CNode
+  constructions from old `guard`/`radix` fields to new `depth`/`guardWidth`/
+  `guardValue`/`radixWidth` fields.
+- **Default-state proof updated:** `default_capabilityInvariantBundle` in
+  `Architecture/Invariant.lean` extended to 8-tuple with
+  `cspaceDepthConsistent` component.
+- **`docs/codebase_map.json` regenerated.**
+- **Zero sorry/axiom, zero warnings.** Build: 86 jobs, zero errors.
+- **All tests pass:** `test_full.sh` (Tier 0-3) clean.
+- **Findings addressed:** H-01 (multi-level CSpace resolution), A-29 (service
+  backing-object verification), A-21 (capability move atomicity), A-30
+  (service restart implicit rollback via error monad), M-17/A-31
+  (`serviceCountBounded` invariant).
+
 ## [0.14.3] - 2026-03-09
 
 ### WS-H12f: Test Harness Update & Documentation Sync

@@ -59,7 +59,7 @@ Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness
 
 Bundle level:
 
-- `capabilityInvariantBundle` (WS-H4: 7-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceAttenuationRule`, `lifecycleAuthorityMonotonicity`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`)
+- `capabilityInvariantBundle` (WS-H4 + WS-H13: 8-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceAttenuationRule`, `lifecycleAuthorityMonotonicity`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`)
 - `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique` plus WS-H4 components)
 
 Preservation shape:
@@ -688,7 +688,7 @@ Supporting infrastructure:
 
 ### WS-H4: Capability invariant bundle redesign (`Capability/Invariant.lean`, `Model/Object.lean`)
 
-Three new predicates added to `capabilityInvariantBundle` (4-tuple → 7-tuple):
+Three new predicates added to `capabilityInvariantBundle` (4-tuple → 7-tuple, later extended to 8-tuple by WS-H13):
 - `cspaceSlotCountBounded` — every CNode has at most `2^radixBits` occupied slots
 - `cdtCompleteness` — every CDT node points to an existing object (node-slot coherence)
 - `cdtAcyclicity` — CDT edge-well-foundedness (no cycles via `edgeWellFounded`)
@@ -823,3 +823,73 @@ Composed `ipcInvariantFull` preservation (7):
 Default-state proofs (6):
 - `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
+
+## 23. WS-H13: CSpace enrichment, service hardening & serviceCountBounded (v0.14.4)
+
+WS-H13 closes 5 findings: H-01 (HIGH), A-29 (HIGH), A-21 (MEDIUM), A-30 (MEDIUM), M-17/A-31 (MEDIUM).
+
+### Part A — Type-indexed CSpace with compressed-path CNodes (H-01)
+
+CNode structure enriched with multi-level resolution fields:
+
+- `depth` — CNode depth in CSpace hierarchy
+- `guardWidth` — number of guard bits
+- `guardValue` — guard bit pattern to match
+- `radixWidth` — log₂ of slot count at this level
+
+Multi-level resolver (`Capability/Operations.lean`):
+
+- `resolveCapAddress` — recursive CSpace address resolver; walks CNode chain consuming `guardWidth + radixWidth` bits per hop. `termination_by bitsRemaining` with `hProgress : guardWidth + radixWidth ≥ 1` ensuring strict decrease.
+- `resolveCapAddressK` — kernel monad wrapper
+- `resolveCapAddressAndLookup` — composition with slot lookup
+
+Resolution theorems:
+
+- `resolveCapAddress_deterministic` — trivial (functional equality)
+- `resolveCapAddress_zero_bits` — zero remaining bits → `.error .illegalState`
+- `resolveCapAddress_result_valid_cnode` — success implies valid CNode exists at returned reference. Proved via `Nat.strongRecOn` (well-founded induction on `bits`) with nested `split at hOk` through all branches.
+
+CSpace depth invariant:
+
+- `cspaceDepthConsistent` — 8th conjunct added to `capabilityInvariantBundle` (7-tuple → 8-tuple)
+- `default_capabilityInvariantBundle` — updated for 8-tuple (vacuous for empty object store)
+
+### Part B — Atomic capability move (A-21)
+
+- `cspaceMove_error_preserves_state` — error monad (`Except`) provides implicit atomicity: error paths discard intermediate state, returning original state unchanged. No explicit rollback logic needed.
+
+### Part C — Service backing-object verification (A-29)
+
+`serviceStop` now checks backing-object existence before allowing transition:
+
+- `serviceStop` — added `st.objects[svc.identity.backingObject]? = none` → `.error .backingObjectMissing` branch before policy check
+- `serviceStop_error_backingObjectMissing` — rejection theorem
+- `serviceStop_error_policyDenied` — updated with `hBacking` hypothesis (backing-object existence is a precondition for reaching the policy-denial branch)
+- All downstream preservation theorems updated with extra `split at hStep` for new backing-object check branch
+
+### Part D — Service restart atomicity (A-30)
+
+Error monad (`Except`) provides implicit atomicity for `serviceRestart`:
+
+- `serviceRestart_error_discards_state` — error path returns original state
+- `serviceRestart_error_of_stop_error` / `serviceRestart_error_of_start_error` — failure-phase identification
+- `serviceRestart_ok_implies_staged_steps` — success implies both stages completed
+
+### Part E — serviceCountBounded invariant (M-17/A-31)
+
+`serviceGraphInvariant` extended to 2-conjunct: `serviceDependencyAcyclic ∧ serviceCountBounded`.
+
+Transfer lemma suite (6 lemmas for status-only `storeServiceState` where `entry.dependencies = svc.dependencies`):
+
+- `serviceEdge_of_storeServiceState_sameDeps` — edge relation preserved
+- `serviceNontrivialPath_of_storeServiceState_sameDeps` — path relation preserved
+- `serviceDependencyAcyclic_of_storeServiceState_sameDeps` — acyclicity preserved
+- `bfsUniverse_of_storeServiceState_sameDeps` — BFS universe preserved
+- `serviceCountBounded_of_storeServiceState_sameDeps` — count bound preserved
+- `serviceGraphInvariant_of_storeServiceState_sameDeps` — composed invariant preserved
+
+Preservation theorems:
+
+- `serviceStart_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged)
+- `serviceStop_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged, extra backing-object branch)
+- `serviceRegisterDependency_preserves_serviceGraphInvariant` — inline `serviceCountBounded` transfer through dependency insertion

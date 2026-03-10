@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.14.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.14.4-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -54,7 +54,7 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.14.3` |
+| **Version** | `0.14.4` |
 | **Lean toolchain** | `4.28.0` |
 | **Production Lean LoC** | 30,491 across 41 files |
 | **Test Lean LoC** | 2,360 across 3 test suites |
@@ -64,7 +64,7 @@ introducing substantial architectural improvements:
 | **Active findings** | [`AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | **Active audit** | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — all 14 findings resolved |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues |
-| **Completed** | WS-H12f (v0.14.3), WS-H12e (v0.14.2), WS-H12d (v0.14.1), WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
+| **Completed** | WS-H13 (v0.14.4), WS-H12f (v0.14.3), WS-H12e (v0.14.2), WS-H12d (v0.14.1), WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), End-to-end audit (v0.13.6), WS-H10 (v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0) |
 | **Metrics source of truth** | `./scripts/report_current_state.py` (use before updating docs/gitbook) |
 
 All quantitative attributes above are generated from the codebase using
@@ -229,7 +229,7 @@ the [v0.12.15 audit plan](docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
 | **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium — **Completed** |
 | **WS-H12c** | Per-TCB register context with inline context switch (H-03) | Medium — **Completed** |
 | **WS-H12d–f** | Scheduler/IPC semantic alignment (message bounds, reconciliation) | Medium |
-| **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
+| **WS-H13** | CSpace/service model enrichment (multi-level resolution, backing-object verification, serviceCountBounded) | Medium — **Completed** |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
 | **WS-H16** | Testing and documentation expansion | Low |
