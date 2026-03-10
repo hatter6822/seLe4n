@@ -146,7 +146,7 @@ Component level:
 
 Preservation shape:
 
-- transition-level `endpointSend_preserves_ipcInvariant`, etc.
+- transition-level `endpointSendDual_preserves_ipcInvariant`, etc.
 - WS-F1 dual-queue: `endpointSendDual_preserves_ipcInvariant`, `endpointReceiveDual_preserves_ipcInvariant`, `endpointQueueRemoveDual_preserves_ipcInvariant` (TPI-D08).
 - WS-F1 compound: `endpointCall_preserves_ipcInvariant`, `endpointReplyRecv_preserves_ipcInvariant`, `endpointReply_preserves_ipcSchedulerContractPredicates` (TPI-D09).
 - WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
@@ -472,7 +472,7 @@ Policy and projection primitives:
 
 Policy checks wired into kernel operations via `Enforcement.lean`:
 
-- `endpointSendChecked` — enforces `securityFlowsTo` before IPC send,
+- `endpointSendDualChecked` — enforces `securityFlowsTo` before IPC send,
 - `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting,
 - `serviceRestartChecked` — enforces `securityFlowsTo` before service restart.
 
@@ -482,7 +482,7 @@ Transition-level non-interference proofs in `InformationFlow/Invariant.lean`:
 
 WS-D2 baseline (5 theorems):
 - `chooseThread_preserves_lowEquivalent` — scheduler non-interference (TPI-D01),
-- `endpointSend_preserves_lowEquivalent` — IPC endpoint non-interference,
+- `endpointSendDual_preserves_lowEquivalent` — IPC endpoint non-interference,
 - `cspaceMint_preserves_lowEquivalent` — capability mint non-interference (TPI-D02),
 - `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
@@ -497,7 +497,7 @@ WS-F3 additions (7 new theorems):
 - `storeObject_at_unobservable_preserves_lowEquivalent` — generic infrastructure.
 
 WS-F3 enforcement-NI bridges (3 theorems):
-- `endpointSendChecked_NI` — bridges checked send to NI,
+- `endpointSendDualChecked_NI` — bridges checked send to NI,
 - `cspaceMintChecked_NI` — bridges checked mint to NI,
 - `serviceRestartChecked_NI` — bridges checked restart to NI.
 
@@ -659,7 +659,7 @@ backward-preservation and frame lemmas.
 
 **Enforcement-NI bridges** (`Invariant.lean`):
 
-- `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
+- `endpointSendDualChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
 - `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
 
