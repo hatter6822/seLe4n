@@ -214,16 +214,48 @@ structure Notification where
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
-/-- WS-G5/F-P03: CNode capability space node.
+/-- Maximum CSpace address width (matching ARM64 word size). -/
+def maxCSpaceDepth : Nat := 64
+
+/-- WS-H13/H-01: CNode capability space node with multi-level resolution support.
+
 `slots` is backed by `Std.HashMap Slot Capability` for O(1) amortized
-lookup, insert, and delete — replacing the O(m) list-based representation.
-HashMap key uniqueness is structural, eliminating the need for an explicit
-`slotsUnique` invariant. -/
+lookup, insert, and delete. HashMap key uniqueness is structural.
+
+Multi-level CSpace fields:
+- `depth`: maximum remaining CSpace depth in bits from this node to any leaf.
+- `guardWidth`: width of guard field in bits. A large guardWidth compresses
+  an unbranched path prefix into a single guard comparison (Patricia-trie
+  optimisation).
+- `guardValue`: expected guard value that must match during resolution.
+- `radixWidth`: width of slot index in bits (2^radixWidth addressable slots).
+
+Each resolution step consumes `guardWidth + radixWidth` bits. The well-formedness
+predicates (`consumed_le_depth`, `progress`) ensure that resolution terminates
+by structural descent on remaining bits. -/
 structure CNode where
-  guard : Nat
-  radix : Nat
+  depth : Nat := 0
+  guardWidth : Nat := 0
+  guardValue : Nat := 0
+  radixWidth : Nat := 0
   slots : Std.HashMap SeLe4n.Slot Capability
   deriving Repr
+
+/-- The number of bits consumed when resolving through this CNode. -/
+def CNode.consumed (cn : CNode) : Nat := cn.guardWidth + cn.radixWidth
+
+/-- Well-formedness: consumed bits fit in remaining depth. -/
+def CNode.consumed_le_depth (cn : CNode) : Prop :=
+  cn.consumed ≤ cn.depth
+
+/-- Well-formedness: each resolution step must consume at least 1 bit
+(ensures termination — prevents zero-width CNodes that loop forever). -/
+def CNode.progress (cn : CNode) : Prop :=
+  0 < cn.consumed
+
+/-- Full well-formedness predicate for a CNode. -/
+def CNode.wellFormed (cn : CNode) : Prop :=
+  cn.consumed_le_depth ∧ cn.progress
 
 /-- WS-F2: Child allocation record within an untyped memory region.
 Each child records the object identity, its byte offset within the parent
@@ -748,28 +780,32 @@ inductive ResolveError where
   deriving Repr, DecidableEq
 
 def empty : CNode :=
-  { guard := 0, radix := 0, slots := {} }
+  { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0, slots := {} }
 
 /-- Number of addressable slots represented by this CNode radix width. -/
 def slotCount (node : CNode) : Nat :=
-  2 ^ node.radix
+  2 ^ node.radixWidth
 
 /-- Resolve a CPtr/depth pair into the local slot index using guard/radix semantics.
 
-`depth` is interpreted as the number of low-order bits consumed at this CNode level.
-Those bits split into:
-- `radix` slot-index bits,
-- `depth - radix` guard bits, which must equal `node.guard`. -/
-def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (depth : Nat) : Except ResolveError SeLe4n.Slot :=
-  if depth < node.radix then
+`bitsRemaining` is interpreted as the number of low-order bits consumed at
+this CNode level. Those bits split into:
+- `radixWidth` slot-index bits,
+- `guardWidth` guard bits, which must equal `node.guardValue`.
+
+WS-H13: Updated to use explicit `guardWidth`/`radixWidth` fields from
+the multi-level CSpace model. -/
+def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) : Except ResolveError SeLe4n.Slot :=
+  let consumed := node.consumed
+  if bitsRemaining < consumed then
     .error .depthMismatch
   else
-    let guardWidth := depth - node.radix
-    let slotCount := node.slotCount
-    let slotNat := cptr.toNat % slotCount
-    let guardBits := (cptr.toNat / slotCount) % (2 ^ guardWidth)
-    if guardBits = node.guard then
-      .ok (SeLe4n.Slot.ofNat slotNat)
+    let shiftedAddr := cptr.toNat >>> (bitsRemaining - consumed)
+    let radixMask := 2 ^ node.radixWidth
+    let slotIndex := shiftedAddr % radixMask
+    let guardExtracted := (shiftedAddr / radixMask) % (2 ^ node.guardWidth)
+    if guardExtracted = node.guardValue then
+      .ok (SeLe4n.Slot.ofNat slotIndex)
     else
       .error .guardMismatch
 
@@ -815,9 +851,9 @@ theorem lookup_mem_of_some (node : CNode) (slot : SeLe4n.Slot) (cap : Capability
 theorem resolveSlot_depthMismatch
     (node : CNode)
     (cptr : SeLe4n.CPtr)
-    (depth : Nat)
-    (hDepth : depth < node.radix) :
-    node.resolveSlot cptr depth = .error .depthMismatch := by
+    (bitsRemaining : Nat)
+    (hDepth : bitsRemaining < node.consumed) :
+    node.resolveSlot cptr bitsRemaining = .error .depthMismatch := by
   unfold resolveSlot
   simp [hDepth]
 
@@ -891,7 +927,7 @@ theorem remove_slotCountBounded
     (cn : CNode) (slot : SeLe4n.Slot)
     (hBounded : cn.slotCountBounded) :
     (cn.remove slot).slotCountBounded := by
-  show (cn.slots.erase slot).size ≤ 2 ^ cn.radix
+  show (cn.slots.erase slot).size ≤ 2 ^ cn.radixWidth
   have h : (cn.slots.erase slot).size ≤ cn.slots.size := Std.HashMap.size_erase_le
   exact Nat.le_trans h hBounded
 
@@ -900,7 +936,7 @@ theorem revokeTargetLocal_slotCountBounded
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (hBounded : cn.slotCountBounded) :
     (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
-  show (cn.slots.filter (fun s c => s == sourceSlot || !c.target == target)).size ≤ 2 ^ cn.radix
+  show (cn.slots.filter (fun s c => s == sourceSlot || !c.target == target)).size ≤ 2 ^ cn.radixWidth
   have h := @Std.HashMap.size_filter_le_size _ _ _ _ cn.slots _ _
     (fun s c => s == sourceSlot || !c.target == target)
   exact Nat.le_trans h hBounded
@@ -946,21 +982,24 @@ theorem lookup_remove_ne
 
 end CNode
 
-/-- WS-G5: `BEq` instance for `CNode` using entry-wise comparison on the
-HashMap-backed slots. Two CNodes are equal iff their guard, radix, and all
-slot entries agree (same size + every key maps to the same value). -/
+/-- WS-H13: `BEq` instance for `CNode` using entry-wise comparison on the
+HashMap-backed slots. Two CNodes are equal iff their depth, guardWidth,
+guardValue, radixWidth, and all slot entries agree. -/
 instance : BEq CNode where
   beq a b :=
-    a.guard == b.guard && a.radix == b.radix &&
+    a.depth == b.depth && a.guardWidth == b.guardWidth &&
+    a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
     a.slots.size == b.slots.size &&
     a.slots.fold (init := true) (fun acc k v => acc && b.slots[k]? == some v)
 
-/-- WS-H7: CNode BEq soundness — when BEq returns true, the two CNodes have
-equal guard, radix, and slot count. Same approach as VSpaceRoot.beq_sound. -/
+/-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
+equal depth, guardWidth, guardValue, radixWidth, and slot count. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
-    a.guard = b.guard ∧ a.radix = b.radix ∧ a.slots.size = b.slots.size := by
+    a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
+    a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
+    a.slots.size = b.slots.size := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  exact ⟨h.1.1.1, h.1.1.2, h.1.2⟩
+  exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2⟩
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model

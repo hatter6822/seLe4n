@@ -73,9 +73,11 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
   - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke).
+  - Multi-level CSpace resolution via `resolveCapAddress` with guard/radix bit extraction and fuel-bounded recursion (WS-H13).
   - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`), move-as-pointer-update semantics, delete-time mapping detachment to avoid stale slot reuse aliasing, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
 - `SeLe4n/Kernel/Capability/Invariant.lean`
   - capability invariants + composed milestone bundles + IPC/scheduler composition links.
+  - `cspaceEnrichmentInvariantBundle`: `cspaceDepthConsistency` + `cspaceWellFormedGuards` with preservation across all CSpace transitions (WS-H13).
 
 ### IPC subsystem
 
@@ -106,10 +108,13 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Kernel/Service/Operations.lean`
   - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
-  - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
+  - backing-object verification: start/stop validate the service's `backingObject` exists in the object store before proceeding (WS-H13/A-29),
+  - restart rollback: `serviceRestart` restores original service entry on start-phase failure (WS-H13/A-30),
+  - explicit `policyDenied`, `dependencyViolation`, `objectNotFound`, and `illegalState` branches,
   - staged-order theorem surface for restart composition.
 - `SeLe4n/Kernel/Service/Invariant.lean`
   - reusable policy predicate components and `servicePolicySurfaceInvariant`,
+  - `serviceCountBounded` preservation for start/stop/restart via `serviceCountBounded_transfer` (WS-H13/A-31),
   - bridge lemmas connecting service policy assumptions to lifecycle/capability bundles,
   - explicit policy-denial check-vs-mutation theorem entrypoints.
 

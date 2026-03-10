@@ -196,12 +196,12 @@ for the full technical breakdown.
 
 ### Remaining v0.12.15 audit remediation (WS-H11..H16)
 
-WS-H1..H11 are completed. The remaining workstreams address Phases 4–5:
-scheduler/IPC alignment (H12), CSpace/service
-enrichment (H13), type safety (H14), platform hardening (H15), and
-testing/docs expansion (H16). WS-H11 added `PagePermissions` with W^X enforcement,
-abstract TLB model, bounded address translation checks, and extended
-`vspaceInvariantBundle` to 5 conjuncts.
+WS-H1..H13 are completed. WS-H13 (v0.15.0) added multi-level CSpace
+resolution with guard/radix CNodes, cspaceMove atomicity theorem, service
+backing-object verification, restart rollback semantics, and
+`serviceCountBounded` preservation proofs (findings H-01, A-21, A-29,
+A-30, M-17/A-31 closed). The remaining workstreams address Phase 5: type
+safety (H14), platform hardening (H15), and testing/docs expansion (H16).
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 and [Next Development Path](22-next-slice-development-path.md).

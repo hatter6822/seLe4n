@@ -35,7 +35,7 @@ seL4 is a high-assurance microkernel originally developed at NICTA (now Data61/C
 | Concept | Description |
 |---------|-------------|
 | **Capabilities** | Unforgeable references to kernel objects. All system calls require a capability. Capabilities carry access rights (read, write, grant) and can be copied, minted (with reduced rights), or revoked. |
-| **CSpace** | A per-thread capability space organized as a tree of CNode objects. Each CNode has a fixed number of slots, each holding one capability. Capability lookups traverse CNodes using guard/radix bit extraction. |
+| **CSpace** | A per-thread capability space organized as a tree of CNode objects. Each CNode carries a *guard* (a bit pattern that must match) and a *radix* (the number of index bits for slot selection). Capability lookups traverse CNodes by consuming address bits: match the guard, use the radix bits to select a slot, and recurse if the slot holds another CNode. seLe4n models this multi-level resolution with `resolveCapAddress` and proves depth/guard well-formedness invariants (`cspaceEnrichmentInvariantBundle`, WS-H13). |
 | **CDT** | The capability derivation tree tracks parent-child relationships between capabilities. Revoking a capability also revokes all its descendants. |
 | **Endpoints** | IPC channels. A thread sends to or receives from an endpoint. If no partner is ready, the thread blocks. seL4 uses a single queue per endpoint with direction tags. |
 | **Notifications** | Lightweight signaling objects. A notification carries a word-sized badge that is bitwise-ORed on signal and consumed atomically on wait. |
@@ -78,7 +78,7 @@ seLe4n does not replicate seL4's proof corpus. Instead, it takes a fundamentally
 | **Information flow** | Binary high/low partition | N-domain two-dimensional labels | Richer security policies |
 | **CDT** | Mutable doubly-linked list | Node-stable with HashMap `childMap` | Eliminates dangling pointers |
 | **Scheduler** | Priority round-robin | Priority-bucketed + EDF with domain partitioning | O(1) operations, temporal isolation |
-| **Service management** | Not in kernel | Service orchestration layer | Dependency graphs, partial-failure |
+| **Service management** | Not in kernel | Service orchestration layer with backing-object verification and restart rollback (WS-H13) | Dependency graphs, partial-failure, atomicity |
 | **Data structures** | Arrays and linked lists | `Std.HashMap`/`Std.HashSet` throughout | O(1) hot paths |
 | **Error handling** | Some paths use assertions | All paths return typed errors | Complete modeled error coverage |
 

@@ -1983,7 +1983,10 @@ theorem cspaceCopy_preserves_lowEquivalent
     cspaceCopy_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hStep₂]
   exact hLow
 
-/-- WS-H9: cspaceMove at non-observable CNodes preserves projection. -/
+/-- WS-H13/A-21: cspaceMove at non-observable CNodes preserves projection.
+
+The move is lookup + insert + delete + CDT fixup. All modified objects are
+at src.cnode and dst.cnode, both non-observable; CDT is not in projection. -/
 private theorem cspaceMove_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -2009,23 +2012,18 @@ private theorem cspaceMove_preserves_projection
       | ok pair₃ =>
         rcases pair₃ with ⟨_, stDel⟩
         simp only [hDelete] at hStep
-        -- Split on srcNode? match (none → stDel, some → attachSlotToCdtNode stDel dst srcNode)
-        split at hStep
-        · -- none: st' = stDel
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          rw [← hStep.2]
-          rw [cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
-        · -- some srcNode: attachSlotToCdtNode only modifies CDT
-          next srcNode =>
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          rw [← hStep.2]
-          have hAttach : ∀ stx nodeId, projectState ctx observer (SystemState.attachSlotToCdtNode stx dst nodeId) =
-              projectState ctx observer stx := by
-            intro stx _; simp only [projectState, SystemState.attachSlotToCdtNode]; congr 1
-          rw [hAttach,
-              cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
+        -- Capture projection lemmas before cases hStep substitutes stDel
+        have hProjDel := cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hDelete
+        have hProjIns := cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert
+        -- CDT fixup: match on srcNode?
+        cases hCdt : SystemState.lookupCdtNodeOfSlot stIns src with
+        | none =>
+          simp only [hCdt] at hStep; cases hStep
+          rw [hProjDel, hProjIns]
+        | some srcNode =>
+          simp only [hCdt] at hStep; cases hStep
+          rw [attachSlotToCdtNode_preserves_projection ctx observer stDel dst srcNode,
+              hProjDel, hProjIns]
 
 /-- WS-H9: cspaceMove preserves low-equivalence. -/
 theorem cspaceMove_preserves_lowEquivalent

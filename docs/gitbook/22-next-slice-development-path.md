@@ -53,8 +53,8 @@ The remaining WS-H workstreams address Phases 4–5 of the v0.12.15 audit plan:
 | **WS-H12c** | Per-TCB register context with inline context switch (H-03) | Medium — **Completed** |
 | **WS-H12d** | IPC message payload bounds (A-09) | Medium — **Completed** |
 | **WS-H12e** | Cross-subsystem invariant reconciliation | Medium — **Completed** |
-| **WS-H12f** | Test harness update & documentation sync | Medium |
-| **WS-H13** | CSpace/service model enrichment (CDT refinement, service health) | Medium |
+| **WS-H12f** | Test harness update & documentation sync | Medium — **Completed** |
+| **WS-H13** | CSpace/Lifecycle/Service enrichment (multi-level CSpace, atomic move, backing-object verification, restart rollback, serviceCountBounded) | Medium — **Completed** |
 | **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
 | **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
 | **WS-H16** | Testing and documentation expansion | Low |

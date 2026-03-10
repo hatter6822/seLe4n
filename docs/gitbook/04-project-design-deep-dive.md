@@ -103,6 +103,31 @@ seL4 uses a binary high/low partition. seLe4n generalizes to a parameterized N-d
 
 Each entity carries a label in this two-dimensional space. `computeObservableSet` precomputes visible objects using `HashSet ObjId`, and `projectStateFast` uses O(1) membership checks. The `projectStateFast_eq` theorem proves equivalence with the naive projection.
 
+## 5b. CSpace resolution: multi-level guard/radix traversal (WS-H13)
+
+seL4 organizes capabilities in a tree of CNode objects. Each CNode carries a **guard** (a bit pattern that must match the next bits of the address) and a **radix** (the number of bits used to index slots within the CNode). Resolving a capability address means consuming bits from the address as you walk the CNode tree: match the guard, use the radix bits to select a slot, and if the slot contains another CNode, repeat.
+
+seLe4n models this with `resolveCapAddress` in `Capability/Operations.lean`:
+
+```
+resolveCapAddress (rootCNode : CNode) (addr : CapAddress)
+    (depth : Nat) (fuel : Nat) : Except KernelError (Capability × Nat)
+```
+
+Key properties:
+
+- **Guard compression.** Each CNode stores `guardValue` and `guardWidth`. The resolver extracts `guardWidth` bits from the current position and compares them against `guardValue`. Mismatches produce `capNotFound`.
+- **Radix indexing.** After consuming the guard, `radixWidth` bits select a slot. The total bits consumed per level is `guardWidth + radixWidth`.
+- **Depth tracking.** The `depth` parameter limits how many bits remain to consume. Resolution terminates when `depth = 0` or no further CNode is found.
+- **Fuel-bounded recursion.** A `fuel` parameter prevents unbounded recursion. When fuel is exhausted, `depthMismatch` is returned.
+
+The `cspaceEnrichmentInvariantBundle` (WS-H13) captures two properties:
+
+1. **`cspaceDepthConsistency`** — all CNode guard+radix sums are ≤ the maximum address width, preventing bit overflows during resolution.
+2. **`cspaceWellFormedGuards`** — all guard values fit within their declared guard width (`guardValue < 2^guardWidth`).
+
+These invariants are preserved by all CSpace transitions (`insert`, `delete`, `mint`, `copy`, `move`) via compositional preservation theorems that chain through the lookup → mutation → CDT fixup pipeline.
+
 ## 6. Milestone slicing strategy
 
 seLe4n builds incrementally through milestone slices:

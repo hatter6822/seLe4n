@@ -266,6 +266,45 @@ This keeps the M5 theorem surface aligned with the local-first composition rule:
 prove per-transition preservation first, then expose cross-subsystem bundle preservation with
 explicit failure-path statements.
 
+## 9b. WS-H13: CSpace, Lifecycle & Service enrichment (v0.15.0)
+
+**Part A — Multi-level CSpace resolution (H-01):**
+
+- CNode enriched with `depth`, `guardWidth`, `guardValue`, `radixWidth` fields,
+- `maxCSpaceDepth := 64` (ARM64 word width),
+- `CNode.consumed := guardWidth + radixWidth`, `CNode.wellFormed`, `CNode.progress`,
+- `resolveCapAddress` — recursive multi-level resolver with `termination_by bitsRemaining`,
+- `cspaceResolveMultiLevel` wrapper delegating to multi-level when depth > 0,
+- `resolveCapAddress_deterministic`, `resolveCapAddress_depth_bounded` theorems,
+- `cspaceDepthConsistent` — child CNode depth ≤ parent depth minus consumed bits,
+- `cspaceWellFormed` — all CNodes satisfy `CNode.wellFormed`,
+- `cspaceEnrichmentInvariantBundle` — composition of `capabilityInvariantBundle` +
+  `cspaceDepthConsistent` + `cspaceWellFormed` (kept separate to avoid cascade),
+- Transfer theorems: `cspaceDepthConsistent_of_objects_eq`, `cspaceWellFormed_of_objects_eq`.
+
+**Part B — Atomic cspaceMove (A-21):**
+
+- `cspaceMove_atomic_semantics` theorem documenting cooperative-scheduling atomicity,
+- `cspaceMove_preserves_projection` updated for insert-then-delete with CDT fixup.
+
+**Part C — Service backing-object verification (A-29):**
+
+- `serviceStart`/`serviceStop` now check `st.objects[svc.identity.backingObject]?`,
+- `serviceStart_error_backingObjectMissing`, `serviceStop_error_backingObjectMissing` theorems,
+- All preservation proofs updated with backing-object case split.
+
+**Part D — Service restart atomicity with rollback (A-30):**
+
+- `serviceRestart` restores original service entry on start failure,
+- `serviceRestart_error_of_start_error`, `serviceRestart_ok_implies_staged_steps` updated.
+
+**Part E — serviceCountBounded preservation (M-17/A-31):**
+
+- `serviceCountBounded_transfer` — generic transfer lemma for objectIndex + coverage + deps,
+- `serviceStart_preserves_serviceCountBounded`,
+- `serviceStop_preserves_serviceCountBounded`,
+- `serviceRestart_preserves_serviceCountBounded`.
+
 ## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:

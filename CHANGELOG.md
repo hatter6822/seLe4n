@@ -1,3 +1,57 @@
+## [0.15.0] - 2026-03-10
+
+### WS-H13: CSpace, Lifecycle & Service Model Enrichment
+
+- **Multi-level CSpace resolution (H-01):** Replaced single-level CNode
+  resolution with recursive multi-level `resolveCapAddress` that walks the
+  CNode graph consuming `guardWidth + radixWidth` bits per hop. CNode
+  structure enriched with `depth`, `guardWidth`, `guardValue`, `radixWidth`
+  fields. Termination proved via `Nat.sub_lt` on `bitsRemaining`. Added
+  `cspaceResolveMultiLevel` wrapper and updated `cspaceResolvePath` to
+  delegate to it.
+- **CSpace depth-consistency invariant:** Added `cspaceDepthConsistent` and
+  `cspaceWellFormed` predicates ensuring child CNodes have depth ≤ parent
+  depth minus consumed bits. Packaged in `cspaceEnrichmentInvariantBundle`
+  (separate from `capabilityInvariantBundle` to avoid proof cascade).
+  Transfer theorems (`cspaceDepthConsistent_of_objects_eq`,
+  `cspaceWellFormed_of_objects_eq`) enable cross-subsystem composition.
+- **Resolution theorems:** `resolveCapAddress_deterministic` (same inputs →
+  same outputs) and `resolveCapAddress_depth_bounded` (resolution terminates
+  within `maxCSpaceDepth` steps).
+- **Atomic cspaceMove (A-21):** Documented that `cspaceMove` achieves
+  atomicity through cooperative scheduling (no preemption during kernel
+  transitions). Added `cspaceMove_atomic_semantics` theorem. Preserved
+  original insert-then-delete implementation and all existing proof chains.
+- **Service backing-object verification (A-29):** `serviceStart` and
+  `serviceStop` now verify `st.objects[svc.identity.backingObject]?` exists
+  before any state mutation. Returns `.objectNotFound` if backing object is
+  missing. Added `serviceStart_error_backingObjectMissing` and
+  `serviceStop_error_backingObjectMissing` theorems.
+- **Service restart atomicity with rollback (A-30):** `serviceRestart` now
+  restores the original service entry on start failure, ensuring the service
+  remains in its pre-restart (running) state. Error is still propagated.
+  Updated `serviceRestart_error_of_start_error` and
+  `serviceRestart_ok_implies_staged_steps` proofs.
+- **serviceCountBounded preservation (M-17/A-31):** Proved
+  `serviceStart_preserves_serviceCountBounded`,
+  `serviceStop_preserves_serviceCountBounded`, and
+  `serviceRestart_preserves_serviceCountBounded` via a transfer lemma
+  (`serviceCountBounded_transfer`) that shows the invariant is preserved
+  when objectIndex, registered service coverage, and dependency lists are
+  unchanged.
+- **Information-flow proof maintained:** Updated
+  `cspaceMove_preserves_projection` in `InformationFlow/Invariant.lean`
+  using compositional rewrite chain (lookup → insert → delete → CDT fixup).
+- **Test suite updates:** Fixed all CNode construction sites in
+  `NegativeStateSuite.lean`, `InformationFlowSuite.lean`, and
+  `MainTraceHarness.lean` to use new `guardValue`/`radixWidth` fields.
+  All invariant preservation proofs updated for new backing-object match.
+- **Documentation synchronized:** CHANGELOG, CLAUDE.md, codebase_map.json,
+  and GitBook chapters updated.
+- **`docs/codebase_map.json` regenerated.**
+- **Zero sorry/axiom, zero warnings.** Build: 86 jobs, zero errors.
+- **Findings addressed:** H-01, A-21, A-29, A-30, M-17/A-31.
+
 ## [0.14.3] - 2026-03-09
 
 ### WS-H12f: Test Harness Update & Documentation Sync
