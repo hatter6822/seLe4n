@@ -856,7 +856,10 @@ CSpace depth invariant:
 
 ### Part B — Atomic capability move (A-21)
 
-- `cspaceMove_error_preserves_state` — error monad (`Except`) provides implicit atomicity: error paths discard intermediate state, returning original state unchanged. No explicit rollback logic needed.
+- `cspaceMove_error_no_state` — error-path exclusion: on error, no success state is reachable.
+- `cspaceMove_ok_implies_source_exists` — success-path: if move succeeds, the source capability existed.
+- `resolveCapAddress_guard_reject` — guard mismatch at any CNode level returns `.error .invalidCapability` (primary CSpace attack surface coverage).
+- Error monad (`Except`) provides implicit atomicity: error paths discard intermediate state, returning original state unchanged.
 
 ### Part C — Service backing-object verification (A-29)
 

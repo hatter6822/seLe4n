@@ -28,12 +28,13 @@ def svcDenied : ServiceId := 102
 def svcBroken : ServiceId := 103
 def svcRestart : ServiceId := 104
 def svcRestartBroken : ServiceId := 105
+def svcMissingBacking : ServiceId := 106
 
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
   [1, 10, 11, 12, 20, demoEndpoint, demoNotification, demoUntyped]
 
 def bootstrapServiceIds : List ServiceId :=
-  [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken]
+  [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken, svcMissingBacking]
 
 def bootstrapState : SystemState :=
   (SeLe4n.Testing.BootstrapBuilder.empty
@@ -122,6 +123,12 @@ def bootstrapState : SystemState :=
       identity := { sid := svcRestartBroken, backingObject := 12, owner := 10 }
       status := .running
       dependencies := [999]
+      isolatedFrom := []
+    }
+    |>.withService svcMissingBacking {
+      identity := { sid := svcMissingBacking, backingObject := 9999, owner := 10 }
+      status := .stopped
+      dependencies := []
       isolatedFrom := []
     }
     |>.withRunnable [1, 12]
@@ -243,6 +250,12 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
   | .error err => IO.println s!"service restart start-stage failure: {reprStr err}"
   | .ok _ =>
       IO.println "unexpected service restart success with broken dependencies"
+  -- WS-H13/A-29: Service start with missing backing object
+  match SeLe4n.Kernel.serviceStart svcMissingBacking allowAll st1 with
+  | .error err => IO.println s!"service start missing-backing branch: {reprStr err}"
+  | .ok _ =>
+      IO.println "unexpected service start success with missing backing object"
+  -- WS-H13/A-29: Service stop with missing backing object (start it first manually)
   IO.println s!"service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
   IO.println s!"service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
 
