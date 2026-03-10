@@ -210,7 +210,11 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 ### API + executable
 
 - `SeLe4n/Kernel/API.lean`
-  - compatibility barrel import surface for clients.
+  - Unified public API with two layers: (1) raw internal kernel operations
+    for trusted kernel paths, and (2) capability-gated `api*` syscall wrappers
+    (WS-H15c) that model the seL4 CSpace-lookup + rights-check pattern for
+    user-space invocations. Includes `SyscallGate`, `syscallLookupCap`,
+    `syscallInvoke`, 13 `api*` entry points, and 3 soundness theorems.
 - `Main.lean`
   - concrete scenario execution and trace output validated by fixture checks.
 

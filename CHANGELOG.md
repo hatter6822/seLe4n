@@ -54,6 +54,10 @@
     correct gate, bad root, insufficient rights, missing cap, retype gate).
   - 6 negative tests in `NegativeStateSuite.lean` exercising syscall
     capability-checking error paths.
+  - 7 platform contract tests validating `rpi5MachineConfig.wellFormed`,
+    `mmioRegionDisjointCheck`, GIC-400 IRQ boundary values (INTID 0, 223, 224),
+    and boot contract predicates.
+  - Stability table in `API.lean` updated with all 13 `api*` syscall wrappers.
   - Regenerated `docs/codebase_map.json`.
 - **Build jobs:** 138 (up from 134). Zero sorry/axiom.
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-api-hardening-plan-Eqmwt",
-      "commit_sha": "1850a148f46e7610b510a99fcc117abd4b9fa20b",
-      "tree_sha": "6cfcb540d1aa11872492fc7784a2115e521dae06",
-      "committed_at_utc": "2026-03-10T22:01:35+00:00"
+      "commit_sha": "7c01936b6831bb7c948be40157487bacee247aac",
+      "tree_sha": "bee2f42eb93c33409c087c51762f4201d2f8681e",
+      "committed_at_utc": "2026-03-10T22:51:16+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "168d0dbc18504aa042d78390be787c0f1b603ed38470c270d3b165683c743ba8"
+    "source_digest": "fe3f3957cb6bdccc12e7d1e50fa769343b469da950ff2408b5c36712d7e31d7d"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 1933
+    "declaration_count": 1934
   },
   "readme_sync": {
     "version": "0.14.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 32257,
+    "production_loc": 32264,
     "test_files": 3,
-    "test_loc": 2493,
+    "test_loc": 2552,
     "proved_theorem_lemma_decls": 1052,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -42,19 +42,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 59,
+          "line": 66,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
-          "line": 67,
+          "line": 74,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_default",
-          "line": 72,
+          "line": 79,
           "called": [
             "apiInvariantBundle"
           ]
@@ -62,13 +62,13 @@
         {
           "kind": "structure",
           "name": "SyscallGate",
-          "line": 109,
+          "line": 116,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallLookupCap",
-          "line": 131,
+          "line": 138,
           "called": [
             "SyscallGate"
           ]
@@ -76,7 +76,7 @@
         {
           "kind": "def",
           "name": "syscallInvoke",
-          "line": 145,
+          "line": 152,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -85,7 +85,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 158,
+          "line": 165,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -94,7 +94,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_state_unchanged",
-          "line": 180,
+          "line": 187,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -104,7 +104,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 189,
+          "line": 196,
           "called": [
             "SyscallGate",
             "syscallInvoke",
@@ -114,15 +114,6 @@
         {
           "kind": "def",
           "name": "apiEndpointSend",
-          "line": 209,
-          "called": [
-            "SyscallGate",
-            "syscallInvoke"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "apiEndpointReceive",
           "line": 216,
           "called": [
             "SyscallGate",
@@ -131,8 +122,17 @@
         },
         {
           "kind": "def",
+          "name": "apiEndpointReceive",
+          "line": 223,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "apiEndpointCall",
-          "line": 222,
+          "line": 229,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReply",
-          "line": 228,
+          "line": 235,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -150,7 +150,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMint",
-          "line": 233,
+          "line": 240,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -159,7 +159,7 @@
         {
           "kind": "def",
           "name": "apiCspaceCopy",
-          "line": 239,
+          "line": 246,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -168,7 +168,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMove",
-          "line": 244,
+          "line": 251,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -177,7 +177,7 @@
         {
           "kind": "def",
           "name": "apiCspaceDelete",
-          "line": 249,
+          "line": 256,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -186,7 +186,7 @@
         {
           "kind": "def",
           "name": "apiLifecycleRetype",
-          "line": 254,
+          "line": 261,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -195,7 +195,7 @@
         {
           "kind": "def",
           "name": "apiVspaceMap",
-          "line": 260,
+          "line": 267,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -204,7 +204,7 @@
         {
           "kind": "def",
           "name": "apiVspaceUnmap",
-          "line": 266,
+          "line": 273,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -213,7 +213,7 @@
         {
           "kind": "def",
           "name": "apiServiceStart",
-          "line": 271,
+          "line": 278,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -222,7 +222,7 @@
         {
           "kind": "def",
           "name": "apiServiceStop",
-          "line": 276,
+          "line": 283,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -15310,72 +15310,72 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 38,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing",
-          "line": 9,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "endpointId",
           "line": 11,
           "called": []
         },
         {
           "kind": "def",
-          "name": "cnodeId",
-          "line": 12,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "wrongTypeId",
+          "name": "endpointId",
           "line": 13,
           "called": []
         },
         {
           "kind": "def",
-          "name": "guardedCnodeId",
+          "name": "cnodeId",
           "line": 14,
           "called": []
         },
         {
           "kind": "def",
-          "name": "sendEmptyEndpointId",
+          "name": "wrongTypeId",
           "line": 15,
           "called": []
         },
         {
           "kind": "def",
-          "name": "notificationId",
+          "name": "guardedCnodeId",
           "line": 16,
           "called": []
         },
         {
           "kind": "def",
-          "name": "asidPrimary",
+          "name": "sendEmptyEndpointId",
           "line": 17,
           "called": []
         },
         {
           "kind": "def",
-          "name": "vaddrPrimary",
+          "name": "notificationId",
           "line": 18,
           "called": []
         },
         {
           "kind": "def",
-          "name": "paddrPrimary",
+          "name": "asidPrimary",
           "line": 19,
           "called": []
         },
         {
           "kind": "def",
-          "name": "slot0",
+          "name": "vaddrPrimary",
+          "line": 20,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "paddrPrimary",
           "line": 21,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "slot0",
+          "line": 23,
           "called": [
             "cnodeId"
           ]
@@ -15383,7 +15383,7 @@
         {
           "kind": "def",
           "name": "slot0Path",
-          "line": 22,
+          "line": 24,
           "called": [
             "cnodeId"
           ]
@@ -15391,22 +15391,6 @@
         {
           "kind": "def",
           "name": "guardedPathBadDepth",
-          "line": 23,
-          "called": [
-            "guardedCnodeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "badSlot",
-          "line": 24,
-          "called": [
-            "wrongTypeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "guardedPathBadGuard",
           "line": 25,
           "called": [
             "guardedCnodeId"
@@ -15414,8 +15398,24 @@
         },
         {
           "kind": "def",
-          "name": "baseState",
+          "name": "badSlot",
+          "line": 26,
+          "called": [
+            "wrongTypeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "guardedPathBadGuard",
           "line": 27,
+          "called": [
+            "guardedCnodeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "baseState",
+          "line": 29,
           "called": [
             "asidPrimary",
             "cnodeId",
@@ -15429,7 +15429,7 @@
         {
           "kind": "def",
           "name": "invariantObjectIds",
-          "line": 109,
+          "line": 111,
           "called": [
             "cnodeId",
             "endpointId",
@@ -15441,7 +15441,7 @@
         {
           "kind": "def",
           "name": "sendEmptyEndpointState",
-          "line": 112,
+          "line": 114,
           "called": [
             "baseState",
             "sendEmptyEndpointId"
@@ -15450,13 +15450,13 @@
         {
           "kind": "def",
           "name": "expectError",
-          "line": 118,
+          "line": 120,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectOkState",
-          "line": 131,
+          "line": 133,
           "called": [
             "invariantObjectIds"
           ]
@@ -15464,43 +15464,43 @@
         {
           "kind": "def",
           "name": "expectOk",
-          "line": 143,
+          "line": 145,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectThreadQueueLinks",
-          "line": 153,
+          "line": 155,
           "called": []
         },
         {
           "kind": "def",
           "name": "corruptThreadQueueLinks",
-          "line": 170,
+          "line": 172,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedObjId",
-          "line": 186,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "f2UntypedChildId",
-          "line": 187,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "f2UntypedAuthCnode",
           "line": 188,
           "called": []
         },
         {
           "kind": "def",
-          "name": "f2UntypedAuthSlot",
+          "name": "f2UntypedChildId",
           "line": 189,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedAuthCnode",
+          "line": 190,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "f2UntypedAuthSlot",
+          "line": 191,
           "called": [
             "f2UntypedAuthCnode"
           ]
@@ -15508,7 +15508,7 @@
         {
           "kind": "def",
           "name": "f2UntypedState",
-          "line": 192,
+          "line": 194,
           "called": [
             "f2UntypedAuthCnode",
             "f2UntypedAuthSlot",
@@ -15518,13 +15518,13 @@
         {
           "kind": "def",
           "name": "f2DeviceUntypedId",
-          "line": 219,
+          "line": 221,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2DeviceState",
-          "line": 221,
+          "line": 223,
           "called": [
             "f2DeviceUntypedId",
             "f2UntypedAuthCnode",
@@ -15534,7 +15534,7 @@
         {
           "kind": "def",
           "name": "runNegativeChecks",
-          "line": 248,
+          "line": 250,
           "called": [
             "asidPrimary",
             "badSlot",
@@ -15566,7 +15566,7 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 1002,
+          "line": 1004,
           "called": [
             "expectError",
             "f2UntypedAuthCnode",
@@ -15578,7 +15578,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 1051,
+          "line": 1053,
           "called": [
             "baseState",
             "endpointId",
@@ -15590,7 +15590,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1134,
+          "line": 1136,
           "called": [
             "baseState",
             "endpointId",
@@ -15600,7 +15600,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1191,
+          "line": 1193,
           "called": [
             "expectError",
             "expectOkState"
@@ -15609,7 +15609,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1378,
+          "line": 1380,
           "called": [
             "expectError"
           ]
@@ -15617,7 +15617,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1418,
+          "line": 1420,
           "called": [
             "cnodeId",
             "expectError"
@@ -15625,8 +15625,14 @@
         },
         {
           "kind": "def",
+          "name": "runWSH15PlatformChecks",
+          "line": 1502,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1499,
+          "line": 1557,
           "called": []
         }
       ]

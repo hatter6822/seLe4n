@@ -39,16 +39,16 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H15..H16 and WS-F5..F8
+## Immediate next: WS-H16 and WS-F5..F8
 
 ### Remaining WS-H workstreams — v0.12.15 audit remediation
 
-WS-H1..H14 are all completed. The remaining workstreams address Phase 5:
+WS-H1..H15 are all completed. The remaining workstream addresses Phase 5:
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
 | **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **COMPLETED** |
-| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low | Pending |
+| **WS-H15** | Platform & API hardening: InterruptBoundaryContract decidability, RPi5 contract hardening, syscall capability wrappers, AdapterProofHooks instantiation | Low | **COMPLETED** |
 | **WS-H16** | Testing and documentation expansion | Low | Pending |
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)

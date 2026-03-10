@@ -375,10 +375,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Remaining workstreams**: WS-H15..H16 (low priority), WS-F5..F8 (medium/low)
+- **Remaining workstreams**: WS-H16 (low priority), WS-F5..F8 (medium/low)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/AUDIT_CODEBASE_v0.13.6.md` — zero critical issues
-- **All prior workstreams completed**: WS-B through WS-H14 (see `docs/WORKSTREAM_HISTORY.md`)
+- **All prior workstreams completed**: WS-B through WS-H15 (see `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

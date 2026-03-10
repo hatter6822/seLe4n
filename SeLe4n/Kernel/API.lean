@@ -54,6 +54,13 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
+| `apiEndpointSend`, `apiEndpointReceive` | Syscall IPC (WS-H15c) | Stable |
+| `apiEndpointCall`, `apiEndpointReply` | Syscall IPC (WS-H15c) | Stable |
+| `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove` | Syscall Capability (WS-H15c) | Stable |
+| `apiCspaceDelete` | Syscall Capability (WS-H15c) | Stable |
+| `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | Stable |
+| `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | Stable |
+| `apiServiceStart`, `apiServiceStop` | Syscall Service (WS-H15c) | Stable |
 -/
 
 namespace SeLe4n.Kernel

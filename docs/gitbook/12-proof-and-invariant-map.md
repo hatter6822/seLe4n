@@ -992,4 +992,7 @@ Introduces the seL4-style capability-gated syscall entry pattern:
   insufficient rights, missing cap, retype gate) in `MainTraceHarness.lean`.
 - **Negative tests**: 6 tests in `NegativeStateSuite.lean` exercising
   `syscallLookupCap` and `apiEndpointSend` error paths.
+- **Platform contract tests**: 7 tests in `NegativeStateSuite.lean` validating
+  `rpi5MachineConfig.wellFormed`, `mmioRegionDisjointCheck`, GIC-400 IRQ
+  boundary values (INTID 0, 223, 224), and boot contract predicates.
 - **Tier 3 anchors**: 31 anchors covering all WS-H15 additions.

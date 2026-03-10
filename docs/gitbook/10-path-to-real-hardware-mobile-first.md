@@ -57,14 +57,25 @@ provides the organizational infrastructure for hardware binding:
   device tree location, entry point, and stack pointer to the base boot contract.
 - **Simulation platform** (`Platform/Sim/`) — `SimPlatform` with permissive
   contracts for trace harness and test execution.
-- **RPi5 platform stubs** (`Platform/RPi5/`) — BCM2712 memory map, GIC-400
+- **RPi5 platform contracts** (`Platform/RPi5/`) — BCM2712 memory map, GIC-400
   base addresses, ARM Generic Timer frequency, PL011 UART address, ARM64
   machine config (64-bit registers, 48-bit VA, 44-bit PA, 4 KiB pages,
-  16-bit ASID), and a RAM-only memory access contract.
+  16-bit ASID), and substantive runtime/boot/interrupt contracts:
+  - **Runtime:** SP-preservation-or-context-switch register stability (not `True`),
+    RAM-only memory access, timer monotonicity.
+  - **Boot:** Empty initial object store and capability ref table (not `True`).
+  - **Interrupt:** GIC-400 INTID 0–223 range validation with handler mapping
+    requirement. `Decidable` instances for all predicates (WS-H15a).
+  - **MMIO:** Disjointness proof (`mmioRegionDisjoint_holds`) for UART, GIC
+    distributor, and GIC CPU interface regions vs. RAM.
+  - **MachineConfig:** Well-formedness proof (`rpi5MachineConfig_wellFormed`).
+  - **AdapterProofHooks:** Concrete instantiation for restrictive contract
+    (`rpi5RestrictiveAdapterProofHooks`) with end-to-end preservation theorems
+    (WS-H15d).
 
-**Remaining H3 work** (critical proof gaps are now closed by WS-F1..F4):
+**Remaining H3 work** (WS-H15 has now populated substantive predicates):
 
-1. Populate RPi5 runtime contract with hardware-validated predicates.
+1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
 2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance (with `PagePermissions` support from WS-H11).
 3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
 4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
