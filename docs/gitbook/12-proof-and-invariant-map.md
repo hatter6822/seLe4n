@@ -96,9 +96,9 @@ CDT structural invariants (WS-G8):
 
 Module structure:
 
-- `IPC/Operations.lean` — core legacy endpoint/notification operations and transport lemmas,
-- `IPC/DualQueue.lean` — intrusive dual-queue infrastructure (queue links, PopHead/Enqueue/RemoveDual) and compound IPC operations (SendDual, ReceiveDual, Call, Reply, ReplyRecv),
-- `IPC/Invariant.lean` — preservation proofs for both legacy and dual-queue operations.
+- `IPC/Operations.lean` (re-export hub) — core endpoint/notification ops (`Operations/Endpoint.lean`) and scheduler preservation lemmas (`Operations/SchedulerLemmas.lean`),
+- `IPC/DualQueue.lean` (re-export hub) — dual-queue operations (`DualQueue/Core.lean`: queue links, PopHead/Enqueue/RemoveDual, SendDual, ReceiveDual, Call, Reply, ReplyRecv) and transport lemmas (`DualQueue/Transport.lean`),
+- `IPC/Invariant.lean` (re-export hub) — definitions (`Invariant/Defs.lean`), endpoint preservation (`Invariant/EndpointPreservation.lean`), call/replyRecv preservation (`Invariant/CallReplyRecv.lean`), notification preservation (`Invariant/NotificationPreservation.lean`), structural invariants and composition (`Invariant/Structural.lean`).
 
 ### 4.1 Dual-queue structural invariant (WS-H5)
 

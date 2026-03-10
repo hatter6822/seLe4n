@@ -48,13 +48,14 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 ### Model
 
-- `SeLe4n/Model/Object.lean`
-  - capability rights/targets,
-  - TCB structure + IPC state + intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`),
-  - endpoint protocol fields,
-  - CNode `Std.HashMap Slot Capability` slot store and local revoke helper (WS-G5),
-  - VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)` mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
-  - `KernelObject` discriminated union.
+- `SeLe4n/Model/Object.lean` (re-export hub)
+  - `Object/Types.lean` — capability rights/targets, TCB structure + IPC state +
+    intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`), endpoint
+    protocol fields, Notification, UntypedObject.
+  - `Object/Structures.lean` — CNode `Std.HashMap Slot Capability` slot store and
+    local revoke helper (WS-G5), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
+    mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
+    `KernelObject` discriminated union.
 
 - `SeLe4n/Model/State.lean`
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
@@ -66,32 +67,41 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
   - M1 component invariants and scheduler bundle alias.
-- `SeLe4n/Kernel/Scheduler/Operations.lean`
-  - scheduling transitions + preservation theorem families.
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (re-export hub)
+  - `Operations/Selection.lean` — EDF predicates, thread selection, candidate ordering.
+  - `Operations/Core.lean` — core transitions (`schedule`, `handleYield`, `timerTick`).
+  - `Operations/Preservation.lean` — scheduler invariant preservation theorems.
 
 ### Capability subsystem
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
   - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke).
   - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`), move-as-pointer-update semantics, delete-time mapping detachment to avoid stale slot reuse aliasing, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
-- `SeLe4n/Kernel/Capability/Invariant.lean`
-  - capability invariants + composed milestone bundles + IPC/scheduler composition links.
+- `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)
+  - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency.
+  - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
+  - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
 
 ### IPC subsystem
 
-- `SeLe4n/Kernel/IPC/Operations.lean`
-  - core endpoint transitions (`send`, `awaitReceive`, `receive`), notification operations.
-- `SeLe4n/Kernel/IPC/DualQueue.lean`
-  - intrusive dual-queue operations (`sendDual`, `receiveDual`, `call`, `reply`, `replyRecv`),
-  - queue link infrastructure (`PopHead`, `Enqueue`, `RemoveDual`),
-  - `blockedOnCall` state for call/reply semantics (WS-H1),
-  - reply-target scoping in `endpointReply`/`endpointReplyRecv` (WS-H1/M-02),
-  - transport/preservation theorems for dual-queue operations.
-- `SeLe4n/Kernel/IPC/Invariant.lean`
-  - endpoint + IPC invariants,
-  - 5-conjunct scheduler-coherence contract predicates (`ipcSchedulerContractPredicates`),
-  - `dualQueueSystemInvariant` with `intrusiveQueueWellFormed`, `tcbQueueLinkIntegrity` (WS-H5),
-  - preservation theorem entrypoints for both legacy and dual-queue operations.
+- `SeLe4n/Kernel/IPC/Operations.lean` (re-export hub)
+  - `Operations/Endpoint.lean` — core endpoint/notification transition ops.
+  - `Operations/SchedulerLemmas.lean` — scheduler preservation + store lemmas.
+- `SeLe4n/Kernel/IPC/DualQueue.lean` (re-export hub)
+  - `DualQueue/Core.lean` — intrusive dual-queue operations (`sendDual`, `receiveDual`, `call`, `reply`, `replyRecv`),
+    queue link infrastructure (`PopHead`, `Enqueue`, `RemoveDual`),
+    `blockedOnCall` state for call/reply semantics (WS-H1),
+    reply-target scoping in `endpointReply`/`endpointReplyRecv` (WS-H1/M-02).
+  - `DualQueue/Transport.lean` — transport/preservation theorems for dual-queue operations.
+- `SeLe4n/Kernel/IPC/Invariant.lean` (re-export hub)
+  - `Invariant/Defs.lean` — endpoint + IPC invariant definitions,
+    5-conjunct scheduler-coherence contract predicates (`ipcSchedulerContractPredicates`),
+    notification well-formedness.
+  - `Invariant/EndpointPreservation.lean` — endpoint preservation proofs.
+  - `Invariant/CallReplyRecv.lean` — call/replyRecv compound preservation proofs.
+  - `Invariant/NotificationPreservation.lean` — notification preservation proofs.
+  - `Invariant/Structural.lean` — `dualQueueSystemInvariant` with `intrusiveQueueWellFormed`,
+    `tcbQueueLinkIntegrity` (WS-H5), ipcInvariantFull composition theorems.
 
 ### Lifecycle subsystem
 
@@ -108,10 +118,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
   - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
   - staged-order theorem surface for restart composition.
-- `SeLe4n/Kernel/Service/Invariant.lean`
-  - reusable policy predicate components and `servicePolicySurfaceInvariant`,
-  - bridge lemmas connecting service policy assumptions to lifecycle/capability bundles,
-  - explicit policy-denial check-vs-mutation theorem entrypoints.
+- `SeLe4n/Kernel/Service/Invariant.lean` (re-export hub)
+  - `Invariant/Policy.lean` — reusable policy predicate components and
+    `servicePolicySurfaceInvariant`, bridge lemmas connecting service policy
+    assumptions to lifecycle/capability bundles, explicit policy-denial
+    check-vs-mutation theorem entrypoints.
+  - `Invariant/Acyclicity.lean` — dependency acyclicity proofs (TPI-D07).
 
 ### Architecture subsystem
 
@@ -165,14 +177,20 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - observer projection helpers, `ObservableState` with 9 fields including
     domain-gated `machineRegs` (WS-H10), domain timing metadata (WS-H8),
     `lowEquivalent` relation scaffold with refl/symm/trans.
-- `SeLe4n/Kernel/InformationFlow/Enforcement.lean`
-  - 8 policy-checked wrappers (WS-H8 additions: `notificationSignalChecked`,
-    `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`)
-    that wire `securityFlowsTo` policy into enforcement boundaries.
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean`
-  - 69 NI preservation theorems covering >80% of kernel operations (WS-H9/H10);
-    31-constructor `NonInterferenceStep` inductive; `composedNonInterference_trace`;
-    `declassifyStore_NI`; `InformationFlowConfigInvariant` bundle.
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
+  - `Enforcement/Wrappers.lean` — 8 policy-checked wrappers (WS-H8 additions:
+    `notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`,
+    `endpointReceiveDualChecked`) wiring `securityFlowsTo` policy into
+    enforcement boundaries.
+  - `Enforcement/Soundness.lean` — correctness theorems, soundness proofs,
+    declassification.
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)
+  - `Invariant/Helpers.lean` — shared NI proof infrastructure.
+  - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of
+    kernel operations (WS-H9/H10).
+  - `Invariant/Composition.lean` — 31-constructor `NonInterferenceStep` inductive;
+    `composedNonInterference_trace`; `declassifyStore_NI`;
+    `InformationFlowConfigInvariant` bundle.
 
 ### Testing modules
 

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.14.4-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.14.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -58,12 +58,12 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.14.4` |
+| **Version** | `0.14.5` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 31,268 across 41 files |
+| **Production Lean LoC** | 31,295 across 65 files |
 | **Test Lean LoC** | 2,413 across 3 test suites |
 | **Proved declarations** | 958 theorem/lemma declarations (zero sorry/axiom) |
-| **Total declarations** | 1,777 across 44 modules |
+| **Total declarations** | 1,792 across 68 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -172,17 +172,39 @@ aggregates all subsystem invariants into a single proof obligation.
 ```
 SeLe4n/Prelude.lean              Typed identifiers, KernelM monad, Hashable instances
 SeLe4n/Machine.lean              Register file, memory, timer, MachineConfig
-SeLe4n/Model/Object.lean         TCB, Endpoint, Notification, CNode, VSpaceRoot, CDT
+SeLe4n/Model/Object.lean         Re-export hub: TCB, Endpoint, Notification, CNode, VSpaceRoot, CDT
+  Object/Types.lean              Core data types through UntypedObject
+  Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
 SeLe4n/Model/State.lean          SystemState with HashMap-backed stores
 SeLe4n/Kernel/Scheduler/*        Priority-bucketed RunQueue, EDF scheduling, domain partitioning
+  Operations/Selection.lean      EDF predicates, thread selection, candidate ordering
+  Operations/Core.lean           Core transitions (schedule, handleYield, timerTick)
+  Operations/Preservation.lean   Scheduler invariant preservation theorems
 SeLe4n/Kernel/Capability/*       CSpace lookup/mint/copy/move/delete/revoke with CDT tracking
-SeLe4n/Kernel/IPC/Operations.lean  Core endpoint/notification legacy ops
-SeLe4n/Kernel/IPC/DualQueue.lean   Intrusive dual-queue IPC with O(1) removal
-SeLe4n/Kernel/IPC/Invariant.lean   95+ IPC invariant preservation theorems
+  Invariant/Defs.lean            Core invariant definitions, transfer theorems
+  Invariant/Authority.lean       Authority reduction, badge routing consistency
+  Invariant/Preservation.lean    Operation preservation, lifecycle integration
+SeLe4n/Kernel/IPC/*              Dual-queue IPC subsystem
+  Operations/Endpoint.lean       Core endpoint/notification ops
+  Operations/SchedulerLemmas.lean  Scheduler preservation lemmas
+  DualQueue/Core.lean            Intrusive dual-queue ops with O(1) removal
+  DualQueue/Transport.lean       Dual-queue transport lemmas
+  Invariant/Defs.lean            IPC invariant definitions
+  Invariant/EndpointPreservation.lean  Endpoint preservation proofs
+  Invariant/CallReplyRecv.lean   Call/ReplyRecv preservation proofs
+  Invariant/NotificationPreservation.lean  Notification preservation proofs
+  Invariant/Structural.lean      Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Object retype with lifecycle metadata preservation
 SeLe4n/Kernel/Service/*          Service graph with HashSet-backed DFS cycle detection
+  Invariant/Policy.lean          Policy surface, bridge theorems
+  Invariant/Acyclicity.lean      Dependency acyclicity proofs
 SeLe4n/Kernel/Architecture/*     VSpace HashMap map/unmap/lookup, W^X, TLB model, VSpaceBackend
-SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorems, 31-constructor NonInterferenceStep
+SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorems
+  Enforcement/Wrappers.lean      Policy-gated operation wrappers
+  Enforcement/Soundness.lean     Correctness theorems, declassification
+  Invariant/Helpers.lean         Shared NI proof infrastructure
+  Invariant/Operations.lean      Per-operation NI proofs
+  Invariant/Composition.lean     Trace composition, 31-constructor NonInterferenceStep
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)

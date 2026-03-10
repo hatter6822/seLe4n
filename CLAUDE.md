@@ -40,17 +40,47 @@ theorems, invariants, or documentation anchors.
 ```
 SeLe4n/Prelude.lean              Typed identifiers, monad foundations
 SeLe4n/Machine.lean              Machine state primitives
-SeLe4n/Model/Object.lean         Kernel objects and data structures
+SeLe4n/Model/Object.lean         Kernel objects (re-export hub)
+  Object/Types.lean              Core data types, TCB, Endpoint, Notification
+  Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
 SeLe4n/Model/State.lean          Kernel/system state representation
 SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
+  Operations.lean                Re-export hub
+    Operations/Selection.lean    EDF predicates, thread selection
+    Operations/Core.lean         Core transitions (schedule, handleYield, timerTick)
+    Operations/Preservation.lean Scheduler invariant preservation theorems
 SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
-SeLe4n/Kernel/IPC/Operations.lean Core endpoint/notification legacy ops
-SeLe4n/Kernel/IPC/DualQueue.lean Intrusive dual-queue IPC operations
-SeLe4n/Kernel/IPC/Invariant.lean IPC invariant preservation proofs
+  Invariant.lean                 Re-export hub
+    Invariant/Defs.lean          Core invariant definitions, transfer theorems
+    Invariant/Authority.lean     Authority reduction, badge routing
+    Invariant/Preservation.lean  Operation preservation, lifecycle integration
+SeLe4n/Kernel/IPC/*              IPC subsystem
+  Operations.lean                Re-export hub
+    Operations/Endpoint.lean     Core endpoint/notification ops
+    Operations/SchedulerLemmas.lean Scheduler preservation lemmas
+  DualQueue.lean                 Re-export hub
+    DualQueue/Core.lean          Dual-queue operations
+    DualQueue/Transport.lean     Transport lemmas
+  Invariant.lean                 Re-export hub
+    Invariant/Defs.lean          Core IPC invariant definitions
+    Invariant/EndpointPreservation.lean Endpoint preservation proofs
+    Invariant/CallReplyRecv.lean Call/ReplyRecv preservation proofs
+    Invariant/NotificationPreservation.lean Notification preservation proofs
+    Invariant/Structural.lean    Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
 SeLe4n/Kernel/Service/*          Service orchestration + policy
+  Invariant.lean                 Re-export hub
+    Invariant/Policy.lean        Policy surface, bridge theorems
+    Invariant/Acyclicity.lean    Dependency acyclicity proofs
 SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend
 SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
+  Enforcement.lean               Re-export hub
+    Enforcement/Wrappers.lean    Policy-gated operation wrappers
+    Enforcement/Soundness.lean   Correctness theorems, declassification
+  Invariant.lean                 Re-export hub
+    Invariant/Helpers.lean       Shared NI proof infrastructure
+    Invariant/Operations.lean    Per-operation NI proofs
+    Invariant/Composition.lean   Trace composition, declassification
 SeLe4n/Kernel/API.lean           Public kernel interface
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
 SeLe4n/Platform/Sim/*            Simulation platform contracts
@@ -59,6 +89,10 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
 ```
+
+Note: Files marked "Re-export hub" are thin import-only files that preserve
+backward compatibility. All existing `import` statements continue to work
+unchanged. Actual implementations live in the listed submodules.
 
 ## Reading large files
 
@@ -72,33 +106,41 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant.lean` (~5841 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (~3002 lines)
-- `SeLe4n/Kernel/Scheduler/Operations.lean` (~2761 lines)
-- `SeLe4n/Kernel/Capability/Invariant.lean` (~2380 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2337 lines)
 - `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
-- `SeLe4n/Kernel/IPC/DualQueue.lean` (~1729 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2162 lines)
 - `CHANGELOG.md` (~1502 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1496 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1484 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1391 lines)
 - `tests/NegativeStateSuite.lean` (~1372 lines)
-- `SeLe4n/Model/Object.lean` (~1261 lines)
-- `SeLe4n/Kernel/Service/Invariant.lean` (~1218 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1199 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~1171 lines)
-- `SeLe4n/Kernel/IPC/Operations.lean` (~1032 lines)
-- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (~963 lines)
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1050 lines)
 - `SeLe4n/Model/State.lean` (~919 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~885 lines)
+- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~860 lines)
 - `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~825 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations.lean` (~811 lines)
 - `tests/InformationFlowSuite.lean` (~809 lines)
 - `SeLe4n/Prelude.lean` (~784 lines)
 - `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md` (~775 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
+- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~730 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~725 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~724 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~675 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.15_v1.md` (~682 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~639 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~614 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~599 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~536 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~513 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~511 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~502 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
