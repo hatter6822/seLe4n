@@ -47,7 +47,7 @@ introducing substantial architectural improvements:
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
 - **Node-stable capability derivation tree** with `childMap` HashMap index for O(1) slot transfer, revocation, and descendant lookup
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
-- **Parameterized N-domain information-flow** framework with two-dimensional confidentiality/integrity labels (beyond seL4's binary partition)
+- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition)
 - **EDF + priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning
 
 ## Current state
@@ -219,7 +219,7 @@ tests/                           Negative-state suite, information-flow suite, t
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
 | **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
-| **Information flow** | Binary high/low partition | N-domain two-dimensional labels (confidentiality + integrity lattice) |
+| **Information flow** | Binary high/low partition | N-domain configurable flow policy (generalizes legacy confidentiality × integrity labels) |
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
 | **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
