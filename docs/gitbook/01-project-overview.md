@@ -46,6 +46,10 @@ M7 (audit remediation).
 
 | Portfolio | Scope | Status |
 |-----------|-------|--------|
+| **WS-H14** (v0.14.6) | Type safety & Prelude foundations: `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness, identifier roundtrip/injectivity, `OfNat` removal, sentinel completion. Closes A-02, A-01, A-03, A-04/M-11, A-06, M-09, M-10 | Completed |
+| **Module restructuring** (v0.14.5) | 9 monolithic files decomposed into 24 focused submodules via re-export hub pattern; 15 private defs tightened; 209 Tier 3 anchor checks updated. Zero sorry/axiom | Completed |
+| **WS-H13** (v0.14.4) | CSpace/service model enrichment: multi-level CSpace resolution, backing-object verification, `serviceCountBounded`. Closes H-01, A-21, A-29, A-30, M-17/A-31 | Completed |
+| **WS-H12f** (v0.14.3) | Test harness update & documentation sync: 3 new trace scenarios, fixture update, 9 new Tier 3 anchors. Completes WS-H12 composite workstream | Completed |
 | **WS-H12e** (v0.14.2) | Cross-subsystem invariant reconciliation: `coreIpcInvariantBundle` upgraded to `ipcInvariantFull`, `schedulerInvariantBundleFull` extended with `contextMatchesCurrent`, `ipcSchedulerCouplingInvariantBundle` extended with register-context and dequeue coherence, `proofLayerInvariantBundle` uses full scheduler bundle, all preservation proofs updated. Closes systemic invariant composition gaps from WS-H12a–d | Completed |
 | **WS-H12d** (v0.14.1) | IPC message payload bounds: `IpcMessage` registers/caps migrated to `Array` with `maxMessageRegisters`(120)/`maxExtraCaps`(3), bounds enforcement at all 4 send boundaries, `allPendingMessagesBounded` system invariant. Closes A-09 | Completed |
 | **WS-H12c** (v0.14.0) | Per-TCB register context with inline context switch: `registerContext` field on TCB, inline `saveOutgoingContext`/`restoreIncomingContext` in `schedule`, `contextMatchesCurrent` invariant with preservation proofs for scheduler and IPC operations, IF projection stripping. Closes H-03 | Completed |
@@ -71,9 +75,8 @@ M7 (audit remediation).
 
 The immediate next steps are:
 
-1. **WS-H12d–f, H13..H16** — Remaining v0.12.15 audit remediation workstreams (Phases 4–5):
-   message bounds, cross-subsystem reconciliation, CSpace/service model
-   enrichment, type safety, platform hardening, testing expansion.
+1. **WS-H15..H16** — Remaining v0.12.15 audit remediation workstreams (Phase 5):
+   platform hardening, testing expansion.
 2. **WS-F5..F8** — Remaining v0.12.2 audit remediation (medium/low priority):
    model fidelity, invariant quality, testing expansion, cleanup.
 3. **Raspberry Pi 5 hardware binding (H3)** — ARM64 code generation and hardware bring-up.

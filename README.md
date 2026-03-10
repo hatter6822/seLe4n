@@ -232,7 +232,7 @@ tests/                           Negative-state suite, information-flow suite, t
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-H14..H16** — Type safety hardening, platform hardening, testing expansion (Low priority)
+- **WS-H15..H16** — Platform hardening, testing expansion (Low priority)
 - **WS-F5..F8** — Model fidelity, invariant quality, testing, cleanup (Medium/Low priority)
 - **Raspberry Pi 5 hardware binding** — populate RPi5 platform stubs with hardware-validated contracts
 
