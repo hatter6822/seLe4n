@@ -22,7 +22,7 @@ theorem setCurrentThread_preserves_queueCurrentConsistent
   cases hStep
   simp [queueCurrentConsistent, hNotMem]
 
-theorem setCurrentThread_preserves_runQueueUnique
+private theorem setCurrentThread_preserves_runQueueUnique
     (st st' : SystemState)
     (tid : Option SeLe4n.ThreadId)
     (hUnique : runQueueUnique st.scheduler)
@@ -32,7 +32,7 @@ theorem setCurrentThread_preserves_runQueueUnique
   cases hStep
   simpa [runQueueUnique] using hUnique
 
-theorem setCurrentThread_none_preserves_currentThreadValid
+private theorem setCurrentThread_none_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : setCurrentThread none st = .ok ((), st')) :
     currentThreadValid st' := by
@@ -71,7 +71,7 @@ theorem chooseThread_preserves_state
 /-- WS-H12b: `schedule` preserves `queueCurrentConsistent`.
 After dequeue-on-dispatch, the selected thread is removed from the run queue
 before being set as current, establishing `tid ∉ runnable`. -/
-theorem schedule_preserves_queueCurrentConsistent
+private theorem schedule_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     queueCurrentConsistent st'.scheduler := by
@@ -117,7 +117,7 @@ theorem schedule_preserves_wellFormed
     schedulerWellFormed st'.scheduler := by
   exact schedule_preserves_queueCurrentConsistent st st' hStep
 
-theorem chooseThread_preserves_queueCurrentConsistent
+private theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (hConsistent : queueCurrentConsistent st.scheduler)
@@ -126,7 +126,7 @@ theorem chooseThread_preserves_queueCurrentConsistent
   rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hConsistent
 
-theorem chooseThread_preserves_runQueueUnique
+private theorem chooseThread_preserves_runQueueUnique
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (hUnique : runQueueUnique st.scheduler)
@@ -135,7 +135,7 @@ theorem chooseThread_preserves_runQueueUnique
   rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hUnique
 
-theorem chooseThread_preserves_currentThreadValid
+private theorem chooseThread_preserves_currentThreadValid
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (hValid : currentThreadValid st)
@@ -144,7 +144,7 @@ theorem chooseThread_preserves_currentThreadValid
   rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hValid
 
-theorem chooseThread_preserves_currentThreadInActiveDomain
+private theorem chooseThread_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (hInv : currentThreadInActiveDomain st)
@@ -161,7 +161,7 @@ private theorem remove_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId)
   unfold RunQueue.remove
   exact hNodup.sublist List.filter_sublist
 
-theorem schedule_preserves_runQueueUnique
+private theorem schedule_preserves_runQueueUnique
     (st st' : SystemState)
     (hUnique : runQueueUnique st.scheduler)
     (hStep : schedule st = .ok ((), st')) :
@@ -208,7 +208,7 @@ theorem schedule_preserves_runQueueUnique
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
 
-theorem schedule_preserves_currentThreadValid
+private theorem schedule_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     currentThreadValid st' := by
@@ -246,7 +246,7 @@ theorem schedule_preserves_currentThreadValid
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
 
-theorem schedule_preserves_currentThreadInActiveDomain
+private theorem schedule_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     currentThreadInActiveDomain st' := by
@@ -321,7 +321,7 @@ theorem schedule_preserves_currentThreadInActiveDomain
 
 /-- WS-H12b: `handleYield` preserves `queueCurrentConsistent`.
 Re-enqueue + schedule re-establishes the invariant. -/
-theorem handleYield_preserves_queueCurrentConsistent
+private theorem handleYield_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     queueCurrentConsistent st'.scheduler := by
@@ -358,7 +358,7 @@ private theorem insert_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId) (
       subst this; intro hEq; subst hEq
       exact hNotMem ((RunQueue.mem_toList_iff_mem rq x).mp hx)⟩
 
-theorem handleYield_preserves_runQueueUnique
+private theorem handleYield_preserves_runQueueUnique
     (st st' : SystemState)
     (hUnique : runQueueUnique st.scheduler)
     (hQCC : queueCurrentConsistent st.scheduler)
@@ -390,7 +390,7 @@ theorem handleYield_preserves_runQueueUnique
           simp only [runQueueUnique, SchedulerState.runnable]; exact hRotatedNodup) hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
 
-theorem handleYield_preserves_currentThreadValid
+private theorem handleYield_preserves_currentThreadValid
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadValid st' := by
@@ -410,7 +410,7 @@ theorem handleYield_preserves_currentThreadValid
         exact schedule_preserves_currentThreadValid _ st' hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
 
-theorem handleYield_preserves_currentThreadInActiveDomain
+private theorem handleYield_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadInActiveDomain st' := by
@@ -504,7 +504,7 @@ theorem handleYield_preserves_schedulerInvariantBundle
 
 /-- WS-H12b: `switchDomain` preserves the scheduler invariant bundle.
 Re-enqueues the current thread before advancing the domain schedule. -/
-theorem switchDomain_preserves_schedulerInvariantBundle
+private theorem switchDomain_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (hInv : schedulerInvariantBundle st)
     (hStep : switchDomain st = .ok ((), st')) :
@@ -835,7 +835,7 @@ private theorem noBetter_implies_edf
 -- ============================================================================
 
 /-- WS-H6: `setCurrentThread` preserves `timeSlicePositive` — only `current` changes. -/
-theorem setCurrentThread_preserves_timeSlicePositive
+private theorem setCurrentThread_preserves_timeSlicePositive
     (st st' : SystemState)
     (tid : Option SeLe4n.ThreadId)
     (hInv : timeSlicePositive st)
@@ -870,7 +870,7 @@ private theorem remove_preserves_timeSlicePositive
 /-- WS-H6/WS-H12b: `schedule` preserves `timeSlicePositive`.
 Updated for dequeue-on-dispatch: the dequeued state's `timeSlicePositive`
 follows from removal being a subset of the original runnable set. -/
-theorem schedule_preserves_timeSlicePositive
+private theorem schedule_preserves_timeSlicePositive
     (st st' : SystemState)
     (hInv : timeSlicePositive st)
     (hStep : schedule st = .ok ((), st')) :
@@ -919,7 +919,7 @@ Under dequeue-on-dispatch, the current thread is NOT in the run queue.
 After insert+rotateToBack, `timeSlicePositive` holds because the current
 thread's TCB (with positive time slice via `hCurTS`) is now in the queue,
 and all previously-runnable threads retain their positive time slices. -/
-theorem handleYield_preserves_timeSlicePositive
+private theorem handleYield_preserves_timeSlicePositive
     (st st' : SystemState)
     (hInv : timeSlicePositive st)
     (hCurTS : currentTimeSlicePositive st)
@@ -964,7 +964,7 @@ theorem handleYield_preserves_timeSlicePositive
 
 /-- WS-H6/WS-H12b: `switchDomain` preserves `timeSlicePositive`.
 Re-enqueues the current thread (if any) before switching domains. -/
-theorem switchDomain_preserves_timeSlicePositive
+private theorem switchDomain_preserves_timeSlicePositive
     (st st' : SystemState)
     (hInv : timeSlicePositive st)
     (hCurTS : currentTimeSlicePositive st)
@@ -1022,7 +1022,7 @@ private theorem threadId_ne_objId_beq_false
 /-- WS-H6/WS-H12b: `timerTick` preserves `timeSlicePositive`.
 Expired case: resets to `defaultTimeSlice` (= 5 > 0), inserts into queue, then schedule.
 Not-expired case: decrements, and since `timeSlice > 1`, the result is still > 0. -/
-theorem timerTick_preserves_timeSlicePositive
+private theorem timerTick_preserves_timeSlicePositive
     (st st' : SystemState)
     (hInv : timeSlicePositive st)
     (hStep : timerTick st = .ok ((), st')) :
@@ -1085,7 +1085,7 @@ theorem timerTick_preserves_timeSlicePositive
 -- ============================================================================
 
 /-- WS-H12b: `setCurrentThread none` trivially preserves `currentTimeSlicePositive`. -/
-theorem setCurrentThread_none_preserves_currentTimeSlicePositive
+private theorem setCurrentThread_none_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hStep : setCurrentThread none st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
@@ -1108,7 +1108,7 @@ theorem setCurrentThread_some_preserves_currentTimeSlicePositive
 /-- WS-H12b: `schedule` preserves `currentTimeSlicePositive`.
 When schedule selects a thread from the runnable queue, its `timeSlice > 0`
 follows from `timeSlicePositive`. -/
-theorem schedule_preserves_currentTimeSlicePositive
+private theorem schedule_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hTS : timeSlicePositive st)
     (hStep : schedule st = .ok ((), st')) :
@@ -1188,7 +1188,7 @@ theorem schedule_preserves_currentTimeSlicePositive
                       simp [hChoose, hObj] at hStep
 
 /-- WS-H12b: `handleYield` preserves `currentTimeSlicePositive`. -/
-theorem handleYield_preserves_currentTimeSlicePositive
+private theorem handleYield_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hTS : timeSlicePositive st)
     (hCurTS : currentTimeSlicePositive st)
@@ -1231,7 +1231,7 @@ theorem handleYield_preserves_currentTimeSlicePositive
 
 /-- WS-H12b: `switchDomain` preserves `currentTimeSlicePositive`.
 Domain switch sets `current := none`, so the predicate is trivially True. -/
-theorem switchDomain_preserves_currentTimeSlicePositive
+private theorem switchDomain_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hCurTS : currentTimeSlicePositive st)
     (hStep : switchDomain st = .ok ((), st')) :
@@ -1246,7 +1246,7 @@ theorem switchDomain_preserves_currentTimeSlicePositive
       · simp at hStep; cases hStep; simp [currentTimeSlicePositive]
 
 /-- WS-H12b: `timerTick` preserves `currentTimeSlicePositive`. -/
-theorem timerTick_preserves_currentTimeSlicePositive
+private theorem timerTick_preserves_currentTimeSlicePositive
     (st st' : SystemState)
     (hTS : timeSlicePositive st)
     (_ : currentTimeSlicePositive st)
@@ -1303,7 +1303,7 @@ theorem timerTick_preserves_currentTimeSlicePositive
 -- ============================================================================
 
 /-- WS-H6: `setCurrentThread none` trivially preserves EDF — no current thread. -/
-theorem setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline
+private theorem setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
     (hStep : setCurrentThread none st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
@@ -1313,7 +1313,7 @@ theorem setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline
 
 /-- WS-H6: `switchDomain` preserves `edfCurrentHasEarliestDeadline`.
 Domain switch sets `current := none` in the transition case. -/
-theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
+private theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
     (hInv : edfCurrentHasEarliestDeadline st)
     (hStep : switchDomain st = .ok ((), st')) :
@@ -1683,7 +1683,7 @@ When schedule selects `none`, EDF is trivially `True`. When schedule selects
 
 WS-H12b: The dequeue step means the post-state's runnable list excludes
 the dispatched thread. The EDF bridge is updated accordingly. -/
-theorem schedule_preserves_edfCurrentHasEarliestDeadline
+private theorem schedule_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
     (hpm : schedulerPriorityMatch st)
@@ -1773,7 +1773,7 @@ Under dequeue-on-dispatch, `handleYield` inserts the current thread back
 into the run queue and then calls `schedule`, which re-selects the best
 candidate from scratch. The EDF property is re-established by the
 `schedule` call. -/
-theorem handleYield_preserves_edfCurrentHasEarliestDeadline
+private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
     (hpm : schedulerPriorityMatch st)
@@ -1851,7 +1851,7 @@ set_option maxHeartbeats 800000 in
   so EDF is preserved.
 - **Time-slice expired**: TCB time-slice reset, re-enqueue via insert, and
   `schedule` call re-establishes EDF from scratch. -/
-theorem timerTick_preserves_edfCurrentHasEarliestDeadline
+private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
     (hpm : schedulerPriorityMatch st)
@@ -1957,7 +1957,7 @@ theorem timerTick_preserves_edfCurrentHasEarliestDeadline
 `contextMatchesCurrent`. The inline context switch in `schedule` atomically
 saves the outgoing thread's registers and restores the incoming thread's
 registers, ensuring machine.regs = currentThread.registerContext. -/
-theorem schedule_preserves_contextMatchesCurrent
+private theorem schedule_preserves_contextMatchesCurrent
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     contextMatchesCurrent st' := by
@@ -2005,7 +2005,7 @@ theorem schedule_preserves_contextMatchesCurrent
 
 /-- WS-H12c/H-03: `handleYield` preserves `contextMatchesCurrent`.
 `handleYield` calls `schedule` which re-establishes the invariant. -/
-theorem handleYield_preserves_contextMatchesCurrent
+private theorem handleYield_preserves_contextMatchesCurrent
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     contextMatchesCurrent st' := by
@@ -2034,7 +2034,7 @@ theorem handleYield_preserves_contextMatchesCurrent
 - When time slice doesn't expire: decrements timeSlice via storeObject, machine.regs and
   current are unchanged → invariant preserved.
 - When time slice expires: re-enqueues + calls `schedule` → invariant re-established. -/
-theorem timerTick_preserves_contextMatchesCurrent
+private theorem timerTick_preserves_contextMatchesCurrent
     (st st' : SystemState)
     (hInv : contextMatchesCurrent st)
     (hStep : timerTick st = .ok ((), st')) :

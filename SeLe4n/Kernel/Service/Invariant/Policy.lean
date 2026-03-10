@@ -1,6 +1,5 @@
 import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Capability.Invariant
-import SeLe4n.Kernel.Lifecycle.Invariant
 
 namespace SeLe4n.Kernel
 

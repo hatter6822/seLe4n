@@ -1,10 +1,7 @@
-import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 
 namespace SeLe4n.Kernel
-
-open SeLe4n.Model
 
 open SeLe4n.Model
 

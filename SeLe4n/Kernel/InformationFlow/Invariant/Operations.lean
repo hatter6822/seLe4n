@@ -30,7 +30,7 @@ with CDT-specific frame lemmas.
 
 /-- WS-F3: serviceStart at a non-observable service preserves low-equivalence.
 Service operations only modify the service store, not objects or scheduler. -/
-theorem serviceStart_preserves_lowEquivalent
+private theorem serviceStart_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : ServiceId) (policy : ServicePolicy)
     (s₁ s₂ s₁' s₂' : SystemState)
@@ -103,7 +103,7 @@ theorem serviceStart_preserves_lowEquivalent
     exact congrArg ObservableState.machineRegs hLow
 
 /-- WS-F3: serviceStop at a non-observable service preserves low-equivalence. -/
-theorem serviceStop_preserves_lowEquivalent
+private theorem serviceStop_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : ServiceId) (policy : ServicePolicy)
     (s₁ s₂ s₁' s₂' : SystemState)
@@ -307,7 +307,7 @@ preserves low-equivalence.
 The enforcement bridge extracts the flow check from the wrapper, then delegates
 to the underlying `cspaceCopy` NI theorem (taken as hypothesis pending WS-H9
 decomposition lemmas for CDT-aware operations). -/
-theorem cspaceCopyChecked_NI
+private theorem cspaceCopyChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr)
     (s₁ s₂ s₁' s₂' : SystemState)
@@ -923,7 +923,7 @@ theorem cspaceDeleteSlot_preserves_projection
               storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hStore]
 
 /-- WS-H9: cspaceDeleteSlot preserves low-equivalence. -/
-theorem cspaceDeleteSlot_preserves_lowEquivalent
+private theorem cspaceDeleteSlot_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
@@ -1044,7 +1044,7 @@ theorem cspaceCopy_preserves_projection
           cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
-theorem cspaceCopy_preserves_lowEquivalent
+private theorem cspaceCopy_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
@@ -1103,7 +1103,7 @@ theorem cspaceMove_preserves_projection
               cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
 
 /-- WS-H9: cspaceMove preserves low-equivalence. -/
-theorem cspaceMove_preserves_lowEquivalent
+private theorem cspaceMove_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)

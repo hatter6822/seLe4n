@@ -5,7 +5,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- Delete transition authority reduction clause. -/
-theorem cspaceDeleteSlot_authority_reduction
+private theorem cspaceDeleteSlot_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
@@ -129,7 +129,7 @@ theorem cspaceLookupSlot_preserves_state
       simp [hLookup] at hStep
       exact hStep.2.symm
 
-theorem cspaceInsertSlot_lookup_eq
+private theorem cspaceInsertSlot_lookup_eq
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
@@ -247,7 +247,7 @@ theorem cspaceRevoke_preserves_source
               refine ⟨parent, ?_⟩
               exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
 
-theorem mintDerivedCap_attenuates
+private theorem mintDerivedCap_attenuates
     (parent child : Capability)
     (rights : List AccessRight)
     (badge : Option SeLe4n.Badge)
