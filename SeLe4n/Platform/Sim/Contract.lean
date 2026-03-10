@@ -9,6 +9,7 @@
 import SeLe4n.Platform.Contract
 import SeLe4n.Platform.Sim.RuntimeContract
 import SeLe4n.Platform.Sim.BootContract
+import SeLe4n.Platform.Sim.ProofHooks
 
 /-!
 # Simulation Platform Binding

@@ -2277,74 +2277,635 @@ H14e depends on H14a and H14d. H14f depends on H14e.
 
 ---
 
-### WS-H15: Platform & API Hardening (MEDIUM)
+### WS-H15: Platform & API Hardening (MEDIUM) — Refined Breakdown
 
-**Objective:** Strengthen the platform binding contracts beyond placeholder
-validators and add capability-checking wrappers at the kernel API boundary.
+**Objective:** Harden the kernel's external-facing surfaces: add capability-
+checking syscall wrappers at the API boundary so that every public kernel
+operation verifies the caller holds a capability with sufficient rights before
+touching kernel state; replace placeholder platform contracts with substantive
+hardware-validated predicates for the Raspberry Pi 5 (BCM2712) target; add
+`Decidable` fields to `InterruptBoundaryContract` for symmetry with the
+runtime contract; and instantiate `AdapterProofHooks` concretely for the Sim
+platform, closing the gap where adapter preservation proofs are parameterized
+but never concretely discharged.
 
-**Entry criteria:** WS-H4 completed (capability invariant redesign for capability
-checking), WS-H13 completed (type-indexed multi-level CSpace resolution).
+**Entry criteria:** WS-H4 completed (capability invariant redesign), WS-H13
+completed (multi-level CSpace resolution with `resolveCapAddress`), WS-H14
+completed (type-safe identifiers used by syscall wrappers). All prior
+workstreams (H1..H14) completed. `test_smoke.sh` passes.
 
 **Findings addressed:**
-- **A-41** (MEDIUM): RPi5 platform stubs are minimal. Boot and runtime contracts
-  use placeholder validators.
-- **A-42** (MEDIUM): No capability-checking wrapper at the API boundary. The API
-  directly exposes raw kernel operations without verifying caller capabilities.
-- **A-33** (MEDIUM): Architecture adapter operations depend on a parameterized
-  `RuntimeBoundaryContract`, not a concrete one. Correctness is contingent on
-  the platform binding providing correct contracts.
-- **M-13** (MEDIUM): `InterruptBoundaryContract` lacks `Decidable` fields,
-  creating an asymmetry with `RuntimeBoundaryContract`.
+- **A-42** (MEDIUM): No capability-checking wrapper at the API boundary. The
+  public `API.lean` module directly re-exports raw kernel operations
+  (`endpointSendDual`, `cspaceMint`, `lifecycleRetypeObject`, etc.) without
+  verifying that the invoking thread holds a capability granting sufficient
+  rights for the operation. In real seL4, every syscall entry point performs
+  CSpace lookup + rights check before dispatching to the kernel operation.
+  Without this, the formal model cannot reason about access control at the
+  system-call boundary.
+- **A-41** (MEDIUM): RPi5 platform stubs are minimal. Boot contract uses `True`
+  placeholders for `objectTypeMetadataConsistent` and
+  `capabilityRefMetadataConsistent`. Runtime contract's `registerContextStable`
+  is `True` (no actual register-set validation). Interrupt contract's
+  `irqHandlerMapped` is `True` (all IRQs trivially considered mapped).
+- **A-33** (MEDIUM): Architecture adapter operations (`adapterAdvanceTimer`,
+  `adapterWriteRegister`, `adapterReadMemory`) depend on a parameterized
+  `RuntimeBoundaryContract`. The `AdapterProofHooks` structure requires a proof
+  that the invariant bundle is preserved when the contract holds, but no
+  platform ever instantiates `AdapterProofHooks` concretely. The preservation
+  chain from contract to invariant is structurally complete but never grounded.
+- **M-13** (MEDIUM): `InterruptBoundaryContract` lacks `Decidable` instance
+  fields for `irqLineSupported` and `irqHandlerMapped`, creating an asymmetry
+  with `RuntimeBoundaryContract` (which has `Decidable` for all three
+  predicates). Adapter code that needs to branch on interrupt predicates at
+  runtime cannot use `if` without manual `Decidable` instance threading.
+
+**Security rationale:** In a production microkernel, the syscall boundary is the
+primary attack surface. An unprivileged thread should never be able to invoke
+`lifecycleRetypeObject` or `endpointSendDual` without first proving it holds the
+appropriate capability. The current model's API layer is an import barrel with an
+invariant bundle alias — it provides no access control. This workstream adds the
+formal access-control gate that closes the gap between "the kernel operations are
+correct" and "unprivileged code cannot invoke them."
+
+**Subdivision:** This workstream is divided into 5 sub-workstreams ordered by
+dependency and risk. Sub-workstreams H15a–H15b are additive infrastructure
+changes. H15c is the core API hardening change. H15d hardens the RPi5 platform.
+H15e is the final proof-grounding and testing sub-workstream.
+
+```
+Dependency graph:
+  H15a (InterruptBoundaryContract decidability) ──┐
+  H15b (RPi5 contract hardening)                  ├── H15d (AdapterProofHooks instantiation)
+  H15c (Syscall capability wrappers) ─────────────┘
+  H15d ──→ H15e (Tests, trace harness, documentation sync)
+```
+
+---
+
+#### WS-H15a: InterruptBoundaryContract Decidability (M-13)
+
+**Objective:** Add `Decidable` instance fields to `InterruptBoundaryContract`,
+matching the pattern established in `RuntimeBoundaryContract`. This enables
+adapter code to branch on interrupt predicates at runtime using `if` without
+manual `Decidable` instance threading.
+
+**Findings addressed:** M-13
 
 **Deliverables:**
 
-*Part A — API capability checking (A-42):*
-1. Define a `SyscallWrapper` that takes a caller ThreadId, an operation, and the
-   required capability type, and:
-   - Resolves the caller's CSpace root capability.
-   - Looks up the required capability via `resolveCapAddress` (from WS-H13).
-   - Validates that the capability has sufficient rights for the operation.
-   - Invokes the underlying kernel operation only if all checks pass.
-2. Wrap all public API operations in `API.lean` with `SyscallWrapper`.
-3. Prove: if a syscall wrapper succeeds, the caller held the required capability
-   with sufficient rights.
+*Part 1 — Add Decidable fields to InterruptBoundaryContract:*
+1. Extend `InterruptBoundaryContract` in `Assumptions.lean` with two new fields:
+   ```lean
+   irqLineSupportedDecidable : ∀ irq, Decidable (irqLineSupported irq)
+   irqHandlerMappedDecidable : ∀ st irq, Decidable (irqHandlerMapped st irq)
+   ```
+   These mirror the `timerMonotonicDecidable`, `registerContextStableDecidable`,
+   and `memoryAccessAllowedDecidable` fields in `RuntimeBoundaryContract`.
 
-*Part B — RPi5 platform contracts (A-41):*
-4. Replace `interruptRoutingValid` placeholder with a substantive check that
-   validates GIC-400 interrupt routing for BCM2712 peripherals.
-5. Add `mmioRegionValid` contract checking that MMIO regions (UART, GPIO,
-   interrupt controller) do not overlap with kernel memory regions.
-6. Add `memorySafetyContract` checking that DMA-capable devices cannot access
-   kernel memory regions.
-7. Prove that the RPi5 platform binding satisfies `PlatformBinding` typeclass
-   with substantive (non-trivial) contract proofs.
+*Part 2 — Update all InterruptBoundaryContract instantiation sites:*
+2. Update `rpi5InterruptContract` in `Platform/RPi5/BootContract.lean` to supply
+   the new `Decidable` fields. For `irqLineSupported` (`irq.toNat < 224`), the
+   proof is `by intro irq; infer_instance` (Nat comparison is decidable). For
+   `irqHandlerMapped` (currently `True`), the proof is
+   `by intro st irq; infer_instance`.
+3. Update `simInterruptContract` in `Platform/Sim/BootContract.lean` to supply
+   the new `Decidable` fields. Both predicates are `True`, so decidability is
+   `by intro _; infer_instance`.
 
-*Part C — Adapter concretization (A-33/M-13):*
-8. Instantiate `RuntimeBoundaryContract` concretely for the Sim platform,
-   providing real implementations of all contract predicates.
-9. Add `Decidable` fields to `InterruptBoundaryContract` matching the pattern
-   in `RuntimeBoundaryContract`.
-10. Prove that the Sim platform's concrete contracts satisfy the adapter's
-    parameterized requirements (closing the "AdapterProofHooks never instantiated"
-    gap from the v1 audit finding F-18).
+*Part 3 — Verification:*
+4. Add a theorem `irqLineSupported_decidable_consistent` verifying that the
+   `Decidable` instance agrees with the predicate:
+   ```lean
+   theorem irqLineSupported_decidable_consistent
+       (contract : InterruptBoundaryContract) (irq : SeLe4n.Irq) :
+       @decide _ (contract.irqLineSupportedDecidable irq) = true ↔
+       contract.irqLineSupported irq
+   ```
 
 **Files modified:**
-- `SeLe4n/Kernel/API.lean` — syscall wrappers
-- `SeLe4n/Platform/RPi5/RuntimeContract.lean` — substantive contracts
-- `SeLe4n/Platform/RPi5/BootContract.lean` — boot validation
-- `SeLe4n/Platform/Sim/RuntimeContract.lean` — concrete instantiation
 - `SeLe4n/Kernel/Architecture/Assumptions.lean` — `InterruptBoundaryContract`
-- `SeLe4n/Kernel/Architecture/Invariant.lean` — adapter proof hooks instantiation
+- `SeLe4n/Platform/RPi5/BootContract.lean` — `rpi5InterruptContract`
+- `SeLe4n/Platform/Sim/BootContract.lean` — `simInterruptContract`
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes (Tier 0-2).
+- `InterruptBoundaryContract` has `irqLineSupportedDecidable` and
+  `irqHandlerMappedDecidable` fields.
+- Both platform bindings (RPi5 and Sim) compile with the new fields.
+
+**Dependencies:** None. Can start immediately.
+
+---
+
+#### WS-H15b: RPi5 Platform Contract Hardening (A-41)
+
+**Objective:** Replace placeholder `True` validators in the RPi5 platform
+contracts with substantive hardware-validated predicates that encode real
+BCM2712 hardware constraints. This advances the RPi5 platform binding from
+"structurally complete stub" to "substantive pre-hardware-validation contracts."
+
+**Findings addressed:** A-41
+
+**Design rationale:** The RPi5 boot contract currently uses `True` for both
+`objectTypeMetadataConsistent` and `capabilityRefMetadataConsistent`. The
+runtime contract uses `True` for `registerContextStable`. The interrupt
+contract uses `True` for `irqHandlerMapped`. These placeholders create a false
+assurance gap: the `PlatformBinding` typeclass is satisfied, but the contracts
+provide no actual validation. This sub-workstream replaces each placeholder with
+a substantive predicate based on BCM2712 hardware documentation.
+
+**Deliverables:**
+
+*Part 1 — RPi5 runtime contract hardening:*
+1. Replace the `registerContextStable` placeholder (`True`) with a substantive
+   predicate that validates ARM64 context-switch register preservation:
+   ```lean
+   registerContextStable := fun st st' =>
+     -- ARMv8 context switch preserves callee-saved registers (X19-X30, SP)
+     -- and the PSTATE condition flags. The kernel must save/restore the full
+     -- register file; this contract checks that the save/restore was performed.
+     st.machine.regs.sp = st'.machine.regs.sp ∨
+     -- Allow SP changes when a context switch is in progress (scheduler
+     -- transitions may update SP as part of thread dispatch)
+     st'.scheduler.current ≠ st.scheduler.current
+   ```
+   This is non-trivially validating: it requires either SP preservation or an
+   active context switch, rather than accepting all register mutations.
+2. Add `wellFormedConfig` check to the runtime contract validating that
+   `rpi5MachineConfig.wellFormed = true`:
+   ```lean
+   theorem rpi5MachineConfig_wellFormed : rpi5MachineConfig.wellFormed = true
+   ```
+   This ensures the RPi5 machine configuration (page size is power of 2,
+   address widths positive, no overlapping memory regions, all regions fit
+   within 44-bit physical address space) is validated at proof time.
+
+*Part 2 — RPi5 boot contract hardening:*
+3. Replace `objectTypeMetadataConsistent` placeholder with a predicate that
+   validates the initial object store is empty (no pre-existing kernel objects
+   at boot):
+   ```lean
+   objectTypeMetadataConsistent :=
+     ∀ (st : SystemState), st = default → st.objects.size = 0
+   ```
+4. Replace `capabilityRefMetadataConsistent` with a predicate that validates
+   the initial capability reference table is empty:
+   ```lean
+   capabilityRefMetadataConsistent :=
+     ∀ (st : SystemState), st = default → st.lifecycle.capabilityRefs.size = 0
+   ```
+
+*Part 3 — RPi5 interrupt contract hardening:*
+5. Replace `irqHandlerMapped` placeholder with a substantive predicate that
+   validates handler mapping against the IRQ handler table in `SystemState`:
+   ```lean
+   irqHandlerMapped := fun st irq =>
+     irq.toNat < gicSpiCount + 32 →   -- only for supported IRQs
+     st.irqHandlers[irq]? ≠ none       -- handler must be registered
+   ```
+   This is non-trivially validating: it requires that every supported IRQ line
+   has a registered handler object in the kernel's IRQ handler table. The
+   placeholder `True` is replaced with an actual state-dependent check.
+
+*Part 4 — RPi5 MMIO and DMA safety contracts:*
+6. Add `mmioRegionDisjoint` predicate to `Board.lean` that validates MMIO
+   peripheral regions (UART, GIC, GPIO) do not overlap with declared RAM
+   regions:
+   ```lean
+   def mmioRegions : List MemoryRegion :=
+     [ { base := uart0Base, size := 0x1000, kind := .device }      -- PL011 UART
+     , { base := gicDistributorBase, size := 0x1000, kind := .device }  -- GIC dist
+     , { base := gicCpuInterfaceBase, size := 0x2000, kind := .device } -- GIC CPU
+     ]
+
+   def mmioRegionDisjoint : Prop :=
+     ∀ mmio ∈ mmioRegions, ∀ ram ∈ rpi5MemoryMap,
+       ram.kind = .ram → ¬ mmio.overlaps ram
+   ```
+7. Prove `mmioRegionDisjoint_holds : mmioRegionDisjoint` by `native_decide`
+   (concrete address ranges are decidable).
+
+*Part 5 — MachineConfig well-formedness proof:*
+8. Prove `rpi5MachineConfig_wellFormed : rpi5MachineConfig.wellFormed = true`
+   by `native_decide`. This validates all 7 well-formedness conditions for the
+   RPi5 configuration: nonzero region sizes, no overlap, power-of-two page
+   size, positive widths, and address bounds.
+
+**Files modified:**
+- `SeLe4n/Platform/RPi5/Board.lean` — MMIO regions, disjointness predicate
+- `SeLe4n/Platform/RPi5/RuntimeContract.lean` — substantive `registerContextStable`
+- `SeLe4n/Platform/RPi5/BootContract.lean` — substantive boot + interrupt contracts
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes (Tier 0-2).
+- `rpi5MachineConfig_wellFormed` theorem compiles.
+- `mmioRegionDisjoint_holds` theorem compiles.
+- `rpi5BootContract.objectTypeMetadataConsistent` is not `True`.
+- `rpi5InterruptContract.irqHandlerMapped` is not `True`.
+
+**Dependencies:** WS-H15a (for `Decidable` fields in interrupt contract).
+
+---
+
+#### WS-H15c: Syscall Capability-Checking Wrappers (A-42)
+
+**Objective:** Define capability-checking syscall wrappers that gate every public
+kernel API operation behind CSpace lookup and rights validation. This is the
+core access-control hardening for the API boundary.
+
+**Findings addressed:** A-42
+
+**Design rationale — seL4 syscall model:** In real seL4, every syscall follows
+the pattern: (1) extract capability pointer from the message registers,
+(2) resolve the capability through the caller's CSpace root using multi-level
+CNode walk, (3) check that the resolved capability grants sufficient rights for
+the requested operation, (4) invoke the kernel operation. The current seLe4n
+API layer (`API.lean`) skips steps 1-3 entirely. This sub-workstream adds a
+`SyscallGate` structure and per-operation wrappers that implement the full
+seL4 syscall entry pattern.
+
+**Deliverables:**
+
+*Part 1 — Syscall gate infrastructure:*
+1. Define `CapabilityRight` enumeration in `Model/Object/Types.lean` (if not
+   already present) or `Kernel/API.lean`:
+   ```lean
+   inductive SyscallCapRight where
+     | read        -- read/receive operations
+     | write       -- write/send operations
+     | grant       -- capability transfer (mint, copy, move)
+     | grantReply  -- grant with reply capability
+     | retype      -- lifecycle retype operations
+     deriving Repr, DecidableEq
+   ```
+2. Define `SyscallGate` — the core capability-checking wrapper:
+   ```lean
+   structure SyscallGate where
+     callerId     : SeLe4n.ThreadId
+     cspaceRoot   : SeLe4n.ObjId
+     capAddr      : SeLe4n.CPtr
+     capDepth     : Nat
+     requiredRight : SyscallCapRight
+   ```
+3. Define `syscallLookupCap` — resolves and validates the capability:
+   ```lean
+   def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
+     fun st =>
+       match resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st with
+       | .error e => .error e
+       | .ok ref =>
+         match SystemState.lookupSlotCap st ref with
+         | none => .error .invalidCapability
+         | some cap =>
+           if gate.requiredRight ∈ cap.rights
+           then .ok (cap, st)
+           else .error .illegalAuthority
+   ```
+4. Define `syscallInvoke` — the gated operation combinator:
+   ```lean
+   def syscallInvoke (gate : SyscallGate) (op : Capability → Kernel α) : Kernel α :=
+     fun st =>
+       match syscallLookupCap gate st with
+       | .error e => .error e
+       | .ok (cap, st') => op cap st'
+   ```
+
+*Part 2 — Wrap public API operations:*
+5. Define capability-gated wrappers for all stable API operations. Each wrapper
+   takes a `SyscallGate` and delegates to the underlying operation only after
+   successful capability lookup and rights check:
+   - `apiEndpointSend (gate : SyscallGate) (msg : IpcMessage) : Kernel Unit`
+     — requires `.write` right on the endpoint capability.
+   - `apiEndpointReceive (gate : SyscallGate) : Kernel (Option IpcMessage)`
+     — requires `.read` right on the endpoint capability.
+   - `apiEndpointCall (gate : SyscallGate) (msg : IpcMessage) : Kernel IpcMessage`
+     — requires `.write` and `.grantReply` rights.
+   - `apiEndpointReply (gate : SyscallGate) (msg : IpcMessage) : Kernel Unit`
+     — requires `.write` right on the reply capability.
+   - `apiCspaceMint (gate srcGate : SyscallGate) (badge : SeLe4n.Badge) (rights : List CapabilityRight) : Kernel Unit`
+     — requires `.grant` right on the source capability.
+   - `apiCspaceCopy (gate srcGate : SyscallGate) : Kernel Unit`
+     — requires `.grant` right on the source.
+   - `apiCspaceMove (gate srcGate : SyscallGate) : Kernel Unit`
+     — requires `.grant` right on the source.
+   - `apiCspaceDelete (gate : SyscallGate) : Kernel Unit`
+     — requires `.write` right on the CNode capability.
+   - `apiLifecycleRetype (gate : SyscallGate) (objType : KernelObjectType) : Kernel Unit`
+     — requires `.retype` right on the untyped capability.
+   - `apiVspaceMap (gate : SyscallGate) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Kernel Unit`
+     — requires `.write` right on the VSpace capability.
+   - `apiVspaceUnmap (gate : SyscallGate) (vaddr : SeLe4n.VAddr) : Kernel Unit`
+     — requires `.write` right on the VSpace capability.
+   - `apiServiceStart (gate : SyscallGate) : Kernel Unit`
+     — requires `.write` right on the service capability.
+   - `apiServiceStop (gate : SyscallGate) : Kernel Unit`
+     — requires `.write` right on the service capability.
+   Operations that are kernel-internal (scheduler transitions: `schedule`,
+   `handleYield`, `timerTick`, `switchDomain`) do NOT get capability wrappers
+   because they are invoked by the kernel itself (timer interrupt handler,
+   scheduling path), not by user-space syscalls.
+
+*Part 3 — Soundness theorems:*
+6. Prove `syscallLookupCap_implies_capability_held`:
+   ```lean
+   theorem syscallLookupCap_implies_capability_held
+       (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+       (hOk : syscallLookupCap gate st = .ok (cap, st')) :
+       ∃ ref, resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+              SystemState.lookupSlotCap st ref = some cap ∧
+              gate.requiredRight ∈ cap.rights ∧
+              st' = st
+   ```
+   This theorem states: if the capability lookup succeeds, then the caller's
+   CSpace root contains a valid capability at the specified address with the
+   required right, and the state is unchanged (lookup is read-only).
+7. Prove `syscallInvoke_requires_right`:
+   ```lean
+   theorem syscallInvoke_requires_right
+       (gate : SyscallGate) (op : Capability → Kernel α) (st : SystemState)
+       (a : α) (st' : SystemState)
+       (hOk : syscallInvoke gate op st = .ok (a, st')) :
+       ∃ cap ref, resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+                  SystemState.lookupSlotCap st ref = some cap ∧
+                  gate.requiredRight ∈ cap.rights
+   ```
+8. Prove `syscallLookupCap_state_unchanged` — the lookup does not modify
+   kernel state (it is a pure read operation):
+   ```lean
+   theorem syscallLookupCap_state_unchanged
+       (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+       (hOk : syscallLookupCap gate st = .ok (cap, st')) :
+       st' = st
+   ```
+
+*Part 4 — API module update:*
+9. Update `API.lean` to export the gated wrappers alongside the raw operations.
+   The raw operations remain available for internal kernel use (scheduler
+   calling IPC, lifecycle calling capability operations). The gated wrappers
+   are the recommended entry points for modeling user-space syscall behavior.
+10. Add documentation distinguishing "internal kernel operations" (no capability
+    check — invoked by trusted kernel paths) from "syscall entry points"
+    (capability-gated — model user-space invocations).
+11. Update the entry-point stability table in `API.lean` to include the new
+    `api*` wrappers with their capability right requirements.
+
+**Files modified:**
+- `SeLe4n/Kernel/API.lean` — `SyscallGate`, `syscallLookupCap`, `syscallInvoke`,
+  all `api*` wrappers, soundness theorems, stability table update
+- `SeLe4n/Model/Object/Types.lean` — `SyscallCapRight` if needed
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes (Tier 0-2).
+- `SyscallGate` and `syscallLookupCap` defined and compiled.
+- At least 13 `api*` capability-gated wrappers defined.
+- `syscallLookupCap_implies_capability_held` theorem compiles.
+- `syscallInvoke_requires_right` theorem compiles.
+- `syscallLookupCap_state_unchanged` theorem compiles.
+- Raw operations still accessible for internal kernel paths.
+
+**Dependencies:** WS-H13 (multi-level `resolveCapAddress`), WS-H4 (capability
+invariant redesign for rights checking).
+
+---
+
+#### WS-H15d: AdapterProofHooks Concrete Instantiation (A-33)
+
+**Objective:** Instantiate `AdapterProofHooks` concretely for both the Sim and
+RPi5 platforms, closing the gap where adapter preservation proofs are
+parameterized but never grounded. This proves that the preservation chain from
+platform contract to invariant bundle is not just structurally sound but
+actually holds for real platform configurations.
+
+**Findings addressed:** A-33
+
+**Design rationale:** The current `AdapterProofHooks` structure requires a proof
+that `proofLayerInvariantBundle` is preserved when the platform contract holds.
+The theorems `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle` etc.
+consume these hooks. But no platform ever constructs an `AdapterProofHooks`
+instance — the preservation chain terminates at "if someone provides hooks, then
+preservation follows." This sub-workstream closes the chain by constructing
+concrete `AdapterProofHooks` for each platform, proving the hooks' obligations
+hold for the specific contract predicates.
+
+**Deliverables:**
+
+*Part 1 — Sim platform AdapterProofHooks:*
+1. Construct `simAdapterProofHooks : AdapterProofHooks simRuntimeContractPermissive`
+   in `Platform/Sim/Contract.lean` or a new `Platform/Sim/ProofHooks.lean`.
+   Each hook obligation must be proven:
+   - `preserveAdvanceTimer`: Timer advancement only changes `st.machine.timer`.
+     The proof shows that none of the 7 invariant bundle components reference
+     `machine.timer`, so the bundle is preserved by frame reasoning.
+   - `preserveWriteRegister`: Register write only changes `st.machine.regs`.
+     The proof shows that only `contextMatchesCurrent` references
+     `machine.regs`, and the permissive contract (`True`) does not constrain
+     the write, but the invariant bundle components that reference the object
+     store and scheduler are unaffected.
+   - `preserveReadMemory`: Read is state-preserving (the pre-state is returned
+     unchanged). The proof is `fun _ st hInv _ => hInv`.
+2. Prove `simAdapterProofHooks_valid`:
+   ```lean
+   theorem simAdapterProofHooks_valid :
+       AdapterProofHooks simRuntimeContractPermissive :=
+     simAdapterProofHooks
+   ```
+
+*Part 2 — RPi5 platform AdapterProofHooks:*
+3. Construct `rpi5AdapterProofHooks : AdapterProofHooks rpi5RuntimeContract`
+   in `Platform/RPi5/Contract.lean` or a new `Platform/RPi5/ProofHooks.lean`.
+   The proof obligations are analogous to Sim but reference the RPi5-specific
+   contract predicates.
+4. The key difference from Sim: `rpi5RuntimeContract.registerContextStable` is
+   non-trivial (validates SP preservation or context switch). The
+   `preserveWriteRegister` proof must show that register writes satisfying
+   the RPi5 contract preserve the invariant bundle.
+
+*Part 3 — End-to-end adapter preservation:*
+5. Prove end-to-end theorems composing the concrete hooks with the adapter
+   preservation theorems:
+   ```lean
+   theorem sim_adapterAdvanceTimer_preserves
+       (ticks : Nat) (st st' : SystemState)
+       (hInv : proofLayerInvariantBundle st)
+       (hStep : adapterAdvanceTimer simRuntimeContractPermissive ticks st = .ok ((), st')) :
+       proofLayerInvariantBundle st' :=
+     adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle
+       simRuntimeContractPermissive simAdapterProofHooks ticks st st' hInv hStep
+   ```
+   This is the first time in the codebase that the adapter preservation chain
+   is grounded end-to-end: from a concrete platform contract, through concrete
+   proof hooks, to concrete invariant preservation.
+6. Prove analogous theorems for `adapterWriteRegister` and `adapterReadMemory`
+   for both platforms.
+
+**Files modified:**
+- `SeLe4n/Platform/Sim/Contract.lean` — `simAdapterProofHooks`, end-to-end
+  theorems
+- `SeLe4n/Platform/RPi5/Contract.lean` — `rpi5AdapterProofHooks`, end-to-end
+  theorems
+- `SeLe4n/Kernel/Architecture/Invariant.lean` — if shared lemmas are needed
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes (Tier 0-2).
+- `simAdapterProofHooks` and `rpi5AdapterProofHooks` compile with all
+  obligations discharged (no sorry).
+- End-to-end `sim_adapterAdvanceTimer_preserves` theorem compiles.
+- End-to-end `rpi5_adapterAdvanceTimer_preserves` theorem compiles.
+
+**Dependencies:** WS-H15a (Decidable fields for interrupt contract used in
+hook proofs), WS-H15b (substantive RPi5 contracts needed as input to hooks).
+
+---
+
+#### WS-H15e: Tests, Trace Harness & Documentation Sync
+
+**Objective:** Update the executable trace harness with syscall-gated scenarios,
+add test coverage for the new API wrappers and platform contracts, and
+synchronize all project documentation.
+
+**Findings addressed:** Documentation and testing component of all H15 findings.
+
+**Deliverables:**
+
+*Part 1 — Trace harness updates:*
+1. Add a trace scenario to `Testing/MainTraceHarness.lean` demonstrating the
+   capability-gated syscall path:
+   - Set up a CSpace root CNode with a capability granting `.write` right on
+     an endpoint.
+   - Invoke `apiEndpointSend` with the correct `SyscallGate` — verify success.
+   - Invoke `apiEndpointSend` with an incorrect capability address — verify
+     `invalidCapability` error.
+   - Invoke `apiEndpointSend` with insufficient rights (`.read` only) — verify
+     `illegalAuthority` error.
+2. Add a trace scenario demonstrating `apiLifecycleRetype` with `.retype` right
+   check.
+3. Update `tests/fixtures/main_trace_smoke.expected` to match new trace output.
+
+*Part 2 — Negative tests:*
+4. Add negative tests to `tests/NegativeStateSuite.lean`:
+   - `syscallLookupCap` with non-existent CSpace root → `objectNotFound`.
+   - `syscallLookupCap` with valid CSpace but missing capability → `invalidCapability`.
+   - `syscallLookupCap` with valid capability but wrong right → `illegalAuthority`.
+   - `apiEndpointSend` through gated path with expired/revoked capability →
+     `invalidCapability`.
+5. Add platform contract tests:
+   - Verify `rpi5MachineConfig_wellFormed` evaluates to `true`.
+   - Verify `mmioRegionDisjoint` holds for RPi5 address map.
+   - Verify RPi5 interrupt contract correctly validates IRQ range boundaries
+     (INTID 0 = supported, INTID 224 = not supported).
+
+*Part 3 — Tier 3 anchor updates:*
+6. Add Tier 3 invariant surface anchors to `scripts/test_tier3_invariant_surface.sh`:
+   - `SyscallGate` structure exists in `API.lean`.
+   - `syscallLookupCap` function exists.
+   - `syscallInvoke` function exists.
+   - `syscallLookupCap_implies_capability_held` theorem exists.
+   - `syscallInvoke_requires_right` theorem exists.
+   - `simAdapterProofHooks` exists in `Platform/Sim/Contract.lean`.
+   - `rpi5AdapterProofHooks` exists in `Platform/RPi5/Contract.lean`.
+   - `mmioRegionDisjoint` predicate exists in `Platform/RPi5/Board.lean`.
+   - `InterruptBoundaryContract` has `irqLineSupportedDecidable` field.
+
+*Part 4 — Documentation sync:*
+7. Update `CHANGELOG.md` with a WS-H15 entry documenting:
+   - Capability-gated syscall wrappers added at API boundary (A-42)
+   - RPi5 platform contracts hardened with substantive predicates (A-41)
+   - `InterruptBoundaryContract` decidability added (M-13)
+   - `AdapterProofHooks` instantiated for Sim and RPi5 platforms (A-33)
+8. Update `docs/spec/SELE4N_SPEC.md`:
+   - API section: document the syscall capability-checking pattern
+   - Platform section: document RPi5 contract hardening
+9. Update `docs/DEVELOPMENT.md`:
+   - Update WS-H15 status from "Planned" to "Completed"
+   - Add API capability-checking usage guidance
+10. Update `docs/CLAIM_EVIDENCE_INDEX.md` if claims about API access control
+    or platform contracts change.
+11. Update `docs/codebase_map.json` with new definitions and theorems.
+12. Update affected GitBook chapters:
+    - `docs/gitbook/03-architecture-and-module-map.md` — API layer description
+    - `docs/gitbook/04-project-design-deep-dive.md` — platform binding details
+    - `docs/gitbook/10-path-to-real-hardware-mobile-first.md` — RPi5 status
+    - `docs/gitbook/12-proof-and-invariant-map.md` — new theorems
+    - `docs/gitbook/22-next-slice-development-path.md` — WS-H15 → completed
+13. Update `docs/WORKSTREAM_HISTORY.md` — add WS-H15 to completed portfolio.
+
+**Files modified:**
+- `SeLe4n/Testing/MainTraceHarness.lean` — new trace scenarios
+- `tests/fixtures/main_trace_smoke.expected` — expected output update
+- `tests/NegativeStateSuite.lean` — negative tests
+- `scripts/test_tier3_invariant_surface.sh` — anchor updates
+- `CHANGELOG.md` — WS-H15 entry
+- `docs/spec/SELE4N_SPEC.md` — spec updates
+- `docs/DEVELOPMENT.md` — status update
+- `docs/CLAIM_EVIDENCE_INDEX.md` — claim updates
+- `docs/codebase_map.json` — description updates
+- `docs/WORKSTREAM_HISTORY.md` — completed portfolio entry
+- `docs/gitbook/03-architecture-and-module-map.md` — API layer
+- `docs/gitbook/04-project-design-deep-dive.md` — platform binding
+- `docs/gitbook/10-path-to-real-hardware-mobile-first.md` — RPi5
+- `docs/gitbook/12-proof-and-invariant-map.md` — invariant map
+- `docs/gitbook/22-next-slice-development-path.md` — status
 
 **Exit evidence:**
 - `lake build` passes with zero errors/warnings and zero sorry.
 - `test_full.sh` passes (Tier 0-3).
-- All API operations wrapped with capability checks.
-- RPi5 `interruptRoutingValid` performs non-trivial GIC-400 validation.
-- Sim platform `RuntimeBoundaryContract` instantiated concretely.
-- `InterruptBoundaryContract` has `Decidable` fields.
+- Trace harness exercises capability-gated syscall path (success + 2 error cases).
+- `main_trace_smoke.expected` fixture matches `lake exe sele4n` output.
+- 4+ new negative tests pass for syscall capability checking.
+- 3+ new platform contract tests pass.
+- 9 new Tier 3 anchors pass.
+- All documentation files updated per PR checklist.
 
-**Dependencies:** WS-H4 (capability invariants), WS-H13 (multi-level CSpace resolution).
+**Dependencies:** WS-H15a–d (all implementation sub-workstreams complete).
+
+---
+
+#### WS-H15 Composite Summary
+
+| Sub-workstream | Findings | Estimated New Theorems | Risk |
+|----------------|----------|-----------------------|------|
+| **WS-H15a** | M-13 | 1 | Low — additive field extension |
+| **WS-H15b** | A-41 | 3-5 | Low — concrete predicate replacement |
+| **WS-H15c** | A-42 | 3 + 13 wrappers | Medium — new API surface |
+| **WS-H15d** | A-33 | 6-8 | Medium — proof hook discharge |
+| **WS-H15e** | (tests/docs) | 0 | Low — documentation only |
+
+**Total execution order:** H15a → H15b → H15c → H15d → H15e
+(H15a and H15b can run in parallel; H15c is independent of H15a/b but
+sequenced for proof composition in H15d)
+
+**Rationale for ordering:**
+- **H15a first:** InterruptBoundaryContract decidability is a small, isolated
+  change that unblocks H15b (RPi5 interrupt contract needs the new fields).
+- **H15b before H15d:** RPi5 contracts must be substantive before
+  `AdapterProofHooks` can be instantiated with non-trivial obligations.
+- **H15c independent:** Syscall wrappers depend on `resolveCapAddress` (WS-H13)
+  and capability invariants (WS-H4), both already completed. Can run in
+  parallel with H15a/b.
+- **H15d after H15a/b/c:** Proof hooks instantiation requires finalized
+  contracts (H15a/b) and may reference syscall soundness (H15c).
+- **H15e last:** Documentation and tests depend on final behavior.
+
+**Composite dependencies:** WS-H4 (capability invariants), WS-H13 (multi-level
+CSpace resolution), WS-H14 (type-safe identifiers). All completed.
+
+**Composite exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- `InterruptBoundaryContract` has `Decidable` fields for all predicates.
+- RPi5 contracts contain no `True` placeholders in security-critical predicates.
+- 13+ capability-gated `api*` syscall wrappers defined in `API.lean`.
+- `AdapterProofHooks` instantiated for both Sim and RPi5 platforms.
+- End-to-end adapter preservation theorems compile for both platforms.
+- All documentation and GitBook chapters synchronized.
+
+**Dependencies:** WS-H4 (capability invariants), WS-H13 (multi-level CSpace
+resolution), WS-H14 (type-safe identifiers).
 
 ---
 

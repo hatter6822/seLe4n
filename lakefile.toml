@@ -5,9 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.14.6"
-keywords = ["microkernel", "lean4", "formal-verification", "seL4"]
-license = "GPL-3.0-or-later"
+version = "0.14.7"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]

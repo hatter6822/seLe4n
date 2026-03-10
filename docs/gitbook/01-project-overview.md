@@ -75,8 +75,8 @@ M7 (audit remediation).
 
 The immediate next steps are:
 
-1. **WS-H15..H16** — Remaining v0.12.15 audit remediation workstreams (Phase 5):
-   platform hardening, testing expansion.
+1. **WS-H16** — Final v0.12.15 audit remediation workstream (Phase 5):
+   testing expansion and documentation cleanup. (WS-H15 completed at v0.14.7.)
 2. **WS-F5..F8** — Remaining v0.12.2 audit remediation (medium/low priority):
    model fidelity, invariant quality, testing expansion, cleanup.
 3. **Raspberry Pi 5 hardware binding (H3)** — ARM64 code generation and hardware bring-up.

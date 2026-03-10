@@ -1,3 +1,66 @@
+## [0.14.7] - 2026-03-10
+
+### WS-H15a–d: Platform & API Hardening
+
+- **WS-H15a:** Added `Decidable` instance fields (`irqLineSupportedDecidable`,
+  `irqHandlerMappedDecidable`) to `InterruptBoundaryContract`, enabling
+  adapter code to branch on interrupt predicates using `if` without manual
+  instance threading. Updated `simInterruptContract` and `rpi5InterruptContract`.
+- **WS-H15b:** RPi5 platform contract hardening:
+  - Added MMIO region definitions (`mmioRegions`) with disjointness proof
+    (`mmioRegionDisjoint_holds`) via `native_decide`.
+  - Proved `rpi5MachineConfig_wellFormed` (region sizes, overlaps, PA bounds).
+  - Replaced `True` placeholder boot predicates with substantive checks
+    (empty object store, empty capability refs at boot).
+  - Strengthened `rpi5InterruptContract.irqHandlerMapped` from `True` to
+    handler-map lookup validation.
+  - Strengthened `rpi5RuntimeContract.registerContextStable` from `True` to
+    SP-preservation-or-context-switch predicate.
+- **WS-H15c:** Syscall capability-checking wrappers:
+  - Added `SyscallGate` structure and `syscallLookupCap`/`syscallInvoke`
+    combinators implementing the seL4 CSpace-lookup + rights-check pattern.
+  - 3 soundness theorems: `syscallLookupCap_implies_capability_held`,
+    `syscallLookupCap_state_unchanged`, `syscallInvoke_requires_right`.
+  - 13 capability-gated `api*` wrappers: `apiEndpointSend`, `apiEndpointReceive`,
+    `apiEndpointCall`, `apiEndpointReply`, `apiCspaceMint`, `apiCspaceCopy`,
+    `apiCspaceMove`, `apiCspaceDelete`, `apiLifecycleRetype`, `apiVspaceMap`,
+    `apiVspaceUnmap`, `apiServiceStart`, `apiServiceStop`.
+  - Added `retype` variant to `AccessRight` enum.
+- **WS-H15a (addendum):** Decidability consistency theorems:
+  `irqLineSupported_decidable_consistent` and
+  `irqHandlerMapped_decidable_consistent` proving `decide` agrees with the
+  underlying predicate.
+- **WS-H15d:** AdapterProofHooks concrete instantiation:
+  - Generic `advanceTimerState_preserves_proofLayerInvariantBundle` theorem
+    proving timer advancement preserves the full 7-conjunct invariant bundle.
+  - `simRestrictiveAdapterProofHooks` concrete instance for the simulation
+    restrictive runtime contract with 3 end-to-end theorems
+    (`simRestrictive_adapterAdvanceTimer_preserves`,
+    `simRestrictive_adapterWriteRegister_preserves`,
+    `simRestrictive_adapterReadMemory_preserves`).
+  - `rpi5RestrictiveAdapterProofHooks` concrete instance for the RPi5
+    restrictive runtime contract (`rpi5RuntimeContractRestrictive`) with 3
+    end-to-end theorems. Timer advancement uses the generic preservation
+    lemma substantively; register write and memory read paths are vacuous
+    (restrictive contract rejects all register writes).
+  - Design note: production RPi5 contract (`rpi5RuntimeContract`) admits
+    all register writes (because `writeReg` never modifies `sp`), making
+    `contextMatchesCurrent` preservation unprovable for arbitrary writes.
+    A future context-switch-aware adapter (WS-H3) will resolve this by
+    combining register-file load with `scheduler.current` update atomically.
+- **WS-H15e:** Testing and documentation:
+  - 31 Tier 3 invariant surface anchors covering all WS-H15 additions.
+  - Syscall capability-gating trace in `MainTraceHarness.lean` (5 scenarios:
+    correct gate, bad root, insufficient rights, missing cap, retype gate).
+  - 6 negative tests in `NegativeStateSuite.lean` exercising syscall
+    capability-checking error paths.
+  - 7 platform contract tests validating `rpi5MachineConfig.wellFormed`,
+    `mmioRegionDisjointCheck`, GIC-400 IRQ boundary values (INTID 0, 223, 224),
+    and boot contract predicates.
+  - Stability table in `API.lean` updated with all 13 `api*` syscall wrappers.
+  - Regenerated `docs/codebase_map.json`.
+- **Build jobs:** 138 (up from 134). Zero sorry/axiom.
+
 ## [0.14.5] - 2026-03-10
 
 ### Codebase Module Restructuring

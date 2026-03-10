@@ -937,3 +937,62 @@ Preservation theorems:
 - `serviceStart_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged)
 - `serviceStop_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged, extra backing-object branch)
 - `serviceRegisterDependency_preserves_serviceGraphInvariant` — inline `serviceCountBounded` transfer through dependency insertion
+
+## WS-H15: Platform & API Hardening (v0.14.7)
+
+### Syscall capability-checking (WS-H15c)
+
+Introduces the seL4-style capability-gated syscall entry pattern:
+
+- **`SyscallGate`** — structure encoding caller identity, CSpace root, capability
+  address, depth, and required access right.
+- **`syscallLookupCap`** — resolves a capability through `resolveCapAddress` and
+  validates the required access right.
+- **`syscallInvoke`** — gated combinator that composes lookup with an operation.
+- **Soundness theorems**: `syscallLookupCap_implies_capability_held` (successful
+  lookup implies capability held with required right), `syscallLookupCap_state_unchanged`
+  (lookup is read-only), `syscallInvoke_requires_right` (successful invocation
+  implies caller held required capability).
+- **13 `api*` wrappers**: capability-gated entry points for IPC, CSpace, lifecycle,
+  VSpace, and service operations.
+
+### Decidability consistency (WS-H15a)
+
+- **`irqLineSupported_decidable_consistent`** — `decide` agrees with the
+  `irqLineSupported` predicate for any `InterruptBoundaryContract`.
+- **`irqHandlerMapped_decidable_consistent`** — same for `irqHandlerMapped`.
+
+### Adapter proof hooks (WS-H15d)
+
+- **`advanceTimerState_preserves_proofLayerInvariantBundle`** — generic theorem
+  proving timer advancement preserves the full 7-conjunct invariant bundle,
+  applicable to any `RuntimeBoundaryContract`.
+- **Simulation platform** (`Platform/Sim/ProofHooks.lean`):
+  - `simRestrictiveAdapterProofHooks` — concrete `AdapterProofHooks` instance
+    for the restrictive contract (all predicates `False`).
+  - 3 end-to-end theorems: `simRestrictive_adapterAdvanceTimer_preserves`,
+    `simRestrictive_adapterWriteRegister_preserves`,
+    `simRestrictive_adapterReadMemory_preserves`.
+- **RPi5 platform** (`Platform/RPi5/ProofHooks.lean`):
+  - `rpi5RuntimeContractRestrictive` — restrictive variant of the RPi5
+    runtime contract. Shares production timer/memory predicates; denies
+    all register writes. Needed because the production contract's SP-only
+    check admits all `writeReg` calls (which never modify `sp`), making
+    `contextMatchesCurrent` preservation unprovable for arbitrary writes.
+  - `rpi5RestrictiveAdapterProofHooks` — concrete `AdapterProofHooks`
+    instance. Timer preservation uses the generic lemma substantively;
+    register write is vacuous (restrictive contract rejects all writes).
+  - 3 end-to-end theorems: `rpi5Restrictive_adapterAdvanceTimer_preserves`,
+    `rpi5Restrictive_adapterWriteRegister_preserves`,
+    `rpi5Restrictive_adapterReadMemory_preserves`.
+
+### Testing (WS-H15e)
+
+- **Trace harness**: 5 syscall gate scenarios (correct gate, bad root,
+  insufficient rights, missing cap, retype gate) in `MainTraceHarness.lean`.
+- **Negative tests**: 6 tests in `NegativeStateSuite.lean` exercising
+  `syscallLookupCap` and `apiEndpointSend` error paths.
+- **Platform contract tests**: 7 tests in `NegativeStateSuite.lean` validating
+  `rpi5MachineConfig.wellFormed`, `mmioRegionDisjointCheck`, GIC-400 IRQ
+  boundary values (INTID 0, 223, 224), and boot contract predicates.
+- **Tier 3 anchors**: 31 anchors covering all WS-H15 additions.

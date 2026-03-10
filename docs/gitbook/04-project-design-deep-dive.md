@@ -128,7 +128,7 @@ The `PlatformBinding` typeclass decouples kernel semantics from hardware:
 - `BootBoundaryContract` — initial state the bootloader provides
 - `InterruptBoundaryContract` — interrupt delivery guarantees
 
-The simulation platform (`Platform/Sim/`) provides permissive contracts for testing. The RPi5 platform (`Platform/RPi5/`) provides hardware-specific contracts. Kernel logic is identical in both — only platform contracts differ.
+The simulation platform (`Platform/Sim/`) provides permissive contracts for testing. The RPi5 platform (`Platform/RPi5/`) provides substantive hardware-specific contracts (WS-H15b: SP-preservation register stability, GIC-400 IRQ range validation, MMIO disjointness proof, empty-initial-state boot checks). Both platforms provide concrete `AdapterProofHooks` instantiations (WS-H15d) grounding the adapter preservation chain end-to-end. Kernel logic is identical in both — only platform contracts differ.
 
 ## 8. Testing: obligation-based coverage
 

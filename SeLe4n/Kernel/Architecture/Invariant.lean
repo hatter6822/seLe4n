@@ -392,4 +392,79 @@ theorem memoryAccessSafety_consumed_by_readMemory
     proofLayerInvariantBundle st :=
   hooks.preserveReadMemory addr st hInv hAllow
 
+-- ============================================================================
+-- WS-H15d/A-42: Generic adapter preservation lemmas
+-- ============================================================================
+
+/-! ## WS-H15d/A-42: Generic adapter preservation infrastructure
+
+The adapter state transformations (`advanceTimerState`, `writeRegisterState`)
+only modify `SystemState.machine` fields. The `proofLayerInvariantBundle`
+components primarily examine `objects`, `scheduler`, `lifecycle`, `services`,
+and `asidTable` — fields unchanged by machine-only modifications.
+
+**Timer advancement** (`advanceTimerState`): modifies only `machine.timer`.
+All 7 invariant-bundle components are trivially preserved because `machine.regs`,
+`objects`, `scheduler`, etc. are definitionally unchanged.
+
+**Memory read** (`preserveReadMemory`): state is unchanged. Trivially `id`.
+
+**Register write** (`writeRegisterState`): modifies `machine.regs`. Six of the 7
+bundle components are preserved (they don't inspect `machine.regs`). However,
+`contextMatchesCurrent` (part of `schedulerInvariantBundleFull`) equates
+`st.machine.regs` with the current thread's `tcb.registerContext`. Register
+writes that change the register file can break this invariant.
+
+Contracts with `registerContextStable := False` (e.g., simulation restrictive)
+trivially satisfy the `preserveWriteRegister` obligation: the adapter rejects
+all writes, so the proof follows from `False.elim`. Concrete proof hooks for
+specific platforms are provided in `Platform/Sim/ProofHooks.lean`. -/
+
+/-- WS-H15d/A-42: Timer advancement preserves the full `proofLayerInvariantBundle`.
+Generic over any `RuntimeBoundaryContract` because `advanceTimerState` only
+modifies `machine.timer`, leaving all invariant-relevant fields unchanged.
+Lean can see through the record update `{ st with machine := { st.machine with timer := ... } }`
+to verify that `scheduler`, `objects`, `machine.regs`, etc. are definitionally equal. -/
+private theorem advanceTimerState_preserves_capabilityInvariantBundle
+    (ticks : Nat) (st : SystemState)
+    (hCap : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (advanceTimerState ticks st) := by
+  obtain ⟨h1, h2, h3, _, h5, h6, h7, h8⟩ := hCap
+  exact ⟨by exact h1, by exact h2, h3,
+         lifecycleAuthorityMonotonicity_holds _,
+         by exact h5, by exact h6, by exact h7, by exact h8⟩
+
+private theorem advanceTimerState_preserves_ipcInvariantFull
+    (ticks : Nat) (st : SystemState)
+    (hIpc : ipcInvariantFull st) :
+    ipcInvariantFull (advanceTimerState ticks st) := by
+  obtain ⟨h1, h2, h3⟩ := hIpc
+  exact ⟨by exact h1, by exact h2, by exact h3⟩
+
+theorem advanceTimerState_preserves_proofLayerInvariantBundle
+    (ticks : Nat) (st : SystemState)
+    (hInv : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle (advanceTimerState ticks st) := by
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp⟩ := hInv
+  refine ⟨by exact hSched,
+         advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
+         ?_, ?_, by exact hLife, ?_, ?_⟩
+  -- coreIpcInvariantBundle
+  · obtain ⟨hS, hC, hI⟩ := hIpc
+    exact ⟨by exact hS,
+           advanceTimerState_preserves_capabilityInvariantBundle ticks st hC,
+           advanceTimerState_preserves_ipcInvariantFull ticks st hI⟩
+  -- ipcSchedulerCouplingInvariantBundle
+  · obtain ⟨⟨hS, hC, hI⟩, hCoh, hCtx, hDeq⟩ := hCoupling
+    exact ⟨⟨by exact hS,
+            advanceTimerState_preserves_capabilityInvariantBundle ticks st hC,
+            advanceTimerState_preserves_ipcInvariantFull ticks st hI⟩,
+           by exact hCoh, by exact hCtx, by exact hDeq⟩
+  -- serviceLifecycleCapabilityInvariantBundle
+  · obtain ⟨hP, hL, hC⟩ := hSvc
+    exact ⟨by exact hP, by exact hL,
+           advanceTimerState_preserves_capabilityInvariantBundle ticks st hC⟩
+  -- vspaceInvariantBundle
+  · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
+
 end SeLe4n.Kernel.Architecture

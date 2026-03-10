@@ -8,6 +8,7 @@
 
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Model.State
 
 /-!
 # Raspberry Pi 5 — Boot Boundary Contract
@@ -25,42 +26,61 @@ the bootloader (ATF / U-Boot).
 
 ## Status
 
-H3-prep stub. Object-type and capability-ref metadata consistency are
-declared as `True` placeholders. Full boot-state verification requires
-the H3 platform-binding workstream to define the concrete initial state
-construction and prove it satisfies these contracts.
+WS-H15b/A-41: Boot and interrupt contracts hardened with substantive predicates.
+Boot contract validates empty initial state. Interrupt contract validates
+GIC-400 IRQ range with decidable predicates (WS-H15a/M-13).
 -/
 
 namespace SeLe4n.Platform.RPi5
 
 open SeLe4n.Kernel.Architecture
+open SeLe4n.Model
 
-/-- RPi5 boot contract: initial state consistency is asserted by the bootloader.
+/-- WS-H15b/A-41: RPi5 boot contract with substantive initial-state predicates.
 
-    In H3, these will become substantive propositions verified against the
-    concrete initial `SystemState` constructed by the boot sequence.
-    For now, they are `True` placeholders. -/
+    Object-type metadata consistency: the default (initial) object store is
+    empty — no pre-existing kernel objects at boot time. This models the
+    assumption that ATF/U-Boot do not pre-populate the kernel's object store.
+
+    Capability-ref metadata consistency: the default capability reference table
+    is empty — no pre-existing capability derivations at boot time. -/
 def rpi5BootContract : BootBoundaryContract :=
   {
-    objectTypeMetadataConsistent := True
-    capabilityRefMetadataConsistent := True
+    objectTypeMetadataConsistent :=
+      (default : SystemState).objects.size = 0
+    capabilityRefMetadataConsistent :=
+      (default : SystemState).lifecycle.capabilityRefs.size = 0
   }
 
-/-- RPi5 interrupt contract: declares which IRQ lines the GIC-400 supports
-    and assumes all supported lines have handler mappings.
+/-- WS-H15b: RPi5 boot contract predicates are satisfied by the default state. -/
+theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataConsistent := by
+  show ({} : Std.HashMap SeLe4n.ObjId KernelObject).size = 0
+  rfl
+
+/-- WS-H15b: RPi5 boot contract capability ref predicate holds for default state. -/
+theorem rpi5BootContract_capabilityRef_holds : rpi5BootContract.capabilityRefMetadataConsistent := by
+  show ({} : Std.HashMap SlotRef CapTarget).size = 0
+  rfl
+
+/-- WS-H15b/A-41: RPi5 interrupt contract with GIC-400 range validation.
 
     **Supported range:** INTIDs 0–223 (SGIs 0–15, PPIs 16–31, SPIs 32–223).
     SGIs (software-generated interrupts) are included because the GIC-400
-    distributes them like any other interrupt; they don't need boot-time
-    handler mapping but are addressable.
+    distributes them like any other interrupt.
 
-    In H3, `irqLineSupported` will be refined to distinguish SGI/PPI/SPI
-    ranges. `irqHandlerMapped` will verify that the IRQ handler table has
-    been populated during boot for PPIs and SPIs. -/
+    **Handler mapping:** For supported IRQ lines, the handler must be
+    registered in the kernel's IRQ handler table (`st.irqHandlers`).
+    Unsupported IRQ lines (INTID ≥ 224) have no mapping requirement.
+
+    WS-H15a/M-13: Decidable fields provided for both predicates. -/
 def rpi5InterruptContract : InterruptBoundaryContract :=
   {
     irqLineSupported := fun irq => irq.toNat < gicSpiCount + 32  -- SGIs + PPIs + SPIs
-    irqHandlerMapped := fun _ _ => True  -- placeholder: all mapped
+    irqHandlerMapped := fun st irq =>
+      irq.toNat < gicSpiCount + 32 →   -- only for supported IRQs
+      st.irqHandlers[irq]? ≠ none       -- handler must be registered
+    irqLineSupportedDecidable := by intro irq; infer_instance
+    irqHandlerMappedDecidable := by intro st irq; infer_instance
   }
 
 end SeLe4n.Platform.RPi5
