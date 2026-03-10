@@ -685,4 +685,17 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariant
 run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant.lean
 
+# WS-H12f: Test harness & documentation sync anchors.
+# Trace function definitions in MainTraceHarness.
+run_check "INVARIANT" rg -n '^private def runDequeueOnDispatchTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runInlineContextSwitchTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runBoundedMessageExtendedTrace' SeLe4n/Testing/MainTraceHarness.lean
+# Fixture output anchors for WS-H12f trace scenarios.
+run_check "TRACE" rg -n 'H12f dequeue-on-dispatch current' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12f dispatched thread absent from runQueue' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12f preempted thread back in runQueue' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12f context switch regs match incoming' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12f outgoing context saved' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12f empty message accepted' tests/fixtures/main_trace_smoke.expected
+
 finalize_report

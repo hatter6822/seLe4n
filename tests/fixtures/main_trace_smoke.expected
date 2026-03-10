@@ -74,6 +74,17 @@ H12d oversized caps rejected: true
 H12d boundary message accepted: true
 H12d call oversized rejected: true
 H12d reply oversized rejected: true
+H12f dequeue-on-dispatch current: some 1
+H12f dispatched thread absent from runQueue: true
+H12f non-dispatched thread in runQueue: true
+H12f preempted thread back in runQueue: true
+H12f preemption new current: some 1
+H12f context switch regs match incoming: true
+H12f outgoing context saved: true
+H12f context switch new current: some 12
+H12f empty message accepted: true
+H12f sub-boundary message accepted: true
+H12f max caps message accepted: true
 EDF tie-break chosen thread: some 12
 timer tick remaining slice: 1
 timer tick expiry rescheduled current: some 1

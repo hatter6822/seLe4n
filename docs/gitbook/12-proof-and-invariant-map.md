@@ -140,9 +140,9 @@ Cross-subsystem composition (WS-H12e):
 
 Component level:
 
-- endpoint queue/object validity,
-- endpoint invariant,
-- `ipcInvariant` across object store.
+- `ipcInvariant` — notification queue well-formedness across object store,
+- `dualQueueSystemInvariant` — per-endpoint dual-queue well-formedness + system-wide TCB link integrity,
+- `allPendingMessagesBounded` — all pending IPC messages satisfy payload bounds.
 
 Preservation shape:
 

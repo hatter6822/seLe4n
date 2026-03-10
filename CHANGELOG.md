@@ -1,3 +1,41 @@
+## [0.14.3] - 2026-03-09
+
+### WS-H12f: Test Harness Update & Documentation Sync
+
+- **Dequeue-on-dispatch trace scenario:** Added `runDequeueOnDispatchTrace` to
+  `MainTraceHarness.lean` exercising the full dequeue-on-dispatch lifecycle:
+  schedule selects highest-priority thread and dequeues it from `runQueue`,
+  non-dispatched thread remains in queue, and after preemption (timer tick
+  expiry) the preempted thread is re-enqueued while a higher-priority thread
+  takes over.
+- **Inline context switch trace scenario:** Added `runInlineContextSwitchTrace`
+  demonstrating that `handleYield` → `schedule` saves the outgoing thread's
+  `machine.regs` into its TCB `registerContext` and restores the incoming
+  thread's `registerContext` into `machine.regs`, establishing
+  `contextMatchesCurrent` atomically.
+- **Bounded message extended trace scenario:** Added
+  `runBoundedMessageExtendedTrace` verifying boundary behavior: zero-length
+  messages accepted, sub-boundary messages (119 registers) accepted, and
+  max-cap messages (3 caps) accepted — complementing the existing WS-H12d
+  rejection tests.
+- **Legacy `endpointInvariant` comment cleanup:** Removed stale comments in
+  `IPC/Invariant.lean` referencing the deleted legacy endpoint fields (`state`,
+  `queue`, `waitingReceiver`) and `endpointQueueWellFormed`. Updated
+  preservation theorem docstrings to reference `ipcInvariant` (notification
+  well-formedness) instead of the removed `endpointInvariant`.
+- **Expected fixture updated:** `tests/fixtures/main_trace_smoke.expected`
+  updated to include all 11 new trace output lines (108 total, up from 98).
+- **Tier 3 invariant surface anchors:** Added 9 new anchors to
+  `test_tier3_invariant_surface.sh` for WS-H12f trace functions and fixture
+  output lines.
+- **Documentation synchronized:** CHANGELOG, SELE4N_SPEC, DEVELOPMENT,
+  CLAIM_EVIDENCE_INDEX, codebase_map.json, README, and GitBook chapters
+  updated to reflect WS-H12f completion and WS-H12 composite closure.
+- **`docs/codebase_map.json` regenerated.**
+- **Zero sorry/axiom, zero warnings.** Build: 86 jobs, zero errors.
+- **Findings addressed:** Documentation component of all WS-H12 findings
+  (A-08/M-01/A-25, H-04, H-03, A-09). Completes WS-H12 composite workstream.
+
 ## [0.14.2] - 2026-03-09
 
 ### WS-H12e: Cross-Subsystem Invariant Reconciliation
