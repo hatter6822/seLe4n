@@ -3,14 +3,21 @@
 Thanks for contributing to seLe4n — a production-oriented microkernel written in
 Lean 4 with machine-checked proofs.
 
+## License
+
+seLe4n is licensed under the [GNU General Public License v3.0 or later](LICENSE).
+By submitting a pull request or contributing code to this project, you agree that
+your contributions will be licensed under the same GPL-3.0-or-later license. You
+also certify that you have the right to submit the contribution under this license.
+
 ## 5-minute contributor path
 
 1. **Workflow + standards:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
 2. **Testing tiers:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Project scope + workstreams:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
-5. **Active audit findings:** [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md)
-6. **Workstream execution plan:** [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
+5. **Active audit findings:** [`docs/audits/AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md)
+6. **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md)
 
 Full handbook: [`docs/gitbook/README.md`](docs/gitbook/README.md)
 

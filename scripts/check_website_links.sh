@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# seLe4n  - A Lean Microkernel
+# Copyright (C) 2026  Adam Hall
+# This program comes with ABSOLUTELY NO WARRANTY.
+# This is free software, and you are welcome to redistribute it
+# under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 # check_website_links.sh — verify that all paths referenced by the seLe4n
 # project website (sele4n.org / hatter6822.github.io) still exist in the repo.
 #

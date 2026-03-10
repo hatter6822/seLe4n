@@ -1,5 +1,13 @@
+# seLe4n  - A Lean Microkernel
+# Copyright (C) 2026  Adam Hall
+# This program comes with ABSOLUTELY NO WARRANTY.
+# This is free software, and you are welcome to redistribute it
+# under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+
 name = "seLe4n"
 version = "0.14.6"
+keywords = ["microkernel", "lean4", "formal-verification", "seL4"]
+license = "GPL-3.0-or-later"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
