@@ -31,10 +31,12 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - IDs/aliases, `Hashable` instances (WS-G1), and core monadic kernel execution shape.
 - `SeLe4n/Machine.lean`
   - machine-level state helpers.
-- `SeLe4n/Model/Object.lean`
-  - object-level representations (including TCB intrusive queue link fields);
-    CNode `Std.HashMap Slot Capability` slot store with O(1) operations (WS-G5);
-    `IpcMessage` with bounded `Array` registers/caps (`maxMessageRegisters`=120, `maxExtraCaps`=3, WS-H12d).
+- `SeLe4n/Model/Object.lean` (re-export hub)
+  - `Object/Types.lean` — core data types: capability rights/targets, TCB,
+    Endpoint, Notification, intrusive queue link fields, `IpcMessage` with
+    bounded `Array` registers/caps (`maxMessageRegisters`=120, `maxExtraCaps`=3, WS-H12d).
+  - `Object/Structures.lean` — VSpaceRoot, CNode `Std.HashMap Slot Capability`
+    slot store with O(1) operations (WS-G5), KernelObject union, CDT helpers.
 - `SeLe4n/Model/State.lean`
   - global system-state composition and update helpers (including
     `SchedulerState.runQueue : RunQueue` priority-bucketed run queue, WS-G4, and WS-H7 HashMap-backed service/IRQ/capabilityRef/CDT state stores).
@@ -43,17 +45,34 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
 
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean`
   - `RunQueue` priority-bucketed structure + O(1) operations + 13 bridge lemmas (WS-G4).
-- `SeLe4n/Kernel/Scheduler/Operations.lean`
+- `SeLe4n/Kernel/Scheduler/Operations.lean` (re-export hub)
+  - `Operations/Selection.lean` — EDF predicates, thread selection, candidate ordering.
+  - `Operations/Core.lean` — core transitions (`schedule`, `handleYield`, `timerTick`, `switchDomain`).
+  - `Operations/Preservation.lean` — scheduler invariant preservation theorems.
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
 - `SeLe4n/Kernel/Capability/Operations.lean`
-- `SeLe4n/Kernel/Capability/Invariant.lean`
-- `SeLe4n/Kernel/IPC/Operations.lean`
-- `SeLe4n/Kernel/IPC/DualQueue.lean`
-- `SeLe4n/Kernel/IPC/Invariant.lean`
+- `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)
+  - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency.
+  - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing.
+  - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
+- `SeLe4n/Kernel/IPC/Operations.lean` (re-export hub)
+  - `Operations/Endpoint.lean` — core endpoint/notification transition ops.
+  - `Operations/SchedulerLemmas.lean` — scheduler preservation + store lemmas.
+- `SeLe4n/Kernel/IPC/DualQueue.lean` (re-export hub)
+  - `DualQueue/Core.lean` — dual-queue operations.
+  - `DualQueue/Transport.lean` — transport/preservation lemmas.
+- `SeLe4n/Kernel/IPC/Invariant.lean` (re-export hub)
+  - `Invariant/Defs.lean` — core IPC invariant definitions, contract predicates.
+  - `Invariant/EndpointPreservation.lean` — endpoint preservation proofs.
+  - `Invariant/CallReplyRecv.lean` — call/replyRecv preservation proofs.
+  - `Invariant/NotificationPreservation.lean` — notification preservation proofs.
+  - `Invariant/Structural.lean` — structural invariants, ipcInvariantFull composition.
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 - `SeLe4n/Kernel/Service/Operations.lean`
-- `SeLe4n/Kernel/Service/Invariant.lean`
+- `SeLe4n/Kernel/Service/Invariant.lean` (re-export hub)
+  - `Invariant/Policy.lean` — policy surface, bridge theorems, bundles.
+  - `Invariant/Acyclicity.lean` — dependency acyclicity proofs (TPI-D07).
 
 ### Architecture boundary
 
@@ -81,15 +100,18 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - observer projection helpers, `ObservableState` (objects, runnable, current, services,
     activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs),
     `lowEquivalent` relation scaffold with refl/symm/trans.
-- `SeLe4n/Kernel/InformationFlow/Enforcement.lean`
-  - 7 policy-checked wrappers (`endpointSendDualChecked`,
+- `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
+  - `Enforcement/Wrappers.lean` — 7 policy-checked wrappers (`endpointSendDualChecked`,
     `endpointReceiveDualChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
     `cspaceMoveChecked`, `notificationSignalChecked`, `serviceRestartChecked`)
     wiring `securityFlowsTo` policy into enforcement boundaries.
-- `SeLe4n/Kernel/InformationFlow/Invariant.lean`
-  - 69 NI preservation theorems covering >80% of kernel operations;
-    31-constructor `NonInterferenceStep` inductive; `composedNonInterference_trace`;
-    `declassifyStore_NI`; `InformationFlowConfigInvariant` bundle.
+  - `Enforcement/Soundness.lean` — correctness theorems, soundness, declassification.
+- `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)
+  - `Invariant/Helpers.lean` — shared NI proof infrastructure.
+  - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of kernel operations.
+  - `Invariant/Composition.lean` — 31-constructor `NonInterferenceStep` inductive;
+    `composedNonInterference_trace`; `declassifyStore_NI`;
+    `InformationFlowConfigInvariant` bundle.
 
 ### API
 

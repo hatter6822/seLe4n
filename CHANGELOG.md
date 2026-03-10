@@ -1,3 +1,36 @@
+## [0.14.5] - 2026-03-10
+
+### Codebase Module Restructuring
+
+- **Module decomposition:** Decomposed 9 large monolithic files (1,000–5,800
+  lines each) into 24 focused submodule files using the re-export hub pattern.
+  Original files preserved as thin import hubs for full backward compatibility.
+- **Model/Object.lean** → `Object/Types.lean` (core data types) +
+  `Object/Structures.lean` (VSpaceRoot, CNode, KernelObject, CDT helpers).
+- **Scheduler/Operations.lean** → `Operations/Selection.lean` (EDF predicates) +
+  `Operations/Core.lean` (core transitions) +
+  `Operations/Preservation.lean` (preservation theorems).
+- **IPC/DualQueue.lean** → `DualQueue/Core.lean` (dual-queue operations) +
+  `DualQueue/Transport.lean` (transport lemmas).
+- **IPC/Operations.lean** → `Operations/Endpoint.lean` (core endpoint ops) +
+  `Operations/SchedulerLemmas.lean` (scheduler preservation lemmas).
+- **IPC/Invariant.lean** → `Invariant/Defs.lean` + `Invariant/EndpointPreservation.lean` +
+  `Invariant/CallReplyRecv.lean` + `Invariant/NotificationPreservation.lean` +
+  `Invariant/Structural.lean`.
+- **Capability/Invariant.lean** → `Invariant/Defs.lean` + `Invariant/Authority.lean` +
+  `Invariant/Preservation.lean`.
+- **InformationFlow/Invariant.lean** → `Invariant/Helpers.lean` +
+  `Invariant/Operations.lean` + `Invariant/Composition.lean`.
+- **InformationFlow/Enforcement.lean** → `Enforcement/Wrappers.lean` +
+  `Enforcement/Soundness.lean`.
+- **Service/Invariant.lean** → `Invariant/Policy.lean` + `Invariant/Acyclicity.lean`.
+- **Private definition visibility:** ~50+ cross-module `private` definitions
+  made non-private to support submodule access across file boundaries.
+- **Tier 3 invariant surface tests:** Updated 209 anchor checks to reference
+  new submodule file paths.
+- **Build jobs:** Increased from 86 to 134 (finer-grained parallelism).
+- **Zero sorry/axiom:** No regressions — all proof surface remains complete.
+
 ## [0.14.4] - 2026-03-10
 
 ### WS-H13: CSpace, Lifecycle & Service Model Enrichment
