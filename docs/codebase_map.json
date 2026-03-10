@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/restructure-codebase-modules-QF5qz",
-      "commit_sha": "25168ab4094079989ee0c18632f6df46e538a0ae",
-      "tree_sha": "b6a4208b0a371387a5fbc4745058ae0229638d5d",
-      "committed_at_utc": "2026-03-10T08:05:25+00:00"
+      "branch": "claude/audit-pr-386-vEFvV",
+      "commit_sha": "a284bab93cb5f828fbd6eda51631fbf9889d1fa7",
+      "tree_sha": "c5838842acb495a0a94f099b98b240fb5d7d63c0",
+      "committed_at_utc": "2026-03-10T08:18:50+00:00"
     }
   },
   "source_sync": {

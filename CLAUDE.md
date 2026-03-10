@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.14.3.
+Lean 4.28.0 toolchain, Lake build system, version 0.14.5.
 
 ## Build and run
 
@@ -109,7 +109,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2337 lines)
 - `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2162 lines)
-- `CHANGELOG.md` (~1502 lines)
+- `CHANGELOG.md` (~1600 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1496 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1484 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1391 lines)
