@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-H Phase 1–8 (v0.12.15 audit remediation) complete through WS-H8; WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complete through WS-H12f (v0.14.3); WS-F1..F4 completed (WS-F5..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 

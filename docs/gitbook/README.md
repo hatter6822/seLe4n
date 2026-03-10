@@ -5,12 +5,12 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.14.2 (Lean 4.28.0).
-- **Codebase metrics:** 30,348 production LoC across 41 files; 2,360 test LoC across 3 suites; 920 theorem/lemma declarations (zero sorry/axiom); 86 build jobs.
+- **Version:** 0.14.3 (Lean 4.28.0).
+- **Codebase metrics:** 30,491 production LoC across 41 files; 2,360 test LoC across 3 suites; 920 theorem/lemma declarations (zero sorry/axiom); 86 build jobs.
 - **Active findings baseline:** [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md).
 - **Active audit:** [`docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) (14 findings tracked to completion in WS-G).
-- **Recently completed:** WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds), WS-H12c (v0.14.0, per-TCB register context with inline context switch), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).
-- **Next workstream:** WS-H12f, H13..H16 (remaining v0.12.15 audit remediation) and WS-F5..F8 (remaining v0.12.2 audit remediation).
+- **Recently completed:** WS-H12f (v0.14.3, test harness update & documentation sync), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds), WS-H12c (v0.14.0, per-TCB register context with inline context switch), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1), WS-H5 (IPC dual-queue structural invariant, v0.12.19), WS-H4 (capability invariant redesign, v0.12.18), WS-H3 (build/CI infrastructure, v0.12.17), WS-H2 (lifecycle safety guards, v0.12.16), WS-H1 (IPC call-path semantic fix, v0.12.16).
+- **Next workstream:** WS-H13..H16 (remaining v0.12.15 audit remediation) and WS-F5..F8 (remaining v0.12.2 audit remediation).
 - **Prior completed:** WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** `./scripts/report_current_state.py` (sync README/spec/GitBook together in one PR).

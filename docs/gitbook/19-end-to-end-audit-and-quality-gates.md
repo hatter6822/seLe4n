@@ -16,14 +16,14 @@ and [`docs/audits/`](../audits/README.md).
 
 ## 2. Current quality state
 
-seLe4n v0.13.9 has:
+seLe4n v0.14.3 has:
 
 - **Zero sorry/axiom** in the production proof surface — fully machine-checked.
-- **855 theorem/lemma declarations** across 7 kernel subsystems.
+- **920 theorem/lemma declarations** across 7 kernel subsystems.
 - **O(1) hash-based data structures** for all kernel hot paths (WS-G, 14 findings closed).
 - **Tiered CI** with 4 validation tiers plus security scanning.
 - **Comprehensive negative-state testing** with per-mutation invariant checking.
-- **Phase 1–4 correctness fixes** (WS-H1..H12b): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge with 4 new enforcement wrappers and projection hardening, non-interference coverage extended to >80% of kernel operations with 31 NonInterferenceStep constructors, security model foundations (BIBA, declassification, endpoint flow policy), VSpace & architecture enrichment (PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation), legacy endpoint removal, dequeue-on-dispatch scheduler semantics.
+- **Phase 1–4 correctness fixes** (WS-H1..H12f): IPC call-path semantic bug fixed, lifecycle safety guards, build/CI infrastructure hardened, capability invariant redesign, IPC dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge with 4 new enforcement wrappers and projection hardening, non-interference coverage extended to >80% of kernel operations with 31 NonInterferenceStep constructors, security model foundations (BIBA, declassification, endpoint flow policy), VSpace & architecture enrichment (PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation), legacy endpoint removal, dequeue-on-dispatch scheduler semantics, per-TCB register context with inline context switch, bounded IPC message payloads, cross-subsystem invariant reconciliation.
 
 Critical audit gaps (all resolved by WS-F1..F4):
 
