@@ -144,18 +144,46 @@ structure SecurityDomain where
   id : Nat
   deriving Repr, DecidableEq, Inhabited
 
+/-- WS-G1: Hash instance for HashMap/HashSet keying. -/
+@[inline] instance : Hashable SecurityDomain where
+  hash a := hash a.id
+
 namespace SecurityDomain
 
 /-- The public (lowest) domain. -/
 def lowest : SecurityDomain := ⟨0⟩
 
-instance instOfNat (n : Nat) : OfNat SecurityDomain n where
-  ofNat := ⟨n⟩
+/-- WS-H14d: Construct a SecurityDomain from a Nat. -/
+@[inline] def ofNat (n : Nat) : SecurityDomain := ⟨n⟩
+
+/-- WS-H14d: Project a SecurityDomain to its underlying Nat. -/
+@[inline] def toNat (d : SecurityDomain) : Nat := d.id
 
 instance : ToString SecurityDomain where
   toString d := s!"domain({d.id})"
 
+/-- WS-H14d: SecurityDomain roundtrip — construct then project. -/
+theorem toNat_ofNat (n : Nat) : (SecurityDomain.ofNat n).toNat = n := rfl
+/-- WS-H14d: SecurityDomain roundtrip — project then reconstruct. -/
+theorem ofNat_toNat (d : SecurityDomain) : SecurityDomain.ofNat d.toNat = d := rfl
+/-- WS-H14d: SecurityDomain injectivity. -/
+theorem ofNat_injective {n₁ n₂ : Nat} (h : SecurityDomain.ofNat n₁ = SecurityDomain.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: SecurityDomain extensionality. -/
+theorem ext {a b : SecurityDomain} (h : a.id = b.id) : a = b := by
+  cases a; cases b; simp_all
+
 end SecurityDomain
+
+/-- WS-H14a: EquivBEq for SecurityDomain. -/
+instance : EquivBEq SecurityDomain := ⟨⟩
+/-- WS-H14a: LawfulBEq for SecurityDomain. -/
+instance : LawfulBEq SecurityDomain where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+/-- WS-H14a: LawfulHashable for SecurityDomain. -/
+instance : LawfulHashable SecurityDomain where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
 
 /-- WS-E5/H-04: Explicit flow-authorization policy between security domains.
 

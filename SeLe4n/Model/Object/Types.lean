@@ -145,7 +145,7 @@ structure TCB where
   /-- M-03/WS-E6: Scheduling deadline for EDF tie-breaking within same
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
-  deadline : SeLe4n.Deadline := 0
+  deadline : SeLe4n.Deadline := ⟨0⟩
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none

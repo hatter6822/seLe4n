@@ -27,7 +27,7 @@ private def admin : SeLe4n.Kernel.IfObserver :=
 
 private def sampleServiceEntry : ServiceGraphEntry :=
   {
-    identity := { sid := 1, backingObject := 1, owner := 1 }
+    identity := { sid := ⟨1⟩, backingObject := ⟨1⟩, owner := ⟨1⟩ }
     status := .running
     dependencies := []
     isolatedFrom := []
@@ -36,7 +36,7 @@ private def sampleServiceEntry : ServiceGraphEntry :=
 /-- A public-level service entry visible to the low observer. -/
 private def publicServiceEntry : ServiceGraphEntry :=
   {
-    identity := { sid := 2, backingObject := 3, owner := 3 }
+    identity := { sid := ⟨2⟩, backingObject := ⟨3⟩, owner := ⟨3⟩ }
     status := .running
     dependencies := []
     isolatedFrom := []
@@ -44,20 +44,20 @@ private def publicServiceEntry : ServiceGraphEntry :=
 
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint {})
-    |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
-    |>.withService 1 sampleServiceEntry
-    |>.withService 2 publicServiceEntry
-    |>.withRunnable [1, 2]
-    |>.withCurrent (some 2)
+    |>.withObject ⟨1⟩ (.endpoint {})
+    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+    |>.withService ⟨1⟩ sampleServiceEntry
+    |>.withService ⟨2⟩ publicServiceEntry
+    |>.withRunnable [⟨1⟩, ⟨2⟩]
+    |>.withCurrent (some ⟨2⟩)
     |>.build)
 
 private def sampleLabeling : SeLe4n.Kernel.LabelingContext :=
   {
-    objectLabelOf := fun oid => if oid = 2 then secretLabel else publicLabel
-    threadLabelOf := fun tid => if tid = 2 then secretLabel else publicLabel
+    objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
+    threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
     endpointLabelOf := fun _ => publicLabel
-    serviceLabelOf := fun sid => if sid = 1 then secretLabel else publicLabel
+    serviceLabelOf := fun sid => if sid = ⟨1⟩ then secretLabel else publicLabel
   }
 
 /-- A second state that differs from sampleState only in secret (high-domain) components.
@@ -71,12 +71,12 @@ Key differences from sampleState:
 - current thread: none (vs some tid=2, which is secret and projected to none anyway) -/
 private def altState : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject 1 (.endpoint {})
+    |>.withObject ⟨1⟩ (.endpoint {})
     -- Secret object differs: different notification state and no pending badge
-    |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-    |>.withService 1 sampleServiceEntry
-    |>.withService 2 publicServiceEntry
-    |>.withRunnable [1, 2]
+    |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withService ⟨1⟩ sampleServiceEntry
+    |>.withService ⟨2⟩ publicServiceEntry
+    |>.withRunnable [⟨1⟩, ⟨2⟩]
     -- Current thread differs: none (vs some tid=2 in sampleState).
     -- Both project to none for the public observer since tid=2 is secret.
     |>.withCurrent none
@@ -98,16 +98,16 @@ def runInformationFlowChecks : IO Unit := do
   let adminProjection := SeLe4n.Kernel.projectState sampleLabeling admin sampleState
 
   expect "public observer cannot see secret object"
-    ((publicProjection.objects 2).isNone)
+    ((publicProjection.objects ⟨2⟩).isNone)
 
   expect "public observer cannot see secret current thread"
     ((publicProjection.current).isNone)
 
   expect "admin observer can see secret object"
-    ((adminProjection.objects 2).isSome)
+    ((adminProjection.objects ⟨2⟩).isSome)
 
   expect "admin observer can see current thread"
-    (adminProjection.current = some 2)
+    (adminProjection.current = some ⟨2⟩)
 
   -- === F-04 fix: Replace tautological lowEquivalent reflexivity with distinct-state comparison ===
   -- Compare sampleState and altState: they differ in secret components (oid=2, current=tid2)
@@ -117,17 +117,17 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Verify the two states ARE actually different (so this isn't a tautological comparison)
   expect "altState differs from sampleState (secret object changed)"
-    (!(sampleState.objects[(2 : SeLe4n.ObjId)]? == altState.objects[(2 : SeLe4n.ObjId)]?))
+    (!(sampleState.objects[(⟨2⟩ : SeLe4n.ObjId)]? == altState.objects[(⟨2⟩ : SeLe4n.ObjId)]?))
 
   expect "altState differs from sampleState (current thread changed)"
     (sampleState.scheduler.current ≠ altState.scheduler.current)
 
   -- Verify public projections of distinct states are equal (non-trivial low-equivalence)
   expect "distinct states: public object projection matches for public observer"
-    (publicProjectionSample.objects 1 == publicProjectionAlt.objects 1)
+    (publicProjectionSample.objects ⟨1⟩ == publicProjectionAlt.objects ⟨1⟩)
 
   expect "distinct states: secret objects both hidden for public observer"
-    ((publicProjectionSample.objects 2).isNone && (publicProjectionAlt.objects 2).isNone)
+    ((publicProjectionSample.objects ⟨2⟩).isNone && (publicProjectionAlt.objects ⟨2⟩).isNone)
 
   expect "distinct states: public runnable queues match"
     (publicProjectionSample.runnable = publicProjectionAlt.runnable)
@@ -140,8 +140,8 @@ def runInformationFlowChecks : IO Unit := do
   -- Full structural low-equivalence check across distinct states.
   -- Function-level equality is not decidable at runtime, so we check point-wise
   -- on all object IDs and service IDs present in the test fixtures.
-  let knownOids : List SeLe4n.ObjId := [1, 2]
-  let knownSids : List ServiceId := [1, 2]
+  let knownOids : List SeLe4n.ObjId := [⟨1⟩, ⟨2⟩]
+  let knownSids : List ServiceId := [⟨1⟩, ⟨2⟩]
   let objectsMatch := knownOids.all (fun oid =>
     publicProjectionSample.objects oid == publicProjectionAlt.objects oid)
   let servicesMatch := knownSids.all (fun sid =>
@@ -161,9 +161,9 @@ def runInformationFlowChecks : IO Unit := do
   let publicServiceProjection := SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState
 
   expect "public observer CAN see public service status"
-    ((publicServiceProjection 2).isSome)
+    ((publicServiceProjection ⟨2⟩).isSome)
 
-  match publicServiceProjection 2 with
+  match publicServiceProjection ⟨2⟩ with
   | some status =>
       expect "public service status is running"
         (status = .running)
@@ -172,15 +172,15 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Secret service (sid=1) should still be hidden from public observer
   expect "public observer cannot see secret service status"
-    ((publicServiceProjection 1).isNone)
+    ((publicServiceProjection ⟨1⟩).isNone)
 
   -- === F-04 fix: Explicit projectServiceStatus coverage ===
   -- Verify projectServiceStatus returns correct status for admin observer on secret service
   let adminServiceProjection := SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState
   expect "admin observer can see secret service status"
-    ((adminServiceProjection 1).isSome)
+    ((adminServiceProjection ⟨1⟩).isSome)
 
-  match adminServiceProjection 1 with
+  match adminServiceProjection ⟨1⟩ with
   | some status =>
       expect "secret service status is running for admin"
         (status = .running)
@@ -189,33 +189,33 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Admin can also see public service
   expect "admin observer can see public service status"
-    ((adminServiceProjection 2).isSome)
+    ((adminServiceProjection ⟨2⟩).isSome)
 
   -- === F-04 fix: Observer discrimination test ===
   -- High-clearance observer (admin) sees MORE than low-clearance observer (reviewer) on the same state.
-  let publicVisibleObjects := [1, 2].filter (fun oid => (publicProjection.objects oid).isSome)
-  let adminVisibleObjects := [1, 2].filter (fun oid => (adminProjection.objects oid).isSome)
+  let publicVisibleObjects := [⟨1⟩, ⟨2⟩].filter (fun oid => (publicProjection.objects oid).isSome)
+  let adminVisibleObjects := [⟨1⟩, ⟨2⟩].filter (fun oid => (adminProjection.objects oid).isSome)
 
   expect "admin sees more objects than public observer"
     (adminVisibleObjects.length > publicVisibleObjects.length)
 
   -- Admin sees secret object that public cannot
   expect "admin sees oid=2 that public cannot"
-    ((adminProjection.objects 2).isSome && (publicProjection.objects 2).isNone)
+    ((adminProjection.objects ⟨2⟩).isSome && (publicProjection.objects ⟨2⟩).isNone)
 
   -- Admin sees current thread that public cannot
   expect "admin sees current thread that public cannot"
     (adminProjection.current.isSome && publicProjection.current.isNone)
 
   -- Admin sees secret service that public cannot
-  let adminSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) 1
-  let publicSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) 1
+  let adminSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) ⟨1⟩
+  let publicSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) ⟨1⟩
   expect "admin sees secret service that public cannot"
     (adminSvc1.isSome && publicSvc1.isNone)
 
   -- Both see public service (no discrimination on public data)
-  let adminSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) 2
-  let publicSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) 2
+  let adminSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) ⟨2⟩
+  let publicSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) ⟨2⟩
   expect "both observers see public service"
     (adminSvc2.isSome && publicSvc2.isSome)
 
@@ -224,9 +224,9 @@ def runInformationFlowChecks : IO Unit := do
   -- endpointSendDualChecked: public sender to public endpoint should succeed (same-domain flow)
   let publicEndpointState :=
     (BootstrapBuilder.empty
-      |>.withObject 10 (.endpoint {})
-      |>.withRunnable [1]
-      |>.withCurrent (some 1)
+      |>.withObject ⟨10⟩ (.endpoint {})
+      |>.withRunnable [⟨1⟩]
+      |>.withCurrent (some ⟨1⟩)
       |>.build)
 
   let publicCtx : SeLe4n.Kernel.LabelingContext :=
@@ -237,22 +237,22 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
-  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
-  let uncheckedResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
+  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
-      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(10 : SeLe4n.ObjId)]? == s₂.objects[(10 : SeLe4n.ObjId)]?
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 
   -- Cross-domain send (secret sender → public endpoint) should be denied
   let secretSenderCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
-      threadLabelOf := fun tid => if tid = 1 then secretLabel else publicLabel
+      threadLabelOf := fun tid => if tid = ⟨1⟩ then secretLabel else publicLabel
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx 10 1 testMsg publicEndpointState
+  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true
@@ -261,8 +261,8 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject 100 (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(0, { target := .object 200, rights := [.read, .write], badge := none })]) })
-      |>.withObject 101 (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList []) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := [.read, .write], badge := none })]) })
+      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList []) })
       |>.build)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -271,8 +271,8 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := 100, slot := 0 }
-  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := 101, slot := 0 }
+  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := ⟨0⟩ }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := ⟨0⟩ }
 
   let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr [.read] none mintState
   let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr [.read] none mintState
@@ -284,7 +284,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Cross-domain mint should be denied
   let crossDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
-    { objectLabelOf := fun oid => if oid = 100 then secretLabel else publicLabel
+    { objectLabelOf := fun oid => if oid = ⟨100⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
@@ -350,34 +350,34 @@ def runInformationFlowChecks : IO Unit := do
   -- Test GenericLabelingContext
   let genericCtx : SeLe4n.Kernel.GenericLabelingContext := {
     policy := SeLe4n.Kernel.DomainFlowPolicy.linearOrder
-    objectDomainOf := fun oid => if oid = 1 then ⟨0⟩ else ⟨2⟩
-    threadDomainOf := fun tid => if tid = 1 then ⟨0⟩ else ⟨1⟩
+    objectDomainOf := fun oid => if oid = ⟨1⟩ then ⟨0⟩ else ⟨2⟩
+    threadDomainOf := fun tid => if tid = ⟨1⟩ then ⟨0⟩ else ⟨1⟩
     endpointDomainOf := fun _ => ⟨1⟩
     serviceDomainOf := fun _ => ⟨0⟩
   }
 
   expect "H-04 generic context: thread 1 (domain 0) → endpoint (domain 1)"
-    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf 1) (genericCtx.endpointDomainOf 10))
+    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨1⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
   expect "H-04 generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
-    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf 2) (genericCtx.endpointDomainOf 10))
+    (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨2⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
   expect "H-04 generic context: object 2 (domain 2) cannot flow to service (domain 0)"
-    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf 2) (genericCtx.serviceDomainOf 1)))
+    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.serviceDomainOf ⟨1⟩)))
 
   -- Test per-endpoint flow policy
   let customEndpointPolicy : SeLe4n.Kernel.DomainFlowPolicy :=
     { canFlow := fun src dst => src.id = dst.id }  -- same-domain only
 
   let epPolicy : SeLe4n.Kernel.EndpointFlowPolicy :=
-    { endpointPolicy := fun eid => if eid = 10 then some customEndpointPolicy else none }
+    { endpointPolicy := fun eid => if eid = ⟨10⟩ then some customEndpointPolicy else none }
 
   expect "H-04 per-endpoint: endpoint 10 has custom policy (same-domain only)"
-    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 10 ⟨1⟩ ⟨1⟩ &&
-     !(SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 10 ⟨0⟩ ⟨1⟩))
+    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨10⟩ ⟨1⟩ ⟨1⟩ &&
+     !(SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨10⟩ ⟨0⟩ ⟨1⟩))
 
   expect "H-04 per-endpoint: endpoint 20 falls back to global policy"
-    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy 20 ⟨0⟩ ⟨1⟩)
+    (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨20⟩ ⟨0⟩ ⟨1⟩)
 
   IO.println "WS-E5/H-04 parameterized domain lattice checks passed"
 
@@ -401,18 +401,18 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.enforcementBoundary.length == 17)
 
   -- Verify enforcement boundary: denied flows produce errors
-  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx 10 1 testMsg publicEndpointState
+  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "M-07: enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
 
   -- Verify that same-domain operations pass through unchecked
-  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx 10 1 testMsg publicEndpointState
-  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual 10 1 testMsg publicEndpointState
+  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "M-07: same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
-      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(10 : SeLe4n.ObjId)]? == s₂.objects[(10 : SeLe4n.ObjId)]?
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 
@@ -441,10 +441,10 @@ def runInformationFlowChecks : IO Unit := do
   -- Build a state with IRQ handlers pointing to both public and secret objects.
   let irqState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint {})
-      |>.withObject 2 (.notification { state := .active, waitingThreads := [], pendingBadge := some 7 })
-      |>.withIrqHandler 0 1   -- IRQ 0 → oid 1 (public object)
-      |>.withIrqHandler 1 2   -- IRQ 1 → oid 2 (secret object)
+      |>.withObject ⟨1⟩ (.endpoint {})
+      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+      |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
+      |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.build)
 
   let irqPublicProj := SeLe4n.Kernel.projectState sampleLabeling reviewer irqState
@@ -452,25 +452,25 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Public observer sees IRQ 0 → oid 1 (public target)
   expect "WS-F3: public observer sees IRQ handler to public object"
-    ((irqPublicProj.irqHandlers 0) = some 1)
+    ((irqPublicProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
 
   -- Public observer cannot see IRQ 1 → oid 2 (secret target)
   expect "WS-F3: public observer cannot see IRQ handler to secret object"
-    ((irqPublicProj.irqHandlers 1).isNone)
+    ((irqPublicProj.irqHandlers ⟨1⟩).isNone)
 
   -- Admin sees both IRQ handlers
   expect "WS-F3: admin observer sees IRQ handler to public object"
-    ((irqAdminProj.irqHandlers 0) = some 1)
+    ((irqAdminProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
 
   expect "WS-F3: admin observer sees IRQ handler to secret object"
-    ((irqAdminProj.irqHandlers 1) = some 2)
+    ((irqAdminProj.irqHandlers ⟨1⟩) = some ⟨2⟩)
 
   -- Unmapped IRQ returns none for both observers
   expect "WS-F3: unmapped IRQ returns none for public observer"
-    ((irqPublicProj.irqHandlers 99).isNone)
+    ((irqPublicProj.irqHandlers ⟨99⟩).isNone)
 
   expect "WS-F3: unmapped IRQ returns none for admin observer"
-    ((irqAdminProj.irqHandlers 99).isNone)
+    ((irqAdminProj.irqHandlers ⟨99⟩).isNone)
 
   IO.println "WS-F3 IRQ handler projection checks passed"
 
@@ -482,17 +482,17 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Public observer sees only oid 1 in the object index
   expect "WS-F3: public object index contains public oid"
-    (publicObjIndex.contains 1)
+    (publicObjIndex.contains ⟨1⟩)
 
   expect "WS-F3: public object index excludes secret oid"
-    (!publicObjIndex.contains 2)
+    (!publicObjIndex.contains ⟨2⟩)
 
   -- Admin sees both oids in the object index
   expect "WS-F3: admin object index contains public oid"
-    (adminObjIndex.contains 1)
+    (adminObjIndex.contains ⟨1⟩)
 
   expect "WS-F3: admin object index contains secret oid"
-    (adminObjIndex.contains 2)
+    (adminObjIndex.contains ⟨2⟩)
 
   IO.println "WS-F3 object index projection checks passed"
 
@@ -500,19 +500,19 @@ def runInformationFlowChecks : IO Unit := do
   -- Build a CNode with caps targeting both public and secret objects.
   let cnodeState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint {})  -- public target
-      |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject 50 (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (0, { target := .object 1, rights := [.read], badge := none })
-          , (1, { target := .object 2, rights := [.read, .write], badge := none })
-          , (2, { target := .replyCap 1, rights := [.read], badge := none })
+      |>.withObject ⟨1⟩ (.endpoint {})  -- public target
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
+          [ (⟨0⟩, { target := .object ⟨1⟩, rights := [.read], badge := none })
+          , (⟨1⟩, { target := .object ⟨2⟩, rights := [.read, .write], badge := none })
+          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := [.read], badge := none })
           ]) })
       |>.build)
 
   -- oid 50 (the CNode) is public so both observers can see it
   let cnodeLabeling : SeLe4n.Kernel.LabelingContext :=
-    { objectLabelOf := fun oid => if oid = 2 then secretLabel else publicLabel
-      threadLabelOf := fun tid => if tid = 2 then secretLabel else publicLabel
+    { objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
+      threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
@@ -520,17 +520,17 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeAdminProj := SeLe4n.Kernel.projectState cnodeLabeling admin cnodeState
 
   -- Public observer sees the CNode but with filtered slots
-  match cnodePublicProj.objects 50 with
+  match cnodePublicProj.objects ⟨50⟩ with
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
     expect "WS-F3/F-22: public observer sees cap slot targeting public object"
-      (cn.slots.contains 0)
+      (cn.slots.contains ⟨0⟩)
     -- Slot 1 (target: secret obj 2) should be filtered out
     expect "WS-F3/F-22: public observer cannot see cap slot targeting secret object"
-      (!cn.slots.contains 1)
+      (!cn.slots.contains ⟨1⟩)
     -- Slot 2 (target: replyCap to public thread 1) should be present
     expect "WS-F3/F-22: public observer sees reply cap to public thread"
-      (cn.slots.contains 2)
+      (cn.slots.contains ⟨2⟩)
     -- Verify slot count
     expect "WS-F3/F-22: public observer sees exactly 2 of 3 slots"
       (cn.slots.size = 2)
@@ -538,7 +538,7 @@ def runInformationFlowChecks : IO Unit := do
     throw <| IO.userError "WS-F3/F-22: public observer should see CNode object at oid 50"
 
   -- Admin observer sees all slots (full clearance)
-  match cnodeAdminProj.objects 50 with
+  match cnodeAdminProj.objects ⟨50⟩ with
   | some (.cnode cn) =>
     expect "WS-F3/F-22: admin observer sees all 3 cap slots"
       (cn.slots.size = 3)
@@ -546,7 +546,7 @@ def runInformationFlowChecks : IO Unit := do
     throw <| IO.userError "WS-F3/F-22: admin observer should see CNode object at oid 50"
 
   -- Non-CNode objects pass through unchanged
-  match cnodePublicProj.objects 1 with
+  match cnodePublicProj.objects ⟨1⟩ with
   | some (.endpoint _) =>
     expect "WS-F3/F-22: non-CNode object passes through unchanged"
       true
@@ -556,21 +556,21 @@ def runInformationFlowChecks : IO Unit := do
   -- CNode slot filtering for .cnodeSlot target variant
   let cnodeSlotState :=
     (BootstrapBuilder.empty
-      |>.withObject 1 (.endpoint {})  -- public target
-      |>.withObject 2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject 60 (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (0, { target := .cnodeSlot 1 0, rights := [.read], badge := none })
-          , (1, { target := .cnodeSlot 2 0, rights := [.read], badge := none })
+      |>.withObject ⟨1⟩ (.endpoint {})  -- public target
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
+          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := [.read], badge := none })
+          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := [.read], badge := none })
           ]) })
       |>.build)
 
   let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
-  match cnodeSlotProj.objects 60 with
+  match cnodeSlotProj.objects ⟨60⟩ with
   | some (.cnode cn) =>
     expect "WS-F3/F-22: cnodeSlot target to public CNode is visible"
-      (cn.slots.contains 0)
+      (cn.slots.contains ⟨0⟩)
     expect "WS-F3/F-22: cnodeSlot target to secret CNode is filtered"
-      (!cn.slots.contains 1)
+      (!cn.slots.contains ⟨1⟩)
     expect "WS-F3/F-22: cnodeSlot variant: exactly 1 of 2 slots visible"
       (cn.slots.size = 1)
   | _ =>
@@ -580,7 +580,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- ---------- Full 7-field low-equivalence ----------
   -- Extend the distinct-state comparison to all 7 ObservableState fields.
-  let knownIrqs : List SeLe4n.Irq := [0, 1, 2, 3]
+  let knownIrqs : List SeLe4n.Irq := [⟨0⟩, ⟨1⟩, ⟨2⟩, ⟨3⟩]
   let irqMatch := knownIrqs.all (fun irq =>
     publicProjectionSample.irqHandlers irq = publicProjectionAlt.irqHandlers irq)
   let fullLowEq7 := objectsMatch
@@ -599,17 +599,16 @@ def runInformationFlowChecks : IO Unit := do
   -- ---------- serviceRestartChecked enforcement (WS-F3) ----------
   -- Build a state with a running service for restart testing.
   let restartServiceEntry : ServiceGraphEntry :=
-    { identity := { sid := 10, backingObject := 20, owner := 1 }
+    { identity := { sid := ⟨10⟩, backingObject := ⟨20⟩, owner := ⟨1⟩ }
       status := .running
       dependencies := []
       isolatedFrom := [] }
 
   let restartState :=
     (BootstrapBuilder.empty
-      |>.withObject 20 (.endpoint {})
-      |>.withService 10 restartServiceEntry
-      |>.withService 5 { identity := { sid := 5, backingObject := 25, owner := 1 }
-                         status := .running, dependencies := [], isolatedFrom := [] }
+      |>.withObject ⟨20⟩ (.endpoint {})
+      |>.withService ⟨10⟩ restartServiceEntry
+      |>.withService ⟨5⟩ { identity := { sid := ⟨5⟩, backingObject := ⟨25⟩, owner := ⟨1⟩ }, status := .running, dependencies := [], isolatedFrom := [] }
       |>.build)
 
   let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
@@ -621,13 +620,13 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let checkedRestart := SeLe4n.Kernel.serviceRestartChecked sameDomainRestartCtx 5 10 allowAll allowAll restartState
-  let uncheckedRestart := SeLe4n.Kernel.serviceRestart 10 allowAll allowAll restartState
+  let checkedRestart := SeLe4n.Kernel.serviceRestartChecked sameDomainRestartCtx ⟨5⟩ ⟨10⟩ allowAll allowAll restartState
+  let uncheckedRestart := SeLe4n.Kernel.serviceRestart ⟨10⟩ allowAll allowAll restartState
 
   expect "WS-F3: same-domain serviceRestartChecked matches unchecked"
     (match checkedRestart, uncheckedRestart with
       | .ok ((), s₁), .ok ((), s₂) =>
-          (s₁.services[(10 : ServiceId)]?).map ServiceGraphEntry.status = (s₂.services[(10 : ServiceId)]?).map ServiceGraphEntry.status
+          (s₁.services[(⟨10⟩ : ServiceId)]?).map ServiceGraphEntry.status = (s₂.services[(⟨10⟩ : ServiceId)]?).map ServiceGraphEntry.status
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 
@@ -636,9 +635,9 @@ def runInformationFlowChecks : IO Unit := do
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun sid => if sid = 5 then secretLabel else publicLabel }
+      serviceLabelOf := fun sid => if sid = ⟨5⟩ then secretLabel else publicLabel }
 
-  let deniedRestart := SeLe4n.Kernel.serviceRestartChecked crossDomainRestartCtx 5 10 allowAll allowAll restartState
+  let deniedRestart := SeLe4n.Kernel.serviceRestartChecked crossDomainRestartCtx ⟨5⟩ ⟨10⟩ allowAll allowAll restartState
   expect "WS-F3: cross-domain serviceRestartChecked returns flowDenied"
     (match deniedRestart with
       | .error .flowDenied => true
@@ -656,7 +655,7 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-H8: notificationSignalChecked tests
   let ntfnState :=
     (BootstrapBuilder.empty
-      |>.withObject 30 (.notification {
+      |>.withObject ⟨30⟩ (.notification {
           state := .idle
           pendingBadge := none
           waitingThreads := [] })
@@ -669,12 +668,12 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx 30 1 42 ntfnState
-  let uncheckedSignal := SeLe4n.Kernel.notificationSignal 30 42 ntfnState
+  let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
+  let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ ⟨42⟩ ntfnState
 
   expect "WS-H8: same-domain notificationSignalChecked matches unchecked"
     (match checkedSignal, uncheckedSignal with
-      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(30 : ObjId)]? == s₂.objects[(30 : ObjId)]?
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨30⟩ : ObjId)]? == s₂.objects[(⟨30⟩ : ObjId)]?
       | .error e₁, .error e₂ => e₁ == e₂
       | _, _ => false)
 
@@ -685,7 +684,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx 30 1 42 ntfnState
+  let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
   expect "WS-H8: cross-domain notificationSignalChecked returns flowDenied"
     (match deniedSignal with
       | .error .flowDenied => true
@@ -695,18 +694,18 @@ def runInformationFlowChecks : IO Unit := do
 
   -- WS-H8: cspaceCopyChecked tests
   let copySrcCNode := SeLe4n.Model.CNode.empty
-  let copySrcCNodeWithCap := copySrcCNode.insert 0 {
-    target := .object 99
+  let copySrcCNodeWithCap := copySrcCNode.insert ⟨0⟩ {
+    target := .object ⟨99⟩
     rights := [.read]
     badge := none }
   let copyState :=
     (BootstrapBuilder.empty
-      |>.withObject 40 (.cnode copySrcCNodeWithCap)
-      |>.withObject 41 (.cnode SeLe4n.Model.CNode.empty)
+      |>.withObject ⟨40⟩ (.cnode copySrcCNodeWithCap)
+      |>.withObject ⟨41⟩ (.cnode SeLe4n.Model.CNode.empty)
       |>.build)
 
-  let copySrc : SlotRef := { cnode := 40, slot := 0 }
-  let copyDst : SlotRef := { cnode := 41, slot := 0 }
+  let copySrc : SlotRef := { cnode := ⟨40⟩, slot := ⟨0⟩ }
+  let copyDst : SlotRef := { cnode := ⟨41⟩, slot := ⟨0⟩ }
 
   -- Same-domain copy should succeed
   let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst copyState
@@ -714,13 +713,13 @@ def runInformationFlowChecks : IO Unit := do
 
   expect "WS-H8: same-domain cspaceCopyChecked matches unchecked"
     (match checkedCopy, uncheckedCopy with
-      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(41 : ObjId)]? == s₂.objects[(41 : ObjId)]?
+      | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨41⟩ : ObjId)]? == s₂.objects[(⟨41⟩ : ObjId)]?
       | .error e₁, .error e₂ => e₁ == e₂
       | _, _ => false)
 
   -- Cross-domain copy (secret src → public dst) should be denied
   let crossDomainCopyCtx : SeLe4n.Kernel.LabelingContext :=
-    { objectLabelOf := fun oid => if oid = 40 then secretLabel else publicLabel
+    { objectLabelOf := fun oid => if oid = ⟨40⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
@@ -745,25 +744,25 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-H8: endpointReceiveDualChecked tests
   let recvEpState :=
     (BootstrapBuilder.empty
-      |>.withObject 50 (.endpoint {})
+      |>.withObject ⟨50⟩ (.endpoint {})
       |>.build)
 
   -- Cross-domain receive (secret endpoint → public receiver) should be denied
   let crossDomainRecvCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun oid => if oid = 50 then secretLabel else publicLabel
+      endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx 50 1 recvEpState
+  let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ recvEpState
   expect "WS-H8: cross-domain endpointReceiveDualChecked returns flowDenied"
     (match deniedRecv with
       | .error .flowDenied => true
       | _ => false)
 
   -- Same-domain receive should delegate to unchecked
-  let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx 50 1 recvEpState
-  let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual 50 1 recvEpState
+  let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx ⟨50⟩ ⟨1⟩ recvEpState
+  let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual ⟨50⟩ ⟨1⟩ recvEpState
   expect "WS-H8: same-domain endpointReceiveDualChecked matches unchecked"
     (match sameDomainRecv, uncheckedRecv with
       | .ok (r₁, _), .ok (r₂, _) => r₁ = r₂
@@ -787,7 +786,7 @@ def runInformationFlowChecks : IO Unit := do
     { (BootstrapBuilder.empty.build) with
         scheduler := { (BootstrapBuilder.empty.build).scheduler with
           domainTimeRemaining := 42
-          domainSchedule := [{ domain := 0, length := 10 }, { domain := 1, length := 5 }]
+          domainSchedule := [{ domain := ⟨0⟩, length := 10 }, { domain := ⟨1⟩, length := 5 }]
           domainScheduleIndex := 1 } }
 
   let projection := SeLe4n.Kernel.projectState sameDomainNtfnCtx

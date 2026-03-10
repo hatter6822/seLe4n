@@ -39,11 +39,15 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Prelude.lean`
   - object/thread IDs and kernel monad contract used globally,
-  - `Hashable` instances for all 13 typed identifiers (WS-G1),
+  - `Hashable`, `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances for all 13 typed identifiers (WS-G1, WS-H14a),
+  - `LawfulMonad` instance for `KernelM` with monad law proofs (WS-H14b),
+  - identifier roundtrip lemmas (`toNat_ofNat`, `ofNat_toNat`) and injectivity proofs (WS-H14d),
+  - sentinel predicate completion: `valid`, `valid_iff_not_reserved`, `sentinel_not_valid` (WS-H14f),
+  - `OfNat` instances removed for type-safety enforcement (WS-H14e),
   - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
 - `SeLe4n/Machine.lean`
   - machine registers, memory abstraction, and pure update/read helpers,
-  - `MachineConfig` (register/address width, page size with `isPowerOfTwo` validation, ASID limit) and
+  - `MachineConfig` (register/address width, page size with `isPowerOfTwo` validation + correctness proof, ASID limit) and
     `MemoryRegion`/`MemoryKind` for platform memory map declaration.
 
 ### Model

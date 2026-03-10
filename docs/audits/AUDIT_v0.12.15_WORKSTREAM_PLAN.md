@@ -2000,71 +2000,280 @@ regions are collapsed into a single guard comparison.
 
 ### WS-H14: Type Safety & Prelude Foundations (MEDIUM)
 
-**Objective:** Harden the type safety of the foundation layer by encapsulating
-typed identifiers, eliminating boilerplate through a derive macro, removing
-OfNat instances that bypass type wrappers, and proving foundational lemmas.
+**Objective:** Harden the type safety of the foundation layer by closing all
+7 audit findings against the Prelude/Machine modules: add missing typeclass
+instances (`EquivBEq`, `LawfulBEq`), prove monad laws (`LawfulMonad` for
+`KernelM`), prove `isPowerOfTwo` correctness, establish identifier roundtrip
+and injectivity lemmas, remove `OfNat` instances that silently bypass type
+wrappers, and complete sentinel predicate coverage.
 
-**Entry criteria:** Independent — can start at any time. Recommended after
-Phase 2 to avoid churn on Prelude during active proof work.
+**Entry criteria:** Independent — can start at any time. All prior WS-H
+workstreams (H1..H13) are completed; Prelude is stable.
 
 **Findings addressed:**
 - **A-02** (HIGH): Typed identifier wrappers are bypassable. All structures have
   public `val` fields. Any code can construct arbitrary IDs via `⟨n⟩` syntax.
-- **M-09** (MEDIUM): ~390 lines of near-identical identifier boilerplate. A
-  `declare_id` derive macro would eliminate ~300 lines.
 - **M-10** (MEDIUM): `OfNat` instances for every identifier type allow
-  `(42 : ObjId)` anywhere, silently bypassing the type-safety wrapper.
+  `(42 : ObjId)` anywhere, silently bypassing the type-safety wrapper. This
+  enables accidental cross-domain ID aliasing without compile-time error.
+- **A-03** (MEDIUM): Missing explicit `EquivBEq` and `LawfulBEq` instances for
+  typed identifiers. HashMap bridge lemmas require these constraints but
+  identifier types provide no such instances, forcing proof-site workarounds.
+- **M-11 / A-04** (MEDIUM): No `LawfulMonad` instance for `KernelM`. Monad law
+  proofs (left/right identity, associativity) are absent, preventing equational
+  reasoning about chained kernel transitions.
+- **A-06** (MEDIUM): `isPowerOfTwo` correctness unproven. The bitwise check
+  `n > 0 && (n &&& (n - 1)) == 0` is used in `MachineConfig.wellFormed` but
+  has no correctness theorem linking it to `∃ k, n = 2^k`.
 - **A-01** (MEDIUM): `Inhabited` defaults generate sentinel values (0) without
-  guard. Code using `default : ObjId` gets the sentinel silently.
-- **A-03** (MEDIUM): Missing explicit `EquivBEq` instances for typed identifiers.
-- **M-11 / A-04** (MEDIUM): No `LawfulMonad` instance for `KernelM`.
-- **A-06** (MEDIUM): `isPowerOfTwo` correctness unproven.
+  guard. Code using `default : ObjId` silently gets the sentinel, risking
+  aliasing with real kernel objects if unchecked.
+- **M-09** (MEDIUM): ~390 lines of near-identical identifier boilerplate across
+  13 types in `Prelude.lean` plus `SecurityDomain` in `Policy.lean`. Repetitive
+  structure increases maintenance burden and audit surface.
+
+**Security rationale:** In a microkernel, typed identifiers are the foundation
+of access control. A `ThreadId` that aliases an `ObjId` by implicit coercion,
+or an `ObjId` silently constructed from a numeric literal, represents a
+confused-deputy vector. Removing `OfNat` instances forces all identifier
+construction through auditable paths (`TypeName.ofNat`, `TypeName.mk`, or
+anonymous constructor `⟨n⟩`), making every creation site visible in code review.
+The `EquivBEq`/`LawfulBEq` instances close a gap where HashMap-backed state
+lookups lack the proof infrastructure needed for sound reasoning.
+
+**Subdivision:** This workstream is divided into 6 sub-workstreams ordered by
+dependency. Sub-workstreams H14a–H14d are non-breaking (additive only).
+Sub-workstream H14e is the sole breaking change (construction site migration).
+Sub-workstream H14f completes sentinel coverage.
+
+```
+Dependency graph:
+  H14a ──────────────────────┐
+  H14b (independent)         ├── H14e (breaking)  ──→  H14f (sentinel hardening)
+  H14c (independent)         │
+  H14d ──────────────────────┘
+```
+
+---
+
+#### WS-H14a: Typeclass Instance Hardening (A-03)
+
+**Scope:** Add `EquivBEq` and `LawfulBEq` instances for all 14 identifier types
+(13 in `Prelude.lean` + `SecurityDomain` in `Policy.lean`).
 
 **Deliverables:**
-
-*Part A — Identifier encapsulation (A-02/M-10):*
-1. Make `val` fields private for all 13 typed identifier structures in
-   `Prelude.lean`. Expose only `ofNat`/`toNat` converters.
-2. Remove `OfNat` instances for typed identifiers. Replace with explicit
-   `ObjId.ofNat` calls at construction sites. This prevents accidental
-   `(42 : ObjId)` usage while still allowing intentional construction.
-3. Update all `⟨n⟩` anonymous constructor patterns across the codebase to
-   use `TypeName.mk n` or `TypeName.ofNat n`.
-4. Audit `Inhabited` instances: ensure the sentinel (0) is documented as
-   invalid and not used in production paths. Add a `isSentinel` predicate.
-
-*Part B — Derive macro (M-09):*
-5. Create a `declare_typed_id` macro or derive handler that generates:
-   - The structure with private `val : Nat`
-   - `DecidableEq`, `Repr`, `Inhabited`, `Hashable`, `BEq`, `LawfulHashable`
-   - `toNat`, `ofNat`, `mk` (controlled constructor)
-   - Injectivity theorem (`ofNat_injective`)
-   - `LawfulBEq` and `EquivBEq` instances (A-03)
-6. Replace all 13 identifier blocks with macro invocations.
-7. Verify identical semantics by checking that all existing tests pass.
-
-*Part C — Foundational proofs (M-11/A-04/A-06):*
-8. Prove `LawfulMonad` for `KernelM`: left identity, right identity,
-   associativity. These follow directly from the `Except` monad laws composed
-   with state threading.
-9. Prove `isPowerOfTwo_correct : isPowerOfTwo n ↔ ∃ k, n = 2^k`. The bitwise
-   check `n > 0 && (n &&& (n - 1)) == 0` is standard; the proof uses the
-   binary representation of powers of two.
+1. Add `EquivBEq` instance for each identifier type. The BEq instance is
+   derived from `DecidableEq` (via `instBEqOfDecidableEq`), which is
+   definitionally equivalent — `EquivBEq` witnesses this.
+2. Add `LawfulBEq` instance for each identifier type. `DecidableEq`-derived
+   `BEq` satisfies `eq_of_beq` and `beq_eq_true_of_eq` by construction.
+3. Verify that all existing HashMap bridge lemmas (`HashMap_get?_insert`,
+   `HashMap_get?_erase`, `HashMap_filter_preserves_key`) can now be
+   instantiated directly with identifier types without extra assumptions.
 
 **Files modified:**
-- `SeLe4n/Prelude.lean` — major rework (macro, encapsulation, proofs)
-- All files using `⟨n⟩` syntax for identifiers — updated to `TypeName.mk n`
-- `SeLe4n/Machine.lean` — `isPowerOfTwo_correct` theorem
+- `SeLe4n/Prelude.lean` — 13 `EquivBEq` + 13 `LawfulBEq` instances
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` — `SecurityDomain` instances
+
+**Exit evidence:**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_smoke.sh` passes.
+- `HashMap_get?_insert (m : Std.HashMap ObjId β)` typechecks without extra
+  assumptions.
+
+---
+
+#### WS-H14b: KernelM Monad Law Proofs (A-04 / M-11)
+
+**Scope:** Prove `LawfulMonad` for `KernelM σ ε` by establishing the three
+monad laws via function extensionality.
+
+**Deliverables:**
+1. Prove `KernelM.pure_bind`: `pure a >>= f = f a` (left identity).
+   Proof: unfold `pure` and `bind`; the `Except.ok` branch yields `f a`
+   directly.
+2. Prove `KernelM.bind_pure`: `m >>= pure = m` (right identity).
+   Proof: extensionality on state `s`; case split on `m s`; both branches
+   reduce by `rfl`.
+3. Prove `KernelM.bind_assoc`: `(m >>= f) >>= g = m >>= (fun x => f x >>= g)`
+   (associativity). Proof: extensionality; case split on `m s`, then on
+   `f a s'`; all branches reduce by `rfl`.
+4. Register the `LawfulMonad (KernelM σ ε)` instance.
+
+**Files modified:**
+- `SeLe4n/Prelude.lean` — 3 theorems + 1 instance declaration
+
+**Exit evidence:**
+- `lake build` passes with zero sorry.
+- `#check (inferInstance : LawfulMonad (KernelM σ ε))` succeeds.
+
+---
+
+#### WS-H14c: isPowerOfTwo Correctness Proof (A-06)
+
+**Scope:** Prove that the bitwise `isPowerOfTwo` function in `Machine.lean`
+correctly characterizes powers of two.
+
+**Deliverables:**
+1. Prove `isPowerOfTwo_spec`:
+   `isPowerOfTwo n = true → n > 0 ∧ n &&& (n - 1) = 0` (definitional unfolding
+   for downstream use).
+2. Prove `isPowerOfTwo_of_pow2`:
+   `isPowerOfTwo (2 ^ k) = true` (every power of two passes the check).
+   Proof: induction on `k`; the base case `2^0 = 1` is `decide`; the
+   inductive step uses the identity `2^(k+1) &&& (2^(k+1) - 1) = 0` which
+   follows from the binary representation of powers of two.
+3. Add `isPowerOfTwo_pos`: `isPowerOfTwo n = true → n > 0` (convenience
+   extraction from the conjunction).
+
+**Files modified:**
+- `SeLe4n/Machine.lean` — 3 theorems (placed after `isPowerOfTwo` definition)
+
+**Exit evidence:**
+- `lake build` passes with zero sorry.
+- `isPowerOfTwo_of_pow2` compiles for concrete cases (`k = 0, 1, 2, 3`).
+
+---
+
+#### WS-H14d: Identifier Roundtrip & Injectivity Proofs
+
+**Scope:** Establish the foundational proof infrastructure for typed identifiers:
+roundtrip lemmas and injectivity theorems. These are prerequisites for sound
+reasoning about identifier equality in proofs.
+
+**Deliverables:**
+1. For each of the 14 identifier types, prove:
+   - `toNat_ofNat : (TypeName.ofNat n).toNat = n` (roundtrip: construct then
+     project yields the original value).
+   - `ofNat_toNat : TypeName.ofNat id.toNat = id` (roundtrip: project then
+     reconstruct yields the original identifier).
+   - `ofNat_injective : TypeName.ofNat n₁ = TypeName.ofNat n₂ → n₁ = n₂`
+     (distinct values produce distinct identifiers).
+   - `ext : a.val = b.val → a = b` (extensionality — already exists for
+     `ThreadId`, add for remaining 12 types).
+2. All proofs are `rfl`-based or trivial `simp`/`cases` proofs (the structures
+   are single-field `Nat` wrappers, so all properties are definitional).
+
+**Files modified:**
+- `SeLe4n/Prelude.lean` — ~56 theorems (4 per type × 14 types, minus those
+  already present like `ThreadId.ext`)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` — 4 theorems for `SecurityDomain`
+
+**Exit evidence:**
+- `lake build` passes with zero sorry.
+- `test_smoke.sh` passes.
+
+---
+
+#### WS-H14e: OfNat Instance Removal & Construction Site Migration (A-02 / M-10)
+
+**Scope:** Remove all `OfNat` instances for typed identifiers and update every
+construction site in the codebase to use explicit constructors. This is the
+primary type-safety hardening change.
+
+**Security impact:** After this change, `def ep : ObjId := 30` will fail to
+compile. All identifier construction must use `ObjId.ofNat 30`, `ObjId.mk 30`,
+or `⟨30⟩` — each of which is visible and auditable in code review. Implicit
+numeric coercion through the `OfNat` typeclass is eliminated.
+
+**Deliverables:**
+1. Remove `instance instOfNat (n : Nat) : OfNat TypeName n` for all 14
+   identifier types (13 in `Prelude.lean` + `SecurityDomain` in `Policy.lean`).
+2. Update construction sites in production code:
+   - `SeLe4n/Kernel/InformationFlow/Policy.lean` — `SecurityDomain` literals
+     (`SecurityDomain.lowest` already uses `⟨0⟩`; update any remaining).
+   - `SeLe4n/Platform/RPi5/Board.lean` — platform constants (IRQ numbers,
+     ASID values, address constants).
+   - `SeLe4n/Kernel/Capability/Operations.lean` — capability construction.
+   - `SeLe4n/Model/Object/Structures.lean` — object structure defaults.
+   - `SeLe4n/Kernel/Scheduler/RunQueue.lean` — scheduler constants.
+   - `SeLe4n/Platform/Sim/Contract.lean` — simulation platform.
+   - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — IPC operations.
+   - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` — proof terms.
+   - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` — proof terms.
+   - `SeLe4n/Testing/StateBuilder.lean` — test state construction.
+3. Update construction sites in test code:
+   - `SeLe4n/Testing/MainTraceHarness.lean` — all 19 trace scenario IDs.
+   - `tests/NegativeStateSuite.lean` — negative test fixtures.
+   - `tests/InformationFlowSuite.lean` — info-flow test fixtures.
+4. Convention: prefer `TypeName.ofNat n` for readability at definition sites;
+   prefer `⟨n⟩` only inside structure initialization blocks where the type
+   is unambiguous from context.
+
+**Files modified:** ~12 files (see list above).
+
+**Migration strategy:** Compile-driven — remove `OfNat` instances first, then
+fix each compilation error. Lean's exhaustive elaboration ensures no site is
+missed.
 
 **Exit evidence:**
 - `lake build` passes with zero errors/warnings and zero sorry.
 - `test_full.sh` passes (Tier 0-3).
-- `Prelude.lean` reduced by ~250+ lines via macro.
-- `grep -r "OfNat.*ObjId\|OfNat.*ThreadId" SeLe4n/` returns zero matches.
-- `LawfulMonad KernelM` instance compiles.
-- `isPowerOfTwo_correct` theorem compiles.
+- `grep -rn "instOfNat\|OfNat.*ObjId\|OfNat.*ThreadId\|OfNat.*ServiceId\|OfNat.*CPtr\|OfNat.*Slot\|OfNat.*Badge\|OfNat.*ASID\|OfNat.*VAddr\|OfNat.*PAddr\|OfNat.*DomainId\|OfNat.*Priority\|OfNat.*Deadline\|OfNat.*Irq\|OfNat.*SecurityDomain" SeLe4n/`
+  returns zero matches.
 
-**Dependencies:** Independent. Recommended after Phase 2 to minimize churn.
+**Dependencies:** H14a (EquivBEq instances must be in place before removing
+OfNat, as the LawfulBEq proofs reference the BEq behavior that OfNat removal
+does not affect — but temporal ordering prevents proof breakage during the
+migration window).
+
+---
+
+#### WS-H14f: Sentinel Predicate Completion & Inhabited Hardening (A-01)
+
+**Scope:** Complete sentinel predicate coverage and document the `Inhabited`
+sentinel convention with formal theorems.
+
+**Deliverables:**
+1. Verify that all 4 sentinel-bearing types (`ObjId`, `ThreadId`, `ServiceId`,
+   `CPtr`) have:
+   - `sentinel` definition (value 0)
+   - `isReserved` predicate
+   - `default_eq_sentinel` theorem (`default = sentinel`)
+   - `sentinel_isReserved` theorem
+   - `valid` predicate (for `ObjId`; add for `ThreadId`, `ServiceId`, `CPtr`)
+   - `valid_iff_not_reserved` theorem (for `ObjId`; add for others)
+2. Add `ThreadId.valid`, `ServiceId.valid`, `CPtr.valid` predicates mirroring
+   `ObjId.valid` (value ≠ 0). Add corresponding `valid_iff_not_reserved`
+   theorems.
+3. Add `sentinel_not_valid` theorem for each sentinel-bearing type:
+   `¬ TypeName.sentinel.valid` — the sentinel is never a valid identifier.
+4. Audit all `default : ObjId` / `default : ThreadId` usage in the codebase
+   to verify that no production path treats the sentinel as a real object.
+   Document findings in code comments.
+5. For non-sentinel types (`DomainId`, `Priority`, `Deadline`, `Irq`, `Slot`,
+   `Badge`, `ASID`, `VAddr`, `PAddr`): document that value 0 has domain-specific
+   semantics (e.g., `Deadline.none` = 0 means "no deadline", `Priority 0` is
+   the lowest priority) and does not require sentinel guarding.
+
+**Files modified:**
+- `SeLe4n/Prelude.lean` — new predicates, theorems, and documentation comments
+
+**Exit evidence:**
+- `lake build` passes with zero sorry.
+- `test_smoke.sh` passes.
+- All 4 sentinel-bearing types have complete sentinel predicate suites.
+
+---
+
+**Combined WS-H14 exit evidence (all sub-workstreams):**
+- `lake build` passes with zero errors/warnings and zero sorry.
+- `test_full.sh` passes (Tier 0-3).
+- All 14 identifier types have `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances.
+- All 14 identifier types have `ofNat_injective`, `toNat_ofNat`, `ofNat_toNat`,
+  `ext` theorems.
+- Zero `OfNat` instances remain for identifier types.
+- `LawfulMonad (KernelM σ ε)` instance compiles.
+- `isPowerOfTwo_of_pow2` theorem compiles.
+- All 4 sentinel-bearing types have `valid`, `valid_iff_not_reserved`,
+  `sentinel_not_valid` theorems.
+- M-09 (boilerplate) is deferred to a future macro workstream — the explicit
+  code pattern was assessed as "acceptable for proof clarity" by the v0.13.6
+  audit. Boilerplate reduction remains a low-priority improvement after all
+  security-critical changes are stable.
+
+**Dependencies:** Independent. Sub-workstreams H14a–H14d can run in parallel.
+H14e depends on H14a and H14d. H14f depends on H14e.
 
 ---
 

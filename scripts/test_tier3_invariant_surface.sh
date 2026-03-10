@@ -455,7 +455,7 @@ run_check "TRACE" rg -n 'adapter read success path byte: 0' tests/fixtures/main_
 run_check "TRACE" rg -n 'adapter register write success path value: 99' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented' tests/fixtures/main_trace_smoke.expected
 # WS-G7: migrated from endpointAwaitReceive to endpointReceiveDual
-run_check "TRACE" rg -n 'endpointReceiveDual demoEndpoint 12' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'endpointReceiveDual demoEndpoint ⟨12⟩' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'serviceStart svcApi allowAll' SeLe4n/Testing/MainTraceHarness.lean
