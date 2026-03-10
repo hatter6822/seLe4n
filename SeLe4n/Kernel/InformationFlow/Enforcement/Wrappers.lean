@@ -1,5 +1,4 @@
 import SeLe4n.Kernel.InformationFlow.Policy
-import SeLe4n.Kernel.IPC.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Operations

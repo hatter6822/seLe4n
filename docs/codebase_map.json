@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-386-vEFvV",
-      "commit_sha": "b2b3b3b88f72cb6cb91272ade8b097deb2ac72ed",
-      "tree_sha": "19a1dc0682ea5562df4b820361b28b870904f965",
-      "committed_at_utc": "2026-03-10T08:40:53+00:00"
+      "commit_sha": "1823fe468e17a9477558e4b1bec3df773f60dcd3",
+      "tree_sha": "2cd7a90aacf7c471338ac596adf7eac0baec5146",
+      "committed_at_utc": "2026-03-10T08:44:55+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1413ab6def0040b50201bc8aab25245ea496e88c346518bf3ca0f7f6983f8ff1"
+    "source_digest": "1da1740e4912d9775e6bd53f3eafdd8cd9cf467c549997e4bff1d8dd3714d22c"
   },
   "summary": {
     "module_count": 68,
@@ -27,7 +27,7 @@
     "version": "0.14.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 65,
-    "production_loc": 31295,
+    "production_loc": 31289,
     "test_files": 3,
     "test_loc": 2413,
     "proved_theorem_lemma_decls": 958,
@@ -2740,31 +2740,31 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 5,
+          "line": 4,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq",
-          "line": 15,
+          "line": 12,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_objects_ne",
-          "line": 21,
+          "line": 18,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq",
-          "line": 30,
+          "line": 27,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "tcb_lookup_of_endpoint_store",
-          "line": 36,
+          "line": 33,
           "called": [
             "storeObject_objects_eq",
             "storeObject_objects_ne"
@@ -2773,7 +2773,7 @@
         {
           "kind": "theorem",
           "name": "runnable_membership_of_endpoint_store",
-          "line": 45,
+          "line": 42,
           "called": [
             "storeObject_scheduler_eq"
           ]
@@ -2781,7 +2781,7 @@
         {
           "kind": "theorem",
           "name": "not_runnable_membership_of_endpoint_store",
-          "line": 52,
+          "line": 49,
           "called": [
             "storeObject_scheduler_eq"
           ]
@@ -2789,13 +2789,13 @@
         {
           "kind": "def",
           "name": "notificationQueueWellFormed",
-          "line": 63,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "notificationInvariant",
-          "line": 69,
+          "line": 66,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -2803,19 +2803,19 @@
         {
           "kind": "def",
           "name": "intrusiveQueueWellFormed",
-          "line": 95,
+          "line": 92,
           "called": []
         },
         {
           "kind": "def",
           "name": "tcbQueueLinkIntegrity",
-          "line": 109,
+          "line": 106,
           "called": []
         },
         {
           "kind": "def",
           "name": "dualQueueEndpointWellFormed",
-          "line": 125,
+          "line": 122,
           "called": [
             "intrusiveQueueWellFormed"
           ]
@@ -2823,7 +2823,7 @@
         {
           "kind": "def",
           "name": "dualQueueSystemInvariant",
-          "line": 136,
+          "line": 133,
           "called": [
             "dualQueueEndpointWellFormed",
             "tcbQueueLinkIntegrity"
@@ -2832,7 +2832,7 @@
         {
           "kind": "def",
           "name": "ipcInvariant",
-          "line": 146,
+          "line": 143,
           "called": [
             "notificationInvariant"
           ]
@@ -2840,13 +2840,13 @@
         {
           "kind": "def",
           "name": "allPendingMessagesBounded",
-          "line": 153,
+          "line": 150,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcInvariantFull",
-          "line": 166,
+          "line": 163,
           "called": [
             "allPendingMessagesBounded",
             "dualQueueSystemInvariant",
@@ -2856,37 +2856,37 @@
         {
           "kind": "def",
           "name": "runnableThreadIpcReady",
-          "line": 173,
+          "line": 170,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnable",
-          "line": 177,
+          "line": 174,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnable",
-          "line": 182,
+          "line": 179,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnCallNotRunnable",
-          "line": 188,
+          "line": 185,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnReplyNotRunnable",
-          "line": 194,
+          "line": 191,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerContractPredicates",
-          "line": 199,
+          "line": 196,
           "called": [
             "blockedOnCallNotRunnable",
             "blockedOnReceiveNotRunnable",
@@ -2898,25 +2898,25 @@
         {
           "kind": "def",
           "name": "currentThreadIpcReady",
-          "line": 207,
+          "line": 204,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentNotEndpointQueueHead",
-          "line": 215,
+          "line": 212,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentNotOnNotificationWaitList",
-          "line": 226,
+          "line": 223,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentThreadDequeueCoherent",
-          "line": 237,
+          "line": 234,
           "called": [
             "currentNotEndpointQueueHead",
             "currentNotOnNotificationWaitList",
@@ -2926,13 +2926,13 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_returns_head",
-          "line": 241,
+          "line": 238,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "scheduler_unchanged_through_store_tcb",
-          "line": 293,
+          "line": 290,
           "called": [
             "storeObject_scheduler_eq"
           ]
@@ -2940,7 +2940,7 @@
         {
           "kind": "theorem",
           "name": "tcb_preserved_through_endpoint_store",
-          "line": 303,
+          "line": 300,
           "called": [
             "storeObject_objects_ne"
           ]
@@ -2948,13 +2948,13 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistent",
-          "line": 320,
+          "line": 317,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "not_mem_waitingThreads_of_ipcState_ne",
-          "line": 329,
+          "line": 326,
           "called": [
             "notificationWaiterConsistent"
           ]
@@ -2962,13 +2962,13 @@
         {
           "kind": "def",
           "name": "uniqueWaiters",
-          "line": 346,
+          "line": 343,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_uniqueWaiters",
-          "line": 352,
+          "line": 349,
           "called": [
             "not_mem_waitingThreads_of_ipcState_ne",
             "notificationWaiterConsistent",
@@ -2979,7 +2979,7 @@
         {
           "kind": "theorem",
           "name": "default_notificationWaiterConsistent",
-          "line": 452,
+          "line": 449,
           "called": [
             "notificationWaiterConsistent"
           ]
@@ -2987,7 +2987,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_wake",
-          "line": 501,
+          "line": 498,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -2995,7 +2995,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_merge",
-          "line": 513,
+          "line": 510,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -3003,7 +3003,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_badge",
-          "line": 523,
+          "line": 520,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -3011,7 +3011,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_wait",
-          "line": 530,
+          "line": 527,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -4407,31 +4407,31 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 7,
+          "line": 6,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointSendDualChecked",
-          "line": 20,
+          "line": 19,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceMintChecked",
-          "line": 42,
+          "line": 41,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceRestartChecked",
-          "line": 60,
+          "line": 59,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_eq_endpointSendDual_when_allowed",
-          "line": 80,
+          "line": 79,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -4439,7 +4439,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_flowDenied",
-          "line": 106,
+          "line": 105,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -4447,7 +4447,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_eq_cspaceMint_when_allowed",
-          "line": 125,
+          "line": 124,
           "called": [
             "cspaceMintChecked"
           ]
@@ -4455,7 +4455,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_flowDenied",
-          "line": 140,
+          "line": 139,
           "called": [
             "cspaceMintChecked"
           ]
@@ -4463,7 +4463,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestartChecked_eq_serviceRestart_when_allowed",
-          "line": 155,
+          "line": 154,
           "called": [
             "serviceRestartChecked"
           ]
@@ -4471,7 +4471,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestartChecked_flowDenied",
-          "line": 170,
+          "line": 169,
           "called": [
             "serviceRestartChecked"
           ]
@@ -4479,13 +4479,13 @@
         {
           "kind": "inductive",
           "name": "EnforcementClass",
-          "line": 213,
+          "line": 212,
           "called": []
         },
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 220,
+          "line": 219,
           "called": [
             "EnforcementClass",
             "cspaceMintChecked",
@@ -4496,7 +4496,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 247,
+          "line": 246,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -4504,7 +4504,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 263,
+          "line": 262,
           "called": [
             "cspaceMintChecked"
           ]
@@ -4512,7 +4512,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestartChecked_denied_preserves_state",
-          "line": 274,
+          "line": 273,
           "called": [
             "serviceRestartChecked"
           ]
@@ -4520,7 +4520,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 292,
+          "line": 291,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -4528,7 +4528,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 313,
+          "line": 312,
           "called": [
             "cspaceMintChecked"
           ]
@@ -4536,7 +4536,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_serviceRestart",
-          "line": 326,
+          "line": 325,
           "called": [
             "serviceRestartChecked"
           ]
@@ -4544,25 +4544,25 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 364,
+          "line": 363,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 385,
+          "line": 384,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 401,
+          "line": 400,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 420,
+          "line": 419,
           "called": []
         }
       ]
@@ -8981,19 +8981,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 5,
+          "line": 4,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "ServicePolicyPredicate",
-          "line": 10,
+          "line": 9,
           "called": []
         },
         {
           "kind": "def",
           "name": "policyBackingObjectTyped",
-          "line": 13,
+          "line": 12,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9001,7 +9001,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthorityRefRecorded",
-          "line": 17,
+          "line": 16,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9009,7 +9009,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthoritySlotPresent",
-          "line": 24,
+          "line": 23,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9017,7 +9017,7 @@
         {
           "kind": "def",
           "name": "servicePolicySurfaceInvariant",
-          "line": 31,
+          "line": 30,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -9027,7 +9027,7 @@
         {
           "kind": "def",
           "name": "serviceLifecycleCapabilityInvariantBundle",
-          "line": 38,
+          "line": 37,
           "called": [
             "servicePolicySurfaceInvariant"
           ]
@@ -9035,7 +9035,7 @@
         {
           "kind": "theorem",
           "name": "serviceLifecycleCapabilityInvariantBundle_of_components",
-          "line": 41,
+          "line": 40,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "servicePolicySurfaceInvariant"
@@ -9044,7 +9044,7 @@
         {
           "kind": "theorem",
           "name": "policyBackingObjectTyped_of_lifecycleInvariant",
-          "line": 50,
+          "line": 49,
           "called": [
             "policyBackingObjectTyped"
           ]
@@ -9052,7 +9052,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
-          "line": 64,
+          "line": 63,
           "called": [
             "policyOwnerAuthorityRefRecorded",
             "policyOwnerAuthoritySlotPresent"
@@ -9061,7 +9061,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_capabilityLookup",
-          "line": 78,
+          "line": 77,
           "called": [
             "policyOwnerAuthoritySlotPresent"
           ]
@@ -9069,7 +9069,7 @@
         {
           "kind": "theorem",
           "name": "servicePolicySurfaceInvariant_of_lifecycleInvariant",
-          "line": 96,
+          "line": 95,
           "called": [
             "policyBackingObjectTyped_of_lifecycleInvariant",
             "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
@@ -9079,19 +9079,19 @@
         {
           "kind": "theorem",
           "name": "serviceStart_policyDenied_separates_check_from_mutation",
-          "line": 110,
+          "line": 109,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_policyDenied_separates_check_from_mutation",
-          "line": 123,
+          "line": 122,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_servicePolicySurfaceInvariant",
-          "line": 135,
+          "line": 134,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -9102,19 +9102,19 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_lifecycleInvariantBundle",
-          "line": 164,
+          "line": 163,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_capabilityInvariantBundle",
-          "line": 182,
+          "line": 181,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 198,
+          "line": 197,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "storeServiceState_preserves_capabilityInvariantBundle",
@@ -9125,7 +9125,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 228,
+          "line": 227,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "storeServiceState_preserves_capabilityInvariantBundle",
@@ -9136,7 +9136,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 256,
+          "line": 255,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle",
@@ -9146,7 +9146,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 272,
+          "line": 271,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9154,7 +9154,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 282,
+          "line": 281,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9162,7 +9162,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 292,
+          "line": 291,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9170,7 +9170,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 304,
+          "line": 303,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle"
@@ -10585,25 +10585,25 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Model",
-          "line": 4,
+          "line": 3,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "ServiceStatus",
-          "line": 8,
+          "line": 7,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceIdentity",
-          "line": 16,
+          "line": 15,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceGraphEntry",
-          "line": 23,
+          "line": 22,
           "called": [
             "ServiceIdentity",
             "ServiceStatus"
@@ -10612,19 +10612,19 @@
         {
           "kind": "inductive",
           "name": "AccessRight",
-          "line": 30,
+          "line": 29,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 41,
+          "line": 40,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 47,
+          "line": 46,
           "called": [
             "AccessRight",
             "CapTarget"
@@ -10633,13 +10633,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 53,
+          "line": 52,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 55,
+          "line": 54,
           "called": [
             "AccessRight",
             "Capability"
@@ -10648,19 +10648,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 62,
+          "line": 61,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 66,
+          "line": 65,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 74,
+          "line": 73,
           "called": [
             "Capability"
           ]
@@ -10668,13 +10668,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 80,
+          "line": 79,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 82,
+          "line": 81,
           "called": [
             "IpcMessage"
           ]
@@ -10682,7 +10682,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 86,
+          "line": 85,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -10692,7 +10692,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 92,
+          "line": 91,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -10702,7 +10702,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 96,
+          "line": 95,
           "called": [
             "bounded",
             "empty",
@@ -10713,7 +10713,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 100,
+          "line": 99,
           "called": [
             "IpcMessage",
             "bounded",
@@ -10725,19 +10725,19 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 116,
+          "line": 115,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 129,
+          "line": 128,
           "called": []
         },
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 134,
+          "line": 133,
           "called": [
             "IpcMessage",
             "QueuePPrev",
@@ -10746,8 +10746,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:173>",
-          "line": 173,
+          "name": "<anonymous:instance:172>",
+          "line": 172,
           "called": [
             "TCB"
           ]
@@ -10755,13 +10755,13 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 187,
+          "line": 186,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 198,
+          "line": 197,
           "called": [
             "IntrusiveQueue"
           ]
@@ -10769,13 +10769,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 203,
+          "line": 202,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 212,
+          "line": 211,
           "called": [
             "NotificationState"
           ]
@@ -10783,7 +10783,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 228,
+          "line": 227,
           "called": [
             "Capability"
           ]
@@ -10791,19 +10791,19 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 237,
+          "line": 236,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 242,
+          "line": 241,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 257,
+          "line": 256,
           "called": [
             "UntypedChild"
           ]
@@ -10811,13 +10811,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 273,
+          "line": 272,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 276,
+          "line": 275,
           "called": [
             "UntypedObject"
           ]
@@ -10825,7 +10825,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 280,
+          "line": 279,
           "called": [
             "UntypedObject"
           ]
@@ -10833,7 +10833,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 285,
+          "line": 284,
           "called": [
             "UntypedObject"
           ]
@@ -10841,7 +10841,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 297,
+          "line": 296,
           "called": [
             "UntypedObject"
           ]
@@ -10849,7 +10849,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 301,
+          "line": 300,
           "called": [
             "UntypedObject"
           ]
@@ -10857,7 +10857,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 305,
+          "line": 304,
           "called": [
             "UntypedObject"
           ]
@@ -10865,7 +10865,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 309,
+          "line": 308,
           "called": [
             "UntypedObject"
           ]
@@ -10873,7 +10873,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 314,
+          "line": 313,
           "called": [
             "UntypedObject"
           ]
@@ -10881,7 +10881,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 319,
+          "line": 318,
           "called": [
             "UntypedObject"
           ]
@@ -10889,7 +10889,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 323,
+          "line": 322,
           "called": [
             "watermarkValid"
           ]
@@ -10897,7 +10897,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 327,
+          "line": 326,
           "called": [
             "childrenWithinWatermark"
           ]
@@ -10905,7 +10905,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 332,
+          "line": 331,
           "called": [
             "childrenNonOverlap"
           ]
@@ -10913,7 +10913,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 337,
+          "line": 336,
           "called": [
             "childrenUniqueIds"
           ]
@@ -10921,7 +10921,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 342,
+          "line": 341,
           "called": [
             "empty_childrenNonOverlap",
             "empty_childrenUniqueIds",
@@ -10933,7 +10933,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 348,
+          "line": 347,
           "called": [
             "UntypedObject",
             "canAllocate"
@@ -10942,7 +10942,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 355,
+          "line": 354,
           "called": [
             "UntypedObject",
             "allocate"
@@ -10951,7 +10951,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 374,
+          "line": 373,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -10960,7 +10960,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 383,
+          "line": 382,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -10969,7 +10969,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 390,
+          "line": 389,
           "called": [
             "UntypedObject",
             "allocate_watermark_advance"
@@ -10978,7 +10978,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 397,
+          "line": 396,
           "called": [
             "UntypedObject",
             "allocate_some_iff",
@@ -10989,7 +10989,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 408,
+          "line": 407,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -10998,7 +10998,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 419,
+          "line": 418,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11007,7 +11007,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 437,
+          "line": 436,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11016,7 +11016,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 459,
+          "line": 458,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11025,7 +11025,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 478,
+          "line": 477,
           "called": [
             "UntypedObject",
             "reset",
@@ -11035,7 +11035,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 482,
+          "line": 481,
           "called": [
             "UntypedObject",
             "reset",
