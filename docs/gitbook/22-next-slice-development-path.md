@@ -2,13 +2,13 @@
 
 ## Current state
 
-**Version:** 0.14.4 (Lean v4.28.0)
+**Version:** 0.14.6 (Lean v4.28.0)
 
 **Verified metrics snapshot (from [`docs/codebase_map.json`](../../docs/codebase_map.json) `readme_sync`):**
-- Production LoC: 31,268 across 41 files
-- Test LoC: 2,413 across 3 suites
-- Proved declarations: 958 theorem/lemma declarations (zero sorry/axiom)
-- Total declarations: 1,777 across 44 modules
+- Production LoC: 31,600 across 65 files
+- Test LoC: 2,412 across 3 suites
+- Proved declarations: 1,034 theorem/lemma declarations (zero sorry/axiom)
+- Total declarations: 1,890 across 68 modules
 
 Four major portfolios are completed:
 
@@ -39,17 +39,17 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H14..H16 and WS-F5..F8
+## Immediate next: WS-H15..H16 and WS-F5..F8
 
 ### Remaining WS-H workstreams — v0.12.15 audit remediation
 
-WS-H1..H13 are all completed. The remaining workstreams address Phases 4-5:
+WS-H1..H14 are all completed. The remaining workstreams address Phase 5:
 
-| ID | Focus | Priority |
-|----|-------|----------|
-| **WS-H14** | Type safety hardening (phantom types, API boundary contracts) | Low |
-| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
-| **WS-H16** | Testing and documentation expansion | Low |
+| ID | Focus | Priority | Status |
+|----|-------|----------|--------|
+| **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **COMPLETED** |
+| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low | Pending |
+| **WS-H16** | Testing and documentation expansion | Low | Pending |
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 for the full execution plan.

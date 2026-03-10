@@ -27,22 +27,22 @@ namespace SeLe4n.Platform.RPi5
 -- ============================================================================
 
 /-- BCM2712 low-peripheral base address (legacy 32-bit peripheral window). -/
-def peripheralBaseLow : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFE000000
+def peripheralBaseLow : SeLe4n.PAddr := ⟨0xFE000000⟩
 
 /-- BCM2712 high-peripheral base address (new peripherals in BCM2712). -/
-def peripheralBaseHigh : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x1000000000
+def peripheralBaseHigh : SeLe4n.PAddr := ⟨0x1000000000⟩
 
 /-- GIC-400 distributor base address. -/
-def gicDistributorBase : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFF841000
+def gicDistributorBase : SeLe4n.PAddr := ⟨0xFF841000⟩
 
 /-- GIC-400 CPU interface base address. -/
-def gicCpuInterfaceBase : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFF842000
+def gicCpuInterfaceBase : SeLe4n.PAddr := ⟨0xFF842000⟩
 
 /-- ARM Generic Timer frequency (54 MHz crystal on RPi5). -/
 def timerFrequencyHz : Nat := 54000000
 
 /-- UART0 (PL011) base address for debug console. -/
-def uart0Base : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFE201000
+def uart0Base : SeLe4n.PAddr := ⟨0xFE201000⟩
 
 -- ============================================================================
 -- RPi5 memory map
@@ -57,16 +57,16 @@ def uart0Base : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0xFE201000
     4. Reserved: 0xFF85_0000 – 0xFFFF_FFFF (above GIC, to 4 GB boundary)
     5. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet) -/
 def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
-  [ { base := SeLe4n.PAddr.ofNat 0x00000000
+  [ { base := ⟨0x00000000⟩
       size := 4032 * 1024 * 1024  -- 4032 MiB usable RAM
       kind := .ram }
-  , { base := SeLe4n.PAddr.ofNat 0xFC000000
+  , { base := ⟨0xFC000000⟩
       size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
       kind := .reserved }
-  , { base := SeLe4n.PAddr.ofNat 0xFE000000
+  , { base := ⟨0xFE000000⟩
       size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
       kind := .device }
-  , { base := SeLe4n.PAddr.ofNat 0xFF850000
+  , { base := ⟨0xFF850000⟩
       size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
       kind := .reserved }
   ]
@@ -95,9 +95,9 @@ def gicSpiCount : Nat := 192
 
 /-- ARM Generic Timer PPI (Private Peripheral Interrupt) ID.
     Non-secure physical timer: INTID 30. -/
-def timerPpiId : SeLe4n.Irq := SeLe4n.Irq.ofNat 30
+def timerPpiId : SeLe4n.Irq := ⟨30⟩
 
 /-- ARM Generic Timer virtual timer PPI: INTID 27. -/
-def virtualTimerPpiId : SeLe4n.Irq := SeLe4n.Irq.ofNat 27
+def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
 
 end SeLe4n.Platform.RPi5

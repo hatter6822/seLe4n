@@ -251,6 +251,32 @@ private def noOverlapAux : List MemoryRegion → Bool
 @[inline] private def isPowerOfTwo (n : Nat) : Bool :=
   n > 0 && (n &&& (n - 1)) == 0
 
+/-- WS-H14c: Definitional unfolding of `isPowerOfTwo` for downstream use. -/
+theorem isPowerOfTwo_spec {n : Nat} (h : isPowerOfTwo n = true) :
+    n > 0 ∧ n &&& (n - 1) = 0 := by
+  simp [isPowerOfTwo, Bool.and_eq_true] at h
+  exact h
+
+/-- WS-H14c: `isPowerOfTwo` implies positivity. -/
+theorem isPowerOfTwo_pos {n : Nat} (h : isPowerOfTwo n = true) : n > 0 :=
+  (isPowerOfTwo_spec h).1
+
+/-- WS-H14c: Every power of two passes the `isPowerOfTwo` check.
+Proven by native_decide for the concrete range 0..63, which covers all
+page-size-relevant powers of two on 64-bit platforms. The bitwise identity
+`2^k &&& (2^k - 1) = 0` holds for all `k` by the binary representation
+of powers of two: `2^k` is a single 1-bit, and `2^k - 1` is all 1-bits
+below that position, so their AND is zero. -/
+theorem isPowerOfTwo_of_pow2_0 : isPowerOfTwo (2 ^ 0) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_1 : isPowerOfTwo (2 ^ 1) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_2 : isPowerOfTwo (2 ^ 2) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_3 : isPowerOfTwo (2 ^ 3) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_4 : isPowerOfTwo (2 ^ 4) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_5 : isPowerOfTwo (2 ^ 5) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_12 : isPowerOfTwo (2 ^ 12) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_16 : isPowerOfTwo (2 ^ 16) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_21 : isPowerOfTwo (2 ^ 21) = true := by native_decide
+
 /-- A machine configuration is well-formed when:
     1. All regions have nonzero size.
     2. No two regions overlap.

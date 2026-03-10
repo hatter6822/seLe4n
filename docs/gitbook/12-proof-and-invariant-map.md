@@ -747,6 +747,47 @@ Supporting infrastructure:
 
 **Design invariant:** Original `projectState` definition is unchanged — all existing NI theorems in `Invariant.lean` (1448 lines) remain untouched. `projectStateFast` provides the performance path with proven equivalence.
 
+## 21. WS-H14 type safety & Prelude foundations
+
+**Typeclass instance hardening (A-03):**
+
+- `EquivBEq` instances for all 14 typed identifier types (13 in `Prelude.lean` + `SecurityDomain` in `Policy.lean`).
+- `LawfulBEq` instances for all 14 typed identifier types.
+- These close the gap where HashMap bridge lemmas required `EquivBEq` constraints that identifier types did not satisfy.
+
+**KernelM monad law proofs (A-04/M-11):**
+
+- `KernelM.pure_bind_law` — left identity for the state-error monad.
+- `KernelM.bind_pure_law` — right identity (bind with pure is identity).
+- `KernelM.bind_assoc_law` — associativity (sequential composition is associative).
+- `LawfulMonad (KernelM σ ε)` — registered instance enabling equational reasoning about chained kernel transitions.
+
+**isPowerOfTwo correctness (A-06):**
+
+- `isPowerOfTwo_spec` — definitional unfolding: `isPowerOfTwo n = true → n > 0 ∧ n &&& (n - 1) = 0`.
+- `isPowerOfTwo_pos` — positivity extraction.
+- `isPowerOfTwo_of_pow2_k` — concrete verification for k = 0..5, 12, 16, 21 (covers all platform page sizes).
+
+**Identifier roundtrip & injectivity proofs (WS-H14d):**
+
+For each of the 14 identifier types:
+- `toNat_ofNat` — roundtrip: construct then project yields the original value.
+- `ofNat_toNat` — roundtrip: project then reconstruct yields the original identifier.
+- `ofNat_injective` — distinct values produce distinct identifiers.
+- `ext` — extensionality: equal underlying values imply equal identifiers.
+
+**OfNat instance removal (A-02/M-10):**
+
+- All `OfNat` instances removed for 14 typed identifier types.
+- Numeric literals can no longer implicitly coerce to typed identifiers.
+- All construction sites migrated to explicit `⟨n⟩` or `TypeName.ofNat n` syntax.
+
+**Sentinel predicate completion (A-01):**
+
+- `ThreadId.valid` / `ServiceId.valid` / `CPtr.valid` — nonzero value predicates.
+- `*.valid_iff_not_reserved` — equivalence between validity and non-reservation.
+- `*.sentinel_not_valid` — sentinel is never valid (for all 4 sentinel-bearing types).
+
 ## 20. WS-H10 security model foundations
 
 **MachineState projection (C-05/A-38):**

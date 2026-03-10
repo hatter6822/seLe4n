@@ -53,7 +53,7 @@ structure SchedulerState where
   current : Option SeLe4n.ThreadId
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
-  activeDomain : SeLe4n.DomainId := 0
+  activeDomain : SeLe4n.DomainId := ⟨0⟩
   /-- M-05/WS-E6: Remaining ticks in the current domain schedule entry.
       When this reaches 0, the scheduler advances to the next domain. -/
   domainTimeRemaining : Nat := 5

@@ -48,12 +48,12 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.14.5` (`lakefile.toml`) |
+| **Package version** | `0.14.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 31,295 across 65 Lean files |
-| **Test LoC** | 2,413 across 3 Lean test suites |
-| **Proved declarations** | 958 theorem/lemma declarations (zero sorry/axiom) |
-| **Total declarations** | 1,792 across 68 modules |
+| **Production LoC** | 31,600 across 65 Lean files |
+| **Test LoC** | 2,412 across 3 Lean test suites |
+| **Proved declarations** | 1,034 theorem/lemma declarations (zero sorry/axiom) |
+| **Total declarations** | 1,890 across 68 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Next workstreams** | WS-H14..H16, WS-F5..F8 |

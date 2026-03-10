@@ -35,9 +35,6 @@ namespace ObjId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ObjId) : Nat := id.val
 
-instance instOfNat (n : Nat) : OfNat ObjId n where
-  ofNat := ⟨n⟩
-
 instance : ToString ObjId where
   toString id := toString id.toNat
 
@@ -85,9 +82,6 @@ avoids carrying an extra proof obligation through every intermediate function.
 See `ThreadId.toObjId_injective` for the injectivity proof that ensures two
 distinct thread IDs cannot alias the same object. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
-
-instance instOfNat (n : Nat) : OfNat ThreadId n where
-  ofNat := ⟨n⟩
 
 instance : ToString ThreadId where
   toString tid := toString tid.toNat
@@ -139,9 +133,6 @@ namespace DomainId
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : DomainId) : Nat := id.val
 
-instance instOfNat (n : Nat) : OfNat DomainId n where
-  ofNat := ⟨n⟩
-
 instance : ToString DomainId where
   toString id := toString id.toNat
 
@@ -164,9 +155,6 @@ namespace Priority
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (prio : Priority) : Nat := prio.val
-
-instance instOfNat (n : Nat) : OfNat Priority n where
-  ofNat := ⟨n⟩
 
 instance : ToString Priority where
   toString prio := toString prio.toNat
@@ -191,9 +179,6 @@ namespace Deadline
 
 @[inline] def ofNat (n : Nat) : Deadline := ⟨n⟩
 @[inline] def toNat (d : Deadline) : Nat := d.val
-
-instance instOfNat (n : Nat) : OfNat Deadline n where
-  ofNat := ⟨n⟩
 
 instance : ToString Deadline where
   toString d := toString d.toNat
@@ -224,9 +209,6 @@ namespace Irq
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (irq : Irq) : Nat := irq.val
 
-instance instOfNat (n : Nat) : OfNat Irq n where
-  ofNat := ⟨n⟩
-
 instance : ToString Irq where
   toString irq := toString irq.toNat
 
@@ -249,9 +231,6 @@ namespace ServiceId
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ServiceId) : Nat := id.val
-
-instance instOfNat (n : Nat) : OfNat ServiceId n where
-  ofNat := ⟨n⟩
 
 instance : ToString ServiceId where
   toString id := toString id.toNat
@@ -281,9 +260,6 @@ namespace CPtr
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (ptr : CPtr) : Nat := ptr.val
-
-instance instOfNat (n : Nat) : OfNat CPtr n where
-  ofNat := ⟨n⟩
 
 instance : ToString CPtr where
   toString ptr := toString ptr.toNat
@@ -319,9 +295,6 @@ namespace Slot
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (slot : Slot) : Nat := slot.val
 
-instance instOfNat (n : Nat) : OfNat Slot n where
-  ofNat := ⟨n⟩
-
 instance : ToString Slot where
   toString slot := toString slot.toNat
 
@@ -344,9 +317,6 @@ namespace Badge
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (badge : Badge) : Nat := badge.val
-
-instance instOfNat (n : Nat) : OfNat Badge n where
-  ofNat := ⟨n⟩
 
 instance : ToString Badge where
   toString badge := toString badge.toNat
@@ -371,9 +341,6 @@ namespace ASID
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (asid : ASID) : Nat := asid.val
 
-instance instOfNat (n : Nat) : OfNat ASID n where
-  ofNat := ⟨n⟩
-
 instance : ToString ASID where
   toString asid := toString asid.toNat
 
@@ -397,9 +364,6 @@ namespace VAddr
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : VAddr) : Nat := addr.val
 
-instance instOfNat (n : Nat) : OfNat VAddr n where
-  ofNat := ⟨n⟩
-
 instance : ToString VAddr where
   toString addr := toString addr.toNat
 
@@ -422,9 +386,6 @@ namespace PAddr
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : PAddr) : Nat := addr.val
-
-instance instOfNat (n : Nat) : OfNat PAddr n where
-  ofNat := ⟨n⟩
 
 instance : ToString PAddr where
   toString addr := toString addr.toNat
@@ -500,6 +461,56 @@ theorem liftExcept_error {σ ε α : Type} (err : ε) (s : σ) :
 theorem throw_errors {σ ε α : Type} (err : ε) (s : σ) :
     @KernelM.throw σ ε α err s = .error err := rfl
 
+-- WS-H14b: LawfulMonad instance for KernelM
+
+/-- WS-H14b: Left identity — `pure a >>= f = f a`. -/
+theorem pure_bind_law {σ ε α β : Type} (a : α) (f : α → KernelM σ ε β) :
+    bind (pure a) f = f a := rfl
+
+/-- WS-H14b: Right identity — `m >>= pure = m`. -/
+theorem bind_pure_law {σ ε α : Type} (m : KernelM σ ε α) :
+    bind m pure = m := by
+  funext s
+  simp only [bind, pure]
+  cases m s with
+  | error e => rfl
+  | ok p => rfl
+
+/-- WS-H14b: Associativity — `(m >>= f) >>= g = m >>= (fun x => f x >>= g)`. -/
+theorem bind_assoc_law {σ ε α β γ : Type}
+    (m : KernelM σ ε α) (f : α → KernelM σ ε β) (g : β → KernelM σ ε γ) :
+    bind (bind m f) g = bind m (fun x => bind (f x) g) := by
+  funext s
+  simp only [bind]
+  cases m s with
+  | error e => rfl
+  | ok p => rfl
+
+instance instLawfulMonad {σ ε : Type} : LawfulMonad (KernelM σ ε) where
+  map_const := by intros; rfl
+  id_map f := by
+    show bind f (pure ∘ id) = f
+    exact bind_pure_law f
+  seqLeft_eq f g := by
+    funext s
+    simp only [bind, pure, SeqLeft.seqLeft, Seq.seq, Functor.map, Function.comp]
+    cases f s with
+    | error e => rfl
+    | ok p => cases g p.2 <;> rfl
+  seqRight_eq f g := by
+    funext s
+    simp only [bind, pure, SeqRight.seqRight, Seq.seq, Functor.map, Function.comp]
+    cases f s with
+    | error e => rfl
+    | ok p => simp only [Function.const, id]; cases g p.2 <;> rfl
+  pure_seq f x := by show bind (pure f) (fun g => bind x (fun a => pure (g a))) = bind x (fun a => pure (f a)); rfl
+  bind_pure_comp f x := by show bind x (fun a => pure (f a)) = bind x (pure ∘ f); rfl
+  bind_map f g := by
+    show bind f (fun h => bind g (fun b => pure (h b))) =
+         bind f (fun h => bind g (fun b => pure (h b))); rfl
+  pure_bind a f := rfl
+  bind_assoc m f g := bind_assoc_law m f g
+
 end KernelM
 
 -- ============================================================================
@@ -544,6 +555,64 @@ instance : LawfulHashable VAddr where
 
 instance : LawfulHashable PAddr where
   hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+-- ============================================================================
+-- WS-H14a: EquivBEq and LawfulBEq instances for typed identifiers
+-- ============================================================================
+
+instance : EquivBEq ObjId := ⟨⟩
+instance : EquivBEq ThreadId := ⟨⟩
+instance : EquivBEq DomainId := ⟨⟩
+instance : EquivBEq Priority := ⟨⟩
+instance : EquivBEq Deadline := ⟨⟩
+instance : EquivBEq Irq := ⟨⟩
+instance : EquivBEq ServiceId := ⟨⟩
+instance : EquivBEq CPtr := ⟨⟩
+instance : EquivBEq Slot := ⟨⟩
+instance : EquivBEq Badge := ⟨⟩
+instance : EquivBEq ASID := ⟨⟩
+instance : EquivBEq VAddr := ⟨⟩
+instance : EquivBEq PAddr := ⟨⟩
+
+instance : LawfulBEq ObjId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq ThreadId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq DomainId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq Priority where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq Deadline where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq Irq where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq ServiceId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq CPtr where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq Slot where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq Badge where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq ASID where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq VAddr where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq PAddr where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
 
 -- ============================================================================
 -- WS-G2: HashMap/HashSet bridge lemmas for proof ergonomics
@@ -780,5 +849,193 @@ theorem ServiceId.default_eq_sentinel : (default : ServiceId) = ServiceId.sentin
 
 /-- The sentinel ServiceId is reserved. -/
 theorem ServiceId.sentinel_isReserved : ServiceId.sentinel.isReserved = true := rfl
+
+-- ============================================================================
+-- WS-H14d: Identifier roundtrip and injectivity proofs
+-- ============================================================================
+
+/-- WS-H14d: ObjId roundtrip — construct then project. -/
+theorem ObjId.toNat_ofNat (n : Nat) : (ObjId.ofNat n).toNat = n := rfl
+/-- WS-H14d: ObjId roundtrip — project then reconstruct. -/
+theorem ObjId.ofNat_toNat (id : ObjId) : ObjId.ofNat id.toNat = id := rfl
+/-- WS-H14d: ObjId injectivity. -/
+theorem ObjId.ofNat_injective {n₁ n₂ : Nat} (h : ObjId.ofNat n₁ = ObjId.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: ObjId extensionality. -/
+theorem ObjId.ext {a b : ObjId} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: ThreadId roundtrip — construct then project. -/
+theorem ThreadId.toNat_ofNat (n : Nat) : (ThreadId.ofNat n).toNat = n := rfl
+/-- WS-H14d: ThreadId roundtrip — project then reconstruct. -/
+theorem ThreadId.ofNat_toNat (id : ThreadId) : ThreadId.ofNat id.toNat = id := rfl
+/-- WS-H14d: ThreadId injectivity. -/
+theorem ThreadId.ofNat_injective {n₁ n₂ : Nat} (h : ThreadId.ofNat n₁ = ThreadId.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+
+/-- WS-H14d: DomainId roundtrip — construct then project. -/
+theorem DomainId.toNat_ofNat (n : Nat) : (DomainId.ofNat n).toNat = n := rfl
+/-- WS-H14d: DomainId roundtrip — project then reconstruct. -/
+theorem DomainId.ofNat_toNat (id : DomainId) : DomainId.ofNat id.toNat = id := rfl
+/-- WS-H14d: DomainId injectivity. -/
+theorem DomainId.ofNat_injective {n₁ n₂ : Nat} (h : DomainId.ofNat n₁ = DomainId.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: DomainId extensionality. -/
+theorem DomainId.ext {a b : DomainId} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: Priority roundtrip — construct then project. -/
+theorem Priority.toNat_ofNat (n : Nat) : (Priority.ofNat n).toNat = n := rfl
+/-- WS-H14d: Priority roundtrip — project then reconstruct. -/
+theorem Priority.ofNat_toNat (p : Priority) : Priority.ofNat p.toNat = p := rfl
+/-- WS-H14d: Priority injectivity. -/
+theorem Priority.ofNat_injective {n₁ n₂ : Nat} (h : Priority.ofNat n₁ = Priority.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: Priority extensionality. -/
+theorem Priority.ext {a b : Priority} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: Deadline roundtrip — construct then project. -/
+theorem Deadline.toNat_ofNat (n : Nat) : (Deadline.ofNat n).toNat = n := rfl
+/-- WS-H14d: Deadline roundtrip — project then reconstruct. -/
+theorem Deadline.ofNat_toNat (d : Deadline) : Deadline.ofNat d.toNat = d := rfl
+/-- WS-H14d: Deadline injectivity. -/
+theorem Deadline.ofNat_injective {n₁ n₂ : Nat} (h : Deadline.ofNat n₁ = Deadline.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: Deadline extensionality. -/
+theorem Deadline.ext {a b : Deadline} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: Irq roundtrip — construct then project. -/
+theorem Irq.toNat_ofNat (n : Nat) : (Irq.ofNat n).toNat = n := rfl
+/-- WS-H14d: Irq roundtrip — project then reconstruct. -/
+theorem Irq.ofNat_toNat (irq : Irq) : Irq.ofNat irq.toNat = irq := rfl
+/-- WS-H14d: Irq injectivity. -/
+theorem Irq.ofNat_injective {n₁ n₂ : Nat} (h : Irq.ofNat n₁ = Irq.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: Irq extensionality. -/
+theorem Irq.ext {a b : Irq} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: ServiceId roundtrip — construct then project. -/
+theorem ServiceId.toNat_ofNat (n : Nat) : (ServiceId.ofNat n).toNat = n := rfl
+/-- WS-H14d: ServiceId roundtrip — project then reconstruct. -/
+theorem ServiceId.ofNat_toNat (id : ServiceId) : ServiceId.ofNat id.toNat = id := rfl
+/-- WS-H14d: ServiceId injectivity. -/
+theorem ServiceId.ofNat_injective {n₁ n₂ : Nat} (h : ServiceId.ofNat n₁ = ServiceId.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: ServiceId extensionality. -/
+theorem ServiceId.ext {a b : ServiceId} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: CPtr roundtrip — construct then project. -/
+theorem CPtr.toNat_ofNat (n : Nat) : (CPtr.ofNat n).toNat = n := rfl
+/-- WS-H14d: CPtr roundtrip — project then reconstruct. -/
+theorem CPtr.ofNat_toNat (ptr : CPtr) : CPtr.ofNat ptr.toNat = ptr := rfl
+/-- WS-H14d: CPtr injectivity. -/
+theorem CPtr.ofNat_injective {n₁ n₂ : Nat} (h : CPtr.ofNat n₁ = CPtr.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: CPtr extensionality. -/
+theorem CPtr.ext {a b : CPtr} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: Slot roundtrip — construct then project. -/
+theorem Slot.toNat_ofNat (n : Nat) : (Slot.ofNat n).toNat = n := rfl
+/-- WS-H14d: Slot roundtrip — project then reconstruct. -/
+theorem Slot.ofNat_toNat (slot : Slot) : Slot.ofNat slot.toNat = slot := rfl
+/-- WS-H14d: Slot injectivity. -/
+theorem Slot.ofNat_injective {n₁ n₂ : Nat} (h : Slot.ofNat n₁ = Slot.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: Slot extensionality. -/
+theorem Slot.ext {a b : Slot} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: Badge roundtrip — construct then project. -/
+theorem Badge.toNat_ofNat (n : Nat) : (Badge.ofNat n).toNat = n := rfl
+/-- WS-H14d: Badge roundtrip — project then reconstruct. -/
+theorem Badge.ofNat_toNat (b : Badge) : Badge.ofNat b.toNat = b := rfl
+/-- WS-H14d: Badge injectivity. -/
+theorem Badge.ofNat_injective {n₁ n₂ : Nat} (h : Badge.ofNat n₁ = Badge.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: Badge extensionality. -/
+theorem Badge.ext {a b : Badge} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: ASID roundtrip — construct then project. -/
+theorem ASID.toNat_ofNat (n : Nat) : (ASID.ofNat n).toNat = n := rfl
+/-- WS-H14d: ASID roundtrip — project then reconstruct. -/
+theorem ASID.ofNat_toNat (asid : ASID) : ASID.ofNat asid.toNat = asid := rfl
+/-- WS-H14d: ASID injectivity. -/
+theorem ASID.ofNat_injective {n₁ n₂ : Nat} (h : ASID.ofNat n₁ = ASID.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: ASID extensionality. -/
+theorem ASID.ext {a b : ASID} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: VAddr roundtrip — construct then project. -/
+theorem VAddr.toNat_ofNat (n : Nat) : (VAddr.ofNat n).toNat = n := rfl
+/-- WS-H14d: VAddr roundtrip — project then reconstruct. -/
+theorem VAddr.ofNat_toNat (addr : VAddr) : VAddr.ofNat addr.toNat = addr := rfl
+/-- WS-H14d: VAddr injectivity. -/
+theorem VAddr.ofNat_injective {n₁ n₂ : Nat} (h : VAddr.ofNat n₁ = VAddr.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: VAddr extensionality. -/
+theorem VAddr.ext {a b : VAddr} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- WS-H14d: PAddr roundtrip — construct then project. -/
+theorem PAddr.toNat_ofNat (n : Nat) : (PAddr.ofNat n).toNat = n := rfl
+/-- WS-H14d: PAddr roundtrip — project then reconstruct. -/
+theorem PAddr.ofNat_toNat (addr : PAddr) : PAddr.ofNat addr.toNat = addr := rfl
+/-- WS-H14d: PAddr injectivity. -/
+theorem PAddr.ofNat_injective {n₁ n₂ : Nat} (h : PAddr.ofNat n₁ = PAddr.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: PAddr extensionality. -/
+theorem PAddr.ext {a b : PAddr} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+-- ============================================================================
+-- WS-H14f: Sentinel predicate completion
+-- ============================================================================
+
+/-- WS-H14f: ThreadId validity — nonzero value. -/
+def ThreadId.valid (id : ThreadId) : Prop := id.val ≠ 0
+
+/-- WS-H14f: ThreadId valid iff not reserved. -/
+theorem ThreadId.valid_iff_not_reserved (id : ThreadId) :
+    id.valid ↔ id.isReserved = false := by
+  simp [ThreadId.valid, ThreadId.isReserved]
+
+/-- WS-H14f: The sentinel ThreadId is not valid. -/
+theorem ThreadId.sentinel_not_valid : ¬ ThreadId.sentinel.valid := by
+  simp [ThreadId.valid, ThreadId.sentinel]
+
+/-- WS-H14f: ServiceId validity — nonzero value. -/
+def ServiceId.valid (id : ServiceId) : Prop := id.val ≠ 0
+
+/-- WS-H14f: ServiceId valid iff not reserved. -/
+theorem ServiceId.valid_iff_not_reserved (id : ServiceId) :
+    id.valid ↔ id.isReserved = false := by
+  simp [ServiceId.valid, ServiceId.isReserved]
+
+/-- WS-H14f: The sentinel ServiceId is not valid. -/
+theorem ServiceId.sentinel_not_valid : ¬ ServiceId.sentinel.valid := by
+  simp [ServiceId.valid, ServiceId.sentinel]
+
+/-- WS-H14f: CPtr validity — nonzero value. -/
+def CPtr.valid (ptr : CPtr) : Prop := ptr.val ≠ 0
+
+/-- WS-H14f: CPtr valid iff not reserved. -/
+theorem CPtr.valid_iff_not_reserved (ptr : CPtr) :
+    ptr.valid ↔ ptr.isReserved = false := by
+  simp [CPtr.valid, CPtr.isReserved]
+
+/-- WS-H14f: The sentinel CPtr is not valid. -/
+theorem CPtr.sentinel_not_valid : ¬ CPtr.sentinel.valid := by
+  simp [CPtr.valid, CPtr.sentinel]
+
+/-- WS-H14f: The sentinel ObjId is not valid. -/
+theorem ObjId.sentinel_not_valid : ¬ ObjId.sentinel.valid := by
+  simp [ObjId.valid, ObjId.sentinel]
 
 end SeLe4n
