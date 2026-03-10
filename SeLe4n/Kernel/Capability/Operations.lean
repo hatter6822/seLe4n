@@ -49,6 +49,73 @@ def cspaceLookupPath (addr : CSpacePathAddr) : Kernel Capability :=
     | .error e => .error e
     | .ok (resolved, st') => cspaceLookupSlot resolved st'
 
+-- ============================================================================
+-- WS-H13/H-01: Multi-level CSpace resolution with compressed-path CNodes
+-- ============================================================================
+
+/-- WS-H13/H-01: Multi-level CSpace capability address resolution.
+
+Walks the CNode graph starting at `rootId`, consuming `guardWidth + radixWidth`
+bits per hop from the capability address `addr`. Each CNode level:
+1. Extracts guard bits and verifies they match `guardValue`.
+2. Extracts radix bits to compute the slot index.
+3. If bits remain, looks up the slot and recurses into the child CNode.
+4. If all bits are consumed, returns the resolved slot reference.
+
+Termination is guaranteed by strict descent of `bitsRemaining`: each hop
+consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
+invariant / `hProgress`). -/
+def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  if hZero : bitsRemaining = 0 then .error .illegalState        -- no bits to consume
+  else
+    match st.objects[rootId]? with
+    | some (.cnode cn) =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if hCons : consumed = 0 then .error .illegalState  -- zero-width CNode
+      else if bitsRemaining < consumed then .error .illegalState
+      else
+        -- Extract guard and slot index bits
+        let shiftedAddr := addr.toNat >>> (bitsRemaining - consumed)
+        let radixMask := 2 ^ cn.radixWidth
+        let slotIndex := shiftedAddr % radixMask
+        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        if guardExtracted ≠ cn.guardValue then .error .invalidCapability
+        else
+          let slot := SeLe4n.Slot.ofNat slotIndex
+          if bitsRemaining - consumed = 0 then
+            .ok { cnode := rootId, slot := slot }   -- leaf: all bits consumed
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                have hConsPos : consumed > 0 := Nat.pos_of_ne_zero hCons
+                have hBitsPos : bitsRemaining > 0 := Nat.pos_of_ne_zero hZero
+                have : bitsRemaining - consumed < bitsRemaining := Nat.sub_lt hBitsPos hConsPos
+                resolveCapAddress childId addr (bitsRemaining - consumed) st
+              | _ => .error .invalidCapability
+            | none => .error .invalidCapability
+    | _ => .error .objectNotFound
+  termination_by bitsRemaining
+
+/-- WS-H13: Resolve a capability address using multi-level CSpace resolution.
+This wraps `resolveCapAddress` in the kernel monad. The `bitsRemaining`
+parameter defaults to the root CNode's `depth` field. -/
+def resolveCapAddressK (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) : Kernel SlotRef :=
+  fun st =>
+    match resolveCapAddress rootId addr bitsRemaining st with
+    | .ok ref => .ok (ref, st)
+    | .error e => .error e
+
+/-- WS-H13: Lookup a capability via multi-level CSpace resolution.
+Composes `resolveCapAddress` with slot lookup. -/
+def cspaceLookupMultiLevel (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) : Kernel Capability :=
+  fun st =>
+    match resolveCapAddress rootId addr bitsRemaining st with
+    | .ok ref => cspaceLookupSlot ref st
+    | .error e => .error e
+
 /-- Insert a capability into an empty slot.
 
 WS-E4/H-02: Guarded against occupied-slot overwrites. If the target slot

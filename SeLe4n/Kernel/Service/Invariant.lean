@@ -247,18 +247,23 @@ theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
   | some svc =>
       have hSvc : lookupService st sid = some svc := hLookup
       by_cases hStopped : svc.status = .stopped
-      · by_cases hAllow : policyAllowsStart svc
-        · by_cases hDeps : dependenciesSatisfied st sid
-          · unfold storeServiceEntry at hStep
-            simp [hLookup, hStopped, hAllow, hDeps, storeServiceState] at hStep
-            cases hStep
-            exact ⟨
-              storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
-              storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
-            ⟩
-          · simp [hLookup, hStopped, hAllow, hDeps] at hStep
-        · simp [hLookup, hStopped, hAllow] at hStep
+      · simp [hLookup, hStopped] at hStep
+        cases hBacking : st.objects[svc.identity.backingObject]? with
+        | none => simp [hBacking] at hStep
+        | some _ =>
+            simp [hBacking] at hStep
+            by_cases hAllow : policyAllowsStart svc
+            · by_cases hDeps : dependenciesSatisfied st sid
+              · unfold storeServiceEntry at hStep
+                simp [hAllow, hDeps, storeServiceState] at hStep
+                cases hStep
+                exact ⟨
+                  storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
+                  storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
+                  storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
+                ⟩
+              · simp [hAllow, hDeps] at hStep
+            · simp [hAllow] at hStep
       · simp [hLookup, hStopped] at hStep
 
 theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
@@ -1214,5 +1219,97 @@ theorem serviceRestart_decompose
       refine ⟨pair.2, ?_, hStep⟩
       have : pair = ((), pair.2) := Prod.ext (Subsingleton.elim _ _) rfl
       rw [this] at hStop
+
+-- ============================================================================
+-- WS-H13/M-17: serviceCountBounded invariant integration
+-- ============================================================================
+
+/-- WS-H13/M-17: Service graph invariant bundle — combines service dependency
+acyclicity with the service count bound. The count bound is required by
+`bfs_complete_for_nontrivialPath` (BFS/DFS completeness), which in turn is
+required by `serviceRegisterDependency_preserves_acyclicity`.
+
+By maintaining both as a bundle, the acyclicity preservation proof chain is
+self-contained: the count bound hypothesis is always available when needed. -/
+def serviceGraphInvariant (st : SystemState) : Prop :=
+  serviceDependencyAcyclic st ∧ serviceCountBounded st
+
+/-- WS-H13: `serviceRegisterDependency` preserves the service graph invariant.
+This closes the gap where `serviceCountBounded` was required as a hypothesis
+but never proved as a maintained invariant. -/
+theorem serviceRegisterDependency_preserves_serviceGraphInvariant
+    (svcId depId : ServiceId) (st st' : SystemState)
+    (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
+    (hInv : serviceGraphInvariant st) :
+    serviceGraphInvariant st' := by
+  obtain ⟨hAcyc, hBound⟩ := hInv
+  constructor
+  · exact serviceRegisterDependency_preserves_acyclicity svcId depId st st' hReg hAcyc hBound
+  · -- serviceCountBounded transfers: storeServiceState only changes services,
+    -- not objectIndex, so serviceBfsFuel is preserved. The universe list
+    -- is extended at most by one node (the updated service entry).
+    unfold serviceRegisterDependency at hReg
+    cases hSvc : lookupService st svcId with
+    | none => simp [hSvc] at hReg
+    | some svc =>
+        simp only [hSvc] at hReg
+        cases hDep : lookupService st depId with
+        | none => simp [hDep] at hReg
+        | some _ =>
+            simp only [hDep] at hReg
+            by_cases hSelf : svcId = depId
+            · simp [hSelf] at hReg; cases hReg; exact hBound
+            · simp only [hSelf, ite_false] at hReg
+              by_cases hExists : depId ∈ svc.dependencies
+              · simp [hExists] at hReg; cases hReg; exact hBound
+              · simp only [hExists, ite_false] at hReg
+                by_cases hCycle : serviceHasPathTo st depId svcId (serviceBfsFuel st)
+                · simp [hCycle] at hReg
+                · simp only [hCycle, ite_false] at hReg
+                  unfold storeServiceEntry at hReg; simp at hReg; cases hReg
+                  -- Post-state: storeServiceState preserves objectIndex
+                  obtain ⟨ns, hU, hLen⟩ := hBound
+                  exact ⟨ns, bfsUniverse_of_storeServiceState st svcId
+                    { svc with dependencies := svc.dependencies ++ [depId] } ns hU, by
+                    show ns.length ≤ (storeServiceState svcId _ st).objectIndex.length + 256
+                    simp [storeServiceState]; exact hLen⟩
+
+/-- WS-H13: `serviceStart` preserves the service graph invariant.
+Starting a service does not modify the dependency graph. -/
+theorem serviceStart_preserves_serviceGraphInvariant
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hInv : serviceGraphInvariant st)
+    (hStep : serviceStart sid policy st = .ok ((), st')) :
+    serviceGraphInvariant st' := by
+  obtain ⟨hAcyc, hBound⟩ := hInv
+  constructor
+  · -- Start only changes service status, not dependencies
+    intro s hCycle
+    exact hAcyc s (serviceNontrivialPath_of_serviceState_change st st' s s
+      (serviceStart_preserves_objects st st' sid policy hStep) hCycle)
+  · -- objectIndex preserved → fuel preserved → bound transfers
+    obtain ⟨ns, hU, hLen⟩ := hBound
+    have hObjIdx := serviceStart_preserves_objectIndex st st' sid policy hStep
+    exact ⟨ns, bfsUniverse_of_objects_services st st' ns
+      (serviceStart_preserves_objects st st' sid policy hStep)
+      hU, by rw [show st'.objectIndex = st.objectIndex from hObjIdx]; exact hLen⟩
+
+/-- WS-H13: `serviceStop` preserves the service graph invariant.
+Stopping a service does not modify the dependency graph. -/
+theorem serviceStop_preserves_serviceGraphInvariant
+    (st st' : SystemState) (sid : ServiceId) (policy : ServicePolicy)
+    (hInv : serviceGraphInvariant st)
+    (hStep : serviceStop sid policy st = .ok ((), st')) :
+    serviceGraphInvariant st' := by
+  obtain ⟨hAcyc, hBound⟩ := hInv
+  constructor
+  · intro s hCycle
+    exact hAcyc s (serviceNontrivialPath_of_serviceState_change st st' s s
+      (serviceStop_preserves_objects st st' sid policy hStep) hCycle)
+  · obtain ⟨ns, hU, hLen⟩ := hBound
+    have hObjIdx := serviceStop_preserves_objectIndex st st' sid policy hStep
+    exact ⟨ns, bfsUniverse_of_objects_services st st' ns
+      (serviceStop_preserves_objects st st' sid policy hStep)
+      hU, by rw [show st'.objectIndex = st.objectIndex from hObjIdx]; exact hLen⟩
 
 end SeLe4n.Kernel

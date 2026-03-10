@@ -1134,17 +1134,17 @@ private def runWSH7Checks : IO Unit := do
   let capA : Capability := { target := .object endpointId, rights := [.read], badge := none }
   let capB : Capability := { target := .object notificationId, rights := [.read, .write], badge := none }
   let cn1 : CNode :=
-    { guard := 0, radix := 2
+    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
       slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 1 capA).insert 2 capB }
   let cn2 : CNode :=
-    { guard := 0, radix := 2
+    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
       slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert 2 capB).insert 1 capA }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { guard := 0, radix := 1, slots := Std.HashMap.ofList [(0, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := Std.HashMap.ofList [(0, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
