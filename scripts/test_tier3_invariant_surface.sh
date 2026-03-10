@@ -150,6 +150,32 @@ run_check "INVARIANT" rg -n '^theorem assumptionContractMap_nonempty' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem assumptionTransitionMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 
+# WS-H15a: InterruptBoundaryContract decidability fields
+run_check "INVARIANT" rg -n '^\s*irqLineSupportedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^\s*irqHandlerMappedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
+
+# WS-H15b: RPi5 platform hardening anchors
+run_check "INVARIANT" rg -n '^def mmioRegions' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def mmioRegionDisjointCheck' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem mmioRegionDisjoint_holds' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5MachineConfig_wellFormed' SeLe4n/Platform/RPi5/Board.lean
+
+# WS-H15c: Syscall capability-checking wrappers
+run_check "INVARIANT" rg -n '^structure SyscallGate' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallLookupCap' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallInvoke' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_state_unchanged' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiEndpointSend' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiCspaceMint' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiLifecycleRetype' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiVspaceMap' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiServiceStart' SeLe4n/Kernel/API.lean
+
+# WS-H15d: AdapterProofHooks concrete instantiation
+run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^def simRestrictiveAdapterProofHooks' SeLe4n/Platform/Sim/ProofHooks.lean
 
 # WS-A5 closure anchors: test-only contract fixture separation + policy visibility.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.MainTraceHarness$' Main.lean

@@ -937,3 +937,29 @@ Preservation theorems:
 - `serviceStart_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged)
 - `serviceStop_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged, extra backing-object branch)
 - `serviceRegisterDependency_preserves_serviceGraphInvariant` — inline `serviceCountBounded` transfer through dependency insertion
+
+## WS-H15: Platform & API Hardening (v0.14.7)
+
+### Syscall capability-checking (WS-H15c)
+
+Introduces the seL4-style capability-gated syscall entry pattern:
+
+- **`SyscallGate`** — structure encoding caller identity, CSpace root, capability
+  address, depth, and required access right.
+- **`syscallLookupCap`** — resolves a capability through `resolveCapAddress` and
+  validates the required access right.
+- **`syscallInvoke`** — gated combinator that composes lookup with an operation.
+- **Soundness theorems**: `syscallLookupCap_implies_capability_held` (successful
+  lookup implies capability held with required right), `syscallLookupCap_state_unchanged`
+  (lookup is read-only), `syscallInvoke_requires_right` (successful invocation
+  implies caller held required capability).
+- **13 `api*` wrappers**: capability-gated entry points for IPC, CSpace, lifecycle,
+  VSpace, and service operations.
+
+### Adapter proof hooks (WS-H15d)
+
+- **`advanceTimerState_preserves_proofLayerInvariantBundle`** — generic theorem
+  proving timer advancement preserves the full 7-conjunct invariant bundle,
+  applicable to any `RuntimeBoundaryContract`.
+- **`simRestrictiveAdapterProofHooks`** — concrete `AdapterProofHooks` instance
+  for the simulation restrictive runtime contract.

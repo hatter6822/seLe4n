@@ -100,4 +100,32 @@ def timerPpiId : SeLe4n.Irq := ⟨30⟩
 /-- ARM Generic Timer virtual timer PPI: INTID 27. -/
 def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
 
+-- ============================================================================
+-- WS-H15b/A-41: MMIO region definitions and disjointness
+-- ============================================================================
+
+/-- Known MMIO peripheral regions on BCM2712 that must not overlap with RAM.
+    Each region covers a specific hardware peripheral's register space. -/
+def mmioRegions : List SeLe4n.MemoryRegion :=
+  [ { base := uart0Base,            size := 0x1000, kind := .device }  -- PL011 UART
+  , { base := gicDistributorBase,   size := 0x1000, kind := .device }  -- GIC-400 distributor
+  , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
+  ]
+
+/-- WS-H15b/A-41: Computable check that MMIO regions do not overlap with any
+    RAM region in the RPi5 memory map. Returns `true` iff every MMIO-RAM pair
+    is non-overlapping. -/
+def mmioRegionDisjointCheck : Bool :=
+  mmioRegions.all fun mmio =>
+    rpi5MemoryMap.all fun ram =>
+      ram.kind != .ram || !mmio.overlaps ram
+
+/-- WS-H15b/A-41: Proof that RPi5 MMIO regions are disjoint from RAM. -/
+theorem mmioRegionDisjoint_holds : mmioRegionDisjointCheck = true := by native_decide
+
+/-- WS-H15b/A-41: The RPi5 machine configuration is well-formed: nonzero region
+    sizes, no overlapping regions, power-of-two page size, positive widths,
+    and all region end addresses fit within the 44-bit physical address space. -/
+theorem rpi5MachineConfig_wellFormed : rpi5MachineConfig.wellFormed = true := by native_decide
+
 end SeLe4n.Platform.RPi5

@@ -27,13 +27,26 @@ namespace SeLe4n.Platform.RPi5
 open SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 
-/-- RPi5 runtime contract: timer must not go backward, registers are always
-    stable (ARMv8 context-switch guarantee), and memory access is restricted
-    to declared RAM regions in the BCM2712 memory map. -/
+/-- WS-H15b/A-41: RPi5 runtime contract with substantive predicates.
+
+Timer monotonicity: ARM Generic Timer (CNTPCT_EL0) is monotonically
+non-decreasing. Counter rollover is outside the operational lifetime.
+
+Register context stability: Validates that either the stack pointer is
+preserved across a state transition (callee-save guarantee) OR a context
+switch is in progress (scheduler transitions may update SP as part of
+thread dispatch). This replaces the previous `True` placeholder with a
+non-trivial hardware-aligned predicate.
+
+Memory access: Restricted to declared RAM regions in the BCM2712 memory map.
+Device and reserved regions require explicit MMIO adapter calls. -/
 def rpi5RuntimeContract : RuntimeBoundaryContract :=
   {
     timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
-    registerContextStable := fun _ _ => True
+    registerContextStable := fun st st' =>
+      -- ARMv8 context-switch guarantee: SP preserved OR context switch in progress
+      st.machine.regs.sp = st'.machine.regs.sp ∨
+      st'.scheduler.current ≠ st.scheduler.current
     memoryAccessAllowed := fun _ addr =>
       rpi5MachineConfig.memoryMap.any fun region =>
         region.kind == .ram && region.contains addr

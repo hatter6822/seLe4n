@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "9a7028aa73fa73156b93410267bd512f583274cb",
-      "tree_sha": "94712024d59ac7bb86df2998be136070f4361d63",
-      "committed_at_utc": "2026-03-10T13:54:59-04:00"
+      "branch": "claude/refine-api-hardening-plan-Eqmwt",
+      "commit_sha": "abe907d83786ee94a045e5983e9d94a85868ac2a",
+      "tree_sha": "3eedb802add70a796dde7a3ff7e139a68f343097",
+      "committed_at_utc": "2026-03-10T17:55:08+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "afb9a5f3fdd2f42e4bff1b2f1ce58f28b683062096456fb0ba168df5cb26e543"
+    "source_digest": "665d94571bd8b21782ab3286ec60fa7185925717f3747d41225a3010a3fafdc8"
   },
   "summary": {
-    "module_count": 68,
-    "declaration_count": 1890
+    "module_count": 69,
+    "declaration_count": 1921
   },
   "readme_sync": {
-    "version": "0.14.6",
+    "version": "0.14.7",
     "lean_toolchain": "v4.28.0",
-    "production_files": 65,
-    "production_loc": 31600,
+    "production_files": 66,
+    "production_loc": 32007,
     "test_files": 3,
     "test_loc": 2412,
-    "proved_theorem_lemma_decls": 1034,
+    "proved_theorem_lemma_decls": 1045,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 3,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -57,6 +57,175 @@
           "line": 72,
           "called": [
             "apiInvariantBundle"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "SyscallGate",
+          "line": 109,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "syscallLookupCap",
+          "line": 131,
+          "called": [
+            "SyscallGate"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallInvoke",
+          "line": 145,
+          "called": [
+            "SyscallGate",
+            "syscallLookupCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallLookupCap_implies_capability_held",
+          "line": 158,
+          "called": [
+            "SyscallGate",
+            "syscallLookupCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallLookupCap_state_unchanged",
+          "line": 180,
+          "called": [
+            "SyscallGate",
+            "syscallLookupCap",
+            "syscallLookupCap_implies_capability_held"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallInvoke_requires_right",
+          "line": 189,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke",
+            "syscallLookupCap_implies_capability_held"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiEndpointSend",
+          "line": 209,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiEndpointReceive",
+          "line": 216,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiEndpointCall",
+          "line": 222,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiEndpointReply",
+          "line": 228,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiCspaceMint",
+          "line": 233,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiCspaceCopy",
+          "line": 239,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiCspaceMove",
+          "line": 244,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiCspaceDelete",
+          "line": 249,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiLifecycleRetype",
+          "line": 254,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiVspaceMap",
+          "line": 260,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiVspaceUnmap",
+          "line": 266,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiServiceStart",
+          "line": 271,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiServiceStop",
+          "line": 276,
+          "called": [
+            "SyscallGate",
+            "syscallInvoke"
           ]
         }
       ]
@@ -224,19 +393,19 @@
         {
           "kind": "structure",
           "name": "InterruptBoundaryContract",
-          "line": 51,
+          "line": 55,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "ContractRef",
-          "line": 56,
+          "line": 62,
           "called": []
         },
         {
           "kind": "def",
           "name": "assumptionContractMap",
-          "line": 67,
+          "line": 73,
           "called": [
             "ArchAssumption",
             "ContractRef"
@@ -245,7 +414,7 @@
         {
           "kind": "def",
           "name": "assumptionTransitionMap",
-          "line": 75,
+          "line": 81,
           "called": [
             "ArchAssumption",
             "TransitionSurface"
@@ -254,7 +423,7 @@
         {
           "kind": "def",
           "name": "assumptionInvariantMap",
-          "line": 83,
+          "line": 89,
           "called": [
             "ArchAssumption",
             "InvariantSurface"
@@ -263,7 +432,7 @@
         {
           "kind": "def",
           "name": "assumptionInventory",
-          "line": 91,
+          "line": 97,
           "called": [
             "ArchAssumption"
           ]
@@ -271,7 +440,7 @@
         {
           "kind": "def",
           "name": "assumptionInventoryComplete",
-          "line": 100,
+          "line": 106,
           "called": [
             "assumptionInventory"
           ]
@@ -279,7 +448,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInventoryComplete_holds",
-          "line": 103,
+          "line": 109,
           "called": [
             "assumptionInventory",
             "assumptionInventoryComplete"
@@ -288,7 +457,7 @@
         {
           "kind": "theorem",
           "name": "assumptionContractMap_nonempty",
-          "line": 108,
+          "line": 114,
           "called": [
             "ArchAssumption",
             "assumptionContractMap"
@@ -297,7 +466,7 @@
         {
           "kind": "theorem",
           "name": "assumptionTransitionMap_nonempty",
-          "line": 112,
+          "line": 118,
           "called": [
             "ArchAssumption",
             "assumptionTransitionMap"
@@ -306,7 +475,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInvariantMap_nonempty",
-          "line": 116,
+          "line": 122,
           "called": [
             "ArchAssumption",
             "assumptionInvariantMap"
@@ -315,13 +484,13 @@
         {
           "kind": "inductive",
           "name": "ExceptionLevel",
-          "line": 151,
+          "line": 157,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ExtendedBootBoundaryContract",
-          "line": 170,
+          "line": 176,
           "called": [
             "BootBoundaryContract",
             "ExceptionLevel"
@@ -332,7 +501,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 27,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -538,6 +707,29 @@
           "line": 378,
           "called": [
             "AdapterProofHooks",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "advanceTimerState_preserves_capabilityInvariantBundle",
+          "line": 420,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "advanceTimerState_preserves_ipcInvariantFull",
+          "line": 429,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
+          "line": 436,
+          "called": [
+            "advanceTimerState_preserves_capabilityInvariantBundle",
+            "advanceTimerState_preserves_ipcInvariantFull",
+            "advanceTimerState_preserves_vspaceInvariantBundle",
             "proofLayerInvariantBundle"
           ]
         }
@@ -10777,13 +10969,13 @@
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 40,
+          "line": 41,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 46,
+          "line": 47,
           "called": [
             "AccessRight",
             "CapTarget"
@@ -10792,13 +10984,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 52,
+          "line": 53,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 54,
+          "line": 55,
           "called": [
             "AccessRight",
             "Capability"
@@ -10807,19 +10999,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 61,
+          "line": 62,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 65,
+          "line": 66,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 73,
+          "line": 74,
           "called": [
             "Capability"
           ]
@@ -10827,13 +11019,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 79,
+          "line": 80,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 81,
+          "line": 82,
           "called": [
             "IpcMessage"
           ]
@@ -10841,7 +11033,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 85,
+          "line": 86,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -10851,7 +11043,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 91,
+          "line": 92,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -10861,7 +11053,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 95,
+          "line": 96,
           "called": [
             "bounded",
             "empty",
@@ -10872,7 +11064,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 99,
+          "line": 100,
           "called": [
             "IpcMessage",
             "bounded",
@@ -10884,19 +11076,19 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 115,
+          "line": 116,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 128,
+          "line": 129,
           "called": []
         },
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 133,
+          "line": 134,
           "called": [
             "IpcMessage",
             "QueuePPrev",
@@ -10905,8 +11097,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:172>",
-          "line": 172,
+          "name": "<anonymous:instance:173>",
+          "line": 173,
           "called": [
             "TCB"
           ]
@@ -10914,13 +11106,13 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 186,
+          "line": 187,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 197,
+          "line": 198,
           "called": [
             "IntrusiveQueue"
           ]
@@ -10928,13 +11120,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 202,
+          "line": 203,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 211,
+          "line": 212,
           "called": [
             "NotificationState"
           ]
@@ -10942,7 +11134,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 227,
+          "line": 228,
           "called": [
             "Capability"
           ]
@@ -10950,19 +11142,19 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 236,
+          "line": 237,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 241,
+          "line": 242,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 256,
+          "line": 257,
           "called": [
             "UntypedChild"
           ]
@@ -10970,13 +11162,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 272,
+          "line": 273,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 275,
+          "line": 276,
           "called": [
             "UntypedObject"
           ]
@@ -10984,7 +11176,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 279,
+          "line": 280,
           "called": [
             "UntypedObject"
           ]
@@ -10992,7 +11184,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 284,
+          "line": 285,
           "called": [
             "UntypedObject"
           ]
@@ -11000,7 +11192,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 296,
+          "line": 297,
           "called": [
             "UntypedObject"
           ]
@@ -11008,7 +11200,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 300,
+          "line": 301,
           "called": [
             "UntypedObject"
           ]
@@ -11016,7 +11208,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 304,
+          "line": 305,
           "called": [
             "UntypedObject"
           ]
@@ -11024,7 +11216,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 308,
+          "line": 309,
           "called": [
             "UntypedObject"
           ]
@@ -11032,7 +11224,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 313,
+          "line": 314,
           "called": [
             "UntypedObject"
           ]
@@ -11040,7 +11232,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 318,
+          "line": 319,
           "called": [
             "UntypedObject"
           ]
@@ -11048,7 +11240,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 322,
+          "line": 323,
           "called": [
             "watermarkValid"
           ]
@@ -11056,7 +11248,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 326,
+          "line": 327,
           "called": [
             "childrenWithinWatermark"
           ]
@@ -11064,7 +11256,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 331,
+          "line": 332,
           "called": [
             "childrenNonOverlap"
           ]
@@ -11072,7 +11264,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 336,
+          "line": 337,
           "called": [
             "childrenUniqueIds"
           ]
@@ -11080,7 +11272,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 341,
+          "line": 342,
           "called": [
             "empty_childrenNonOverlap",
             "empty_childrenUniqueIds",
@@ -11092,7 +11284,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 347,
+          "line": 348,
           "called": [
             "UntypedObject",
             "canAllocate"
@@ -11101,7 +11293,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 354,
+          "line": 355,
           "called": [
             "UntypedObject",
             "allocate"
@@ -11110,7 +11302,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 373,
+          "line": 374,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11119,7 +11311,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 382,
+          "line": 383,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11128,7 +11320,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 389,
+          "line": 390,
           "called": [
             "UntypedObject",
             "allocate_watermark_advance"
@@ -11137,7 +11329,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 396,
+          "line": 397,
           "called": [
             "UntypedObject",
             "allocate_some_iff",
@@ -11148,7 +11340,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 407,
+          "line": 408,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11157,7 +11349,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 418,
+          "line": 419,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11166,7 +11358,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 436,
+          "line": 437,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11175,7 +11367,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 458,
+          "line": 459,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11184,7 +11376,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 477,
+          "line": 478,
           "called": [
             "UntypedObject",
             "reset",
@@ -11194,7 +11386,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 481,
+          "line": 482,
           "called": [
             "UntypedObject",
             "reset",
@@ -12099,7 +12291,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 12,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -12174,13 +12366,43 @@
           "name": "virtualTimerPpiId",
           "line": 101,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "mmioRegions",
+          "line": 109,
+          "called": [
+            "gicCpuInterfaceBase",
+            "gicDistributorBase",
+            "uart0Base"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mmioRegionDisjointCheck",
+          "line": 118,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioRegionDisjoint_holds",
+          "line": 124,
+          "called": [
+            "mmioRegionDisjointCheck"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5MachineConfig_wellFormed",
+          "line": 129,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Platform.RPi5.BootContract",
       "path": "SeLe4n/Platform/RPi5/BootContract.lean",
-      "declaration_count": 3,
+      "declaration_count": 5,
       "declarations": [
         {
           "kind": "namespace",
@@ -12191,13 +12413,25 @@
         {
           "kind": "def",
           "name": "rpi5BootContract",
-          "line": 35,
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5BootContract_objectType_holds",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5BootContract_capabilityRef_holds",
+          "line": 53,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5InterruptContract",
-          "line": 52,
+          "line": 68,
           "called": []
         }
       ]
@@ -12243,7 +12477,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 33,
+          "line": 43,
           "called": []
         }
       ]
@@ -12281,28 +12515,55 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Sim",
-          "line": 25,
+          "line": 26,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SimPlatform",
-          "line": 28,
+          "line": 29,
           "called": []
         },
         {
           "kind": "def",
           "name": "simMachineConfig",
-          "line": 32,
+          "line": 33,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simPlatformBinding",
-          "line": 47,
+          "line": 48,
           "called": [
             "SimPlatform",
             "simMachineConfig"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Sim.ProofHooks",
+      "path": "SeLe4n/Platform/Sim/ProofHooks.lean",
+      "declaration_count": 3,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.Sim",
+          "line": 27,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "simRestrictiveAdapterProofHooks",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "simRestrictive_adapter_preserves_bundle",
+          "line": 48,
+          "called": [
+            "simRestrictiveAdapterProofHooks"
           ]
         }
       ]

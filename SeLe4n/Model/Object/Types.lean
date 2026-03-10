@@ -31,6 +31,7 @@ inductive AccessRight where
   | write
   | grant
   | grantReply
+  | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq
 
 /-- The addressable target of a capability in the abstract object universe.

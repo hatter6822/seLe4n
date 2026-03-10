@@ -28,6 +28,8 @@ def simInterruptContract : InterruptBoundaryContract :=
   {
     irqLineSupported := fun _ => True
     irqHandlerMapped := fun _ _ => True
+    irqLineSupportedDecidable := by intro _; infer_instance
+    irqHandlerMappedDecidable := by intro _ _; infer_instance
   }
 
 end SeLe4n.Platform.Sim

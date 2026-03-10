@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.14.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.14.7.
 
 ## Build and run
 
@@ -81,9 +81,9 @@ SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
     Invariant/Helpers.lean       Shared NI proof infrastructure
     Invariant/Operations.lean    Per-operation NI proofs
     Invariant/Composition.lean   Trace composition, declassification
-SeLe4n/Kernel/API.lean           Public kernel interface
+SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
-SeLe4n/Platform/Sim/*            Simulation platform contracts
+SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
 SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point

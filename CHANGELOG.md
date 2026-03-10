@@ -1,3 +1,40 @@
+## [0.14.7] - 2026-03-10
+
+### WS-H15a–d: Platform & API Hardening
+
+- **WS-H15a:** Added `Decidable` instance fields (`irqLineSupportedDecidable`,
+  `irqHandlerMappedDecidable`) to `InterruptBoundaryContract`, enabling
+  adapter code to branch on interrupt predicates using `if` without manual
+  instance threading. Updated `simInterruptContract` and `rpi5InterruptContract`.
+- **WS-H15b:** RPi5 platform contract hardening:
+  - Added MMIO region definitions (`mmioRegions`) with disjointness proof
+    (`mmioRegionDisjoint_holds`) via `native_decide`.
+  - Proved `rpi5MachineConfig_wellFormed` (region sizes, overlaps, PA bounds).
+  - Replaced `True` placeholder boot predicates with substantive checks
+    (empty object store, empty capability refs at boot).
+  - Strengthened `rpi5InterruptContract.irqHandlerMapped` from `True` to
+    handler-map lookup validation.
+  - Strengthened `rpi5RuntimeContract.registerContextStable` from `True` to
+    SP-preservation-or-context-switch predicate.
+- **WS-H15c:** Syscall capability-checking wrappers:
+  - Added `SyscallGate` structure and `syscallLookupCap`/`syscallInvoke`
+    combinators implementing the seL4 CSpace-lookup + rights-check pattern.
+  - 3 soundness theorems: `syscallLookupCap_implies_capability_held`,
+    `syscallLookupCap_state_unchanged`, `syscallInvoke_requires_right`.
+  - 13 capability-gated `api*` wrappers: `apiEndpointSend`, `apiEndpointReceive`,
+    `apiEndpointCall`, `apiEndpointReply`, `apiCspaceMint`, `apiCspaceCopy`,
+    `apiCspaceMove`, `apiCspaceDelete`, `apiLifecycleRetype`, `apiVspaceMap`,
+    `apiVspaceUnmap`, `apiServiceStart`, `apiServiceStop`.
+  - Added `retype` variant to `AccessRight` enum.
+- **WS-H15d:** AdapterProofHooks concrete instantiation:
+  - Generic `advanceTimerState_preserves_proofLayerInvariantBundle` theorem
+    proving timer advancement preserves the full 7-conjunct invariant bundle.
+  - `simRestrictiveAdapterProofHooks` concrete instance for the simulation
+    restrictive runtime contract in `Platform/Sim/ProofHooks.lean`.
+- **WS-H15e:** 21 new Tier 3 invariant surface anchors covering all WS-H15
+  additions. Regenerated `docs/codebase_map.json`.
+- **Build jobs:** 136 (up from 134). Zero sorry/axiom.
+
 ## [0.14.5] - 2026-03-10
 
 ### Codebase Module Restructuring

@@ -15,14 +15,13 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-### Remaining WS-H workstreams (H15-H16)
+### Remaining WS-H workstreams (H16)
 
-WS-H1..H14 are all completed. The remaining workstreams address Phase 5 of
+WS-H1..H15 are all completed. The remaining workstream addresses Phase 5 of
 the [v0.12.15 audit plan](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md):
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-H15** | Platform hardening (RPi5 contract population, boot sequence) | Low |
 | **WS-H16** | Testing and documentation expansion | Low |
 
 ### Remaining WS-F workstreams (F5-F8)
@@ -61,6 +60,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-H15** | v0.14.7 | Platform & API hardening: InterruptBoundaryContract decidability (H15a), RPi5 MMIO disjointness/boot contract hardening (H15b), syscall capability-checking wrappers with 3 soundness theorems and 13 `api*` entry points (H15c), generic timer-invariant preservation + concrete `AdapterProofHooks` for Sim restrictive contract (H15d), 21 new Tier 3 anchors (H15e). Closes A-41/A-42 | H15a-e |
 | **WS-H14** | v0.14.6 | Type safety & Prelude foundations: `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal (type-safety enforcement), sentinel predicate completion. Closes A-01/A-02/A-03/A-04/A-06/M-09/M-10/M-11 | H14 |
 | **Restructuring** | v0.14.5 | Module decomposition: 9 monolithic files (1K-5.8K lines) split into 24 focused submodules via re-export hub pattern. 15 private defs tightened after cross-module audit. 209 Tier 3 anchor checks updated. Zero sorry/axiom | Structural |
 | **WS-H13** | v0.14.4 | CSpace/service model enrichment: multi-level CSpace resolution, backing-object verification, `serviceCountBounded` | H13 |
