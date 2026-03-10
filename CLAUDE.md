@@ -284,14 +284,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 ## Documentation rules
 
 When changing behavior, theorems, or workstream status, update in the same PR:
-1. `README.md`
+1. `README.md` — metrics sync from `docs/codebase_map.json` (`readme_sync` key)
 2. `docs/spec/SELE4N_SPEC.md`
 3. `docs/DEVELOPMENT.md`
 4. Affected GitBook chapter(s) — canonical root docs take priority over GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` if claims change
+6. `docs/WORKSTREAM_HISTORY.md` if workstream status changes
+7. Regenerate `docs/codebase_map.json` if Lean sources changed
 
 Canonical ownership: root `docs/` files own policy/spec text. GitBook chapters
 under `docs/gitbook/` are mirrors that summarize and link to canonical sources.
+`docs/WORKSTREAM_HISTORY.md` is the single canonical source for workstream
+planning, status, and history.
 
 ## Website link protection
 
@@ -320,10 +324,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active portfolio**: WS-G (kernel performance optimization) — WS-G1..G9 completed
-- **Active findings baseline**: `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`
-- **Planning backbone**: `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`
-- **Completed**: WS-H12f (v0.14.3), WS-H12e (v0.14.2), WS-H12d (v0.14.1), WS-H12c (v0.14.0), WS-H12b (v0.13.9), WS-H12a (v0.13.8), WS-H11 (v0.13.7), WS-H10 (v0.13.6), WS-H9 (v0.13.4), WS-H8 (v0.13.2), WS-H6 (v0.13.1), WS-H5 (v0.12.19), WS-H4 (v0.12.18), WS-H3 (v0.12.17), WS-H2 (v0.12.16), WS-H1 (v0.12.16), WS-G1..G9 + refinement (v0.12.15), WS-F1..F4 (v0.12.2), WS-E1..E6 (v0.11.6), WS-D1..D4 (v0.11.0), WS-C1..C8 (v0.9.32), WS-B1..B11 (v0.9.0)
+- **Remaining workstreams**: WS-H14..H16 (low priority), WS-F5..F8 (medium/low)
+- **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
+- **Latest audit**: `docs/audits/AUDIT_CODEBASE_v0.13.6.md` — zero critical issues
+- **All prior workstreams completed**: WS-B through WS-H13 (see `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

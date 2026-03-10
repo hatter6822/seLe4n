@@ -219,6 +219,16 @@ theorem t : True := by
                 m.ROOT = old_root
 
     def test_normalized_for_check_ignores_repository_head(self) -> None:
+        readme_sync = {
+            "version": "0.14.4",
+            "lean_toolchain": "v4.28.0",
+            "production_files": 41,
+            "production_loc": 31000,
+            "test_files": 3,
+            "test_loc": 2400,
+            "proved_theorem_lemma_decls": 958,
+            "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
+        }
         base = {
             "schema_version": "1.0.0",
             "repository": {
@@ -233,6 +243,7 @@ theorem t : True := by
             },
             "source_sync": {"source_digest": "abc"},
             "summary": {"module_count": 1, "declaration_count": 2},
+            "readme_sync": readme_sync,
             "modules": [{"module": "Main", "path": "Main.lean", "declaration_count": 0, "declarations": []}],
         }
         changed_head = {
@@ -250,11 +261,22 @@ theorem t : True := by
         self.assertEqual(m.normalized_for_check(base), m.normalized_for_check(changed_head))
 
     def test_normalized_for_check_detects_source_or_module_drift(self) -> None:
+        readme_sync = {
+            "version": "0.14.4",
+            "lean_toolchain": "v4.28.0",
+            "production_files": 41,
+            "production_loc": 31000,
+            "test_files": 3,
+            "test_loc": 2400,
+            "proved_theorem_lemma_decls": 958,
+            "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
+        }
         base = {
             "schema_version": "1.0.0",
             "repository": {"name": "hatter6822/seLe4n", "url": "https://github.com/hatter6822/seLe4n"},
             "source_sync": {"source_digest": "abc"},
             "summary": {"module_count": 1, "declaration_count": 2},
+            "readme_sync": readme_sync,
             "modules": [{"module": "Main", "path": "Main.lean", "declaration_count": 0, "declarations": []}],
         }
         changed_source = {**base, "source_sync": {"source_digest": "def"}}

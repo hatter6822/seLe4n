@@ -348,8 +348,42 @@ def normalized_for_check(payload: dict) -> dict:
         "repository": normalized_repository,
         "source_sync": payload.get("source_sync"),
         "summary": payload.get("summary"),
+        "readme_sync": payload.get("readme_sync"),
         "modules": payload.get("modules"),
     }
+
+
+def _count_loc(paths: list[Path]) -> int:
+    """Count total lines of code across paths."""
+    total = 0
+    for path in paths:
+        with path.open("r", encoding="utf-8") as f:
+            total += sum(1 for _ in f)
+    return total
+
+
+def _count_theorem_like(paths: list[Path]) -> int:
+    """Count theorem/lemma declarations (matches report_current_state.py logic)."""
+    pattern = re.compile(r"^\s*(?:@[\w\[\]\.\s]+\s+)?(?:private\s+)?(?:theorem|lemma)\s+")
+    total = 0
+    for path in paths:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if pattern.match(line):
+                total += 1
+    return total
+
+
+def _read_version() -> str:
+    """Read project version from lakefile.toml."""
+    for line in (ROOT / "lakefile.toml").read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith("version"):
+            return line.split("=", 1)[1].strip().strip('"')
+    return "unknown"
+
+
+def _read_lean_toolchain() -> str:
+    """Read Lean toolchain version from lean-toolchain file."""
+    return (ROOT / "lean-toolchain").read_text(encoding="utf-8").splitlines()[0].strip().split(":")[-1]
 
 
 def build_map() -> dict:
@@ -365,6 +399,9 @@ def build_map() -> dict:
                 declarations=parse_declarations(path),
             )
         )
+
+    prod_paths = [p for p in paths if not str(p.relative_to(ROOT)).startswith("tests/")]
+    test_paths = [p for p in paths if str(p.relative_to(ROOT)).startswith("tests/")]
 
     decl_total = sum(len(m.declarations) for m in modules)
     return {
@@ -382,6 +419,16 @@ def build_map() -> dict:
         "summary": {
             "module_count": len(modules),
             "declaration_count": decl_total,
+        },
+        "readme_sync": {
+            "version": _read_version(),
+            "lean_toolchain": _read_lean_toolchain(),
+            "production_files": len(prod_paths),
+            "production_loc": _count_loc(prod_paths),
+            "test_files": len(test_paths),
+            "test_loc": _count_loc(test_paths),
+            "proved_theorem_lemma_decls": _count_theorem_like(prod_paths),
+            "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
         },
         "modules": [
             {
