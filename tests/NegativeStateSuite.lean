@@ -1414,6 +1414,86 @@ private def runWSH13Checks : IO Unit := do
 
   IO.println "all WS-H13 service negative checks passed"
 
+/-- WS-H15e: Negative tests for syscall capability-checking wrappers. -/
+private def runWSH15Checks : IO Unit := do
+  -- Build a state with a CNode (radixWidth=4, 16 slots) with known capabilities.
+  let cnodeId : SeLe4n.ObjId := ⟨50⟩
+  let epId : SeLe4n.ObjId := ⟨40⟩
+  let callerId : SeLe4n.ThreadId := ⟨1⟩
+  let writeCap : Capability := { target := .object epId, rights := [.write], badge := none }
+  let readOnlyCap : Capability := { target := .object epId, rights := [.read], badge := none }
+  let cn : CNode := {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, writeCap),
+      (⟨1⟩, readOnlyCap)
+    ]
+  }
+  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let st : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject cnodeId (.cnode cn)
+      |>.withObject epId ep
+      |>.build)
+
+  -- H15-NEG-01: syscallLookupCap with non-existent CSpace root
+  let badRootGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := ⟨9999⟩,
+    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+  }
+  expectError "H15 syscallLookupCap non-existent CSpace root"
+    (SeLe4n.Kernel.syscallLookupCap badRootGate st)
+    .objectNotFound
+
+  -- H15-NEG-02: syscallLookupCap with valid CSpace but missing capability (slot 15)
+  let missingSlotGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
+  }
+  expectError "H15 syscallLookupCap valid CSpace missing capability"
+    (SeLe4n.Kernel.syscallLookupCap missingSlotGate st)
+    .invalidCapability
+
+  -- H15-NEG-03: syscallLookupCap with valid capability but wrong right
+  let wrongRightGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write   -- slot 1 has .read only
+  }
+  expectError "H15 syscallLookupCap valid capability wrong right"
+    (SeLe4n.Kernel.syscallLookupCap wrongRightGate st)
+    .illegalAuthority
+
+  -- H15-NEG-04: syscallLookupCap succeeds with correct right
+  let goodGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+  }
+  match SeLe4n.Kernel.syscallLookupCap goodGate st with
+  | .ok (cap, _) =>
+      if cap.hasRight .write then
+        IO.println "positive check passed [H15 syscallLookupCap correct right resolves]"
+      else
+        throw <| IO.userError "H15 syscallLookupCap: resolved cap missing expected right"
+  | .error err =>
+      throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {reprStr err}"
+
+  -- H15-NEG-05: apiEndpointSend through gated path with insufficient rights
+  let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
+  expectError "H15 apiEndpointSend insufficient rights"
+    (SeLe4n.Kernel.apiEndpointSend wrongRightGate epId msg st)
+    .illegalAuthority
+
+  -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
+  let zeroDepthGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨0⟩, capDepth := 0, requiredRight := .write
+  }
+  expectError "H15 syscallLookupCap zero depth"
+    (SeLe4n.Kernel.syscallLookupCap zeroDepthGate st)
+    .illegalState
+
+  IO.println "all WS-H15 syscall capability negative checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1423,3 +1503,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH7Checks
   SeLe4n.Testing.runWSH11Checks
   SeLe4n.Testing.runWSH13Checks
+  SeLe4n.Testing.runWSH15Checks

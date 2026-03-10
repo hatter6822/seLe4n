@@ -1070,6 +1070,80 @@ private def runBoundedMessageExtendedTrace (st1 : SystemState) : IO Unit := do
   | .ok _ =>
       IO.println s!"H12f max caps message accepted: true"
 
+-- ============================================================================
+-- WS-H15e: Syscall capability-gating trace
+-- ============================================================================
+
+/-- WS-H15e: Exercise the capability-gated syscall path:
+1. Build a state with a CNode containing a `.write`-only capability.
+2. Invoke `apiEndpointSend` with correct gate → expect success.
+3. Invoke `apiEndpointSend` with wrong CSpace root → expect `objectNotFound`.
+4. Invoke `apiEndpointSend` with insufficient rights (`.read`) → expect `illegalAuthority`. -/
+private def runSyscallGateTrace (st1 : SystemState) : IO Unit := do
+  -- Build a CNode with radixWidth=4 (16 slots) containing capabilities with
+  -- different rights at different slots.
+  let cnodeId : SeLe4n.ObjId := ⟨50⟩
+  let epId : SeLe4n.ObjId := demoEndpoint
+  let callerId : SeLe4n.ThreadId := ⟨1⟩
+  let writeCap : Capability := { target := .object epId, rights := [.write], badge := none }
+  let readOnlyCap : Capability := { target := .object epId, rights := [.read], badge := none }
+  let retypeCap : Capability := { target := .object demoUntyped, rights := [.retype], badge := none }
+  let cn : CNode := {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, writeCap),
+      (⟨1⟩, readOnlyCap),
+      (⟨2⟩, retypeCap)
+    ]
+  }
+  -- Insert the CNode and a fresh endpoint into the state
+  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let stLocal := { st1 with objects := st1.objects.insert cnodeId (.cnode cn)
+                                        |>.insert epId ep }
+  -- Case 1: Correct gate (slot 0, .write right, depth 4) → success
+  let goodGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+  }
+  let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
+  match SeLe4n.Kernel.apiEndpointSend goodGate epId msg stLocal with
+  | .ok _ => IO.println "H15e syscall gate send (correct): ok"
+  | .error e => IO.println s!"H15e syscall gate send (correct): error {reprStr e}"
+  -- Case 2: Non-existent CSpace root → objectNotFound
+  let badRootGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := ⟨9999⟩,
+    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+  }
+  match SeLe4n.Kernel.apiEndpointSend badRootGate epId msg stLocal with
+  | .ok _ => IO.println "H15e syscall gate send (bad root): unexpected ok"
+  | .error e => IO.println s!"H15e syscall gate send (bad root): {reprStr e}"
+  -- Case 3: Insufficient rights — slot 1 has .read only, we require .write
+  let insufficientGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write
+  }
+  match SeLe4n.Kernel.apiEndpointSend insufficientGate epId msg stLocal with
+  | .ok _ => IO.println "H15e syscall gate send (insufficient rights): unexpected ok"
+  | .error e => IO.println s!"H15e syscall gate send (insufficient rights): {reprStr e}"
+  -- Case 4: Missing capability — slot 15 has no capability
+  let missingCapGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
+  }
+  match SeLe4n.Kernel.apiEndpointSend missingCapGate epId msg stLocal with
+  | .ok _ => IO.println "H15e syscall gate send (missing cap): unexpected ok"
+  | .error e => IO.println s!"H15e syscall gate send (missing cap): {reprStr e}"
+  -- Case 5: apiLifecycleRetype with .retype right → exercises retype gate path
+  let retypeGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRoot := cnodeId,
+    capAddr := ⟨2⟩, capDepth := 4, requiredRight := .retype
+  }
+  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
+  let newObj : KernelObject := .endpoint {}
+  match SeLe4n.Kernel.apiLifecycleRetype retypeGate authSlot ⟨60⟩ newObj stLocal with
+  | .ok _ => IO.println "H15e syscall gate retype: ok"
+  | .error e => IO.println s!"H15e syscall gate retype: {reprStr e}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -1094,6 +1168,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runBoundedMessageExtendedTrace st1
   runSchedulerTimingDomainTrace st1
   runUntypedMemoryTrace st1
+  runSyscallGateTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

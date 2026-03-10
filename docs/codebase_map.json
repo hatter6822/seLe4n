@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-api-hardening-plan-Eqmwt",
-      "commit_sha": "abe907d83786ee94a045e5983e9d94a85868ac2a",
-      "tree_sha": "3eedb802add70a796dde7a3ff7e139a68f343097",
-      "committed_at_utc": "2026-03-10T17:55:08+00:00"
+      "commit_sha": "1850a148f46e7610b510a99fcc117abd4b9fa20b",
+      "tree_sha": "6cfcb540d1aa11872492fc7784a2115e521dae06",
+      "committed_at_utc": "2026-03-10T22:01:35+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "665d94571bd8b21782ab3286ec60fa7185925717f3747d41225a3010a3fafdc8"
+    "source_digest": "168d0dbc18504aa042d78390be787c0f1b603ed38470c270d3b165683c743ba8"
   },
   "summary": {
-    "module_count": 69,
-    "declaration_count": 1921
+    "module_count": 70,
+    "declaration_count": 1933
   },
   "readme_sync": {
     "version": "0.14.7",
     "lean_toolchain": "v4.28.0",
-    "production_files": 66,
-    "production_loc": 32007,
+    "production_files": 67,
+    "production_loc": 32257,
     "test_files": 3,
-    "test_loc": 2412,
-    "proved_theorem_lemma_decls": 1045,
+    "test_loc": 2493,
+    "proved_theorem_lemma_decls": 1052,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -352,7 +352,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Assumptions",
       "path": "SeLe4n/Kernel/Architecture/Assumptions.lean",
-      "declaration_count": 19,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -397,15 +397,31 @@
           "called": []
         },
         {
+          "kind": "theorem",
+          "name": "irqLineSupported_decidable_consistent",
+          "line": 63,
+          "called": [
+            "InterruptBoundaryContract"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "irqHandlerMapped_decidable_consistent",
+          "line": 74,
+          "called": [
+            "InterruptBoundaryContract"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "ContractRef",
-          "line": 62,
+          "line": 84,
           "called": []
         },
         {
           "kind": "def",
           "name": "assumptionContractMap",
-          "line": 73,
+          "line": 95,
           "called": [
             "ArchAssumption",
             "ContractRef"
@@ -414,7 +430,7 @@
         {
           "kind": "def",
           "name": "assumptionTransitionMap",
-          "line": 81,
+          "line": 103,
           "called": [
             "ArchAssumption",
             "TransitionSurface"
@@ -423,7 +439,7 @@
         {
           "kind": "def",
           "name": "assumptionInvariantMap",
-          "line": 89,
+          "line": 111,
           "called": [
             "ArchAssumption",
             "InvariantSurface"
@@ -432,7 +448,7 @@
         {
           "kind": "def",
           "name": "assumptionInventory",
-          "line": 97,
+          "line": 119,
           "called": [
             "ArchAssumption"
           ]
@@ -440,7 +456,7 @@
         {
           "kind": "def",
           "name": "assumptionInventoryComplete",
-          "line": 106,
+          "line": 128,
           "called": [
             "assumptionInventory"
           ]
@@ -448,7 +464,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInventoryComplete_holds",
-          "line": 109,
+          "line": 131,
           "called": [
             "assumptionInventory",
             "assumptionInventoryComplete"
@@ -457,7 +473,7 @@
         {
           "kind": "theorem",
           "name": "assumptionContractMap_nonempty",
-          "line": 114,
+          "line": 136,
           "called": [
             "ArchAssumption",
             "assumptionContractMap"
@@ -466,7 +482,7 @@
         {
           "kind": "theorem",
           "name": "assumptionTransitionMap_nonempty",
-          "line": 118,
+          "line": 140,
           "called": [
             "ArchAssumption",
             "assumptionTransitionMap"
@@ -475,7 +491,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInvariantMap_nonempty",
-          "line": 122,
+          "line": 144,
           "called": [
             "ArchAssumption",
             "assumptionInvariantMap"
@@ -484,13 +500,13 @@
         {
           "kind": "inductive",
           "name": "ExceptionLevel",
-          "line": 157,
+          "line": 179,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ExtendedBootBoundaryContract",
-          "line": 176,
+          "line": 198,
           "called": [
             "BootBoundaryContract",
             "ExceptionLevel"
@@ -12444,19 +12460,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 33,
+          "line": 34,
           "called": []
         },
         {
           "kind": "structure",
           "name": "RPi5Platform",
-          "line": 36,
+          "line": 37,
           "called": []
         },
         {
           "kind": "instance",
           "name": "rpi5PlatformBinding",
-          "line": 40,
+          "line": 41,
           "called": [
             "RPi5Platform"
           ]
@@ -12464,9 +12480,52 @@
       ]
     },
     {
+      "module": "SeLe4n.Platform.RPi5.ProofHooks",
+      "path": "SeLe4n/Platform/RPi5/ProofHooks.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 44,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rpi5RestrictiveAdapterProofHooks",
+          "line": 52,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Restrictive_adapterAdvanceTimer_preserves",
+          "line": 65,
+          "called": [
+            "rpi5RestrictiveAdapterProofHooks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Restrictive_adapterWriteRegister_preserves",
+          "line": 77,
+          "called": [
+            "rpi5RestrictiveAdapterProofHooks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Restrictive_adapterReadMemory_preserves",
+          "line": 89,
+          "called": [
+            "rpi5RestrictiveAdapterProofHooks"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Platform.RPi5.RuntimeContract",
       "path": "SeLe4n/Platform/RPi5/RuntimeContract.lean",
-      "declaration_count": 2,
+      "declaration_count": 3,
       "declarations": [
         {
           "kind": "namespace",
@@ -12478,6 +12537,12 @@
           "kind": "def",
           "name": "rpi5RuntimeContract",
           "line": 43,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rpi5RuntimeContractRestrictive",
+          "line": 79,
           "called": []
         }
       ]
@@ -12544,7 +12609,7 @@
     {
       "module": "SeLe4n.Platform.Sim.ProofHooks",
       "path": "SeLe4n/Platform/Sim/ProofHooks.lean",
-      "declaration_count": 3,
+      "declaration_count": 5,
       "declarations": [
         {
           "kind": "namespace",
@@ -12560,8 +12625,24 @@
         },
         {
           "kind": "theorem",
-          "name": "simRestrictive_adapter_preserves_bundle",
-          "line": 48,
+          "name": "simRestrictive_adapterAdvanceTimer_preserves",
+          "line": 47,
+          "called": [
+            "simRestrictiveAdapterProofHooks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "simRestrictive_adapterWriteRegister_preserves",
+          "line": 58,
+          "called": [
+            "simRestrictiveAdapterProofHooks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "simRestrictive_adapterReadMemory_preserves",
+          "line": 69,
           "called": [
             "simRestrictiveAdapterProofHooks"
           ]
@@ -14623,7 +14704,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 38,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -14884,8 +14965,17 @@
         },
         {
           "kind": "def",
+          "name": "runSyscallGateTrace",
+          "line": 1082,
+          "called": [
+            "demoEndpoint",
+            "demoUntyped"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1073,
+          "line": 1147,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -14902,19 +14992,20 @@
             "runLifecycleAndEndpointTrace",
             "runSchedulerTimingDomainTrace",
             "runServiceAndStressTrace",
+            "runSyscallGateTrace",
             "runUntypedMemoryTrace"
           ]
         },
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1105,
+          "line": 1180,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1156,
+          "line": 1231,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -14922,7 +15013,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1170,
+          "line": 1245,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -14930,7 +15021,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1178,
+          "line": 1253,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -15219,7 +15310,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -15525,8 +15616,17 @@
         },
         {
           "kind": "def",
+          "name": "runWSH15Checks",
+          "line": 1418,
+          "called": [
+            "cnodeId",
+            "expectError"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1419,
+          "line": 1499,
           "called": []
         }
       ]

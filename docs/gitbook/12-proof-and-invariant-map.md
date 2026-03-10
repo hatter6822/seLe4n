@@ -956,10 +956,40 @@ Introduces the seL4-style capability-gated syscall entry pattern:
 - **13 `api*` wrappers**: capability-gated entry points for IPC, CSpace, lifecycle,
   VSpace, and service operations.
 
+### Decidability consistency (WS-H15a)
+
+- **`irqLineSupported_decidable_consistent`** — `decide` agrees with the
+  `irqLineSupported` predicate for any `InterruptBoundaryContract`.
+- **`irqHandlerMapped_decidable_consistent`** — same for `irqHandlerMapped`.
+
 ### Adapter proof hooks (WS-H15d)
 
 - **`advanceTimerState_preserves_proofLayerInvariantBundle`** — generic theorem
   proving timer advancement preserves the full 7-conjunct invariant bundle,
   applicable to any `RuntimeBoundaryContract`.
-- **`simRestrictiveAdapterProofHooks`** — concrete `AdapterProofHooks` instance
-  for the simulation restrictive runtime contract.
+- **Simulation platform** (`Platform/Sim/ProofHooks.lean`):
+  - `simRestrictiveAdapterProofHooks` — concrete `AdapterProofHooks` instance
+    for the restrictive contract (all predicates `False`).
+  - 3 end-to-end theorems: `simRestrictive_adapterAdvanceTimer_preserves`,
+    `simRestrictive_adapterWriteRegister_preserves`,
+    `simRestrictive_adapterReadMemory_preserves`.
+- **RPi5 platform** (`Platform/RPi5/ProofHooks.lean`):
+  - `rpi5RuntimeContractRestrictive` — restrictive variant of the RPi5
+    runtime contract. Shares production timer/memory predicates; denies
+    all register writes. Needed because the production contract's SP-only
+    check admits all `writeReg` calls (which never modify `sp`), making
+    `contextMatchesCurrent` preservation unprovable for arbitrary writes.
+  - `rpi5RestrictiveAdapterProofHooks` — concrete `AdapterProofHooks`
+    instance. Timer preservation uses the generic lemma substantively;
+    register write is vacuous (restrictive contract rejects all writes).
+  - 3 end-to-end theorems: `rpi5Restrictive_adapterAdvanceTimer_preserves`,
+    `rpi5Restrictive_adapterWriteRegister_preserves`,
+    `rpi5Restrictive_adapterReadMemory_preserves`.
+
+### Testing (WS-H15e)
+
+- **Trace harness**: 5 syscall gate scenarios (correct gate, bad root,
+  insufficient rights, missing cap, retype gate) in `MainTraceHarness.lean`.
+- **Negative tests**: 6 tests in `NegativeStateSuite.lean` exercising
+  `syscallLookupCap` and `apiEndpointSend` error paths.
+- **Tier 3 anchors**: 31 anchors covering all WS-H15 additions.

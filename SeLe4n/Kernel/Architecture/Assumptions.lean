@@ -58,6 +58,28 @@ structure InterruptBoundaryContract where
   irqLineSupportedDecidable : ∀ irq, Decidable (irqLineSupported irq)
   irqHandlerMappedDecidable : ∀ st irq, Decidable (irqHandlerMapped st irq)
 
+/-- WS-H15a/M-13: The `Decidable` instance for `irqLineSupported` agrees with
+the predicate: `decide` returns `true` if and only if the predicate holds. -/
+theorem irqLineSupported_decidable_consistent
+    (contract : InterruptBoundaryContract) (irq : SeLe4n.Irq) :
+    @decide (contract.irqLineSupported irq) (contract.irqLineSupportedDecidable irq) = true ↔
+    contract.irqLineSupported irq := by
+  letI := contract.irqLineSupportedDecidable irq
+  constructor
+  · intro h; exact of_decide_eq_true h
+  · intro h; exact decide_eq_true h
+
+/-- WS-H15a/M-13: The `Decidable` instance for `irqHandlerMapped` agrees with
+the predicate. -/
+theorem irqHandlerMapped_decidable_consistent
+    (contract : InterruptBoundaryContract) (st : SystemState) (irq : SeLe4n.Irq) :
+    @decide (contract.irqHandlerMapped st irq) (contract.irqHandlerMappedDecidable st irq) = true ↔
+    contract.irqHandlerMapped st irq := by
+  letI := contract.irqHandlerMappedDecidable st irq
+  constructor
+  · intro h; exact of_decide_eq_true h
+  · intro h; exact decide_eq_true h
+
 /-- First-class references to extracted boundary contract obligations. -/
 inductive ContractRef where
   | bootObjectTypeMetadataConsistent

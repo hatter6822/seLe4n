@@ -40,12 +40,11 @@ def simRestrictiveAdapterProofHooks :
     absurd hStable (by simp [simRuntimeContractRestrictive])
   preserveReadMemory := fun _ st hInv _ => hInv
 
-/-- WS-H15d/A-42: The simulation restrictive proof hooks compose with the
-adapter preservation theorems: any successful adapter operation under the
-restrictive contract preserves `proofLayerInvariantBundle`. Since the
-restrictive contract rejects all operations, no successful path exists —
-the theorem is vacuously true but structurally witnesses the composition. -/
-theorem simRestrictive_adapter_preserves_bundle
+/-- WS-H15d/A-33: End-to-end timer advancement preservation for Sim.
+The restrictive contract rejects all timer operations, so the theorem is
+vacuously true — no successful path exists. Structurally witnesses the
+composition of proof hooks with the generic adapter preservation theorem. -/
+theorem simRestrictive_adapterAdvanceTimer_preserves
     (st st' : SystemState) (ticks : Nat)
     (hInv : proofLayerInvariantBundle st)
     (hOk : adapterAdvanceTimer simRuntimeContractRestrictive ticks st = .ok ((), st')) :
@@ -53,5 +52,27 @@ theorem simRestrictive_adapter_preserves_bundle
   adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle
     simRuntimeContractRestrictive simRestrictiveAdapterProofHooks
     ticks st st' hInv hOk
+
+/-- WS-H15d/A-33: End-to-end register write preservation for Sim (vacuous).
+The restrictive contract rejects all register writes. -/
+theorem simRestrictive_adapterWriteRegister_preserves
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterWriteRegister simRuntimeContractRestrictive reg value st = .ok ((), st')) :
+    proofLayerInvariantBundle st' :=
+  adapterWriteRegister_ok_preserves_proofLayerInvariantBundle
+    simRuntimeContractRestrictive simRestrictiveAdapterProofHooks
+    reg value st st' hInv hOk
+
+/-- WS-H15d/A-33: End-to-end memory read preservation for Sim (vacuous).
+The restrictive contract rejects all memory reads. -/
+theorem simRestrictive_adapterReadMemory_preserves
+    (st st' : SystemState) (addr : SeLe4n.PAddr) (byte : UInt8)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterReadMemory simRuntimeContractRestrictive addr st = .ok (byte, st')) :
+    proofLayerInvariantBundle st' :=
+  adapterReadMemory_ok_preserves_proofLayerInvariantBundle
+    simRuntimeContractRestrictive simRestrictiveAdapterProofHooks
+    addr st st' byte hInv hOk
 
 end SeLe4n.Platform.Sim

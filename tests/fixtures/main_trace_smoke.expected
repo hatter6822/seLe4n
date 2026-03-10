@@ -104,6 +104,11 @@ retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuth
 retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
 retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
 retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
+H15e syscall gate send (correct): ok
+H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
+H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
+H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
+H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound
 parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

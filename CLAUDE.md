@@ -84,7 +84,16 @@ SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
 SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
-SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
+  Sim/RuntimeContract.lean       Permissive + restrictive runtime contracts
+  Sim/BootContract.lean          Boot + interrupt contracts (all True)
+  Sim/ProofHooks.lean            AdapterProofHooks for restrictive contract
+  Sim/Contract.lean              PlatformBinding instance (re-export hub)
+SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
+  RPi5/Board.lean                BCM2712 addresses, MMIO, MachineConfig
+  RPi5/RuntimeContract.lean      Substantive runtime + restrictive contract
+  RPi5/BootContract.lean         Boot + interrupt contracts (GIC-400)
+  RPi5/ProofHooks.lean           AdapterProofHooks for restrictive contract
+  RPi5/Contract.lean             PlatformBinding instance (re-export hub)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
@@ -109,13 +118,13 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2337 lines)
 - `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2162 lines)
-- `CHANGELOG.md` (~1600 lines)
+- `CHANGELOG.md` (~1659 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1496 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1484 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1391 lines)
-- `tests/NegativeStateSuite.lean` (~1372 lines)
+- `tests/NegativeStateSuite.lean` (~1506 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1199 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~1171 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~1263 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1050 lines)
 - `SeLe4n/Model/State.lean` (~919 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~885 lines)

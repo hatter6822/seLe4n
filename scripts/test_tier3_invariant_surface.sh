@@ -154,6 +154,10 @@ run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^\s*irqLineSupportedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^\s*irqHandlerMappedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
 
+# WS-H15a: Decidability consistency theorems
+run_check "INVARIANT" rg -n '^theorem irqLineSupported_decidable_consistent' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerMapped_decidable_consistent' SeLe4n/Kernel/Architecture/Assumptions.lean
+
 # WS-H15b: RPi5 platform hardening anchors
 run_check "INVARIANT" rg -n '^def mmioRegions' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def mmioRegionDisjointCheck' SeLe4n/Platform/RPi5/Board.lean
@@ -173,9 +177,17 @@ run_check "INVARIANT" rg -n '^def apiLifecycleRetype' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def apiVspaceMap' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def apiServiceStart' SeLe4n/Kernel/API.lean
 
-# WS-H15d: AdapterProofHooks concrete instantiation
+# WS-H15d: AdapterProofHooks concrete instantiation (Sim + RPi5)
 run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^def simRestrictiveAdapterProofHooks' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterWriteRegister_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterReadMemory_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^def rpi5RestrictiveAdapterProofHooks' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterWriteRegister_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterReadMemory_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^def rpi5RuntimeContractRestrictive' SeLe4n/Platform/RPi5/RuntimeContract.lean
 
 # WS-A5 closure anchors: test-only contract fixture separation + policy visibility.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.MainTraceHarness$' Main.lean

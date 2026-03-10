@@ -26,14 +26,36 @@
     `apiCspaceMove`, `apiCspaceDelete`, `apiLifecycleRetype`, `apiVspaceMap`,
     `apiVspaceUnmap`, `apiServiceStart`, `apiServiceStop`.
   - Added `retype` variant to `AccessRight` enum.
+- **WS-H15a (addendum):** Decidability consistency theorems:
+  `irqLineSupported_decidable_consistent` and
+  `irqHandlerMapped_decidable_consistent` proving `decide` agrees with the
+  underlying predicate.
 - **WS-H15d:** AdapterProofHooks concrete instantiation:
   - Generic `advanceTimerState_preserves_proofLayerInvariantBundle` theorem
     proving timer advancement preserves the full 7-conjunct invariant bundle.
   - `simRestrictiveAdapterProofHooks` concrete instance for the simulation
-    restrictive runtime contract in `Platform/Sim/ProofHooks.lean`.
-- **WS-H15e:** 21 new Tier 3 invariant surface anchors covering all WS-H15
-  additions. Regenerated `docs/codebase_map.json`.
-- **Build jobs:** 136 (up from 134). Zero sorry/axiom.
+    restrictive runtime contract with 3 end-to-end theorems
+    (`simRestrictive_adapterAdvanceTimer_preserves`,
+    `simRestrictive_adapterWriteRegister_preserves`,
+    `simRestrictive_adapterReadMemory_preserves`).
+  - `rpi5RestrictiveAdapterProofHooks` concrete instance for the RPi5
+    restrictive runtime contract (`rpi5RuntimeContractRestrictive`) with 3
+    end-to-end theorems. Timer advancement uses the generic preservation
+    lemma substantively; register write and memory read paths are vacuous
+    (restrictive contract rejects all register writes).
+  - Design note: production RPi5 contract (`rpi5RuntimeContract`) admits
+    all register writes (because `writeReg` never modifies `sp`), making
+    `contextMatchesCurrent` preservation unprovable for arbitrary writes.
+    A future context-switch-aware adapter (WS-H3) will resolve this by
+    combining register-file load with `scheduler.current` update atomically.
+- **WS-H15e:** Testing and documentation:
+  - 31 Tier 3 invariant surface anchors covering all WS-H15 additions.
+  - Syscall capability-gating trace in `MainTraceHarness.lean` (5 scenarios:
+    correct gate, bad root, insufficient rights, missing cap, retype gate).
+  - 6 negative tests in `NegativeStateSuite.lean` exercising syscall
+    capability-checking error paths.
+  - Regenerated `docs/codebase_map.json`.
+- **Build jobs:** 138 (up from 134). Zero sorry/axiom.
 
 ## [0.14.5] - 2026-03-10
 
