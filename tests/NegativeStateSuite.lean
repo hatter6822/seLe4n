@@ -1374,6 +1374,46 @@ def runWSH11Checks : IO Unit := do
 
   IO.println "all WS-H11 VSpace & Architecture checks passed"
 
+/-- WS-H13: Service backing-object and restart negative tests. -/
+private def runWSH13Checks : IO Unit := do
+  -- H13-NEG-01: serviceStart with missing backing object
+  let svcMissing : ServiceId := ⟨700⟩
+  let svcMissingState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withService svcMissing {
+        identity := { sid := svcMissing, backingObject := 9999, owner := 10 }
+        status := .stopped
+        dependencies := []
+        isolatedFrom := []
+      }
+      |>.build)
+  let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
+  expectError "H13 serviceStart with missing backing object"
+    (SeLe4n.Kernel.serviceStart svcMissing allowAll svcMissingState)
+    .backingObjectMissing
+
+  -- H13-NEG-02: serviceRestart where stop succeeds but start fails (dependency violation)
+  let svcRestart : ServiceId := ⟨701⟩
+  let svcRestartState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject 1 (.tcb {
+        tid := 1, priority := 100, domain := 0,
+        cspaceRoot := 10, vspaceRoot := 20, ipcBuffer := 4096,
+        ipcState := .ready })
+      |>.withService svcRestart {
+        identity := { sid := svcRestart, backingObject := 1, owner := 10 }
+        status := .running
+        dependencies := [999]  -- non-existent dependency
+        isolatedFrom := []
+      }
+      |>.build)
+  -- Restart should fail at start-stage with dependency violation
+  expectError "H13 serviceRestart start-stage failure (dep violation)"
+    (SeLe4n.Kernel.serviceRestart svcRestart allowAll allowAll svcRestartState)
+    .dependencyViolation
+
+  IO.println "all WS-H13 service negative checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1382,3 +1422,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runAuditCoverageChecks
   SeLe4n.Testing.runWSH7Checks
   SeLe4n.Testing.runWSH11Checks
+  SeLe4n.Testing.runWSH13Checks

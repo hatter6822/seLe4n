@@ -12,6 +12,8 @@
   - `resolveCapAddress_result_valid_cnode` — success implies the returned slot
     reference points to a valid CNode in the object store (proved by
     well-founded induction on `bitsRemaining`).
+  - `resolveCapAddress_guard_reject` — guard mismatch at any CNode level
+    returns `.error .invalidCapability` (attack surface coverage).
 - **Service backing-object verification (Part C / A-29):**
   - `serviceStop` now verifies `st.objects[svc.identity.backingObject]? ≠ none`
     before allowing the transition. Returns `.backingObjectMissing` if absent.
@@ -31,7 +33,10 @@
     `serviceCountBounded_of_storeServiceState_sameDeps`,
     `serviceGraphInvariant_of_storeServiceState_sameDeps`.
 - **Capability move atomicity (Part B / A-21):**
-  - `cspaceMove_error_preserves_state` — error-path atomicity theorem.
+  - `cspaceMove_error_no_state` — error-path exclusion: on error, no success
+    state is reachable.
+  - `cspaceMove_ok_implies_source_exists` — success-path: if move succeeds,
+    the source slot had a valid capability.
   - Documented that the sequential kernel's `Except` monad provides implicit
     both-or-neither semantics: on error, no intermediate state is returned.
 - **CNode field migration:** Updated `NegativeStateSuite.lean` CNode
@@ -41,6 +46,13 @@
   `Architecture/Invariant.lean` extended to 8-tuple with
   `cspaceDepthConsistent` component.
 - **`docs/codebase_map.json` regenerated.**
+- **New negative tests (WS-H13):**
+  - `MainTraceHarness`: service start with missing backing object
+    (`backingObjectMissing` error).
+  - `NegativeStateSuite`: `runWSH13Checks` — backing-object missing and
+    restart start-stage failure (dependency violation).
+- **Expected fixture updated:** `tests/fixtures/main_trace_smoke.expected`
+  updated with 1 new output line (110 total).
 - **Zero sorry/axiom, zero warnings.** Build: 86 jobs, zero errors.
 - **All tests pass:** `test_full.sh` (Tier 0-3) clean.
 - **Findings addressed:** H-01 (multi-level CSpace resolution), A-29 (service

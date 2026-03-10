@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "8df6c2ae0ad8d5778d4092f60d4fadb41247870e",
-      "tree_sha": "bc5068c03a37cc39ce1c04c9d6e64436c5519c68",
-      "committed_at_utc": "2026-03-10T01:31:14-04:00"
+      "branch": "claude/audit-ws-h13-implementation-PCZpD",
+      "commit_sha": "ddc438992372f9fc0b82195e2c14e9e373fa4e91",
+      "tree_sha": "965cf34790b3376d7b2569a77bfdacd4ce03ebaa",
+      "committed_at_utc": "2026-03-10T05:31:24+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0db0fa16d1c4dd54ea92507820b396734158797984bc5df0b11275e374838725"
+    "source_digest": "b4988aabacfe7912dcc3757b104484075e27623646874fc7a6e23f21ee5eb4e5"
   },
   "summary": {
     "module_count": 44,
-    "declaration_count": 1772
+    "declaration_count": 1777
   },
   "modules": [
     {
@@ -2210,7 +2210,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 37,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
@@ -2311,9 +2311,17 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "resolveCapAddress_guard_reject",
+          "line": 190,
+          "called": [
+            "resolveCapAddress"
+          ]
+        },
+        {
           "kind": "def",
           "name": "cspaceInsertSlot",
-          "line": 187,
+          "line": 216,
           "called": [
             "CSpaceAddr"
           ]
@@ -2321,15 +2329,6 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_scheduler",
-          "line": 200,
-          "called": [
-            "CSpaceAddr",
-            "cspaceInsertSlot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "cspaceInsertSlot_preserves_services",
           "line": 229,
           "called": [
             "CSpaceAddr",
@@ -2338,8 +2337,17 @@
         },
         {
           "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_services",
+          "line": 258,
+          "called": [
+            "CSpaceAddr",
+            "cspaceInsertSlot"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_objects_ne",
-          "line": 256,
+          "line": 285,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -2348,7 +2356,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_machine",
-          "line": 286,
+          "line": 315,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -2357,7 +2365,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_irqHandlers",
-          "line": 312,
+          "line": 341,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -2366,7 +2374,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_rejects_occupied_slot",
-          "line": 338,
+          "line": 367,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -2375,7 +2383,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_iff_lookupSlotCap",
-          "line": 347,
+          "line": 376,
           "called": [
             "CSpaceAddr",
             "cspaceLookupSlot"
@@ -2384,7 +2392,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_implies_ownsSlot",
-          "line": 371,
+          "line": 400,
           "called": [
             "CSpaceAddr",
             "cspaceLookupSlot",
@@ -2394,13 +2402,13 @@
         {
           "kind": "def",
           "name": "rightsSubset",
-          "line": 382,
+          "line": 411,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rightsSubset_sound",
-          "line": 385,
+          "line": 414,
           "called": [
             "rightsSubset"
           ]
@@ -2408,7 +2416,7 @@
         {
           "kind": "def",
           "name": "mintDerivedCap",
-          "line": 395,
+          "line": 424,
           "called": [
             "rightsSubset"
           ]
@@ -2416,7 +2424,7 @@
         {
           "kind": "def",
           "name": "cspaceMint",
-          "line": 403,
+          "line": 432,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -2427,7 +2435,7 @@
         {
           "kind": "def",
           "name": "cspaceDeleteSlot",
-          "line": 416,
+          "line": 445,
           "called": [
             "CSpaceAddr"
           ]
@@ -2435,7 +2443,7 @@
         {
           "kind": "def",
           "name": "cspaceRevoke",
-          "line": 436,
+          "line": 465,
           "called": [
             "CSpaceAddr",
             "cspaceLookupSlot"
@@ -2444,7 +2452,7 @@
         {
           "kind": "def",
           "name": "cspaceCopy",
-          "line": 464,
+          "line": 493,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -2454,7 +2462,7 @@
         {
           "kind": "def",
           "name": "cspaceMove",
-          "line": 482,
+          "line": 511,
           "called": [
             "CSpaceAddr",
             "cspaceDeleteSlot",
@@ -2464,17 +2472,36 @@
         },
         {
           "kind": "theorem",
-          "name": "cspaceMove_error_preserves_state",
-          "line": 505,
+          "name": "cspaceMove_error_no_state",
+          "line": 536,
           "called": [
             "CSpaceAddr",
             "cspaceMove"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "cspaceLookupSlot_state_eq",
+          "line": 548,
+          "called": [
+            "CSpaceAddr",
+            "cspaceLookupSlot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMove_ok_implies_source_exists",
+          "line": 557,
+          "called": [
+            "CSpaceAddr",
+            "cspaceLookupSlot",
+            "cspaceMove"
+          ]
+        },
+        {
           "kind": "def",
           "name": "cspaceMutate",
-          "line": 514,
+          "line": 578,
           "called": [
             "CSpaceAddr",
             "cspaceLookupSlot",
@@ -2484,7 +2511,7 @@
         {
           "kind": "def",
           "name": "cspaceMintWithCdt",
-          "line": 538,
+          "line": 602,
           "called": [
             "CSpaceAddr",
             "cspaceMint"
@@ -2493,7 +2520,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdt",
-          "line": 561,
+          "line": 625,
           "called": [
             "CSpaceAddr",
             "cspaceDeleteSlot",
@@ -2503,7 +2530,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 592,
+          "line": 656,
           "called": [
             "CSpaceAddr"
           ]
@@ -2511,7 +2538,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 602,
+          "line": 666,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -2520,7 +2547,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 617,
+          "line": 681,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure",
@@ -14154,7 +14181,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 37,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -14266,8 +14293,14 @@
         },
         {
           "kind": "def",
+          "name": "svcMissingBacking",
+          "line": 31,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "bootstrapInvariantObjectIds",
-          "line": 32,
+          "line": 33,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -14277,12 +14310,13 @@
         {
           "kind": "def",
           "name": "bootstrapServiceIds",
-          "line": 35,
+          "line": 36,
           "called": [
             "svcApi",
             "svcBroken",
             "svcDb",
             "svcDenied",
+            "svcMissingBacking",
             "svcRestart",
             "svcRestartBroken"
           ]
@@ -14290,7 +14324,7 @@
         {
           "kind": "def",
           "name": "bootstrapState",
-          "line": 38,
+          "line": 39,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -14301,6 +14335,7 @@
             "svcBroken",
             "svcDb",
             "svcDenied",
+            "svcMissingBacking",
             "svcRestart",
             "svcRestartBroken",
             "untypedAuthSlot"
@@ -14309,13 +14344,13 @@
         {
           "kind": "def",
           "name": "runCapabilityAndArchitectureTrace",
-          "line": 141,
+          "line": 148,
           "called": []
         },
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 211,
+          "line": 218,
           "called": [
             "demoEndpoint",
             "mkRunQueue",
@@ -14323,6 +14358,7 @@
             "svcBroken",
             "svcDb",
             "svcDenied",
+            "svcMissingBacking",
             "svcRestart",
             "svcRestartBroken"
           ]
@@ -14330,7 +14366,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 377,
+          "line": 390,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -14343,7 +14379,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 482,
+          "line": 495,
           "called": [
             "demoEndpoint",
             "rootSlot"
@@ -14352,7 +14388,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 533,
+          "line": 546,
           "called": [
             "mkRunQueue"
           ]
@@ -14360,7 +14396,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 603,
+          "line": 616,
           "called": [
             "demoEndpoint"
           ]
@@ -14368,7 +14404,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 764,
+          "line": 777,
           "called": [
             "demoEndpoint"
           ]
@@ -14376,7 +14412,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 837,
+          "line": 850,
           "called": [
             "demoUntyped",
             "lifecycleAuthSlot",
@@ -14387,19 +14423,19 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 924,
+          "line": 937,
           "called": []
         },
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 981,
+          "line": 994,
           "called": []
         },
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1024,
+          "line": 1037,
           "called": [
             "demoEndpoint"
           ]
@@ -14407,7 +14443,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1060,
+          "line": 1073,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -14430,13 +14466,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1092,
+          "line": 1105,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1143,
+          "line": 1156,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -14444,7 +14480,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1157,
+          "line": 1170,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -14452,7 +14488,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1165,
+          "line": 1178,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -14741,7 +14777,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 36,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -15039,8 +15075,16 @@
         },
         {
           "kind": "def",
+          "name": "runWSH13Checks",
+          "line": 1378,
+          "called": [
+            "expectError"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1379,
+          "line": 1419,
           "called": []
         }
       ]

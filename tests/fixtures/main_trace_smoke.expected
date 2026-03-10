@@ -24,6 +24,7 @@ service stop denied branch: SeLe4n.Model.KernelError.policyDenied
 service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
 service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
 service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
+service start missing-backing branch: SeLe4n.Model.KernelError.backingObjectMissing
 service isolation api↔denied: true
 service isolation api↔db: false
 deep cnode radix fixture: some 12

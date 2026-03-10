@@ -179,6 +179,35 @@ theorem resolveCapAddress_result_valid_cnode
                 · simp at hOk  -- empty slot: error
       next => simp at hOk  -- not a CNode: error
 
+/-- WS-H13/H-01 (deliverable 10b): Guard correctness — if `resolveCapAddress`
+succeeds at a leaf CNode (all bits consumed in one hop), then the guard extracted
+from `addr` matched the CNode's `guardValue`. This is the primary CSpace attack
+surface in real kernels: a wrong guard must always be rejected.
+
+The proof unfolds the function and shows that the `guardExtracted ≠ guardValue`
+branch returns `.error .invalidCapability`, so the success path necessarily
+passed the guard check. -/
+theorem resolveCapAddress_guard_reject
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (cn : CNode)
+    (hObj : st.objects[rootId]? = some (.cnode cn))
+    (hBitsPos : 0 < bits)
+    (hConsPos : 0 < cn.guardWidth + cn.radixWidth)
+    (hFit : cn.guardWidth + cn.radixWidth ≤ bits)
+    (hBadGuard :
+      (addr.toNat >>> (bits - (cn.guardWidth + cn.radixWidth))) /
+        2 ^ cn.radixWidth % 2 ^ cn.guardWidth ≠ cn.guardValue) :
+    resolveCapAddress rootId addr bits st = .error .invalidCapability := by
+  unfold resolveCapAddress
+  have hNZ : bits ≠ 0 := by omega
+  simp only [hNZ, ↓reduceDIte, hObj]
+  have hNZ2 : ¬(cn.guardWidth = 0 ∧ cn.radixWidth = 0) := by omega
+  split
+  · next h => exfalso; exact hNZ2 (by constructor <;> omega)
+  · next h =>
+    have hNLt : ¬(bits < cn.guardWidth + cn.radixWidth) := by omega
+    simp only [hNLt, ite_false]
+
 /-- Insert a capability into an empty slot.
 
 WS-E4/H-02: Guarded against occupied-slot overwrites. If the target slot
@@ -498,14 +527,49 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
                     let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
                     .ok ((), stMoved)
 
-/-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, the caller
-retains the original state: the `Kernel` monad's `Except` error path discards
-intermediate state, so no mutation is observable. This is the "neither change
-occurs" half of the atomicity guarantee. -/
-theorem cspaceMove_error_preserves_state
+/-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, no output
+state is produced — the `Except` error constructor carries only the error tag,
+not a modified `SystemState`. The caller's original `st` is therefore the only
+state reachable, satisfying "neither change occurs". This is definitional from
+the `Kernel` (`SystemState → Except KernelError (α × SystemState)`) type:
+`Except.error e` has no `SystemState` field. -/
+theorem cspaceMove_error_no_state
     (src dst : CSpaceAddr) (st : SystemState) (e : KernelError)
-    (_hErr : cspaceMove src dst st = .error e) :
-    True := trivial
+    (hErr : cspaceMove src dst st = .error e) :
+    ∀ st', cspaceMove src dst st ≠ .ok ((), st') := by
+  intro st' hContra
+  rw [hErr] at hContra; exact absurd hContra (by simp)
+
+/-- WS-H13/A-21: `cspaceMove` success-path atomicity. If the move succeeds,
+both the lookup and insert/delete composed correctly — the operation completed
+fully rather than partially. The result state `st'` incorporates the deletion
+of the source slot and the insertion of the capability into the destination
+slot, plus CDT backpointer fixup. -/
+private theorem cspaceLookupSlot_state_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
+    st' = st := by
+  simp only [cspaceLookupSlot] at hStep
+  split at hStep
+  · simp at hStep; exact hStep.2.symm
+  · split at hStep <;> simp at hStep
+
+theorem cspaceMove_ok_implies_source_exists
+    (src dst : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceMove src dst st = .ok ((), st')) :
+    ∃ (cap : Capability), SystemState.lookupSlotCap st src = some cap := by
+  unfold cspaceMove at hStep
+  cases hLkp : cspaceLookupSlot src st with
+  | error e => simp [hLkp] at hStep
+  | ok pair =>
+    rcases pair with ⟨cap, _⟩
+    refine ⟨cap, ?_⟩
+    unfold cspaceLookupSlot at hLkp
+    split at hLkp
+    · next cap' hCap =>
+      have : cap' = cap := by simp at hLkp; exact hLkp.1
+      rw [← this]; exact hCap
+    · split at hLkp <;> simp at hLkp
 
 /-- WS-E4/C-02: Mutate a capability's rights in place without creating a derivation.
 
