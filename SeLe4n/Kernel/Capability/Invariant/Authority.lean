@@ -595,6 +595,12 @@ theorem cspaceSlotUnique_of_objects_eq
   intro cnodeId cn hObj
   exact hUniq cnodeId cn (by rwa [hObjEq] at hObj)
 
+-- ============================================================================
+-- WS-F6/D1: Operation Correctness Lemmas
+-- Reclassified from capabilityInvariantBundle — these are operation properties,
+-- not state invariants. Retained as standalone theorems.
+-- ============================================================================
+
 theorem cspaceAttenuationRule_holds :
     cspaceAttenuationRule := by
   intro parent child rights badge hMint
@@ -621,6 +627,6 @@ theorem capabilityInvariantBundle_of_slotUnique
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st) :
     capabilityInvariantBundle st :=
-  ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique, cspaceAttenuationRule_holds,
-    lifecycleAuthorityMonotonicity_holds st, hBounded, hComp, hAcyclic, hDepth⟩
+  ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique,
+    hBounded, hComp, hAcyclic, hDepth⟩
 

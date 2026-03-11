@@ -40,7 +40,8 @@ def cspaceLookupSound (st : SystemState) : Prop :=
     cn.lookup slot = some cap →
     SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap
 
-/-- Attenuation rule component used by the M2 capability invariant bundle. -/
+/-- Attenuation rule operation-correctness lemma (proved by `cspaceAttenuationRule_holds`).
+Not a state invariant (no `st` parameter); removed from `capabilityInvariantBundle` in WS-F6/D1. -/
 def cspaceAttenuationRule : Prop :=
   ∀ parent child rights badge,
     mintDerivedCap parent rights badge = .ok child →
@@ -115,17 +116,23 @@ def cspaceDepthConsistent (st : SystemState) : Prop :=
 
 /-- Composed capability invariant bundle entrypoint.
 
-The active lifecycle slice extends the M2 foundation bundle with explicit lifecycle-transition
-authority obligations (`delete`/`revoke`) so lifecycle preservation can be stated against a
-single invariant entrypoint.
+The active lifecycle slice extends the M2 foundation bundle with security-meaningful
+state predicates. Only genuine state invariants are included — predicates that assert
+properties of the system state and must be preserved through every transition.
 
-WS-H4: Extended from 4-tuple to 7-tuple with meaningful security predicates:
+WS-H4: Extended with meaningful security predicates:
 - `cspaceSlotCountBounded`: slot capacity bound (replaces trivially-true `slotsUnique`)
 - `cdtCompleteness`: CDT node-slot reachability (every CDT node points to an existing object)
 - `cdtAcyclicity`: CDT cycle-freedom for sound revocation
 
-WS-H13: Extended to 8-tuple with depth consistency:
+WS-H13: Extended with depth consistency:
 - `cspaceDepthConsistent`: child CNodes have strictly smaller depth than parents
+
+WS-F6/D1: Reduced from 8-tuple to 6-tuple. Removed `cspaceAttenuationRule` (operation
+property of `mintDerivedCap`, not a state invariant — no `st` parameter) and
+`lifecycleAuthorityMonotonicity` (operation-correctness lemma about delete/revoke
+effects, not a state property preserved through transitions). Both are retained as
+standalone operation-correctness lemmas in `Authority.lean`.
 
 **Design decisions (WS-H4):**
 - CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) take
@@ -138,23 +145,25 @@ WS-H13: Extended to 8-tuple with depth consistency:
 - `cspaceSlotUnique` is retained alongside `cspaceSlotCountBounded` for backward
   compatibility with the existing proof surface. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
-  cspaceSlotUnique st ∧ cspaceLookupSound st ∧ cspaceAttenuationRule ∧
-    lifecycleAuthorityMonotonicity st ∧
+  cspaceSlotUnique st ∧ cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st
 
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
-monotonicity so composition proofs can depend on a single named assumption. -/
+monotonicity so composition proofs can depend on a single named assumption.
+
+WS-F6/D1: `lifecycleAuthorityMonotonicity` is an operation-correctness lemma (proved
+by `lifecycleAuthorityMonotonicity_holds`), not extracted from a bundle. -/
 def lifecycleCapabilityStaleAuthorityInvariant (st : SystemState) : Prop :=
   lifecycleStaleReferenceExclusionInvariant st ∧ lifecycleAuthorityMonotonicity st
 
 theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
     (st : SystemState)
     (hLifecycle : lifecycleInvariantBundle st)
-    (hCap : capabilityInvariantBundle st) :
-    lifecycleCapabilityStaleAuthorityInvariant st := by
-  refine ⟨lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hLifecycle, ?_⟩
-  exact hCap.2.2.2.1
+    (_hCap : capabilityInvariantBundle st)
+    (hMono : lifecycleAuthorityMonotonicity st) :
+    lifecycleCapabilityStaleAuthorityInvariant st :=
+  ⟨lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hLifecycle, hMono⟩
 
 -- ============================================================================
 -- WS-H4: Extraction theorems for new bundle components
@@ -162,19 +171,19 @@ theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
 
 theorem cspaceSlotCountBounded_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceSlotCountBounded st := hInv.2.2.2.2.1
+    cspaceSlotCountBounded st := hInv.2.2.1
 
 theorem cdtCompleteness_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtCompleteness st := hInv.2.2.2.2.2.1
+    cdtCompleteness st := hInv.2.2.2.1
 
 theorem cdtAcyclicity_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtAcyclicity st := hInv.2.2.2.2.2.2.1
+    cdtAcyclicity st := hInv.2.2.2.2.1
 
 theorem cspaceDepthConsistent_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := hInv.2.2.2.2.2.2.2
+    cspaceDepthConsistent st := hInv.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions

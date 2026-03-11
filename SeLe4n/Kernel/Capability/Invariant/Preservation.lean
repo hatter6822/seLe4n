@@ -35,7 +35,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   -- Compositionally derive post-state uniqueness (WS-E2 / H-01)
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
@@ -103,8 +103,8 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
               cdtAcyclicity_of_cdt_eq st st' hAcyclic
                 (by rw [hRefCdt]; exact storeObject_cdt_eq st stMid addr.cnode _ hStore),
               cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj⟩
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+    hBounded', hComp', hAcyclic', hDepth'⟩
 
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -140,7 +140,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceDeleteSlot at hStep
@@ -217,8 +217,8 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
               cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef,
               cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
               cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef⟩
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+    hBounded', hComp', hAcyclic', hDepth'⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 Uses pre-state `cspaceSlotUnique` + `CNode.revokeTargetLocal_slotsUnique` to derive
@@ -229,7 +229,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceRevoke at hStep
@@ -303,8 +303,8 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               cdtCompleteness_of_objects_nodeSlot_eq stMid st' hCompMid hClearObj hClearNS,
               cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hClearCdt,
               cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hClearObj⟩
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+    hBounded', hComp', hAcyclic', hDepth'⟩
 
 -- ============================================================================
 -- WS-E4/C-02: Preservation theorems for new capability operations
@@ -335,7 +335,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
             (fun cn hObj => hDstCapacity cn cap hObj) hInsert
-          rcases hBundleSt2 with ⟨hU2, _, hAtt2, _, hBnd2, hComp2, _, hDepth2⟩
+          rcases hBundleSt2 with ⟨hU2, _, hBnd2, hComp2, _, hDepth2⟩
           cases hEnsSrc : SystemState.ensureCdtNodeForSlot st2 src with
           | mk srcNode stSrc =>
               cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
@@ -351,8 +351,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
                   have hU' := cspaceSlotUnique_of_objects_eq st2 { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .copy } hU2 hObjFinal
                   -- WS-H4: cspaceSlotCountBounded transfers via objects equality
                   -- cdtCompleteness and cdtAcyclicity for CDT-modifying ops taken as hypotheses
-                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt2,
-                    lifecycleAuthorityMonotonicity_holds _,
+                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU',
                     cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal⟩
@@ -386,13 +385,13 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
                 (fun cn hObj => hDstCapacity cn cap hObj) hInsert
               have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2 hDelete
-              rcases hBundleSt3 with ⟨hU3, _, hAtt3, _, hBnd3, _, _, hDepth3⟩
+              rcases hBundleSt3 with ⟨hU3, _, hBnd3, _, _, hDepth3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
-                  exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3, hAtt3,
-                    lifecycleAuthorityMonotonicity_holds _, hBnd3, hCdtPost.1, hCdtPost.2, hDepth3⟩
+                  exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3,
+                    hBnd3, hCdtPost.1, hCdtPost.2, hDepth3⟩
               | some srcNode =>
                   simp [hSrc, hInsert, hDelete, hNode] at hStep
                   cases hStep
@@ -401,8 +400,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                   have hU' := cspaceSlotUnique_of_objects_eq st3
                     (SystemState.attachSlotToCdtNode st3 dst srcNode)
                     hU3 hObjEq
-                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt3,
-                    lifecycleAuthorityMonotonicity_holds _,
+                  exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU',
                     cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq⟩
@@ -427,7 +425,7 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
       rcases pair with ⟨_, st1⟩
       have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv
         hDstCapacity hMint
-      rcases hBundle with ⟨hU1, _, hAtt1, _, hBnd1, _, _, hDepth1⟩
+      rcases hBundle with ⟨hU1, _, hBnd1, _, _, hDepth1⟩
       cases hEnsSrc : SystemState.ensureCdtNodeForSlot st1 src with
       | mk srcNode stSrc =>
           cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
@@ -441,8 +439,7 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
               have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint }).objects = st1.objects := by
                 simp [hObjDst, hObjSrc]
               have hU' := cspaceSlotUnique_of_objects_eq st1 { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint } hU1 hObjFinal
-              exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU', hAtt1,
-                lifecycleAuthorityMonotonicity_holds _,
+              exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU',
                 cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
                 hCdtPost.1, hCdtPost.2,
                 cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal⟩
@@ -464,7 +461,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     -- Revert hStep to decompose the definition via goal-level case splits
@@ -556,8 +553,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hRefCdt,
                 cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj⟩
       · simp_all
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+    hBounded', hComp', hAcyclic', hDepth'⟩
 
 -- ============================================================================
 -- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
@@ -570,11 +567,11 @@ private theorem capabilityInvariantBundle_of_cdt_update
     (hInv : capabilityInvariantBundle st)
     (hAcyclic' : cdt'.edgeWellFounded) :
     capabilityInvariantBundle { st with cdt := cdt' } := by
-  rcases hInv with ⟨hU, _, hA, _, hBnd, hComp, _, hDepthPre⟩
+  rcases hInv with ⟨hU, _, hBnd, hComp, _, hDepthPre⟩
   have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
   exact ⟨cspaceSlotUnique_of_objects_eq st _ hU hObjEq,
     cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq st _ hU hObjEq),
-    hA, lifecycleAuthorityMonotonicity_holds _, hBnd, hComp, hAcyclic',
+    hBnd, hComp, hAcyclic',
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq⟩
 
 /-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node. -/
@@ -604,30 +601,29 @@ private theorem revokeCdtFoldBody_preserves
   | none =>
     simp [hSlot] at hStep; cases hStep
     exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
   | some descAddr =>
     simp [hSlot] at hStep
     cases hDel : cspaceDeleteSlot descAddr stAcc with
     | error _ =>
       simp [hDel] at hStep; cases hStep
       exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
       simp [hDel] at hStep; cases hStep
       have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel descAddr hInv hDel
       have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-      rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
+      rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
       have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
         ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
          cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
-         hA2, lifecycleAuthorityMonotonicity_holds _,
          cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
          cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
          cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
          cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
       exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2.1
+        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
           (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
 
 /-- Error propagation: revokeCdtFoldBody propagates errors unchanged. -/
@@ -750,7 +746,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             simp
             exact ih rep { stAcc with cdt := stAcc.cdt.removeNode node }
               (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
+                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
           | some descAddr =>
             simp
             cases hDel : cspaceDeleteSlot descAddr stAcc with
@@ -758,24 +754,23 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
               simp
               exact ih _ { stAcc with cdt := stAcc.cdt.removeNode node }
                 (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                  (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
+                  (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
             | ok pair =>
               obtain ⟨_, stDel⟩ := pair
               simp
               have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel
                 descAddr hI hDel
               have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-              rcases hDelInv with ⟨hU2, _, hA2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
+              rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
               have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
                 ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
                  cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
-                 hA2, lifecycleAuthorityMonotonicity_holds _,
                  cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
                  cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
                  cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
                  cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
               exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-                (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.2.2.1
+                (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
                   (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node)))
 
 -- ============================================================================
@@ -792,7 +787,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -864,8 +859,8 @@ theorem endpointReply_preserves_capabilityInvariantBundle
             intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
           have hDepthE := cspaceDepthConsistent_of_objects_eq st1 _ hDepth1
             (ensureRunnable_preserves_objects st1 target)
-          exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU, hAttRule,
-            lifecycleAuthorityMonotonicity_holds _, hBndE, hCompE, hAcyclicE, hDepthE⟩
+          exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU,
+            hBndE, hCompE, hAcyclicE, hDepthE⟩
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 
@@ -918,13 +913,18 @@ def ipcSchedulerBlockedCallComponent (st : SystemState) : Prop :=
 def ipcSchedulerBlockedReplyComponent (st : SystemState) : Prop :=
   blockedOnReplyNotRunnable st
 
+/-- WS-F6/D2: Named coherence component: notification-blocked threads are not runnable. -/
+def ipcSchedulerBlockedNotificationComponent (st : SystemState) : Prop :=
+  blockedOnNotificationNotRunnable st
+
 /-- Named M3.5 aggregate coherence component for IPC+scheduler interaction. -/
 def ipcSchedulerCoherenceComponent (st : SystemState) : Prop :=
   ipcSchedulerRunnableReadyComponent st ∧
   ipcSchedulerBlockedSendComponent st ∧
   ipcSchedulerBlockedReceiveComponent st ∧
   ipcSchedulerBlockedCallComponent st ∧
-  ipcSchedulerBlockedReplyComponent st
+  ipcSchedulerBlockedReplyComponent st ∧
+  ipcSchedulerBlockedNotificationComponent st
 
 theorem ipcSchedulerCoherenceComponent_iff_contractPredicates (st : SystemState) :
     ipcSchedulerCoherenceComponent st ↔ ipcSchedulerContractPredicates st := by
@@ -976,7 +976,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hAttRule, _hLifecycle, hBounded, hComp, hAcyclic, hDepthPre⟩
+  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre⟩
   have hUnique' : cspaceSlotUnique st' := by
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
       ⟨_, _, _, _, _, _, hStore⟩
@@ -1017,8 +1017,8 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hStep] at hObj
         exact hDepthPre cnodeId cn hObj
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique', hAttRule,
-    lifecycleAuthorityMonotonicity_holds st', hBounded', hComp', hAcyclic', hDepth'⟩
+  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+    hBounded', hComp', hAcyclic', hDepth'⟩
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
     (st st' : SystemState)
@@ -1153,6 +1153,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle stDeleted st' authority target
       newObj hLifecycleDeleted hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
+    (lifecycleAuthorityMonotonicity_holds st')
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)

@@ -185,8 +185,8 @@ private theorem advanceTimerState_preserves_vspaceInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (advanceTimerState ticks st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid⟩
 
 /-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
 Register-only state changes do not affect the object store or ASID table. -/
@@ -194,8 +194,8 @@ private theorem writeRegisterState_preserves_vspaceInvariantBundle
     (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (writeRegisterState reg value st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proofs
@@ -228,12 +228,13 @@ private theorem default_lifecycleInvariantBundle :
 
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
   · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb nid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
@@ -243,8 +244,6 @@ private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
   ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
    by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-   by intro p c r b hMint; exact cspaceAttenuationRule_holds p c r b hMint,
-   by exact lifecycleAuthorityMonotonicity_holds _,
    by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
    by intro _ _ h; simp [default] at h,
    by exact CapDerivationTree.empty_edgeWellFounded,
@@ -298,14 +297,15 @@ private theorem default_schedulerInvariantBundleFull :
     rw [this] at hMem; simp at hMem,
    by unfold currentTimeSlicePositive; simp,
    by unfold edfCurrentHasEarliestDeadline; simp,
-   default_contextMatchesCurrent⟩
+   default_contextMatchesCurrent,
+   default_runnableThreadsAreTCBs⟩
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
-  -- 2. capabilityInvariantBundle (7-tuple: unique, sound, attenuation, lifecycle, bounded, completeness, acyclicity)
+  -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
   · exact default_capabilityInvariantBundle
   -- 3. coreIpcInvariantBundle (WS-H12e: now uses ipcInvariantFull)
   · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩
@@ -326,8 +326,8 @@ theorem default_system_state_proofLayerInvariantBundle :
         cases hSvc)
       default_lifecycleInvariantBundle
       default_capabilityInvariantBundle
-  -- 7. vspaceInvariantBundle (5-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr)
-  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  -- 7. vspaceInvariantBundle (6-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation)
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)
     · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
     · constructor
@@ -335,6 +335,7 @@ theorem default_system_state_proofLayerInvariantBundle :
       · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := HashMap_getElem?_empty; rw [h] at hObjA; exact absurd hObjA (by simp)
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -435,10 +436,9 @@ private theorem advanceTimerState_preserves_capabilityInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hCap : capabilityInvariantBundle st) :
     capabilityInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨h1, h2, h3, _, h5, h6, h7, h8⟩ := hCap
-  exact ⟨by exact h1, by exact h2, h3,
-         lifecycleAuthorityMonotonicity_holds _,
-         by exact h5, by exact h6, by exact h7, by exact h8⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hCap
+  exact ⟨by exact h1, by exact h2, by exact h3,
+         by exact h4, by exact h5, by exact h6⟩
 
 private theorem advanceTimerState_preserves_ipcInvariantFull
     (ticks : Nat) (st : SystemState)

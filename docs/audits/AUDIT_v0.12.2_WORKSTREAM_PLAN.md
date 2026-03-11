@@ -1,7 +1,7 @@
 # WS-F Workstream Plan — v0.12.2 Audit Remediation
 
 **Created:** 2026-02-28
-**Last updated:** 2026-03-01 (PR #290 H3-prep integration, WS-F1..F4 completion records)
+**Last updated:** 2026-03-11 (WS-F6 completion — invariant quality)
 **Findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](AUDIT_CODEBASE_v0.12.2_v1.md), [`AUDIT_CODEBASE_v0.12.2_v2.md`](AUDIT_CODEBASE_v0.12.2_v2.md)
 **Prior portfolio:** WS-E (v0.11.6, all 6 workstreams completed)
 **Project direction:** Production microkernel targeting Raspberry Pi 5 (ARM64)
@@ -304,9 +304,12 @@ plan requires explicit disposition: implement or document deferral.
 
 **Dependencies:** WS-F4 (existing proofs should be sound before model changes — completed).
 
-### WS-F6: Invariant Quality (MEDIUM)
+### WS-F6: Invariant Quality (MEDIUM) — **COMPLETED** (v0.14.9)
 
-**Objective:** Strengthen the invariant surface and close architectural gaps.
+**Objective:** Strengthen the invariant surface, eliminate tautological predicates
+from state-invariant bundles, close scheduler/IPC/VSpace architectural gaps, and
+discharge all assumed invariant predicates. Every change must strengthen the
+security posture of the proof surface without introducing `sorry` or `axiom`.
 
 **Enabling infrastructure (delivered by PR #290):**
 - `PlatformBinding` typeclass with `RuntimeBoundaryContract` field provides the
@@ -318,20 +321,307 @@ plan requires explicit disposition: implement or document deferral.
   satisfies these obligations. Cross-ASID *isolation* (operations on one ASID root
   do not affect another) remains a deliverable.
 
-**Deliverables:**
-1. Reclassify `cspaceAttenuationRule`, `lifecycleAuthorityMonotonicity`, `lifecycleIdentityNoTypeAliasConflict` as operation correctness lemmas (not state invariants).
-2. Extend `ipcSchedulerContractPredicates` to cover `blockedOnNotification` and `blockedOnReply`.
-3. Instantiate `AdapterProofHooks` with at least one concrete proof, using the `PlatformBinding` → `RuntimeBoundaryContract` infrastructure from PR #290. The Sim platform's permissive contract (`simRuntimeContractPermissive`) is the natural first target, as its trivially-true predicates simplify the proof obligations.
-4. Discharge `serviceCountBounded` (currently assumed).
-5. Add `runnableThreadsAreTCBs` invariant.
-6. Prove `timeSlicePositive` and `edfCurrentHasEarliestDeadline` preservation for at least `schedule`.
-7. Add VSpace cross-ASID isolation theorem. Note: per-operation ASID preservation is already proved in `VSpaceBackend`; this deliverable requires the stronger cross-root non-interference property.
+**Prior work (already delivered, no longer in scope):**
+- ~~Instantiate `AdapterProofHooks` with concrete proof~~: Delivered in WS-H15d (v0.14.7).
+  `simRestrictiveAdapterProofHooks` instantiates all three proof obligations for the
+  Sim restrictive contract. End-to-end theorems proved for timer/register/memory
+  adapter paths. Permissive contract cannot satisfy `contextMatchesCurrent`
+  obligation (documented limitation in `Platform/Sim/ProofHooks.lean`).
+- ~~`blockedOnReply` coverage in `ipcSchedulerContractPredicates`~~: Already covered
+  by `blockedOnReplyNotRunnable` since WS-H1 (v0.12.16). The 5-predicate bundle
+  includes `blockedOnCallNotRunnable` and `blockedOnReplyNotRunnable`.
+
+**Deliverables (7):**
+
+#### F6-D1: Reclassify Tautological Invariants (MED-01 / F-07 / F-15)
+
+**Problem:** Three predicates in state-invariant bundles are not state invariants:
+`cspaceAttenuationRule` (operation property, no `st` parameter),
+`lifecycleAuthorityMonotonicity` (operation-correctness — asserts what delete/revoke
+must achieve, not a state property preserved through transitions), and
+`lifecycleIdentityNoTypeAliasConflict` (structural tautology — same lookup cannot
+return two different values). Their presence inflates the capability invariant bundle
+from 6 meaningful predicates to 8, and every preservation theorem must carry these
+trivially-true obligations as dead weight.
+
+**Security rationale:** Tautological predicates in invariant bundles weaken audit
+assurance by creating a false impression of proof density. Reclassification
+concentrates the bundle on genuine security properties, making the proof surface
+more honest and auditable.
+
+**Implementation plan:**
+
+- **F6-D1a: Move `cspaceAttenuationRule` to operation-specification section.**
+  In `Capability/Invariant/Defs.lean`, remove `cspaceAttenuationRule` from the
+  `capabilityInvariantBundle` conjunction. Retain the definition and its proof
+  (`cspaceAttenuationRule_holds`) in a clearly labeled "Operation Correctness
+  Lemmas" section. Add a `cspaceAttenuationRule_holds` standalone theorem if
+  not already present. Update the bundle docstring to reflect the 6-tuple
+  (removing the "8-tuple" reference).
+
+- **F6-D1b: Move `lifecycleAuthorityMonotonicity` to operation-specification section.**
+  Remove from `capabilityInvariantBundle`. Retain the definition, `_holds` proof,
+  and the `lifecycleCapabilityStaleAuthorityInvariant` bridge (which uses it) in
+  a separate section. Update all extraction theorems that index into the bundle
+  tuple (`.2.2.2.2.1` etc.) to use the new 6-tuple layout.
+
+- **F6-D1c: Reclassify `lifecycleIdentityNoTypeAliasConflict`.**
+  This is proved from `lifecycleIdentityTypeExact` via
+  `lifecycleIdentityNoTypeAliasConflict_of_exact`. Move the standalone definition
+  to a "Structural Lemmas" section in `Lifecycle/Invariant.lean`. The
+  `lifecycleIdentityAliasingInvariant` bundle keeps `lifecycleIdentityTypeExact`
+  as its sole conjunct (since `NoTypeAliasConflict` is derivable from it). Update
+  `lifecycleInvariantBundle` accordingly.
+
+- **F6-D1d: Update all downstream bundle references.**
+  Update `capabilityInvariantBundle` extraction theorems, all `_preserves_capabilityInvariantBundle`
+  theorems across IPC/Lifecycle/Service modules, and composed bundles
+  (`coreIpcInvariantBundle`, `proofLayerInvariantBundle`). The removal of two
+  conjuncts from the 8-tuple simplifies every preservation proof that currently
+  carries `hAttRule` and `lifecycleAuthorityMonotonicity_holds _` obligations.
+
+- **F6-D1e: Update Tier 3 anchor checks.**
+  Update `test_tier3_invariant_surface.sh` to check for the reclassified locations
+  and new bundle arity. Add anchors for the "Operation Correctness Lemmas" section.
+
+#### F6-D2: Extend IPC-Scheduler Contract with Notification Blocking (HIGH-03)
+
+**Problem:** `ipcSchedulerContractPredicates` covers 5 blocking states (ready,
+blockedOnSend, blockedOnReceive, blockedOnCall, blockedOnReply) but omits
+`blockedOnNotification`. A thread calling `notificationWait` transitions to
+`ipcState = .blockedOnNotification oid` and is removed from the run queue, but
+no contract predicate asserts this exclusion. Without it, a scheduler bug could
+leave a notification-blocked thread in the runnable queue, violating temporal
+isolation.
+
+**Security rationale:** An unreachable thread that remains runnable can execute
+despite being logically blocked, breaking information-flow non-interference. The
+`notificationWaiterConsistent` predicate (WS-G7) couples waitlist membership to
+ipcState but does not assert non-runnability. This gap must be closed.
+
+**Implementation plan:**
+
+- **F6-D2a: Define `blockedOnNotificationNotRunnable` predicate.**
+  In `IPC/Invariant/Defs.lean`, add:
+  ```
+  def blockedOnNotificationNotRunnable (st : SystemState) : Prop :=
+    ∀ (tid : ThreadId) tcb oid,
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.ipcState = .blockedOnNotification oid →
+      tid ∉ st.scheduler.runnable
+  ```
+
+- **F6-D2b: Extend `ipcSchedulerContractPredicates` to 6-tuple.**
+  Add `blockedOnNotificationNotRunnable` as the 6th conjunct. Update the bundle
+  definition and all extraction/construction sites.
+
+- **F6-D2c: Prove preservation through notification operations.**
+  Prove `notificationWait_preserves_blockedOnNotificationNotRunnable` and
+  `notificationSignal_preserves_blockedOnNotificationNotRunnable`. The wait path
+  calls `removeRunnable` before setting ipcState; the signal wake path calls
+  `ensureRunnable` after setting ipcState to `.ready`.
+
+- **F6-D2d: Prove preservation through non-notification operations.**
+  Prove preservation through `endpointSendDual`, `endpointReceiveDual`,
+  `schedule`, `handleYield`, `timerTick`, `cspaceMint`, `cspaceMutate`,
+  `lifecycleRetypeObject`, and service operations. Most follow from
+  scheduler-unchanged or ipcState-unchanged frame lemmas.
+
+- **F6-D2e: Update composed bundles and Tier 3 anchors.**
+  Update `ipcSchedulerCoherenceComponent` to include the new predicate.
+  Add Tier 3 anchor for `blockedOnNotificationNotRunnable`.
+
+#### F6-D3: Add `runnableThreadsAreTCBs` Invariant (MED-06)
+
+**Problem:** No invariant asserts that every thread ID in the scheduler's runnable
+queue corresponds to a valid TCB in the object store. Only `currentThreadValid`
+covers the *current* thread. A lifecycle `retypeObject` that overwrites a TCB with
+a non-TCB object while leaving the thread ID in the run queue would violate this
+property silently.
+
+**Security rationale:** If a non-TCB object ID is in the run queue, `chooseThread`
+will select it and attempt to read TCB fields from a non-TCB object, producing
+undefined behavior in a production kernel. This invariant is a type-safety
+backstop for the scheduler.
+
+**Implementation plan:**
+
+- **F6-D3a: Define `runnableThreadsAreTCBs` predicate.**
+  In `Scheduler/Invariant.lean`, add:
+  ```
+  def runnableThreadsAreTCBs (st : SystemState) : Prop :=
+    ∀ tid, tid ∈ st.scheduler.runnable →
+      ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)
+  ```
+
+- **F6-D3b: Prove default-state satisfaction.**
+  Prove `default_runnableThreadsAreTCBs`: the default `SystemState` has an empty
+  run queue, so the predicate is vacuously true.
+
+- **F6-D3c: Prove preservation through scheduler operations.**
+  `ensureRunnable` only adds a thread after verifying TCB lookup succeeds.
+  `removeRunnable` only removes threads. `chooseThread`/`schedule` use
+  `removeRunnable` + `ensureRunnable` patterns. Prove preservation for
+  `schedule`, `handleYield`, `timerTick`.
+
+- **F6-D3d: Prove preservation through IPC operations.**
+  IPC operations that modify the run queue (`endpointSendDual`, `endpointReceiveDual`,
+  `notificationSignal`, `notificationWait`) use `ensureRunnable`/`removeRunnable`
+  and `storeObject` (which does not modify the scheduler). Prove frame preservation
+  through `storeObject` (TCBs at other ObjIds are unchanged).
+
+- **F6-D3e: Add to `schedulerInvariantBundleFull` and Tier 3 anchors.**
+  Extend `schedulerInvariantBundleFull` from 5-tuple to 6-tuple. Update all
+  extraction and composition theorems. Add Tier 3 surface anchor.
+
+#### F6-D4: Discharge `serviceCountBounded` (HIGH-06)
+
+**Problem:** `serviceCountBounded` is used as a precondition for
+`bfs_complete_for_nontrivialPath` and
+`serviceRegisterDependency_preserves_acyclicity`. It asserts that a BFS traversal
+universe exists within the fuel budget. Currently, callers must assume it; it is
+not proved from first principles or preserved through state transitions.
+
+**Security rationale:** Without a proof that `serviceCountBounded` holds for all
+reachable states, the acyclicity guarantee for the service dependency graph is
+conditional. An adversary who could register enough services to exceed the fuel
+budget could bypass the cycle detection, creating a circular dependency that causes
+the kernel to loop on service startup.
+
+**Implementation plan:**
+
+- **F6-D4a: Prove `serviceCountBounded` for initial/default state.**
+  The default state has an empty services HashMap, so the predicate holds with
+  `ns := []`. Prove `default_serviceCountBounded`.
+
+- **F6-D4b: Prove preservation through `storeServiceState`.**
+  `storeServiceState` modifies a service entry's status but does not add/remove
+  service registrations. The existing `serviceCountBounded_of_storeServiceState_sameDeps`
+  theorem handles this case. Verify it composes cleanly with `serviceStart`,
+  `serviceStop`, and `serviceRestart`.
+
+- **F6-D4c: Prove preservation through `serviceRegisterDependency`.**
+  `serviceRegisterDependency` adds edges but does not add service registrations.
+  The BFS universe (`bfsUniverse`) is service-node based. Prove that edge
+  insertion does not invalidate the universe.
+
+- **F6-D4d: Prove construction from finite `services` HashMap.**
+  The `services` field is `Std.HashMap ServiceId ServiceGraphEntry`. Prove
+  that `services.toList.map (·.1)` satisfies `bfsUniverse` and has length
+  bounded by `serviceBfsFuel`. This gives a constructive proof for any state
+  with a finite services map.
+
+#### F6-D5: Scheduler Invariant Preservation for `schedule` (MED-05)
+
+**Problem:** `timeSlicePositive` and `edfCurrentHasEarliestDeadline` preservation
+through `schedule` must be explicitly proved. While WS-H6 defined these invariants
+and proved them for basic cases, the `schedule` transition (which selects a new
+thread via `chooseThread` and sets `current`) is the critical path.
+
+**Security rationale:** If `timeSlicePositive` is not preserved through scheduling,
+a zero-timeslice thread could be scheduled indefinitely (starvation attack). If
+`edfCurrentHasEarliestDeadline` is not preserved, a later-deadline thread could
+preempt an earlier one (temporal isolation violation).
+
+**Implementation plan:**
+
+- **F6-D5a: Verify existing `schedule_preserves_schedulerInvariantBundleFull`.**
+  Check that the existing preservation theorem for `schedulerInvariantBundleFull`
+  includes `timeSlicePositive` and `edfCurrentHasEarliestDeadline`. If only the
+  base triad is covered, extend the proof.
+
+- **F6-D5b: Prove `schedule_preserves_timeSlicePositive`.**
+  `schedule` calls `chooseThread` which selects the best runnable thread and
+  removes it from the queue via `removeRunnable`. The removed thread's timeslice
+  remains positive (it was in the queue, covered by pre-state `timeSlicePositive`).
+  Remaining queue threads are a subset, so their timeslices remain positive.
+
+- **F6-D5c: Prove `schedule_preserves_edfCurrentHasEarliestDeadline`.**
+  `chooseThread` selects via `chooseBestRunnableInDomain`, which picks the thread
+  with the earliest deadline in the active domain at the highest priority. After
+  removal and promotion to current, the remaining queue threads have later-or-equal
+  deadlines by selection semantics.
+
+#### F6-D6: VSpace Cross-ASID Isolation Theorem (MED-07)
+
+**Problem:** Per-operation ASID preservation is proved (`mapPage_preserves_asid`,
+`unmapPage_preserves_asid` in `VSpaceBackend`), but the stronger cross-root
+non-interference property is not: "operations on VSpaceRoot A do not modify the
+mappings or ASID of VSpaceRoot B (B ≠ A)." Without this, a compromised VSpace
+could theoretically affect another address space's translations.
+
+**Security rationale:** Cross-ASID isolation is the memory-safety foundation of
+process separation. It is the VSpace analog of non-interference: operations
+within one address space must not be observable in another. This is a prerequisite
+for the RPi5 hardware binding, where page table walks for different processes must
+be provably independent.
+
+**Implementation plan:**
+
+- **F6-D6a: Define `vspaceCrossAsidIsolation` predicate.**
+  In `Architecture/VSpaceInvariant.lean`, add:
+  ```
+  def vspaceCrossAsidIsolation (st : SystemState) : Prop :=
+    ∀ (oidA oidB : ObjId) (rootA rootB : VSpaceRoot),
+      st.objects[oidA]? = some (.vspaceRoot rootA) →
+      st.objects[oidB]? = some (.vspaceRoot rootB) →
+      oidA ≠ oidB →
+      rootA.asid ≠ rootB.asid
+  ```
+  This expresses ASID uniqueness across distinct VSpaceRoot objects, which
+  combined with `vspaceAsidRootsUnique` gives full cross-root isolation.
+
+- **F6-D6b: Prove `vspaceMapPage_preserves_crossAsidIsolation`.**
+  `vspaceMapPage` modifies exactly one VSpaceRoot (looked up by ASID). Prove
+  that other VSpaceRoot objects are unchanged via `storeObject_objects_ne`,
+  and the modified root's ASID is preserved via `root'.asid = root.asid`.
+
+- **F6-D6c: Prove `vspaceUnmapPage_preserves_crossAsidIsolation`.**
+  Same structure as D6b: the unmap modifies one root, preserving its ASID.
+
+- **F6-D6d: Add to `vspaceInvariantBundle` and Tier 3 anchors.**
+  Extend `vspaceInvariantBundle` from 5-tuple to 6-tuple with
+  `vspaceCrossAsidIsolation`. Update all preservation theorems. Add anchor.
+
+#### F6-D7: Invariant Bundle Coherence and Integration
+
+**Problem:** After D1-D6, the invariant bundle structure has changed. All composed
+bundles must be updated, and the default-state satisfaction theorem must be
+reproved.
+
+- **F6-D7a: Update `proofLayerInvariantBundle` composition.**
+  Verify that the composed bundle correctly includes all updated sub-bundles.
+
+- **F6-D7b: Reprove `default_system_state_proofLayerInvariantBundle`.**
+  With new invariant predicates added, prove the default (empty) state still
+  satisfies the full composed bundle.
+
+- **F6-D7c: Update `AdapterProofHooks` preservation theorems.**
+  Timer/register/memory adapter paths must preserve the expanded bundles.
+  Since these operations do not modify the object store or scheduler, new
+  predicates (which quantify over objects/scheduler) are trivially preserved.
+
+- **F6-D7d: Run `test_full.sh` and fix any regressions.**
+  Verify Tier 0-3 pass. Update `test_tier3_invariant_surface.sh` with new
+  anchors for all reclassified and added invariants.
 
 **Exit evidence:**
-- `lake build` passes.
-- `test_full.sh` passes.
+- `lake build` passes with zero errors/warnings.
+- `test_full.sh` passes (Tier 0-3) with updated Tier 3 surface anchors.
+- Zero `sorry` or `axiom` in production proof surface.
+- `capabilityInvariantBundle` reduced from 8-tuple to 6-tuple (tautologies removed).
+- `ipcSchedulerContractPredicates` extended to 6-tuple (notification blocking).
+- `runnableThreadsAreTCBs` defined and preservation proven for all scheduler-affecting operations.
+- `serviceCountBounded` discharged with constructive proof from finite `services` map.
+- `vspaceCrossAsidIsolation` defined and preservation proven for `mapPage`/`unmapPage`.
+- `schedulerInvariantBundleFull` extended to 6-tuple with `runnableThreadsAreTCBs`.
+- All existing tests pass, updated fixture if trace output changes.
+- No tautological predicates remain in state-invariant bundles.
 
-**Dependencies:** WS-F4 (proof gap closure provides foundation). H3-prep infrastructure (PR #290) provides the platform binding pathway for deliverable 3.
+**Dependencies:** WS-F4 (proof gap closure provides foundation — completed).
+WS-F5 (model fidelity — completed). H3-prep infrastructure (PR #290) provides
+the platform binding pathway (delivered). WS-H15d provided `AdapterProofHooks`
+instantiation (delivered).
 
 ### WS-F7: Testing Expansion (LOW)
 
@@ -378,17 +668,16 @@ plan requires explicit disposition: implement or document deferral.
 | **P1** | WS-F1, WS-F2, WS-F4 | Critical IPC/memory + high-value proof gaps (parallel) | **Done** |
 | **P2** | WS-F3 | Information-flow completeness (depends on WS-F1 IPC) | **Done** |
 | **H3-prep** | — | Platform binding infrastructure (PR #290): `PlatformBinding` typeclass, `MachineConfig`/`MemoryRegion`, `VSpaceBackend`, Sim + RPi5 bindings | **Done** |
-| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **WS-F5 in progress** |
+| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **Done** |
 | **P4** | WS-F7, WS-F8 | Testing expansion + cleanup | Planning |
 
 **Phase notes:**
-- P0–P2 are complete. All CRITICAL and HIGH findings from P1/P2 are closed.
+- P0–P3 are complete. All CRITICAL, HIGH, and targeted MEDIUM findings from P1–P3 are closed.
 - H3-prep (PR #290) was executed between P2 and P3 as cross-cutting infrastructure.
   It is not a numbered workstream but delivers enabling assets: the `PlatformBinding`
   typeclass, `VSpaceBackend` abstraction, and concrete platform bindings that P3
-  deliverables (particularly WS-F6 deliverable 3: `AdapterProofHooks` instantiation)
-  depend on. It also closed F-19 (stub declarations) ahead of P4/WS-F8.
-- P3 and P4 can now leverage H3-prep platform binding infrastructure.
+  deliverables depend on. It also closed F-19 (stub declarations) ahead of P4/WS-F8.
+- P4 can now leverage H3-prep platform binding infrastructure and WS-F6 invariant quality improvements.
 
 ---
 
@@ -400,14 +689,14 @@ plan requires explicit disposition: implement or document deferral.
 | WS-F2 | Critical | **Completed** | CRIT-04 |
 | WS-F3 | High | **Completed** | CRIT-02, CRIT-03, F-20, F-21, F-22 |
 | WS-F4 | High | **Completed** | F-03, F-06, F-12 |
-| WS-F5 | Medium | **In Progress** | CRIT-06, ~~HIGH-01~~ (WS-H13), ~~HIGH-02~~ (WS-H12c), HIGH-04, MED-03 |
-| WS-F6 | Medium | Planning (H3-prep infra available) | HIGH-03..08, MED-01..02, MED-05..07, F-07, F-13, F-15, F-18 |
+| WS-F5 | Medium | **Completed** | CRIT-06, ~~HIGH-01~~ (WS-H13), ~~HIGH-02~~ (WS-H12c), HIGH-04, MED-03 |
+| WS-F6 | Medium | **Completed** | HIGH-03, ~~HIGH-05~~ (WS-H5), HIGH-06, ~~HIGH-07~~ (WS-H9), ~~HIGH-08~~ (WS-H15d), MED-01, MED-02, MED-05, MED-06, MED-07, F-07, F-13, F-15, ~~F-18~~ (WS-H15d) |
 | WS-F7 | Low | Planning | MED-08, F-24, F-25, F-26 |
 | WS-F8 | Low | Planning (F-19 closed) | MED-04, MED-17, F-01, F-14, ~~F-19~~ |
 
 **Aggregate finding closure (by matrix row):**
-- **Closed:** 5 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3), 6 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c), 1 LOW (F-19 by PR #290) = **12 of 33**
-- **Open:** 1 CRITICAL (CRIT-06), 8 HIGH, 10 MEDIUM, 4 LOW = **23 of 33**
+- **Closed:** 6 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3; CRIT-06 by WS-F5), 10 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c; HIGH-03, HIGH-06 by WS-F6; HIGH-05 by WS-H5; HIGH-04 by WS-F5; HIGH-07 by WS-H9; HIGH-08/F-18 by WS-H15d), 7 MEDIUM (MED-01, MED-02, MED-05, MED-06, MED-07 by WS-F6; MED-03 by WS-F5; F-07, F-13, F-15 by WS-F6), 1 LOW (F-19 by PR #290) = **24 of 33**
+- **Open:** 0 CRITICAL, 0 HIGH, 3 MEDIUM (MED-04, MED-08, MED-17), 4 LOW (F-01, F-14, F-24..F-26) = **7 of 33** (WS-F7 + WS-F8)
 
 ### Cross-cutting: H3-prep Platform Binding (PR #290)
 
@@ -416,7 +705,7 @@ numbered workstream, it has material impact on remaining work:
 
 | Asset | Location | Impact |
 |-------|----------|--------|
-| `PlatformBinding` typeclass | `Platform/Contract.lean` | Unblocks WS-F6 deliverable 3 (AdapterProofHooks instantiation) |
+| `PlatformBinding` typeclass | `Platform/Contract.lean` | Enabled WS-H15d AdapterProofHooks instantiation (completed) |
 | `MachineConfig` + `MemoryRegion` + `wellFormed` | `Machine.lean` | Provides hardware parameter vocabulary for WS-F5 model fidelity |
 | `VSpaceBackend` + `listVSpaceBackend` | `Architecture/VSpaceBackend.lean` | Per-operation ASID preservation proved; cross-ASID isolation remains WS-F6 |
 | `SimPlatform` binding | `Platform/Sim/*` | Permissive contract provides natural first target for `AdapterProofHooks` |

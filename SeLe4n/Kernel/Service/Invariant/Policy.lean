@@ -193,8 +193,8 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     (newStatus : ServiceStatus)
     (hInv : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
-  rcases hInv with ⟨hUnique, hSound, hAttRule, _, hBounded, hComp, hAcyclic⟩
-  refine ⟨?_, ?_, hAttRule, lifecycleAuthorityMonotonicity_holds _, hBounded, hComp, hAcyclic⟩
+  rcases hInv with ⟨hUnique, hSound, hBounded, hComp, hAcyclic, hDepth⟩
+  refine ⟨?_, ?_, hBounded, hComp, hAcyclic, hDepth⟩
   · intro cnodeId cn hCn
     exact hUnique cnodeId cn hCn
   · intro cnodeId cn slot cap hCn hMem

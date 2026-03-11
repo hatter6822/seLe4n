@@ -75,8 +75,8 @@ M7 (audit remediation).
 
 The immediate next steps are:
 
-1. **WS-F6..F8** — Remaining v0.12.2 audit remediation (medium/low priority):
-   invariant quality, testing expansion, cleanup. WS-F5 (model fidelity) completed at v0.14.9.
+1. **WS-F7..F8** — Remaining v0.12.2 audit remediation (low priority):
+   testing expansion, cleanup. WS-F5 (model fidelity) and WS-F6 (invariant quality) completed at v0.14.9.
 3. **Raspberry Pi 5 hardware binding (H3)** — ARM64 code generation and hardware bring-up.
 
 See [Next Development Path](22-next-slice-development-path.md) and

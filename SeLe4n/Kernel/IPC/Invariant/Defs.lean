@@ -238,9 +238,21 @@ def blockedOnReplyNotRunnable (st : SystemState) : Prop :=
     st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .blockedOnReply endpointId replyTarget →
     tid ∉ st.scheduler.runnable
 
+/-- WS-F6/D2: A thread blocked on notification wait is not runnable.
+Closes the HIGH-03 gap: threads in ipcState = `.blockedOnNotification oid` must
+not appear in the runnable queue. Without this, a notification-blocked thread could
+be scheduled despite being logically blocked, violating temporal isolation. -/
+def blockedOnNotificationNotRunnable (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) tcb notificationId,
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .blockedOnNotification notificationId →
+    tid ∉ st.scheduler.runnable
+
+/-- WS-F6/D2: Extended from 5-tuple to 6-tuple with `blockedOnNotificationNotRunnable`.
+All IPC blocking states now have non-runnability contracts. -/
 def ipcSchedulerContractPredicates (st : SystemState) : Prop :=
   runnableThreadIpcReady st ∧ blockedOnSendNotRunnable st ∧ blockedOnReceiveNotRunnable st ∧
-  blockedOnCallNotRunnable st ∧ blockedOnReplyNotRunnable st
+  blockedOnCallNotRunnable st ∧ blockedOnReplyNotRunnable st ∧
+  blockedOnNotificationNotRunnable st
 
 /-- Under dequeue-on-dispatch QCC, the current thread (if any) has ipcState = .ready.
 This is needed because ensureRunnable adds the woken target to the run queue, and

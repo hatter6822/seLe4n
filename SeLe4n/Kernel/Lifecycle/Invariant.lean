@@ -49,14 +49,24 @@ def lifecycleIdentityTypeExact (st : SystemState) : Prop :=
   SystemState.objectTypeMetadataConsistent st
 
 /-- M4-A step-3 aliasing invariant: one object identity cannot carry conflicting lifecycle
-object-type aliases. -/
+object-type aliases.
+
+WS-F6/D1c: Reclassified as a structural lemma derivable from `lifecycleIdentityTypeExact`
+(see `lifecycleIdentityNoTypeAliasConflict_of_exact`). This is a tautology: the same
+deterministic lookup cannot return two different values. Retained for backward compatibility
+with the `lifecycleIdentityAliasingInvariant` bundle and downstream proof surfaces. -/
 def lifecycleIdentityNoTypeAliasConflict (st : SystemState) : Prop :=
   ∀ oid ty₁ ty₂,
     SystemState.lookupObjectTypeMeta st oid = some ty₁ →
     SystemState.lookupObjectTypeMeta st oid = some ty₂ →
     ty₁ = ty₂
 
-/-- Identity/aliasing bundle used by lifecycle proofs before capability-reference composition. -/
+/-- Identity/aliasing bundle used by lifecycle proofs before capability-reference composition.
+
+WS-F6/D1c note: `lifecycleIdentityNoTypeAliasConflict` is derivable from
+`lifecycleIdentityTypeExact` via `lifecycleIdentityNoTypeAliasConflict_of_exact`.
+Both are retained in the bundle for backward compatibility, but auditors should note
+that the second conjunct adds no independent assurance beyond the first. -/
 def lifecycleIdentityAliasingInvariant (st : SystemState) : Prop :=
   lifecycleIdentityTypeExact st ∧ lifecycleIdentityNoTypeAliasConflict st
 

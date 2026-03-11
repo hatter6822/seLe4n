@@ -1368,18 +1368,245 @@ theorem switchDomain_preserves_contextMatchesCurrent
       obtain ⟨_, hStEq⟩ := hStep; subst hStEq
       simp [contextMatchesCurrent]
 
+-- ============================================================================
+-- WS-F6/D3: runnableThreadsAreTCBs preservation per scheduler operation
+-- ============================================================================
+
+/-- WS-F6/D3: `switchDomain` preserves `runnableThreadsAreTCBs`.
+`switchDomain` may re-enqueue the current thread; its TCB status follows from
+`currentThreadValid` (which is part of the full bundle).
+TPI-D12: Requires saveOutgoingContext + RunQueue.insert TCB-existence helper. -/
+theorem switchDomain_preserves_runnableThreadsAreTCBs
+    (st st' : SystemState)
+    (hInv : runnableThreadsAreTCBs st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    runnableThreadsAreTCBs st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+      simp [hSched] at hStep; cases hStep; exact hInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · cases hStep; exact hInv
+      · rename_i _ hGet
+        simp at hStep; cases hStep
+        intro tid hMem
+        simp only [SchedulerState.runnable] at hMem
+        cases hCur : st.scheduler.current with
+        | none =>
+            simp [hCur] at hMem
+            exact hInv tid (by simp [SchedulerState.runnable]; exact hMem)
+        | some curTid =>
+            cases hObj : st.objects[curTid.toObjId]? with
+            | none =>
+                simp [hCur, hObj] at hMem
+                exact hInv tid (by simp [SchedulerState.runnable]; exact hMem)
+            | some obj =>
+                cases obj with
+                | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+                    simp [hCur, hObj] at hMem
+                    exact hInv tid (by simp [SchedulerState.runnable]; exact hMem)
+                | tcb tcb =>
+                    simp [hCur, hObj] at hMem
+                    rw [RunQueue.mem_toList_iff_mem] at hMem
+                    rw [RunQueue.mem_insert] at hMem
+                    cases hMem with
+                    | inl hOld =>
+                        rw [← RunQueue.mem_toList_iff_mem] at hOld
+                        exact hInv tid (by simp [SchedulerState.runnable]; exact hOld)
+                    | inr hEq =>
+                        subst hEq
+                        exact ⟨tcb, hObj⟩
+
+/-- WS-F6/D3: `schedule` preserves `runnableThreadsAreTCBs`.
+`schedule` removes a thread from the runnable queue (subset relation); TCB existence
+is preserved through saveOutgoingContext (only modifies registerContext).
+TPI-D12: Requires RunQueue.remove subset + saveOutgoingContext TCB-existence helper. -/
+theorem schedule_preserves_runnableThreadsAreTCBs
+    (st st' : SystemState)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : schedule st = .ok ((), st')) :
+    runnableThreadsAreTCBs st' := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          have hStEqBase := chooseThread_preserves_state st stChoose next (by rw [hChoose])
+          cases next with
+          | none =>
+              simp only [hChoose] at hStep
+              -- Derive st' facts
+              have hObjSt' : st'.objects = (saveOutgoingContext stChoose).objects := by
+                simp only [setCurrentThread] at hStep
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep; rfl
+              have hSchedSt' : st'.scheduler.runQueue = (saveOutgoingContext stChoose).scheduler.runQueue := by
+                simp only [setCurrentThread] at hStep
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep; rfl
+              intro tid hMem
+              simp only [SchedulerState.runnable] at hMem
+              rw [hSchedSt', saveOutgoingContext_scheduler] at hMem
+              have hMemOrig : tid ∈ st.scheduler.runnable := by
+                rw [← hStEqBase]; simp [SchedulerState.runnable]; exact hMem
+              obtain ⟨tcb, hTcb⟩ := hAllTcb tid hMemOrig
+              rw [← hStEqBase] at hTcb
+              rw [hObjSt']
+              exact saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hTcb
+          | some tid =>
+              simp only [hChoose] at hStep
+              have hStEq := hStEqBase
+              cases hObj : stChoose.objects[tid.toObjId]? with
+              | none => simp [hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+                      simp [hObj] at hStep
+                  | tcb tcb =>
+                      simp only [hObj] at hStep
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      · rw [if_pos hSchedOk] at hStep
+                        -- Extract st' properties without full substitution
+                        have hObjSt' : st'.objects = (saveOutgoingContext stChoose).objects := by
+                          simp only [setCurrentThread] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                          obtain ⟨_, rfl⟩ := hStep
+                          simp [restoreIncomingContext_objects]
+                        have hSchedSt' : st'.scheduler.runQueue = stChoose.scheduler.runQueue.remove tid := by
+                          simp only [setCurrentThread] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                          obtain ⟨_, rfl⟩ := hStep
+                          simp [restoreIncomingContext_scheduler, saveOutgoingContext_scheduler]
+                        intro t hMem
+                        simp only [SchedulerState.runnable] at hMem
+                        rw [hSchedSt', RunQueue.mem_toList_iff_mem, RunQueue.mem_remove] at hMem
+                        obtain ⟨hMemOrig, _⟩ := hMem
+                        rw [← RunQueue.mem_toList_iff_mem] at hMemOrig
+                        have hMemOrig' : t ∈ st.scheduler.runnable := by
+                          rw [← hStEq]; simp [SchedulerState.runnable]; exact hMemOrig
+                        obtain ⟨tcb', hTcb'⟩ := hAllTcb t hMemOrig'
+                        rw [← hStEq] at hTcb'
+                        rw [hObjSt']
+                        exact saveOutgoingContext_preserves_tcb stChoose t.toObjId tcb' hTcb'
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hSchedOk'] at hStep
+
+/-- WS-F6/D3: `handleYield` preserves `runnableThreadsAreTCBs`.
+`handleYield` re-enqueues the current thread then calls `schedule`. Objects are
+unchanged, and the re-enqueued thread is a TCB via `currentThreadValid`.
+TPI-D12: Composition of schedule preservation + re-enqueue TCB-existence. -/
+theorem handleYield_preserves_runnableThreadsAreTCBs
+    (st st' : SystemState)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : handleYield st = .ok ((), st')) :
+    runnableThreadsAreTCBs st' := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+      -- No current thread: handleYield just calls schedule
+      simp [hCur] at hStep
+      exact schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hStep
+  | some tid =>
+      cases hObj : st.objects[tid.toObjId]? with
+      | none => simp [hCur, hObj] at hStep
+      | some obj =>
+          cases obj with
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+              simp [hCur, hObj] at hStep
+          | tcb tcb =>
+              simp only [hCur, hObj] at hStep
+              apply schedule_preserves_runnableThreadsAreTCBs _ st' _ hStep
+              intro t hMem
+              simp only [SchedulerState.runnable] at hMem
+              rw [RunQueue.mem_toList_iff_mem] at hMem
+              rw [RunQueue.mem_rotateToBack] at hMem
+              rw [RunQueue.mem_insert] at hMem
+              cases hMem with
+              | inl hOld =>
+                  rw [← RunQueue.mem_toList_iff_mem] at hOld
+                  exact hAllTcb t (by simp [SchedulerState.runnable]; exact hOld)
+              | inr hEq =>
+                  subst hEq
+                  exact ⟨tcb, hObj⟩
+
+/-- WS-F6/D3: `timerTick` preserves `runnableThreadsAreTCBs`.
+`timerTick` may call `schedule` when the time-slice expires. Objects are unchanged.
+TPI-D12: Composition via schedule_preserves_runnableThreadsAreTCBs. -/
+theorem timerTick_preserves_runnableThreadsAreTCBs
+    (st st' : SystemState)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hStep : timerTick st = .ok ((), st')) :
+    runnableThreadsAreTCBs st' := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+      -- No current thread: only machine timer advances
+      simp [hCur] at hStep; cases hStep
+      intro tid hMem
+      exact hAllTcb tid hMem
+  | some curTid =>
+      simp only [hCur] at hStep
+      cases hObj : st.objects[curTid.toObjId]? with
+      | none => simp [hObj] at hStep
+      | some obj =>
+          cases obj with
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+              simp [hObj] at hStep
+          | tcb tcb =>
+              simp only [hObj] at hStep
+              by_cases hExp : tcb.timeSlice ≤ 1
+              · -- Time-slice expired: reset TCB, re-enqueue, schedule
+                rw [if_pos hExp] at hStep
+                apply schedule_preserves_runnableThreadsAreTCBs _ st' _ hStep
+                intro t hMem
+                simp only [SchedulerState.runnable] at hMem
+                rw [RunQueue.mem_toList_iff_mem] at hMem
+                rw [RunQueue.mem_insert] at hMem
+                cases hMem with
+                | inl hOld =>
+                    rw [← RunQueue.mem_toList_iff_mem] at hOld
+                    have hMemOrig : t ∈ st.scheduler.runnable := by
+                      simp [SchedulerState.runnable]; exact hOld
+                    obtain ⟨tcbT, hTcbT⟩ := hAllTcb t hMemOrig
+                    rw [HashMap_getElem?_insert]
+                    by_cases hEq : curTid.toObjId == t.toObjId
+                    · simp [hEq]
+                    · simp [hEq]; exact ⟨tcbT, hTcbT⟩
+                | inr hEq =>
+                    subst hEq
+                    rw [HashMap_getElem?_insert]
+                    simp [BEq.beq]
+              · -- Time-slice not expired: decrement, no schedule call
+                rw [if_neg hExp] at hStep
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                intro tid hMem
+                obtain ⟨tcbT, hTcbT⟩ := hAllTcb tid hMem
+                rw [HashMap_getElem?_insert]
+                by_cases hEqId : curTid.toObjId == tid.toObjId
+                · simp [hEqId]
+                · simp [hEqId]; exact ⟨tcbT, hTcbT⟩
+
 /-- WS-H6/WS-H12b/WS-H12e: `switchDomain` preserves the full scheduler invariant bundle. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb⟩
   exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
          switchDomain_preserves_timeSlicePositive st st' hTS hCurTS hStep,
          switchDomain_preserves_currentTimeSlicePositive st st' hCurTS hStep,
          switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep,
-         switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep⟩
+         switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep,
+         switchDomain_preserves_runnableThreadsAreTCBs st st' hRunnTcb hStep⟩
 
 /-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
 satisfies the EDF deadline ordering among same-domain/same-priority candidates. -/
@@ -2128,12 +2355,13 @@ theorem schedule_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb⟩
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hStep,
          schedule_preserves_timeSlicePositive st st' hTS hStep,
          schedule_preserves_currentTimeSlicePositive st st' hTS hStep,
          schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hStep,
-         schedule_preserves_contextMatchesCurrent st st' hStep⟩
+         schedule_preserves_contextMatchesCurrent st st' hStep,
+         schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hStep⟩
 
 /-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle. -/
 theorem handleYield_preserves_schedulerInvariantBundleFull
@@ -2145,12 +2373,13 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb⟩
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hStep,
          handleYield_preserves_currentTimeSlicePositive st st' hTS hCurTS hStep,
          handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hStep,
-         handleYield_preserves_contextMatchesCurrent st st' hStep⟩
+         handleYield_preserves_contextMatchesCurrent st st' hStep,
+         handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hStep⟩
 
 /-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle. -/
 theorem timerTick_preserves_schedulerInvariantBundleFull
@@ -2162,9 +2391,10 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb⟩
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hStep,
          timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hStep,
          timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hStep,
-         timerTick_preserves_contextMatchesCurrent st st' hCtx hStep⟩
+         timerTick_preserves_contextMatchesCurrent st st' hCtx hStep,
+         timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hStep⟩

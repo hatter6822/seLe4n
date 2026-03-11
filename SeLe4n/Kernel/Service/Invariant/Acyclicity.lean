@@ -1055,4 +1055,36 @@ theorem serviceStop_preserves_serviceGraphInvariant
       unfold storeServiceEntry storeServiceState at hStep; simp at hStep; cases hStep
       exact serviceGraphInvariant_of_storeServiceState_sameDeps hLookup rfl hInv
 
+-- ============================================================================
+-- WS-F6/D4: Default state satisfaction
+-- ============================================================================
+
+/-- WS-F6/D4a: Default state has empty services, so `serviceCountBounded` holds
+with `ns := []`. The empty list is trivially a `bfsUniverse` (no services to
+include), and `[].length = 0 ≤ serviceBfsFuel default`. -/
+private theorem default_lookupService_none (sid : ServiceId) :
+    lookupService default sid = none := by
+  unfold lookupService
+  exact @HashMap_getElem?_empty ServiceId ServiceGraphEntry _ _ sid
+
+theorem default_serviceCountBounded : serviceCountBounded default := by
+  refine ⟨[], ⟨List.nodup_nil, ?_, ?_⟩, ?_⟩
+  · intro sid hLookup
+    exact absurd (default_lookupService_none sid) hLookup
+  · intro sid hMem
+    contradiction
+  · simp [serviceBfsFuel]
+
+/-- WS-F6/D4: Default state satisfies the full service graph invariant. -/
+theorem default_serviceGraphInvariant : serviceGraphInvariant default := by
+  refine ⟨?_, default_serviceCountBounded⟩
+  intro a hPath
+  cases hPath with
+  | single h =>
+      obtain ⟨svc, hL, _⟩ := h
+      have := default_lookupService_none a; rw [this] at hL; nomatch hL
+  | cons h _ =>
+      obtain ⟨svc, hL, _⟩ := h
+      have := default_lookupService_none a; rw [this] at hL; nomatch hL
+
 end SeLe4n.Kernel

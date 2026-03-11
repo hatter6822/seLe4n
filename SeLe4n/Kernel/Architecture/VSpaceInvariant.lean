@@ -78,15 +78,33 @@ def wxExclusiveInvariant (st : SystemState) : Prop :=
     root.mappings[v]? = some (p, perms) →
     perms.wxCompliant = true
 
-/-- WS-B1/WS-G3/WS-H11 architecture/VSpace invariant bundle entrypoint.
+/-- WS-F6/D6/MED-07: Cross-ASID isolation — operations on one VSpaceRoot do not
+affect another VSpaceRoot's mappings because distinct VSpaceRoot objects have
+distinct ASIDs. This is the VSpace analog of non-interference: address spaces
+for different processes are provably independent.
 
-WS-H11: Enriched with `wxExclusiveInvariant` and `boundedAddressTranslation`. -/
+Combined with `vspaceAsidRootsUnique` (which ensures ASID → ObjId uniqueness)
+and `storeObject_objects_ne` (which ensures storeObject only modifies the target),
+this gives full cross-root isolation: if VSpaceRoot A is modified, VSpaceRoot B
+(B ≠ A) is unchanged. -/
+def vspaceCrossAsidIsolation (st : SystemState) : Prop :=
+  ∀ (oidA oidB : SeLe4n.ObjId) (rootA rootB : VSpaceRoot),
+    st.objects[oidA]? = some (.vspaceRoot rootA) →
+    st.objects[oidB]? = some (.vspaceRoot rootB) →
+    oidA ≠ oidB →
+    rootA.asid ≠ rootB.asid
+
+/-- WS-B1/WS-G3/WS-H11/WS-F6 architecture/VSpace invariant bundle entrypoint.
+
+WS-H11: Enriched with `wxExclusiveInvariant` and `boundedAddressTranslation`.
+WS-F6/D6: Extended from 5-tuple to 6-tuple with `vspaceCrossAsidIsolation`. -/
 def vspaceInvariantBundle (st : SystemState) (bound : Nat := 2^52) : Prop :=
   vspaceAsidRootsUnique st ∧
   vspaceRootNonOverlap st ∧
   asidTableConsistent st ∧
   wxExclusiveInvariant st ∧
-  boundedAddressTranslation st bound
+  boundedAddressTranslation st bound ∧
+  vspaceCrossAsidIsolation st
 
 -- ============================================================================
 -- WS-G3: Shared asidTableConsistent preservation helper
@@ -265,8 +283,8 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
               fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hStore
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
-            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv⟩
-            refine ⟨?_, ?_, ?_, ?_, ?_⟩
+            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             -- 1. vspaceAsidRootsUnique st'
             · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
               by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -332,6 +350,26 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                   exact hBoundInv _ root v p pm hObjRoot hMap
               · rw [hObjNe oid hEq] at hObjR
                 exact hBoundInv oid r v p pm hObjR hMap
+            -- 6. vspaceCrossAsidIsolation st'
+            · intro oidA oidB rA rB hObjA hObjB hNeqAB
+              by_cases hA : oidA = rootId <;> by_cases hB : oidB = rootId
+              · exact absurd (hA.trans hB.symm) hNeqAB
+              · rw [hA] at hObjA hNeqAB
+                rw [hObjEq] at hObjA; cases hObjA
+                rw [hObjNe oidB hB] at hObjB
+                intro hEq
+                apply hCrossAsid rootId oidB root rB hObjRoot hObjB hNeqAB
+                rw [← hAsidPreserved]; exact hEq
+              · rw [hB] at hObjB hNeqAB
+                rw [hObjEq] at hObjB; cases hObjB
+                rw [hObjNe oidA hA] at hObjA
+                intro hEq
+                have hNeqAB' : oidA ≠ rootId := fun h => hNeqAB (h.trans rfl)
+                apply hCrossAsid oidA rootId rA root hObjA hObjRoot hNeqAB'
+                rw [← hAsidPreserved]; exact hEq
+              · rw [hObjNe oidA hA] at hObjA
+                rw [hObjNe oidB hB] at hObjB
+                exact hCrossAsid oidA oidB rA rB hObjA hObjB hNeqAB
       · have hWxF : perms.wxCompliant = false := by
           cases h : perms.wxCompliant <;> simp_all
         simp [hWxF] at hStep
@@ -363,8 +401,8 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hStore
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
-          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv⟩
-          refine ⟨?_, ?_, ?_, ?_, ?_⟩
+          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid⟩
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
           -- 1. vspaceAsidRootsUnique st'
           · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
             by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -420,6 +458,26 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               exact hBoundInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hBoundInv oid r v p pm hObjR hMap
+          -- 6. vspaceCrossAsidIsolation st'
+          · intro oidA oidB rA rB hObjA hObjB hNeqAB
+            by_cases hA : oidA = rootId <;> by_cases hB : oidB = rootId
+            · exact absurd (hA.trans hB.symm) hNeqAB
+            · rw [hA] at hObjA hNeqAB
+              rw [hObjEq] at hObjA; cases hObjA
+              rw [hObjNe oidB hB] at hObjB
+              intro hEq
+              apply hCrossAsid rootId oidB root rB hObjRoot hObjB hNeqAB
+              rw [← hAsidPreserved]; exact hEq
+            · rw [hB] at hObjB hNeqAB
+              rw [hObjEq] at hObjB; cases hObjB
+              rw [hObjNe oidA hA] at hObjA
+              intro hEq
+              have hNeqAB' : oidA ≠ rootId := fun h => hNeqAB (h.trans rfl)
+              apply hCrossAsid oidA rootId rA root hObjA hObjRoot hNeqAB'
+              rw [← hAsidPreserved]; exact hEq
+            · rw [hObjNe oidA hA] at hObjA
+              rw [hObjNe oidB hB] at hObjB
+              exact hCrossAsid oidA oidB rA rB hObjA hObjB hNeqAB
 
 -- ============================================================================
 -- TPI-D05 / TPI-001: VSpace round-trip theorems

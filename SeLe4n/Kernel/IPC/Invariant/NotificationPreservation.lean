@@ -363,7 +363,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
     (hContract : ipcSchedulerContractPredicates st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold notificationSignal at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
@@ -388,7 +388,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
             intro ⟨_, hEq⟩; subst hEq
             have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st''
               notificationId _ waiter _ hStore hTcb
-            refine ⟨?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · -- runnableThreadIpcReady
               intro tid tcb' hTcb' hRun'
               rw [ensureRunnable_preserves_objects] at hTcb'
@@ -486,6 +486,26 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
                 · exact hBlockReply tid tcb' eid rt hTcbPre hIpcState'
                     (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · exact absurd hEq hNeTid
+            · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+              intro tid tcb' nid hTcb' hIpcState'
+              rw [ensureRunnable_preserves_objects] at hTcb'
+              by_cases hNe : tid.toObjId = waiter.toObjId
+              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hTcb tcb' (hNe ▸ hTcb')
+                rw [this] at hIpcState'; cases hIpcState'
+              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
+                    .ready tid.toObjId hNe hTcb).symm.trans hTcb'
+                have hNeNotif : tid.toObjId ≠ notificationId := by
+                  intro h; rw [h] at hTcbMid
+                  rw [storeObject_objects_eq st pair.2 notificationId _ hStore] at hTcbMid
+                  cases hTcbMid
+                have hTcbPre := (storeObject_objects_ne st pair.2 notificationId tid.toObjId
+                  _ hNeNotif hStore).symm.trans hTcbMid
+                have hNeTid : tid ≠ waiter := fun h => hNe (congrArg ThreadId.toObjId h)
+                intro hRun'
+                rcases ensureRunnable_mem_reverse st'' waiter tid hRun' with hOld | hEq
+                · exact hBlockNotif tid tcb' nid hTcbPre hIpcState'
+                    (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                · exact absurd hEq hNeTid
       | nil =>
         simp only [hWaiters] at hStep
         exact contracts_of_same_scheduler_ipcState st st'
@@ -496,7 +516,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               rw [storeObject_objects_eq st st' notificationId _ hStep] at hTcb'; cases hTcb'
             exact ⟨tcb', by rwa [storeObject_objects_ne st st' notificationId tid.toObjId
               _ hNeNotif hStep] at hTcb', rfl⟩)
-          ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+          ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
 
 /-- WS-F4: notificationWait preserves ipcSchedulerContractPredicates.
 Badge-consume: storeObject + storeTcbIpcState(.ready) — scheduler unchanged.
@@ -510,7 +530,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
     (hContract : ipcSchedulerContractPredicates st)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold notificationWait at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
@@ -534,7 +554,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
             intro ⟨_, hEq⟩; subst hEq
             have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st''
               notificationId _ waiter _ hStore hTcb
-            refine ⟨?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · -- runnableThreadIpcReady
               intro tid tcb' hTcb' hRun'
               by_cases hNe : tid.toObjId = waiter.toObjId
@@ -612,6 +632,22 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                 intro hRun'
                 exact hBlockReply tid tcb' eid rt hTcbPre hIpcState'
                   (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+            · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+              intro tid tcb' nid hTcb' hIpcState'
+              by_cases hNe : tid.toObjId = waiter.toObjId
+              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hTcb tcb' (hNe ▸ hTcb')
+                rw [this] at hIpcState'; cases hIpcState'
+              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
+                    .ready tid.toObjId hNe hTcb).symm.trans hTcb'
+                have hNeNotif : tid.toObjId ≠ notificationId := by
+                  intro h; rw [h] at hTcbMid
+                  rw [storeObject_objects_eq st pair.2 notificationId _ hStore] at hTcbMid
+                  cases hTcbMid
+                have hTcbPre := (storeObject_objects_ne st pair.2 notificationId tid.toObjId
+                  _ hNeNotif hStore).symm.trans hTcbMid
+                intro hRun'
+                exact hBlockNotif tid tcb' nid hTcbPre hIpcState'
+                  (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
       | none =>
         -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
         simp only [hBadge] at hStep
@@ -638,7 +674,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                 intro ⟨_, hEq⟩; subst hEq
                 have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st''
                   notificationId _ waiter _ hStore hTcb
-                refine ⟨?_, ?_, ?_, ?_, ?_⟩
+                refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
                 · -- runnableThreadIpcReady
                   intro tid tcb' hTcb' hRun'
                   rw [removeRunnable_preserves_objects] at hTcb'
@@ -734,6 +770,27 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                     rw [removeRunnable_runnable_mem] at hRun'
                     have ⟨hMem, _⟩ := hRun'
                     exact hBlockReply tid tcb' eid rt hTcbPre hIpcState'
+                      (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+                  intro tid tcb' nid hTcb' hIpcState'
+                  rw [removeRunnable_preserves_objects] at hTcb'
+                  by_cases hNe : tid.toObjId = waiter.toObjId
+                  · -- tid matches waiter: waiter was removed from runnable
+                    have hTidEq := ThreadId.toObjId_injective tid waiter hNe
+                    subst hTidEq
+                    exact removeRunnable_not_mem_self st'' _
+                  · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
+                        (.blockedOnNotification notificationId) tid.toObjId hNe hTcb).symm.trans hTcb'
+                    have hNeNotif : tid.toObjId ≠ notificationId := by
+                      intro h; rw [h] at hTcbMid
+                      rw [storeObject_objects_eq st pair.2 notificationId _ hStore] at hTcbMid
+                      cases hTcbMid
+                    have hTcbPre := (storeObject_objects_ne st pair.2 notificationId tid.toObjId
+                      _ hNeNotif hStore).symm.trans hTcbMid
+                    intro hRun'
+                    rw [removeRunnable_runnable_mem] at hRun'
+                    have ⟨hMem, _⟩ := hRun'
+                    exact hBlockNotif tid tcb' nid hTcbPre hIpcState'
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
 -- ============================================================================
 -- WS-F5/D1d: Badge well-formedness preservation
