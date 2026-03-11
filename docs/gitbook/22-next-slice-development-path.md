@@ -2,13 +2,13 @@
 
 ## Current state
 
-**Version:** 0.14.8 (Lean v4.28.0)
+**Version:** 0.14.9 (Lean v4.28.0)
 
 **Verified metrics snapshot (from [`docs/codebase_map.json`](../../docs/codebase_map.json) `readme_sync`):**
-- Production LoC: 32,872 across 67 files
-- Test LoC: 2,763 across 3 suites
-- Proved declarations: 1,055 theorem/lemma declarations (zero sorry/axiom)
-- Total declarations: 1,940 across 70 modules
+- Production LoC: 34,171 across 67 files
+- Test LoC: 2,886 across 3 suites
+- Proved declarations: 1,086 theorem/lemma declarations (zero sorry/axiom)
+- Total declarations: 2,006 across 70 modules
 
 Four major portfolios are completed:
 

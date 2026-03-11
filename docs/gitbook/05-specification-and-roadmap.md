@@ -13,14 +13,14 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.14.8` |
+| Version | `0.14.9` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 32,872 across 67 files |
-| Test LoC | 2,763 across 3 suites |
-| Proved declarations | 1,055 theorem/lemma declarations (zero sorry/axiom) |
-| Total declarations | 1,940 across 70 modules |
+| Production LoC | 34,171 across 67 files |
+| Test LoC | 2,886 across 3 suites |
+| Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
+| Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-F8 (WS-F7 completed) |
+| Next workstreams | Raspberry Pi 5 hardware binding (all WS-F and WS-H portfolios completed) |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
