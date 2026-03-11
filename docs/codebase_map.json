@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-invariant-quality-CuEEM",
-      "commit_sha": "36ebb6ffd09732ca1288ad51cf16d3f5166ea16b",
-      "tree_sha": "7493501fa9bdee6ce7bb7d85dc47d7050e0c3d9f",
-      "committed_at_utc": "2026-03-11T07:30:42+00:00"
+      "commit_sha": "58dd53c5f30f3e80bee2ec17ac41ad48b50546ca",
+      "tree_sha": "6b589ce7210be15257026c501edb79bf29a07ba2",
+      "committed_at_utc": "2026-03-11T07:45:32+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "51bad5cb4b01527ea33a273dbb095fe09192d90ebd8ae9a9d20a181f56ca6c6d"
+    "source_digest": "ed823ff8d826ad047197a3bce54701b6060921135a7ebd89afa60873f3bcfd9f"
   },
   "summary": {
     "module_count": 70,
@@ -27,7 +27,7 @@
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 33999,
+    "production_loc": 34006,
     "test_files": 3,
     "test_loc": 2798,
     "proved_theorem_lemma_decls": 1086,
@@ -1455,7 +1455,7 @@
         {
           "kind": "theorem",
           "name": "cspaceAttenuationRule_holds",
-          "line": 598,
+          "line": 604,
           "called": [
             "mintDerivedCap_attenuates"
           ]
@@ -1463,7 +1463,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleAuthorityMonotonicity_holds",
-          "line": 604,
+          "line": 610,
           "called": [
             "cspaceDeleteSlot_authority_reduction",
             "cspaceRevoke_local_target_reduction"
@@ -1472,7 +1472,7 @@
         {
           "kind": "theorem",
           "name": "capabilityInvariantBundle_of_slotUnique",
-          "line": 616,
+          "line": 622,
           "called": [
             "cspaceLookupSound_of_cspaceSlotUnique"
           ]
@@ -1505,43 +1505,43 @@
         {
           "kind": "def",
           "name": "cspaceAttenuationRule",
-          "line": 44,
+          "line": 45,
           "called": []
         },
         {
           "kind": "def",
           "name": "lifecycleAuthorityMonotonicity",
-          "line": 56,
+          "line": 57,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceSlotCountBounded",
-          "line": 75,
+          "line": 76,
           "called": []
         },
         {
           "kind": "def",
           "name": "cdtCompleteness",
-          "line": 91,
+          "line": 92,
           "called": []
         },
         {
           "kind": "def",
           "name": "cdtAcyclicity",
-          "line": 99,
+          "line": 100,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceDepthConsistent",
-          "line": 110,
+          "line": 111,
           "called": []
         },
         {
           "kind": "def",
           "name": "capabilityInvariantBundle",
-          "line": 146,
+          "line": 147,
           "called": [
             "cdtAcyclicity",
             "cdtCompleteness",
@@ -1554,7 +1554,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 156,
+          "line": 157,
           "called": [
             "lifecycleAuthorityMonotonicity"
           ]
@@ -1562,7 +1562,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCapabilityStaleAuthorityInvariant_of_bundles",
-          "line": 159,
+          "line": 160,
           "called": [
             "capabilityInvariantBundle",
             "lifecycleAuthorityMonotonicity",
@@ -1572,7 +1572,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_capabilityInvariantBundle",
-          "line": 171,
+          "line": 172,
           "called": [
             "capabilityInvariantBundle",
             "cspaceSlotCountBounded"
@@ -1581,7 +1581,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_capabilityInvariantBundle",
-          "line": 175,
+          "line": 176,
           "called": [
             "capabilityInvariantBundle",
             "cdtCompleteness"
@@ -1590,7 +1590,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_capabilityInvariantBundle",
-          "line": 179,
+          "line": 180,
           "called": [
             "capabilityInvariantBundle",
             "cdtAcyclicity"
@@ -1599,7 +1599,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_capabilityInvariantBundle",
-          "line": 183,
+          "line": 184,
           "called": [
             "capabilityInvariantBundle",
             "cspaceDepthConsistent"
@@ -1608,7 +1608,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeObject_nonCNode",
-          "line": 193,
+          "line": 194,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -1616,7 +1616,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeObject_cnode",
-          "line": 213,
+          "line": 214,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -1624,7 +1624,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_objects_eq",
-          "line": 230,
+          "line": 231,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -1632,7 +1632,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_objects_nodeSlot_eq",
-          "line": 240,
+          "line": 241,
           "called": [
             "cdtCompleteness"
           ]
@@ -1640,7 +1640,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_storeObject",
-          "line": 253,
+          "line": 254,
           "called": [
             "cdtCompleteness"
           ]
@@ -1648,7 +1648,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_cdt_eq",
-          "line": 267,
+          "line": 268,
           "called": [
             "cdtAcyclicity"
           ]
@@ -1656,13 +1656,13 @@
         {
           "kind": "theorem",
           "name": "storeObject_cdtNodeSlot_eq",
-          "line": 277,
+          "line": 278,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeTcbIpcState",
-          "line": 286,
+          "line": 287,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -1670,7 +1670,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cdt_eq",
-          "line": 297,
+          "line": 298,
           "called": [
             "storeObject_cdtNodeSlot_eq"
           ]
@@ -1678,7 +1678,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_cdt_eq",
-          "line": 316,
+          "line": 317,
           "called": [
             "storeObject_cdtNodeSlot_eq"
           ]
@@ -1686,19 +1686,19 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_cdt_eq",
-          "line": 336,
+          "line": 337,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefsState_cdt_eq",
-          "line": 345,
+          "line": 346,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "clearCapabilityRefs_cdt_eq",
-          "line": 358,
+          "line": 359,
           "called": [
             "clearCapabilityRefsState_cdt_eq"
           ]
@@ -1706,7 +1706,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_storeObject_nonCNode",
-          "line": 368,
+          "line": 369,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -1720,7 +1720,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_objects_cdtNodeSlot_eq",
-          "line": 383,
+          "line": 384,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -1733,7 +1733,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_detachSlotFromCdt",
-          "line": 398,
+          "line": 399,
           "called": [
             "cdtCompleteness"
           ]
@@ -1741,7 +1741,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_detachSlotFromCdt",
-          "line": 421,
+          "line": 422,
           "called": [
             "cdtAcyclicity"
           ]
@@ -1749,7 +1749,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_detachSlotFromCdt",
-          "line": 432,
+          "line": 433,
           "called": [
             "cspaceSlotCountBounded",
             "cspaceSlotCountBounded_of_objects_eq"
@@ -1758,7 +1758,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_detachSlotFromCdt",
-          "line": 440,
+          "line": 441,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_detachSlotFromCdt",
@@ -1771,7 +1771,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_objects_eq",
-          "line": 452,
+          "line": 453,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -1779,7 +1779,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_nonCNode",
-          "line": 461,
+          "line": 462,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -1787,7 +1787,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_sameCNode",
-          "line": 480,
+          "line": 481,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -1795,7 +1795,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_insertCNode",
-          "line": 509,
+          "line": 510,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -1803,7 +1803,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_detachSlotFromCdt",
-          "line": 525,
+          "line": 526,
           "called": [
             "cspaceDepthConsistent",
             "cspaceDepthConsistent_of_objects_eq"
@@ -1812,73 +1812,73 @@
         {
           "kind": "theorem",
           "name": "CNode.remove_depth_eq",
-          "line": 533,
+          "line": 534,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_guardWidth_eq",
-          "line": 536,
+          "line": 537,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_radixWidth_eq",
-          "line": 539,
+          "line": 540,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_slots_sub",
-          "line": 542,
+          "line": 543,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_depth_eq",
-          "line": 552,
+          "line": 553,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_guardWidth_eq",
-          "line": 555,
+          "line": 556,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_radixWidth_eq",
-          "line": 558,
+          "line": 559,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_slots_sub",
-          "line": 561,
+          "line": 562,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_depth_eq",
-          "line": 581,
+          "line": 582,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_guardWidth_eq",
-          "line": 584,
+          "line": 585,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_radixWidth_eq",
-          "line": 587,
+          "line": 588,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "boundedCompleteness_of_cdt_only_update",
-          "line": 592,
+          "line": 593,
           "called": [
             "cdtCompleteness",
             "cspaceSlotCountBounded"
@@ -1887,7 +1887,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_blocking_path",
-          "line": 602,
+          "line": 603,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -1905,7 +1905,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_handshake_path",
-          "line": 644,
+          "line": 645,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -1923,7 +1923,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_reply_path",
-          "line": 692,
+          "line": 693,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",

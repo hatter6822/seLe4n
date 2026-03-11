@@ -305,7 +305,7 @@ theorem default_system_state_proofLayerInvariantBundle :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
-  -- 2. capabilityInvariantBundle (7-tuple: unique, sound, attenuation, lifecycle, bounded, completeness, acyclicity)
+  -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
   · exact default_capabilityInvariantBundle
   -- 3. coreIpcInvariantBundle (WS-H12e: now uses ipcInvariantFull)
   · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩

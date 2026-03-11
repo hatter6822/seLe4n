@@ -40,7 +40,8 @@ def cspaceLookupSound (st : SystemState) : Prop :=
     cn.lookup slot = some cap →
     SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap
 
-/-- Attenuation rule component used by the M2 capability invariant bundle. -/
+/-- Attenuation rule operation-correctness lemma (proved by `cspaceAttenuationRule_holds`).
+Not a state invariant (no `st` parameter); removed from `capabilityInvariantBundle` in WS-F6/D1. -/
 def cspaceAttenuationRule : Prop :=
   ∀ parent child rights badge,
     mintDerivedCap parent rights badge = .ok child →
