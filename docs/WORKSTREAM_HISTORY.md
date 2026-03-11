@@ -32,6 +32,22 @@ All WS-F workstreams are completed. The v0.12.2 audit remediation portfolio is
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low — **COMPLETED** |
 | **WS-F8** | Cleanup (dead code, dead type constructors, extension labeling) | Low — **COMPLETED** |
 
+### WS-I workstreams (I1-I5) — Improvement recommendations from v0.14.9 audit
+
+The v0.14.9 comprehensive codebase audit identified 18 non-blocking improvement
+recommendations across testing, proof quality, documentation, code quality, and
+coverage expansion. These are organized into 5 workstreams across 3 phases. See
+the [workstream plan](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) for
+full details.
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-I1** | Test infrastructure hardening (inter-transition assertions, determinism promotion, fixture traceability, negative-state expansion) | HIGH — pending |
+| **WS-I2** | Proof & hygiene strengthening (L-08 regex upgrade, HashMap.fold migration, NI CDT frame lemmas, VSpace memory projection) | HIGH — pending |
+| **WS-I3** | Documentation completeness (codebase map automation, GitBook Tier 3 chapter, claim-evidence gap closure) | MEDIUM — pending |
+| **WS-I4** | Code quality refinement (RuntimeContract documentation, Service subsystem docstring expansion) | LOW — pending |
+| **WS-I5** | Coverage expansion (scheduler edge-case scenarios, information-flow declassification tests, platform contract stress tests) | LOW — pending |
+
 ### Raspberry Pi 5 hardware binding
 
 After the remaining workstreams, the next major milestone is populating the RPi5
@@ -98,4 +114,5 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 | [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) | WS-F portfolio (v0.12.2 audit findings) |
 | [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) | WS-G portfolio (performance optimization) |
 | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) | Performance audit baseline |
-| [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) | Latest end-to-end audit |
+| [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) | Prior end-to-end audit (v0.13.6) |
+| [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) |
