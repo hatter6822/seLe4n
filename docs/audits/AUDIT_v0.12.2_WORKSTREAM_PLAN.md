@@ -625,19 +625,101 @@ instantiation (delivered).
 
 ### WS-F7: Testing Expansion (LOW)
 
-**Objective:** Strengthen runtime validation and close testing gaps.
+**Objective:** Strengthen runtime validation and close residual testing gaps
+identified by the v0.12.2 audit (MED-08, F-24, F-25, F-26). Every new runtime
+check must be machine-exercised by at least one trace or probe scenario. Zero
+`sorry`/`axiom` in production proof surface.
 
-**Deliverables:**
-1. Extend runtime invariant oracle (`InvariantChecks.lean`) to check `blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `currentThreadInActiveDomain`, `uniqueWaiters`.
-2. Extend `TraceSequenceProbe` to cover dual-queue, notification, scheduler, and capability operations.
-3. Exercise `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` fixtures.
-4. Add CDT structural integrity runtime checks.
+**Deliverables — broken into implementation units:**
+
+#### D1: Invariant Oracle Expansion (`InvariantChecks.lean`)
+
+Add four new runtime invariant check families to the existing
+`stateInvariantChecksFor` oracle. Each check strengthens the scheduler/IPC
+contract and catches violations that formal proofs alone cannot exercise at
+runtime.
+
+| Check | Semantic | Security Rationale |
+|-------|----------|-------------------|
+| `blockedOnSendNotRunnable` | Every thread with `ipcState = .blockedOnSend ep` must NOT appear in the runnable list. | Prevents scheduler from dispatching a thread that is logically blocked, which could cause message duplication or ordering violations. |
+| `blockedOnReceiveNotRunnable` | Every thread with `ipcState = .blockedOnReceive ep` must NOT appear in the runnable list. | Same as above for the receive path — a blocked receiver dispatched prematurely could observe partial state. |
+| `currentThreadInActiveDomain` | If `scheduler.current = some tid`, then the TCB for `tid` must have `domain = scheduler.activeDomain`. | Enforces domain-based temporal isolation. A current thread outside the active domain violates the scheduling invariant that only threads in the active domain are eligible for dispatch. |
+| `uniqueWaiters` | No `ThreadId` appears in more than one notification `waitingThreads` list across all notification objects. | Prevents double-wake: if a thread is on two waiting lists, a single signal could corrupt both notification objects' state machines. |
+
+**Implementation steps:**
+- D1a: Add `blockedOnSendNotRunnable` and `blockedOnReceiveNotRunnable` checks
+  that iterate all objects, find TCBs with blocking IPC states, and verify
+  absence from `scheduler.runnable`.
+- D1b: Add `currentThreadInActiveDomain` check that verifies the current
+  thread's TCB domain matches `scheduler.activeDomain`.
+- D1c: Add `uniqueWaiters` check that collects all notification waiting lists
+  and verifies no `ThreadId` appears more than once across all lists.
+- D1d: Wire all four checks into `stateInvariantChecksFor` so they run on
+  every assertion point in MainTraceHarness, NegativeStateSuite, and
+  TraceSequenceProbe.
+
+#### D2: TraceSequenceProbe Expansion (`tests/TraceSequenceProbe.lean`)
+
+Extend the randomized probe from 3 operations (send, awaitReceive, receive) to
+cover notification, scheduler, and capability operation families. This closes
+F-26 (probe covers only 3 ops).
+
+| Operation Family | New ProbeOps | Kernel Function |
+|-----------------|-------------|-----------------|
+| Notification | `notifySignal`, `notifyWait` | `notificationSignal`, `notificationWait` |
+| Scheduler | `scheduleOp` | `schedule` |
+| Capability | `capLookup` | `cspaceLookupSlot` |
+
+**Implementation steps:**
+- D2a: Add a notification object to the probe base state at a fixed `ObjId`.
+- D2b: Add `ProbeOp` variants: `notifySignal`, `notifyWait`, `scheduleOp`,
+  `capLookup`.
+- D2c: Add a CNode with per-thread capability slots to the probe base state
+  for `capLookup`.
+- D2d: Implement `stepOp` cases for each new operation with appropriate error
+  classification (expected vs unexpected failures).
+- D2e: Update `pickOp` to distribute across 7 operations (was 3).
+- D2f: Verify that `probeInvariantObjectIds` includes the new notification
+  and CNode objects.
+
+#### D3: Runtime Contract Fixture Exercise (`MainTraceHarness.lean`)
+
+Exercise the `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory`
+fixtures with explicit trace scenarios that verify the expected
+success/denied branch combinations. This closes F-25 (unused fixtures).
+
+**Implementation steps:**
+- D3a: Add `runRuntimeContractFixtureTrace` function that:
+  - Calls adapter timer with `runtimeContractTimerOnly` → expects success.
+  - Calls adapter register with `runtimeContractTimerOnly` → expects denied.
+  - Calls adapter memory with `runtimeContractReadOnlyMemory` → expects success.
+  - Calls adapter timer with `runtimeContractReadOnlyMemory` → expects denied.
+- D3b: Add corresponding expected output lines to
+  `tests/fixtures/main_trace_smoke.expected`.
+- D3c: Wire `runRuntimeContractFixtureTrace` into `runMainTraceFrom`.
+
+#### D4: CDT Structural Integrity (already delivered)
+
+The `cdtChildMapConsistentCheck` in `InvariantChecks.lean` (lines 210-223)
+already validates bidirectional consistency between `childMap` and `edges`.
+This deliverable is **closed** — it was delivered during WS-G audit
+remediation. No additional work required.
 
 **Exit evidence:**
-- `lake build` passes.
-- `test_smoke.sh` passes.
+- `lake build` passes with zero errors and zero warnings.
+- `test_smoke.sh` passes (Tier 0-2).
+- `test_full.sh` passes (Tier 0-3) — invariant surface anchors updated.
+- All four new invariant checks exercise at least one violation-free and one
+  structurally correct scenario.
+- TraceSequenceProbe exercises 7 operation families (was 3).
+- Runtime contract fixtures produce deterministic trace output matched by
+  fixture comparison.
+- Zero `sorry` or `axiom` in production proof surface.
+- Documentation synchronized: WORKSTREAM_HISTORY, CLAIM_EVIDENCE_INDEX,
+  DEVELOPMENT.md, GitBook chapters.
 
-**Dependencies:** WS-F1 (dual-queue operations needed for extended probe).
+**Dependencies:** WS-F1 (dual-queue operations — completed). WS-F6 (invariant
+quality — completed). All dependencies satisfied.
 
 ### WS-F8: Cleanup (LOW)
 
@@ -669,7 +751,7 @@ instantiation (delivered).
 | **P2** | WS-F3 | Information-flow completeness (depends on WS-F1 IPC) | **Done** |
 | **H3-prep** | — | Platform binding infrastructure (PR #290): `PlatformBinding` typeclass, `MachineConfig`/`MemoryRegion`, `VSpaceBackend`, Sim + RPi5 bindings | **Done** |
 | **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **Done** |
-| **P4** | WS-F7, WS-F8 | Testing expansion + cleanup | Planning |
+| **P4** | WS-F7, WS-F8 | Testing expansion + cleanup | WS-F7 **Done**, WS-F8 Planning |
 
 **Phase notes:**
 - P0–P3 are complete. All CRITICAL, HIGH, and targeted MEDIUM findings from P1–P3 are closed.
@@ -691,12 +773,12 @@ instantiation (delivered).
 | WS-F4 | High | **Completed** | F-03, F-06, F-12 |
 | WS-F5 | Medium | **Completed** | CRIT-06, ~~HIGH-01~~ (WS-H13), ~~HIGH-02~~ (WS-H12c), HIGH-04, MED-03 |
 | WS-F6 | Medium | **Completed** | HIGH-03, ~~HIGH-05~~ (WS-H5), HIGH-06, ~~HIGH-07~~ (WS-H9), ~~HIGH-08~~ (WS-H15d), MED-01, MED-02, MED-05, MED-06, MED-07, F-07, F-13, F-15, ~~F-18~~ (WS-H15d) |
-| WS-F7 | Low | Planning | MED-08, F-24, F-25, F-26 |
+| WS-F7 | Low | **Completed** | MED-08, F-24, F-25, F-26 |
 | WS-F8 | Low | Planning (F-19 closed) | MED-04, MED-17, F-01, F-14, ~~F-19~~ |
 
 **Aggregate finding closure (by matrix row):**
-- **Closed:** 6 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3; CRIT-06 by WS-F5), 10 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c; HIGH-03, HIGH-06 by WS-F6; HIGH-05 by WS-H5; HIGH-04 by WS-F5; HIGH-07 by WS-H9; HIGH-08/F-18 by WS-H15d), 7 MEDIUM (MED-01, MED-02, MED-05, MED-06, MED-07 by WS-F6; MED-03 by WS-F5; F-07, F-13, F-15 by WS-F6), 1 LOW (F-19 by PR #290) = **24 of 33**
-- **Open:** 0 CRITICAL, 0 HIGH, 3 MEDIUM (MED-04, MED-08, MED-17), 4 LOW (F-01, F-14, F-24..F-26) = **7 of 33** (WS-F7 + WS-F8)
+- **Closed:** 6 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3; CRIT-06 by WS-F5), 10 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c; HIGH-03, HIGH-06 by WS-F6; HIGH-05 by WS-H5; HIGH-04 by WS-F5; HIGH-07 by WS-H9; HIGH-08/F-18 by WS-H15d), 8 MEDIUM (MED-01, MED-02, MED-05, MED-06, MED-07 by WS-F6; MED-03 by WS-F5; MED-08 by WS-F7; F-07, F-13, F-15 by WS-F6), 4 LOW (F-19 by PR #290; F-24, F-25, F-26 by WS-F7) = **28 of 33**
+- **Open:** 0 CRITICAL, 0 HIGH, 2 MEDIUM (MED-04, MED-17), 3 LOW (F-01, F-14) = **5 of 33** (WS-F8 only)
 
 ### Cross-cutting: H3-prep Platform Binding (PR #290)
 

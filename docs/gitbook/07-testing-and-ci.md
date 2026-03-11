@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complete through WS-H12f (v0.14.3); WS-F1..F6 completed (WS-F7..F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complete through WS-H12f (v0.14.3); WS-F1..F7 completed (WS-F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
@@ -95,6 +95,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-H11 (v0.13.7):** VSpace & architecture enrichment — `PagePermissions` with W^X enforcement, bounded address translation (ARM64 52-bit), `TlbState` abstract model with per-ASID and per-VAddr flush, cross-ASID isolation theorem, `VSpaceBackend` typeclass, `vspaceInvariantBundle` 5-conjunct composition. Proof deduplication via extracted helper lemmas. 20 negative tests for VSpace/TLB operations. 889 theorem/lemma declarations (zero sorry/axiom).
 - **WS-H12a (v0.13.8):** Legacy endpoint removal — `EndpointState` type and legacy fields (`state`, `queue`, `waitingReceiver`) deleted from `Endpoint` structure. Legacy IPC operations (`endpointSend`, `endpointReceive`, `endpointAwaitReceive`) and `endpointSendChecked` removed. ~60 dead theorems cleaned from `IPC/Invariant.lean`, `Capability/Invariant.lean`, and `InformationFlow/Invariant.lean`. `endpointReplyRecv` migrated to `endpointReceiveDual`. Tests and tier-3 anchors updated. Closes A-08 (HIGH), M-01 (MEDIUM), A-25 (MEDIUM). 838 theorem/lemma declarations (zero sorry/axiom).
 - **WS-H12b (v0.13.9):** Dequeue-on-dispatch scheduler semantics — inverted `queueCurrentConsistent` from `current ∈ runnable` to `current ∉ runnable`, matching seL4's `switchToThread`/`tcbSchedDequeue` pattern. `schedule` dequeues dispatched thread; `handleYield`, `timerTick`, and `switchDomain` re-enqueue before rescheduling. New predicates: `currentTimeSlicePositive`, `schedulerPriorityMatch`, plus 4 IPC dequeue-coherence predicates. ~1,800 lines of preservation proofs re-proved across scheduler, IPC, and information-flow invariant files. Closes H-04 (HIGH). 855 theorem/lemma declarations (zero sorry/axiom).
+- **WS-F7 (testing expansion):** D1 — 4 new runtime invariant check families added to `InvariantChecks.lean`: `blockedOnSendNotRunnable` (includes `blockedOnCall`), `blockedOnReceiveNotRunnable` (includes `blockedOnReply`, `blockedOnNotification`), `currentThreadInActiveDomainB`, `uniqueWaitersCheck` — 17 check families total in `stateInvariantChecksFor`. D2 — `TraceSequenceProbe` extended from 3 to 7 `ProbeOp` variants (`notifySignal`, `notifyWait`, `scheduleOp`, `capLookup`) with notification + CNode objects in probe base state and blocked-thread guard. D3 — `runRuntimeContractFixtureTrace` exercises `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` with 6 deterministic trace assertions. D4 — CDT `cdtChildMapConsistentCheck` confirmed already delivered. Closes MED-08, F-24, F-25, F-26.
 
 ## Practical failure triage
 

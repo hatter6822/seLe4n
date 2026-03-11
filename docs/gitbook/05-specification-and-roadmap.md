@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,055 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 1,940 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-F7..F8 |
+| Next workstreams | WS-F8 (WS-F7 completed) |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -217,7 +217,7 @@ address low findings from the v0.12.2 audits:
 |----|-------|----------|
 | **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **COMPLETED** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium — **COMPLETED** (v0.14.9) |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low — **COMPLETED** |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
 
 See [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md).

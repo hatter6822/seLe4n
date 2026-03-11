@@ -1152,6 +1152,46 @@ private def runSyscallGateTrace (st1 : SystemState) : IO Unit := do
   | .ok _ => IO.println "H15e syscall gate retype: ok"
   | .error e => IO.println s!"H15e syscall gate retype: {reprStr e}"
 
+-- ============================================================================
+-- WS-F7/D3: Runtime contract fixture exercise
+-- ============================================================================
+
+/-- WS-F7/D3a: Exercise `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory`
+fixtures with explicit success/denied branch combinations. Closes F-25. -/
+private def runRuntimeContractFixtureTrace (st1 : SystemState) : IO Unit := do
+  -- D3a: TimerOnly contract — timer passes, register denied, memory denied
+  match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractTimerOnly 3 st1 with
+  | .ok (_, stTimer) =>
+      IO.println s!"F7 timerOnly timer success: {reprStr stTimer.machine.timer}"
+  | .error err =>
+      IO.println s!"F7 timerOnly timer unexpected error: {reprStr err}"
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractTimerOnly 0 42 st1 with
+  | .error err =>
+      IO.println s!"F7 timerOnly register denied: {reprStr err}"
+  | .ok _ =>
+      IO.println "F7 timerOnly register unexpected success"
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractTimerOnly ⟨4096⟩ st1 with
+  | .error err =>
+      IO.println s!"F7 timerOnly memory denied: {reprStr err}"
+  | .ok _ =>
+      IO.println "F7 timerOnly memory unexpected success"
+  -- D3a: ReadOnlyMemory contract — memory passes, timer denied, register denied
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractReadOnlyMemory ⟨4096⟩ st1 with
+  | .ok (byte, _) =>
+      IO.println s!"F7 readOnlyMemory memory success: {reprStr byte}"
+  | .error err =>
+      IO.println s!"F7 readOnlyMemory memory unexpected error: {reprStr err}"
+  match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractReadOnlyMemory 1 st1 with
+  | .error err =>
+      IO.println s!"F7 readOnlyMemory timer denied: {reprStr err}"
+  | .ok _ =>
+      IO.println "F7 readOnlyMemory timer unexpected success"
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractReadOnlyMemory 0 42 st1 with
+  | .error err =>
+      IO.println s!"F7 readOnlyMemory register denied: {reprStr err}"
+  | .ok _ =>
+      IO.println "F7 readOnlyMemory register unexpected success"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
@@ -1177,6 +1217,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runSchedulerTimingDomainTrace st1
   runUntypedMemoryTrace st1
   runSyscallGateTrace st1
+  runRuntimeContractFixtureTrace st1
 
 -- ============================================================================
 -- M-10 Parameterized test topology builder (WS-E1)

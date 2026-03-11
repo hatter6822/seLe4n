@@ -203,6 +203,64 @@ private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
   rq.flat.all fun tid =>
     rq.threadPriority[tid]?.isSome
 
+/-- WS-F7/D1a: Threads blocked on endpoint send must not appear in the runnable list.
+A blocked sender dispatched prematurely could cause message duplication or ordering violations. -/
+private def blockedOnSendNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.tcb tcb) =>
+        match tcb.ipcState with
+        | .blockedOnSend _ =>
+            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            (s!"blockedOnSend not runnable: tid={tcb.tid.toNat}", ok) :: acc
+        | .blockedOnCall _ =>
+            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            (s!"blockedOnCall not runnable: tid={tcb.tid.toNat}", ok) :: acc
+        | _ => acc
+    | _ => acc) []
+
+/-- WS-F7/D1a: Threads blocked on endpoint receive must not appear in the runnable list.
+A blocked receiver dispatched prematurely could observe partial state. -/
+private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.tcb tcb) =>
+        match tcb.ipcState with
+        | .blockedOnReceive _ =>
+            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            (s!"blockedOnReceive not runnable: tid={tcb.tid.toNat}", ok) :: acc
+        | .blockedOnReply _ _ =>
+            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            (s!"blockedOnReply not runnable: tid={tcb.tid.toNat}", ok) :: acc
+        | .blockedOnNotification _ =>
+            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            (s!"blockedOnNotification not runnable: tid={tcb.tid.toNat}", ok) :: acc
+        | _ => acc
+    | _ => acc) []
+
+/-- WS-F7/D1b: If a thread is currently dispatched, its TCB domain must match the
+scheduler's `activeDomain`. Violation would break domain-based temporal isolation. -/
+private def currentThreadInActiveDomainB (st : SystemState) : Bool :=
+  match st.scheduler.current with
+  | none => true
+  | some tid =>
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => tcb.domain == st.scheduler.activeDomain
+      | _ => true  -- missing TCB caught by currentThreadValidB
+
+/-- WS-F7/D1c: No thread appears in more than one notification `waitingThreads` list.
+A thread on two waiting lists could be double-woken, corrupting both notification
+objects' state machines. -/
+private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  let allWaiters : List SeLe4n.ThreadId := objectIds.foldr (fun oid acc =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.notification ntfn) => ntfn.waitingThreads ++ acc
+    | _ => acc) []
+  if allWaiters.isEmpty then []
+  else
+    let hasDuplicates := !allWaiters.Nodup
+    [("notification waiters globally unique", !hasDuplicates)]
+
 /-- Audit: Runtime check for CDT `childMapConsistent` — verifies that the
 `childMap` HashMap mirrors the parent→child edges in the `edges` list.
 Checks both directions: every childMap entry has a corresponding edge,
@@ -229,6 +287,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     , ("scheduler runnable queue uniqueness", schedulerRunQueueUniqueB st)
     , ("scheduler current thread validity", currentThreadValidB st)
     , ("scheduler runQueue threadPriority consistency", runQueueThreadPriorityConsistentB st)
+    , ("scheduler current thread in active domain", currentThreadInActiveDomainB st)
     ]
   let runnableChecks : List (String × Bool) :=
     st.scheduler.runnable.map fun tid =>
@@ -259,6 +318,9 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
     ++ cdtChildMapConsistentCheck st
+    ++ blockedOnSendNotRunnableChecks objectIds st
+    ++ blockedOnReceiveNotRunnableChecks objectIds st
+    ++ uniqueWaitersCheck objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

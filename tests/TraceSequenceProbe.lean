@@ -13,40 +13,75 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
+/-- WS-F7/D2b: Expanded probe operation set covering IPC, notification,
+scheduler, and capability families. -/
 inductive ProbeOp where
   | send
   | awaitReceive
   | receive
+  | notifySignal
+  | notifyWait
+  | scheduleOp
+  | capLookup
   deriving Repr
 
 def probeEndpointId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 300
+/-- WS-F7/D2a: Fixed notification object for probe notification operations. -/
+def probeNotificationId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 301
+/-- WS-F7/D2c: Fixed CNode object for probe capability lookup operations. -/
+def probeCNodeId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 302
 
 def probeThreadIds (threadCount : Nat) : List SeLe4n.ObjId :=
   List.range threadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
 
+/-- WS-F7/D2a-D2c: Probe base state now includes an endpoint, a notification
+object, and a CNode with per-thread capability slots for expanded coverage. -/
 def probeBaseState (threadCount : Nat) : SystemState :=
   let threadEntries := (List.range threadCount).map fun n =>
     let tid := n + 1
     (SeLe4n.ObjId.ofNat tid, KernelObject.tcb {
       tid := SeLe4n.ThreadId.ofNat tid, priority := SeLe4n.Priority.ofNat 0, domain := default,
-      cspaceRoot := default, vspaceRoot := default, ipcBuffer := default,
+      cspaceRoot := probeCNodeId, vspaceRoot := default, ipcBuffer := default,
       ipcState := .ready })
-  let allEntries := (probeEndpointId, KernelObject.endpoint {
-}) :: threadEntries
+  -- WS-F7/D2c: CNode with one slot per thread targeting the endpoint
+  let cnodeSlots : List (SeLe4n.Slot × Capability) :=
+    (List.range threadCount).map fun n =>
+      (⟨n⟩, { target := .object probeEndpointId,
+               rights := AccessRightSet.ofList [.read, .write],
+               badge := none })
+  let cnodeObj : KernelObject := .cnode {
+    depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+    slots := Std.HashMap.ofList cnodeSlots }
+  let allEntries :=
+    (probeEndpointId, KernelObject.endpoint {}) ::
+    (probeNotificationId, KernelObject.notification {
+      state := .idle, waitingThreads := [], pendingBadge := none }) ::
+    (probeCNodeId, cnodeObj) ::
+    threadEntries
+  let runnableThreads : List SeLe4n.ThreadId :=
+    (List.range threadCount).map fun n => ⟨n + 1⟩
   { (default : SystemState) with
     objects := Std.HashMap.ofList allEntries
     objectIndex := allEntries.map Prod.fst
     objectIndexSet := Std.HashSet.ofList (allEntries.map Prod.fst)
+    scheduler := { (default : SchedulerState) with
+      runQueue := SeLe4n.Kernel.RunQueue.ofList (runnableThreads.map (fun tid => (tid, ⟨0⟩)))
+    }
   }
 
 def nextRand (x : Nat) : Nat :=
   (1664525 * x + 1013904223) % 4294967296
 
+/-- WS-F7/D2e: Distribute across 7 operations (was 3). -/
 def pickOp (x : Nat) : ProbeOp :=
-  match x % 3 with
+  match x % 7 with
   | 0 => .send
   | 1 => .awaitReceive
-  | _ => .receive
+  | 2 => .receive
+  | 3 => .notifySignal
+  | 4 => .notifyWait
+  | 5 => .scheduleOp
+  | _ => .capLookup
 
 def pickThreadId (threadCount : Nat) (x : Nat) : SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofNat ((x % threadCount) + 1)
@@ -58,8 +93,9 @@ def endpointConsistencyHolds (ep : Endpoint) : Bool :=
   (ep.sendQ.head.isNone == ep.sendQ.tail.isNone) &&
   (ep.receiveQ.head.isNone == ep.receiveQ.tail.isNone)
 
+/-- WS-F7/D2f: Object ID inventory includes endpoint, notification, and CNode. -/
 def probeInvariantObjectIds (threadCount : Nat) : List SeLe4n.ObjId :=
-  probeThreadIds threadCount ++ [probeEndpointId]
+  probeThreadIds threadCount ++ [probeEndpointId, probeNotificationId, probeCNodeId]
 
 def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String Unit :=
   let failures := (stateInvariantChecksFor (probeInvariantObjectIds threadCount) st).filterMap fun (label, ok) => if ok then none else some label
@@ -68,7 +104,7 @@ def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String 
   else
     .error s!"state invariant mismatch: {reprStr failures}"
 
-def checkEndpointConsistency (st : SystemState) : Except String Unit :=
+def checkEndpointConsistency (st : SystemState) : Except String Unit := do
   match st.objects[probeEndpointId]? with
   | some (.endpoint ep) =>
       if endpointConsistencyHolds ep then
@@ -77,6 +113,11 @@ def checkEndpointConsistency (st : SystemState) : Except String Unit :=
         .error s!"endpoint invariant mismatch: sendQ={reprStr ep.sendQ}, receiveQ={reprStr ep.receiveQ}"
   | some obj => .error s!"probe endpoint object changed unexpectedly: {reprStr obj}"
   | none => .error "probe endpoint object missing"
+  -- WS-F7: verify notification object still exists and has valid state
+  match st.objects[probeNotificationId]? with
+  | some (.notification _) => .ok ()
+  | some obj => .error s!"probe notification object changed unexpectedly: {reprStr obj}"
+  | none => .error "probe notification object missing"
 
 /-- Outcome of a single probe step, distinguishing actual mutations from expected failures
 and unexpected failures. -/
@@ -87,42 +128,89 @@ inductive StepOutcome where
 
 /-- Classify a KernelError as expected or unexpected for the probe context.
 
-Expected errors: state-mismatch and empty-queue errors are normal when the random
-operation doesn't match the current endpoint state machine position.
+Expected errors: state-mismatch, empty-queue, alreadyWaiting, and scheduler
+invariant violations are normal when the random operation doesn't match the
+current state machine position.
 
 Unexpected errors: objectNotFound and invalidCapability should never occur because
-the probe operates on a known endpoint object at a fixed ObjId. -/
+the probe operates on known objects at fixed ObjIds. -/
 def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
   match err with
   | .endpointStateMismatch => .expectedFailure err
   | .endpointQueueEmpty => .expectedFailure err
   | .alreadyWaiting => .expectedFailure err
-  | .objectNotFound =>
-      .unexpectedFailure err s!"objectNotFound during {reprStr op}: probe endpoint (oid={probeEndpointId}) should always exist"
+  -- WS-F7: scheduler may fail if no runnable thread in active domain
+  | .schedulerInvariantViolation => .expectedFailure err
+  -- WS-F7: invalidCapability is expected for capLookup on empty slots
   | .invalidCapability =>
-      .unexpectedFailure err s!"invalidCapability during {reprStr op}: probe endpoint (oid={probeEndpointId}) should be an endpoint object"
+      match op with
+      | .capLookup => .expectedFailure err
+      | _ => .unexpectedFailure err s!"invalidCapability during {reprStr op}: probe objects should be correctly typed"
+  | .objectNotFound =>
+      match op with
+      -- capLookup on a non-existent CNode slot returns objectNotFound
+      | .capLookup => .expectedFailure err
+      | _ => .unexpectedFailure err s!"objectNotFound during {reprStr op}: probe objects should always exist"
   | other =>
       .unexpectedFailure other s!"unexpected error {reprStr other} during {reprStr op}"
 
 /-- Execute one probe operation with error-aware classification.
 
-Unlike the original `stepOp` which silently returned unchanged state on any error,
-this function classifies each error and returns a structured outcome. -/
+WS-F7/D2d: Extended to cover 7 operation families (was 3). Each new operation
+uses the fixed probe objects (endpoint, notification, CNode) and classifies
+errors as expected or unexpected based on the operation semantics.
+
+Guard: IPC and notification operations that modify thread ipcState are skipped
+when the target thread is already blocked. In a real kernel, blocked threads
+cannot initiate new operations; without this guard the random probe would
+create inconsistent state (e.g., a thread on a notification waiting list with
+ipcState changed by a subsequent endpoint send). -/
 def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutcome :=
+  -- Guard: skip state-modifying IPC ops on already-blocked threads
+  let threadBlocked := match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.ipcState != .ready
+    | _ => false
   match op with
   -- WS-G7: migrated to dual-queue operations
   | .send =>
-      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid .empty st with
+      if threadBlocked == true then .expectedFailure .endpointStateMismatch
+      else match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid .empty st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   | .awaitReceive =>
-      match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
+      if threadBlocked == true then .expectedFailure .endpointStateMismatch
+      else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .awaitReceive err
   | .receive =>
-      match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
+      if threadBlocked == true then .expectedFailure .endpointStateMismatch
+      else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .receive err
+  -- WS-F7/D2d: Notification signal — wake a waiter or accumulate badge
+  -- (signal does not modify the signalling thread's state, so no guard needed)
+  | .notifySignal =>
+      let badge := SeLe4n.Badge.ofNat (tid.toNat * 7 + 1)
+      match SeLe4n.Kernel.notificationSignal probeNotificationId badge st with
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .notifySignal err
+  -- WS-F7/D2d: Notification wait — consume badge or block caller
+  | .notifyWait =>
+      if threadBlocked == true then .expectedFailure .alreadyWaiting
+      else match SeLe4n.Kernel.notificationWait probeNotificationId tid st with
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .notifyWait err
+  -- WS-F7/D2d: Schedule — pick best runnable thread in active domain
+  | .scheduleOp =>
+      match SeLe4n.Kernel.schedule st with
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .scheduleOp err
+  -- WS-F7/D2d: Capability lookup — exercise CSpace resolution
+  | .capLookup =>
+      let addr : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := ⟨tid.toNat % 16⟩ }
+      match SeLe4n.Kernel.cspaceLookupSlot addr st with
+      | .ok (_, st') => .mutated st'
+      | .error err => classifyError .capLookup err
 
 /-- Accumulated probe statistics for reporting. -/
 structure ProbeStats where
