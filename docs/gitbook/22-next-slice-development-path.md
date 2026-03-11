@@ -2,12 +2,12 @@
 
 ## Current state
 
-**Version:** 0.14.8 (Lean v4.28.0)
+**Version:** 0.14.9 (Lean v4.28.0)
 
 **Verified metrics snapshot (from [`docs/codebase_map.json`](../../docs/codebase_map.json) `readme_sync`):**
-- Production LoC: 32,872 across 67 files
-- Test LoC: 2,763 across 3 suites
-- Proved declarations: 1,055 theorem/lemma declarations (zero sorry/axiom)
+- Production LoC: 34,006 across 67 files
+- Test LoC: 2,798 across 3 suites
+- Proved declarations: 1,086 theorem/lemma declarations (zero sorry/axiom)
 - Total declarations: 1,940 across 70 modules
 
 Four major portfolios are completed:
@@ -43,13 +43,13 @@ Four major portfolios are completed:
 
 ### Remaining WS-H workstreams — v0.12.15 audit remediation
 
-WS-H1..H15 are all completed. The remaining workstream addresses Phase 5:
+WS-H1..H16 are all completed. No remaining WS-H workstreams.
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
 | **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **COMPLETED** |
 | **WS-H15** | Platform & API hardening: InterruptBoundaryContract decidability, RPi5 contract hardening, syscall capability wrappers, AdapterProofHooks instantiation | Low | **COMPLETED** |
-| **WS-H16** | Testing and documentation expansion | Low | Pending |
+| **WS-H16** | Testing and documentation expansion | Low | **COMPLETED** |
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 for the full execution plan.

@@ -10,8 +10,8 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **30,491 lines** of production Lean code across 41 modules.
-- **920 theorem/lemma declarations** with zero sorry/axiom.
+- **34,006 lines** of production Lean code across 67 modules.
+- **1,086 theorem/lemma declarations** with zero sorry/axiom.
 - **4-tier CI** with hygiene, build, trace, and invariant surface gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
 - **Executable trace harness** with fixture-backed evidence.
@@ -31,7 +31,7 @@ capability, and information-flow behavior. Catch violations at type-check time.
 
 ### C) Formal-methods engineering practice
 
-The milestone progression (Bootstrap → M7 → WS-B..H) provides a practical path
+The milestone progression (Bootstrap → M7 → WS-B..F6) provides a practical path
 from state modeling through composed theorem surfaces to production kernel.
 
 ### D) Architecture and security review
