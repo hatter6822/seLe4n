@@ -56,12 +56,12 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (WS-H11..H16 remaining).
-- Remaining WS-F planning: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F5..F8 remaining).
-- Recently completed: WS-H10 (security model foundations, v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1).
+- Completed WS-H planning: `AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (WS-H1..H16 all completed).
+- Remaining WS-F planning: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F6..F8 remaining).
+- Recently completed: WS-F5 (model fidelity, v0.14.9), WS-H16 (testing/docs, v0.14.8), WS-H15 (platform hardening, v0.14.7), WS-H14 (type safety, v0.14.6).
 - Active findings baseline: `AUDIT_CODEBASE_v0.12.2_v1.md` + `v2`, `AUDIT_CODEBASE_v0.12.15_v1.md` + `v2`.
-- Completed portfolios: WS-H1..H10 (v0.13.6), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
+- Completed portfolios: WS-H1..H16 (v0.14.8), WS-G (v0.12.15), WS-F1..F5 (v0.14.9), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
 - Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
 - Hardware target: Raspberry Pi 5 (ARM64).
-- Metrics: 29,351 production LoC, 866 proved declarations (zero sorry/axiom), 84 build jobs.
+- Metrics: 138 build jobs, zero sorry/axiom, zero warnings.

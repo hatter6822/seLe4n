@@ -56,7 +56,7 @@ for the full execution plan.
 | **WS-H13** | CSpace/service model enrichment (multi-level resolution, backing-object verification, serviceCountBounded) | Medium | **Completed** |
 | **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **Completed** |
 | **WS-H15** | Platform & API hardening (RPi5 contracts, syscall capability wrappers, AdapterProofHooks) | Low | **Completed** |
-| **WS-H16** | Testing and documentation expansion | Low | Planned |
+| **WS-H16** | Testing and documentation expansion | Low | **Completed** |
 
 ### 3.2 WS-F5..F8 — Remaining v0.12.2 audit remediation
 
@@ -65,7 +65,7 @@ for the full execution plan.
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
+| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **Completed** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Next |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
@@ -90,7 +90,7 @@ for the full execution plan.
 - **WS-H2:** completed (v0.12.16). Lifecycle safety guards — childId collision/self-overwrite guards, TCB scheduler cleanup on retype, CNode CDT detach, atomic retype. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-H1:** completed (v0.12.16). IPC call-path semantic fix — `blockedOnCall` variant, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates`. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 - **WS-G1..G9:** all completed (v0.12.6–v0.12.15). See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
-- **WS-F1..F4:** completed. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
+- **WS-F1..F5:** completed. WS-F5 (v0.14.9): Word-bounded badge (`machineWordBits`, `Badge.ofNatMasked`, `Badge.bor`), order-independent access rights (`AccessRightSet` bitmask), deferred operations documented. See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
 - **WS-E1..E6:** all completed (historical archive).
 - **WS-D1..D4:** completed (historical archive).
 - **WS-C1..C8:** completed (historical archive).
@@ -117,7 +117,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent slice from the active plans (WS-H11..H16 or WS-F5..F8; prefer the highest-priority pending item).
+1. Sync branch and choose one coherent slice from the active plans (WS-F6..F8; prefer the highest-priority pending item).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

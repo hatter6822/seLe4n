@@ -17,7 +17,7 @@ Two independent audits of the v0.12.2 codebase:
 | **WS-F2** | Untyped memory model | Critical | **Completed** |
 | **WS-F3** | Information-flow completeness | High | **Completed** |
 | **WS-F4** | Proof gap closure (timerTick, cspaceMutate, notifications) | High | **Completed** |
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
+| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **Completed** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter hooks) | Medium | Next |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
@@ -29,7 +29,7 @@ Two independent audits of the v0.12.2 codebase:
 | ~~**P0**~~ | — | Publish WS-F backbone, update docs | **Done** |
 | ~~**P1**~~ | WS-F1, WS-F2, WS-F4 | Critical IPC/memory + proof gaps | **Completed** |
 | ~~**P2**~~ | WS-F3 | Info-flow completeness | **Completed** |
-| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **Next** |
+| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **WS-F5 completed (v0.14.9); WS-F6 next** |
 | **P4** | WS-F7, WS-F8 | Testing + cleanup | Planned |
 
 ## Related: WS-G (completed)

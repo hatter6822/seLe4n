@@ -194,16 +194,14 @@ re-verified — zero sorry/axiom.
 See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 for the full technical breakdown.
 
-## Next: WS-H11..H16 and WS-F5..F8 (WS-F5 completed)
+## Completed: WS-H1..H16 and WS-F1..F5; Remaining: WS-F6..F8
 
-### Remaining v0.12.15 audit remediation (WS-H11..H16)
+### Completed v0.12.15 audit remediation (WS-H1..H16)
 
-WS-H1..H11 are completed. The remaining workstreams address Phases 4–5:
-scheduler/IPC alignment (H12), CSpace/service
-enrichment (H13), type safety (H14), platform hardening (H15), and
-testing/docs expansion (H16). WS-H11 added `PagePermissions` with W^X enforcement,
-abstract TLB model, bounded address translation checks, and extended
-`vspaceInvariantBundle` to 5 conjuncts.
+All 16 WS-H workstreams are completed (v0.12.16–v0.14.8). Key milestones:
+WS-H11 (VSpace/architecture, v0.13.7), WS-H12a–f (IPC/scheduler alignment,
+v0.13.8–v0.14.3), WS-H13 (CSpace enrichment, v0.14.4), WS-H14 (type safety,
+v0.14.6), WS-H15 (platform hardening, v0.14.7), WS-H16 (testing/docs, v0.14.8).
 
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 and [Next Development Path](22-next-slice-development-path.md).
@@ -215,7 +213,6 @@ address medium/low findings from the v0.12.2 audits:
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **COMPLETED** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |

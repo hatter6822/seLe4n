@@ -153,7 +153,7 @@ and connect the enforcement layer to non-interference theorems.
 
 **Dependencies:** None.
 
-### WS-F5: Model Fidelity (MEDIUM)
+### WS-F5: Model Fidelity (MEDIUM) — **COMPLETED**
 
 **Objective:** Close the gap between the seLe4n model and seL4 reality where it
 matters for production. Badge values must be word-bounded, capability rights must

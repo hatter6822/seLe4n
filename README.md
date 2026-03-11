@@ -60,10 +60,10 @@ introducing substantial architectural improvements:
 |-----------|-------|
 | **Version** | `0.14.9` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 33,034 across 67 files |
-| **Test Lean LoC** | 2,765 across 3 test suites |
-| **Proved declarations** | 1,062 theorem/lemma declarations (zero sorry/axiom) |
-| **Total declarations** | 1,940+ across 70 modules |
+| **Production Lean LoC** | 33,449 across 67 files |
+| **Test Lean LoC** | 2,798 across 3 test suites |
+| **Proved declarations** | 1,077 theorem/lemma declarations (zero sorry/axiom) |
+| **Total declarations** | 1,986 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
