@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.14.7.
+Lean 4.28.0 toolchain, Lake build system, version 0.14.8.
 
 ## Build and run
 
@@ -115,41 +115,42 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2337 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2345 lines)
 - `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2162 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2170 lines)
 - `CHANGELOG.md` (~1659 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1496 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1484 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1391 lines)
-- `tests/NegativeStateSuite.lean` (~1506 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1199 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~1263 lines)
-- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1050 lines)
-- `SeLe4n/Model/State.lean` (~919 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~885 lines)
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~860 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1504 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1492 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1399 lines)
+- `tests/NegativeStateSuite.lean` (~1766 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1207 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~1271 lines)
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1058 lines)
+- `SeLe4n/Model/State.lean` (~982 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~893 lines)
+- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~868 lines)
 - `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~825 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~833 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~825 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~811 lines)
-- `tests/InformationFlowSuite.lean` (~809 lines)
-- `SeLe4n/Prelude.lean` (~784 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~819 lines)
+- `tests/InformationFlowSuite.lean` (~816 lines)
+- `SeLe4n/Prelude.lean` (~1049 lines)
 - `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md` (~775 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
-- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~730 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~725 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~724 lines)
+- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~738 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~733 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~732 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~675 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.15_v1.md` (~682 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~639 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~614 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~599 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~622 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~607 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~536 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~513 lines)
-- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~511 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~502 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~544 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~724 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~519 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~510 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~493 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
@@ -375,10 +376,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Remaining workstreams**: WS-H16 (low priority), WS-F5..F8 (medium/low)
+- **Remaining workstreams**: WS-F5..F8 (medium/low)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/AUDIT_CODEBASE_v0.13.6.md` — zero critical issues
-- **All prior workstreams completed**: WS-B through WS-H15 (see `docs/WORKSTREAM_HISTORY.md`)
+- **All prior workstreams completed**: WS-B through WS-H16 (see `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

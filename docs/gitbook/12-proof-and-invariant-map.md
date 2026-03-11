@@ -21,6 +21,7 @@ Component level:
 - `queueCurrentConsistent` (WS-H12b: inverted to `current ∉ runnable`, matching seL4 dequeue-on-dispatch)
 - `currentTimeSlicePositive` (WS-H12b: current thread time slice positive, since current is not in run queue)
 - `schedulerPriorityMatch` (WS-H12b: priority consistency for run queue threads)
+- `runQueueThreadPriorityConsistent` (WS-H16/A-19: bi-directional consistency between RunQueue membership and `threadPriority` mapping, with `runQueueThreadPriorityConsistent_default` theorem)
 
 Data structure:
 
@@ -996,3 +997,61 @@ Introduces the seL4-style capability-gated syscall entry pattern:
   `rpi5MachineConfig.wellFormed`, `mmioRegionDisjointCheck`, GIC-400 IRQ
   boundary values (INTID 0, 223, 224), and boot contract predicates.
 - **Tier 3 anchors**: 31 anchors covering all WS-H15 additions.
+
+## WS-H16: Testing, Documentation & Cleanup (v0.14.8)
+
+WS-H16 closes 6 findings: M-18 (MEDIUM), A-43 (LOW), A-13 (MEDIUM), A-18 (MEDIUM), A-19 (LOW), M-21/A-45 (LOW).
+
+### Object store liveness invariant (A-13)
+
+New predicate in `Model/State.lean`:
+
+- `objectIndexLive` — every entry in `objectIndex` resolves to a live object
+  in the store (`∀ id ∈ st.objectIndex, st.objects[id]? ≠ none`).
+- `objectIndexLive_default` — holds trivially for the default system state.
+- `storeObject_preserves_objectIndexLive` — preservation through `storeObject`,
+  the atomic object store mutation primitive. Proved by case-splitting on
+  `objectIndexSet.contains` (new vs existing object) with `HashMap.getElem?_insert`.
+
+### RunQueue threadPriority consistency (A-19)
+
+New predicate in `Scheduler/Invariant.lean`:
+
+- `runQueueThreadPriorityConsistent` — bi-directional consistency:
+  (1) every RunQueue member has a `threadPriority` entry, and
+  (2) every `threadPriority` entry is a RunQueue member.
+- `runQueueThreadPriorityConsistent_default` — holds for empty default state.
+- Standalone predicate (not in `schedulerInvariantBundleFull`) following the
+  pattern of `schedulerPriorityMatch`, to avoid cascading proof breakage.
+
+### O(1) membership audit (A-18)
+
+Confirmed that `schedule` (`Operations/Core.lean:235`) uses O(1) `RunQueue.contains`
+via `tid ∈ st'.scheduler.runQueue` (backed by `HashSet`), not the O(n)
+`runnable` flat-list alias. No code change required.
+
+### Lifecycle negative tests (M-18)
+
+10 new `expectError` tests in `NegativeStateSuite.lean` (`runWSH16LifecycleChecks`):
+
+- H16-NEG-01..04: `lifecycleRetypeObject` error branches (non-existent target,
+  metadata mismatch, insufficient authority, bad authority CNode).
+- H16-NEG-05..06: `lifecycleRevokeDeleteRetype` error branches (authority = cleanup,
+  bad cleanup CNode).
+- H16-NEG-07: `retypeFromUntyped` with exhausted untyped region.
+- H16-NEG-08: `retypeFromUntyped` with non-untyped source (type mismatch).
+- H16-NEG-09: `retypeFromUntyped` with device untyped restriction.
+- H16-NEG-10: `lifecycleRevokeDeleteRetype` with non-existent retype target.
+
+### Semantic Tier 3 assertions (A-43)
+
+13 new proof-surface anchors in `test_tier3_invariant_surface.sh` verifying
+structural properties rather than just symbol existence:
+
+- `capabilityInvariantBundle` has ≥5 conjuncts
+- `schedulerInvariantBundleFull` includes `timeSlicePositive`, `edfCurrentHasEarliestDeadline`, `contextMatchesCurrent`
+- `NonInterferenceStep` has ≥20 constructors
+- `objectIndexLive` definition and theorems exist
+- `runQueueThreadPriorityConsistent` definition and default theorem exist
+- `runWSH16LifecycleChecks` test function exists
+- `schedule` uses O(1) `runQueue` membership

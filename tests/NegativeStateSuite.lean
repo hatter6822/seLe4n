@@ -1560,6 +1560,198 @@ def runWSH15PlatformChecks : IO Unit := do
 
   IO.println "all WS-H15 platform contract checks passed"
 
+/-- WS-H16/M-18: Lifecycle operations negative tests.
+Covers error branches in `lifecycleRetypeObject` and `lifecycleRevokeDeleteRetype`
+that were previously untested. -/
+def runWSH16LifecycleChecks : IO Unit := do
+  IO.println "=== WS-H16/M-18 lifecycle negative checks ==="
+
+  -- Fixture: state with an endpoint, a CNode (authority), and a TCB
+  let h16TargetId : SeLe4n.ObjId := ⟨150⟩
+  let h16CnodeId : SeLe4n.ObjId := ⟨151⟩
+  let h16TcbId : SeLe4n.ObjId := ⟨152⟩
+  let h16AuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨0⟩ }
+  let h16CleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨1⟩ }
+
+  let h16State : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject h16TargetId (.endpoint {})
+      |>.withObject h16CnodeId (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, {
+            target := .object h16TargetId
+            rights := [.read, .write]
+            badge := none
+          }),
+          (⟨1⟩, {
+            target := .object h16TargetId
+            rights := [.read]
+            badge := none
+          })
+        ]
+      })
+      |>.withObject h16TcbId (.tcb {
+        tid := ⟨152⟩
+        priority := ⟨10⟩
+        domain := ⟨0⟩
+        cspaceRoot := h16CnodeId
+        vspaceRoot := ⟨20⟩
+        ipcBuffer := ⟨4096⟩
+        ipcState := .ready
+      })
+      |>.withLifecycleObjectType h16TargetId .endpoint
+      |>.withLifecycleObjectType h16CnodeId .cnode
+      |>.withLifecycleObjectType h16TcbId .tcb
+      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
+      |>.withLifecycleCapabilityRef h16CleanupSlot (.object h16TargetId)
+      |>.build)
+
+  -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
+  expectError "H16 lifecycleRetypeObject non-existent target"
+    (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot ⟨999⟩ (.endpoint {}) h16State)
+    .objectNotFound
+
+  -- H16-NEG-02: lifecycleRetypeObject with metadata mismatch → illegalState
+  -- Target exists as endpoint but we tell lifecycle it's a TCB
+  let h16MismatchState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject h16TargetId (.endpoint {})
+      |>.withObject h16CnodeId (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, {
+            target := .object h16TargetId
+            rights := [.read, .write]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
+      |>.withLifecycleObjectType h16CnodeId .cnode
+      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
+      |>.build)
+  expectError "H16 lifecycleRetypeObject metadata mismatch"
+    (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16MismatchState)
+    .illegalState
+
+  -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
+  let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨1⟩ }
+  expectError "H16 lifecycleRetypeObject insufficient authority"
+    (SeLe4n.Kernel.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
+    .illegalAuthority
+
+  -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
+  let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
+  expectError "H16 lifecycleRetypeObject bad authority CNode"
+    (SeLe4n.Kernel.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
+    .objectNotFound
+
+  -- H16-NEG-05: lifecycleRevokeDeleteRetype with authority = cleanup → illegalState
+  expectError "H16 lifecycleRevokeDeleteRetype authority equals cleanup"
+    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16AuthSlot h16TargetId (.endpoint {}) h16State)
+    .illegalState
+
+  -- H16-NEG-06: lifecycleRevokeDeleteRetype with non-existent cleanup CNode → objectNotFound
+  let h16BadCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
+  expectError "H16 lifecycleRevokeDeleteRetype bad cleanup CNode"
+    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16BadCleanupSlot h16TargetId (.endpoint {}) h16State)
+    .objectNotFound
+
+  -- H16-NEG-07: retypeFromUntyped with exhausted untyped (watermark at region boundary) → regionExhausted
+  let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
+  let h16ExhaustedCnodeId : SeLe4n.ObjId := ⟨161⟩
+  let h16ExhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16ExhaustedCnodeId, slot := ⟨0⟩ }
+  let h16ExhaustedState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject h16ExhaustedUntypedId (.untyped {
+        regionBase := ⟨0x10000⟩
+        regionSize := 64
+        watermark := 64   -- fully exhausted
+        children := []
+        isDevice := false
+      })
+      |>.withObject h16ExhaustedCnodeId (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, {
+            target := .object h16ExhaustedUntypedId
+            rights := [.read, .write, .grant]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
+      |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
+      |>.withLifecycleCapabilityRef h16ExhaustedAuthSlot (.object h16ExhaustedUntypedId)
+      |>.build)
+  expectError "H16 retypeFromUntyped exhausted untyped"
+    (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
+      (.endpoint {}) 64 h16ExhaustedState)
+    .untypedRegionExhausted
+
+  -- H16-NEG-08: retypeFromUntyped with non-untyped source → untypedTypeMismatch
+  -- Plan REQ: "retypeFromUntyped with invalid object type → expect error"
+  -- The source is an endpoint, not an untyped, triggering the type mismatch guard.
+  expectError "H16 retypeFromUntyped non-untyped source"
+    (SeLe4n.Kernel.retypeFromUntyped h16AuthSlot h16TargetId ⟨162⟩
+      (.endpoint {}) 64 h16State)
+    .untypedTypeMismatch
+
+  -- H16-NEG-09: retypeFromUntyped with device untyped → untypedDeviceRestriction
+  -- Device untypeds cannot back typed kernel objects (except other untypeds).
+  let h16DeviceUntypedId : SeLe4n.ObjId := ⟨163⟩
+  let h16DeviceCnodeId : SeLe4n.ObjId := ⟨164⟩
+  let h16DeviceAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16DeviceCnodeId, slot := ⟨0⟩ }
+  let h16DeviceState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject h16DeviceUntypedId (.untyped {
+        regionBase := ⟨0x20000⟩
+        regionSize := 8192
+        watermark := 0
+        children := []
+        isDevice := true     -- device untyped
+      })
+      |>.withObject h16DeviceCnodeId (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, {
+            target := .object h16DeviceUntypedId
+            rights := [.read, .write, .grant]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType h16DeviceUntypedId .untyped
+      |>.withLifecycleObjectType h16DeviceCnodeId .cnode
+      |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
+      |>.build)
+  expectError "H16 retypeFromUntyped device untyped restriction"
+    (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
+      (.endpoint {}) 1024 h16DeviceState)
+    .untypedDeviceRestriction
+
+  -- H16-NEG-10: lifecycleRevokeDeleteRetype with non-existent target → objectNotFound
+  -- Plan REQ: "lifecycleRevokeDeleteRetype with non-existent object → expect error"
+  -- cleanup resolves correctly, but the final retype target doesn't exist.
+  expectError "H16 lifecycleRevokeDeleteRetype non-existent target"
+    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16CleanupSlot ⟨999⟩ (.endpoint {}) h16State)
+    .objectNotFound
+
+  IO.println "all WS-H16/M-18 lifecycle negative checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1571,3 +1763,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH13Checks
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
+  SeLe4n.Testing.runWSH16LifecycleChecks

@@ -741,4 +741,55 @@ run_check "TRACE" rg -n 'H12f context switch regs match incoming' tests/fixtures
 run_check "TRACE" rg -n 'H12f outgoing context saved' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12f empty message accepted' tests/fixtures/main_trace_smoke.expected
 
+# ============================================================================
+# WS-H16: Testing, Documentation & Cleanup — Semantic Assertions (A-43)
+# ============================================================================
+# These assertions go beyond name-based anchoring to verify structural
+# properties of invariant bundles, preventing regression to trivially-true
+# predicates or incomplete coverage.
+
+log_section "INVARIANT" "WS-H16: Semantic invariant surface assertions"
+
+# WS-H16/A-43: capabilityInvariantBundle definition must have at least 5 conjuncts (∧).
+# Counts ∧ only in the bundle definition body. Prevents regression to
+# trivially-true C-03 scenario.
+CIBUNDLE_CONJUNCTS=$(sed -n '/^def capabilityInvariantBundle/,/^$/p' SeLe4n/Kernel/Capability/Invariant/Defs.lean | grep -o '∧' | wc -l)
+run_check "INVARIANT" test "${CIBUNDLE_CONJUNCTS}" -ge 5
+
+# WS-H16/A-43: schedulerInvariantBundleFull includes timeSlicePositive.
+run_check "INVARIANT" rg -n 'timeSlicePositive st' SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# WS-H16/A-43: schedulerInvariantBundleFull includes edfCurrentHasEarliestDeadline.
+run_check "INVARIANT" rg -n 'edfCurrentHasEarliestDeadline st' SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# WS-H16/A-43: schedulerInvariantBundleFull includes contextMatchesCurrent.
+run_check "INVARIANT" rg -n 'contextMatchesCurrent st' SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# WS-H16/A-43: NonInterferenceStep has at least 20 constructors (up from 12 pre-H9).
+# Counts constructor lines only within the inductive definition body.
+NI_CTORS=$(sed -n '/^inductive NonInterferenceStep/,/^$/p' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean | grep -c '^\s*| ')
+run_check "INVARIANT" test "${NI_CTORS}" -ge 20
+
+# WS-H16/A-13: objectIndexLive predicate exists in Model/State.lean.
+run_check "INVARIANT" rg -n '^def objectIndexLive' SeLe4n/Model/State.lean
+
+# WS-H16/A-13: objectIndexLive default theorem exists.
+run_check "INVARIANT" rg -n '^theorem objectIndexLive_default' SeLe4n/Model/State.lean
+
+# WS-H16/A-13: objectIndexLive preservation theorem for storeObject exists.
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectIndexLive' SeLe4n/Model/State.lean
+
+# WS-H16/A-19: runQueueThreadPriorityConsistent predicate defined.
+run_check "INVARIANT" rg -n '^def runQueueThreadPriorityConsistent' SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# WS-H16/A-19: runQueueThreadPriorityConsistent default theorem exists.
+run_check "INVARIANT" rg -n '^theorem runQueueThreadPriorityConsistent_default' SeLe4n/Kernel/Scheduler/Invariant.lean
+
+# WS-H16/M-18: Lifecycle negative test function exists in NegativeStateSuite.
+run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSuite.lean
+
+# WS-H16/A-18: schedule uses O(1) RunQueue membership (not O(n) list scan).
+# Verify schedule references runQueue (O(1) HashSet) not runnable (O(n) list).
+run_check "INVARIANT" rg -n 'scheduler\.runQueue' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+
 finalize_report

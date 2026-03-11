@@ -182,6 +182,36 @@ def contextMatchesCurrent (st : SystemState) : Prop :=
   | none => True
 
 -- ============================================================================
+-- WS-H16/A-19: RunQueue threadPriority consistency predicate
+-- ============================================================================
+
+/-- WS-H16/A-19: Every thread in the RunQueue's membership set has a
+corresponding entry in the `threadPriority` mapping, and vice versa.
+
+This formalizes the structural invariant documented in `RunQueue` (lines 26-32)
+which is maintained by `insert` (adds both) and `remove` (erases both), but
+was previously only verified at runtime via `InvariantChecks.runQueueThreadPriorityConsistentB`.
+
+The forward direction ensures no "priority-orphaned" thread can escape bucket
+routing during scheduling. The reverse direction prevents stale priority entries
+from accumulating after thread removal. -/
+def runQueueThreadPriorityConsistent (st : SystemState) : Prop :=
+  (∀ tid, tid ∈ st.scheduler.runQueue →
+    st.scheduler.runQueue.threadPriority[tid]? ≠ none) ∧
+  (∀ tid, st.scheduler.runQueue.threadPriority[tid]? ≠ none →
+    tid ∈ st.scheduler.runQueue)
+
+/-- WS-H16/A-19: `runQueueThreadPriorityConsistent` holds for the empty
+default scheduler state. -/
+theorem runQueueThreadPriorityConsistent_default :
+    runQueueThreadPriorityConsistent default := by
+  constructor
+  · intro tid hMem
+    exact absurd hMem (RunQueue.not_mem_empty tid)
+  · intro tid hPrio
+    simp [default, Inhabited.default, RunQueue.empty] at hPrio
+
+-- ============================================================================
 -- WS-H6: Full scheduler invariant bundle
 -- ============================================================================
 
@@ -196,6 +226,10 @@ is no longer in the run queue under dequeue-on-dispatch semantics.
 WS-H12e: Adds `contextMatchesCurrent` (from WS-H12c) to the full bundle,
 ensuring the register-context coherence invariant is composed into the
 cross-subsystem proof surface rather than remaining orphaned.
+
+Note: `runQueueThreadPriorityConsistent` (WS-H16/A-19) is a standalone
+predicate not included in this bundle to avoid cascading preservation proof
+changes. It follows the same pattern as `schedulerPriorityMatch`.
 Cross-subsystem consumers that only need the structural triad should continue
 using `schedulerInvariantBundle` (the 3-component version). -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
