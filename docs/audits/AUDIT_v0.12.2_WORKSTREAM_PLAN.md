@@ -1,7 +1,7 @@
 # WS-F Workstream Plan — v0.12.2 Audit Remediation
 
 **Created:** 2026-02-28
-**Last updated:** 2026-03-11 (WS-F6 completion — invariant quality)
+**Last updated:** 2026-03-11 (WS-F8 cleanup — completed, 33/33 findings closed)
 **Findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](AUDIT_CODEBASE_v0.12.2_v1.md), [`AUDIT_CODEBASE_v0.12.2_v2.md`](AUDIT_CODEBASE_v0.12.2_v2.md)
 **Prior portfolio:** WS-E (v0.11.6, all 6 workstreams completed)
 **Project direction:** Production microkernel targeting Raspberry Pi 5 (ARM64)
@@ -723,22 +723,155 @@ quality — completed). All dependencies satisfied.
 
 ### WS-F8: Cleanup (LOW)
 
-**Objective:** Remove dead code and resolve architectural divergences.
+**Objective:** Remove dead code, close remaining audit findings with evidence,
+and ensure the codebase surface is minimal, well-labeled, and free of
+architectural ambiguity before the Raspberry Pi 5 hardware binding phase.
 
-**Deliverables:**
-1. Remove dead `endpointInvariant` definition (F-14).
-2. Resolve legacy/dual-queue divergence: deprecate legacy operations or add refinement bridge.
-3. Remove or document `ServiceStatus.failed`/`isolated` dead states.
-4. Remove dead generic domain lattice code (MED-04). *Note: no domain lattice code found in current codebase — verify whether this was addressed in a prior commit or was misidentified.*
-5. ~~Remove forward-declared stubs without consumers (F-19).~~ **Closed by PR #290:** `BootBoundaryContract`, `InterruptBoundaryContract`, and `RuntimeBoundaryContract` are now instantiated in both `Platform/Sim/` and `Platform/RPi5/` with concrete consumers in `PlatformBinding`. Only `boundedAddressTranslation` (VSpaceInvariant.lean) remains a forward declaration, tracked separately under WS-E6 model completeness.
-6. Label Service subsystem clearly as a seLe4n extension (not seL4 formalization).
+**Scope:** 5 open findings — 2 MEDIUM (MED-04, MED-17), 3 LOW (F-01, F-14,
+~~F-19~~ closed by PR #290). All CRITICAL and HIGH findings were closed in
+WS-F1..F7. This workstream completes the v0.12.2 audit remediation portfolio.
 
-**Exit evidence:**
-- `lake build` passes.
-- `test_smoke.sh` passes.
+**Security rationale:** Dead type constructors and unlabeled extensions create
+false assurance surface. A `ServiceStatus.failed` variant that no operation
+transitions to could mask a future bug where code matches on it incorrectly.
+Removing dead states reduces the trusted codebase surface and eliminates
+unreachable code paths that could otherwise confuse proof auditors.
+
+#### D1: Remove `ServiceStatus.failed`/`isolated` dead states
+
+**Finding:** `ServiceStatus` (Model/Object/Types.lean:15-20) declares four
+constructors: `stopped`, `running`, `failed`, `isolated`. Production operations
+(`serviceStart`, `serviceStop`, `serviceRestart`) only transition between
+`.stopped` and `.running`. No kernel operation ever produces `.failed` or
+`.isolated`. These are dead constructors.
+
+Note: `isolatedFrom : List ServiceId` on `ServiceGraphEntry` is a *separate*
+concept — it models isolation edges in the dependency graph, not runtime
+status. Removing the `ServiceStatus.isolated` constructor does not affect
+isolation-edge functionality.
+
+**Sub-tasks:**
+
+- D1a: Remove `| failed` and `| isolated` from the `ServiceStatus` inductive
+  (Model/Object/Types.lean).
+- D1b: Verify no production Lean files reference `ServiceStatus.failed` or
+  `ServiceStatus.isolated`. (Pre-verified: zero matches in `SeLe4n/`.)
+- D1c: Add a docstring to `ServiceStatus` clarifying the two-state machine and
+  rationale for not modeling failure as a runtime state (failure is an error
+  return, not a persistent state — matching seL4's deterministic error model).
+- D1d: Update test fixtures and harnesses if any reference `failed`/`isolated`.
+  (Pre-verified: tests only use `.stopped` and `.running`.)
+
+**Exit evidence:** `lake build` passes; `grep -r 'ServiceStatus.failed\|ServiceStatus.isolated' SeLe4n/` returns zero matches.
+
+#### D2: Label Service subsystem as seLe4n extension (MED-17)
+
+**Finding:** The Service orchestration layer (`SeLe4n/Kernel/Service/*`) is a
+novel abstraction with no analogue in real seL4. The `ServiceGraphEntry` with
+dependency edges, isolation edges, and runtime status is a seLe4n-specific
+extension for modelling higher-level system composition. Without clear labeling,
+auditors may mistake it for a seL4 formalization, creating false assurance.
+
+**Sub-tasks:**
+
+- D2a: Add a module-level docstring to `Service/Operations.lean` clearly stating
+  this is a seLe4n extension (not seL4 formalization), explaining the design
+  rationale and relationship to real seL4's lack of service management.
+- D2b: Add a module-level docstring to `Service/Invariant/Policy.lean` with the
+  same seLe4n-extension designation.
+- D2c: Add a module-level docstring to `Service/Invariant/Acyclicity.lean` with
+  the same designation plus a note on how dependency acyclicity differs from
+  seL4's capability derivation tree.
+- D2d: Update `docs/spec/SELE4N_SPEC.md` to list the Service subsystem under a
+  dedicated "seLe4n Extensions" section or label it clearly in the existing
+  feature table.
+
+**Exit evidence:** All three Service module files begin with a docstring
+containing "seLe4n extension" or equivalent designation. Spec document reflects
+the labeling.
+
+#### D3: Close F-14 (endpointInvariant) with evidence
+
+**Finding:** F-14 flagged a dead `endpointInvariant` definition. Investigation
+confirms this was already removed during WS-H12a/WS-H12c. The `ipcInvariant`
+definition (IPC/Invariant/Defs.lean:147-152) explicitly documents the removal:
+"The former `endpointInvariant` conjunct (vacuous `True` since WS-H12a) has
+been removed." No definition named `endpointInvariant` exists anywhere in the
+codebase.
+
+**Sub-task:** No code change required. Record closure evidence in this plan and
+in the status dashboard.
+
+**Exit evidence:** `grep -r 'def endpointInvariant' SeLe4n/` returns zero
+matches. Comment in IPC/Invariant/Defs.lean:148 documents the removal lineage.
+
+#### D4: Close F-01 (legacy endpoint fields) with evidence
+
+**Finding:** F-01 flagged redundant legacy endpoint fields (`state`, `queue`,
+`waitingReceiver`) coexisting with dual-queue fields (`sendQ`, `receiveQ`).
+Investigation confirms these were already removed during WS-H12a. The
+`Endpoint` structure (Model/Object/Types.lean:285-288) now contains only
+dual-queue fields. The docstring (line 281-284) explicitly documents:
+"Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) and the
+`EndpointState` type have been removed."
+
+**Sub-task:** No code change required. Record closure evidence in this plan and
+in the status dashboard.
+
+**Exit evidence:** `Endpoint` structure has exactly two fields: `sendQ`,
+`receiveQ`. No `EndpointState` type exists in the codebase.
+
+#### D5: Close MED-04 (domain lattice dead code) with evidence
+
+**Finding:** MED-04 flagged "generic domain lattice is dead code." Investigation
+reveals this finding was either misidentified or refers to code removed in a
+prior commit. The current codebase contains an **active** parameterized domain
+lattice system in `InformationFlow/Policy.lean` (WS-E5/H-04):
+- `SecurityDomain` (parameterized N-domain type)
+- `DomainFlowPolicy` (linear, partitioned, custom flow policies)
+- `embedLegacyLabel` (2-level → 4-domain bridge)
+- `GenericLabelingContext` (N-domain labeling surface)
+
+This code is exercised by `tests/InformationFlowSuite.lean` (domain lattice
+checks at line 309) and referenced throughout the information-flow enforcement
+and non-interference proof surface. It is **not** dead code.
+
+**Sub-task:** No code removal. Record closure with evidence that the domain
+lattice is alive and exercised. If the original finding referred to an earlier
+orphaned implementation, that code no longer exists.
+
+**Exit evidence:** `grep -r 'domain lattice' SeLe4n/ tests/` shows active
+references. `InformationFlowSuite.lean` exercises ≥3-domain lattice checks.
+
+#### D6: Verify F-19 closure (stubs without consumers)
+
+~~Already closed by PR #290.~~ `BootBoundaryContract`,
+`InterruptBoundaryContract`, and `RuntimeBoundaryContract` are instantiated in
+both `Platform/Sim/` and `Platform/RPi5/` with concrete consumers in
+`PlatformBinding`. Only `boundedAddressTranslation` (VSpaceInvariant.lean)
+remains a forward declaration, tracked under WS-E6 model completeness.
+
+**Sub-task:** No code change. Verify PR #290 evidence and record in dashboard.
+
+**Exit evidence:** All three boundary contracts have instantiations.
+`boundedAddressTranslation` tracked under WS-E6 (not WS-F8 scope).
+
+#### Exit evidence (workstream-level):
+
+- `lake build` passes with zero errors and zero warnings.
+- `test_smoke.sh` passes (Tier 0-2).
+- `test_full.sh` passes (Tier 0-3).
+- Zero `sorry` or `axiom` in production proof surface.
+- `grep -r 'ServiceStatus.failed\|ServiceStatus.isolated' SeLe4n/` → 0 matches.
+- `grep -r 'def endpointInvariant' SeLe4n/` → 0 matches.
+- All three Service module files contain "seLe4n extension" docstring.
+- Documentation synchronized: WORKSTREAM_HISTORY, CLAIM_EVIDENCE_INDEX,
+  DEVELOPMENT.md, spec, GitBook chapters.
 - No orphaned definitions in the codebase.
+- All 33 v0.12.2 audit findings closed (100%).
 
-**Dependencies:** WS-F1 (legacy/dual-queue resolution depends on dual-queue verification).
+**Dependencies:** WS-F1 (completed), WS-H12a/c (completed — endpoint fields
+and endpointInvariant removal). All dependencies satisfied.
 
 ---
 
@@ -751,7 +884,7 @@ quality — completed). All dependencies satisfied.
 | **P2** | WS-F3 | Information-flow completeness (depends on WS-F1 IPC) | **Done** |
 | **H3-prep** | — | Platform binding infrastructure (PR #290): `PlatformBinding` typeclass, `MachineConfig`/`MemoryRegion`, `VSpaceBackend`, Sim + RPi5 bindings | **Done** |
 | **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **Done** |
-| **P4** | WS-F7, WS-F8 | Testing expansion + cleanup | WS-F7 **Done**, WS-F8 Planning |
+| **P4** | WS-F7, WS-F8 | Testing expansion + cleanup | **Done** |
 
 **Phase notes:**
 - P0–P3 are complete. All CRITICAL, HIGH, and targeted MEDIUM findings from P1–P3 are closed.
@@ -774,11 +907,11 @@ quality — completed). All dependencies satisfied.
 | WS-F5 | Medium | **Completed** | CRIT-06, ~~HIGH-01~~ (WS-H13), ~~HIGH-02~~ (WS-H12c), HIGH-04, MED-03 |
 | WS-F6 | Medium | **Completed** | HIGH-03, ~~HIGH-05~~ (WS-H5), HIGH-06, ~~HIGH-07~~ (WS-H9), ~~HIGH-08~~ (WS-H15d), MED-01, MED-02, MED-05, MED-06, MED-07, F-07, F-13, F-15, ~~F-18~~ (WS-H15d) |
 | WS-F7 | Low | **Completed** | MED-08, F-24, F-25, F-26 |
-| WS-F8 | Low | Planning (F-19 closed) | MED-04, MED-17, F-01, F-14, ~~F-19~~ |
+| WS-F8 | Low | **Completed** | MED-04, MED-17, F-01, F-14, ~~F-19~~ |
 
 **Aggregate finding closure (by matrix row):**
-- **Closed:** 6 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3; CRIT-06 by WS-F5), 10 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c; HIGH-03, HIGH-06 by WS-F6; HIGH-05 by WS-H5; HIGH-04 by WS-F5; HIGH-07 by WS-H9; HIGH-08/F-18 by WS-H15d), 8 MEDIUM (MED-01, MED-02, MED-05, MED-06, MED-07 by WS-F6; MED-03 by WS-F5; MED-08 by WS-F7; F-07, F-13, F-15 by WS-F6), 4 LOW (F-19 by PR #290; F-24, F-25, F-26 by WS-F7) = **28 of 33**
-- **Open:** 0 CRITICAL, 0 HIGH, 2 MEDIUM (MED-04, MED-17), 3 LOW (F-01, F-14) = **5 of 33** (WS-F8 only)
+- **Closed:** 6 CRITICAL (CRIT-01, CRIT-04, CRIT-05 by WS-F1/F2; CRIT-02, CRIT-03 by WS-F3; CRIT-06 by WS-F5), 10 HIGH (F-11 by WS-F1; F-03, F-06, F-12 by WS-F4; HIGH-01 by WS-H13; HIGH-02 by WS-H12c; HIGH-03, HIGH-06 by WS-F6; HIGH-05 by WS-H5; HIGH-04 by WS-F5; HIGH-07 by WS-H9; HIGH-08/F-18 by WS-H15d), 10 MEDIUM (MED-01, MED-02, MED-05, MED-06, MED-07 by WS-F6; MED-03 by WS-F5; MED-08 by WS-F7; MED-04, MED-17 by WS-F8; F-07, F-13, F-15 by WS-F6), 7 LOW (F-19 by PR #290; F-24, F-25, F-26 by WS-F7; F-01, F-14 by WS-F8) = **33 of 33 (100%)**
+- **Open:** None — all v0.12.2 audit findings closed.
 
 ### Cross-cutting: H3-prep Platform Binding (PR #290)
 

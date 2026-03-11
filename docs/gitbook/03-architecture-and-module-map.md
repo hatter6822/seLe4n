@@ -116,7 +116,13 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - step-3 lifecycle invariant components and bundle layering,
   - explicit split between identity/aliasing and capability-reference constraints.
 
-### Service subsystem
+### Service subsystem *(seLe4n extension — not present in seL4)*
+
+The Service orchestration layer is a **seLe4n-specific extension** with no
+analogue in real seL4. seL4 delegates service lifecycle entirely to user-level
+components. seLe4n models it as a kernel abstraction to enable machine-checked
+reasoning about dependency satisfaction, isolation enforcement, and lifecycle
+determinism. See `Service/Operations.lean` for the full design rationale.
 
 - `SeLe4n/Kernel/Service/Operations.lean`
   - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),

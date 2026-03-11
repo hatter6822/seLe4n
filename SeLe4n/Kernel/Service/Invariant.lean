@@ -9,7 +9,10 @@
 import SeLe4n.Kernel.Service.Invariant.Policy
 import SeLe4n.Kernel.Service.Invariant.Acyclicity
 
-/-! # Service Invariant Preservation — Re-export Hub
+/-! # Service Invariant Preservation — Re-export Hub (seLe4n Extension)
+
+**The Service subsystem is a seLe4n-specific extension** — seL4 has no
+kernel-level service management. See `Service/Operations.lean` for rationale.
 
 Decomposed into:
 - **Policy**: Policy surface definitions, bridge theorems, service lifecycle

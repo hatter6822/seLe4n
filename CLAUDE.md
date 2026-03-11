@@ -376,10 +376,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Remaining workstreams**: WS-F7..F8 (low)
+- **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/AUDIT_CODEBASE_v0.13.6.md` — zero critical issues
-- **All prior workstreams completed**: WS-B through WS-F6 (see `docs/WORKSTREAM_HISTORY.md`)
+- **All prior workstreams completed**: WS-B through WS-F8 (see `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

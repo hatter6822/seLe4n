@@ -9,6 +9,18 @@
 import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Capability.Invariant
 
+/-! # Service Policy Invariants — seLe4n Extension
+
+**This module is a seLe4n-specific extension with no analogue in real seL4.**
+
+Defines the service policy surface: invariants over backing-object typing,
+owner-authority references, and cross-subsystem bundle composition with the
+capability and lifecycle invariant surfaces. These predicates enable
+machine-checked verification that service operations preserve structural
+properties across subsystem boundaries.
+
+See `Service/Operations.lean` for the full seLe4n extension rationale. -/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

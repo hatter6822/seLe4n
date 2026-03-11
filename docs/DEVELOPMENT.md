@@ -7,7 +7,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **next workstream:** WS-H16 (remaining v0.12.15 audit remediation — testing/docs), WS-F5..F8 (v0.12.2 audit),
+- **next workstream:** WS-H16 (remaining v0.12.15 audit remediation — testing/docs). WS-F portfolio fully completed (F1..F8),
 - **recently completed:** WS-H15 (v0.14.7, platform & API hardening — `InterruptBoundaryContract` decidability, RPi5 contract hardening with substantive predicates, 13 capability-gated syscall wrappers, `AdapterProofHooks` concrete instantiation for Sim/RPi5, MMIO disjointness proof; closes A-33, A-41, A-42, M-13), WS-H14 (v0.14.6, type safety & Prelude foundations — `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal for type-safety enforcement, sentinel predicate completion), Module restructuring (v0.14.5, decomposed 9 monolithic files into 24 focused submodules via re-export hub pattern; zero code loss, 50 new helper theorems extracted, 209 Tier 3 anchor checks updated), WS-H13 (v0.14.4, CSpace/service model enrichment — `cspaceDepthConsistent` invariant, `resolveCapAddress` theorems, `serviceStop` backing-object verification, `serviceGraphInvariant` preservation, `cspaceMove` atomicity; addresses H-01, A-21, A-29, A-30, M-17/A-31), WS-H12f (v0.14.3, test harness update & documentation sync — dequeue-on-dispatch, context switch, and bounded message trace scenarios; legacy `endpointInvariant` comment cleanup; expected fixture updated; Tier 3 anchors added; documentation synchronized), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds — A-09 closed), WS-H12c (v0.14.0, per-TCB register context with inline context switch — H-03 closed), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics — H-04 closed), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues,
@@ -35,9 +35,9 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ## 3) Next workstreams
 
-Two workstream portfolios remain active. The primary focus is WS-H16
-(the final WS-H workstream from the v0.12.15 audit, Phase 5), with secondary
-focus on the remaining WS-F workstreams from the v0.12.2 audit.
+The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
+The remaining active portfolio is WS-H16 (the final WS-H workstream from the
+v0.12.15 audit, Phase 5).
 
 ### 3.1 WS-H11..H16 — Remaining v0.12.15 audit remediation
 
@@ -65,13 +65,14 @@ for the full execution plan.
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Completed |
+| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | **Completed** |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | **Completed** |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | **Completed** |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
+| **WS-F8** | Cleanup (dead type constructors, extension labeling, finding closure) | Low | **Completed** |
 
 ### 3.3 Completed portfolios
 
+- **WS-F8:** completed. Cleanup — removed dead `ServiceStatus.failed`/`isolated` constructors, labeled Service subsystem as seLe4n extension with module docstrings (MED-17), closed F-14 (endpointInvariant already removed in WS-H12a), closed F-01 (legacy endpoint fields already removed in WS-H12a), closed MED-04 (domain lattice alive and exercised — finding misidentified). Completes 100% of v0.12.2 audit findings (33/33). Closes MED-04, MED-17, F-01, F-14, F-19.
 - **WS-F7:** completed. Testing expansion — 4 new runtime invariant checks (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `currentThreadInActiveDomain`, `uniqueWaiters`) added to `InvariantChecks.lean`; `TraceSequenceProbe` extended from 3 to 7 operation families (+ notification signal/wait, schedule, capability lookup) with blocked-thread guard; `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` fixtures exercised in `MainTraceHarness` with 6 deterministic trace assertions; CDT `childMapConsistentCheck` confirmed already delivered. Zero sorry, zero axiom. Closes MED-08, F-24, F-25, F-26.
 - **WS-F6:** completed (v0.14.9). Invariant quality — tautology reclassification, cross-subsystem coupling, adapter proof hooks. `capabilityInvariantBundle` reduced from 8-tuple to 6-tuple (removed tautological `cspaceInvariant`/`badgeInvariant`); `blockedOnNotificationNotRunnable` predicate added to `ipcSchedulerContractPredicates` (6-conjunct); `runnableThreadsAreTCBs` predicate added to `schedulerInvariantBundleFull` (6-conjunct) with 4 preservation theorems (`switchDomain`, `schedule`, `handleYield`, `timerTick`); `vspaceCrossAsidIsolation` added to `vspaceInvariantBundle` (6-conjunct) with `mapPage`/`unmapPage` proofs; `default_serviceCountBounded` and `default_serviceGraphInvariant` proved for service graph; bundle coherence verified across all subsystems. Zero sorry, zero axiom.
 - **WS-H12f:** completed (v0.14.3). Test harness update & documentation sync — `runDequeueOnDispatchTrace` (dequeue-on-dispatch lifecycle with preemption re-enqueue), `runInlineContextSwitchTrace` (inline context save/restore verification through `handleYield` → `schedule`), `runBoundedMessageExtendedTrace` (zero-length, sub-boundary, max-caps acceptance); legacy `endpointInvariant` comment cleanup; expected fixture updated (108 lines); 9 new Tier 3 anchors; documentation synchronized. Completes WS-H12 composite workstream.

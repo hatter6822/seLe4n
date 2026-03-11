@@ -238,7 +238,10 @@ local and composed lifecycle preservation entrypoints (`lifecycleRetypeObject_pr
 `lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle`), and fixture-backed executable trace evidence
 for unauthorized/illegal-state/success lifecycle retype outcomes plus composed lifecycle+capability behavior.
 
-## 8. M5 policy-surface layering (WS-M5-C complete)
+## 8. M5 policy-surface layering (WS-M5-C complete) — seLe4n extension
+
+> **Note:** The Service subsystem is a seLe4n-specific extension with no
+> analogue in real seL4. See `Service/Operations.lean` for design rationale.
 
 Policy surface entrypoints now live in `SeLe4n/Kernel/Service/Invariant.lean` and are explicitly
 kept mutation-free:

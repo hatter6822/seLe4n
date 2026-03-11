@@ -11,12 +11,16 @@ import SeLe4n.Machine
 namespace SeLe4n.Model
 
 
-/-- High-level service runtime status for orchestration-level reasoning. -/
+/-- High-level service runtime status for orchestration-level reasoning.
+
+WS-F8/D1: Two-state machine — services are either `stopped` or `running`.
+Failure is modelled as an error return from service operations (matching seL4's
+deterministic error model), not as a persistent runtime state. Isolation between
+services is expressed via `ServiceGraphEntry.isolatedFrom` edges in the
+dependency graph, not as a runtime status variant. -/
 inductive ServiceStatus where
   | stopped
   | running
-  | failed
-  | isolated
   deriving Repr, DecidableEq
 
 /-- Stable service identity metadata for graph-level orchestration. -/
