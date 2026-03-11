@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "7bb902d8abab43cf2044cba2d104ace75024b930",
-      "tree_sha": "087bc988f946eaf60f6f0ba277e02b09479f1e2a",
-      "committed_at_utc": "2026-03-10T19:44:26-04:00"
+      "branch": "claude/review-testing-cleanup-55Xyb",
+      "commit_sha": "0b273f85d35ebc244986386b979f9f2fb856dc40",
+      "tree_sha": "433185d6d045c684314bb95e83cabfd77e53995c",
+      "committed_at_utc": "2026-03-10T23:44:34+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9a5edae0ec4a85fab32649de4df284d9266903e8e1aed1b213afdeeb85756a3c"
+    "source_digest": "d00cbbab2f6cca59b78f7db33fada6b1e3b04ba0fdcb628b98d6a25f1a157315"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 1934
+    "declaration_count": 1940
   },
   "readme_sync": {
-    "version": "0.14.7",
+    "version": "0.14.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 32784,
+    "production_loc": 32871,
     "test_files": 3,
-    "test_loc": 2576,
-    "proved_theorem_lemma_decls": 1052,
+    "test_loc": 2718,
+    "proved_theorem_lemma_decls": 1055,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7220,7 +7220,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 19,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -7332,8 +7332,22 @@
         },
         {
           "kind": "def",
+          "name": "runQueueThreadPriorityConsistent",
+          "line": 198,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueueThreadPriorityConsistent_default",
+          "line": 206,
+          "called": [
+            "runQueueThreadPriorityConsistent"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 201,
+          "line": 234,
           "called": [
             "contextMatchesCurrent",
             "currentTimeSlicePositive",
@@ -7345,7 +7359,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 207,
+          "line": 240,
           "called": [
             "schedulerInvariantBundle",
             "schedulerInvariantBundleFull"
@@ -7354,7 +7368,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 212,
+          "line": 245,
           "called": [
             "contextMatchesCurrent",
             "schedulerInvariantBundleFull"
@@ -7363,7 +7377,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 228,
+          "line": 261,
           "called": []
         }
       ]
@@ -11420,7 +11434,7 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 90,
+      "declaration_count": 93,
       "declarations": [
         {
           "kind": "namespace",
@@ -12248,6 +12262,32 @@
           "line": 913,
           "called": [
             "SystemState",
+            "storeObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectIndexLive",
+          "line": 939,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectIndexLive_default",
+          "line": 943,
+          "called": [
+            "objectIndexLive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_objectIndexLive",
+          "line": 952,
+          "called": [
+            "SystemState",
+            "objectIndexLive",
             "storeObject"
           ]
         }
@@ -15310,7 +15350,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 39,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
@@ -15631,8 +15671,16 @@
         },
         {
           "kind": "def",
+          "name": "runWSH16LifecycleChecks",
+          "line": 1566,
+          "called": [
+            "expectError"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1565,
+          "line": 1706,
           "called": []
         }
       ]

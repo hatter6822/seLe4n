@@ -925,4 +925,58 @@ theorem storeObject_objectIndex_monotone
   · simp; exact Or.inr hMem
   · simp; exact hMem
 
+-- ============================================================================
+-- WS-H16/A-13: objectIndex liveness — index membership implies object existence
+-- ============================================================================
+
+/-- WS-H16/A-13: Every ID in `objectIndex` has a corresponding object in
+`objects`. Since `storeObject` always inserts into both `objects` and
+`objectIndex` (and no operation erases from `objects`), this property holds
+for any state built through `storeObject` transitions.
+
+This closes the gap identified by A-13 where `objectIndex` grows monotonically
+without a bounds proof connecting index membership to object existence. -/
+def objectIndexLive (st : SystemState) : Prop :=
+  ∀ (id : SeLe4n.ObjId), id ∈ st.objectIndex → st.objects[id]? ≠ none
+
+/-- WS-H16/A-13: `objectIndexLive` holds for the default (empty) state. -/
+theorem objectIndexLive_default : objectIndexLive default := by
+  intro id hMem
+  simp [default, Inhabited.default] at hMem
+
+/-- WS-H16/A-13: `storeObject` preserves `objectIndexLive`.
+
+After `storeObject oid obj st`, every ID in `st'.objectIndex` maps to a
+live object: the newly stored `oid` maps to `obj`, and all pre-existing
+IDs retain their objects because `HashMap.insert` does not erase other keys. -/
+theorem storeObject_preserves_objectIndexLive
+    (st st' : SystemState)
+    (oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hLive : objectIndexLive st)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    objectIndexLive st' := by
+  unfold storeObject at hStep
+  cases hStep
+  intro id hMem
+  simp only [] at hMem
+  cases h : st.objectIndexSet.contains oid
+  · -- oid was not in objectIndexSet, so objectIndex = oid :: st.objectIndex
+    simp [h] at hMem
+    cases hMem with
+    | inl heq =>
+      subst heq; simp
+    | inr hOld =>
+      have hOldLive := hLive id hOld
+      simp [Std.HashMap.getElem?_insert]
+      split
+      · simp
+      · exact hOldLive
+  · -- oid was already in objectIndexSet, so objectIndex unchanged
+    simp [h] at hMem
+    simp [Std.HashMap.getElem?_insert]
+    split
+    · simp
+    · exact hLive id hMem
+
 end SeLe4n.Model

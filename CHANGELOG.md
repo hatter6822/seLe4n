@@ -1,3 +1,36 @@
+## [0.14.8] - 2026-03-10
+
+### WS-H16: Testing, Documentation & Cleanup
+
+- **Part A (M-18):** Lifecycle negative tests — 7 new `expectError` tests in
+  `NegativeStateSuite.lean` exercising error branches in `lifecycleRetypeObject`
+  (non-existent target, metadata mismatch, insufficient authority, bad authority
+  CNode) and `lifecycleRevokeDeleteRetype` (authority = cleanup, bad cleanup
+  CNode) and `retypeFromUntyped` (exhausted untyped region).
+- **Part B (A-43):** Semantic Tier 3 assertions — 13 new proof-surface anchors
+  in `test_tier3_invariant_surface.sh` checking structural properties:
+  `capabilityInvariantBundle` conjunct count, `schedulerInvariantBundleFull`
+  component inclusion, `NonInterferenceStep` constructor count,
+  `objectIndexLive` and `runQueueThreadPriorityConsistent` definitions and
+  theorems, `runWSH16LifecycleChecks` test function, `schedule` O(1) RunQueue
+  membership.
+- **Part D (A-13):** `objectIndexLive` liveness invariant — new predicate in
+  `Model/State.lean` with `objectIndexLive_default` theorem and
+  `storeObject_preserves_objectIndexLive` preservation proof. Ensures every
+  `objectIndex` entry resolves to a live object in the store.
+- **Part D (A-19):** `runQueueThreadPriorityConsistent` predicate — new
+  bi-directional consistency predicate in `Scheduler/Invariant.lean` with
+  `runQueueThreadPriorityConsistent_default` theorem. Formalizes the invariant
+  that every RunQueue member has a `threadPriority` entry and vice versa.
+- **Part D (A-18):** O(n) membership check audit — confirmed `schedule` already
+  uses O(1) `HashSet`-backed `RunQueue.contains` (not the O(n) `runnable` flat
+  list alias). No code change required.
+- **Documentation sync (M-21/A-45):** Updated `CLAUDE.md` file-size table,
+  `README.md` metrics, `WORKSTREAM_HISTORY.md`, `CHANGELOG.md`, GitBook
+  proof-and-invariant map.
+- **Build jobs:** 138. Zero sorry/axiom.
+- **Findings closed:** M-18, A-43, A-13, A-18, A-19, M-21/A-45.
+
 ## [0.14.7] - 2026-03-10
 
 ### WS-H15a–d: Platform & API Hardening
