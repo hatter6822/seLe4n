@@ -750,9 +750,10 @@ run_check "TRACE" rg -n 'H12f empty message accepted' tests/fixtures/main_trace_
 
 log_section "INVARIANT" "WS-H16: Semantic invariant surface assertions"
 
-# WS-H16/A-43: capabilityInvariantBundle must compose at least 5 non-True conjuncts.
-# Prevents regression to the trivially-true C-03 scenario.
-CIBUNDLE_CONJUNCTS=$(rg -c '∧' SeLe4n/Kernel/Capability/Invariant/Defs.lean || echo "0")
+# WS-H16/A-43: capabilityInvariantBundle definition must have at least 5 conjuncts (∧).
+# Counts ∧ only in the bundle definition body. Prevents regression to
+# trivially-true C-03 scenario.
+CIBUNDLE_CONJUNCTS=$(sed -n '/^def capabilityInvariantBundle/,/^$/p' SeLe4n/Kernel/Capability/Invariant/Defs.lean | grep -o '∧' | wc -l)
 run_check "INVARIANT" test "${CIBUNDLE_CONJUNCTS}" -ge 5
 
 # WS-H16/A-43: schedulerInvariantBundleFull includes timeSlicePositive.

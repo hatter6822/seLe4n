@@ -217,8 +217,7 @@ theorem runQueueThreadPriorityConsistent_default :
 
 /-- Full Scheduler Invariant Bundle — extends the structural triad with
 `timeSlicePositive`, `currentTimeSlicePositive`,
-`edfCurrentHasEarliestDeadline`, `contextMatchesCurrent`, and
-`runQueueThreadPriorityConsistent`.
+`edfCurrentHasEarliestDeadline`, and `contextMatchesCurrent`.
 
 WS-H6: Promotes the previously orphaned time-slice and EDF invariants into a
 composed bundle with preservation theorems for all scheduler operations.
@@ -227,8 +226,10 @@ is no longer in the run queue under dequeue-on-dispatch semantics.
 WS-H12e: Adds `contextMatchesCurrent` (from WS-H12c) to the full bundle,
 ensuring the register-context coherence invariant is composed into the
 cross-subsystem proof surface rather than remaining orphaned.
-WS-H16/A-19: Adds `runQueueThreadPriorityConsistent` to formalize the
-threadPriority consistency guarantee as a proof obligation.
+
+Note: `runQueueThreadPriorityConsistent` (WS-H16/A-19) is a standalone
+predicate not included in this bundle to avoid cascading preservation proof
+changes. It follows the same pattern as `schedulerPriorityMatch`.
 Cross-subsystem consumers that only need the structural triad should continue
 using `schedulerInvariantBundle` (the 3-component version). -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=

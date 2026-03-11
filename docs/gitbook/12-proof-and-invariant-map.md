@@ -1032,13 +1032,16 @@ via `tid ∈ st'.scheduler.runQueue` (backed by `HashSet`), not the O(n)
 
 ### Lifecycle negative tests (M-18)
 
-7 new `expectError` tests in `NegativeStateSuite.lean` (`runWSH16LifecycleChecks`):
+10 new `expectError` tests in `NegativeStateSuite.lean` (`runWSH16LifecycleChecks`):
 
 - H16-NEG-01..04: `lifecycleRetypeObject` error branches (non-existent target,
   metadata mismatch, insufficient authority, bad authority CNode).
 - H16-NEG-05..06: `lifecycleRevokeDeleteRetype` error branches (authority = cleanup,
   bad cleanup CNode).
 - H16-NEG-07: `retypeFromUntyped` with exhausted untyped region.
+- H16-NEG-08: `retypeFromUntyped` with non-untyped source (type mismatch).
+- H16-NEG-09: `retypeFromUntyped` with device untyped restriction.
+- H16-NEG-10: `lifecycleRevokeDeleteRetype` with non-existent retype target.
 
 ### Semantic Tier 3 assertions (A-43)
 

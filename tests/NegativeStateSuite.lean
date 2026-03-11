@@ -1699,6 +1699,57 @@ def runWSH16LifecycleChecks : IO Unit := do
       (.endpoint {}) 64 h16ExhaustedState)
     .untypedRegionExhausted
 
+  -- H16-NEG-08: retypeFromUntyped with non-untyped source → untypedTypeMismatch
+  -- Plan REQ: "retypeFromUntyped with invalid object type → expect error"
+  -- The source is an endpoint, not an untyped, triggering the type mismatch guard.
+  expectError "H16 retypeFromUntyped non-untyped source"
+    (SeLe4n.Kernel.retypeFromUntyped h16AuthSlot h16TargetId ⟨162⟩
+      (.endpoint {}) 64 h16State)
+    .untypedTypeMismatch
+
+  -- H16-NEG-09: retypeFromUntyped with device untyped → untypedDeviceRestriction
+  -- Device untypeds cannot back typed kernel objects (except other untypeds).
+  let h16DeviceUntypedId : SeLe4n.ObjId := ⟨163⟩
+  let h16DeviceCnodeId : SeLe4n.ObjId := ⟨164⟩
+  let h16DeviceAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16DeviceCnodeId, slot := ⟨0⟩ }
+  let h16DeviceState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject h16DeviceUntypedId (.untyped {
+        regionBase := ⟨0x20000⟩
+        regionSize := 8192
+        watermark := 0
+        children := []
+        isDevice := true     -- device untyped
+      })
+      |>.withObject h16DeviceCnodeId (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, {
+            target := .object h16DeviceUntypedId
+            rights := [.read, .write, .grant]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType h16DeviceUntypedId .untyped
+      |>.withLifecycleObjectType h16DeviceCnodeId .cnode
+      |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
+      |>.build)
+  expectError "H16 retypeFromUntyped device untyped restriction"
+    (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
+      (.endpoint {}) 1024 h16DeviceState)
+    .untypedDeviceRestriction
+
+  -- H16-NEG-10: lifecycleRevokeDeleteRetype with non-existent target → objectNotFound
+  -- Plan REQ: "lifecycleRevokeDeleteRetype with non-existent object → expect error"
+  -- cleanup resolves correctly, but the final retype target doesn't exist.
+  expectError "H16 lifecycleRevokeDeleteRetype non-existent target"
+    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16CleanupSlot ⟨999⟩ (.endpoint {}) h16State)
+    .objectNotFound
+
   IO.println "all WS-H16/M-18 lifecycle negative checks passed"
 
 end SeLe4n.Testing

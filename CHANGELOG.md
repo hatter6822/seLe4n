@@ -2,11 +2,12 @@
 
 ### WS-H16: Testing, Documentation & Cleanup
 
-- **Part A (M-18):** Lifecycle negative tests — 7 new `expectError` tests in
+- **Part A (M-18):** Lifecycle negative tests — 10 new `expectError` tests in
   `NegativeStateSuite.lean` exercising error branches in `lifecycleRetypeObject`
   (non-existent target, metadata mismatch, insufficient authority, bad authority
-  CNode) and `lifecycleRevokeDeleteRetype` (authority = cleanup, bad cleanup
-  CNode) and `retypeFromUntyped` (exhausted untyped region).
+  CNode), `lifecycleRevokeDeleteRetype` (authority = cleanup, bad cleanup CNode,
+  non-existent retype target), and `retypeFromUntyped` (exhausted untyped,
+  non-untyped source type mismatch, device untyped restriction).
 - **Part B (A-43):** Semantic Tier 3 assertions — 13 new proof-surface anchors
   in `test_tier3_invariant_surface.sh` checking structural properties:
   `capabilityInvariantBundle` conjunct count, `schedulerInvariantBundleFull`

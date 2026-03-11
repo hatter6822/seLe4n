@@ -122,7 +122,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1504 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~1492 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1399 lines)
-- `tests/NegativeStateSuite.lean` (~1715 lines)
+- `tests/NegativeStateSuite.lean` (~1766 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1207 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~1271 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1058 lines)

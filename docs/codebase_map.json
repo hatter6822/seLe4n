@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-testing-cleanup-55Xyb",
-      "commit_sha": "0b273f85d35ebc244986386b979f9f2fb856dc40",
-      "tree_sha": "433185d6d045c684314bb95e83cabfd77e53995c",
-      "committed_at_utc": "2026-03-10T23:44:34+00:00"
+      "commit_sha": "0bb51a1648d1c29c764d2df6cab190d7c3be8025",
+      "tree_sha": "72b9d7f2bd60541954051b15a6b3922ea791b75e",
+      "committed_at_utc": "2026-03-11T00:22:28+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d00cbbab2f6cca59b78f7db33fada6b1e3b04ba0fdcb628b98d6a25f1a157315"
+    "source_digest": "a9e2179ff3552a81b8392d05edcfeeab663d96c36bac2854a6b656d627a548c7"
   },
   "summary": {
     "module_count": 70,
@@ -27,9 +27,9 @@
     "version": "0.14.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 32871,
+    "production_loc": 32872,
     "test_files": 3,
-    "test_loc": 2718,
+    "test_loc": 2769,
     "proved_theorem_lemma_decls": 1055,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -7347,7 +7347,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 234,
+          "line": 235,
           "called": [
             "contextMatchesCurrent",
             "currentTimeSlicePositive",
@@ -7359,7 +7359,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 240,
+          "line": 241,
           "called": [
             "schedulerInvariantBundle",
             "schedulerInvariantBundleFull"
@@ -7368,7 +7368,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 245,
+          "line": 246,
           "called": [
             "contextMatchesCurrent",
             "schedulerInvariantBundleFull"
@@ -7377,7 +7377,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 261,
+          "line": 262,
           "called": []
         }
       ]
@@ -15680,7 +15680,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1706,
+          "line": 1757,
           "called": []
         }
       ]
