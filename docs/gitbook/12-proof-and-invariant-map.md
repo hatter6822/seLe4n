@@ -35,7 +35,7 @@ Bundle level:
 
 Extraction theorem:
 
-- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 5-conjunct bundle (WS-H12e)
+- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 6-conjunct bundle (WS-H12e + WS-F6/D3)
 
 Preservation shape:
 
@@ -692,7 +692,7 @@ Supporting infrastructure:
 
 ### WS-H4: Capability invariant bundle redesign (`Capability/Invariant.lean`, `Model/Object.lean`)
 
-Three new predicates added to `capabilityInvariantBundle` (4-tuple → 7-tuple, later extended to 8-tuple by WS-H13):
+Three new predicates added to `capabilityInvariantBundle` (4-tuple → 7-tuple, later extended to 8-tuple by WS-H13, then reduced to 6-tuple by WS-F6/D1):
 - `cspaceSlotCountBounded` — every CNode has at most `2^radixBits` occupied slots
 - `cdtCompleteness` — every CDT node points to an existing object (node-slot coherence)
 - `cdtAcyclicity` — CDT edge-well-foundedness (no cycles via `edgeWellFounded`)
@@ -831,18 +831,18 @@ closing gaps where invariants were defined but not composed into the top-level p
 
 | Bundle | Change | Effect |
 |---|---|---|
-| `schedulerInvariantBundleFull` | Extended from 4 to 5 conjuncts (+ `contextMatchesCurrent`) | Machine registers match current thread's saved context at all scheduler exit points |
+| `schedulerInvariantBundleFull` | Extended from 4 to 6 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3) | Machine registers match current thread's saved context; all runnable threads are valid TCBs |
 | `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
-| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 5 scheduler conjuncts |
+| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 6 scheduler conjuncts |
 
 ### New proofs and definitions
 
 Scheduler preservation (4 updated theorems):
-- `schedule_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
-- `handleYield_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
-- `timerTick_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation
-- `switchDomain_preserves_schedulerInvariantBundleFull` — 5th conjunct preservation (+ new `switchDomain_preserves_contextMatchesCurrent`)
+- `schedule_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation (incl. `runnableThreadsAreTCBs` WS-F6/D3)
+- `handleYield_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation
+- `timerTick_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation
+- `switchDomain_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation (+ `switchDomain_preserves_contextMatchesCurrent`)
 
 Backward-compatible extraction theorems (3):
 - `coreIpcInvariantBundle_to_ipcInvariant`
@@ -904,8 +904,8 @@ Resolution theorems:
 
 CSpace depth invariant:
 
-- `cspaceDepthConsistent` — 8th conjunct added to `capabilityInvariantBundle` (7-tuple → 8-tuple)
-- `default_capabilityInvariantBundle` — updated for 8-tuple (vacuous for empty object store)
+- `cspaceDepthConsistent` — added to `capabilityInvariantBundle` (WS-H13; later WS-F6/D1 reduced bundle to 6-tuple by removing 2 tautological predicates)
+- `default_capabilityInvariantBundle` — updated for current 6-tuple (vacuous for empty object store)
 
 ### Part B — Atomic capability move (A-21)
 

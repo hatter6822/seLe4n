@@ -792,6 +792,10 @@ run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSu
 # Verify schedule references runQueue (O(1) HashSet) not runnable (O(n) list).
 run_check "INVARIANT" rg -n 'scheduler\.runQueue' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 
+# WS-F6/D1: Reclassified operation-correctness lemmas (removed from capabilityInvariantBundle).
+run_check "INVARIANT" rg -n '^theorem cspaceAttenuationRule_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleAuthorityMonotonicity_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+
 # WS-F6/D2: blockedOnNotificationNotRunnable predicate in IPC invariant defs.
 run_check "INVARIANT" rg -n '^def blockedOnNotificationNotRunnable' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
@@ -806,6 +810,10 @@ run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreT
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+
+# WS-F6/D4: serviceCountBounded and serviceGraphInvariant default-state proofs.
+run_check "INVARIANT" rg -n '^theorem default_serviceCountBounded' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-F6/D6: vspaceCrossAsidIsolation in VSpace invariant bundle.
 run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
