@@ -766,7 +766,8 @@ run_check "INVARIANT" rg -n 'edfCurrentHasEarliestDeadline st' SeLe4n/Kernel/Sch
 run_check "INVARIANT" rg -n 'contextMatchesCurrent st' SeLe4n/Kernel/Scheduler/Invariant.lean
 
 # WS-H16/A-43: NonInterferenceStep has at least 20 constructors (up from 12 pre-H9).
-NI_CTORS=$(rg -c '^\s*\| ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean || echo "0")
+# Counts constructor lines only within the inductive definition body.
+NI_CTORS=$(sed -n '/^inductive NonInterferenceStep/,/^$/p' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean | grep -c '^\s*| ')
 run_check "INVARIANT" test "${NI_CTORS}" -ge 20
 
 # WS-H16/A-13: objectIndexLive predicate exists in Model/State.lean.
