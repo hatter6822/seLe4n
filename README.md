@@ -61,7 +61,7 @@ introducing substantial architectural improvements:
 | **Version** | `0.14.8` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 32,872 across 67 files |
-| **Test Lean LoC** | 2,769 across 3 test suites |
+| **Test Lean LoC** | 2,770 across 3 test suites |
 | **Proved declarations** | 1,055 theorem/lemma declarations (zero sorry/axiom) |
 | **Total declarations** | 1,940+ across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

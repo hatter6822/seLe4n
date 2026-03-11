@@ -19,7 +19,7 @@ inductive ProbeOp where
   | receive
   deriving Repr
 
-def probeEndpointId : SeLe4n.ObjId := 300
+def probeEndpointId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 300
 
 def probeThreadIds (threadCount : Nat) : List SeLe4n.ObjId :=
   List.range threadCount |>.map fun n => SeLe4n.ObjId.ofNat (n + 1)
@@ -28,7 +28,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   let threadEntries := (List.range threadCount).map fun n =>
     let tid := n + 1
     (SeLe4n.ObjId.ofNat tid, KernelObject.tcb {
-      tid := SeLe4n.ThreadId.ofNat tid, priority := 0, domain := default,
+      tid := SeLe4n.ThreadId.ofNat tid, priority := SeLe4n.Priority.ofNat 0, domain := default,
       cspaceRoot := default, vspaceRoot := default, ipcBuffer := default,
       ipcState := .ready })
   let allEntries := (probeEndpointId, KernelObject.endpoint {
@@ -96,6 +96,7 @@ def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
   match err with
   | .endpointStateMismatch => .expectedFailure err
   | .endpointQueueEmpty => .expectedFailure err
+  | .alreadyWaiting => .expectedFailure err
   | .objectNotFound =>
       .unexpectedFailure err s!"objectNotFound during {reprStr op}: probe endpoint (oid={probeEndpointId}) should always exist"
   | .invalidCapability =>

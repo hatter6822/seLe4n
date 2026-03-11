@@ -13,12 +13,12 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.14.6` |
+| Version | `0.14.8` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 32,120 across 65 files |
-| Test LoC | 2,436 across 3 suites |
-| Proved declarations | 1,034 theorem/lemma declarations (zero sorry/axiom) |
-| Total declarations | 1,890 across 68 modules |
+| Production LoC | 32,872 across 67 files |
+| Test LoC | 2,770 across 3 suites |
+| Proved declarations | 1,055 theorem/lemma declarations (zero sorry/axiom) |
+| Total declarations | 1,940 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | Next workstreams | WS-H16, WS-F5..F8 |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
