@@ -109,6 +109,13 @@ H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
 H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
 H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
 H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound
+# WS-F7/D3: Runtime contract fixture exercise (F-25 closure)
+F7 timerOnly timer success: 3
+F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented
+F7 timerOnly memory denied: SeLe4n.Model.KernelError.notImplemented
+F7 readOnlyMemory memory success: 0
+F7 readOnlyMemory timer denied: SeLe4n.Model.KernelError.notImplemented
+F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented
 parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

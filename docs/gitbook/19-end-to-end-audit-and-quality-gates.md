@@ -32,8 +32,8 @@ Critical audit gaps (all resolved by WS-F1..F4):
 - ~~Information-flow covers 5 of 30+ operations (CRIT-03).~~ **RESOLVED** (WS-F3) — extended to 12+ operations with 15 NI theorems.
 - ~~Dual-queue IPC model has zero formal proofs (CRIT-05/F-10).~~ **RESOLVED** (WS-F1)
 
-Remaining low findings (WS-F7..F8): testing expansion, cleanup.
-WS-F5 (model fidelity) and WS-F6 (invariant quality) completed in v0.14.9.
+Remaining low findings (WS-F8): cleanup.
+WS-F5 (model fidelity), WS-F6 (invariant quality), and WS-F7 (testing expansion) completed.
 
 ## 3. Quality gates
 
@@ -72,7 +72,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 | v0.13.7 | WS-H11 | **Completed** — VSpace & architecture enrichment: PagePermissions, W^X, TLB model, address bounds, cross-ASID isolation. 889 proved declarations |
 | v0.12.15 | WS-H | Phase 1–4 **Completed** (WS-H1..H12a: IPC fix, lifecycle guards, CI hardening, capability invariant redesign, dual-queue structural invariant, scheduler proof completion, enforcement-NI bridge & missing wrappers, NI coverage extension to >80%, WS-H7/H8/H9 gap closure v0.13.5, security model foundations v0.13.6, VSpace enrichment v0.13.7, legacy endpoint removal v0.13.8) |
 | v0.12.5 | WS-G | **Completed** — all 9 workstreams, 14 performance findings closed |
-| v0.12.2 | WS-F | WS-F1..F6 completed; **WS-F7..F8 remaining** |
+| v0.12.2 | WS-F | WS-F1..F7 completed; **WS-F8 remaining** |
 | v0.11.6 | WS-E | Completed (WS-E1..E6) |
 | v0.11.0 | WS-D | Completed (WS-D1..D4) |
 | v0.9.32 | WS-C | Completed (WS-C1..C8) |

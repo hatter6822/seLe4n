@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "799f74c0b81f30a365ab54ef1f6d60b9fc81cf89",
-      "tree_sha": "c24c37bd0ddb911ce8ee828e4ffcb1b9d172fa08",
-      "committed_at_utc": "2026-03-11T03:51:31-04:00"
+      "branch": "claude/refine-testing-expansion-hqPaD",
+      "commit_sha": "76af7c5addd3361d1a30f99b5cf635b51e53128e",
+      "tree_sha": "dbb59c0360bd866ee4a7d16ffd439ec72b3b8606",
+      "committed_at_utc": "2026-03-11T07:51:40+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ed823ff8d826ad047197a3bce54701b6060921135a7ebd89afa60873f3bcfd9f"
+    "source_digest": "bc2d23ef3c560976227f25794a801089cc8555996fc21196a3c4c471af937094"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 1999
+    "declaration_count": 2006
   },
   "readme_sync": {
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 34006,
+    "production_loc": 34109,
     "test_files": 3,
-    "test_loc": 2798,
+    "test_loc": 2886,
     "proved_theorem_lemma_decls": 1086,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -15053,7 +15053,7 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 24,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -15172,19 +15172,46 @@
         },
         {
           "kind": "def",
+          "name": "blockedOnSendNotRunnableChecks",
+          "line": 208,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnReceiveNotRunnableChecks",
+          "line": 224,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadInActiveDomainB",
+          "line": 243,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "uniqueWaitersCheck",
+          "line": 254,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "cdtChildMapConsistentCheck",
-          "line": 210,
+          "line": 268,
           "called": []
         },
         {
           "kind": "def",
           "name": "stateInvariantChecksFor",
-          "line": 225,
+          "line": 283,
           "called": [
             "asidTableConsistencyChecks",
+            "blockedOnReceiveNotRunnableChecks",
+            "blockedOnSendNotRunnableChecks",
             "capabilityRightsStructuralChecks",
             "cdtChildMapConsistentCheck",
             "cspaceSlotCoherencyChecks",
+            "currentThreadInActiveDomainB",
             "currentThreadValidB",
             "endpointDualQueueWellFormedB",
             "intrusiveQueueWellFormedB",
@@ -15195,6 +15222,7 @@
             "schedulerQueueCurrentConsistentB",
             "schedulerRunQueueUniqueB",
             "serviceGraphAcyclicityChecks",
+            "uniqueWaitersCheck",
             "untypedWatermarkChecks",
             "vspaceAsidUniquenessChecks"
           ]
@@ -15202,7 +15230,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecks",
-          "line": 269,
+          "line": 331,
           "called": [
             "stateInvariantChecksFor"
           ]
@@ -15210,13 +15238,13 @@
         {
           "kind": "def",
           "name": "failedChecks",
-          "line": 272,
+          "line": 334,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 275,
+          "line": 337,
           "called": [
             "failedChecks",
             "stateInvariantChecksFor"
@@ -15225,7 +15253,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 283,
+          "line": 345,
           "called": [
             "assertStateInvariantsFor"
           ]
@@ -15235,7 +15263,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 39,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
@@ -15505,8 +15533,14 @@
         },
         {
           "kind": "def",
+          "name": "runRuntimeContractFixtureTrace",
+          "line": 1161,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1155,
+          "line": 1195,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -15521,6 +15555,7 @@
             "runIpcMessageBoundsTrace",
             "runIpcMessageTransferTrace",
             "runLifecycleAndEndpointTrace",
+            "runRuntimeContractFixtureTrace",
             "runSchedulerTimingDomainTrace",
             "runServiceAndStressTrace",
             "runSyscallGateTrace",
@@ -15530,13 +15565,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1188,
+          "line": 1229,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1239,
+          "line": 1280,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -15544,7 +15579,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1253,
+          "line": 1294,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -15552,7 +15587,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1261,
+          "line": 1302,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -16164,7 +16199,7 @@
     {
       "module": "tests.TraceSequenceProbe",
       "path": "tests/TraceSequenceProbe.lean",
-      "declaration_count": 22,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -16175,39 +16210,53 @@
         {
           "kind": "inductive",
           "name": "ProbeOp",
-          "line": 16,
+          "line": 18,
           "called": []
         },
         {
           "kind": "def",
           "name": "probeEndpointId",
-          "line": 22,
+          "line": 28,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "probeNotificationId",
+          "line": 30,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "probeCNodeId",
+          "line": 32,
           "called": []
         },
         {
           "kind": "def",
           "name": "probeThreadIds",
-          "line": 24,
+          "line": 34,
           "called": []
         },
         {
           "kind": "def",
           "name": "probeBaseState",
-          "line": 27,
+          "line": 39,
           "called": [
-            "probeEndpointId"
+            "probeCNodeId",
+            "probeEndpointId",
+            "probeNotificationId"
           ]
         },
         {
           "kind": "def",
           "name": "nextRand",
-          "line": 42,
+          "line": 72,
           "called": []
         },
         {
           "kind": "def",
           "name": "pickOp",
-          "line": 45,
+          "line": 76,
           "called": [
             "ProbeOp"
           ]
@@ -16215,28 +16264,30 @@
         {
           "kind": "def",
           "name": "pickThreadId",
-          "line": 51,
+          "line": 86,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointConsistencyHolds",
-          "line": 56,
+          "line": 91,
           "called": []
         },
         {
           "kind": "def",
           "name": "probeInvariantObjectIds",
-          "line": 61,
+          "line": 97,
           "called": [
+            "probeCNodeId",
             "probeEndpointId",
+            "probeNotificationId",
             "probeThreadIds"
           ]
         },
         {
           "kind": "def",
           "name": "checkStateInvariants",
-          "line": 64,
+          "line": 100,
           "called": [
             "probeInvariantObjectIds"
           ]
@@ -16244,49 +16295,51 @@
         {
           "kind": "def",
           "name": "checkEndpointConsistency",
-          "line": 71,
+          "line": 107,
           "called": [
             "endpointConsistencyHolds",
-            "probeEndpointId"
+            "probeEndpointId",
+            "probeNotificationId"
           ]
         },
         {
           "kind": "inductive",
           "name": "StepOutcome",
-          "line": 83,
+          "line": 124,
           "called": []
         },
         {
           "kind": "def",
           "name": "classifyError",
-          "line": 95,
+          "line": 137,
           "called": [
             "ProbeOp",
-            "StepOutcome",
-            "probeEndpointId"
+            "StepOutcome"
           ]
         },
         {
           "kind": "def",
           "name": "stepOp",
-          "line": 111,
+          "line": 168,
           "called": [
             "ProbeOp",
             "StepOutcome",
             "classifyError",
-            "probeEndpointId"
+            "probeCNodeId",
+            "probeEndpointId",
+            "probeNotificationId"
           ]
         },
         {
           "kind": "structure",
           "name": "ProbeStats",
-          "line": 128,
+          "line": 216,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:135>",
-          "line": 135,
+          "name": "<anonymous:instance:223>",
+          "line": 223,
           "called": [
             "ProbeStats"
           ]
@@ -16294,7 +16347,7 @@
         {
           "kind": "def",
           "name": "runProbeLoop",
-          "line": 138,
+          "line": 226,
           "called": [
             "ProbeStats",
             "checkEndpointConsistency",
@@ -16308,13 +16361,13 @@
         {
           "kind": "def",
           "name": "pickThreadCount",
-          "line": 162,
+          "line": 250,
           "called": []
         },
         {
           "kind": "def",
           "name": "runProbe",
-          "line": 165,
+          "line": 253,
           "called": [
             "ProbeStats",
             "pickThreadCount",
@@ -16325,13 +16378,13 @@
         {
           "kind": "def",
           "name": "parseNatArg",
-          "line": 176,
+          "line": 264,
           "called": []
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 181,
+          "line": 269,
           "called": [
             "parseNatArg"
           ]
