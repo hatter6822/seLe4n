@@ -22,7 +22,6 @@ private def endpointId : SeLe4n.ObjId := ⟨40⟩
 private def cnodeId : SeLe4n.ObjId := ⟨10⟩
 private def wrongTypeId : SeLe4n.ObjId := ⟨99⟩
 private def guardedCnodeId : SeLe4n.ObjId := ⟨55⟩
-private def sendEmptyEndpointId : SeLe4n.ObjId := ⟨41⟩
 private def notificationId : SeLe4n.ObjId := ⟨42⟩
 private def asidPrimary : SeLe4n.ASID := ⟨2⟩
 private def vaddrPrimary : SeLe4n.VAddr := ⟨4096⟩
@@ -118,12 +117,6 @@ private def baseState : SystemState :=
 
 private def invariantObjectIds : List SeLe4n.ObjId :=
   [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, ⟨20⟩, ⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
-
-private def sendEmptyEndpointState : SystemState :=
-  { baseState with
-    objects := baseState.objects.insert sendEmptyEndpointId
-      (.endpoint {})
-  }
 
 private def expectError
     (label : String)

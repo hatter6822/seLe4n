@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked â€
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,034 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,055 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -48,12 +48,12 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.14.6` (`lakefile.toml`) |
+| **Package version** | `0.14.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 32,120 across 65 Lean files |
-| **Test LoC** | 2,436 across 3 Lean test suites |
-| **Proved declarations** | 1,034 theorem/lemma declarations (zero sorry/axiom) |
-| **Total declarations** | 1,890 across 68 modules |
+| **Production LoC** | 32,872 across 67 Lean files |
+| **Test LoC** | 2,763 across 3 Lean test suites |
+| **Proved declarations** | 1,055 theorem/lemma declarations (zero sorry/axiom) |
+| **Total declarations** | 1,940 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) â€” zero critical issues |
 | **Next workstreams** | WS-H16, WS-F5..F8 |

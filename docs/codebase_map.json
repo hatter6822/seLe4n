@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "823ea8d0554f629ff6842385a29d0611329517a4",
-      "tree_sha": "1bddfeef04740ba3cbb038e61dc3f2515ae53eb4",
-      "committed_at_utc": "2026-03-10T20:44:51-04:00"
+      "branch": "claude/codebase-audit-6nAg5",
+      "commit_sha": "25ed1c2a2e3800136a0074cf71276a704c909c4d",
+      "tree_sha": "b510ea494cb55c82be383759ca8adc003fa60600",
+      "committed_at_utc": "2026-03-11T01:43:06+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a9e2179ff3552a81b8392d05edcfeeab663d96c36bac2854a6b656d627a548c7"
+    "source_digest": "4d9f77ad9c6fe11c5cb18982101510e4f41db396a7eb78a23c48a54ed7ea6f0d"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 1940
+    "declaration_count": 1938
   },
   "readme_sync": {
     "version": "0.14.8",
@@ -29,7 +29,7 @@
     "production_files": 67,
     "production_loc": 32872,
     "test_files": 3,
-    "test_loc": 2769,
+    "test_loc": 2763,
     "proved_theorem_lemma_decls": 1055,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -15350,7 +15350,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 40,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -15384,38 +15384,32 @@
         },
         {
           "kind": "def",
-          "name": "sendEmptyEndpointId",
+          "name": "notificationId",
           "line": 25,
           "called": []
         },
         {
           "kind": "def",
-          "name": "notificationId",
+          "name": "asidPrimary",
           "line": 26,
           "called": []
         },
         {
           "kind": "def",
-          "name": "asidPrimary",
+          "name": "vaddrPrimary",
           "line": 27,
           "called": []
         },
         {
           "kind": "def",
-          "name": "vaddrPrimary",
+          "name": "paddrPrimary",
           "line": 28,
           "called": []
         },
         {
           "kind": "def",
-          "name": "paddrPrimary",
-          "line": 29,
-          "called": []
-        },
-        {
-          "kind": "def",
           "name": "slot0",
-          "line": 31,
+          "line": 30,
           "called": [
             "cnodeId"
           ]
@@ -15423,7 +15417,7 @@
         {
           "kind": "def",
           "name": "slot0Path",
-          "line": 32,
+          "line": 31,
           "called": [
             "cnodeId"
           ]
@@ -15431,7 +15425,7 @@
         {
           "kind": "def",
           "name": "guardedPathBadDepth",
-          "line": 33,
+          "line": 32,
           "called": [
             "guardedCnodeId"
           ]
@@ -15439,7 +15433,7 @@
         {
           "kind": "def",
           "name": "badSlot",
-          "line": 34,
+          "line": 33,
           "called": [
             "wrongTypeId"
           ]
@@ -15447,7 +15441,7 @@
         {
           "kind": "def",
           "name": "guardedPathBadGuard",
-          "line": 35,
+          "line": 34,
           "called": [
             "guardedCnodeId"
           ]
@@ -15455,7 +15449,7 @@
         {
           "kind": "def",
           "name": "baseState",
-          "line": 37,
+          "line": 36,
           "called": [
             "asidPrimary",
             "cnodeId",
@@ -15469,7 +15463,7 @@
         {
           "kind": "def",
           "name": "invariantObjectIds",
-          "line": 119,
+          "line": 118,
           "called": [
             "cnodeId",
             "endpointId",
@@ -15480,23 +15474,14 @@
         },
         {
           "kind": "def",
-          "name": "sendEmptyEndpointState",
-          "line": 122,
-          "called": [
-            "baseState",
-            "sendEmptyEndpointId"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "expectError",
-          "line": 128,
+          "line": 121,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectOkState",
-          "line": 141,
+          "line": 134,
           "called": [
             "invariantObjectIds"
           ]
@@ -15504,43 +15489,43 @@
         {
           "kind": "def",
           "name": "expectOk",
-          "line": 153,
+          "line": 146,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectThreadQueueLinks",
-          "line": 163,
+          "line": 156,
           "called": []
         },
         {
           "kind": "def",
           "name": "corruptThreadQueueLinks",
-          "line": 180,
+          "line": 173,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedObjId",
-          "line": 196,
+          "line": 189,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedChildId",
-          "line": 197,
+          "line": 190,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedAuthCnode",
-          "line": 198,
+          "line": 191,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedAuthSlot",
-          "line": 199,
+          "line": 192,
           "called": [
             "f2UntypedAuthCnode"
           ]
@@ -15548,7 +15533,7 @@
         {
           "kind": "def",
           "name": "f2UntypedState",
-          "line": 202,
+          "line": 195,
           "called": [
             "f2UntypedAuthCnode",
             "f2UntypedAuthSlot",
@@ -15558,13 +15543,13 @@
         {
           "kind": "def",
           "name": "f2DeviceUntypedId",
-          "line": 229,
+          "line": 222,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2DeviceState",
-          "line": 231,
+          "line": 224,
           "called": [
             "f2DeviceUntypedId",
             "f2UntypedAuthCnode",
@@ -15574,7 +15559,7 @@
         {
           "kind": "def",
           "name": "runNegativeChecks",
-          "line": 258,
+          "line": 251,
           "called": [
             "asidPrimary",
             "badSlot",
@@ -15606,7 +15591,7 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 1012,
+          "line": 1005,
           "called": [
             "expectError",
             "f2UntypedAuthCnode",
@@ -15618,7 +15603,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 1061,
+          "line": 1054,
           "called": [
             "baseState",
             "endpointId",
@@ -15630,7 +15615,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1144,
+          "line": 1137,
           "called": [
             "baseState",
             "endpointId",
@@ -15640,7 +15625,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1201,
+          "line": 1194,
           "called": [
             "expectError",
             "expectOkState"
@@ -15649,7 +15634,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1388,
+          "line": 1381,
           "called": [
             "expectError"
           ]
@@ -15657,7 +15642,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1428,
+          "line": 1421,
           "called": [
             "cnodeId",
             "expectError"
@@ -15666,13 +15651,13 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 1510,
+          "line": 1503,
           "called": []
         },
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 1566,
+          "line": 1559,
           "called": [
             "expectError"
           ]
@@ -15680,7 +15665,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1757,
+          "line": 1750,
           "called": []
         }
       ]
@@ -15793,7 +15778,7 @@
         {
           "kind": "def",
           "name": "stepOp",
-          "line": 110,
+          "line": 111,
           "called": [
             "ProbeOp",
             "StepOutcome",
@@ -15804,13 +15789,13 @@
         {
           "kind": "structure",
           "name": "ProbeStats",
-          "line": 127,
+          "line": 128,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:134>",
-          "line": 134,
+          "name": "<anonymous:instance:135>",
+          "line": 135,
           "called": [
             "ProbeStats"
           ]
@@ -15818,7 +15803,7 @@
         {
           "kind": "def",
           "name": "runProbeLoop",
-          "line": 137,
+          "line": 138,
           "called": [
             "ProbeStats",
             "checkEndpointConsistency",
@@ -15832,13 +15817,13 @@
         {
           "kind": "def",
           "name": "pickThreadCount",
-          "line": 161,
+          "line": 162,
           "called": []
         },
         {
           "kind": "def",
           "name": "runProbe",
-          "line": 164,
+          "line": 165,
           "called": [
             "ProbeStats",
             "pickThreadCount",
@@ -15849,13 +15834,13 @@
         {
           "kind": "def",
           "name": "parseNatArg",
-          "line": 175,
+          "line": 176,
           "called": []
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 180,
+          "line": 181,
           "called": [
             "parseNatArg"
           ]
