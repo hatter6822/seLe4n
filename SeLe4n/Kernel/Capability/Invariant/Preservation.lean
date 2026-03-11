@@ -109,7 +109,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
@@ -412,7 +412,7 @@ Composes cspaceMint (already proven) + CDT edge addition. -/
 theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
@@ -457,7 +457,7 @@ slotsUnique) + storeObject + storeCapabilityRef. -/
 theorem cspaceMutate_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hSlotCapacity : ∀ cn cap, st.objects[addr.cnode]? = some (.cnode cn) →

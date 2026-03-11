@@ -78,11 +78,13 @@ WS-H4 transfer theorems (new):
 - `cdtPredicates_through_handshake_path` — storeObject(.endpoint) → storeTcbIpcState → ensureRunnable,
 - `cdtPredicates_through_reply_path` — storeTcbIpcStateAndMessage → ensureRunnable.
 
-Badge routing chain (H-03):
+Badge routing chain (H-03, WS-F5/D1):
 
 - `mintDerivedCap_badge_propagated` → `cspaceMint_child_badge_preserved` → `notificationSignal_badge_stored_fresh` → `notificationWait_recovers_pending_badge`
-- End-to-end: `badge_notification_routing_consistent`
-- Merge property: `badge_merge_idempotent`
+- End-to-end: `badge_notification_routing_consistent` (word-bounded)
+- Merge property: `badge_merge_idempotent` (via `Badge.bor`)
+- Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
+- Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
 CDT structural invariants (WS-G8):
 

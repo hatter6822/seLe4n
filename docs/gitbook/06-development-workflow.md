@@ -44,7 +44,7 @@ workstreams are:
 |-------|-------------|-------------|--------|
 | ~~**P1**~~ | ~~WS-F1, WS-F2, WS-F4~~ | ~~Critical IPC/memory + proof gaps~~ | **Completed** |
 | ~~**P2**~~ | ~~WS-F3~~ | ~~Information-flow completeness~~ | **Completed** |
-| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | Next |
+| **P3** | WS-F5, WS-F6 | Model fidelity + invariant quality | **WS-F5 in progress** |
 | **P4** | WS-F7, WS-F8 | Testing + cleanup | Planned |
 
 See [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for details.

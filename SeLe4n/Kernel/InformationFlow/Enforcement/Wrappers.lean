@@ -49,7 +49,7 @@ Returns `flowDenied` when `securityFlowsTo srcLabel dstLabel = false`. -/
 def cspaceMintChecked
     (ctx : LabelingContext)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
   fun st =>
     let srcLabel := ctx.objectLabelOf src.cnode
@@ -132,7 +132,7 @@ unchecked mint. -/
 theorem cspaceMintChecked_eq_cspaceMint_when_allowed
     (ctx : LabelingContext)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode)
@@ -147,7 +147,7 @@ without modifying state. -/
 theorem cspaceMintChecked_flowDenied
     (ctx : LabelingContext)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
@@ -269,7 +269,7 @@ theorem endpointSendDualChecked_denied_preserves_state
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
     (ctx : LabelingContext) (src dst : CSpaceAddr)
-    (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
                (ctx.objectLabelOf dst.cnode) = false) :
@@ -319,7 +319,7 @@ theorem enforcement_sufficiency_endpointSendDual
 /-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
     (ctx : LabelingContext) (src dst : CSpaceAddr)
-    (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (st : SystemState) :
     (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
        cspaceMintChecked ctx src dst rights badge st = cspaceMint src dst rights badge st) ∨

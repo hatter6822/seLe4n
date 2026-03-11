@@ -415,21 +415,37 @@ theorem cspaceLookupSlot_ok_implies_ownsSlot
     (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup
   exact (SystemState.ownsSlot_iff st addr.cnode addr).2 ⟨rfl, ⟨cap, hCap⟩⟩
 
-/-- Requested rights must be contained in allowed rights. -/
-def rightsSubset (requested allowed : List AccessRight) : Bool :=
-  requested.all (fun right => right ∈ allowed)
+/-- WS-F5/D2b: Requested rights must be contained in allowed rights.
+    Checks each of the 5 possible rights via `AccessRight.all`. -/
+def rightsSubset (requested allowed : AccessRightSet) : Bool :=
+  AccessRight.all.all fun r =>
+    if requested.mem r then allowed.mem r else true
 
+/-- WS-F5/D2c: Helper — if `rightsSubset` passes and `r` is in the all-rights list,
+    then membership in `requested` implies membership in `allowed`. -/
+private theorem rightsSubset_at
+    (requested allowed : AccessRightSet) (r : AccessRight)
+    (hSubset : rightsSubset requested allowed = true)
+    (hMem : AccessRightSet.mem requested r = true) :
+    AccessRightSet.mem allowed r = true := by
+  unfold rightsSubset at hSubset
+  simp only [AccessRight.all, List.all_eq_true] at hSubset
+  have hR := hSubset r (by cases r <;> simp)
+  simp [hMem] at hR
+  exact hR
+
+/-- WS-F5/D2c: Soundness of `rightsSubset` — if subset check passes, every
+    right in `requested` is also in `allowed`. -/
 theorem rightsSubset_sound
-    (requested allowed : List AccessRight)
+    (requested allowed : AccessRightSet)
     (hSubset : rightsSubset requested allowed = true) :
     ∀ right, right ∈ requested → right ∈ allowed := by
   intro right hMem
-  unfold rightsSubset at hSubset
-  have hDec : decide (right ∈ allowed) = true := (List.all_eq_true.mp hSubset) right hMem
-  simpa using hDec
+  simp only [Membership.mem] at hMem ⊢
+  exact rightsSubset_at requested allowed right hSubset hMem
 
-/-- Build a mint-like derived capability with explicit rights attenuation. -/
-def mintDerivedCap (parent : Capability) (rights : List AccessRight)
+/-- WS-F5/D2b: Build a mint-like derived capability with explicit rights attenuation. -/
+def mintDerivedCap (parent : Capability) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := parent.badge) : Except KernelError Capability :=
   if rightsSubset rights parent.rights then
     .ok { target := parent.target, rights := rights, badge := badge }
@@ -439,7 +455,7 @@ def mintDerivedCap (parent : Capability) (rights : List AccessRight)
 /-- Mint from source slot and insert into destination slot under attenuation checks. -/
 def cspaceMint
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot src st with
@@ -583,7 +599,7 @@ theorem cspaceMove_ok_implies_source_exists
 
 The slot must already contain a capability, and the new rights must be a subset
 of the existing rights (attenuation only). Badge can be overridden. -/
-def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight)
+def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot addr st with
@@ -607,7 +623,7 @@ def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight)
 -- ============================================================================
 
 /-- WS-E4/C-03: Mint a derived capability and record a CDT derivation edge. -/
-def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : List AccessRight)
+def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match cspaceMint src dst rights badge st with

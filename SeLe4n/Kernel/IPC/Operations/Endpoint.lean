@@ -110,10 +110,11 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | [] =>
+            -- WS-F5/D1c: Use word-bounded Badge.bor for accumulation.
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
-              | some existing => SeLe4n.Badge.ofNat (existing.toNat ||| badge.toNat)
-              | none => badge
+              | some existing => SeLe4n.Badge.bor existing badge
+              | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active
               waitingThreads := []

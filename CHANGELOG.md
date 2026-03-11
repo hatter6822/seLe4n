@@ -1,3 +1,33 @@
+## [0.14.9] - 2026-03-11
+
+### WS-F5: Model Fidelity
+
+- **F5-D1 (CRIT-06): Word-bounded badge.** `Badge.val` is now logically bounded
+  to 64-bit machine word size via `machineWordBits`/`machineWordMax` constants.
+  New constructors: `Badge.ofNatMasked` (truncating), `Badge.bor` (word-bounded
+  OR combiner). Theorems: `ofNatMasked_valid`, `bor_valid`, `bor_comm`,
+  `bor_idempotent`, `ofNat_lt_valid`. `notificationSignal` uses `Badge.bor`
+  for accumulation. Updated: `badge_merge_idempotent`,
+  `notificationSignal_badge_stored_fresh`, `badge_notification_routing_consistent`.
+- **F5-D2 (HIGH-04): Order-independent access rights.** `Capability.rights` is
+  now `AccessRightSet` (bitmask) instead of `List AccessRight`. `AccessRightSet`
+  provides O(1) membership, subset, union, intersection. `ofList` converts from
+  list literals; `ofList_comm` proves order-independence. `rightsSubset_sound`
+  re-proved via finite enumeration. All capability operations, invariant proofs,
+  information-flow wrappers, and test fixtures migrated.
+- **F5-D3 (MED-03): Deferred operations documented.** `setPriority`,
+  `setMCPriority`, `suspend`, `resume`, `setIPCBuffer` explicitly documented in
+  API.lean deferred operations table with rationale and prerequisites. Spec
+  section 5.13 added. Claim evidence index updated.
+- **Prior work acknowledged:** Per-thread register context (WS-H12c, v0.14.0)
+  and multi-level CSpace resolution (WS-H13, v0.14.4) were already delivered
+  and are marked as completed in the refined WS-F5 plan.
+- **Workstream plan refined:** Original 5-deliverable plan replaced with
+  detailed 3-deliverable plan (13 sub-tasks) reflecting actual remaining scope.
+- **Build jobs:** 138. Zero sorry/axiom. Zero warnings.
+- **Findings closed:** CRIT-06, HIGH-04, MED-03. Prior: HIGH-01 (WS-H13),
+  HIGH-02 (WS-H12c).
+
 ## [0.14.8] - 2026-03-10
 
 ### WS-H16: Testing, Documentation & Cleanup

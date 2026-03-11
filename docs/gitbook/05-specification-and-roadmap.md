@@ -215,7 +215,7 @@ address medium/low findings from the v0.12.2 audits:
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
+| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **In Progress** |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |

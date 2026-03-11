@@ -63,17 +63,17 @@ def bootstrapState : SystemState :=
       slots := Std.HashMap.ofList
         [ (⟨0⟩, {
             target := .object ⟨1⟩
-            rights := [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant]
             badge := none
           }),
           (⟨5⟩, {
             target := .object ⟨12⟩
-            rights := [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write]
             badge := none
           }),
           (⟨6⟩, {
             target := .object demoUntyped
-            rights := [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write]
             badge := none
           }) ]
     })
@@ -273,8 +273,8 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
     guardValue := 3
     radixWidth := 12
     slots := Std.HashMap.ofList [
-      (⟨1⟩, { target := .object ⟨1⟩, rights := [.read], badge := none }),
-      (⟨1024⟩, { target := .object ⟨12⟩, rights := [.read, .write], badge := none })
+      (⟨1⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
+      (⟨1024⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
   }
   let stDeepCNode : SystemState :=
@@ -426,10 +426,10 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stCleaned) =>
       let tid12InQueue := stCleaned.scheduler.runQueue.flat.any (· == (SeLe4n.ThreadId.ofNat 12))
       IO.println s!"lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
-  match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot [.read] none st1 with
+  match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot (AccessRightSet.ofList [.read]) none st1 with
   | .error err => IO.println s!"cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
-      match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot siblingSlot [.read] none st2 with
+      match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot siblingSlot (AccessRightSet.ofList [.read]) none st2 with
       | .error err => IO.println s!"sibling mint error: {reprStr err}"
       | .ok (_, st3) =>
           IO.println "created sibling cap with the same target"
@@ -503,7 +503,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
 private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   -- H-02: Try inserting into occupied slot (slot 0 already has a cap)
   let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let testCap : Capability := { target := .object ⟨1⟩, rights := [.read], badge := none }
+  let testCap : Capability := { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }
   match SeLe4n.Kernel.cspaceInsertSlot occSlot testCap st1 with
   | .error err => IO.println s!"H-02 occupied slot guard: {reprStr err}"
   | .ok _ => IO.println "unexpected: H-02 guard did not reject occupied slot"
@@ -801,10 +801,10 @@ private def runIpcMessageBoundsTrace (st1 : SystemState) : IO Unit := do
   let oversizedCaps : IpcMessage := {
     registers := #[],
     caps := #[
-      { target := .object ⟨1⟩, rights := [] },
-      { target := .object ⟨2⟩, rights := [] },
-      { target := .object ⟨3⟩, rights := [] },
-      { target := .object ⟨4⟩, rights := [] }],
+      { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+      { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+      { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] },
+      { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }],
     badge := none }
   match SeLe4n.Kernel.endpointSendDual epId senderId oversizedCaps st1 with
   | .error .ipcMessageTooManyCaps =>
@@ -818,9 +818,9 @@ private def runIpcMessageBoundsTrace (st1 : SystemState) : IO Unit := do
   let boundaryMsg : IpcMessage := {
     registers := Array.mk (List.replicate 120 42),
     caps := #[
-      { target := .object ⟨1⟩, rights := [] },
-      { target := .object ⟨2⟩, rights := [] },
-      { target := .object ⟨3⟩, rights := [] }],
+      { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+      { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+      { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }],
     badge := some ⟨999⟩ }
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
@@ -907,10 +907,10 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
           slots := Std.HashMap.ofList [
-            (⟨0⟩, { target := .object ⟨1⟩, rights := [.read, .write, .grant], badge := none }),
-            (⟨5⟩, { target := .object ⟨12⟩, rights := [.read, .write], badge := none }),
-            (⟨6⟩, { target := .object demoUntyped, rights := [.read, .write], badge := none }),
-            (⟨7⟩, { target := .object deviceUntypedId, rights := [.read, .write], badge := none }) ] }) }
+            (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
+            (⟨5⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+            (⟨6⟩, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+            (⟨7⟩, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }) }
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨7⟩ }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -1067,9 +1067,9 @@ private def runBoundedMessageExtendedTrace (st1 : SystemState) : IO Unit := do
   let maxCapsMsg : IpcMessage := {
     registers := #[],
     caps := #[
-      { target := .object ⟨1⟩, rights := [.read] },
-      { target := .object ⟨2⟩, rights := [.write] },
-      { target := .object ⟨3⟩, rights := [.grant] }],
+      { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] },
+      { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] },
+      { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] }],
     badge := some ⟨42⟩ }
   let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
@@ -1093,9 +1093,9 @@ private def runSyscallGateTrace (st1 : SystemState) : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨50⟩
   let epId : SeLe4n.ObjId := demoEndpoint
   let callerId : SeLe4n.ThreadId := ⟨1⟩
-  let writeCap : Capability := { target := .object epId, rights := [.write], badge := none }
-  let readOnlyCap : Capability := { target := .object epId, rights := [.read], badge := none }
-  let retypeCap : Capability := { target := .object demoUntyped, rights := [.retype], badge := none }
+  let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
+  let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
+  let retypeCap : Capability := { target := .object demoUntyped, rights := AccessRightSet.ofList [.retype], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := Std.HashMap.ofList [
@@ -1202,7 +1202,7 @@ private def buildParameterizedTopology
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
-      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := [.read, .write], badge := none })
+      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := Std.HashMap.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>

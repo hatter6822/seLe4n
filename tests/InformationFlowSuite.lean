@@ -269,7 +269,7 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := [.read, .write], badge := none })]) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
       |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList []) })
       |>.build)
 
@@ -282,8 +282,8 @@ def runInformationFlowChecks : IO Unit := do
   let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := ⟨0⟩ }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := ⟨0⟩ }
 
-  let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr [.read] none mintState
-  let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr [.read] none mintState
+  let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
+  let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
   expect "same-domain cspaceMintChecked matches unchecked mint"
     (match checkedMint, uncheckedMint with
       | .ok _, .ok _ => true
@@ -297,7 +297,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr [.read] none mintState
+  let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
   expect "secret-to-public cspaceMintChecked returns flowDenied"
     (match deniedMint with
       | .error .flowDenied => true
@@ -511,9 +511,9 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (⟨0⟩, { target := .object ⟨1⟩, rights := [.read], badge := none })
-          , (⟨1⟩, { target := .object ⟨2⟩, rights := [.read, .write], badge := none })
-          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := [.read], badge := none })
+          [ (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          , (⟨1⟩, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
       |>.build)
 
@@ -567,8 +567,8 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := [.read], badge := none })
-          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := [.read], badge := none })
+          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
       |>.build)
 
@@ -704,7 +704,7 @@ def runInformationFlowChecks : IO Unit := do
   let copySrcCNode := SeLe4n.Model.CNode.empty
   let copySrcCNodeWithCap := copySrcCNode.insert ⟨0⟩ {
     target := .object ⟨99⟩
-    rights := [.read]
+    rights := AccessRightSet.ofList [.read]
     badge := none }
   let copyState :=
     (BootstrapBuilder.empty

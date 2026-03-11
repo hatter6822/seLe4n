@@ -474,7 +474,7 @@ theorem cspaceMint_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)

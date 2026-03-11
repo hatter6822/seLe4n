@@ -257,7 +257,7 @@ theorem cspaceRevoke_preserves_source
 
 private theorem mintDerivedCap_attenuates
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     capAttenuates parent child := by
@@ -281,7 +281,7 @@ constructing the child capability and setting `child.target = parent.target`
 unconditionally. -/
 theorem mintDerivedCap_rights_attenuated_with_badge_override
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     ∀ right, right ∈ child.rights → right ∈ parent.rights := by
@@ -297,7 +297,7 @@ This is the core F-06 safety property: badge is metadata that affects notificati
 signaling semantics, not capability authority scope. -/
 theorem mintDerivedCap_target_preserved_with_badge_override
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.target = parent.target := by
@@ -307,7 +307,7 @@ theorem mintDerivedCap_target_preserved_with_badge_override
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
@@ -341,7 +341,7 @@ badge override in `cspaceMint` cannot escalate privilege. -/
 theorem cspaceMint_badge_override_safe
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
@@ -360,7 +360,7 @@ theorem cspaceMint_badge_override_safe
 /-- (H-03) `mintDerivedCap` propagates the explicitly provided badge to the
 derived capability when rights are sufficient. -/
 theorem mintDerivedCap_badge_propagated
-    (parent : Capability) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (parent : Capability) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (child : Capability)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.badge = badge := by
@@ -374,7 +374,7 @@ This is the operation-level badge consistency witness. -/
 theorem cspaceMint_child_badge_preserved
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : SeLe4n.Badge)
     (hStep : cspaceMint src dst rights (some badge) st = .ok ((), st')) :
     ∃ child,
@@ -400,7 +400,8 @@ theorem cspaceMint_child_badge_preserved
           · simp [hRights] at hMint
 
 /-- (H-03) When a notification has no waiters and no pending badge, signaling with badge `b`
-stores exactly `b` as the pending badge. -/
+stores `ofNatMasked b.val` as the pending badge (word-bounded).
+WS-F5/D1c: Updated to reflect word-bounded badge storage via `ofNatMasked`. -/
 theorem notificationSignal_badge_stored_fresh
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
@@ -412,10 +413,11 @@ theorem notificationSignal_badge_stored_fresh
     (hSignal : notificationSignal notifId badge st = .ok ((), st')) :
     ∃ ntfn',
       st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.pendingBadge = some badge := by
+      ntfn'.pendingBadge = some (SeLe4n.Badge.ofNatMasked badge.toNat) := by
   unfold notificationSignal at hSignal
   simp [hObj, hNoWaiters, hNoPending] at hSignal
-  exact ⟨{ state := .active, waitingThreads := [], pendingBadge := some badge },
+  exact ⟨{ state := .active, waitingThreads := [],
+           pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat) },
     by rw [← storeObject_objects_eq st st' notifId _ hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending
@@ -484,11 +486,12 @@ theorem notificationWait_recovers_pending_badge
 Composition of badge preservation through the full minting → signaling → waiting
 path. When a capability is minted with explicit badge `b`, and that badge is
 signaled to an idle notification, and a waiter collects the notification, the
-recovered badge is exactly `b`. This closes the H-03 badge-override safety gap. -/
+recovered badge equals the word-bounded form of `b`.
+WS-F5/D1c: Updated to reflect word-bounded badge storage via `ofNatMasked`. -/
 theorem badge_notification_routing_consistent
     (st₁ st₂ st₃ st₄ : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRightSet)
     (badge : SeLe4n.Badge)
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
@@ -500,7 +503,7 @@ theorem badge_notification_routing_consistent
     (hSignal : notificationSignal notifId badge st₂ = .ok ((), st₃))
     (recoveredBadge : SeLe4n.Badge)
     (hWait : notificationWait notifId waiter st₃ = .ok (some recoveredBadge, st₄)) :
-    recoveredBadge = badge := by
+    recoveredBadge = SeLe4n.Badge.ofNatMasked badge.toNat := by
   rcases notificationSignal_badge_stored_fresh st₂ st₃ notifId badge ntfn
     hNtfnObj hNoWaiters hNoPending hSignal with ⟨ntfn', hNtfn'Obj, hNtfn'Badge⟩
   rcases notificationWait_recovers_pending_badge st₃ st₄ notifId waiter recoveredBadge hWait
@@ -511,11 +514,12 @@ theorem badge_notification_routing_consistent
   exact (Option.some.inj hNtfn''Badge).symm
 
 /-- (H-03) Badge OR-merge is idempotent — signaling the same badge twice yields the same
-pending badge as signaling it once (since `b ||| b = b` for bitwise OR). -/
+pending badge as signaling it once (since `b ||| b = b` for bitwise OR).
+WS-F5/D1c: Updated to use word-bounded `Badge.bor`. -/
 theorem badge_merge_idempotent
     (badge : SeLe4n.Badge) :
-    SeLe4n.Badge.ofNat (badge.toNat ||| badge.toNat) = badge := by
-  simp [Nat.or_self, SeLe4n.Badge.ofNat, SeLe4n.Badge.toNat]
+    SeLe4n.Badge.bor badge badge = SeLe4n.Badge.ofNatMasked badge.toNat := by
+  simp [SeLe4n.Badge.bor, SeLe4n.Badge.toNat, Nat.or_self]
 
 -- ============================================================================
 -- WS-E2 / C-01: Derivation infrastructure for reformulated invariants
