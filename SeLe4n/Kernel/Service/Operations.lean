@@ -8,6 +8,30 @@
 
 import SeLe4n.Model.State
 
+/-! # Service Orchestration — seLe4n Extension
+
+**This module is a seLe4n-specific extension with no analogue in real seL4.**
+
+seL4 provides no kernel-level service management — service lifecycle, dependency
+graphs, and orchestration are delegated entirely to user-level system components
+(e.g., the component framework or CAmkES). seLe4n models service orchestration
+as a first-class kernel abstraction to enable machine-checked reasoning about
+service dependency satisfaction, isolation enforcement, and lifecycle
+determinism.
+
+The `ServiceGraphEntry` structure captures per-service identity, runtime status,
+dependency edges, and isolation edges. Operations (`serviceStart`, `serviceStop`,
+`serviceRestart`, `serviceRegisterDependency`) are deterministic kernel
+transitions with explicit error returns. The companion invariant modules
+(`Invariant/Policy.lean`, `Invariant/Acyclicity.lean`) provide machine-checked
+proofs of policy preservation and dependency acyclicity.
+
+**Design rationale:** Modelling services in the kernel allows the proof surface
+to verify end-to-end properties (e.g., "a service cannot start unless all
+dependencies are running") that would otherwise require unverified user-level
+assumptions. This is a deliberate extension of the seL4 formalization scope,
+not a claim that seL4 itself provides these mechanisms. -/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

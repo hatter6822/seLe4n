@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "8373db0f4ed384477f4f9b0bcb03a85c9b698988",
-      "tree_sha": "6044aa2a88929a15ab6e9ae1d0c43a30058403a7",
-      "committed_at_utc": "2026-03-11T15:33:20-04:00"
+      "branch": "claude/refine-cleanup-workstream-RaS1h",
+      "commit_sha": "240a3729c824d1fe008d653c62dddd851e95dfc6",
+      "tree_sha": "da5ede3151068441124834a9dc6b83d0a9e9b310",
+      "committed_at_utc": "2026-03-11T19:33:29+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bc2d23ef3c560976227f25794a801089cc8555996fc21196a3c4c471af937094"
+    "source_digest": "72bbcea80ea72b09f9aed27b27edcce968b715a55bbe64703f09969af96ccd9f"
   },
   "summary": {
     "module_count": 70,
@@ -27,7 +27,7 @@
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 34109,
+    "production_loc": 34171,
     "test_files": 3,
     "test_loc": 2886,
     "proved_theorem_lemma_decls": 1086,
@@ -8967,19 +8967,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 11,
+          "line": 30,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceEdge",
-          "line": 21,
+          "line": 40,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "serviceReachable",
-          "line": 25,
+          "line": 44,
           "called": [
             "serviceEdge"
           ]
@@ -8987,7 +8987,7 @@
         {
           "kind": "inductive",
           "name": "serviceNontrivialPath",
-          "line": 31,
+          "line": 50,
           "called": [
             "serviceEdge"
           ]
@@ -8995,7 +8995,7 @@
         {
           "kind": "def",
           "name": "serviceDependencyAcyclic",
-          "line": 43,
+          "line": 62,
           "called": [
             "serviceNontrivialPath"
           ]
@@ -9003,7 +9003,7 @@
         {
           "kind": "theorem",
           "name": "serviceReachable_trans",
-          "line": 50,
+          "line": 69,
           "called": [
             "serviceReachable"
           ]
@@ -9011,7 +9011,7 @@
         {
           "kind": "theorem",
           "name": "serviceReachable_of_edge",
-          "line": 57,
+          "line": 76,
           "called": [
             "serviceEdge",
             "serviceReachable"
@@ -9020,7 +9020,7 @@
         {
           "kind": "theorem",
           "name": "serviceReachable_of_nontrivialPath",
-          "line": 61,
+          "line": 80,
           "called": [
             "serviceNontrivialPath",
             "serviceReachable",
@@ -9030,7 +9030,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_edge_reachable",
-          "line": 69,
+          "line": 88,
           "called": [
             "serviceEdge",
             "serviceNontrivialPath",
@@ -9040,7 +9040,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_reachable_ne",
-          "line": 78,
+          "line": 97,
           "called": [
             "serviceNontrivialPath",
             "serviceNontrivialPath_of_edge_reachable",
@@ -9050,7 +9050,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_trans",
-          "line": 84,
+          "line": 103,
           "called": [
             "serviceNontrivialPath"
           ]
@@ -9058,7 +9058,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_step_right",
-          "line": 91,
+          "line": 110,
           "called": [
             "serviceEdge",
             "serviceNontrivialPath"
@@ -9067,7 +9067,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_storeServiceState_ne",
-          "line": 103,
+          "line": 122,
           "called": [
             "serviceEdge"
           ]
@@ -9075,7 +9075,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_storeServiceState_updated",
-          "line": 115,
+          "line": 134,
           "called": [
             "serviceEdge"
           ]
@@ -9083,7 +9083,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_post_insert",
-          "line": 127,
+          "line": 146,
           "called": [
             "serviceEdge",
             "serviceEdge_storeServiceState_ne",
@@ -9093,13 +9093,13 @@
         {
           "kind": "def",
           "name": "lookupDeps",
-          "line": 150,
+          "line": 169,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceEdge_iff_lookupDeps",
-          "line": 154,
+          "line": 173,
           "called": [
             "lookupDeps",
             "serviceEdge"
@@ -9108,7 +9108,7 @@
         {
           "kind": "def",
           "name": "bfsClosed",
-          "line": 167,
+          "line": 186,
           "called": [
             "serviceEdge"
           ]
@@ -9116,7 +9116,7 @@
         {
           "kind": "theorem",
           "name": "bfsClosed_init",
-          "line": 171,
+          "line": 190,
           "called": [
             "bfsClosed"
           ]
@@ -9124,7 +9124,7 @@
         {
           "kind": "theorem",
           "name": "bfsClosed_skip",
-          "line": 176,
+          "line": 195,
           "called": [
             "bfsClosed"
           ]
@@ -9132,7 +9132,7 @@
         {
           "kind": "theorem",
           "name": "bfsClosed_expand",
-          "line": 189,
+          "line": 208,
           "called": [
             "bfsClosed",
             "lookupDeps"
@@ -9141,7 +9141,7 @@
         {
           "kind": "theorem",
           "name": "bfs_boundary_lemma",
-          "line": 214,
+          "line": 233,
           "called": [
             "bfsClosed",
             "serviceReachable"
@@ -9150,7 +9150,7 @@
         {
           "kind": "def",
           "name": "bfsUniverse",
-          "line": 232,
+          "line": 251,
           "called": [
             "lookupDeps"
           ]
@@ -9158,7 +9158,7 @@
         {
           "kind": "theorem",
           "name": "reach_in_universe",
-          "line": 238,
+          "line": 257,
           "called": [
             "bfsUniverse",
             "serviceReachable"
@@ -9167,13 +9167,13 @@
         {
           "kind": "theorem",
           "name": "filter_mono",
-          "line": 246,
+          "line": 265,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "filter_strict",
-          "line": 261,
+          "line": 280,
           "called": [
             "filter_mono"
           ]
@@ -9181,7 +9181,7 @@
         {
           "kind": "theorem",
           "name": "filter_vis_decrease",
-          "line": 287,
+          "line": 306,
           "called": [
             "filter_strict"
           ]
@@ -9189,7 +9189,7 @@
         {
           "kind": "theorem",
           "name": "step_of_reachable_ne",
-          "line": 299,
+          "line": 318,
           "called": [
             "serviceEdge",
             "serviceReachable"
@@ -9198,19 +9198,19 @@
         {
           "kind": "theorem",
           "name": "go_tgt_eq",
-          "line": 309,
+          "line": 328,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "go_skip_eq",
-          "line": 314,
+          "line": 333,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "go_expand_eq",
-          "line": 321,
+          "line": 340,
           "called": [
             "lookupDeps"
           ]
@@ -9218,7 +9218,7 @@
         {
           "kind": "theorem",
           "name": "go_complete",
-          "line": 338,
+          "line": 357,
           "called": [
             "bfsClosed",
             "bfsClosed_expand",
@@ -9238,7 +9238,7 @@
         {
           "kind": "def",
           "name": "serviceCountBounded",
-          "line": 415,
+          "line": 434,
           "called": [
             "bfsUniverse"
           ]
@@ -9246,7 +9246,7 @@
         {
           "kind": "theorem",
           "name": "registered_of_nontrivialPath_src",
-          "line": 420,
+          "line": 439,
           "called": [
             "serviceNontrivialPath"
           ]
@@ -9254,7 +9254,7 @@
         {
           "kind": "theorem",
           "name": "bfs_complete_for_nontrivialPath",
-          "line": 441,
+          "line": 460,
           "called": [
             "bfsClosed_init",
             "go_complete",
@@ -9267,7 +9267,7 @@
         {
           "kind": "theorem",
           "name": "nontrivialPath_post_insert_cases",
-          "line": 473,
+          "line": 492,
           "called": [
             "serviceEdge_post_insert",
             "serviceNontrivialPath",
@@ -9278,7 +9278,7 @@
         {
           "kind": "theorem",
           "name": "serviceRegisterDependency_preserves_acyclicity",
-          "line": 524,
+          "line": 543,
           "called": [
             "bfs_complete_for_nontrivialPath",
             "nontrivialPath_post_insert_cases",
@@ -9293,25 +9293,25 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_error_discards_state",
-          "line": 581,
+          "line": 600,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceRestart_error_from_start_phase",
-          "line": 593,
+          "line": 612,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceHasPathTo_fuel_zero",
-          "line": 615,
+          "line": 634,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "bfs_false_implies_no_nontrivialPath",
-          "line": 622,
+          "line": 641,
           "called": [
             "bfs_complete_for_nontrivialPath",
             "serviceCountBounded",
@@ -9321,85 +9321,85 @@
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_objects",
-          "line": 638,
+          "line": 657,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_scheduler",
-          "line": 654,
+          "line": 673,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_irqHandlers",
-          "line": 670,
+          "line": 689,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_objectIndex",
-          "line": 686,
+          "line": 705,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_machine",
-          "line": 702,
+          "line": 721,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_lookupService_ne",
-          "line": 718,
+          "line": 737,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_objects",
-          "line": 741,
+          "line": 760,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_scheduler",
-          "line": 756,
+          "line": 775,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_irqHandlers",
-          "line": 771,
+          "line": 790,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_objectIndex",
-          "line": 786,
+          "line": 805,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_machine",
-          "line": 801,
+          "line": 820,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_lookupService_ne",
-          "line": 816,
+          "line": 835,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceRestart_decompose",
-          "line": 838,
+          "line": 857,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceEdge_of_storeServiceState_sameDeps",
-          "line": 859,
+          "line": 878,
           "called": [
             "serviceEdge",
             "serviceEdge_storeServiceState_ne",
@@ -9409,7 +9409,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_storeServiceState_sameDeps",
-          "line": 874,
+          "line": 893,
           "called": [
             "serviceEdge_of_storeServiceState_sameDeps",
             "serviceNontrivialPath"
@@ -9418,7 +9418,7 @@
         {
           "kind": "theorem",
           "name": "serviceDependencyAcyclic_of_storeServiceState_sameDeps",
-          "line": 890,
+          "line": 909,
           "called": [
             "serviceDependencyAcyclic",
             "serviceNontrivialPath_of_storeServiceState_sameDeps"
@@ -9427,7 +9427,7 @@
         {
           "kind": "def",
           "name": "serviceGraphInvariant",
-          "line": 910,
+          "line": 929,
           "called": [
             "serviceCountBounded",
             "serviceDependencyAcyclic"
@@ -9436,7 +9436,7 @@
         {
           "kind": "theorem",
           "name": "bfsUniverse_of_storeServiceState_sameDeps",
-          "line": 915,
+          "line": 934,
           "called": [
             "bfsUniverse",
             "lookupDeps"
@@ -9445,7 +9445,7 @@
         {
           "kind": "theorem",
           "name": "serviceCountBounded_of_storeServiceState_sameDeps",
-          "line": 938,
+          "line": 957,
           "called": [
             "bfsUniverse_of_storeServiceState_sameDeps",
             "serviceCountBounded"
@@ -9454,7 +9454,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_of_storeServiceState_sameDeps",
-          "line": 949,
+          "line": 968,
           "called": [
             "serviceCountBounded_of_storeServiceState_sameDeps",
             "serviceDependencyAcyclic_of_storeServiceState_sameDeps",
@@ -9464,7 +9464,7 @@
         {
           "kind": "theorem",
           "name": "serviceRegisterDependency_preserves_serviceGraphInvariant",
-          "line": 961,
+          "line": 980,
           "called": [
             "lookupDeps",
             "serviceGraphInvariant",
@@ -9474,7 +9474,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_serviceGraphInvariant",
-          "line": 1021,
+          "line": 1040,
           "called": [
             "serviceGraphInvariant",
             "serviceGraphInvariant_of_storeServiceState_sameDeps"
@@ -9483,7 +9483,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_serviceGraphInvariant",
-          "line": 1042,
+          "line": 1061,
           "called": [
             "serviceGraphInvariant",
             "serviceGraphInvariant_of_storeServiceState_sameDeps"
@@ -9492,13 +9492,13 @@
         {
           "kind": "theorem",
           "name": "default_lookupService_none",
-          "line": 1065,
+          "line": 1084,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_serviceCountBounded",
-          "line": 1070,
+          "line": 1089,
           "called": [
             "default_lookupService_none",
             "serviceCountBounded"
@@ -9507,7 +9507,7 @@
         {
           "kind": "theorem",
           "name": "default_serviceGraphInvariant",
-          "line": 1079,
+          "line": 1098,
           "called": [
             "default_lookupService_none",
             "default_serviceCountBounded",
@@ -9524,19 +9524,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 12,
+          "line": 24,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "ServicePolicyPredicate",
-          "line": 17,
+          "line": 29,
           "called": []
         },
         {
           "kind": "def",
           "name": "policyBackingObjectTyped",
-          "line": 20,
+          "line": 32,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9544,7 +9544,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthorityRefRecorded",
-          "line": 24,
+          "line": 36,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9552,7 +9552,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthoritySlotPresent",
-          "line": 31,
+          "line": 43,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -9560,7 +9560,7 @@
         {
           "kind": "def",
           "name": "servicePolicySurfaceInvariant",
-          "line": 38,
+          "line": 50,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -9570,7 +9570,7 @@
         {
           "kind": "def",
           "name": "serviceLifecycleCapabilityInvariantBundle",
-          "line": 45,
+          "line": 57,
           "called": [
             "servicePolicySurfaceInvariant"
           ]
@@ -9578,7 +9578,7 @@
         {
           "kind": "theorem",
           "name": "serviceLifecycleCapabilityInvariantBundle_of_components",
-          "line": 48,
+          "line": 60,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "servicePolicySurfaceInvariant"
@@ -9587,7 +9587,7 @@
         {
           "kind": "theorem",
           "name": "policyBackingObjectTyped_of_lifecycleInvariant",
-          "line": 57,
+          "line": 69,
           "called": [
             "policyBackingObjectTyped"
           ]
@@ -9595,7 +9595,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
-          "line": 71,
+          "line": 83,
           "called": [
             "policyOwnerAuthorityRefRecorded",
             "policyOwnerAuthoritySlotPresent"
@@ -9604,7 +9604,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_capabilityLookup",
-          "line": 85,
+          "line": 97,
           "called": [
             "policyOwnerAuthoritySlotPresent"
           ]
@@ -9612,7 +9612,7 @@
         {
           "kind": "theorem",
           "name": "servicePolicySurfaceInvariant_of_lifecycleInvariant",
-          "line": 103,
+          "line": 115,
           "called": [
             "policyBackingObjectTyped_of_lifecycleInvariant",
             "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
@@ -9622,19 +9622,19 @@
         {
           "kind": "theorem",
           "name": "serviceStart_policyDenied_separates_check_from_mutation",
-          "line": 117,
+          "line": 129,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_policyDenied_separates_check_from_mutation",
-          "line": 130,
+          "line": 142,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_servicePolicySurfaceInvariant",
-          "line": 142,
+          "line": 154,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -9645,19 +9645,19 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_lifecycleInvariantBundle",
-          "line": 171,
+          "line": 183,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_capabilityInvariantBundle",
-          "line": 189,
+          "line": 201,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 205,
+          "line": 217,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "storeServiceState_preserves_capabilityInvariantBundle",
@@ -9668,7 +9668,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 235,
+          "line": 247,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "storeServiceState_preserves_capabilityInvariantBundle",
@@ -9679,7 +9679,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 263,
+          "line": 275,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle",
@@ -9689,7 +9689,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 279,
+          "line": 291,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9697,7 +9697,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 289,
+          "line": 301,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9705,7 +9705,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 299,
+          "line": 311,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle"
           ]
@@ -9713,7 +9713,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle",
-          "line": 311,
+          "line": 323,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle"
@@ -9735,25 +9735,25 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 11,
+          "line": 35,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "ServicePolicy",
-          "line": 16,
+          "line": 40,
           "called": []
         },
         {
           "kind": "def",
           "name": "storeServiceEntry",
-          "line": 19,
+          "line": 43,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceStart",
-          "line": 35,
+          "line": 59,
           "called": [
             "ServicePolicy",
             "storeServiceEntry"
@@ -9762,7 +9762,7 @@
         {
           "kind": "def",
           "name": "serviceStop",
-          "line": 67,
+          "line": 91,
           "called": [
             "ServicePolicy",
             "storeServiceEntry"
@@ -9771,7 +9771,7 @@
         {
           "kind": "def",
           "name": "serviceRestart",
-          "line": 99,
+          "line": 123,
           "called": [
             "ServicePolicy",
             "serviceStart",
@@ -9781,19 +9781,19 @@
         {
           "kind": "def",
           "name": "serviceBfsFuel",
-          "line": 122,
+          "line": 146,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceHasPathTo",
-          "line": 147,
+          "line": 171,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceRegisterDependency",
-          "line": 182,
+          "line": 206,
           "called": [
             "serviceBfsFuel",
             "serviceHasPathTo",
@@ -9803,7 +9803,7 @@
         {
           "kind": "theorem",
           "name": "serviceRegisterDependency_error_self_loop",
-          "line": 203,
+          "line": 227,
           "called": [
             "serviceRegisterDependency"
           ]
@@ -9811,7 +9811,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_error_backingObjectMissing",
-          "line": 213,
+          "line": 237,
           "called": [
             "ServicePolicy",
             "serviceStart"
@@ -9820,7 +9820,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_error_policyDenied",
-          "line": 225,
+          "line": 249,
           "called": [
             "ServicePolicy",
             "serviceStart"
@@ -9829,7 +9829,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_error_dependencyViolation",
-          "line": 238,
+          "line": 262,
           "called": [
             "ServicePolicy",
             "serviceStart"
@@ -9838,7 +9838,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_error_backingObjectMissing",
-          "line": 252,
+          "line": 276,
           "called": [
             "ServicePolicy",
             "serviceStop"
@@ -9847,7 +9847,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_error_policyDenied",
-          "line": 264,
+          "line": 288,
           "called": [
             "ServicePolicy",
             "serviceStop"
@@ -9856,7 +9856,7 @@
         {
           "kind": "theorem",
           "name": "serviceStop_error_illegalState",
-          "line": 277,
+          "line": 301,
           "called": [
             "ServicePolicy",
             "serviceStop"
@@ -9865,7 +9865,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_error_of_stop_error",
-          "line": 288,
+          "line": 312,
           "called": [
             "ServicePolicy",
             "serviceRestart",
@@ -9875,7 +9875,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_error_of_start_error",
-          "line": 299,
+          "line": 323,
           "called": [
             "ServicePolicy",
             "serviceRestart",
@@ -9886,7 +9886,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_ok_implies_staged_steps",
-          "line": 312,
+          "line": 336,
           "called": [
             "ServicePolicy",
             "serviceRestart",
@@ -9897,7 +9897,7 @@
         {
           "kind": "theorem",
           "name": "serviceStart_ok_backing_object_exists",
-          "line": 332,
+          "line": 356,
           "called": [
             "ServicePolicy",
             "serviceStart"
@@ -9906,7 +9906,7 @@
         {
           "kind": "theorem",
           "name": "serviceRestart_atomicity",
-          "line": 353,
+          "line": 377,
           "called": [
             "ServicePolicy",
             "serviceRestart",
@@ -9918,7 +9918,7 @@
         {
           "kind": "theorem",
           "name": "serviceHasPathTo_fuel_zero_is_true",
-          "line": 371,
+          "line": 395,
           "called": [
             "serviceHasPathTo"
           ]
@@ -9926,7 +9926,7 @@
         {
           "kind": "theorem",
           "name": "serviceHasPathTo_false_implies_not_fuel_exhaustion",
-          "line": 381,
+          "line": 405,
           "called": [
             "serviceHasPathTo"
           ]
@@ -9934,7 +9934,7 @@
         {
           "kind": "theorem",
           "name": "serviceBfsFuel_adequate",
-          "line": 394,
+          "line": 418,
           "called": [
             "serviceBfsFuel"
           ]
@@ -9942,7 +9942,7 @@
         {
           "kind": "theorem",
           "name": "serviceRegisterDependency_rejects_if_path_or_fuel_exhausted",
-          "line": 403,
+          "line": 427,
           "called": [
             "serviceBfsFuel",
             "serviceHasPathTo",
@@ -11223,19 +11223,19 @@
         {
           "kind": "inductive",
           "name": "ServiceStatus",
-          "line": 15,
+          "line": 21,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceIdentity",
-          "line": 23,
+          "line": 27,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceGraphEntry",
-          "line": 30,
+          "line": 34,
           "called": [
             "ServiceIdentity",
             "ServiceStatus"
@@ -11244,19 +11244,19 @@
         {
           "kind": "inductive",
           "name": "AccessRight",
-          "line": 37,
+          "line": 41,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRight",
-          "line": 45,
+          "line": 49,
           "called": []
         },
         {
           "kind": "def",
           "name": "toBit",
-          "line": 49,
+          "line": 53,
           "called": [
             "AccessRight"
           ]
@@ -11264,7 +11264,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 57,
+          "line": 61,
           "called": [
             "AccessRight"
           ]
@@ -11272,19 +11272,19 @@
         {
           "kind": "structure",
           "name": "AccessRightSet",
-          "line": 67,
+          "line": 71,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRightSet",
-          "line": 71,
+          "line": 75,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 74,
+          "line": 78,
           "called": [
             "AccessRightSet"
           ]
@@ -11292,15 +11292,6 @@
         {
           "kind": "def",
           "name": "singleton",
-          "line": 77,
-          "called": [
-            "AccessRight",
-            "AccessRightSet"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ofList",
           "line": 81,
           "called": [
             "AccessRight",
@@ -11309,7 +11300,7 @@
         },
         {
           "kind": "def",
-          "name": "mem",
+          "name": "ofList",
           "line": 85,
           "called": [
             "AccessRight",
@@ -11317,9 +11308,18 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "mem",
+          "line": 89,
+          "called": [
+            "AccessRight",
+            "AccessRightSet"
+          ]
+        },
+        {
           "kind": "instance",
-          "name": "<anonymous:instance:88>",
-          "line": 88,
+          "name": "<anonymous:instance:92>",
+          "line": 92,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -11328,8 +11328,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:91>",
-          "line": 91,
+          "name": "<anonymous:instance:95>",
+          "line": 95,
           "called": [
             "AccessRight",
             "AccessRightSet"
@@ -11338,14 +11338,6 @@
         {
           "kind": "def",
           "name": "subset",
-          "line": 96,
-          "called": [
-            "AccessRightSet"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "union",
           "line": 100,
           "called": [
             "AccessRightSet"
@@ -11353,8 +11345,16 @@
         },
         {
           "kind": "def",
+          "name": "union",
+          "line": 104,
+          "called": [
+            "AccessRightSet"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "inter",
-          "line": 103,
+          "line": 107,
           "called": [
             "AccessRightSet"
           ]
@@ -11362,7 +11362,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 106,
+          "line": 110,
           "called": [
             "AccessRight",
             "AccessRightSet"
@@ -11370,8 +11370,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:109>",
-          "line": 109,
+          "name": "<anonymous:instance:113>",
+          "line": 113,
           "called": [
             "AccessRightSet"
           ]
@@ -11379,7 +11379,7 @@
         {
           "kind": "theorem",
           "name": "ofList_comm",
-          "line": 113,
+          "line": 117,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -11389,13 +11389,13 @@
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 125,
+          "line": 129,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 133,
+          "line": 137,
           "called": [
             "AccessRightSet",
             "CapTarget"
@@ -11404,13 +11404,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 139,
+          "line": 143,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 142,
+          "line": 146,
           "called": [
             "AccessRight",
             "Capability"
@@ -11419,19 +11419,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 149,
+          "line": 153,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 153,
+          "line": 157,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 161,
+          "line": 165,
           "called": [
             "Capability"
           ]
@@ -11439,13 +11439,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 167,
+          "line": 171,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 169,
+          "line": 173,
           "called": [
             "IpcMessage"
           ]
@@ -11453,7 +11453,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 173,
+          "line": 177,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -11463,7 +11463,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 179,
+          "line": 183,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -11473,7 +11473,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 183,
+          "line": 187,
           "called": [
             "bounded",
             "empty",
@@ -11484,7 +11484,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 187,
+          "line": 191,
           "called": [
             "IpcMessage",
             "bounded",
@@ -11496,19 +11496,19 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 203,
+          "line": 207,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 216,
+          "line": 220,
           "called": []
         },
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 221,
+          "line": 225,
           "called": [
             "IpcMessage",
             "QueuePPrev",
@@ -11517,8 +11517,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:260>",
-          "line": 260,
+          "name": "<anonymous:instance:264>",
+          "line": 264,
           "called": [
             "TCB"
           ]
@@ -11526,13 +11526,13 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 274,
+          "line": 278,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 285,
+          "line": 289,
           "called": [
             "IntrusiveQueue"
           ]
@@ -11540,13 +11540,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 290,
+          "line": 294,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 299,
+          "line": 303,
           "called": [
             "NotificationState"
           ]
@@ -11554,7 +11554,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 315,
+          "line": 319,
           "called": [
             "Capability"
           ]
@@ -11562,19 +11562,19 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 324,
+          "line": 328,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 329,
+          "line": 333,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 344,
+          "line": 348,
           "called": [
             "UntypedChild"
           ]
@@ -11582,20 +11582,12 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 360,
+          "line": 364,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 363,
-          "called": [
-            "UntypedObject"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "canAllocate",
           "line": 367,
           "called": [
             "UntypedObject"
@@ -11603,8 +11595,16 @@
         },
         {
           "kind": "def",
+          "name": "canAllocate",
+          "line": 371,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "allocate",
-          "line": 372,
+          "line": 376,
           "called": [
             "UntypedObject"
           ]
@@ -11612,14 +11612,6 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 384,
-          "called": [
-            "UntypedObject"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "watermarkValid",
           "line": 388,
           "called": [
             "UntypedObject"
@@ -11627,7 +11619,7 @@
         },
         {
           "kind": "def",
-          "name": "childrenWithinWatermark",
+          "name": "watermarkValid",
           "line": 392,
           "called": [
             "UntypedObject"
@@ -11635,7 +11627,7 @@
         },
         {
           "kind": "def",
-          "name": "childrenNonOverlap",
+          "name": "childrenWithinWatermark",
           "line": 396,
           "called": [
             "UntypedObject"
@@ -11643,8 +11635,16 @@
         },
         {
           "kind": "def",
+          "name": "childrenNonOverlap",
+          "line": 400,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 401,
+          "line": 405,
           "called": [
             "UntypedObject"
           ]
@@ -11652,7 +11652,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 406,
+          "line": 410,
           "called": [
             "UntypedObject"
           ]
@@ -11660,7 +11660,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 410,
+          "line": 414,
           "called": [
             "watermarkValid"
           ]
@@ -11668,7 +11668,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 414,
+          "line": 418,
           "called": [
             "childrenWithinWatermark"
           ]
@@ -11676,7 +11676,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 419,
+          "line": 423,
           "called": [
             "childrenNonOverlap"
           ]
@@ -11684,7 +11684,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 424,
+          "line": 428,
           "called": [
             "childrenUniqueIds"
           ]
@@ -11692,7 +11692,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 429,
+          "line": 433,
           "called": [
             "empty_childrenNonOverlap",
             "empty_childrenUniqueIds",
@@ -11704,7 +11704,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 435,
+          "line": 439,
           "called": [
             "UntypedObject",
             "canAllocate"
@@ -11713,7 +11713,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 442,
+          "line": 446,
           "called": [
             "UntypedObject",
             "allocate"
@@ -11722,7 +11722,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 461,
+          "line": 465,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11731,7 +11731,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 470,
+          "line": 474,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11740,7 +11740,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 477,
+          "line": 481,
           "called": [
             "UntypedObject",
             "allocate_watermark_advance"
@@ -11749,7 +11749,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 484,
+          "line": 488,
           "called": [
             "UntypedObject",
             "allocate_some_iff",
@@ -11760,7 +11760,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 495,
+          "line": 499,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11769,7 +11769,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 506,
+          "line": 510,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11778,7 +11778,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 524,
+          "line": 528,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11787,7 +11787,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 546,
+          "line": 550,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -11796,7 +11796,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 565,
+          "line": 569,
           "called": [
             "UntypedObject",
             "reset",
@@ -11806,7 +11806,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 569,
+          "line": 573,
           "called": [
             "UntypedObject",
             "reset",

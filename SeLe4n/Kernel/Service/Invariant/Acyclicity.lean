@@ -8,6 +8,25 @@
 
 import SeLe4n.Kernel.Service.Invariant.Policy
 
+/-! # Service Dependency Acyclicity — seLe4n Extension
+
+**This module is a seLe4n-specific extension with no analogue in real seL4.**
+
+Provides machine-checked proofs that the service dependency graph remains
+acyclic across all kernel operations. seL4 has no notion of service
+dependencies — its capability derivation tree (CDT) tracks object lineage,
+not service-level relationships. seLe4n's dependency graph is a separate
+abstraction that enables reasoning about service startup ordering, cascade
+failure boundaries, and isolation enforcement.
+
+The proofs are layered:
+- **Layer 0:** Declarative graph definitions (edges, reachability, acyclicity).
+- **Layer 1:** Structural lemmas (transitivity, path lifting).
+- **Layer 2:** Operation preservation (registration preserves acyclicity).
+- **Layer 3:** Cross-subsystem composition with lifecycle and capability proofs.
+
+See `Service/Operations.lean` for the full seLe4n extension rationale. -/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

@@ -19,18 +19,18 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 WS-H1..H16 are all completed. No remaining WS-H workstreams.
 
-### Remaining WS-F workstreams (F5-F8)
+### WS-F workstreams (F1-F8) — ALL COMPLETED
 
-The critical WS-F workstreams (F1-F4) are all completed. The remaining
-medium/low-priority workstreams close model fidelity and testing gaps identified
-by the [v0.12.2 audits](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
+All WS-F workstreams are completed. The v0.12.2 audit remediation portfolio is
+100% closed (33/33 findings). See the
+[workstream plan](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for details.
 
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **COMPLETED** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium — **COMPLETED** |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low — **COMPLETED** |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
+| **WS-F8** | Cleanup (dead code, dead type constructors, extension labeling) | Low — **COMPLETED** |
 
 ### Raspberry Pi 5 hardware binding
 
@@ -55,6 +55,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-F8** | v0.14.9 | Cleanup: removed dead `ServiceStatus.failed`/`isolated` constructors (D1), labeled Service subsystem as seLe4n extension with module docstrings (D2/MED-17), closed F-14 (endpointInvariant already removed in WS-H12a), closed F-01 (legacy endpoint fields already removed in WS-H12a), closed MED-04 (domain lattice alive and exercised, finding misidentified). Completes 100% of v0.12.2 audit findings (33/33). Closes MED-04/MED-17/F-01/F-14/F-19 | F8 |
 | **WS-F5** | v0.14.9 | Model fidelity: word-bounded `Badge` with `ofNatMasked`/`bor`/validity theorems (F5-D1/CRIT-06), order-independent `AccessRightSet` bitmask replacing list-based rights (F5-D2/HIGH-04), deferred operations documented with rationale (F5-D3/MED-03), `badgeWellFormed` invariant with `notificationBadgesWellFormed`/`capabilityBadgesWellFormed` predicates and preservation proofs for `notificationSignal`/`notificationWait`/`cspaceMint`/`cspaceMutate`. Closes CRIT-06/HIGH-04/MED-03 | F5 |
 | **WS-H16** | v0.14.8 | Testing, documentation & cleanup: 10 lifecycle negative tests (M-18), 13 semantic Tier 3 assertions (A-43), `objectIndexLive` liveness invariant with preservation proof (A-13), `runQueueThreadPriorityConsistent` predicate with default theorem (A-19), O(1) membership audit confirmation (A-18), documentation metrics sync (M-21/A-45). Closes M-18/A-43/A-13/A-18/A-19/M-21/A-45 | H16 |
 | **WS-H15** | v0.14.7 | Platform & API hardening: InterruptBoundaryContract decidability + consistency theorems (H15a), RPi5 MMIO disjointness/boot contract hardening (H15b), syscall capability-checking wrappers with 3 soundness theorems and 13 `api*` entry points (H15c), generic timer-invariant preservation + concrete `AdapterProofHooks` for Sim and RPi5 restrictive contracts with 6 end-to-end theorems (H15d), 31 Tier 3 anchors + 5 trace scenarios + 6 negative tests (H15e). Closes A-33/A-41/A-42/M-13 | H15a-e |
