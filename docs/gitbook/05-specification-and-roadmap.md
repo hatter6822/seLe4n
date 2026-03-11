@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,055 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 1,940 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-F6..F8 |
+| Next workstreams | WS-F7..F8 |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -208,15 +208,15 @@ abstract TLB model, bounded address translation checks, and extended
 See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 and [Next Development Path](22-next-slice-development-path.md).
 
-### Remaining v0.12.2 audit remediation (WS-F6..F8)
+### Remaining v0.12.2 audit remediation (WS-F7..F8)
 
-WS-F1..F5 (critical/high/medium priority) are completed. The remaining workstreams
-address medium/low findings from the v0.12.2 audits:
+WS-F1..F6 (critical/high/medium priority) are completed. The remaining workstreams
+address low findings from the v0.12.2 audits:
 
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **COMPLETED** (v0.14.9) |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
+| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium — **COMPLETED** (v0.14.9) |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
 

@@ -226,7 +226,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     (hContract : ipcSchedulerContractPredicates st)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointCall at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -249,7 +249,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
           have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2 pair.1 hPop
           have hContractPop := contracts_of_same_scheduler_ipcState st pair.2 hSchedPop
             (fun tid tcb' h => endpointQueuePopHead_tcb_ipcState_backward endpointId true st pair.2 pair.1 tid tcb' hPop h)
-            ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+            ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
           cases hMsg : storeTcbIpcStateAndMessage pair.2 pair.1 .ready (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
@@ -261,8 +261,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hSchedIpc := storeTcbIpcState_scheduler_eq (ensureRunnable st2 pair.1) st4 caller (.blockedOnReply endpointId (some pair.1)) hIpc
-              rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply'⟩
-              refine ⟨?_, ?_, ?_, ?_, ?_⟩
+              rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
               · -- runnableThreadIpcReady
                 intro tid tcb' hTcb' hRun'
                 rw [removeRunnable_preserves_objects] at hTcb'
@@ -351,6 +351,24 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                     rcases ensureRunnable_mem_reverse st2 pair.1 tid hRunSt4 with hOld | hEq
                     · exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ pair.2.scheduler.runnable by rwa [← hSchedMsg])
                     · exact absurd hEq hNeTid
+              · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+                intro tid tcb' nid hTcb' hIpcState'
+                rw [removeRunnable_preserves_objects] at hTcb'
+                by_cases hNeCaller : tid = caller
+                · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
+                · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
+                  rw [storeTcbIpcState_preserves_objects_ne _ st4 caller _ tid.toObjId hNeCallerObjId hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  by_cases hNeRecv : tid.toObjId = pair.1.toObjId
+                  · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st2 pair.1 .ready (some msg) hMsg tcb' (hNeRecv ▸ hTcb')
+                    rw [this] at hIpcState'; cases hIpcState'
+                  · have hNeTid : tid ≠ pair.1 := fun h => hNeRecv (congrArg ThreadId.toObjId h)
+                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st2 pair.1 .ready (some msg) tid.toObjId hNeRecv hMsg).symm.trans hTcb'
+                    intro hRun'
+                    have ⟨hRunSt4, _⟩ := (removeRunnable_runnable_mem st4 caller tid).mp hRun'
+                    rw [congrArg SchedulerState.runnable hSchedIpc] at hRunSt4
+                    rcases ensureRunnable_mem_reverse st2 pair.1 tid hRunSt4 with hOld | hEq
+                    · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.scheduler.runnable by rwa [← hSchedMsg])
+                    · exact absurd hEq hNeTid
       | none =>
         -- Blocking: Enqueue → storeTcbIpcStateAndMessage → removeRunnable (same as SendDual blocking)
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -360,15 +378,15 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
           have hSchedEnq := endpointQueueEnqueue_scheduler_eq endpointId false caller st st1 hEnq
           have hContractEnq := contracts_of_same_scheduler_ipcState st st1 hSchedEnq
             (fun tid tcb' h => endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st1 tid tcb' hEnq h)
-            ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+            ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
           cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            rcases hContractEnq with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply'⟩
+            rcases hContractEnq with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
             have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) (some msg) hMsg
-            refine ⟨?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · intro tid tcb' hTcb' hRun'
               rw [removeRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid = caller
@@ -413,6 +431,16 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
+            · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+              intro tid tcb' nid hTcb' hIpcState'
+              rw [removeRunnable_preserves_objects] at hTcb'
+              by_cases hNe : tid = caller
+              · subst hNe; exact removeRunnable_not_mem_self st2 _
+              · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hMsg).symm.trans hTcb'
+                intro hRun'
+                have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
+                exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
 
 /-- WS-H1/C-01: A Call sender that enters the endpoint call path does not
 remain runnable after the operation completes. Both execution paths
@@ -642,7 +670,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     (hContract : ipcSchedulerContractPredicates st)
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointReplyRecv at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -689,7 +717,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
       intro st1 hMsg stR hRecv
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
       have hContractMid : ipcSchedulerContractPredicates (ensureRunnable st1 replyTarget) := by
-        refine ⟨?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
         · intro tid tcb' hTcb' hRun'
           rw [ensureRunnable_preserves_objects] at hTcb'
           by_cases hNe : tid.toObjId = replyTarget.toObjId
@@ -743,6 +771,18 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
             rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
             · exact hBlockReply tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
             · exact absurd hEq hNeTid
+        · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+          intro tid tcb' nid hTcb' hIpcState'
+          rw [ensureRunnable_preserves_objects] at hTcb'
+          by_cases hNe : tid.toObjId = replyTarget.toObjId
+          · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hMsg tcb' (hNe ▸ hTcb')
+            rw [this] at hIpcState'; cases hIpcState'
+          · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+            have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hMsg).symm.trans hTcb'
+            intro hRun'
+            rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+            · exact hBlockNotif tid tcb' nid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+            · exact absurd hEq hNeTid
       exact endpointReceiveDual_preserves_ipcSchedulerContractPredicates _ stR.2 endpointId receiver stR.1 hContractMid (by
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl
         rw [this] at hRecv; exact hRecv)
@@ -757,7 +797,7 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
     (hContract : ipcSchedulerContractPredicates st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
-  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply⟩
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -806,7 +846,7 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
       -- Shared proof body
       intro st1 hMsg
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 target .ready (some msg) hMsg
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- runnableThreadIpcReady
         intro tid tcb' hTcb' hRun'
         rw [ensureRunnable_preserves_objects] at hTcb'
@@ -864,5 +904,17 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
           intro hRun'
           rcases ensureRunnable_mem_reverse st1 target tid hRun' with hOld | hEq
           · exact hBlockReply tid tcb' eid rt' hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+          · exact absurd hEq hNeTid
+      · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+        intro tid tcb' nid hTcb' hIpcState'
+        rw [ensureRunnable_preserves_objects] at hTcb'
+        by_cases hNe : tid.toObjId = target.toObjId
+        · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 target .ready (some msg) hMsg tcb' (hNe ▸ hTcb')
+          rw [this] at hIpcState'; cases hIpcState'
+        · have hNeTid : tid ≠ target := fun h => hNe (congrArg ThreadId.toObjId h)
+          have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) tid.toObjId hNe hMsg).symm.trans hTcb'
+          intro hRun'
+          rcases ensureRunnable_mem_reverse st1 target tid hRun' with hOld | hEq
+          · exact hBlockNotif tid tcb' nid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
           · exact absurd hEq hNeTid
 

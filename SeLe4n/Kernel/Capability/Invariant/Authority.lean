@@ -621,6 +621,6 @@ theorem capabilityInvariantBundle_of_slotUnique
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st) :
     capabilityInvariantBundle st :=
-  ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique, cspaceAttenuationRule_holds,
-    lifecycleAuthorityMonotonicity_holds st, hBounded, hComp, hAcyclic, hDepth⟩
+  ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique,
+    hBounded, hComp, hAcyclic, hDepth⟩
 

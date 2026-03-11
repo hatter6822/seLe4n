@@ -792,4 +792,22 @@ run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSu
 # Verify schedule references runQueue (O(1) HashSet) not runnable (O(n) list).
 run_check "INVARIANT" rg -n 'scheduler\.runQueue' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 
+# WS-F6/D2: blockedOnNotificationNotRunnable predicate in IPC invariant defs.
+run_check "INVARIANT" rg -n '^def blockedOnNotificationNotRunnable' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+
+# WS-F6/D2: ipcSchedulerBlockedNotificationComponent in capability preservation.
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
+
+# WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
+run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem runnableThreadsAreTCBs_of_scheduler_objects_eq' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem timerTick_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+
+# WS-F6/D6: vspaceCrossAsidIsolation in VSpace invariant bundle.
+run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+
 finalize_report

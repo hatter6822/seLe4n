@@ -215,27 +215,49 @@ theorem runQueueThreadPriorityConsistent_default :
 -- WS-H6: Full scheduler invariant bundle
 -- ============================================================================
 
-/-- Full Scheduler Invariant Bundle — extends the structural triad with
-`timeSlicePositive`, `currentTimeSlicePositive`,
-`edfCurrentHasEarliestDeadline`, and `contextMatchesCurrent`.
+-- Full Scheduler Invariant Bundle — extends the structural triad with
+-- `timeSlicePositive`, `currentTimeSlicePositive`,
+-- `edfCurrentHasEarliestDeadline`, `contextMatchesCurrent`, and
+-- `runnableThreadsAreTCBs` (WS-F6/D3 6-tuple extension).
 
-WS-H6: Promotes the previously orphaned time-slice and EDF invariants into a
-composed bundle with preservation theorems for all scheduler operations.
-WS-H12b: Adds `currentTimeSlicePositive` to cover the dispatched thread which
-is no longer in the run queue under dequeue-on-dispatch semantics.
-WS-H12e: Adds `contextMatchesCurrent` (from WS-H12c) to the full bundle,
-ensuring the register-context coherence invariant is composed into the
-cross-subsystem proof surface rather than remaining orphaned.
+-- ============================================================================
+-- WS-F6/D3: Runnable threads type-safety invariant
+-- ============================================================================
 
-Note: `runQueueThreadPriorityConsistent` (WS-H16/A-19) is a standalone
-predicate not included in this bundle to avoid cascading preservation proof
-changes. It follows the same pattern as `schedulerPriorityMatch`.
-Cross-subsystem consumers that only need the structural triad should continue
-using `schedulerInvariantBundle` (the 3-component version). -/
+/-- WS-F6/D3/MED-06: Every thread ID in the scheduler's runnable queue
+corresponds to a valid TCB in the object store.
+
+This is a type-safety backstop for the scheduler: without it, a lifecycle
+`retypeObject` that overwrites a TCB with a non-TCB object while leaving the
+thread ID in the run queue could cause `chooseThread` to read TCB fields from
+a non-TCB object. `currentThreadValid` only covers the *current* thread;
+this predicate covers *all* runnable threads. -/
+def runnableThreadsAreTCBs (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runnable →
+    ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)
+
+/-- WS-F6/D3: Default state has empty run queue, so the predicate is vacuously true. -/
+theorem default_runnableThreadsAreTCBs :
+    runnableThreadsAreTCBs (default : SystemState) := by
+  intro tid hMem
+  have : (default : SystemState).scheduler.runnable = [] := by native_decide
+  rw [this] at hMem; simp at hMem
+
+/-- WS-F6/D3: runnableThreadsAreTCBs is preserved when objects are unchanged. -/
+theorem runnableThreadsAreTCBs_of_scheduler_objects_eq
+    (st st' : SystemState)
+    (hInv : runnableThreadsAreTCBs st)
+    (hSchedEq : st'.scheduler = st.scheduler)
+    (hObjEq : st'.objects = st.objects) :
+    runnableThreadsAreTCBs st' := by
+  intro tid hMem; rw [hSchedEq] at hMem; rw [hObjEq]; exact hInv tid hMem
+
+/-- WS-F6/D2+D3: Extended full scheduler invariant bundle.
+WS-F6: Extended from 5-tuple to 6-tuple with `runnableThreadsAreTCBs`. -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ timeSlicePositive st ∧
   currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
-  contextMatchesCurrent st
+  contextMatchesCurrent st ∧ runnableThreadsAreTCBs st
 
 /-- Project the structural triad from the full bundle. -/
 theorem schedulerInvariantBundleFull_to_base {st : SystemState}
@@ -245,7 +267,7 @@ theorem schedulerInvariantBundleFull_to_base {st : SystemState}
 /-- WS-H12e: Project `contextMatchesCurrent` from the full scheduler bundle. -/
 theorem schedulerInvariantBundleFull_to_contextMatchesCurrent {st : SystemState}
     (h : schedulerInvariantBundleFull st) : contextMatchesCurrent st :=
-  h.2.2.2.2
+  h.2.2.2.2.1
 
 -- ============================================================================
 -- WS-H6: RunQueue priority-match predicate

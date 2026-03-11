@@ -31,7 +31,7 @@ Data structure:
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
-- `schedulerInvariantBundleFull` (5-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent`, WS-H12b + WS-H12e)
+- `schedulerInvariantBundleFull` (6-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs`, WS-H12b + WS-H12e + WS-F6/D3)
 
 Extraction theorem:
 
@@ -60,7 +60,7 @@ Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness
 
 Bundle level:
 
-- `capabilityInvariantBundle` (WS-H4 + WS-H13: 8-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceAttenuationRule`, `lifecycleAuthorityMonotonicity`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`)
+- `capabilityInvariantBundle` (WS-H4 + WS-H13 + WS-F6/D1: 6-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`; 2 tautological predicates removed by WS-F6)
 - `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique` plus WS-H4 components)
 
 Preservation shape:
@@ -196,7 +196,7 @@ Component level:
 
 Bundle level:
 
-- `ipcSchedulerContractPredicates` (5 conjuncts: ready, send, receive, call, reply)
+- `ipcSchedulerContractPredicates` (6 conjuncts: ready, send, receive, call, reply, notification; WS-F6/D2)
 - `ipcSchedulerCoherenceComponent`
 - `ipcSchedulerCouplingInvariantBundle` (WS-H12e: extended from 2 to 4 conjuncts — `coreIpcInvariantBundle ∧ ipcSchedulerCoherenceComponent ∧ contextMatchesCurrent ∧ currentThreadDequeueCoherent`)
 
