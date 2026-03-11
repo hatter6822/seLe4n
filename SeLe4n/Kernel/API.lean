@@ -69,6 +69,20 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | Stable |
 | `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | Stable |
 | `apiServiceStart`, `apiServiceStop` | Syscall Service (WS-H15c) | Stable |
+
+## Deferred operations (WS-F5/D3)
+
+The following seL4 operations are intentionally **deferred** from the current
+model. Each is documented with rationale and the prerequisite that must be
+completed before implementation.
+
+| Operation | seL4 Reference | Rationale | Prerequisite |
+|-----------|---------------|-----------|--------------|
+| `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model. Priority is currently set at TCB creation; runtime modification deferred until MCS scheduling contexts (budget/period/replenishment) are modeled. | MCS scheduling (long-horizon) |
+| `setMCPriority` | `seL4_TCB_SetMCPriority` | Maximum controlled priority. Same MCS prerequisite as `setPriority`. | MCS scheduling (long-horizon) |
+| `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine beyond `ThreadIpcState`. Must handle interactions with run queue removal, IPC blocking state cleanup, and notification wait cancellation. | WS-F6 (thread-lifecycle invariants) |
+| `resume` | `seL4_TCB_Resume` | Inverse of `suspend`. Same lifecycle state machine prerequisite. Must ensure scheduler invariant preservation on thread re-insertion. | WS-F6 (thread-lifecycle invariants) |
+| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Trivial field update, but VSpace validation of the buffer address (must be mapped, writable, aligned) requires `VSpaceBackend` integration and page table walk. | H3 hardware binding (VSpace validation) |
 -/
 
 namespace SeLe4n.Kernel
@@ -246,7 +260,7 @@ def apiEndpointReply (gate : SyscallGate) (targetId : SeLe4n.ThreadId) (msg : Ip
 
 /-- WS-H15c/A-42: Capability-gated CSpace mint. Requires `.grant` right on source. -/
 def apiCspaceMint (gate : SyscallGate) (src dest : CSpaceAddr)
-    (newRights : List AccessRight) (newBadge : Option SeLe4n.Badge) : Kernel Unit :=
+    (newRights : AccessRightSet) (newBadge : Option SeLe4n.Badge) : Kernel Unit :=
   syscallInvoke { gate with requiredRight := .grant } fun _ =>
     cspaceMint src dest newRights newBadge
 

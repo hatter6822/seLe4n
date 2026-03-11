@@ -42,6 +42,82 @@ inductive AccessRight where
   | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq
 
+namespace AccessRight
+
+/-- WS-F5/D2a: Ordinal encoding for bitmask representation. Each right maps to
+    a unique bit position. -/
+@[inline] def toBit : AccessRight → Nat
+  | .read       => 0
+  | .write      => 1
+  | .grant      => 2
+  | .grantReply => 3
+  | .retype     => 4
+
+/-- WS-F5/D2a: All access rights in canonical order (bit 0..4). -/
+def all : List AccessRight := [.read, .write, .grant, .grantReply, .retype]
+
+end AccessRight
+
+/-- WS-F5/D2a: Order-independent access right set using bitmask representation.
+
+Matches seL4's rights representation as a word-sized bitmask. Each of the 5
+access rights maps to a unique bit position (0..4). Membership is a single
+bit test; subset is bitwise AND comparison. Two sets with the same rights in
+any order are structurally equal. -/
+structure AccessRightSet where
+  bits : Nat
+deriving DecidableEq, Repr, Inhabited
+
+namespace AccessRightSet
+
+/-- The empty rights set (no permissions). -/
+@[inline] def empty : AccessRightSet := ⟨0⟩
+
+/-- Construct a rights set from a single right. -/
+@[inline] def singleton (r : AccessRight) : AccessRightSet := ⟨1 <<< r.toBit⟩
+
+/-- WS-F5/D2a: Construct a rights set from a list of rights. Order-independent:
+    `ofList [.read, .write] = ofList [.write, .read]`. -/
+@[inline] def ofList (rs : List AccessRight) : AccessRightSet :=
+  ⟨rs.foldl (fun acc r => acc ||| (1 <<< r.toBit)) 0⟩
+
+/-- WS-F5/D2a: Membership test — O(1) bit check. -/
+@[inline] def mem (s : AccessRightSet) (r : AccessRight) : Bool :=
+  (s.bits >>> r.toBit) &&& 1 != 0
+
+instance : Membership AccessRight AccessRightSet where
+  mem s r := AccessRightSet.mem s r = true
+
+instance (r : AccessRight) (s : AccessRightSet) : Decidable (r ∈ s) :=
+  inferInstanceAs (Decidable (AccessRightSet.mem s r = true))
+
+/-- WS-F5/D2a: Subset test — O(1) bitwise check. `a ⊆ b` iff every bit in `a`
+    is also set in `b`. -/
+@[inline] def subset (a b : AccessRightSet) : Bool :=
+  a.bits &&& b.bits == a.bits
+
+/-- WS-F5/D2a: Union of two rights sets (bitwise OR). -/
+@[inline] def union (a b : AccessRightSet) : AccessRightSet := ⟨a.bits ||| b.bits⟩
+
+/-- WS-F5/D2a: Intersection of two rights sets (bitwise AND). -/
+@[inline] def inter (a b : AccessRightSet) : AccessRightSet := ⟨a.bits &&& b.bits⟩
+
+/-- WS-F5/D2a: Convert rights set to a list (canonical order). -/
+def toList (s : AccessRightSet) : List AccessRight :=
+  AccessRight.all.filter s.mem
+
+instance : ToString AccessRightSet where
+  toString s := toString (s.toList.map reprStr)
+
+/-- WS-F5/D2a: `ofList` is order-independent — permutations produce equal sets. -/
+theorem ofList_comm (a b : AccessRight) (rest : List AccessRight) :
+    ofList (a :: b :: rest) = ofList (b :: a :: rest) := by
+  simp [ofList, List.foldl]
+  congr 1
+  exact Nat.or_comm (1 <<< a.toBit) (1 <<< b.toBit)
+
+end AccessRightSet
+
 /-- The addressable target of a capability in the abstract object universe.
 
 WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities that
@@ -52,16 +128,19 @@ inductive CapTarget where
   | replyCap (senderTcb : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
+/-- WS-F5/D2b: Capability with order-independent rights set.
+    `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`. -/
 structure Capability where
   target : CapTarget
-  rights : List AccessRight
+  rights : AccessRightSet
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 namespace Capability
 
+/-- WS-F5/D2b: Check if a capability has a specific right. O(1) bit test. -/
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
-  right ∈ cap.rights
+  cap.rights.mem right
 
 end Capability
 

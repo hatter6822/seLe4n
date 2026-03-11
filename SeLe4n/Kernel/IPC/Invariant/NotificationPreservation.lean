@@ -735,4 +735,192 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                     have ⟨hMem, _⟩ := hRun'
                     exact hBlockReply tid tcb' eid rt hTcbPre hIpcState'
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+-- ============================================================================
+-- WS-F5/D1d: Badge well-formedness preservation
+-- ============================================================================
 
+/-- WS-F5/D1d: Storing a notification with a valid (or absent) pending badge
+preserves `notificationBadgesWellFormed`. -/
+theorem storeObject_notification_preserves_notificationBadgesWellFormed
+    (st st' : SystemState) (targetId : SeLe4n.ObjId) (ntfn' : Notification)
+    (hInv : notificationBadgesWellFormed st)
+    (hStore : storeObject targetId (.notification ntfn') st = .ok ((), st'))
+    (hValid : ∀ b, ntfn'.pendingBadge = some b → b.valid) :
+    notificationBadgesWellFormed st' := by
+  intro oid ntfn b hObj hPending
+  by_cases hEq : oid = targetId
+  · subst hEq; rw [storeObject_objects_eq st st' oid _ hStore] at hObj
+    cases hObj; exact hValid b hPending
+  · exact hInv oid ntfn b ((storeObject_objects_ne st st' targetId oid _ hEq hStore).symm.trans hObj) hPending
+
+/-- WS-F5/D1d: Storing a non-notification object preserves `notificationBadgesWellFormed`. -/
+theorem storeObject_nonNotification_preserves_notificationBadgesWellFormed
+    (st st' : SystemState) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : notificationBadgesWellFormed st)
+    (hStore : storeObject targetId obj st = .ok ((), st'))
+    (hNotNtfn : ∀ ntfn, obj ≠ .notification ntfn) :
+    notificationBadgesWellFormed st' := by
+  intro oid ntfn b hObj hPending
+  by_cases hEq : oid = targetId
+  · subst hEq; rw [storeObject_objects_eq st st' oid obj hStore] at hObj
+    have := Option.some.inj hObj
+    cases obj with
+    | notification n => exact absurd rfl (hNotNtfn n)
+    | _ => cases this
+  · exact hInv oid ntfn b ((storeObject_objects_ne st st' targetId oid obj hEq hStore).symm.trans hObj) hPending
+
+/-- WS-F5/D1d: Storing a non-CNode object preserves `capabilityBadgesWellFormed`. -/
+theorem storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+    (st st' : SystemState) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : capabilityBadgesWellFormed st)
+    (hStore : storeObject targetId obj st = .ok ((), st'))
+    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
+    capabilityBadgesWellFormed st' := by
+  intro oid cn slot cap badge hObj hLookup hBadge
+  by_cases hEq : oid = targetId
+  · subst hEq; rw [storeObject_objects_eq st st' oid obj hStore] at hObj
+    have := Option.some.inj hObj
+    cases obj with
+    | cnode c => exact absurd rfl (hNotCNode c)
+    | _ => cases this
+  · exact hInv oid cn slot cap badge ((storeObject_objects_ne st st' targetId oid obj hEq hStore).symm.trans hObj) hLookup hBadge
+
+/-- WS-F5/D1d: `ensureRunnable` preserves `badgeWellFormed`.
+Only modifies `scheduler.runQueue`, never the object store. -/
+theorem ensureRunnable_preserves_badgeWellFormed
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : badgeWellFormed st) :
+    badgeWellFormed (ensureRunnable st tid) := by
+  unfold ensureRunnable; split
+  · exact hInv
+  · split <;> exact hInv
+
+/-- WS-F5/D1d: `removeRunnable` preserves `badgeWellFormed`.
+Only modifies `scheduler`, never the object store. -/
+theorem removeRunnable_preserves_badgeWellFormed
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : badgeWellFormed st) :
+    badgeWellFormed (removeRunnable st tid) := hInv
+
+/-- WS-F5/D1d: `storeTcbIpcState` preserves `badgeWellFormed`.
+Stores a `.tcb` object (not notification, not CNode). -/
+private theorem storeTcbIpcState_preserves_badgeWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : badgeWellFormed st)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st') :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold storeTcbIpcState at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep; revert hStep
+    cases hStore : storeObject tid.toObjId _ st with
+    | error e => simp
+    | ok pair => simp only []; intro hEq; cases hEq
+                 exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
+                           st pair.2 tid.toObjId _ hNtfn hStore (fun ntfn h => by cases h),
+                        storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                           st pair.2 tid.toObjId _ hCap hStore (fun cn h => by cases h)⟩
+
+/-- WS-F5/D1d: `notificationSignal` preserves `badgeWellFormed`.
+Wake path: stores `pendingBadge := none`. Merge path: stores `Badge.bor` or
+`Badge.ofNatMasked` — both word-bounded. -/
+theorem notificationSignal_preserves_badgeWellFormed
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : badgeWellFormed st) (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold notificationSignal at hStep
+  cases hObjSrc : st.objects[notificationId]? with
+  | none => simp [hObjSrc] at hStep
+  | some obj =>
+    cases obj with
+    | notification ntfnSrc =>
+      simp only [hObjSrc] at hStep
+      cases hWaiters : ntfnSrc.waitingThreads with
+      | cons waiter rest =>
+        simp only [hWaiters] at hStep; revert hStep
+        cases hStore1 : storeObject notificationId _ st with
+        | error e => simp
+        | ok pair1 =>
+          simp only []; intro hStep; revert hStep
+          cases hStoreTcb : storeTcbIpcState pair1.2 waiter .ready with
+          | error e => simp
+          | ok st2 => simp only []; intro hEq; cases hEq
+                      apply ensureRunnable_preserves_badgeWellFormed
+                      exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter .ready
+                        ⟨storeObject_notification_preserves_notificationBadgesWellFormed
+                          st pair1.2 notificationId _ hNtfn hStore1 (fun b hb => by simp at hb),
+                         storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                          st pair1.2 notificationId _ hCap hStore1 (fun cn h => by cases h)⟩
+                        hStoreTcb
+      | nil =>
+        simp only [hWaiters] at hStep
+        exact ⟨storeObject_notification_preserves_notificationBadgesWellFormed
+                 st st' notificationId _ hNtfn hStep
+                 (fun b hb => by
+                   simp only [Option.some.injEq] at hb; subst hb
+                   cases hPending : ntfnSrc.pendingBadge with
+                   | some existing => exact SeLe4n.Badge.bor_valid existing badge
+                   | none => exact SeLe4n.Badge.ofNatMasked_valid badge.toNat),
+               storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                 st st' notificationId _ hCap hStep (fun cn h => by cases h)⟩
+    | _ => simp [hObjSrc] at hStep
+
+/-- WS-F5/D1d: `notificationWait` preserves `badgeWellFormed`.
+Consume path: stores `pendingBadge := none`. Block path: stores notification
+with waiter prepended (badges unchanged). -/
+theorem notificationWait_preserves_badgeWellFormed
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge) (hInv : badgeWellFormed st)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold notificationWait at hStep
+  cases hObjSrc : st.objects[notificationId]? with
+  | none => simp [hObjSrc] at hStep
+  | some obj =>
+    cases obj with
+    | notification ntfnSrc =>
+      simp only [hObjSrc] at hStep
+      cases hPending : ntfnSrc.pendingBadge with
+      | some pendBadge =>
+        simp only [hPending] at hStep; revert hStep
+        cases hStore1 : storeObject notificationId _ st with
+        | error e => simp
+        | ok pair1 => simp only []; intro hStep; revert hStep
+                      cases hStoreTcb : storeTcbIpcState pair1.2 waiter .ready with
+                      | error e => simp
+                      | ok st2 => simp only [Except.ok.injEq, Prod.mk.injEq]
+                                  intro ⟨_, hEq⟩; subst hEq
+                                  exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter .ready
+                                    ⟨storeObject_notification_preserves_notificationBadgesWellFormed
+                                      st pair1.2 notificationId _ hNtfn hStore1 (fun b hb => by simp at hb),
+                                     storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                                      st pair1.2 notificationId _ hCap hStore1 (fun cn h => by cases h)⟩
+                                    hStoreTcb
+      | none =>
+        simp only [hPending] at hStep; revert hStep
+        cases hLk : lookupTcb st waiter with
+        | none => simp
+        | some tcb =>
+          simp only []; split
+          · simp
+          · intro hStep; revert hStep
+            cases hStore1 : storeObject notificationId _ st with
+            | error e => simp
+            | ok pair1 =>
+              simp only []; intro hStep; revert hStep
+              cases hStoreTcb : storeTcbIpcState pair1.2 waiter _ with
+              | error e => simp
+              | ok st2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                apply removeRunnable_preserves_badgeWellFormed
+                exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter _
+                  ⟨storeObject_notification_preserves_notificationBadgesWellFormed
+                    st pair1.2 notificationId _ hNtfn hStore1
+                    (fun b hb => by simp at hb),
+                   storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                    st pair1.2 notificationId _ hCap hStore1 (fun cn h => by cases h)⟩
+                  hStoreTcb
+    | _ => simp [hObjSrc] at hStep

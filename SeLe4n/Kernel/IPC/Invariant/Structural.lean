@@ -2254,11 +2254,13 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hStep,
    hDualQueue',
-   notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2 hStep⟩
+   notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hStep,
+   hBadge'⟩
 
 /-- WS-H12e: notificationWait preserves the full IPC invariant.
 See `notificationSignal_preserves_ipcInvariantFull` for hypothesis rationale. -/
@@ -2268,11 +2270,13 @@ theorem notificationWait_preserves_ipcInvariantFull
     (result : Option SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' :=
   ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hStep,
    hDualQueue',
-   notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2 hStep⟩
+   notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hStep,
+   hBadge'⟩
 
 /-- WS-H12e: endpointReply preserves the full IPC invariant.
 The `dualQueueSystemInvariant` post-state hypothesis is needed because
@@ -2284,11 +2288,13 @@ theorem endpointReply_preserves_ipcInvariantFull
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hStep,
    hDualQueue',
-   endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2 hStep⟩
+   endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hStep,
+   hBadge'⟩
 
 /-- WS-H12e: endpointSendDual preserves the full IPC invariant.
 Composes `endpointSendDual_preserves_ipcInvariant` (from existing proof surface),
@@ -2301,10 +2307,11 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hStep,
-   hDualQueue', hBounded'⟩
+   hDualQueue', hBounded', hBadge'⟩
 
 /-- WS-H12e: endpointReceiveDual preserves the full IPC invariant. -/
 theorem endpointReceiveDual_preserves_ipcInvariantFull
@@ -2313,10 +2320,11 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
     (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
     ipcInvariantFull st' :=
   ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId hInv.1 hStep,
-   hDualQueue', hBounded'⟩
+   hDualQueue', hBounded', hBadge'⟩
 
 /-- WS-H12e: endpointCall preserves the full IPC invariant. -/
 theorem endpointCall_preserves_ipcInvariantFull
@@ -2325,10 +2333,11 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hStep,
-   hDualQueue', hBounded'⟩
+   hDualQueue', hBounded', hBadge'⟩
 
 /-- WS-H12e: endpointReplyRecv preserves the full IPC invariant. -/
 theorem endpointReplyRecv_preserves_ipcInvariantFull
@@ -2337,9 +2346,10 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hStep,
-   hDualQueue', hBounded'⟩
+   hDualQueue', hBounded', hBadge'⟩
 
 end SeLe4n.Kernel

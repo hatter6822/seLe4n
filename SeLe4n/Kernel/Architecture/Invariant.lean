@@ -264,9 +264,15 @@ private theorem default_allPendingMessagesBounded :
     allPendingMessagesBounded (default : SystemState) := by
   intro tid tcb msg hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
 
+private theorem default_badgeWellFormed :
+    badgeWellFormed (default : SystemState) := by
+  refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
+  all_goals (have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp))
+
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
-  ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded⟩
+  ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
+   default_badgeWellFormed⟩
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
@@ -438,8 +444,8 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (ticks : Nat) (st : SystemState)
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
-  obtain ⟨h1, h2, h3⟩ := hIpc
-  exact ⟨by exact h1, by exact h2, by exact h3⟩
+  obtain ⟨h1, h2, h3, h4⟩ := hIpc
+  exact ⟨by exact h1, by exact h2, by exact h3, by exact h4⟩
 
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)

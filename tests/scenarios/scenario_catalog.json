@@ -8,7 +8,7 @@
       "subsystem": "capability",
       "risk_tags": ["correctness", "regression"],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]"
+      "expected_trace_fragment": "source path lookup rights: { bits := 7 }"
     },
     {
       "id": "SCN-ARCH-TIMER-INVALID",
@@ -36,7 +36,7 @@
       "subsystem": "cspace",
       "risk_tags": ["correctness", "scale"],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]"
+      "expected_trace_fragment": "deep cnode path lookup rights: { bits := 3 }"
     },
     {
       "id": "SCN-SCHED-LARGE-QUEUE",

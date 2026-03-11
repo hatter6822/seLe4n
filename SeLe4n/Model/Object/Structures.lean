@@ -826,8 +826,9 @@ def objectType : KernelObject → KernelObjectType
 
 end KernelObject
 
-/-- Construct a capability that names an object directly. -/
+/-- Construct a capability that names an object directly.
+    WS-F5/D2b: Accepts list for ergonomics, converts to AccessRightSet internally. -/
 def makeObjectCap (id : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
-  { target := .object id, rights }
+  { target := .object id, rights := AccessRightSet.ofList rights }
 
 end SeLe4n.Model

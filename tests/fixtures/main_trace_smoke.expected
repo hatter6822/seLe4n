@@ -1,7 +1,7 @@
 scheduled thread: some 1
-source cap rights before mint: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-source path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
-source path alias lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write, SeLe4n.Model.AccessRight.grant]
+source cap rights before mint: { bits := 7 }
+source path lookup rights: { bits := 7 }
+source path alias lookup rights: { bits := 7 }
 adapter timer success path value: 2
 adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
 adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
@@ -28,7 +28,7 @@ service start missing-backing branch: SeLe4n.Model.KernelError.backingObjectMiss
 service isolation api↔denied: true
 service isolation api↔db: false
 deep cnode radix fixture: some 12
-deep cnode path lookup rights: [SeLe4n.Model.AccessRight.read, SeLe4n.Model.AccessRight.write]
+deep cnode path lookup rights: { bits := 3 }
 deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
 deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
 large runnable queue length: 2
@@ -53,7 +53,7 @@ queued sender on endpoint
 endpoint receive #1 sender: 1
 notification wait #1 result: none
 notification wait #2 result: some { val := 123 }
-minted cap rights: [SeLe4n.Model.AccessRight.read]
+minted cap rights: { bits := 1 }
 H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
 cspaceCopy target matches: true
 dual-queue sender blocked on sendQ non-empty: true

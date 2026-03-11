@@ -308,7 +308,17 @@ instance : ToString Slot where
 
 end Slot
 
-/-- Endpoint or notification badge value. -/
+/-- WS-F5/D1a: Machine word width in bits. ARM64 target = 64.
+    Badge values and notification bitmasks are bounded to this width. -/
+def machineWordBits : Nat := 64
+
+/-- WS-F5/D1a: Maximum value representable in one machine word. -/
+def machineWordMax : Nat := 2 ^ machineWordBits
+
+/-- Endpoint or notification badge value.
+    WS-F5/D1a: Values are logically bounded to `machineWordBits` (64) bits.
+    The `valid` predicate asserts word-boundedness; `ofNatMasked` enforces it
+    at construction. -/
 structure Badge where
   val : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -325,6 +335,43 @@ namespace Badge
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (badge : Badge) : Nat := badge.val
+
+/-- WS-F5/D1a: A badge is valid if its value fits in one machine word. -/
+@[inline] def valid (badge : Badge) : Prop := badge.val < machineWordMax
+
+/-- WS-F5/D1a: Decidable validity check for runtime use. -/
+@[inline] def isValid (badge : Badge) : Bool := badge.val < machineWordMax
+
+/-- WS-F5/D1a: Construct a badge with word-size truncation, matching seL4's
+    silent word-truncation semantics on 64-bit platforms. -/
+@[inline] def ofNatMasked (n : Nat) : Badge := ⟨n % machineWordMax⟩
+
+/-- WS-F5/D1b: Bitwise OR combiner for badge accumulation. Masks the result
+    to machine word size, matching seL4 notification signal semantics. -/
+@[inline] def bor (a b : Badge) : Badge := ofNatMasked (a.val ||| b.val)
+
+/-- WS-F5/D1a: `ofNatMasked` always produces a valid badge. -/
+theorem ofNatMasked_valid (n : Nat) : (ofNatMasked n).valid := by
+  simp [ofNatMasked, valid, machineWordMax]
+  exact Nat.mod_lt n (by decide)
+
+/-- WS-F5/D1b: `bor` preserves validity — OR of two word-bounded values
+    is word-bounded. -/
+theorem bor_valid (a b : Badge) : (bor a b).valid :=
+  ofNatMasked_valid (a.val ||| b.val)
+
+/-- WS-F5/D1b: Badge OR is commutative. -/
+theorem bor_comm (a b : Badge) : bor a b = bor b a := by
+  simp [bor, ofNatMasked, Nat.or_comm]
+
+/-- WS-F5/D1b: Badge OR is idempotent. -/
+theorem bor_idempotent (a : Badge) : bor a a = ofNatMasked a.val := by
+  simp [bor, Nat.or_self]
+
+/-- WS-F5/D1a: `ofNat` with a small literal is valid (common test/fixture case). -/
+theorem ofNat_lt_valid {n : Nat} (h : n < machineWordMax) : (ofNat n).valid := by
+  simp [ofNat, valid, machineWordMax]
+  exact h
 
 instance : ToString Badge where
   toString badge := toString badge.toNat

@@ -44,7 +44,7 @@ private def baseState : SystemState :=
       slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object endpointId
-          rights := [.read, .write]
+          rights := AccessRightSet.ofList [.read, .write]
           badge := none
         })
       ]
@@ -58,7 +58,7 @@ private def baseState : SystemState :=
       slots := Std.HashMap.ofList [
         (⟨1⟩, {
           target := .object endpointId
-          rights := [.read]
+          rights := AccessRightSet.ofList [.read]
           badge := none
         })
       ]
@@ -209,7 +209,7 @@ private def f2UntypedState : SystemState :=
       slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object f2UntypedObjId
-          rights := [.read, .write, .grant]
+          rights := AccessRightSet.ofList [.read, .write, .grant]
           badge := none
         })
       ]
@@ -238,7 +238,7 @@ private def f2DeviceState : SystemState :=
       slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object f2DeviceUntypedId
-          rights := [.read, .write, .grant]
+          rights := AccessRightSet.ofList [.read, .write, .grant]
           badge := none
         })
       ]
@@ -319,12 +319,12 @@ private def runNegativeChecks : IO Unit := do
             slots := Std.HashMap.ofList [
               (strictRootSlot.slot, {
                 target := .object endpointId
-                rights := [.read, .write]
+                rights := AccessRightSet.ofList [.read, .write]
                 badge := none
               }),
               (strictChildSlotOk.slot, {
                 target := .object endpointId
-                rights := [.read]
+                rights := AccessRightSet.ofList [.read]
                 badge := none
               })
             ]
@@ -433,8 +433,9 @@ private def runNegativeChecks : IO Unit := do
   -- F-03 fix: Badge accumulation — assert badge value BEFORE final signal
   match (stN3.objects[notificationId]? : Option KernelObject) with
   | some (.notification ntfn) =>
-      if ntfn.pendingBadge = some (SeLe4n.Badge.ofNat 66) then
-        IO.println "positive check passed [notification badge precondition: badge=66 before accumulation]"
+      -- WS-F5/D1e: Badge stored via ofNatMasked; for 66 < 2^64, equivalent to ofNat 66
+      if ntfn.pendingBadge = some (SeLe4n.Badge.ofNatMasked 66) then
+        IO.println "positive check passed [notification badge precondition: badge=66 (word-bounded) before accumulation]"
       else
         throw <| IO.userError s!"notification badge precondition mismatch: expected some 66, got {reprStr ntfn.pendingBadge}"
   | _ => throw <| IO.userError "notification badge precondition expected notification object"
@@ -444,9 +445,10 @@ private def runNegativeChecks : IO Unit := do
 
   match (stN4.objects[notificationId]? : Option KernelObject) with
   | some (.notification ntfn) =>
-      let expected := SeLe4n.Badge.ofNat (66 ||| 5)
+      -- WS-F5/D1e: Use word-bounded Badge.bor for expected accumulation value
+      let expected := SeLe4n.Badge.bor (SeLe4n.Badge.ofNat 66) (SeLe4n.Badge.ofNat 5)
       if ntfn.pendingBadge = some expected then
-        IO.println "positive check passed [notification signal accumulates active badge via OR]"
+        IO.println "positive check passed [notification signal accumulates active badge via word-bounded OR]"
       else
         throw <| IO.userError "notification active badge accumulation mismatch"
   | _ => throw <| IO.userError "notification signal expected notification object"
@@ -467,6 +469,39 @@ private def runNegativeChecks : IO Unit := do
       else
         throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {reprStr tcb.ipcState}"
   | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
+
+  -- ==========================================================================
+  -- WS-F5/D1e: Badge > 2^64 word-truncation semantics
+  -- ==========================================================================
+
+  -- ofNatMasked silently truncates values exceeding the machine word
+  let oversized : Nat := 2 ^ 64 + 42  -- 18446744073709551658
+  let truncated := SeLe4n.Badge.ofNatMasked oversized
+  let expected := SeLe4n.Badge.ofNatMasked 42  -- 42 mod 2^64 = 42
+  if truncated = expected then
+    IO.println "positive check passed [badge > 2^64 truncated to word-bounded value via ofNatMasked]"
+  else
+    throw <| IO.userError s!"badge word-truncation failed: ofNatMasked({oversized}) = {reprStr truncated}, expected {reprStr expected}"
+
+  -- Truncated badge must satisfy validity predicate
+  if truncated.isValid then
+    IO.println "positive check passed [truncated badge passes isValid check]"
+  else
+    throw <| IO.userError "truncated badge should be valid but isValid returned false"
+
+  -- Un-truncated (raw) badge exceeding 2^64 is NOT valid
+  let rawOversized := SeLe4n.Badge.ofNat oversized
+  if rawOversized.isValid then
+    throw <| IO.userError "raw oversized badge should NOT be valid"
+  else
+    IO.println "positive check passed [raw badge > 2^64 correctly fails isValid]"
+
+  -- bor of two large badges is still word-bounded
+  let borResult := SeLe4n.Badge.bor (SeLe4n.Badge.ofNat (2 ^ 64 - 1)) (SeLe4n.Badge.ofNat 1)
+  if borResult.isValid then
+    IO.println "positive check passed [Badge.bor of near-max values produces valid result]"
+  else
+    throw <| IO.userError "Badge.bor should always produce valid results"
 
   expectError "notification wait wrong object type"
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
@@ -491,10 +526,10 @@ private def runNegativeChecks : IO Unit := do
   expectError "endpointSendDual rejects oversized caps"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
-        caps := #[{ target := .object ⟨1⟩, rights := [] },
-                  { target := .object ⟨2⟩, rights := [] },
-                  { target := .object ⟨3⟩, rights := [] },
-                  { target := .object ⟨4⟩, rights := [] }],
+        caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -508,10 +543,10 @@ private def runNegativeChecks : IO Unit := do
   expectError "endpointCall rejects oversized caps"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
-        caps := #[{ target := .object ⟨1⟩, rights := [] },
-                  { target := .object ⟨2⟩, rights := [] },
-                  { target := .object ⟨3⟩, rights := [] },
-                  { target := .object ⟨4⟩, rights := [] }],
+        caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -527,10 +562,10 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[{ target := .object ⟨1⟩, rights := [] },
-                  { target := .object ⟨2⟩, rights := [] },
-                  { target := .object ⟨3⟩, rights := [] },
-                  { target := .object ⟨4⟩, rights := [] }],
+        caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -546,10 +581,10 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[{ target := .object ⟨1⟩, rights := [] },
-                  { target := .object ⟨2⟩, rights := [] },
-                  { target := .object ⟨3⟩, rights := [] },
-                  { target := .object ⟨4⟩, rights := [] }],
+        caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] },
+                  { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -557,9 +592,9 @@ private def runNegativeChecks : IO Unit := do
   -- (may still fail due to other reasons like endpoint state)
   let boundaryMsg : SeLe4n.Model.IpcMessage := {
     registers := Array.mk (List.replicate 120 42),
-    caps := #[{ target := .object ⟨1⟩, rights := [] },
-              { target := .object ⟨2⟩, rights := [] },
-              { target := .object ⟨3⟩, rights := [] }],
+    caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
+              { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
+              { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }],
     badge := none }
   let boundaryResult := SeLe4n.Kernel.endpointSendDual endpointId
     (SeLe4n.ThreadId.ofNat 1) boundaryMsg baseState
@@ -1033,7 +1068,7 @@ private def runH2NegativeChecks : IO Unit := do
         slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object f2UntypedObjId
-            rights := [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant]
             badge := none
           })
         ]
@@ -1098,30 +1133,30 @@ private def runAuditCoverageChecks : IO Unit := do
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────
   -- NEG-MUTATE-01: mutate on non-existent CNode
   expectError "cspaceMutate non-existent CNode"
-    (SeLe4n.Kernel.cspaceMutate { cnode := ⟨999⟩, slot := ⟨0⟩ } [.read] none baseState)
+    (SeLe4n.Kernel.cspaceMutate { cnode := ⟨999⟩, slot := ⟨0⟩ } (AccessRightSet.ofList [.read]) none baseState)
     .objectNotFound
 
   -- NEG-MUTATE-02: mutate with rights not a subset (escalation attempt)
   expectError "cspaceMutate rights escalation denied"
-    (SeLe4n.Kernel.cspaceMutate slot0 [.read, .write, .grant] none baseState)
+    (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read, .write, .grant]) none baseState)
     .invalidCapability
 
   -- POS-MUTATE: attenuate rights successfully
   let (_, stMutated) ← expectOkState "cspaceMutate attenuate to read-only"
-    (SeLe4n.Kernel.cspaceMutate slot0 [.read] none baseState)
+    (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) none baseState)
   -- Verify rights were attenuated
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stMutated with
   | .ok (cap, _) =>
-      if cap.rights = [.read] then
+      if cap.rights = AccessRightSet.ofList [.read] then
         IO.println "positive check passed [cspaceMutate: rights attenuated to read-only]"
       else
-        throw <| IO.userError s!"cspaceMutate: expected [read], got {reprStr cap.rights}"
+        throw <| IO.userError s!"cspaceMutate: expected read-only, got {reprStr cap.rights}"
   | .error err =>
       throw <| IO.userError s!"cspaceMutate: lookup after mutate failed: {reprStr err}"
 
   -- POS-MUTATE-BADGE: mutate with badge override
   let (_, stBadgeMutate) ← expectOkState "cspaceMutate with badge override"
-    (SeLe4n.Kernel.cspaceMutate slot0 [.read] (some (SeLe4n.Badge.ofNat 77)) baseState)
+    (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) (some (SeLe4n.Badge.ofNat 77)) baseState)
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stBadgeMutate with
   | .ok (cap, _) =>
       if cap.badge = some ⟨77⟩ then
@@ -1146,8 +1181,8 @@ private def runWSH7Checks : IO Unit := do
   else
     throw <| IO.userError "WS-H7 VSpaceRoot BEq ignores insertion order: expected true"
 
-  let capA : Capability := { target := .object endpointId, rights := [.read], badge := none }
-  let capB : Capability := { target := .object notificationId, rights := [.read, .write], badge := none }
+  let capA : Capability := { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
       slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert ⟨1⟩ capA).insert ⟨2⟩ capB }
@@ -1423,8 +1458,8 @@ private def runWSH15Checks : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨50⟩
   let epId : SeLe4n.ObjId := ⟨40⟩
   let callerId : SeLe4n.ThreadId := ⟨1⟩
-  let writeCap : Capability := { target := .object epId, rights := [.write], badge := none }
-  let readOnlyCap : Capability := { target := .object epId, rights := [.read], badge := none }
+  let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
+  let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := Std.HashMap.ofList [
@@ -1577,12 +1612,12 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
-            rights := [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write]
             badge := none
           }),
           (⟨1⟩, {
             target := .object h16TargetId
-            rights := [.read]
+            rights := AccessRightSet.ofList [.read]
             badge := none
           })
         ]
@@ -1621,7 +1656,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
-            rights := [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write]
             badge := none
           })
         ]
@@ -1678,7 +1713,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16ExhaustedUntypedId
-            rights := [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant]
             badge := none
           })
         ]
@@ -1722,7 +1757,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16DeviceUntypedId
-            rights := [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant]
             badge := none
           })
         ]

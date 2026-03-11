@@ -111,7 +111,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
     | some (.cnode cn) =>
         cn.slots.toList.foldr (fun (slot, cap) inner =>
           let ok := match cap.badge with
-            | some _ => !cap.rights.isEmpty
+            | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
             | none => true
           (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok) :: inner) acc
     | _ => acc) []
