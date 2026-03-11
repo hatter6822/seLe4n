@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-cleanup-workstream-RaS1h",
-      "commit_sha": "240a3729c824d1fe008d653c62dddd851e95dfc6",
-      "tree_sha": "da5ede3151068441124834a9dc6b83d0a9e9b310",
-      "committed_at_utc": "2026-03-11T19:33:29+00:00"
+      "branch": "main",
+      "commit_sha": "f5438de5b352f868664f998ec9b91f47a337ab28",
+      "tree_sha": "e68e11e87ee892f35ff88849476bcce31e8f2ca6",
+      "committed_at_utc": "2026-03-11T15:55:27-04:00"
     }
   },
   "source_sync": {
