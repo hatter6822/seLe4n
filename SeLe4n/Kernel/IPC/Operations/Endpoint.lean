@@ -101,7 +101,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := nextState
               waitingThreads := rest
-              pendingBadge := none
+              pendingBadge := ⟨0⟩
             }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
@@ -110,14 +110,13 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | [] =>
+            -- WS-F5/CRIT-06: Word-sized OR-accumulation matching seL4 semantics
             let mergedBadge : SeLe4n.Badge :=
-              match ntfn.pendingBadge with
-              | some existing => SeLe4n.Badge.ofNat (existing.toNat ||| badge.toNat)
-              | none => badge
+              SeLe4n.Badge.ofNat (ntfn.pendingBadge.toNat ||| badge.toNat)
             let ntfn' : Notification := {
               state := .active
               waitingThreads := []
-              pendingBadge := some mergedBadge
+              pendingBadge := mergedBadge
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -140,16 +139,17 @@ def notificationWait
   fun st =>
     match st.objects[notificationId]? with
     | some (.notification ntfn) =>
-        match ntfn.pendingBadge with
-        | some badge =>
-            let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+        -- WS-F5/CRIT-06: Non-zero pendingBadge means active — consume and reset
+        if ntfn.pendingBadge.toNat != 0 then
+            let consumedBadge := ntfn.pendingBadge
+            let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
                 match storeTcbIpcState st' waiter .ready with
                 | .error e => .error e
-                | .ok st'' => .ok (some badge, st'')
-        | none =>
+                | .ok st'' => .ok (some consumedBadge, st'')
+        else
             -- WS-G7/F-P11: O(1) duplicate check via TCB ipcState instead of O(n) list membership
             match lookupTcb st waiter with
             | none => .error .objectNotFound
@@ -160,7 +160,7 @@ def notificationWait
                   let ntfn' : Notification := {
                     state := .waiting
                     waitingThreads := waiter :: ntfn.waitingThreads
-                    pendingBadge := none
+                    pendingBadge := ⟨0⟩
                   }
                   match storeObject notificationId (.notification ntfn') st with
                   | .error e => .error e
@@ -402,12 +402,14 @@ theorem notificationWait_error_alreadyWaiting
     (ntfn : Notification)
     (tcb : TCB)
     (hObj : st.objects[notifId]? = some (.notification ntfn))
-    (hNoBadge : ntfn.pendingBadge = none)
+    (hNoBadge : ntfn.pendingBadge.toNat = 0)
     (hTcb : lookupTcb st waiter = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
     notificationWait notifId waiter st = .error .alreadyWaiting := by
   unfold notificationWait
-  simp [hObj, hNoBadge, hTcb, hBlocked]
+  simp only [hObj]
+  have hNe : (ntfn.pendingBadge.toNat != 0) = false := by simp [hNoBadge]
+  simp [hNe, hTcb, hBlocked]
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
 has an empty waiting list. -/
@@ -426,10 +428,31 @@ theorem notificationWait_badge_path_notification
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | none =>
-        simp only [hBadge] at hStep
-        -- WS-G7: lookupTcb match
+      -- Split on the if-then-else (pendingBadge.toNat != 0)
+      split at hStep
+      · -- Badge-consumed path: pendingBadge.toNat != 0
+        let newNtfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }
+        revert hStep
+        cases hStore : storeObject notifId (.notification newNtfn) st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          intro hStep
+          revert hStep
+          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+          | error e => simp
+          | ok st2 =>
+            intro hStep
+            have hParts : ntfn.pendingBadge = badge ∧ st2 = st' := by simp at hStep; exact hStep
+            obtain ⟨_, hStEq⟩ := hParts
+            subst hStEq
+            have hNtfnStored : pair.2.objects[notifId]? = some (.notification newNtfn) :=
+              storeObject_objects_eq st pair.2 notifId (.notification newNtfn) hStore
+            have hNtfnPreserved : st2.objects[notifId]? = some (.notification newNtfn) :=
+              storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hTcb
+            exact ⟨newNtfn, hNtfnPreserved, rfl⟩
+      · -- Wait path: pendingBadge.toNat = 0, returns none — contradicts (some badge)
+        exfalso
         cases hLookup : lookupTcb st waiter with
         | none => simp [hLookup] at hStep
         | some tcb =>
@@ -441,35 +464,9 @@ theorem notificationWait_badge_path_notification
             | error e => simp
             | ok pair =>
               simp only []
-              intro hStep
-              revert hStep
               cases hTcb : storeTcbIpcState pair.2 waiter _ with
               | error e => simp
-              | ok st2 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨h, _⟩
-                exact absurd h (by simp)
-      | some b =>
-        simp only [hBadge] at hStep
-        let newNtfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
-        revert hStep
-        cases hStore : storeObject notifId (.notification newNtfn) st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          intro hStep
-          revert hStep
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hStEq⟩
-            subst hStEq
-            have hNtfnStored : pair.2.objects[notifId]? = some (.notification newNtfn) :=
-              storeObject_objects_eq st pair.2 notifId (.notification newNtfn) hStore
-            have hNtfnPreserved : st2.objects[notifId]? = some (.notification newNtfn) :=
-              storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hTcb
-            exact ⟨newNtfn, hNtfnPreserved, rfl⟩
+              | ok st2 => simp
 
 /-- WS-G7/F-P11: Decomposition: on the wait path, the post-state notification has the
 waiter prepended. The waiter's TCB existed and was not already blocked on this
@@ -481,7 +478,7 @@ theorem notificationWait_wait_path_notification
     (hStep : notificationWait notifId waiter st = .ok (none, st')) :
     ∃ ntfn ntfn',
       st.objects[notifId]? = some (.notification ntfn) ∧
-      ntfn.pendingBadge = none ∧
+      ntfn.pendingBadge.toNat = 0 ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads = waiter :: ntfn.waitingThreads := by
   unfold notificationWait at hStep
@@ -492,34 +489,31 @@ theorem notificationWait_wait_path_notification
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some b =>
-        simp only [hBadge] at hStep
+      -- Split on the if (pendingBadge.toNat != 0)
+      split at hStep
+      · -- Badge-consumed path: returns (some consumedBadge) — contradicts expected (none)
+        exfalso
         revert hStep
-        cases hStore : storeObject notifId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+        cases hStore : storeObject notifId (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
-          intro hStep
-          revert hStep
           cases hTcb : storeTcbIpcState pair.2 waiter .ready with
           | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨h, _⟩
-            exact absurd h (by simp)
-      | none =>
-        simp only [hBadge] at hStep
+          | ok st2 => simp
+      · -- Wait path: pendingBadge.toNat = 0
+        rename_i hInactive
+        have hBadgeZero : ntfn.pendingBadge.toNat = 0 := by
+          simp [bne] at hInactive; exact hInactive
         -- WS-G7: match on lookupTcb
         cases hLookup : lookupTcb st waiter with
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
           -- ipcState check
-          by_cases hBlocked : tcb.ipcState = .blockedOnNotification notifId
-          · simp [hBlocked] at hStep
-          · simp only [hBlocked, ite_false] at hStep
-            let ntfn' : Notification := { state := .waiting, waitingThreads := waiter :: ntfn.waitingThreads, pendingBadge := none }
+          split at hStep
+          · simp at hStep
+          · let ntfn' : Notification := { state := .waiting, waitingThreads := waiter :: ntfn.waitingThreads, pendingBadge := ⟨0⟩ }
             revert hStep
             cases hStore : storeObject notifId (.notification ntfn') st with
             | error e => simp
@@ -530,15 +524,15 @@ theorem notificationWait_wait_path_notification
               cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
               | error e => simp
               | ok st2 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hStEq⟩
+                intro hStEq
+                have hEq : removeRunnable st2 waiter = st' := by simp at hStEq; exact hStEq
                 have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
                 have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
                   storeObject_objects_eq st pair.2 notifId (.notification ntfn') hStore
                 have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
                   storeTcbIpcState_preserves_notification pair.2 st2 waiter
                     (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hTcb
-                refine ⟨ntfn, ntfn', rfl, hBadge, ?_, rfl⟩
-                rw [← hStEq, hRemObj]
+                refine ⟨ntfn, ntfn', rfl, hBadgeZero, ?_, rfl⟩
+                rw [← hEq, hRemObj]
                 exact hNtfnPreserved
 

@@ -205,7 +205,7 @@ theorem serviceRestart_preserves_lowEquivalent
 preserves low-equivalence. -/
 theorem cspaceMintChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
-    (src dst : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (src dst : CSpaceAddr) (rights : AccessRights) (badge : Option SeLe4n.Badge)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)

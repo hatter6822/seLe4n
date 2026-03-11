@@ -39,29 +39,21 @@ Four major portfolios are completed:
 - **WS-E, WS-D, WS-C, WS-B** (v0.9.0–v0.11.6): All earlier audit portfolios
   completed — test/CI hardening, proof quality, kernel design, model structure.
 
-## Immediate next: WS-H16 and WS-F5..F8
+## Immediate next: WS-F6..F8
 
-### Remaining WS-H workstreams — v0.12.15 audit remediation
+### Completed WS-H and WS-F5 workstreams
 
-WS-H1..H15 are all completed. The remaining workstream addresses Phase 5:
+WS-H1..H16 are all completed. WS-F5 (Model Fidelity) completed in v0.14.9:
+badge bitmask with OR-accumulation, `AccessRights` struct, thread management
+operations (`setPriority`, `suspendThread`, `resumeThread`).
 
-| ID | Focus | Priority | Status |
-|----|-------|----------|--------|
-| **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **COMPLETED** |
-| **WS-H15** | Platform & API hardening: InterruptBoundaryContract decidability, RPi5 contract hardening, syscall capability wrappers, AdapterProofHooks instantiation | Low | **COMPLETED** |
-| **WS-H16** | Testing and documentation expansion | Low | Pending |
-
-See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
-for the full execution plan.
-
-### WS-F5..F8 — Remaining v0.12.2 audit remediation
+### WS-F6..F8 — Remaining v0.12.2 audit remediation
 
 The remaining WS-F workstreams address medium/low-priority findings from the
 v0.12.2 audits:
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |

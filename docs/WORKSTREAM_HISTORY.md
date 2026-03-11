@@ -19,15 +19,15 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 WS-H1..H16 are all completed. No remaining WS-H workstreams.
 
-### Remaining WS-F workstreams (F5-F8)
+### Remaining WS-F workstreams (F6-F8)
 
-The critical WS-F workstreams (F1-F4) are all completed. The remaining
-medium/low-priority workstreams close model fidelity and testing gaps identified
-by the [v0.12.2 audits](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
+The critical WS-F workstreams (F1-F4) and model fidelity (F5) are all
+completed. The remaining medium/low-priority workstreams close invariant
+quality and testing gaps identified by the
+[v0.12.2 audits](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md):
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
@@ -55,6 +55,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-F5** | v0.14.9 | Model fidelity: `Notification.pendingBadge` word-sized bitmask with OR-accumulation (D1), `AccessRights` order-independent struct replacing `List AccessRight` (D4), `setPriority`/`suspendThread`/`resumeThread` operations (D5). Per-thread registers (D2) and multi-level CSpace (D3) confirmed pre-existing. All invariant proofs updated with zero sorry. | F5 |
 | **WS-H16** | v0.14.8 | Testing, documentation & cleanup: 10 lifecycle negative tests (M-18), 13 semantic Tier 3 assertions (A-43), `objectIndexLive` liveness invariant with preservation proof (A-13), `runQueueThreadPriorityConsistent` predicate with default theorem (A-19), O(1) membership audit confirmation (A-18), documentation metrics sync (M-21/A-45). Closes M-18/A-43/A-13/A-18/A-19/M-21/A-45 | H16 |
 | **WS-H15** | v0.14.7 | Platform & API hardening: InterruptBoundaryContract decidability + consistency theorems (H15a), RPi5 MMIO disjointness/boot contract hardening (H15b), syscall capability-checking wrappers with 3 soundness theorems and 13 `api*` entry points (H15c), generic timer-invariant preservation + concrete `AdapterProofHooks` for Sim and RPi5 restrictive contracts with 6 end-to-end theorems (H15d), 31 Tier 3 anchors + 5 trace scenarios + 6 negative tests (H15e). Closes A-33/A-41/A-42/M-13 | H15a-e |
 | **WS-H14** | v0.14.6 | Type safety & Prelude foundations: `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal (type-safety enforcement), sentinel predicate completion. Closes A-01/A-02/A-03/A-04/A-06/M-09/M-10/M-11 | H14 |

@@ -53,7 +53,7 @@ private def publicServiceEntry : ServiceGraphEntry :=
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
-    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := ⟨7⟩ })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
     |>.withRunnable [⟨1⟩, ⟨2⟩]
@@ -81,7 +81,7 @@ private def altState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
     -- Secret object differs: different notification state and no pending badge
-    |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
     |>.withRunnable [⟨1⟩, ⟨2⟩]
@@ -269,7 +269,7 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := [.read, .write], badge := none })]) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := { read := true, write := true }, badge := none })]) })
       |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList []) })
       |>.build)
 
@@ -282,8 +282,8 @@ def runInformationFlowChecks : IO Unit := do
   let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := ⟨0⟩ }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := ⟨0⟩ }
 
-  let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr [.read] none mintState
-  let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr [.read] none mintState
+  let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr { read := true } none mintState
+  let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr { read := true } none mintState
   expect "same-domain cspaceMintChecked matches unchecked mint"
     (match checkedMint, uncheckedMint with
       | .ok _, .ok _ => true
@@ -297,7 +297,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr [.read] none mintState
+  let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr { read := true } none mintState
   expect "secret-to-public cspaceMintChecked returns flowDenied"
     (match deniedMint with
       | .error .flowDenied => true
@@ -450,7 +450,7 @@ def runInformationFlowChecks : IO Unit := do
   let irqState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})
-      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := ⟨7⟩ })
       |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.build)
@@ -509,11 +509,11 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
-      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ })  -- secret target
       |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (⟨0⟩, { target := .object ⟨1⟩, rights := [.read], badge := none })
-          , (⟨1⟩, { target := .object ⟨2⟩, rights := [.read, .write], badge := none })
-          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := [.read], badge := none })
+          [ (⟨0⟩, { target := .object ⟨1⟩, rights := { read := true }, badge := none })
+          , (⟨1⟩, { target := .object ⟨2⟩, rights := { read := true, write := true }, badge := none })
+          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := { read := true }, badge := none })
           ]) })
       |>.build)
 
@@ -565,10 +565,10 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeSlotState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
-      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ })  -- secret target
       |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
-          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := [.read], badge := none })
-          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := [.read], badge := none })
+          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := { read := true }, badge := none })
+          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := { read := true }, badge := none })
           ]) })
       |>.build)
 
@@ -665,7 +665,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨30⟩ (.notification {
           state := .idle
-          pendingBadge := none
+          pendingBadge := ⟨0⟩
           waitingThreads := [] })
       |>.build)
 
@@ -704,7 +704,7 @@ def runInformationFlowChecks : IO Unit := do
   let copySrcCNode := SeLe4n.Model.CNode.empty
   let copySrcCNodeWithCap := copySrcCNode.insert ⟨0⟩ {
     target := .object ⟨99⟩
-    rights := [.read]
+    rights := { read := true }
     badge := none }
   let copyState :=
     (BootstrapBuilder.empty

@@ -109,7 +109,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
@@ -412,7 +412,7 @@ Composes cspaceMint (already proven) + CDT edge addition. -/
 theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
@@ -457,7 +457,7 @@ slotsUnique) + storeObject + storeCapabilityRef. -/
 theorem cspaceMutate_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hSlotCapacity : ∀ cn cap, st.objects[addr.cnode]? = some (.cnode cn) →
@@ -475,7 +475,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup
       subst st1
-      by_cases hRights : rightsSubset rights cap.rights
+      by_cases hRights : rights.subset cap.rights
       · simp only [hRights, ite_true]
         cases hPre : st.objects[addr.cnode]? with
         | none => simp
@@ -525,7 +525,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
     | ok pair =>
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup2; subst st1
-      by_cases hRights : rightsSubset rights cap.rights
+      by_cases hRights : rights.subset cap.rights
       · simp only [hLookup2, hRights, ite_true] at hStep
         cases hPre : st.objects[addr.cnode]? with
         | none => simp_all

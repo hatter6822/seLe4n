@@ -257,16 +257,14 @@ theorem cspaceRevoke_preserves_source
 
 private theorem mintDerivedCap_attenuates
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     capAttenuates parent child := by
-  by_cases hSubset : rightsSubset rights parent.rights = true
+  by_cases hSubset : rights.subset parent.rights = true
   · simp [mintDerivedCap, hSubset] at hMint
     cases hMint
-    constructor
-    · rfl
-    · exact rightsSubset_sound rights parent.rights hSubset
+    exact ⟨rfl, hSubset⟩
   · simp [mintDerivedCap, hSubset] at hMint
 
 -- ============================================================================
@@ -281,12 +279,11 @@ constructing the child capability and setting `child.target = parent.target`
 unconditionally. -/
 theorem mintDerivedCap_rights_attenuated_with_badge_override
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
-    ∀ right, right ∈ child.rights → right ∈ parent.rights := by
-  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
-  exact hAtt.2
+    child.rights.subset parent.rights = true := by
+  exact (mintDerivedCap_attenuates parent child rights badge hMint).2
 
 /-- Badge override preserves target identity: a minted capability always names the
 same target as the parent, regardless of the badge supplied. Badge override cannot
@@ -297,7 +294,7 @@ This is the core F-06 safety property: badge is metadata that affects notificati
 signaling semantics, not capability authority scope. -/
 theorem mintDerivedCap_target_preserved_with_badge_override
     (parent child : Capability)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.target = parent.target := by
@@ -307,7 +304,7 @@ theorem mintDerivedCap_target_preserved_with_badge_override
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
@@ -341,14 +338,14 @@ badge override in `cspaceMint` cannot escalate privilege. -/
 theorem cspaceMint_badge_override_safe
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
       cspaceLookupSlot src st = .ok (parent, st) ∧
       cspaceLookupSlot dst st' = .ok (child, st') ∧
       child.target = parent.target ∧
-      (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
+      child.rights.subset parent.rights = true := by
   rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
     ⟨parent, child, hSrc, hDst, hAtt⟩
   exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
@@ -360,7 +357,7 @@ theorem cspaceMint_badge_override_safe
 /-- (H-03) `mintDerivedCap` propagates the explicitly provided badge to the
 derived capability when rights are sufficient. -/
 theorem mintDerivedCap_badge_propagated
-    (parent : Capability) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+    (parent : Capability) (rights : AccessRights) (badge : Option SeLe4n.Badge)
     (child : Capability)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.badge = badge := by
@@ -374,7 +371,7 @@ This is the operation-level badge consistency witness. -/
 theorem cspaceMint_child_badge_preserved
     (st st' : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : SeLe4n.Badge)
     (hStep : cspaceMint src dst rights (some badge) st = .ok ((), st')) :
     ∃ child,
@@ -395,7 +392,7 @@ theorem cspaceMint_child_badge_preserved
           have hDst := cspaceInsertSlot_lookup_eq st st' dst child hStep
           refine ⟨child, hDst, ?_⟩
           unfold mintDerivedCap at hMint
-          by_cases hRights : rightsSubset rights parent.rights
+          by_cases hRights : rights.subset parent.rights
           · simp [hRights] at hMint; cases hMint; rfl
           · simp [hRights] at hMint
 
@@ -408,14 +405,15 @@ theorem notificationSignal_badge_stored_fresh
     (ntfn : Notification)
     (hObj : st.objects[notifId]? = some (.notification ntfn))
     (hNoWaiters : ntfn.waitingThreads = [])
-    (hNoPending : ntfn.pendingBadge = none)
+    (_hNoPending : ntfn.pendingBadge.toNat = 0)
     (hSignal : notificationSignal notifId badge st = .ok ((), st')) :
     ∃ ntfn',
       st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.pendingBadge = some badge := by
+      ntfn'.pendingBadge = SeLe4n.Badge.ofNat (ntfn.pendingBadge.toNat ||| badge.toNat) := by
   unfold notificationSignal at hSignal
-  simp [hObj, hNoWaiters, hNoPending] at hSignal
-  exact ⟨{ state := .active, waitingThreads := [], pendingBadge := some badge },
+  simp [hObj, hNoWaiters] at hSignal
+  let mergedBadge := SeLe4n.Badge.ofNat (ntfn.pendingBadge.toNat ||| badge.toNat)
+  exact ⟨{ state := .active, waitingThreads := [], pendingBadge := mergedBadge },
     by rw [← storeObject_objects_eq st st' notifId _ hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending
@@ -428,7 +426,7 @@ theorem notificationWait_recovers_pending_badge
     (hWait : notificationWait notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn,
       st.objects[notifId]? = some (.notification ntfn) ∧
-      ntfn.pendingBadge = some badge := by
+      ntfn.pendingBadge = badge := by
   unfold notificationWait at hWait
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hWait
@@ -437,46 +435,40 @@ theorem notificationWait_recovers_pending_badge
       | notification ntfn =>
           refine ⟨ntfn, rfl, ?_⟩
           simp only [hObj] at hWait
-          cases hPending : ntfn.pendingBadge with
-          | none =>
-              exfalso; simp only [hPending] at hWait
-              -- WS-G7: match on lookupTcb
-              cases hLk : lookupTcb st waiter with
-              | none => simp [hLk] at hWait
-              | some tcb =>
-                simp only [hLk] at hWait
-                split at hWait
-                · simp at hWait
-                · revert hWait
-                  cases hStore : storeObject notifId _ st with
-                  | error e => simp
-                  | ok pair =>
-                      simp only []
-                      intro hWait
-                      revert hWait
-                      cases storeTcbIpcState pair.2 waiter _ with
-                      | error e => simp
-                      | ok st2 =>
-                          simp only [Except.ok.injEq, Prod.mk.injEq]
-                          intro ⟨h, _⟩
-                          exact absurd h (by simp)
-          | some b =>
-              simp only [hPending] at hWait
-              let newNtfn : Notification :=
-                { state := .idle, waitingThreads := [], pendingBadge := none }
-              revert hWait
-              cases hStore : storeObject notifId (.notification newNtfn) st with
-              | error e => simp
-              | ok pair =>
-                  simp only []
-                  intro hWait
-                  revert hWait
-                  cases storeTcbIpcState pair.2 waiter .ready with
-                  | error e => simp
-                  | ok st2 =>
-                      simp only [Except.ok.injEq, Prod.mk.injEq]
-                      intro ⟨hBadgeEq, _⟩
-                      exact hBadgeEq
+          -- WS-F5: split on if (pendingBadge.toNat != 0) instead of by_cases
+          split at hWait
+          · -- Active path: badge consumed
+            revert hWait
+            cases hStore : storeObject notifId
+                (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
+            | error e => simp
+            | ok pair =>
+                simp only []
+                cases storeTcbIpcState pair.2 waiter .ready with
+                | error e => simp
+                | ok st2 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨hBadgeEq, _⟩
+                    exact Option.some.inj hBadgeEq
+          · -- Idle path: blocks and returns none — contradicts (some badge)
+            exfalso
+            cases hLk : lookupTcb st waiter with
+            | none => simp [hLk] at hWait
+            | some tcb =>
+              simp only [hLk] at hWait
+              split at hWait
+              · cases hWait
+              · revert hWait
+                cases hStore : storeObject notifId _ st with
+                | error e => simp
+                | ok pair =>
+                    simp only []
+                    cases storeTcbIpcState pair.2 waiter _ with
+                    | error e => simp
+                    | ok st2 =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨h, _⟩
+                        cases h
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hWait
 
 /-- (H-03) End-to-end badge routing consistency.
@@ -488,7 +480,7 @@ recovered badge is exactly `b`. This closes the H-03 badge-override safety gap. 
 theorem badge_notification_routing_consistent
     (st₁ st₂ st₃ st₄ : SystemState)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : SeLe4n.Badge)
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
@@ -496,11 +488,11 @@ theorem badge_notification_routing_consistent
     (_hMint : cspaceMint src dst rights (some badge) st₁ = .ok ((), st₂))
     (hNtfnObj : st₂.objects[notifId]? = some (.notification ntfn))
     (hNoWaiters : ntfn.waitingThreads = [])
-    (hNoPending : ntfn.pendingBadge = none)
+    (hNoPending : ntfn.pendingBadge.toNat = 0)
     (hSignal : notificationSignal notifId badge st₂ = .ok ((), st₃))
     (recoveredBadge : SeLe4n.Badge)
     (hWait : notificationWait notifId waiter st₃ = .ok (some recoveredBadge, st₄)) :
-    recoveredBadge = badge := by
+    recoveredBadge = SeLe4n.Badge.ofNat (ntfn.pendingBadge.toNat ||| badge.toNat) := by
   rcases notificationSignal_badge_stored_fresh st₂ st₃ notifId badge ntfn
     hNtfnObj hNoWaiters hNoPending hSignal with ⟨ntfn', hNtfn'Obj, hNtfn'Badge⟩
   rcases notificationWait_recovers_pending_badge st₃ st₄ notifId waiter recoveredBadge hWait
@@ -508,7 +500,7 @@ theorem badge_notification_routing_consistent
   rw [hNtfn'Obj] at hNtfn''Obj
   cases hNtfn''Obj
   rw [hNtfn'Badge] at hNtfn''Badge
-  exact (Option.some.inj hNtfn''Badge).symm
+  exact hNtfn''Badge.symm
 
 /-- (H-03) Badge OR-merge is idempotent — signaling the same badge twice yields the same
 pending badge as signaling it once (since `b ||| b = b` for bitwise OR). -/

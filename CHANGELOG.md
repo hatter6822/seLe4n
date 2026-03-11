@@ -1,3 +1,34 @@
+## [0.14.9] - 2026-03-11
+
+### WS-F5: Model Fidelity
+
+- **D1 (Notification badge):** Changed `Notification.pendingBadge` from
+  `Option Badge` to `Badge` (word-sized bitmask). `notificationSignal` now
+  uses bitwise OR accumulation (`pendingBadge.toNat ||| badge.toNat`)
+  matching seL4 semantics. `notificationWait` uses `pendingBadge.toNat != 0`
+  guard instead of `Option` pattern matching. All preservation proofs
+  (`notificationWait_preserves_ipcInvariant`,
+  `notificationSignal_preserves_ipcInvariant`, etc.) updated with zero sorry.
+  `notificationSignal_preserves_ipcInvariant` now requires `hBadgeNonZero :
+  badge.toNat ≠ 0` precondition matching seL4's nonzero capability badge
+  guarantee.
+- **D2 (Per-thread registers):** Confirmed already implemented in WS-H12c
+  (`TCB.registerContext`).
+- **D3 (Multi-level CSpace):** Confirmed already implemented in WS-H13
+  (guard/radix bits in `CNode`, recursive resolution in
+  `cspaceLookupSlot`).
+- **D4 (AccessRights):** Replaced `List AccessRight` with `AccessRights`
+  structure (5 Boolean fields: `read`, `write`, `grant`, `grantReply`,
+  `retype`). Added `subset`, `intersect`, `union`, `isEmpty`, `ofList`,
+  `toList` operations with `subset_refl` and `subset_sound` theorems.
+  Updated `capAttenuates`, `mintDerivedCap`, `cspaceMint`, `cspaceMutate`,
+  and all invariant proofs across ~17 files.
+- **D5 (Thread management):** Added `setPriority`, `suspendThread`,
+  `resumeThread` to `Scheduler/Operations/Core.lean`. `setPriority`
+  re-inserts at new priority if queued; `suspendThread` clears blocking
+  state and deschedules current thread; `resumeThread` enqueues at thread's
+  priority. Trace harness exercises all three operations.
+
 ## [0.14.8] - 2026-03-10
 
 ### WS-H16: Testing, Documentation & Cleanup

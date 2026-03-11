@@ -50,7 +50,7 @@ inductive NonInterferenceStep
       (hProjection : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
   | cspaceMint
-      (src dst : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+      (src dst : CSpaceAddr) (rights : AccessRights) (badge : Option SeLe4n.Badge)
       (hSrcHigh : objectObservable ctx observer src.cnode = false)
       (hDstHigh : objectObservable ctx observer dst.cnode = false)
       (hStep : cspaceMint src dst rights badge st = .ok ((), st'))
@@ -199,7 +199,7 @@ inductive NonInterferenceStep
       (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     : NonInterferenceStep ctx observer st st'
   | cspaceMutateHigh
-      (addr : CSpaceAddr) (rights : List AccessRight) (badge : Option SeLe4n.Badge)
+      (addr : CSpaceAddr) (rights : AccessRights) (badge : Option SeLe4n.Badge)
       (hAddrHigh : objectObservable ctx observer addr.cnode = false)
       (hStep : cspaceMutate addr rights badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'

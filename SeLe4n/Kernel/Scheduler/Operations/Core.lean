@@ -388,3 +388,70 @@ def scheduleDomain : Kernel Unit :=
         domainTimeRemaining := st.scheduler.domainTimeRemaining - 1
       }
       .ok ((), { st with scheduler := sched' })
+
+-- ============================================================================
+-- WS-F5/D5: Thread management operations
+-- setPriority, suspendThread, resumeThread
+-- ============================================================================
+
+/-- WS-F5/D5: Set the scheduling priority of a thread.
+Mirrors seL4's `tcbSchedDequeue` + priority update + `tcbSchedEnqueue`.
+If the thread is in the run queue, it is removed and re-inserted at the new
+priority. The current thread's priority can also be changed, but it remains
+current (seL4 reschedules on priority change — we defer the actual reschedule
+to the next `schedule` call for determinism). -/
+def setPriority (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) : Kernel Unit :=
+  fun st =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+        let tcb' := { tcb with priority := newPrio }
+        let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+        -- Re-insert in run queue at new priority if thread was queued
+        if tid ∈ st'.scheduler.runQueue then
+          let rq' := (st'.scheduler.runQueue.remove tid).insert tid newPrio
+          .ok ((), { st' with scheduler := { st'.scheduler with runQueue := rq' } })
+        else
+          .ok ((), st')
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-F5/D5: Suspend a thread.
+Mirrors seL4's `suspend`: removes the thread from the run queue and sets its
+ipcState to `.ready` (clearing any blocking state). If the thread is the
+current thread, it is descheduled (current set to none) and `schedule` is
+called to pick a new thread. -/
+def suspendThread (tid : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+        -- Clear any blocking state
+        let tcb' := { tcb with ipcState := .ready }
+        let st1 := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+        -- Remove from run queue
+        let st2 := { st1 with scheduler := { st1.scheduler with
+            runQueue := st1.scheduler.runQueue.remove tid } }
+        -- If suspending current thread, deschedule and reschedule
+        if st2.scheduler.current = some tid then
+          let st3 := { st2 with scheduler := { st2.scheduler with current := none } }
+          schedule st3
+        else
+          .ok ((), st2)
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+
+/-- WS-F5/D5: Resume a thread.
+Mirrors seL4's `resume`: makes the thread runnable by adding it to the run
+queue (if not already present). Does not reschedule — the resumed thread will
+be considered at the next scheduling point. -/
+def resumeThread (tid : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+        if tid ∈ st.scheduler.runQueue then
+          -- Already runnable, no-op
+          .ok ((), st)
+        else
+          let rq' := st.scheduler.runQueue.insert tid tcb.priority
+          .ok ((), { st with scheduler := { st.scheduler with runQueue := rq' } })
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound

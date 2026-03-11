@@ -246,7 +246,7 @@ def apiEndpointReply (gate : SyscallGate) (targetId : SeLe4n.ThreadId) (msg : Ip
 
 /-- WS-H15c/A-42: Capability-gated CSpace mint. Requires `.grant` right on source. -/
 def apiCspaceMint (gate : SyscallGate) (src dest : CSpaceAddr)
-    (newRights : List AccessRight) (newBadge : Option SeLe4n.Badge) : Kernel Unit :=
+    (newRights : AccessRights) (newBadge : Option SeLe4n.Badge) : Kernel Unit :=
   syscallInvoke { gate with requiredRight := .grant } fun _ =>
     cspaceMint src dest newRights newBadge
 

@@ -38,6 +38,7 @@ theorem notificationSignal_preserves_ipcInvariant
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariant st)
+    (hBadgeNonZero : badge.toNat ≠ 0)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold notificationSignal at hStep
@@ -54,7 +55,7 @@ theorem notificationSignal_preserves_ipcInvariant
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -71,7 +72,12 @@ theorem notificationSignal_preserves_ipcInvariant
         -- Merge path: storeObject only
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_ipcInvariant st st' notificationId
-          _ hInv hStep (notificationSignal_result_wellFormed_merge _)
+          _ hInv hStep (notificationSignal_result_wellFormed_merge _ (by
+            simp only [SeLe4n.Badge.toNat, SeLe4n.Badge.ofNat]
+            intro h; apply hBadgeNonZero; show badge.val = 0
+            have : (ntfn.pendingBadge.val ||| badge.val) ||| badge.val = 0 ||| badge.val := by rw [h]
+            rw [Nat.or_assoc, Nat.or_self, Nat.zero_or] at this
+            rw [← this, h]))
 
 /-- WS-F4: notificationSignal preserves schedulerInvariantBundle.
 Wake path: storeObject + storeTcbIpcState (scheduler unchanged) + ensureRunnable.
@@ -98,7 +104,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -186,13 +192,12 @@ theorem notificationWait_preserves_ipcInvariant
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-        -- Badge-consume path: storeObject → storeTcbIpcState
-        simp only [hBadge] at hStep
+      -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+      split at hStep
+      · -- Badge-consume path: storeObject → storeTcbIpcState
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+            (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -204,9 +209,7 @@ theorem notificationWait_preserves_ipcInvariant
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
             exact storeTcbIpcState_preserves_ipcInvariant pair.2 st'' waiter .ready hInv1 hTcb
-      | none =>
-        -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
-        simp only [hBadge] at hStep
+      · -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
         -- WS-G7: match on lookupTcb
         cases hLk : lookupTcb st waiter with
         | none => simp [hLk] at hStep
@@ -218,7 +221,7 @@ theorem notificationWait_preserves_ipcInvariant
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := waiter :: ntfn.waitingThreads,
-                                 pendingBadge := none }) st with
+                                 pendingBadge := ⟨0⟩ }) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -251,13 +254,12 @@ theorem notificationWait_preserves_schedulerInvariantBundle
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-        -- Badge-consume path: storeObject → storeTcbIpcState (scheduler unchanged)
-        simp only [hBadge] at hStep
+      -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+      split at hStep
+      · -- Badge-consume path: storeObject → storeTcbIpcState (scheduler unchanged)
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+            (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -294,9 +296,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                   have h := storeTcbIpcState_tcb_exists_at_target pair.2 st'' waiter .ready hTcb hTargetTcb
                   rwa [← hNeTid] at h
                 · exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter .ready x.toObjId hNeTid hTcb) ▸ hTcb1⟩
-      | none =>
-        -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
-        simp only [hBadge] at hStep
+      · -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
         -- WS-G7: match on lookupTcb
         cases hLk : lookupTcb st waiter with
         | none => simp [hLk] at hStep
@@ -308,7 +308,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := waiter :: ntfn.waitingThreads,
-                                 pendingBadge := none }) st with
+                                 pendingBadge := ⟨0⟩ }) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -377,7 +377,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -518,12 +518,12 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-        simp only [hBadge] at hStep
+      -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+      split at hStep
+      · -- Badge-consume path
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+            (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -612,9 +612,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                 intro hRun'
                 exact hBlockReply tid tcb' eid rt hTcbPre hIpcState'
                   (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-      | none =>
-        -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
-        simp only [hBadge] at hStep
+      · -- WS-G7: Wait path: lookupTcb → ipcState check → storeObject → storeTcbIpcState → removeRunnable
         -- WS-G7: match on lookupTcb
         cases hLk : lookupTcb st waiter with
         | none => simp [hLk] at hStep
@@ -626,7 +624,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := waiter :: ntfn.waitingThreads,
-                                 pendingBadge := none }) st with
+                                 pendingBadge := ⟨0⟩ }) st with
             | error e => simp
             | ok pair =>
               simp only []

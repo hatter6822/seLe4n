@@ -474,7 +474,7 @@ theorem cspaceMint_preserves_lowEquivalent
     (ctx : LabelingContext)
     (observer : IfObserver)
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
@@ -776,11 +776,11 @@ theorem notificationWait_projection_preserved
     cases obj with
     | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
-      simp [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-        -- Consume pending badge: storeObject + storeTcbIpcState
-        simp [hBadge] at hStep; revert hStep
+      simp only [hObj] at hStep
+      -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+      split at hStep
+      · -- Consume pending badge: storeObject + storeTcbIpcState
+        revert hStep
         cases hStore : storeObject notificationId _ st with
         | error e => simp
         | ok pair =>
@@ -791,17 +791,15 @@ theorem notificationWait_projection_preserved
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             rw [storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
-      | none =>
-        -- WS-G7: Block path: lookupTcb → ipcState check → storeObject + storeTcbIpcState + removeRunnable
-        simp [hBadge] at hStep
+      · -- WS-G7: Block path: lookupTcb → ipcState check → storeObject + storeTcbIpcState + removeRunnable
         -- WS-G7: match on lookupTcb
         cases hLk : lookupTcb st waiter with
         | none => simp [hLk] at hStep
         | some tcb =>
           simp only [hLk] at hStep
-          by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-          · simp [hBlocked] at hStep
-          · simp [hBlocked] at hStep; revert hStep
+          split at hStep
+          · cases hStep
+          · revert hStep
             cases hStore : storeObject notificationId _ st with
             | error e => simp
             | ok pair =>

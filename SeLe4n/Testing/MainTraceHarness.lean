@@ -63,17 +63,17 @@ def bootstrapState : SystemState :=
       slots := Std.HashMap.ofList
         [ (⟨0⟩, {
             target := .object ⟨1⟩
-            rights := [.read, .write, .grant]
+            rights := { read := true, write := true, grant := true }
             badge := none
           }),
           (⟨5⟩, {
             target := .object ⟨12⟩
-            rights := [.read, .write]
+            rights := { read := true, write := true }
             badge := none
           }),
           (⟨6⟩, {
             target := .object demoUntyped
-            rights := [.read, .write]
+            rights := { read := true, write := true }
             badge := none
           }) ]
     })
@@ -89,7 +89,7 @@ def bootstrapState : SystemState :=
     |>.withObject ⟨11⟩ (.cnode CNode.empty)
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withObject demoEndpoint (.endpoint {})
-    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ })
     |>.withObject demoUntyped (.untyped {
       regionBase := ⟨0x100000⟩
       regionSize := 16384
@@ -273,8 +273,8 @@ private def runServiceAndStressTrace (st1 : SystemState) : IO Unit := do
     guardValue := 3
     radixWidth := 12
     slots := Std.HashMap.ofList [
-      (⟨1⟩, { target := .object ⟨1⟩, rights := [.read], badge := none }),
-      (⟨1024⟩, { target := .object ⟨12⟩, rights := [.read, .write], badge := none })
+      (⟨1⟩, { target := .object ⟨1⟩, rights := { read := true }, badge := none }),
+      (⟨1024⟩, { target := .object ⟨12⟩, rights := { read := true, write := true }, badge := none })
     ]
   }
   let stDeepCNode : SystemState :=
@@ -426,10 +426,10 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
   | .ok (_, stCleaned) =>
       let tid12InQueue := stCleaned.scheduler.runQueue.flat.any (· == (SeLe4n.ThreadId.ofNat 12))
       IO.println s!"lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
-  match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot [.read] none st1 with
+  match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot { read := true } none st1 with
   | .error err => IO.println s!"cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
-      match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot siblingSlot [.read] none st2 with
+      match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot siblingSlot { read := true } none st2 with
       | .error err => IO.println s!"sibling mint error: {reprStr err}"
       | .ok (_, st3) =>
           IO.println "created sibling cap with the same target"
@@ -503,7 +503,7 @@ private def runLifecycleAndEndpointTrace (st1 : SystemState) : IO Unit := do
 private def runCapabilityIpcTrace (st1 : SystemState) : IO Unit := do
   -- H-02: Try inserting into occupied slot (slot 0 already has a cap)
   let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let testCap : Capability := { target := .object ⟨1⟩, rights := [.read], badge := none }
+  let testCap : Capability := { target := .object ⟨1⟩, rights := { read := true }, badge := none }
   match SeLe4n.Kernel.cspaceInsertSlot occSlot testCap st1 with
   | .error err => IO.println s!"H-02 occupied slot guard: {reprStr err}"
   | .ok _ => IO.println "unexpected: H-02 guard did not reject occupied slot"
@@ -615,6 +615,41 @@ private def runSchedulerTimingDomainTrace (st1 : SystemState) : IO Unit := do
   | .ok ((), stSwitched) =>
       IO.println s!"domain switch active domain: {stSwitched.scheduler.activeDomain.toNat}"
       IO.println s!"domain switch time remaining: {stSwitched.scheduler.domainTimeRemaining}"
+
+-- ============================================================================
+-- WS-F5/D5: Thread management trace scenarios (setPriority, suspend, resume)
+-- ============================================================================
+
+/-- WS-F5/D5 test: setPriority, suspendThread, resumeThread. -/
+private def runThreadManagementTrace (st1 : SystemState) : IO Unit := do
+  let tid1 : SeLe4n.ThreadId := ⟨1⟩
+  -- D5-01: setPriority — change thread 1's priority
+  match SeLe4n.Kernel.setPriority tid1 ⟨200⟩ st1 with
+  | .error err => IO.println s!"setPriority error: {reprStr err}"
+  | .ok ((), stPrio) =>
+      match stPrio.objects[tid1.toObjId]? with
+      | some (.tcb tcb) =>
+          IO.println s!"setPriority new priority: {tcb.priority.toNat}"
+      | _ => IO.println "setPriority: thread not found after set"
+  -- D5-02: suspendThread — suspend thread 12 (in run queue but not current)
+  let tid12 : SeLe4n.ThreadId := ⟨12⟩
+  let stWithQueued := { st1 with scheduler := { st1.scheduler with
+      runQueue := st1.scheduler.runQueue.insert tid12 ⟨50⟩ } }
+  match SeLe4n.Kernel.suspendThread tid12 stWithQueued with
+  | .error err => IO.println s!"suspendThread error: {reprStr err}"
+  | .ok ((), stSusp) =>
+      let inQueue := stSusp.scheduler.runQueue.toList.any (· == tid12)
+      IO.println s!"suspendThread removed from queue: {!inQueue}"
+  -- D5-03: resumeThread — resume thread 12 (not in run queue)
+  match SeLe4n.Kernel.resumeThread tid12 st1 with
+  | .error err => IO.println s!"resumeThread error: {reprStr err}"
+  | .ok ((), stRes) =>
+      let inQueue := stRes.scheduler.runQueue.toList.any (· == tid12)
+      IO.println s!"resumeThread added to queue: {inQueue}"
+  -- D5-04: setPriority non-existent thread
+  match SeLe4n.Kernel.setPriority ⟨999⟩ ⟨100⟩ st1 with
+  | .error err => IO.println s!"setPriority missing thread: {reprStr err}"
+  | .ok _ => IO.println "setPriority missing thread: unexpected success"
 
 -- ============================================================================
 -- WS-F1: IPC message transfer verification trace scenarios
@@ -801,10 +836,10 @@ private def runIpcMessageBoundsTrace (st1 : SystemState) : IO Unit := do
   let oversizedCaps : IpcMessage := {
     registers := #[],
     caps := #[
-      { target := .object ⟨1⟩, rights := [] },
-      { target := .object ⟨2⟩, rights := [] },
-      { target := .object ⟨3⟩, rights := [] },
-      { target := .object ⟨4⟩, rights := [] }],
+      { target := .object ⟨1⟩, rights := {} },
+      { target := .object ⟨2⟩, rights := {} },
+      { target := .object ⟨3⟩, rights := {} },
+      { target := .object ⟨4⟩, rights := {} }],
     badge := none }
   match SeLe4n.Kernel.endpointSendDual epId senderId oversizedCaps st1 with
   | .error .ipcMessageTooManyCaps =>
@@ -818,9 +853,9 @@ private def runIpcMessageBoundsTrace (st1 : SystemState) : IO Unit := do
   let boundaryMsg : IpcMessage := {
     registers := Array.mk (List.replicate 120 42),
     caps := #[
-      { target := .object ⟨1⟩, rights := [] },
-      { target := .object ⟨2⟩, rights := [] },
-      { target := .object ⟨3⟩, rights := [] }],
+      { target := .object ⟨1⟩, rights := {} },
+      { target := .object ⟨2⟩, rights := {} },
+      { target := .object ⟨3⟩, rights := {} }],
     badge := some ⟨999⟩ }
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
@@ -907,10 +942,10 @@ private def runUntypedMemoryTrace (st1 : SystemState) : IO Unit := do
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
           slots := Std.HashMap.ofList [
-            (⟨0⟩, { target := .object ⟨1⟩, rights := [.read, .write, .grant], badge := none }),
-            (⟨5⟩, { target := .object ⟨12⟩, rights := [.read, .write], badge := none }),
-            (⟨6⟩, { target := .object demoUntyped, rights := [.read, .write], badge := none }),
-            (⟨7⟩, { target := .object deviceUntypedId, rights := [.read, .write], badge := none }) ] }) }
+            (⟨0⟩, { target := .object ⟨1⟩, rights := { read := true, write := true, grant := true }, badge := none }),
+            (⟨5⟩, { target := .object ⟨12⟩, rights := { read := true, write := true }, badge := none }),
+            (⟨6⟩, { target := .object demoUntyped, rights := { read := true, write := true }, badge := none }),
+            (⟨7⟩, { target := .object deviceUntypedId, rights := { read := true, write := true }, badge := none }) ] }) }
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨7⟩ }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -1067,9 +1102,9 @@ private def runBoundedMessageExtendedTrace (st1 : SystemState) : IO Unit := do
   let maxCapsMsg : IpcMessage := {
     registers := #[],
     caps := #[
-      { target := .object ⟨1⟩, rights := [.read] },
-      { target := .object ⟨2⟩, rights := [.write] },
-      { target := .object ⟨3⟩, rights := [.grant] }],
+      { target := .object ⟨1⟩, rights := { read := true } },
+      { target := .object ⟨2⟩, rights := { write := true } },
+      { target := .object ⟨3⟩, rights := { grant := true } }],
     badge := some ⟨42⟩ }
   let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
@@ -1093,9 +1128,9 @@ private def runSyscallGateTrace (st1 : SystemState) : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨50⟩
   let epId : SeLe4n.ObjId := demoEndpoint
   let callerId : SeLe4n.ThreadId := ⟨1⟩
-  let writeCap : Capability := { target := .object epId, rights := [.write], badge := none }
-  let readOnlyCap : Capability := { target := .object epId, rights := [.read], badge := none }
-  let retypeCap : Capability := { target := .object demoUntyped, rights := [.retype], badge := none }
+  let writeCap : Capability := { target := .object epId, rights := { write := true }, badge := none }
+  let readOnlyCap : Capability := { target := .object epId, rights := { read := true }, badge := none }
+  let retypeCap : Capability := { target := .object demoUntyped, rights := { retype := true }, badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := Std.HashMap.ofList [
@@ -1175,6 +1210,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runInlineContextSwitchTrace st1
   runBoundedMessageExtendedTrace st1
   runSchedulerTimingDomainTrace st1
+  runThreadManagementTrace st1
   runUntypedMemoryTrace st1
   runSyscallGateTrace st1
 
@@ -1202,7 +1238,7 @@ private def buildParameterizedTopology
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
-      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := [.read, .write], badge := none })
+      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := { read := true, write := true }, badge := none })
   let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := Std.HashMap.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
@@ -1211,7 +1247,7 @@ private def buildParameterizedTopology
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
     [ (⟨4000⟩, .endpoint {})
-    , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ })
     ]
   let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects
   let runnableThreads : List SeLe4n.ThreadId :=

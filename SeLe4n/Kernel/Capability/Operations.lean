@@ -27,7 +27,7 @@ structure CSpacePathAddr where
 `derived.rights` must be a subset of `parent.rights`; targets are preserved by mint-like
 derivation in this slice. -/
 def capAttenuates (parent derived : Capability) : Prop :=
-  derived.target = parent.target ∧ ∀ right, right ∈ derived.rights → right ∈ parent.rights
+  derived.target = parent.target ∧ derived.rights.subset parent.rights = true
 
 /-- Lookup a capability at `(cnode, slot)` with typed CNode checking. -/
 def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
@@ -415,23 +415,13 @@ theorem cspaceLookupSlot_ok_implies_ownsSlot
     (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup
   exact (SystemState.ownsSlot_iff st addr.cnode addr).2 ⟨rfl, ⟨cap, hCap⟩⟩
 
-/-- Requested rights must be contained in allowed rights. -/
-def rightsSubset (requested allowed : List AccessRight) : Bool :=
-  requested.all (fun right => right ∈ allowed)
+/-- WS-F5/HIGH-04: Build a mint-like derived capability with rights attenuation.
 
-theorem rightsSubset_sound
-    (requested allowed : List AccessRight)
-    (hSubset : rightsSubset requested allowed = true) :
-    ∀ right, right ∈ requested → right ∈ allowed := by
-  intro right hMem
-  unfold rightsSubset at hSubset
-  have hDec : decide (right ∈ allowed) = true := (List.all_eq_true.mp hSubset) right hMem
-  simpa using hDec
-
-/-- Build a mint-like derived capability with explicit rights attenuation. -/
-def mintDerivedCap (parent : Capability) (rights : List AccessRight)
+The requested rights must be a subset of the parent's rights (attenuation only).
+Uses the order-independent `AccessRights` bitmask representation. -/
+def mintDerivedCap (parent : Capability) (rights : AccessRights)
     (badge : Option SeLe4n.Badge := parent.badge) : Except KernelError Capability :=
-  if rightsSubset rights parent.rights then
+  if rights.subset parent.rights then
     .ok { target := parent.target, rights := rights, badge := badge }
   else
     .error .invalidCapability
@@ -439,7 +429,7 @@ def mintDerivedCap (parent : Capability) (rights : List AccessRight)
 /-- Mint from source slot and insert into destination slot under attenuation checks. -/
 def cspaceMint
     (src dst : CSpaceAddr)
-    (rights : List AccessRight)
+    (rights : AccessRights)
     (badge : Option SeLe4n.Badge := none) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot src st with
@@ -583,13 +573,13 @@ theorem cspaceMove_ok_implies_source_exists
 
 The slot must already contain a capability, and the new rights must be a subset
 of the existing rights (attenuation only). Badge can be overridden. -/
-def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight)
+def cspaceMutate (addr : CSpaceAddr) (rights : AccessRights)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot addr st with
     | .error e => .error e
     | .ok (cap, st') =>
-        if rightsSubset rights cap.rights then
+        if rights.subset cap.rights then
           let mutatedCap : Capability :=
             { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
           -- Direct overwrite: bypass H-02 guard since we are replacing in-place
@@ -607,7 +597,7 @@ def cspaceMutate (addr : CSpaceAddr) (rights : List AccessRight)
 -- ============================================================================
 
 /-- WS-E4/C-03: Mint a derived capability and record a CDT derivation edge. -/
-def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : List AccessRight)
+def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRights)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match cspaceMint src dst rights badge st with

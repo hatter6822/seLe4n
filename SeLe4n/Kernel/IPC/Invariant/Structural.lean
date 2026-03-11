@@ -2102,7 +2102,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
           revert hStep
           cases hStore : storeObject notificationId
               (.notification { state := if rest.isEmpty then .idle else .waiting,
-                               waitingThreads := rest, pendingBadge := none }) st with
+                               waitingThreads := rest, pendingBadge := ⟨0⟩ }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -2138,12 +2138,12 @@ theorem notificationWait_preserves_allPendingMessagesBounded
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-          simp only [hBadge] at hStep
+      -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+      split at hStep
+      · -- Badge-consume path
           revert hStep
           cases hStore : storeObject notificationId
-              (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+              (.notification { state := .idle, waitingThreads := [], pendingBadge := ⟨0⟩ }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -2156,8 +2156,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
                   intro ⟨_, hEq⟩; subst hEq
                   exact storeTcbIpcState_preserves_allPendingMessagesBounded
                     pair.2 st'' waiter _ hIpc hInv1
-      | none =>
-          simp only [hBadge] at hStep
+      · -- Wait path
           cases hLk : lookupTcb st waiter with
           | none => simp [hLk] at hStep
           | some tcb =>
@@ -2168,7 +2167,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
                 cases hStore : storeObject notificationId
                     (.notification { state := .waiting,
                                      waitingThreads := waiter :: ntfn.waitingThreads,
-                                     pendingBadge := none }) st with
+                                     pendingBadge := ⟨0⟩ }) st with
                 | error e => simp
                 | ok pair =>
                     simp only []
@@ -2253,10 +2252,11 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
+    (hBadgeNonZero : badge.toNat ≠ 0)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' :=
-  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hStep,
+  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hBadgeNonZero hStep,
    hDualQueue',
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2 hStep⟩
 

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.14.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.14.9-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -58,7 +58,7 @@ introducing substantial architectural improvements:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.14.8` |
+| **Version** | `0.14.9` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 32,872 across 67 files |
 | **Test Lean LoC** | 2,763 across 3 test suites |
@@ -233,7 +233,7 @@ Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
 - **WS-H16** — Testing expansion and documentation cleanup (Low priority)
-- **WS-F5..F8** — Model fidelity, invariant quality, testing, cleanup (Medium/Low priority)
+- **WS-F6..F8** — Invariant quality, testing, cleanup (Medium/Low priority)
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters

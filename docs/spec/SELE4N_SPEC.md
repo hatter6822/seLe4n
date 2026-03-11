@@ -48,7 +48,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.14.8` (`lakefile.toml`) |
+| **Package version** | `0.14.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 32,872 across 67 Lean files |
 | **Test LoC** | 2,763 across 3 Lean test suites |
@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 1,940 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-H16, WS-F5..F8 |
+| **Next workstreams** | WS-F6..F8 |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -224,13 +224,25 @@ Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
 - **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
 - **WS-F5–F8:** Medium/Low priority — immediate next steps (see below)
 
-### 5.12 Next Steps: Remaining WS-F Workstreams (F5–F8)
+### 5.12 WS-F5: Model Fidelity (completed, v0.14.9)
+
+WS-F5 closed the gap between seLe4n model and seL4 reality:
+
+- **D1:** `Notification.pendingBadge` changed from `Option Badge` to `Badge`
+  with word-sized OR-accumulation matching seL4 notification semantics.
+- **D2:** Per-thread register context (confirmed pre-existing from WS-H12c).
+- **D3:** Multi-level CSpace resolution (confirmed pre-existing from WS-H13).
+- **D4:** `List AccessRight` replaced with `AccessRights` structure (5 Boolean
+  fields) for order-independent capability rights representation.
+- **D5:** `setPriority`, `suspendThread`, `resumeThread` operations added to
+  scheduler.
+
+### 5.13 Next Steps: Remaining WS-F Workstreams (F6–F8)
 
 The remaining WS-F workstreams address medium/low-priority findings:
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | Next |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Next |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |

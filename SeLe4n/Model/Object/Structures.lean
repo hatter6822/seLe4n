@@ -827,7 +827,7 @@ def objectType : KernelObject → KernelObjectType
 end KernelObject
 
 /-- Construct a capability that names an object directly. -/
-def makeObjectCap (id : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
+def makeObjectCap (id : SeLe4n.ObjId) (rights : AccessRights) : Capability :=
   { target := .object id, rights }
 
 end SeLe4n.Model

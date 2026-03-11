@@ -67,9 +67,9 @@ theorem not_runnable_membership_of_endpoint_store
 
 def notificationQueueWellFormed (ntfn : Notification) : Prop :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge = none
-  | .waiting => ntfn.waitingThreads ≠ [] ∧ ntfn.pendingBadge = none
-  | .active => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.toNat = 0
+  | .waiting => ntfn.waitingThreads ≠ [] ∧ ntfn.pendingBadge.toNat = 0
+  | .active => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.toNat ≠ 0
 
 def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
@@ -402,9 +402,9 @@ theorem notificationWait_preserves_uniqueWaiters
       | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hLookup] at hStep
       | notification ntfnOrig =>
         simp only [hLookup] at hStep
-        cases hPend : ntfnOrig.pendingBadge with
-        | some b =>
-          simp only [hPend] at hStep
+        -- WS-F5: split on if (pendingBadge.toNat != 0) instead of Option cases
+        split at hStep
+        · -- Active path: badge consumed
           revert hStep
           cases hStore : storeObject notificationId _ st with
           | error e => simp
@@ -413,24 +413,24 @@ theorem notificationWait_preserves_uniqueWaiters
             cases hTcb : storeTcbIpcState pair.2 waiter _ with
             | error e => simp
             | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
+              intro hStep
               have hPre : st.objects[oid]? = some (.notification ntfn) := by
+                have hStEq : st2 = st' := by simp at hStep; exact hStep.2
+                rw [← hStEq] at hObj
                 have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
                 by_cases hEq2 : oid = notificationId
                 · exact absurd hEq2 hEq
                 · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hStore] at h2
               exact hInv oid ntfn hPre
-        | none =>
-          simp only [hPend] at hStep
+        · -- Wait path: badge = 0
           -- WS-G7: match on lookupTcb
           cases hLk : lookupTcb st waiter with
           | none => simp [hLk] at hStep
           | some tcb =>
             simp only [hLk] at hStep
-            by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-            · simp [hBlocked] at hStep
-            · simp only [hBlocked, ite_false] at hStep
-              revert hStep
+            split at hStep
+            · simp at hStep
+            · revert hStep
               cases hStore : storeObject notificationId _ st with
               | error e => simp
               | ok pair =>
@@ -438,8 +438,9 @@ theorem notificationWait_preserves_uniqueWaiters
                 cases hTcb : storeTcbIpcState pair.2 waiter _ with
                 | error e => simp
                 | ok st2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩
+                  intro hStep
                   have hPre : st.objects[oid]? = some (.notification ntfn) := by
+                    have hStEq : removeRunnable st2 waiter = st' := by simp at hStep; exact hStep.2
                     have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
                     rw [← hStEq, hRemObj] at hObj
                     have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
@@ -508,27 +509,28 @@ theorem notificationSignal_result_wellFormed_wake
     notificationQueueWellFormed
       { state := if rest.isEmpty then NotificationState.idle else .waiting,
         waitingThreads := rest,
-        pendingBadge := none } := by
+        pendingBadge := ⟨0⟩ } := by
   unfold notificationQueueWellFormed
   by_cases hEmpty : rest = []
-  · simp [hEmpty, List.isEmpty]
+  · simp [hEmpty, List.isEmpty, SeLe4n.Badge.toNat]
   · have : rest.isEmpty = false := by simp [List.isEmpty]; cases rest <;> simp_all
-    simp [this, hEmpty]
+    simp [this, hEmpty, SeLe4n.Badge.toNat]
 
 theorem notificationSignal_result_wellFormed_merge
-    (mergedBadge : SeLe4n.Badge) :
+    (mergedBadge : SeLe4n.Badge)
+    (hNonZero : mergedBadge.toNat ≠ 0) :
     notificationQueueWellFormed
       { state := .active,
         waitingThreads := [],
-        pendingBadge := some mergedBadge } := by
-  unfold notificationQueueWellFormed; simp
+        pendingBadge := mergedBadge } := by
+  unfold notificationQueueWellFormed; exact ⟨rfl, hNonZero⟩
 
 /-- notificationWait result notification is well-formed (badge-consume path):
     idle state, empty waiters, no badge. -/
 theorem notificationWait_result_wellFormed_badge :
     notificationQueueWellFormed
-      { state := NotificationState.idle, waitingThreads := [], pendingBadge := none } := by
-  unfold notificationQueueWellFormed; simp
+      { state := NotificationState.idle, waitingThreads := [], pendingBadge := ⟨0⟩ } := by
+  unfold notificationQueueWellFormed; simp [SeLe4n.Badge.toNat]
 
 /-- WS-G7/F-P11: notificationWait result notification is well-formed (wait path):
     waiting state, non-empty waiter list (prepended), no badge. -/
@@ -536,7 +538,7 @@ theorem notificationWait_result_wellFormed_wait
     (waiter : SeLe4n.ThreadId)
     (waiters : List SeLe4n.ThreadId) :
     notificationQueueWellFormed
-      { state := .waiting, waitingThreads := waiter :: waiters, pendingBadge := none } := by
+      { state := .waiting, waitingThreads := waiter :: waiters, pendingBadge := ⟨0⟩ } := by
   unfold notificationQueueWellFormed
   constructor
   · intro h; cases h

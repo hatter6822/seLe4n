@@ -42,6 +42,99 @@ inductive AccessRight where
   | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq
 
+/-- WS-F5/HIGH-04: Order-independent access-rights bitmask.
+
+Replaces `List AccessRight` to eliminate order-dependent equality:
+`[.read, .write] ≠ [.write, .read]` as lists, but the bitfield
+representation makes them structurally equal. Maps naturally to a
+hardware word on ARM64. -/
+structure AccessRights where
+  read       : Bool := false
+  write      : Bool := false
+  grant      : Bool := false
+  grantReply : Bool := false
+  retype     : Bool := false
+  deriving Repr, DecidableEq, Inhabited
+
+namespace AccessRights
+
+def empty : AccessRights := {}
+
+def hasRight (rights : AccessRights) (r : AccessRight) : Bool :=
+  match r with
+  | .read      => rights.read
+  | .write     => rights.write
+  | .grant     => rights.grant
+  | .grantReply => rights.grantReply
+  | .retype    => rights.retype
+
+/-- True iff every right set in `sub` is also set in `sup`. -/
+def subset (sub sup : AccessRights) : Bool :=
+  (!sub.read || sup.read) && (!sub.write || sup.write) &&
+  (!sub.grant || sup.grant) && (!sub.grantReply || sup.grantReply) &&
+  (!sub.retype || sup.retype)
+
+/-- Pointwise intersection — the attenuated rights after mint/derive. -/
+def intersect (a b : AccessRights) : AccessRights where
+  read       := a.read && b.read
+  write      := a.write && b.write
+  grant      := a.grant && b.grant
+  grantReply := a.grantReply && b.grantReply
+  retype     := a.retype && b.retype
+
+/-- Pointwise union. -/
+def union (a b : AccessRights) : AccessRights where
+  read       := a.read || b.read
+  write      := a.write || b.write
+  grant      := a.grant || b.grant
+  grantReply := a.grantReply || b.grantReply
+  retype     := a.retype || b.retype
+
+/-- True iff no rights are set. -/
+def isEmpty (rights : AccessRights) : Bool :=
+  !rights.read && !rights.write && !rights.grant &&
+  !rights.grantReply && !rights.retype
+
+/-- Convert from a list for backward-compatible construction. -/
+def ofList (l : List AccessRight) : AccessRights :=
+  l.foldl (fun acc r => match r with
+    | .read      => { acc with read := true }
+    | .write     => { acc with write := true }
+    | .grant     => { acc with grant := true }
+    | .grantReply => { acc with grantReply := true }
+    | .retype    => { acc with retype := true }) empty
+
+/-- Convert to a canonical list (deterministic order) for display. -/
+def toList (rights : AccessRights) : List AccessRight :=
+  let acc := []
+  let acc := if rights.read then acc ++ [.read] else acc
+  let acc := if rights.write then acc ++ [.write] else acc
+  let acc := if rights.grant then acc ++ [.grant] else acc
+  let acc := if rights.grantReply then acc ++ [.grantReply] else acc
+  let acc := if rights.retype then acc ++ [.retype] else acc
+  acc
+
+theorem subset_refl (r : AccessRights) : r.subset r = true := by
+  unfold subset; simp
+
+/-- If `sub ⊆ sup` and `sub` has right `r`, then `sup` has `r`. -/
+theorem subset_sound (sub sup : AccessRights) (r : AccessRight)
+    (h : sub.subset sup = true) (hr : sub.hasRight r = true) :
+    sup.hasRight r = true := by
+  -- The subset check is a conjunction of (!sub.field || sup.field) for each field.
+  -- If sub.field = true, then sup.field must be true (otherwise the conjunction fails).
+  -- We proceed by match on r and use the relevant conjunct.
+  simp only [subset, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  match r with
+  | .read => simp only [hasRight] at hr ⊢; rcases h1 with h1 | h1 <;> simp_all
+  | .write => simp only [hasRight] at hr ⊢; rcases h2 with h2 | h2 <;> simp_all
+  | .grant => simp only [hasRight] at hr ⊢; rcases h3 with h3 | h3 <;> simp_all
+  | .grantReply => simp only [hasRight] at hr ⊢; rcases h4 with h4 | h4 <;> simp_all
+  | .retype => simp only [hasRight] at hr ⊢; rcases h5 with h5 | h5 <;> simp_all
+
+end AccessRights
+
 /-- The addressable target of a capability in the abstract object universe.
 
 WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities that
@@ -54,14 +147,14 @@ inductive CapTarget where
 
 structure Capability where
   target : CapTarget
-  rights : List AccessRight
+  rights : AccessRights := {}
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 namespace Capability
 
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
-  right ∈ cap.rights
+  cap.rights.hasRight right
 
 end Capability
 
@@ -214,13 +307,18 @@ inductive NotificationState where
   | active
   deriving Repr, DecidableEq
 
-/-- Minimal notification object model for WS-B6.
+/-- WS-F5/CRIT-06: Notification object with word-sized pending badge.
 
-`active` stores a single pending badge, while `waiting` tracks blocked receivers. -/
+Models seL4's notification semantics: `pendingBadge` is a word-sized bitmask
+(default 0) that accumulates signals via bitwise OR. A non-zero badge
+indicates an active notification. On wait, the accumulated badge is consumed
+(returned to the waiter) and reset to 0.
+
+`active` ↔ `pendingBadge.toNat ≠ 0`, `idle` ↔ `pendingBadge.toNat = 0 ∧ waitingThreads = []`. -/
 structure Notification where
   state : NotificationState
   waitingThreads : List SeLe4n.ThreadId
-  pendingBadge : Option SeLe4n.Badge := none
+  pendingBadge : SeLe4n.Badge := ⟨0⟩
   deriving Repr, DecidableEq
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.

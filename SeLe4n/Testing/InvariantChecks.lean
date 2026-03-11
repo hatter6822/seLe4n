@@ -67,9 +67,9 @@ private def endpointDualQueueWellFormedB (st : SystemState) (ep : Endpoint) : Bo
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
-  | .waiting => !ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
-  | .active => ntfn.waitingThreads.isEmpty && ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitingThreads.isEmpty && (ntfn.pendingBadge.toNat == 0)
+  | .waiting => !ntfn.waitingThreads.isEmpty && (ntfn.pendingBadge.toNat == 0)
+  | .active => ntfn.waitingThreads.isEmpty && (ntfn.pendingBadge.toNat != 0)
 
 private def schedulerQueueCurrentConsistentB (st : SystemState) : Bool :=
   match st.scheduler.current with
