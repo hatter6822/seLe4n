@@ -6,7 +6,7 @@
 
 **Verified metrics snapshot (from [`docs/codebase_map.json`](../../docs/codebase_map.json) `readme_sync`):**
 - Production LoC: 32,872 across 67 files
-- Test LoC: 2,770 across 3 suites
+- Test LoC: 2,763 across 3 suites
 - Proved declarations: 1,055 theorem/lemma declarations (zero sorry/axiom)
 - Total declarations: 1,940 across 70 modules
 

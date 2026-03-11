@@ -16,7 +16,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Version | `0.14.8` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 32,872 across 67 files |
-| Test LoC | 2,770 across 3 suites |
+| Test LoC | 2,763 across 3 suites |
 | Proved declarations | 1,055 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 1,940 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |

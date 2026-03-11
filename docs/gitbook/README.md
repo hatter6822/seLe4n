@@ -6,7 +6,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 
 ## Current project state
 - **Version:** 0.14.8 (Lean v4.28.0).
-- **Codebase metrics:** 32,872 production LoC across 67 files; 2,770 test LoC across 3 suites; 1,055 theorem/lemma declarations (zero sorry/axiom); 1,940 total declarations across 70 modules.
+- **Codebase metrics:** 32,872 production LoC across 67 files; 2,763 test LoC across 3 suites; 1,055 theorem/lemma declarations (zero sorry/axiom); 1,940 total declarations across 70 modules.
 - **Latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues.
 - **Next workstreams:** WS-H16 (remaining v0.12.15 audit remediation) and WS-F5..F8 (remaining v0.12.2 audit remediation).
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
