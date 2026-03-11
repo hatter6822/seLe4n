@@ -134,12 +134,13 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (3-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded`, WS-H12c + WS-H12d)
+- `ipcInvariantFull` (4-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed`, WS-H12c + WS-H12d + WS-F5)
+- `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
-Cross-subsystem composition (WS-H12e):
+Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (3-conjunct), closing the gap where `dualQueueSystemInvariant` and `allPendingMessagesBounded` were defined but not composed into the cross-subsystem proof surface
-- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`
 
 Component level:
 
@@ -831,7 +832,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 5 conjuncts (+ `contextMatchesCurrent`) | Machine registers match current thread's saved context at all scheduler exit points |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` | `dualQueueSystemInvariant` and `allPendingMessagesBounded` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 5 scheduler conjuncts |
 
@@ -864,9 +865,17 @@ Composed `ipcInvariantFull` preservation (7):
 - `endpointReceiveDual_preserves_ipcInvariantFull`, `endpointCall_preserves_ipcInvariantFull`
 - `endpointReplyRecv_preserves_ipcInvariantFull`
 
-Default-state proofs (6):
-- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_ipcInvariantFull`
+Default-state proofs (7):
+- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
+
+Badge well-formedness preservation (WS-F5/D1d):
+- `notificationSignal_preserves_badgeWellFormed`, `notificationWait_preserves_badgeWellFormed`
+- `cspaceMint_preserves_badgeWellFormed`, `cspaceMutate_preserves_badgeWellFormed`
+- Helper lemmas: `storeObject_cnode_preserves_notificationBadgesWellFormed`, `storeObject_cnode_preserves_capabilityBadgesWellFormed`
+- `storeObject_notification_preserves_notificationBadgesWellFormed`, `storeObject_nonNotification_preserves_notificationBadgesWellFormed`
+- `storeObject_nonCNode_preserves_capabilityBadgesWellFormed`
+- Transfer: `badgeWellFormed_of_objects_eq`
 
 ## 23. WS-H13: CSpace enrichment, service hardening & serviceCountBounded (v0.14.4)
 

@@ -470,6 +470,39 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {reprStr tcb.ipcState}"
   | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
 
+  -- ==========================================================================
+  -- WS-F5/D1e: Badge > 2^64 word-truncation semantics
+  -- ==========================================================================
+
+  -- ofNatMasked silently truncates values exceeding the machine word
+  let oversized : Nat := 2 ^ 64 + 42  -- 18446744073709551658
+  let truncated := SeLe4n.Badge.ofNatMasked oversized
+  let expected := SeLe4n.Badge.ofNatMasked 42  -- 42 mod 2^64 = 42
+  if truncated = expected then
+    IO.println "positive check passed [badge > 2^64 truncated to word-bounded value via ofNatMasked]"
+  else
+    throw <| IO.userError s!"badge word-truncation failed: ofNatMasked({oversized}) = {reprStr truncated}, expected {reprStr expected}"
+
+  -- Truncated badge must satisfy validity predicate
+  if truncated.isValid then
+    IO.println "positive check passed [truncated badge passes isValid check]"
+  else
+    throw <| IO.userError "truncated badge should be valid but isValid returned false"
+
+  -- Un-truncated (raw) badge exceeding 2^64 is NOT valid
+  let rawOversized := SeLe4n.Badge.ofNat oversized
+  if rawOversized.isValid then
+    throw <| IO.userError "raw oversized badge should NOT be valid"
+  else
+    IO.println "positive check passed [raw badge > 2^64 correctly fails isValid]"
+
+  -- bor of two large badges is still word-bounded
+  let borResult := SeLe4n.Badge.bor (SeLe4n.Badge.ofNat (2 ^ 64 - 1)) (SeLe4n.Badge.ofNat 1)
+  if borResult.isValid then
+    IO.println "positive check passed [Badge.bor of near-max values produces valid result]"
+  else
+    throw <| IO.userError "Badge.bor should always produce valid results"
+
   expectError "notification wait wrong object type"
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability

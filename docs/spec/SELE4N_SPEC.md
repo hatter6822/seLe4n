@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 1,940 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-H16, WS-F5..F8 |
+| **Next workstreams** | WS-F6..F8 |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -230,7 +230,7 @@ The remaining WS-F workstreams address medium/low-priority findings:
 
 | ID | Focus | Priority | Status |
 |----|-------|----------|--------|
-| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **In Progress** |
+| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **Completed** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | Next |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
 | **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |

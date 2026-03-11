@@ -35,7 +35,7 @@ Two independent audits of the v0.12.2 codebase:
 ## Related: WS-G (completed)
 
 The WS-G kernel performance optimization portfolio (v0.12.6–v0.12.15) was
-completed between WS-F1..F4 and the remaining WS-F5..F8 workstreams.
+completed between WS-F1..F4 and the remaining WS-F6..F8 workstreams.
 See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md).
 
 ## Prior completed portfolios

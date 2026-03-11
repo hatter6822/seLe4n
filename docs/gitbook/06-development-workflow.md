@@ -4,7 +4,7 @@ Canonical source: [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ## Daily contributor loop
 
-1. Pick one coherent WS-F5..F8 target (or another identified workstream slice).
+1. Pick one coherent WS-F6..F8 target (or another identified workstream slice).
 2. Implement minimal code/proof changes.
 3. Run tiered checks from smallest scope upward.
 4. Synchronize docs in the same PR.
@@ -28,17 +28,17 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 
 For milestone-moving PRs:
 
-- include workstream ID(s) (WS-F5..F8 for current focus),
+- include workstream ID(s) (WS-F6..F8 for current focus),
 - show evidence commands,
 - map changes to workstream outcomes,
 - record deferrals and destination workstreams,
 - keep README/spec/development/GitBook status text synchronized.
 
-## Remaining workstream sequence (WS-F5..F8)
+## Remaining workstream sequence (WS-F6..F8)
 
-WS-G (kernel performance), WS-F1..F4 (critical audit remediation), and
-WS-H1..H8 (v0.12.15 audit Phase 1-3) are completed. The remaining WS-F
-workstreams are:
+WS-G (kernel performance), WS-F1..F5 (critical/high/medium audit remediation),
+and WS-H1..H16 (v0.12.15 audit) are completed. The remaining WS-F workstreams
+are:
 
 | Phase | Workstreams | Description | Status |
 |-------|-------------|-------------|--------|

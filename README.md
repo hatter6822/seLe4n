@@ -232,8 +232,7 @@ tests/                           Negative-state suite, information-flow suite, t
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-H16** — Testing expansion and documentation cleanup (Low priority)
-- **WS-F5..F8** — Model fidelity, invariant quality, testing, cleanup (Medium/Low priority)
+- **WS-F6..F8** — Invariant quality, testing, cleanup (Medium/Low priority)
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters

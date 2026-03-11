@@ -161,15 +161,52 @@ def allPendingMessagesBounded (st : SystemState) : Prop :=
     tcb.pendingMessage = some msg →
     msg.bounded
 
+-- ============================================================================
+-- WS-F5/D1d: Badge well-formedness invariant
+-- ============================================================================
+
+/-- WS-F5/D1d: A single badge value is word-bounded (fits in `machineWordBits`). -/
+@[inline] def badgeValid (badge : SeLe4n.Badge) : Prop := badge.valid
+
+/-- WS-F5/D1d: All badges in notification objects are word-bounded.
+Asserts that every notification's `pendingBadge` (when present) satisfies
+`Badge.valid` (value < 2^machineWordBits). This ensures the model cannot
+represent badge values that would be silently truncated on real hardware. -/
+def notificationBadgesWellFormed (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification) (badge : SeLe4n.Badge),
+    st.objects[oid]? = some (.notification ntfn) →
+    ntfn.pendingBadge = some badge →
+    badge.valid
+
+/-- WS-F5/D1d: All badges in capabilities are word-bounded.
+Asserts that every capability's badge (when present) in every CNode
+satisfies `Badge.valid`. -/
+def capabilityBadgesWellFormed (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (badge : SeLe4n.Badge),
+    st.objects[oid]? = some (.cnode cn) →
+    cn.lookup slot = some cap →
+    cap.badge = some badge →
+    badge.valid
+
+/-- WS-F5/D1d: System-wide badge well-formedness — all badges in notifications
+and capabilities are word-bounded to `machineWordBits` (64 bits). -/
+def badgeWellFormed (st : SystemState) : Prop :=
+  notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
+
 /-- Full IPC invariant including system-level dual-queue structural
-well-formedness, TCB link integrity, and message payload bounds.
+well-formedness, TCB link integrity, message payload bounds, and badge
+well-formedness.
 WS-H12c: Dual-queue well-formedness is enforced at the system level via
 `dualQueueSystemInvariant` (per-endpoint `dualQueueEndpointWellFormed` +
 system-wide `tcbQueueLinkIntegrity`).
 WS-H12d: `allPendingMessagesBounded` ensures every pending message stored in
-a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds. -/
+a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds.
+WS-F5/D1d: `badgeWellFormed` ensures all badges in notifications and
+capabilities are word-bounded. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
-  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
