@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "d8f81ed54e5f65f1e986a800497c790c689b4277",
-      "tree_sha": "53181c5d0e2be13533d9a3ce2d38cfe68a57520c",
-      "committed_at_utc": "2026-03-11T19:36:59-04:00"
+      "branch": "claude/upgrade-testing-infrastructure-BPyo1",
+      "commit_sha": "a87575ec420772d833d391af765b4c8a3495a018",
+      "tree_sha": "40ac98d8b9c8dceec5cc94368590c211c19eaf39",
+      "committed_at_utc": "2026-03-12T00:03:40+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "72bbcea80ea72b09f9aed27b27edcce968b715a55bbe64703f09969af96ccd9f"
+    "source_digest": "22e45ee61b89c0acb147e125805aa5f4362bac11ef732cf08c80c60a2aee0e15"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 2006
+    "declaration_count": 2007
   },
   "readme_sync": {
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 34171,
+    "production_loc": 34198,
     "test_files": 3,
     "test_loc": 2886,
     "proved_theorem_lemma_decls": 1086,
@@ -15263,7 +15263,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 40,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -15405,8 +15405,17 @@
         },
         {
           "kind": "def",
+          "name": "checkInvariants",
+          "line": 49,
+          "called": [
+            "bootstrapInvariantObjectIds",
+            "bootstrapServiceIds"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "bootstrapState",
-          "line": 47,
+          "line": 53,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -15426,14 +15435,17 @@
         {
           "kind": "def",
           "name": "runCapabilityAndArchitectureTrace",
-          "line": 156,
-          "called": []
+          "line": 162,
+          "called": [
+            "checkInvariants"
+          ]
         },
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 226,
+          "line": 234,
           "called": [
+            "checkInvariants",
             "demoEndpoint",
             "mkRunQueue",
             "svcApi",
@@ -15448,8 +15460,9 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 398,
+          "line": 408,
           "called": [
+            "checkInvariants",
             "demoEndpoint",
             "demoNotification",
             "lifecycleAuthSlot",
@@ -15461,8 +15474,9 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 503,
+          "line": 515,
           "called": [
+            "checkInvariants",
             "demoEndpoint",
             "rootSlot"
           ]
@@ -15470,32 +15484,36 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 554,
+          "line": 567,
           "called": [
+            "checkInvariants",
             "mkRunQueue"
           ]
         },
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 624,
+          "line": 638,
           "called": [
+            "checkInvariants",
             "demoEndpoint"
           ]
         },
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 785,
+          "line": 800,
           "called": [
+            "checkInvariants",
             "demoEndpoint"
           ]
         },
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 858,
+          "line": 874,
           "called": [
+            "checkInvariants",
             "demoUntyped",
             "lifecycleAuthSlot",
             "rootSlot",
@@ -15505,28 +15523,34 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 945,
-          "called": []
+          "line": 963,
+          "called": [
+            "checkInvariants"
+          ]
         },
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1002,
-          "called": []
+          "line": 1021,
+          "called": [
+            "checkInvariants"
+          ]
         },
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1045,
+          "line": 1065,
           "called": [
+            "checkInvariants",
             "demoEndpoint"
           ]
         },
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1090,
+          "line": 1111,
           "called": [
+            "checkInvariants",
             "demoEndpoint",
             "demoUntyped"
           ]
@@ -15534,13 +15558,15 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1161,
-          "called": []
+          "line": 1183,
+          "called": [
+            "checkInvariants"
+          ]
         },
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1195,
+          "line": 1218,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -15565,13 +15591,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1229,
+          "line": 1256,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1280,
+          "line": 1307,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -15579,7 +15605,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1294,
+          "line": 1321,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -15587,7 +15613,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1302,
+          "line": 1329,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

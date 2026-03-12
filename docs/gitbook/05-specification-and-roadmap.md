@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | Raspberry Pi 5 hardware binding (all WS-F and WS-H portfolios completed) |
+| Next workstreams | WS-I2+ (v0.14.9 improvement portfolio); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -47,7 +47,11 @@ WS-H12e (cross-subsystem invariant reconciliation, v0.14.2) →
 WS-H12f (test harness & docs sync, v0.14.3) →
 WS-H13 (CSpace/service enrichment, v0.14.4) →
 Module restructuring (24 focused submodules, v0.14.5) →
-WS-H14 (type safety & Prelude foundations, v0.14.6).
+WS-H14 (type safety & Prelude foundations, v0.14.6) →
+WS-H15 (platform/API hardening, v0.14.7) →
+WS-H16 (testing/documentation cleanup, v0.14.8) →
+WS-F5..F8 (model fidelity, invariant quality, testing, cleanup, v0.14.9) →
+WS-I1 (critical testing infrastructure, v0.15.0).
 
 ## Completed: WS-H12e Cross-Subsystem Invariant Reconciliation (v0.14.2)
 
@@ -70,6 +74,23 @@ boundaries (`endpointSendDual`/`endpointCall`/`endpointReply`/`endpointReplyRecv
 integrated into `ipcInvariantFull` 3-conjunct bundle. `checkBounds_iff_bounded`
 decidability bridge. Information-flow enforcement updated with bounds-before-flow
 ordering. Closes A-09 (HIGH).
+
+## Completed: WS-I1 Critical Testing Infrastructure (v0.15.0)
+
+Phase 1 of the WS-I improvement portfolio, addressing three critical testing
+infrastructure recommendations from the v0.14.9 audit:
+
+- **R-01 (inter-transition assertions):** 17 `checkInvariants` calls across all
+  13 trace functions, invoking 17 invariant check families (scheduler, CSpace, IPC,
+  lifecycle, service, VSpace, CDT, ASID, untyped, notification, blocked-thread, domain)
+  after every major transition group. `IO.Ref Nat` counter tracking with `[ITR-001]`
+  summary output.
+- **R-02 (mandatory determinism):** `test_tier2_determinism.sh` runs trace twice
+  and diffs output, integrated into `test_smoke.sh` Tier 2 gate. Determinism is now
+  a mandatory CI property rather than an optional Tier 4 extension.
+- **R-03 (scenario ID traceability):** 121 trace lines tagged with unique IDs
+  across 15 prefix families. Pipe-delimited fixture format. Scenario registry YAML
+  with bidirectional Tier 0 validation.
 
 ## Completed: WS-H12f Test Harness Update & Documentation Sync (v0.14.3)
 

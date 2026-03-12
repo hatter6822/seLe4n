@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 2,006 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-F7..F8 |
+| **Next workstreams** | WS-I2+ (v0.14.9 improvement portfolio) |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -233,12 +233,22 @@ The remaining WS-F workstreams address medium/low-priority findings:
 |----|-------|----------|--------|
 | **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **Completed** (v0.14.9) |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | **Completed** (v0.14.9) |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | Planned |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
+| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | **Completed** (v0.14.9) |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | **Completed** (v0.14.9) |
+| **WS-I1** | Critical testing infrastructure (inter-transition assertions, mandatory determinism, scenario ID traceability) | High | **Completed** (v0.15.0) |
 
-After WS-F: Raspberry Pi 5 hardware binding (H3).
+After WS-F/WS-I1: Raspberry Pi 5 hardware binding (H3).
 
-### 5.13 Deferred Operations (WS-F5/D3)
+### 5.13 WS-I1: Critical Testing Infrastructure (completed, v0.15.0)
+
+WS-I1 is the first workstream of the WS-I improvement portfolio, addressing three
+critical testing infrastructure recommendations from the v0.14.9 audit.
+
+- **Part A (R-01 — Inter-transition assertions):** 17 `checkInvariants` calls inserted across all 13 trace functions in `MainTraceHarness.lean`. Each call invokes `assertStateInvariantsFor` (17 invariant check families covering scheduler, CSpace, IPC, lifecycle, service, VSpace, CDT, ASID, untyped, notification, blocked-thread, and domain invariants) with `IO.Ref Nat` counter tracking. Summary `[ITR-001]` line confirms all 17 checks passed. Zero sorry/axiom.
+- **Part B (R-02 — Mandatory determinism):** `scripts/test_tier2_determinism.sh` runs the trace harness twice and diffs output, failing on any divergence. Integrated into `test_smoke.sh` Tier 2 gate (between trace and negative checks), making determinism a mandatory CI property rather than an optional Tier 4 extension.
+- **Part C (R-03 — Scenario ID traceability):** All 121 trace output lines tagged with unique scenario IDs (15 prefix families: ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY). Fixture format upgraded to pipe-delimited (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`). `tests/fixtures/scenario_registry.yaml` maps all 121 IDs to source functions and subsystems. `scripts/scenario_catalog.py validate-registry` checks bidirectional fixture↔registry consistency. Tier 0 hygiene validates registry on every PR.
+
+### 5.14 Deferred Operations (WS-F5/D3)
 
 The following seL4 operations are intentionally deferred from the current model.
 Each has a documented rationale and prerequisite milestone:
