@@ -226,6 +226,26 @@ tests/                           Negative-state suite, information-flow suite, t
 | **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
+### Comparison with Fiasco.OC (TU Dresden)
+
+Fiasco.OC is a mature L4-family microkernel from TU Dresden with a strong
+engineering focus on high-performance IPC, object-oriented C++ kernel
+structure, and practical deployment in systems such as L4Re. seLe4n shares the
+microkernel design intent (small trusted computing base, explicit user/kernel
+boundary), but differs in where the project puts its primary innovation:
+
+| Dimension | Fiasco.OC (TU Dresden) | seLe4n |
+|-----------|-------------------------|--------|
+| **Primary implementation style** | Systems-engineered C++ microkernel with object-oriented kernel internals | Lean 4 executable specification + implementation, where transitions are pure functions |
+| **Correctness assurance focus** | Conventional systems validation (testing/review, performance and robustness engineering) | Machine-checked theorem layer co-developed with implementation (`no sorry/axiom` target) |
+| **IPC and kernel object model** | L4-style IPC and object/capability mechanisms optimized for practical runtime efficiency | Explicitly modeled endpoint/notification + capability transitions with theorem-backed invariants in-tree |
+| **Architectural extensibility strategy** | Production-oriented architecture support in the L4 ecosystem (e.g., L4Re integration path) | Proof-oriented modularization (`Operations` + `Invariant` split) with typed contracts for platform bindings |
+
+In short, Fiasco.OC demonstrates how far a production L4 kernel can be pushed
+with disciplined systems engineering, while seLe4n explores the complementary
+path: making the kernel's transition semantics and invariants first-class,
+machine-checked artifacts from the outset.
+
 ## What's next
 
 Current priorities and the full workstream history are maintained in
