@@ -48,33 +48,34 @@ THEOREM_CHECK_TARGETS=(
   "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean"
   "SeLe4n/Kernel/InformationFlow/Invariant.lean"
 )
-L08_FAIL=0
-for target in "${THEOREM_CHECK_TARGETS[@]}"; do
-  if [[ ! -f "${target}" ]]; then
-    continue
-  fi
-  # Check for sorry inside theorem bodies (already caught by the marker scan above,
-  # but this is a targeted double-check on the invariant proof surface).
-  if command -v rg >/dev/null 2>&1; then
-    if rg -n '\bsorry\b' "${target}" | grep -v 'TPI-D[0-9]' | grep -v '^--' | grep -v '/-' | head -5 | grep -q '.'; then
-      log_section "HYGIENE" "L-08 FAIL: sorry found in ${target}"
-      L08_FAIL=1
-    fi
-    # Check for trivial rfl-only proofs on preservation theorems.
-    # Matches patterns like `:= by rfl` or `:= rfl` at the end of theorem bodies.
-    if rg -n 'theorem.*preserves.*:=\s*(by\s+)?rfl\s*$' "${target}" | head -5 | grep -q '.'; then
-      log_section "HYGIENE" "L-08 FAIL: trivial rfl-only preservation theorem in ${target}"
-      L08_FAIL=1
-    fi
-  fi
-done
-if [[ "${L08_FAIL}" -eq 1 ]]; then
-  record_failure "HYGIENE" "L-08: sorry or trivial rfl-only proof found in invariant proof surface (see details above)"
-  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
-    finalize_report
-  fi
+if command -v python3 >/dev/null 2>&1; then
+  run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_proof_depth.py" "${THEOREM_CHECK_TARGETS[@]}"
 else
-  log_section "HYGIENE" "L-08: theorem-body spot-check passed for invariant proof surface."
+  log_section "HYGIENE" "python3 not found; using regex fallback for L-08 theorem-body validation."
+  L08_FAIL=0
+  for target in "${THEOREM_CHECK_TARGETS[@]}"; do
+    if [[ ! -f "${target}" ]]; then
+      continue
+    fi
+    if command -v rg >/dev/null 2>&1; then
+      if rg -n '\bsorry\b' "${target}" | grep -v 'TPI-D[0-9]' | grep -v '^--' | grep -v '/-' | head -5 | grep -q '.'; then
+        log_section "HYGIENE" "L-08 FAIL: sorry found in ${target}"
+        L08_FAIL=1
+      fi
+      if rg -n 'theorem.*preserves.*:=\s*(by\s+)?rfl\s*$' "${target}" | head -5 | grep -q '.'; then
+        log_section "HYGIENE" "L-08 FAIL: trivial rfl-only preservation theorem in ${target}"
+        L08_FAIL=1
+      fi
+    fi
+  done
+  if [[ "${L08_FAIL}" -eq 1 ]]; then
+    record_failure "HYGIENE" "L-08: sorry or trivial rfl-only proof found in invariant proof surface (see details above)"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
+  else
+    log_section "HYGIENE" "L-08: theorem-body spot-check passed for invariant proof surface."
+  fi
 fi
 
 # L-08 supplemental: verify that SHA-pinned GitHub Actions have not regressed to tag-only refs.

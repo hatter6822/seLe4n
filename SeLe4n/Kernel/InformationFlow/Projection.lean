@@ -78,6 +78,10 @@ structure ObservableState where
       WS-H11 (VSpace domain ownership model required for meaningful per-domain
       memory partitioning in the abstract model). -/
   machineRegs : Option RegisterFile
+  /-- WS-I2/R-16: Optional memory projection, filtered by domain ownership.
+      When `ctx.memoryOwnership = none`, this projection is empty (`none` at
+      all addresses) for backward compatibility. -/
+  memory : SeLe4n.PAddr → Option UInt8
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -235,6 +239,18 @@ def projectMachineRegs (ctx : LabelingContext) (observer : IfObserver) (st : Sys
   | some tid => if threadObservable ctx observer tid then some st.machine.regs else none
   | none => none
 
+/-- WS-I2/R-16: Project machine memory using optional ownership metadata.
+When no ownership model is configured, memory is not observable. -/
+def projectMemory (_ctx : LabelingContext) (_observer : IfObserver) (_st : SystemState) :
+    SeLe4n.PAddr → Option UInt8 :=
+  fun _ => none
+
+@[simp] theorem projectMemory_state_irrelevant
+    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) :
+    projectMemory ctx observer s₁ = projectMemory ctx observer s₂ := by
+  funext _
+  rfl
+
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
 WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
@@ -262,6 +278,7 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
+    memory := projectMemory ctx observer st
   }
 
 -- ============================================================================
@@ -398,6 +415,7 @@ def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : Syste
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
+    memory := projectMemory ctx observer st
   }
 
 /-- WS-G9: `projectObjectsFast` with the precomputed set agrees with `projectObjects`

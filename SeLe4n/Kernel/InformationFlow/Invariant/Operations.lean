@@ -868,7 +868,51 @@ theorem vspaceLookup_preserves_state
       simp only [hLookup, Except.ok.injEq, Prod.mk.injEq] at hStep
       exact hStep.2.symm
 
-/-- WS-H9: vspaceLookup preserves low-equivalence (trivially, as read-only). -/
+-- WS-H9: vspaceLookup preserves low-equivalence (trivially, as read-only).
+/-- WS-I2/R-16: VSpace map preserves low-equivalence under optional memory
+ownership projection when the mapped physical address is non-observable. The
+operation updates only VSpace metadata, not machine memory, so projection
+preservation follows from the base theorem. -/
+theorem vspaceMapPage_preserves_lowEquivalent_memoryOwnedHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (_hOwnerHigh : ∀ mo dom,
+      ctx.memoryOwnership = some mo →
+      mo.regionOwner paddr = some dom →
+      securityFlowsTo (mo.domainLabelOf dom) observer.clearance = false)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hRootHigh₁ : ∀ rootId root, Architecture.resolveAsidRoot s₁ asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hStep₁ : Architecture.vspaceMapPage asid vaddr paddr default s₁ = .ok ((), s₁'))
+    (hStep₂ : Architecture.vspaceMapPage asid vaddr paddr default s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  exact vspaceMapPage_preserves_lowEquivalent ctx observer asid vaddr paddr
+    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hStep₁ hStep₂
+
+/-- WS-I2/R-16: VSpace unmap preserves low-equivalence under optional memory
+ownership projection. Unmapping mutates VSpace metadata only. -/
+theorem vspaceUnmapPage_preserves_lowEquivalent_memoryOwnedHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (_hOwnerHigh : ∀ mo paddr dom,
+      ctx.memoryOwnership = some mo →
+      mo.regionOwner paddr = some dom →
+      securityFlowsTo (mo.domainLabelOf dom) observer.clearance = false)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hRootHigh₁ : ∀ rootId root, Architecture.resolveAsidRoot s₁ asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hStep₁ : Architecture.vspaceUnmapPage asid vaddr s₁ = .ok ((), s₁'))
+    (hStep₂ : Architecture.vspaceUnmapPage asid vaddr s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  exact vspaceUnmapPage_preserves_lowEquivalent ctx observer asid vaddr
+    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hStep₁ hStep₂
+
 theorem vspaceLookup_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)

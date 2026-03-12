@@ -8,7 +8,7 @@ Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complet
   - marker scan for forbidden placeholders (`axiom|sorry|TODO`) in tracked proof surface,
   - fixture-isolation guard (test-only contracts must not leak into production kernel modules),
   - wrapper-structure regression guard (scalar wrappers must remain structure-based),
-  - theorem-body spot-check (L-08: no `sorry`, no trivial `rfl`-only preservation theorems),
+  - theorem-body semantic depth check (L-08: Python analyzer flags `sorry` and trivial/single-tactic `preserves` proofs, with regex fallback),
   - SHA-pinning regression guard (F-14: all GitHub Actions must be SHA-pinned),
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
@@ -23,7 +23,7 @@ Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complet
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.
   - scenario registry (`tests/fixtures/scenario_registry.yaml`) maps all 121 IDs to source functions; validated bidirectionally in Tier 0 hygiene.
-- **Tier 3 (invariant surface anchors)**
+- **Tier 3 (invariant surface anchors + type-correctness #check gate)**
   - validates critical theorem/bundle/trace anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
 - **Tier 4 (nightly staged extension candidates)**

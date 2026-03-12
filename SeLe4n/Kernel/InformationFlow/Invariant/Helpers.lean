@@ -161,8 +161,10 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hM₂ := storeObject_machine_eq s₂ s₂' targetId obj₂ hStore₂
     simp [projectMachineRegs, hSched₁, hSched₂, hM₁, hM₂]
     exact congrArg ObservableState.machineRegs hLow
+  have hMem : projectMemory ctx observer s₁' = projectMemory ctx observer s₂' :=
+    projectMemory_state_irrelevant ctx observer s₁' s₂'
   unfold lowEquivalent
-  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR]
+  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem]
 
 -- ============================================================================
 -- WS-E5: clearCapabilityRefsState preserves projection (used by composed proofs)
@@ -263,7 +265,10 @@ theorem removeRunnable_preserves_projection
       by_cases hEq : some x = some tid
       · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
       · rw [if_neg hEq]
-  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR]
+  have hMem : projectMemory ctx observer (removeRunnable st tid) =
+      projectMemory ctx observer st :=
+    projectMemory_state_irrelevant ctx observer (removeRunnable st tid) st
+  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 theorem ensureRunnable_preserves_projection
