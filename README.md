@@ -228,12 +228,16 @@ tests/                           Negative-state suite, information-flow suite, t
 
 ### Comparison with Fiasco.OC (TU Dresden)
 
-| Dimension | Fiasco.OC (TU Dresden) | seLe4n |
-|-----------|-------------------------|--------|
-| **Primary implementation style** | Systems-engineered C++ microkernel with object-oriented kernel internals | Lean 4 executable specification + implementation, where transitions are pure functions |
-| **Correctness assurance focus** | Conventional systems validation (testing/review, performance and robustness engineering) | Machine-checked theorem layer co-developed with implementation (`no sorry/axiom` target) |
-| **IPC and kernel object model** | L4-style IPC and object/capability mechanisms optimized for practical runtime efficiency | Explicitly modeled endpoint/notification + capability transitions with theorem-backed invariants in-tree |
-| **Architectural extensibility strategy** | Production-oriented architecture support in the L4 ecosystem (e.g., L4Re integration path) | Proof-oriented modularization (`Operations` + `Invariant` split) with typed contracts for platform bindings |
+| Feature | Fiasco.OC (TU Dresden) | seLe4n |
+|---------|-------------------------|--------|
+| **IPC mechanism** | L4 message-based IPC with kernel-managed endpoint semantics optimized in C++ for low-latency production paths | Intrusive dual-queue endpoint design with `queuePPrev` back-pointers enabling O(1) mid-queue removal in explicit, pure state transitions |
+| **Information flow** | Isolation is enforced through kernel mechanism and policy configuration, without an in-tree machine-checked noninterference proof layer | N-domain configurable flow policy (generalizes legacy confidentiality × integrity labels) with theorem-backed low-equivalence projections |
+| **Service management** | Core microkernel keeps services outside the kernel (user-space servers/runtime stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
+| **Capability derivation** | L4 capability/object model with production-focused grant/transfer/revocation behavior in engineered kernel logic | `childMap` HashMap for O(1) children lookup with typed transition functions amenable to local preservation proofs |
+| **Scheduler** | Priority-driven real-time scheduling tuned for practical latency and throughput on supported architectures | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
+| **VSpace** | Architecture-native MMU/page-table handling integrated into the kernel for practical virtual-memory deployment | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
+| **Proof methodology** | Systems assurance centered on testing, review, benchmarking, and long-run deployment hardening | Lean 4 type-checker with proofs co-located with transitions; production target forbids `sorry`/`axiom` |
+| **Platform abstraction** | Architecture and board support delivered through production kernel engineering and L4 ecosystem integration | `PlatformBinding` typeclass with typed boundary contracts |
 
 In short, Fiasco.OC demonstrates how far a production L4 kernel can be pushed
 with disciplined systems engineering, while seLe4n explores the complementary
