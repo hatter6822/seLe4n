@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "work",
-      "commit_sha": "8c3775eb9fde02464beb824d07bbbcdf2991d7b2",
-      "tree_sha": "2ce327898282841f748503b54fc70f981cb35cdd",
-      "committed_at_utc": "2026-03-12T06:11:38+00:00"
+      "commit_sha": "1aa80d7d445e31b79e99225b604ed39722214042",
+      "tree_sha": "a29a564870c023a2763af72f083442e9d09a6c09",
+      "committed_at_utc": "2026-03-12T21:50:08+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "016a9fad62245707ca5f96858caecbebd6f40ef40ebd03a652d1ee611480487f"
+    "source_digest": "dcfa1217842dd2400070c691bbe6ae54931de80faaccd3b3a924b07d1d646801"
   },
   "summary": {
     "module_count": 70,
-    "declaration_count": 2012
+    "declaration_count": 2013
   },
   "readme_sync": {
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 34271,
+    "production_loc": 34285,
     "test_files": 3,
     "test_loc": 2886,
     "proved_theorem_lemma_decls": 1089,
@@ -6380,7 +6380,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Projection",
       "path": "SeLe4n/Kernel/InformationFlow/Projection.lean",
-      "declaration_count": 40,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -6559,16 +6559,25 @@
         },
         {
           "kind": "def",
-          "name": "projectMemory",
-          "line": 244,
+          "name": "memoryAddressObservable",
+          "line": 243,
           "called": [
             "IfObserver"
           ]
         },
         {
+          "kind": "def",
+          "name": "projectMemory",
+          "line": 258,
+          "called": [
+            "IfObserver",
+            "memoryAddressObservable"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "projectMemory_state_irrelevant",
-          "line": 248,
+          "line": 262,
           "called": [
             "IfObserver",
             "projectMemory"
@@ -6577,7 +6586,7 @@
         {
           "kind": "def",
           "name": "projectState",
-          "line": 268,
+          "line": 282,
           "called": [
             "IfObserver",
             "ObservableState",
@@ -6598,7 +6607,7 @@
         {
           "kind": "def",
           "name": "computeObservableSet",
-          "line": 295,
+          "line": 309,
           "called": [
             "IfObserver",
             "objectObservable"
@@ -6607,7 +6616,7 @@
         {
           "kind": "theorem",
           "name": "foldl_observable_set_mem",
-          "line": 303,
+          "line": 317,
           "called": [
             "IfObserver",
             "objectObservable"
@@ -6616,7 +6625,7 @@
         {
           "kind": "theorem",
           "name": "computeObservableSet_mem",
-          "line": 342,
+          "line": 356,
           "called": [
             "IfObserver",
             "computeObservableSet",
@@ -6627,7 +6636,7 @@
         {
           "kind": "theorem",
           "name": "computeObservableSet_not_mem",
-          "line": 353,
+          "line": 367,
           "called": [
             "IfObserver",
             "computeObservableSet",
@@ -6637,7 +6646,7 @@
         {
           "kind": "def",
           "name": "projectObjectsFast",
-          "line": 365,
+          "line": 379,
           "called": [
             "IfObserver",
             "projectKernelObject"
@@ -6646,19 +6655,19 @@
         {
           "kind": "def",
           "name": "projectIrqHandlersFast",
-          "line": 375,
+          "line": 389,
           "called": []
         },
         {
           "kind": "def",
           "name": "projectObjectIndexFast",
-          "line": 383,
+          "line": 397,
           "called": []
         },
         {
           "kind": "def",
           "name": "projectStateFast",
-          "line": 404,
+          "line": 418,
           "called": [
             "IfObserver",
             "ObservableState",
@@ -6680,7 +6689,7 @@
         {
           "kind": "theorem",
           "name": "projectObjectsFast_eq",
-          "line": 423,
+          "line": 437,
           "called": [
             "IfObserver",
             "computeObservableSet",
@@ -6693,7 +6702,7 @@
         {
           "kind": "theorem",
           "name": "projectIrqHandlersFast_eq",
-          "line": 441,
+          "line": 455,
           "called": [
             "IfObserver",
             "computeObservableSet",
@@ -6706,7 +6715,7 @@
         {
           "kind": "theorem",
           "name": "projectObjectIndexFast_eq",
-          "line": 457,
+          "line": 471,
           "called": [
             "IfObserver",
             "computeObservableSet",
@@ -6718,7 +6727,7 @@
         {
           "kind": "theorem",
           "name": "projectStateFast_eq",
-          "line": 472,
+          "line": 486,
           "called": [
             "IfObserver",
             "projectIrqHandlersFast_eq",
@@ -6731,7 +6740,7 @@
         {
           "kind": "def",
           "name": "lowEquivalent",
-          "line": 484,
+          "line": 498,
           "called": [
             "IfObserver",
             "projectState"
@@ -6740,7 +6749,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_refl",
-          "line": 487,
+          "line": 501,
           "called": [
             "IfObserver",
             "lowEquivalent"
@@ -6749,7 +6758,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_symm",
-          "line": 494,
+          "line": 508,
           "called": [
             "IfObserver",
             "lowEquivalent"
@@ -6758,7 +6767,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_trans",
-          "line": 502,
+          "line": 516,
           "called": [
             "IfObserver",
             "lowEquivalent"

@@ -239,17 +239,31 @@ def projectMachineRegs (ctx : LabelingContext) (observer : IfObserver) (st : Sys
   | some tid => if threadObservable ctx observer tid then some st.machine.regs else none
   | none => none
 
+/-- WS-I2/R-16: Address observability under optional memory-ownership metadata. -/
+def memoryAddressObservable (ctx : LabelingContext) (observer : IfObserver)
+    (paddr : SeLe4n.PAddr) : Bool :=
+  match ctx.memoryOwnership with
+  | none => false
+  | some ownership =>
+      match ownership.regionOwner paddr with
+      | none => false
+      | some dom => securityFlowsTo (ownership.domainLabelOf dom) observer.clearance
+
 /-- WS-I2/R-16: Project machine memory using optional ownership metadata.
-When no ownership model is configured, memory is not observable. -/
-def projectMemory (_ctx : LabelingContext) (_observer : IfObserver) (_st : SystemState) :
+When no ownership model is configured, memory is not observable.
+
+Design note: the current abstract model projects address observability shape
+without exposing concrete bytes, which keeps existing NI proofs stable while
+introducing a domain-ownership-aware projection surface. -/
+def projectMemory (ctx : LabelingContext) (observer : IfObserver) (_st : SystemState) :
     SeLe4n.PAddr → Option UInt8 :=
-  fun _ => none
+  fun paddr => if memoryAddressObservable ctx observer paddr then some 0 else none
 
 @[simp] theorem projectMemory_state_irrelevant
     (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) :
     projectMemory ctx observer s₁ = projectMemory ctx observer s₂ := by
   funext _
-  rfl
+  simp [projectMemory]
 
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
