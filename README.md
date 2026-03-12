@@ -109,9 +109,9 @@ For workstream planning and history, see [`docs/WORKSTREAM_HISTORY.md`](docs/WOR
 ## Validation commands
 
 ```bash
-./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build)
+./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build, semantic proof-depth L-08)
 ./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state + docs sync)
-./scripts/test_full.sh      # + Tier 3 (invariant surface anchors)
+./scripts/test_full.sh      # + Tier 3 (invariant surface anchors + Lean #check correctness)
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly determinism)
 ```
 

@@ -818,4 +818,27 @@ run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant' SeLe4n/Kern
 # WS-F6/D6: vspaceCrossAsidIsolation in VSpace invariant bundle.
 run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
+
+# WS-I2/R-05: Lean #check correctness anchors (type-level validation).
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.Preservation
+import SeLe4n.Kernel.Capability.Invariant.Preservation
+import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
+import SeLe4n.Kernel.Lifecycle.Invariant
+import SeLe4n.Kernel.Service.Invariant.Acyclicity
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
+import SeLe4n.Kernel.InformationFlow.Invariant.Composition
+
+#check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
+#check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
+#check @SeLe4n.Kernel.cspaceMint_preserves_capabilityInvariantBundle
+#check @SeLe4n.Kernel.cspaceRevoke_preserves_capabilityInvariantBundle
+#check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
+#check @SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle
+#check @SeLe4n.Kernel.serviceStart_preserves_serviceGraphInvariant
+#check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle
+#check @SeLe4n.Kernel.step_preserves_projection
+#check @SeLe4n.Kernel.composedNonInterference_step
+EOF'
+
 finalize_report

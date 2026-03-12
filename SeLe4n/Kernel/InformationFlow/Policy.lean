@@ -65,12 +65,18 @@ def securityFlowsTo (src dst : SecurityLabel) : Bool :=
   confidentialityFlowsTo src.confidentiality dst.confidentiality &&
     integrityFlowsTo dst.integrity src.integrity
 
+/-- WS-I2/R-16: Ownership metadata for optional memory projection. -/
+structure MemoryDomainOwnership where
+  regionOwner : SeLe4n.PAddr → Option SeLe4n.DomainId
+  domainLabelOf : SeLe4n.DomainId → SecurityLabel
+
 /-- IF-M1 context: explicit label assignment entrypoints for each primary entity class. -/
 structure LabelingContext where
   objectLabelOf : SeLe4n.ObjId → SecurityLabel
   threadLabelOf : SeLe4n.ThreadId → SecurityLabel
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
   serviceLabelOf : ServiceId → SecurityLabel
+  memoryOwnership : Option MemoryDomainOwnership := none
 
 /-- Minimal default labeling: everything is publicly observable and untrusted. -/
 def defaultLabelingContext : LabelingContext :=
