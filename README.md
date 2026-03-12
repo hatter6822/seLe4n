@@ -239,10 +239,6 @@ tests/                           Negative-state suite, information-flow suite, t
 | **Proof methodology** | Systems assurance centered on testing, review, benchmarking, and long-run deployment hardening | Lean 4 type-checker with proofs co-located with transitions; production target forbids `sorry`/`axiom` |
 | **Platform abstraction** | Architecture and board support delivered through production kernel engineering and L4 ecosystem integration | `PlatformBinding` typeclass with typed boundary contracts |
 
-In short, Fiasco.OC demonstrates how far a production L4 kernel can be pushed
-with disciplined systems engineering, while seLe4n explores the complementary
-path: making the kernel's transition semantics and invariants first-class,
-machine-checked artifacts from the outset.
 
 ## What's next
 
