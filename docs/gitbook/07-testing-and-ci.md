@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complete through WS-H12f (v0.14.3); WS-F1..F7 completed (WS-F8 remaining); testing tiers enforce regression protection and evidence continuity across active workstreams.**
+Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complete through WS-H12f (v0.14.3); WS-F1..F8 completed; WS-I1 (critical testing infrastructure) completed (v0.15.0); testing tiers enforce regression protection and evidence continuity across active workstreams.**
 
 ## Tier model
 
@@ -15,10 +15,14 @@ Current stage context: **WS-H Phase 1–12f (v0.12.15 audit remediation) complet
   - full `lake build` to verify definitions, theorem scripts, and module integration.
 - **Tier 2 (trace/behavior)**
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
+  - **mandatory determinism validation** (WS-I1/R-02): `scripts/test_tier2_determinism.sh` runs trace twice and diffs output, failing on any divergence,
   - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
-  - fixture lines support scenario/risk tags (`scenario_id | risk_class | expected_trace_fragment`) for audit traceability.
+  - fixture lines use pipe-delimited format with scenario IDs (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`) for audit traceability (WS-I1/R-03),
+  - all 121 trace output lines tagged with unique scenario IDs across 15 prefix families (ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY),
+  - 15 inter-transition invariant assertions (WS-I1/R-01) check 17 invariant families after every major transition group,
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.
+  - scenario registry (`tests/fixtures/scenario_registry.yaml`) maps all 121 IDs to source functions; validated bidirectionally in Tier 0 hygiene.
 - **Tier 3 (invariant surface anchors)**
   - validates critical theorem/bundle/trace anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
@@ -96,6 +100,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-H12a (v0.13.8):** Legacy endpoint removal — `EndpointState` type and legacy fields (`state`, `queue`, `waitingReceiver`) deleted from `Endpoint` structure. Legacy IPC operations (`endpointSend`, `endpointReceive`, `endpointAwaitReceive`) and `endpointSendChecked` removed. ~60 dead theorems cleaned from `IPC/Invariant.lean`, `Capability/Invariant.lean`, and `InformationFlow/Invariant.lean`. `endpointReplyRecv` migrated to `endpointReceiveDual`. Tests and tier-3 anchors updated. Closes A-08 (HIGH), M-01 (MEDIUM), A-25 (MEDIUM). 838 theorem/lemma declarations (zero sorry/axiom).
 - **WS-H12b (v0.13.9):** Dequeue-on-dispatch scheduler semantics — inverted `queueCurrentConsistent` from `current ∈ runnable` to `current ∉ runnable`, matching seL4's `switchToThread`/`tcbSchedDequeue` pattern. `schedule` dequeues dispatched thread; `handleYield`, `timerTick`, and `switchDomain` re-enqueue before rescheduling. New predicates: `currentTimeSlicePositive`, `schedulerPriorityMatch`, plus 4 IPC dequeue-coherence predicates. ~1,800 lines of preservation proofs re-proved across scheduler, IPC, and information-flow invariant files. Closes H-04 (HIGH). 855 theorem/lemma declarations (zero sorry/axiom).
 - **WS-F7 (testing expansion):** D1 — 4 new runtime invariant check families added to `InvariantChecks.lean`: `blockedOnSendNotRunnable` (includes `blockedOnCall`), `blockedOnReceiveNotRunnable` (includes `blockedOnReply`, `blockedOnNotification`), `currentThreadInActiveDomainB`, `uniqueWaitersCheck` — 17 check families total in `stateInvariantChecksFor`. D2 — `TraceSequenceProbe` extended from 3 to 7 `ProbeOp` variants (`notifySignal`, `notifyWait`, `scheduleOp`, `capLookup`) with notification + CNode objects in probe base state and blocked-thread guard. D3 — `runRuntimeContractFixtureTrace` exercises `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` with 6 deterministic trace assertions. D4 — CDT `cdtChildMapConsistentCheck` confirmed already delivered. Closes MED-08, F-24, F-25, F-26.
+- **WS-I1 (critical testing infrastructure, v0.15.0):** R-01 — 15 inter-transition invariant assertions across all 13 trace functions using `checkInvariants` helper with `IO.Ref Nat` counter tracking; R-02 — mandatory Tier 2 determinism validation (`test_tier2_determinism.sh`) integrated into smoke gate; R-03 — 121 trace lines tagged with unique scenario IDs (15 prefix families), pipe-delimited fixture format, `scenario_registry.yaml` with bidirectional Tier 0 validation. Closes R-01, R-02, R-03.
 
 ## Practical failure triage
 

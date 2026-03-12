@@ -1,3 +1,30 @@
+## [0.15.0] - 2026-03-11
+
+### WS-I1: Critical Testing Infrastructure
+
+- **Part A (R-01): Inter-transition invariant assertions.** Added 15
+  `checkInvariants` calls across all 13 trace functions in
+  `MainTraceHarness.lean`, validating scheduler, CSpace, IPC, lifecycle,
+  service, VSpace, and CDT invariants after each major transition group.
+  Counter-based tracking via `IO.Ref Nat` prints summary count at trace end.
+  Catches state corruption (CDT orphans, ASID mismatches, queue pointer
+  corruption) that would previously pass silently.
+- **Part B (R-02): Mandatory determinism validation.** Created
+  `scripts/test_tier2_determinism.sh` executing `lake exe sele4n` twice and
+  diffing output. Integrated into `test_smoke.sh` between trace fixture and
+  negative state checks. Non-determinism bugs (HashMap iteration order, random
+  scheduling) now caught immediately rather than at nightly Tier 4.
+- **Part C (R-03): Scenario ID traceability.** Added `[PREFIX-NNN]` tags to all
+  121 trace output lines across 15 prefixes (ENT, CAT, SST, LEP, CIC, IMT,
+  IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY). Updated fixture file to
+  pipe-delimited format (`SCENARIO_ID | SUBSYSTEM | fragment`). Created
+  `tests/fixtures/scenario_registry.yaml` mapping each ID to source function
+  and subsystem. Added `validate-registry` subcommand to `scenario_catalog.py`
+  with Tier 0 hygiene integration. Developers can now answer coverage questions
+  by grepping the registry.
+- **Build jobs:** 138. Zero sorry/axiom. Zero warnings.
+- **Recommendations closed:** R-01, R-02, R-03.
+
 ## [0.14.9] - 2026-03-11
 
 ### WS-F5: Model Fidelity

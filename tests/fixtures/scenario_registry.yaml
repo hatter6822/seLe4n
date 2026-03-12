@@ -1,0 +1,610 @@
+# WS-I1/R-03: Scenario registry
+# Maps each scenario ID to its source location and subsystem.
+# Validate with: python3 scripts/scenario_catalog.py validate-registry
+
+scenarios:
+  ENT-000:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMainTrace/runMainTraceFrom
+    subsystem: Entry
+    description: "scheduled thread: some 1"
+  ENT-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMainTrace/runMainTraceFrom
+    subsystem: Entry
+    description: "source cap rights before mint: { bits := 7 }"
+  ENT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMainTrace/runMainTraceFrom
+    subsystem: Entry
+    description: "source path lookup rights: { bits := 7 }"
+  ENT-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMainTrace/runMainTraceFrom
+    subsystem: Entry
+    description: "source path alias lookup rights: { bits := 7 }"
+  CAT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter timer success path value: 2"
+  CAT-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState"
+  CAT-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented"
+  CAT-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter read denied branch: SeLe4n.Model.KernelError.notImplemented"
+  CAT-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter read success path byte: 0"
+  CAT-013:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace lookup mapped paddr: 8192"
+  CAT-015:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault"
+  CAT-017:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDeni"
+  CAT-021:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace lookupFull paddr: 8192, read=true, write=false, exec=false"
+  CAT-022:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBo"
+  CAT-025:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "vspace mapChecked valid address accepted"
+  CAT-026:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "TLB flush entry count: 0"
+  CAT-028:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter register write success path value: 99"
+  CAT-029:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityAndArchitectureTrace
+    subsystem: Architecture
+    description: "adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplement"
+  SST-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service start api status: some (SeLe4n.Model.ServiceStatus.running)"
+  SST-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service start denied branch: SeLe4n.Model.KernelError.policyDenied"
+  SST-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation"
+  SST-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service restart status: some (SeLe4n.Model.ServiceStatus.running)"
+  SST-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service stop denied branch: SeLe4n.Model.KernelError.policyDenied"
+  SST-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState"
+  SST-013:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied"
+  SST-015:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolatio"
+  SST-017:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service start missing-backing branch: SeLe4n.Model.KernelError.backingObjectMiss"
+  SST-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service isolation api↔denied: true"
+  SST-020:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service isolation api↔db: false"
+  SST-021:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "deep cnode radix fixture: some 12"
+  SST-023:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "deep cnode path lookup rights: { bits := 3 }"
+  SST-024:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState"
+  SST-026:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapabilit"
+  SST-028:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "large runnable queue length: 2"
+  SST-030:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "large queue scheduled current: some 1"
+  SST-032:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "context switch regs match incoming: true"
+  SST-037:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "multi-endpoint receive senders: 1, 12"
+  SST-039:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus."
+  SST-041:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "boundary memory low-address byte: 0"
+  SST-043:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "boundary memory high-address byte: 0"
+  LEP-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority"
+  LEP-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState"
+  LEP-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoi"
+  LEP-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "lifecycle retype-with-cleanup old tid removed: true"
+  LEP-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "created sibling cap with the same target"
+  LEP-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "composed transition alias guard (expected error): SeLe4n.Model.KernelError.illeg"
+  LEP-014:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthori"
+  LEP-017:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "composed revoke/delete/retype success"
+  LEP-018:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability"
+  LEP-020:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability"
+  LEP-024:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "handshake send matched waiting receiver"
+  LEP-026:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "queued sender on endpoint"
+  LEP-028:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "endpoint receive #1 sender: 1"
+  LEP-030:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "notification wait #1 result: none"
+  LEP-034:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "notification wait #2 result: some { val := 123 }"
+  LEP-036:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runLifecycleAndEndpointTrace
+    subsystem: Lifecycle
+    description: "minted cap rights: { bits := 1 }"
+  CIC-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityIpcTrace
+    subsystem: Capability
+    description: "H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied"
+  CIC-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityIpcTrace
+    subsystem: Capability
+    description: "cspaceCopy target matches: true"
+  CIC-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityIpcTrace
+    subsystem: Capability
+    description: "dual-queue sender blocked on sendQ non-empty: true"
+  CIC-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCapabilityIpcTrace
+    subsystem: Capability
+    description: "endpointReply unblocked target: true"
+  IMT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "message sender has pending: true"
+  IMT-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "message transfer registers: [42, 7]"
+  IMT-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "message transfer badge: some { val := 123 }"
+  IMT-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "message sender cleared after transfer: true"
+  IMT-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "rendezvous delivery registers: [99]"
+  IMT-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "call/reply caller blocked: true"
+  IMT-014:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "call/reply response registers: [100, 200]"
+  IMT-016:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "H1 caller blockedOnCall: true"
+  IMT-018:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "H1 caller blockedOnReply after dequeue: true"
+  IMT-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "H1 caller not ready after dequeue: true"
+  IMT-021:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "H1 caller ready after reply: true"
+  IMT-024:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageTransferTrace
+    subsystem: IPC
+    description: "H1 unauthorized reply rejected: true"
+  IMB-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageBoundsTrace
+    subsystem: IPC
+    description: "H12d oversized registers rejected: true"
+  IMB-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageBoundsTrace
+    subsystem: IPC
+    description: "H12d oversized caps rejected: true"
+  IMB-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageBoundsTrace
+    subsystem: IPC
+    description: "H12d boundary message accepted: true"
+  IMB-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageBoundsTrace
+    subsystem: IPC
+    description: "H12d call oversized rejected: true"
+  IMB-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runIpcMessageBoundsTrace
+    subsystem: IPC
+    description: "H12d reply oversized rejected: true"
+  DDT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDequeueOnDispatchTrace
+    subsystem: Scheduler
+    description: "H12f dequeue-on-dispatch current: some 1"
+  DDT-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDequeueOnDispatchTrace
+    subsystem: Scheduler
+    description: "H12f dispatched thread absent from runQueue: true"
+  DDT-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDequeueOnDispatchTrace
+    subsystem: Scheduler
+    description: "H12f non-dispatched thread in runQueue: true"
+  DDT-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDequeueOnDispatchTrace
+    subsystem: Scheduler
+    description: "H12f preempted thread back in runQueue: true"
+  DDT-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDequeueOnDispatchTrace
+    subsystem: Scheduler
+    description: "H12f preemption new current: some 1"
+  ICS-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runInlineContextSwitchTrace
+    subsystem: Scheduler
+    description: "H12f context switch regs match incoming: true"
+  ICS-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runInlineContextSwitchTrace
+    subsystem: Scheduler
+    description: "H12f outgoing context saved: true"
+  ICS-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runInlineContextSwitchTrace
+    subsystem: Scheduler
+    description: "H12f context switch new current: some 12"
+  BME-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBoundedMessageExtendedTrace
+    subsystem: IPC
+    description: "H12f empty message accepted: true"
+  BME-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBoundedMessageExtendedTrace
+    subsystem: IPC
+    description: "H12f sub-boundary message accepted: true"
+  BME-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBoundedMessageExtendedTrace
+    subsystem: IPC
+    description: "H12f max caps message accepted: true"
+  STD-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "EDF tie-break chosen thread: some 12"
+  STD-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "timer tick remaining slice: 1"
+  STD-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "timer tick expiry rescheduled current: some 1"
+  STD-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "timer tick expiry reset slice: 5"
+  STD-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "domain switch active domain: 1"
+  STD-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedulerTimingDomainTrace
+    subsystem: Scheduler
+    description: "domain switch time remaining: 5"
+  UMT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.end"
+  UMT-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "untyped watermark after retype: 64"
+  UMT-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "untyped children count: 1"
+  UMT-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "untyped watermark after second retype: 1088"
+  UMT-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMi"
+  UMT-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedReg"
+  UMT-013:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound"
+  UMT-015:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedD"
+  UMT-017:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuth"
+  UMT-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untype"
+  UMT-021:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.child"
+  UMT-023:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runUntypedMemoryTrace
+    subsystem: Lifecycle
+    description: "retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCol"
+  SGT-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallGateTrace
+    subsystem: Capability
+    description: "H15e syscall gate send (correct): ok"
+  SGT-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallGateTrace
+    subsystem: Capability
+    description: "H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound"
+  SGT-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallGateTrace
+    subsystem: Capability
+    description: "H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAu"
+  SGT-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallGateTrace
+    subsystem: Capability
+    description: "H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability"
+  SGT-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallGateTrace
+    subsystem: Capability
+    description: "H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound"
+  RCF-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 timerOnly timer success: 3"
+  RCF-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented"
+  RCF-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 timerOnly memory denied: SeLe4n.Model.KernelError.notImplemented"
+  RCF-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 readOnlyMemory memory success: 0"
+  RCF-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 readOnlyMemory timer denied: SeLe4n.Model.KernelError.notImplemented"
+  RCF-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRuntimeContractFixtureTrace
+    subsystem: Platform
+    description: "F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented"
+  ITR-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMainTraceFrom
+    subsystem: Testing
+    description: "inter-transition invariant checks: 15 passed"
+  PTY-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runParameterizedTopologyCheck
+    subsystem: Testing
+    description: "parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)"
+  PTY-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runParameterizedTopologyCheck
+    subsystem: Testing
+    description: "parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)"
+  PTY-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runParameterizedTopologyCheck
+    subsystem: Testing
+    description: "parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)"

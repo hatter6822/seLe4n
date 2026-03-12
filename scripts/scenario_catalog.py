@@ -89,9 +89,54 @@ def nightly_seeds(catalog: dict) -> list[int]:
     return sorted(seeds)
 
 
+def validate_registry(fixture_path: Path, registry_path: Path) -> list[str]:
+    """WS-I1/R-03: Validate that fixture scenario IDs and registry are consistent."""
+    import re
+
+    errors: list[str] = []
+
+    if not registry_path.exists():
+        errors.append(f"registry not found: {registry_path}")
+        return errors
+    if not fixture_path.exists():
+        errors.append(f"fixture not found: {fixture_path}")
+        return errors
+
+    # Parse scenario IDs from fixture (pipe-delimited lines)
+    fixture_ids: set[str] = set()
+    fixture_text = fixture_path.read_text(encoding="utf-8")
+    for line in fixture_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("|")
+        if len(parts) >= 3:
+            fixture_ids.add(parts[0].strip())
+
+    # Parse scenario IDs from registry (YAML-like: "  ID:" lines)
+    registry_ids: set[str] = set()
+    registry_text = registry_path.read_text(encoding="utf-8")
+    for line in registry_text.splitlines():
+        m = re.match(r"^  ([A-Z]+-\d+):", line)
+        if m:
+            registry_ids.add(m.group(1))
+
+    # Check fixture IDs not in registry
+    missing_in_registry = fixture_ids - registry_ids
+    for sid in sorted(missing_in_registry):
+        errors.append(f"fixture scenario ID not in registry: {sid}")
+
+    # Check registry IDs not in fixture
+    missing_in_fixture = registry_ids - fixture_ids
+    for sid in sorted(missing_in_fixture):
+        errors.append(f"registry scenario ID not in fixture: {sid}")
+
+    return errors
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scenario catalog utilities")
-    parser.add_argument("command", choices=["validate", "nightly-seeds"])
+    parser.add_argument("command", choices=["validate", "nightly-seeds", "validate-registry"])
     parser.add_argument(
         "--catalog",
         default="tests/scenarios/scenario_catalog.json",
@@ -101,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fixture",
         default="tests/fixtures/main_trace_smoke.expected",
         help="Trace fixture path for validation",
+    )
+    parser.add_argument(
+        "--registry",
+        default="tests/fixtures/scenario_registry.yaml",
+        help="Scenario registry path for validate-registry",
     )
     return parser
 
@@ -135,6 +185,17 @@ def main() -> int:
         print(
             f"scenario catalog validation passed ({len(catalog['scenarios'])} scenarios; owner={catalog['owner']}; review={catalog['review_cadence']})"
         )
+        return 0
+
+    if args.command == "validate-registry":
+        registry_path = Path(args.registry)
+        errors = validate_registry(fixture_path, registry_path)
+        if errors:
+            print("scenario registry validation failed:", file=sys.stderr)
+            for error in errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
+        print("scenario registry validation passed")
         return 0
 
     for seed in nightly_seeds(catalog):

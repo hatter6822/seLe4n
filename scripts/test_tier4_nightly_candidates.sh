@@ -15,7 +15,8 @@ cd "${REPO_ROOT}"
 
 if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" != "1" ]]; then
   log_section "META" "Tier 4 candidates staged but not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run)."
-  log_section "META" "Staged candidates: repeat-run trace determinism + full suite replay."
+  log_section "META" "Staged candidates: extended determinism seed probe + full suite replay."
+  log_section "META" "Note: basic determinism validation is now mandatory in Tier 2 (WS-I1/R-02)."
   finalize_report
 fi
 
