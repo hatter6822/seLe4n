@@ -2,7 +2,7 @@
 
 ### WS-I1: Critical Testing Infrastructure
 
-- **Part A (R-01): Inter-transition invariant assertions.** Added 15
+- **Part A (R-01): Inter-transition invariant assertions.** Added 17
   `checkInvariants` calls across all 13 trace functions in
   `MainTraceHarness.lean`, validating scheduler, CSpace, IPC, lifecycle,
   service, VSpace, and CDT invariants after each major transition group.

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/upgrade-testing-infrastructure-BPyo1",
-      "commit_sha": "a9cc0cc0819a9a95dd3c3f717b97ee9382f9c39d",
-      "tree_sha": "c1f6d4f189bbaf53c2d3e96f73ee4e731308325e",
-      "committed_at_utc": "2026-03-11T23:37:09+00:00"
+      "commit_sha": "a87575ec420772d833d391af765b4c8a3495a018",
+      "tree_sha": "40ac98d8b9c8dceec5cc94368590c211c19eaf39",
+      "committed_at_utc": "2026-03-12T00:03:40+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "90462812206c5fd76b0fd2d22834389d2a07289b5f099fb5894c4387c517b3b8"
+    "source_digest": "22e45ee61b89c0acb147e125805aa5f4362bac11ef732cf08c80c60a2aee0e15"
   },
   "summary": {
     "module_count": 70,
@@ -27,7 +27,7 @@
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
-    "production_loc": 34196,
+    "production_loc": 34198,
     "test_files": 3,
     "test_loc": 2886,
     "proved_theorem_lemma_decls": 1086,
@@ -15474,7 +15474,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 514,
+          "line": 515,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -15484,7 +15484,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 566,
+          "line": 567,
           "called": [
             "checkInvariants",
             "mkRunQueue"
@@ -15493,7 +15493,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 637,
+          "line": 638,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -15502,7 +15502,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 799,
+          "line": 800,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -15511,7 +15511,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 873,
+          "line": 874,
           "called": [
             "checkInvariants",
             "demoUntyped",
@@ -15523,7 +15523,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 961,
+          "line": 963,
           "called": [
             "checkInvariants"
           ]
@@ -15531,7 +15531,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1019,
+          "line": 1021,
           "called": [
             "checkInvariants"
           ]
@@ -15539,7 +15539,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1063,
+          "line": 1065,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -15548,7 +15548,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1109,
+          "line": 1111,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -15558,7 +15558,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1181,
+          "line": 1183,
           "called": [
             "checkInvariants"
           ]
@@ -15566,7 +15566,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1216,
+          "line": 1218,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -15591,13 +15591,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1254,
+          "line": 1256,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1305,
+          "line": 1307,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -15605,7 +15605,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1319,
+          "line": 1321,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -15613,7 +15613,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1327,
+          "line": 1329,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

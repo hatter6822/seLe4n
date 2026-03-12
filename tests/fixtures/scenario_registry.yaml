@@ -592,19 +592,9 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMainTraceFrom
     subsystem: Testing
-    description: "inter-transition invariant checks: 15 passed"
+    description: "inter-transition invariant checks: 17 passed"
   PTY-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runParameterizedTopologyCheck
     subsystem: Testing
-    description: "parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)"
-  PTY-001:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runParameterizedTopologyCheck
-    subsystem: Testing
-    description: "parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)"
-  PTY-001:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runParameterizedTopologyCheck
-    subsystem: Testing
-    description: "parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)"
+    description: "parameterized topology ok: 3 configurations (minimal, medium, large)"

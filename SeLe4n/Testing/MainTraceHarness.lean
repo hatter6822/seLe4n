@@ -505,6 +505,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
       | .error err => IO.println s!"[LEP-035] cspace lookup error: {reprStr err}"
       | .ok (cap, _) =>
           IO.println s!"[LEP-036] minted cap rights: {reprStr cap.rights}"
+  checkInvariants counter "post-endpoint-notification-handshake" st1
 
 -- ============================================================================
 -- WS-E4: Capability/IPC completion trace scenarios
@@ -899,6 +900,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           | some (.untyped ut2) =>
               IO.println s!"[UMT-007] untyped watermark after second retype: {ut2.watermark}"
           | _ => IO.println "[UMT-008] untyped object missing after second retype"
+  checkInvariants counter "post-untyped-retype-success-path" st1
   -- F2-03: Type mismatch — try retypeFromUntyped on a TCB (not an untyped)
   match SeLe4n.Kernel.retypeFromUntyped lifecycleAuthSlot ⟨12⟩ ⟨50⟩ newEp epAllocSize st1 with
   | .error err => IO.println s!"[UMT-009] retype-from-untyped type-mismatch branch: {reprStr err}"

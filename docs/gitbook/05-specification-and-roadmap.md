@@ -80,7 +80,7 @@ ordering. Closes A-09 (HIGH).
 Phase 1 of the WS-I improvement portfolio, addressing three critical testing
 infrastructure recommendations from the v0.14.9 audit:
 
-- **R-01 (inter-transition assertions):** 15 `checkInvariants` calls across all
+- **R-01 (inter-transition assertions):** 17 `checkInvariants` calls across all
   13 trace functions, invoking 17 invariant check families (scheduler, CSpace, IPC,
   lifecycle, service, VSpace, CDT, ASID, untyped, notification, blocked-thread, domain)
   after every major transition group. `IO.Ref Nat` counter tracking with `[ITR-001]`
