@@ -39,9 +39,8 @@ transition is an executable pure function. Every invariant is machine-checked
 by the Lean type-checker — zero `sorry`, zero `axiom`. The entire proof surface
 compiles to native code with no admitted proofs.
 
-The project began as a formalization of seL4 semantics and has evolved into a
-novel kernel that preserves seL4's capability-based security model while
-introducing substantial architectural improvements:
+The project utilizes a capability-based security model while introducing novel 
+architectural improvements compared to other microkernels:
 
 - **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use `Std.HashMap`/`Std.HashSet`
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
@@ -214,7 +213,7 @@ Main.lean                        Executable entry point
 tests/                           Negative-state suite, information-flow suite, trace probe
 ```
 
-## Architectural innovations beyond seL4
+## Architectural innovations beyond traditional microkernels
 
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
