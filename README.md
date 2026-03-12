@@ -213,7 +213,7 @@ Main.lean                        Executable entry point
 tests/                           Negative-state suite, information-flow suite, trace probe
 ```
 
-## Architectural innovations beyond traditional microkernels
+### Comparison with seL4
 
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
@@ -227,12 +227,6 @@ tests/                           Negative-state suite, information-flow suite, t
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ### Comparison with Fiasco.OC (TU Dresden)
-
-Fiasco.OC is a mature L4-family microkernel from TU Dresden with a strong
-engineering focus on high-performance IPC, object-oriented C++ kernel
-structure, and practical deployment in systems such as L4Re. seLe4n shares the
-microkernel design intent (small trusted computing base, explicit user/kernel
-boundary), but differs in where the project puts its primary innovation:
 
 | Dimension | Fiasco.OC (TU Dresden) | seLe4n |
 |-----------|-------------------------|--------|
