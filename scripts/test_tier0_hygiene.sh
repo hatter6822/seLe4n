@@ -40,13 +40,15 @@ fi
 # Verify that sampled key preservation theorems have non-trivial proof bodies.
 # A theorem is flagged if its body is only `:= by rfl`, `:= rfl`, or contains sorry.
 THEOREM_CHECK_TARGETS=(
-  "SeLe4n/Kernel/Scheduler/Invariant.lean"
-  "SeLe4n/Kernel/Capability/Invariant.lean"
-  "SeLe4n/Kernel/IPC/Invariant.lean"
+  "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean"
+  "SeLe4n/Kernel/Capability/Invariant/Preservation.lean"
+  "SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean"
+  "SeLe4n/Kernel/IPC/Invariant/Structural.lean"
   "SeLe4n/Kernel/Lifecycle/Invariant.lean"
-  "SeLe4n/Kernel/Service/Invariant.lean"
+  "SeLe4n/Kernel/Service/Invariant/Acyclicity.lean"
   "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean"
-  "SeLe4n/Kernel/InformationFlow/Invariant.lean"
+  "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean"
+  "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean"
 )
 if command -v python3 >/dev/null 2>&1; then
   run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_proof_depth.py" "${THEOREM_CHECK_TARGETS[@]}"
