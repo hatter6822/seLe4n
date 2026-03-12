@@ -230,14 +230,14 @@ tests/                           Negative-state suite, information-flow suite, t
 
 | Feature | Fiasco.OC (TU Dresden) | seLe4n |
 |---------|-------------------------|--------|
-| **IPC mechanism** | L4 message-based IPC with kernel-managed endpoint semantics optimized in C++ for low-latency production paths | Intrusive dual-queue endpoint design with `queuePPrev` back-pointers enabling O(1) mid-queue removal in explicit, pure state transitions |
-| **Information flow** | Isolation is enforced through kernel mechanism and policy configuration, without an in-tree machine-checked noninterference proof layer | N-domain configurable flow policy (generalizes legacy confidentiality × integrity labels) with theorem-backed low-equivalence projections |
-| **Service management** | Core microkernel keeps services outside the kernel (user-space servers/runtime stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
-| **Capability derivation** | L4 capability/object model with production-focused grant/transfer/revocation behavior in engineered kernel logic | `childMap` HashMap for O(1) children lookup with typed transition functions amenable to local preservation proofs |
-| **Scheduler** | Priority-driven real-time scheduling tuned for practical latency and throughput on supported architectures | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
-| **VSpace** | Architecture-native MMU/page-table handling integrated into the kernel for practical virtual-memory deployment | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Systems assurance centered on testing, review, benchmarking, and long-run deployment hardening | Lean 4 type-checker with proofs co-located with transitions; production target forbids `sorry`/`axiom` |
-| **Platform abstraction** | Architecture and board support delivered through production kernel engineering and L4 ecosystem integration | `PlatformBinding` typeclass with typed boundary contracts |
+| **IPC mechanism** | L4 message-based endpoint IPC | Intrusive dual-queue endpoint IPC with `queuePPrev` back-pointers for O(1) mid-queue removal |
+| **Information flow** | Mechanism/policy isolation (no in-tree machine-checked noninterference layer) | N-domain configurable flow policy with machine-checked low-equivalence/noninterference theorems |
+| **Service management** | Not in kernel (external user-space stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
+| **Capability derivation** | L4 capability/object model | `childMap` HashMap for O(1) children lookup with typed transitions |
+| **Scheduler** | Priority-driven real-time scheduler | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
+| **VSpace** | Architecture-native page tables/MMU | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
+| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with proofs co-located with transitions |
+| **Platform abstraction** | Architecture/board support via kernel + ecosystem engineering | `PlatformBinding` typeclass with typed boundary contracts |
 
 
 ## What's next
