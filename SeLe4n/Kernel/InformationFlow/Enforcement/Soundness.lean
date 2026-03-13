@@ -377,7 +377,7 @@ def declassifyStore
       -- Declassification authorized — perform the controlled downgrade
       storeObject targetId obj st
     else
-      .error .flowDenied
+      .error .declassificationDenied
 
 /-- WS-H10/A-39: When declassification is authorized, the operation delegates
 to storeObject. -/
@@ -417,7 +417,7 @@ theorem declassifyStore_error_when_declass_denied
     (hNormalDenied : ctx.policy.canFlow srcDomain dstDomain = false)
     (hDeclDenied : declPolicy.canDeclassify srcDomain dstDomain = false) :
     declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st =
-      .error .flowDenied := by
+      .error .declassificationDenied := by
   simp [declassifyStore, hNormalDenied, hDeclDenied]
 
 /-- WS-H10/A-39: Declassification preserves state on denial — if either
