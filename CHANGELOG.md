@@ -25,6 +25,14 @@
 - **Build jobs:** 138. Zero sorry/axiom. Zero warnings.
 - **Recommendations closed:** R-01, R-02, R-03.
 
+## [0.14.10] - 2026-03-13
+
+### Documentation & version sync
+
+- Bumped package version from `0.14.9` to `0.14.10` in `lakefile.toml`.
+- Synchronized canonical documentation version markers (`README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/DEVELOPMENT.md`, and `docs/codebase_map.json`).
+- Updated GitBook mirror version markers (`docs/gitbook/README.md`, `docs/gitbook/navigation_manifest.json`, `docs/gitbook/05-specification-and-roadmap.md`, and `docs/gitbook/22-next-slice-development-path.md`).
+
 ## [0.14.9] - 2026-03-11
 
 ### WS-F5: Model Fidelity

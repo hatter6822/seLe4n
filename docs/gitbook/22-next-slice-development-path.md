@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Version:** 0.14.9 (Lean v4.28.0)
+**Version:** 0.14.10 (Lean v4.28.0)
 
 **Verified metrics snapshot (from [`docs/codebase_map.json`](../../docs/codebase_map.json) `readme_sync`):**
 - Production LoC: 34,171 across 67 files
