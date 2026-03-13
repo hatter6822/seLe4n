@@ -1,4 +1,4 @@
-## [0.15.0] - 2026-03-11
+## [0.14.10] - 2026-03-13
 
 ### WS-I1: Critical Testing Infrastructure
 
@@ -25,14 +25,28 @@
 - **Build jobs:** 138. Zero sorry/axiom. Zero warnings.
 - **Recommendations closed:** R-01, R-02, R-03.
 
-## [0.14.10] - 2026-03-13
+### WS-I2: Test Coverage and Memory domain ownership
 
-### Documentation & version sync
+- proof/validation depth completed: Tier 0 now runs semantic L-08 theorem-body
+  analysis (`scripts/check_proof_depth.py` with regex fallback), Tier 3 now runs
+  Lean `#check` correctness anchors across
+  scheduler/capability/IPC/lifecycle/service/VSpace/IF preservation theorems,
+  and IF projection now supports optional memory-domain ownership
+  (`memoryOwnership`) with backward-compatible default (`none`).
 
-- Bumped package version from `0.14.9` to `0.14.10` in `lakefile.toml`.
-- Synchronized canonical documentation version markers (`README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/DEVELOPMENT.md`, and `docs/codebase_map.json`).
-- Updated GitBook mirror version markers (`docs/gitbook/README.md`, `docs/gitbook/navigation_manifest.json`, `docs/gitbook/05-specification-and-roadmap.md`, and `docs/gitbook/22-next-slice-development-path.md`).
+### WS-I3: Test coverage expansion —
 
+- new tests/OperationChainSuite.lean adds 6 multi-operation chain tests
+  (retype→mint→revoke, send/send/receive FIFO, map/lookup/unmap/lookup,
+  service start/stop dependency sequencing, copy/move/delete,   notification
+  badge accumulation), scheduler stress coverage (16-thread repeated scheduling,
+  same-priority determinism, multi-domain isolation), and Tier 2 integration via
+  scripts/test_tier2_negative.sh; tests/InformationFlowSuite.lean now includes
+  declassification runtime checks for authorized downgrade, normal-flow rejection,
+  policy-denied rejection, and 3-domain lattice behavior. Closes R-06/R-07/R-08
+  Declassification policy denial now reports a distinct declassificationDenied
+   error in declassifyStore and suite expectations.
+   
 ## [0.14.9] - 2026-03-11
 
 ### WS-F5: Model Fidelity
