@@ -13,7 +13,7 @@ moved to [`docs/dev_history/audits/`](../dev_history/audits/).
 6. [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](./AUDIT_v0.12.2_WORKSTREAM_PLAN.md) — WS-F execution plan (**WS-F1..F4 completed; WS-F5..F8 remaining**).
 7. [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](./KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) — v0.12.5 performance audit (**all 14 findings closed by WS-G**).
 8. [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](./KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) — WS-G execution plan (**all 9 workstreams completed**).
-9. [`AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](./AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) — WS-J1 planning document for typed register-indexed authoritative namespace migration.
+9. [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](./AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) — WS-J1 planning document for typed register-indexed authoritative namespace migration.
 
 ## Planning guidance
 
@@ -22,7 +22,7 @@ For current planning, use:
 - **active workstream (WS-H11..H16):** `AUDIT_v0.12.15_WORKSTREAM_PLAN.md`
 - **remaining WS-F (WS-F5..F8):** `AUDIT_v0.12.2_WORKSTREAM_PLAN.md`
 - **completed performance portfolio (WS-G):** `KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`
-- **next planned architecture/model migration (WS-J1):** `AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`
+- **next planned architecture/model migration (WS-J1):** `AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`
 - **audit findings:** `AUDIT_CODEBASE_v0.12.2_v1.md` + `v2`, `AUDIT_CODEBASE_v0.12.15_v1.md` + `v2`
 
 ## Audit lineage

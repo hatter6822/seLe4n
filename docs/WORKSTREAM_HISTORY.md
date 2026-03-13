@@ -52,7 +52,7 @@ full details.
 
 A new planning slice supersedes the WS-I5 Part A documentation-only treatment of
 `RegName`/`RegValue` for authority-bearing register paths. See
-[`AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
 
 | ID | Focus | Priority |
 |----|-------|----------|
