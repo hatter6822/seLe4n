@@ -1,6 +1,6 @@
 # seLe4n Workstream Plan — Register-Indexed Authoritative Namespaces (WS-J1)
 
-**Version target:** v0.15.4+
+**Version target:** v0.14.10+
 **Status:** Planned
 **Priority:** High
 **Estimated effort:** 3–5 days
