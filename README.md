@@ -245,7 +245,7 @@ tests/                           Negative-state suite, information-flow suite, t
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-I4..WS-I5** — Remaining WS-I coverage/documentation polish (Low priority). WS-I3 (operations coverage expansion) completed in v0.15.2.
+- **WS-I4..WS-I5** — Remaining WS-I coverage/documentation polish (Low priority). WS-I3 (operations coverage expansion) completed in v0.15.2, including distinct declassification-policy denial signaling (`declassificationDenied`) in runtime checks.
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters

@@ -827,7 +827,7 @@ def runInformationFlowChecks : IO Unit := do
     SeLe4n.Kernel.declassifyStore declassCtx denyDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
   expect "WS-I3: declassify fails when declassification policy denies"
     (match policyDenied with
-      | .error .flowDenied => true
+      | .error .declassificationDenied => true
       | _ => false)
 
   let triLevelAllow : SeLe4n.Kernel.DeclassificationPolicy :=

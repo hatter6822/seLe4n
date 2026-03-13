@@ -27,6 +27,7 @@ inductive KernelError where
   | mappingConflict
   | translationFault
   | flowDenied
+  | declassificationDenied  -- WS-I3/R-08: declassification policy denied downgrade
   | alreadyWaiting
   | cyclicDependency
   | notImplemented

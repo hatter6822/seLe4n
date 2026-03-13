@@ -32,6 +32,15 @@ private def expectOkState
   | .error err =>
       throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
 
+private def runKernelState
+    (label : String)
+    (actual : Except KernelError (Unit × SystemState)) : IO SystemState :=
+  match actual with
+  | .ok (_, st) =>
+      pure st
+  | .error err =>
+      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+
 private def expectError
     (label : String)
     (actual : Except KernelError α)
@@ -236,7 +245,7 @@ private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemSta
     pure st
   else
     let step := if st.scheduler.current.isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
-    let (_, st') ← expectOkState s!"scheduler: schedule step {n}" step
+    let st' ← runKernelState s!"scheduler: schedule step {n}" step
     if assertEvery > 0 && n % assertEvery = 0 then
       assertInvariants s!"scheduler periodic invariant {n}" st'
     scheduleNTimes (n - 1) assertEvery st'
@@ -310,8 +319,8 @@ private def schedulerStressChecks : IO Unit := do
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
-    let (_, stSwitch) ← expectOkState "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
-    let (_, stSched) ← expectOkState "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
+    let stSwitch ← runKernelState "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
+    let stSched ← runKernelState "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
     match stSched.scheduler.current with
     | none => pure ()
     | some tid =>

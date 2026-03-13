@@ -82,7 +82,7 @@ Phase 3 (operations-focused) of the WS-I improvement portfolio:
 - `tests/OperationChainSuite.lean` adds six compositional chain tests spanning lifecycle, CSpace, IPC, VSpace, service sequencing, and notifications.
 - Scheduler stress section adds 16-thread repeated scheduling, same-priority deterministic selection checks, and multi-domain isolation checks with `switchDomain` + `schedule`.
 - Tier 2 negative gate now executes `OperationChainSuite` via `scripts/test_tier2_negative.sh`.
-- `tests/InformationFlowSuite.lean` adds declassification runtime coverage for authorized downgrade, normal-flow rejection, policy-denied rejection, and a 3-domain lattice scenario.
+- `tests/InformationFlowSuite.lean` adds declassification runtime coverage for authorized downgrade, normal-flow rejection, policy-denied rejection, and a 3-domain lattice scenario; policy-denied downgrade now reports distinct `declassificationDenied`.
 
 ## Completed: WS-I1 Critical Testing Infrastructure (v0.15.0)
 

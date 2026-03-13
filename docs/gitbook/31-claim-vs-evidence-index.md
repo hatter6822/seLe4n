@@ -34,7 +34,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | 17 inter-transition invariant assertions across all trace functions (WS-I1/R-01) | `./scripts/test_smoke.sh` |
 | Mandatory determinism: trace output identical across runs (WS-I1/R-02) | `./scripts/test_tier2_determinism.sh` |
 | 121 trace lines tagged with unique scenario IDs; registry validated bidirectionally (WS-I1/R-03) | `./scripts/test_tier0_hygiene.sh` + `test_tier2_trace.sh` |
-| WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks | `./scripts/test_tier2_negative.sh` |
+| WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks (including distinct `declassificationDenied` policy-denial path) | `./scripts/test_tier2_negative.sh` |
 
 ## Proof claim qualification
 
