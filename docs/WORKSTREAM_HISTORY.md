@@ -43,10 +43,10 @@ full details.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-I1** | Test infrastructure hardening (inter-transition assertions, determinism promotion, scenario ID traceability) | HIGH — **COMPLETED** (v0.15.0) |
-| **WS-I2** | Proof & hygiene strengthening (L-08 regex upgrade, HashMap.fold migration, NI CDT frame lemmas, VSpace memory projection) | HIGH — pending |
-| **WS-I3** | Documentation completeness (codebase map automation, GitBook Tier 3 chapter, claim-evidence gap closure) | MEDIUM — pending |
-| **WS-I4** | Code quality refinement (RuntimeContract documentation, Service subsystem docstring expansion) | LOW — pending |
-| **WS-I5** | Coverage expansion (scheduler edge-case scenarios, information-flow declassification tests, platform contract stress tests) | LOW — pending |
+| **WS-I2** | Proof & validation depth (semantic L-08 validation, Tier 3 property anchors, CDT decomposition lemmas, VSpace memory projection ownership) | HIGH — **COMPLETED** (v0.15.1) |
+| **WS-I3** | Operations coverage expansion (multi-operation chains, scheduler stress, declassification checks) | MEDIUM — **COMPLETED** (v0.15.2) |
+| **WS-I4** | Subsystem coverage expansion (VSpace multi-ASID sharing, IPC interleaving, lifecycle chain tests) | LOW — **COMPLETED** (v0.15.3) |
+| **WS-I5** | Documentation & code quality polish (RegName/RegValue docs, IF readers' guide, fixture process, HashMap.fold migration, metrics automation) | LOW — pending |
 
 ### Raspberry Pi 5 hardware binding
 
@@ -71,6 +71,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-I4** | v0.15.3 | Subsystem coverage expansion: `tests/OperationChainSuite.lean` now includes VSpace multi-ASID shared-page tests (cross-ASID shared PAddr coherence under ASID-local unmap and per-ASID permission divergence), IPC interleaved send/receive tests (three-sender FIFO plus alternating send/receive queue-integrity checks), and lifecycle transaction chains (authority attenuation root→child→grandchild with no-grant mint denial and strict cascading CDT revoke assertions). Tier 2 smoke now exercises these via `tests/OperationChainSuite.lean`. Closes R-09/R-10/R-11 | I4 |
 | **WS-I1** | v0.15.0 | Critical testing infrastructure: 17 inter-transition invariant assertions across all 13 trace functions (R-01), mandatory Tier 2 determinism validation via `test_tier2_determinism.sh` (R-02), scenario ID traceability with 121 tagged trace lines in pipe-delimited format, scenario registry YAML with Tier 0 validation (R-03). Zero sorry/axiom. Closes R-01/R-02/R-03 | I1 |
 | **WS-F8** | v0.14.9 | Cleanup: removed dead `ServiceStatus.failed`/`isolated` constructors (D1), labeled Service subsystem as seLe4n extension with module docstrings (D2/MED-17), closed F-14 (endpointInvariant already removed in WS-H12a), closed F-01 (legacy endpoint fields already removed in WS-H12a), closed MED-04 (domain lattice alive and exercised, finding misidentified). Completes 100% of v0.12.2 audit findings (33/33). Closes MED-04/MED-17/F-01/F-14/F-19 | F8 |
 | **WS-F5** | v0.14.9 | Model fidelity: word-bounded `Badge` with `ofNatMasked`/`bor`/validity theorems (F5-D1/CRIT-06), order-independent `AccessRightSet` bitmask replacing list-based rights (F5-D2/HIGH-04), deferred operations documented with rationale (F5-D3/MED-03), `badgeWellFormed` invariant with `notificationBadgesWellFormed`/`capabilityBadgesWellFormed` predicates and preservation proofs for `notificationSignal`/`notificationWait`/`cspaceMint`/`cspaceMutate`. Closes CRIT-06/HIGH-04/MED-03 | F5 |

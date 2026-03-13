@@ -36,8 +36,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ## 3) Next workstreams
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
-The active improvement portfolio is WS-I (v0.14.10). WS-I1 and WS-I2 are completed;
-remaining follow-up workstreams are WS-I4..WS-I5.
+The active improvement portfolio is WS-I (v0.14.10). WS-I1 through WS-I4 are completed;
+remaining follow-up workstream is WS-I5.
 
 ### 3.1 WS-H11..H16 — Remaining v0.12.15 audit remediation
 
@@ -73,6 +73,7 @@ for the full execution plan.
 ### 3.3 Completed portfolios
 
 - **WS-I3:** completed (v0.15.2). Test coverage expansion — new `tests/OperationChainSuite.lean` adds 6 multi-operation chain tests (retype→mint→revoke, send/send/receive FIFO, map/lookup/unmap/lookup, service start/stop dependency sequencing, copy/move/delete, notification badge accumulation), scheduler stress coverage (16-thread repeated scheduling, same-priority determinism, multi-domain isolation), and Tier 2 integration via `scripts/test_tier2_negative.sh`; `tests/InformationFlowSuite.lean` now includes declassification runtime checks for authorized downgrade, normal-flow rejection, policy-denied rejection, and 3-domain lattice behavior. Closes R-06/R-07/R-08 Declassification policy denial now reports a distinct `declassificationDenied` error in `declassifyStore` and suite expectations.
+- **WS-I4:** completed (v0.15.3). Subsystem coverage expansion — `tests/OperationChainSuite.lean` now includes dedicated WS-I4 sections for (R-09) VSpace multi-ASID shared-page coverage (shared PAddr persistence across ASID-local unmap + per-ASID permission divergence via `vspaceLookupFull`), (R-10) IPC interleaved sender/receiver ordering checks (3-sender FIFO and alternating send/receive), and (R-11) lifecycle transaction chains (authority attenuation root→child→grandchild, syscall-gated no-grant mint denial, and cascading `cspaceRevokeCdtStrict` descendant cleanup with CDT detachment assertions). Closes R-09/R-10/R-11.
 - **WS-I1:** completed (v0.15.0). Critical testing infrastructure — 17 inter-transition invariant assertions across all 13 trace functions (R-01), mandatory Tier 2 determinism validation (R-02), scenario ID traceability with 121 tagged trace lines, pipe-delimited fixture format, scenario registry YAML with Tier 0 validation (R-03). Phase 1 of the WS-I improvement portfolio. Closes R-01/R-02/R-03.
 - **WS-F8:** completed. Cleanup — removed dead `ServiceStatus.failed`/`isolated` constructors, labeled Service subsystem as seLe4n extension with module docstrings (MED-17), closed F-14 (endpointInvariant already removed in WS-H12a), closed F-01 (legacy endpoint fields already removed in WS-H12a), closed MED-04 (domain lattice alive and exercised — finding misidentified). Completes 100% of v0.12.2 audit findings (33/33). Closes MED-04, MED-17, F-01, F-14, F-19.
 - **WS-F7:** completed. Testing expansion — 4 new runtime invariant checks (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `currentThreadInActiveDomain`, `uniqueWaiters`) added to `InvariantChecks.lean`; `TraceSequenceProbe` extended from 3 to 7 operation families (+ notification signal/wait, schedule, capability lookup) with blocked-thread guard; `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` fixtures exercised in `MainTraceHarness` with 6 deterministic trace assertions; CDT `childMapConsistentCheck` confirmed already delivered. Zero sorry, zero axiom. Closes MED-08, F-24, F-25, F-26.

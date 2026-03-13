@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-I4+ (v0.14.10 improvement portfolio; WS-I1/WS-I3 completed); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-I5+ (v0.14.10 improvement portfolio; WS-I1..WS-I4 completed); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -74,6 +74,14 @@ boundaries (`endpointSendDual`/`endpointCall`/`endpointReply`/`endpointReplyRecv
 integrated into `ipcInvariantFull` 3-conjunct bundle. `checkBounds_iff_bounded`
 decidability bridge. Information-flow enforcement updated with bounds-before-flow
 ordering. Closes A-09 (HIGH).
+
+## Completed: WS-I4 Subsystem Coverage Expansion (v0.15.3)
+
+Phase 3 (subsystem-focused) of the WS-I improvement portfolio:
+
+- `tests/OperationChainSuite.lean` now includes VSpace multi-ASID sharing coverage: one physical page mapped into two ASIDs, ASID-local unmap isolation, and per-ASID permission divergence validated with `vspaceLookupFull`.
+- IPC interleaving coverage validates three-sender FIFO ordering and alternating send/receive sequencing on a shared endpoint without queue corruption.
+- Lifecycle chain coverage validates authority attenuation (`{read,write,grant}` → `{read,write}` → `{read}`), syscall-gated no-grant mint denial, and strict cascading `cspaceRevokeCdtStrict` descendant cleanup with CDT detachment assertions.
 
 ## Completed: WS-I3 Operations Coverage Expansion (v0.15.2)
 

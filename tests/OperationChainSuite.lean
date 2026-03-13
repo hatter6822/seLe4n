@@ -207,6 +207,158 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
     (received = some (SeLe4n.Badge.ofNat 0x11))
   assertInvariants "chain6: signal→signal→wait" st3
 
+private def wsI4VspaceMultiAsidSharing : IO Unit := do
+  let asid1 : SeLe4n.ASID := ⟨1⟩
+  let asid2 : SeLe4n.ASID := ⟨2⟩
+  let sharedPaddr : SeLe4n.PAddr := ⟨0x1000⟩
+  let vaddr1 : SeLe4n.VAddr := ⟨0x2000⟩
+  let vaddr2 : SeLe4n.VAddr := ⟨0x3000⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨270⟩ (.vspaceRoot { asid := asid1, mappings := {} })
+      |>.withObject ⟨271⟩ (.vspaceRoot { asid := asid2, mappings := {} })
+      |>.build)
+
+  let (_, st1) ← expectOkState "ws-i4 vspace: map shared page ASID1"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 sharedPaddr default st0)
+  let (_, st2) ← expectOkState "ws-i4 vspace: map shared page ASID2"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 vaddr2 sharedPaddr default st1)
+  let (lookupAsid1, st3) ← expectOkState "ws-i4 vspace: lookup ASID1 shared mapping"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st2)
+  let (lookupAsid2, st4) ← expectOkState "ws-i4 vspace: lookup ASID2 shared mapping"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st3)
+  expect "ws-i4 vspace: shared paddr visible in ASID1" (lookupAsid1 = sharedPaddr)
+  expect "ws-i4 vspace: shared paddr visible in ASID2" (lookupAsid2 = sharedPaddr)
+
+  let (_, st5) ← expectOkState "ws-i4 vspace: unmap ASID1 only"
+    (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid1 vaddr1 st4)
+  expectError "ws-i4 vspace: ASID1 unmapped lookup faults"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st5) .translationFault
+  let (stillMappedAsid2, st6) ← expectOkState "ws-i4 vspace: ASID2 remains mapped"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st5)
+  expect "ws-i4 vspace: ASID2 mapping survives ASID1 unmap" (stillMappedAsid2 = sharedPaddr)
+
+  let readOnly : PagePermissions := { read := true, write := false, execute := false, user := false, cacheable := true }
+  let readWrite : PagePermissions := { read := true, write := true, execute := false, user := false, cacheable := true }
+  let (_, st7) ← expectOkState "ws-i4 vspace: map read-only in ASID1"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 sharedPaddr readOnly st6)
+  let (_, st8) ← expectOkState "ws-i4 vspace: map read-write in ASID2"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 ⟨0x3100⟩ sharedPaddr readWrite st7)
+  let ((_, permsAsid1), st9) ← expectOkState "ws-i4 vspace: lookupFull ASID1 perms"
+    (SeLe4n.Kernel.Architecture.vspaceLookupFull asid1 vaddr1 st8)
+  let ((_, permsAsid2), st10) ← expectOkState "ws-i4 vspace: lookupFull ASID2 perms"
+    (SeLe4n.Kernel.Architecture.vspaceLookupFull asid2 ⟨0x3100⟩ st9)
+  expect "ws-i4 vspace: ASID1 keeps read-only permissions" (permsAsid1 = readOnly)
+  expect "ws-i4 vspace: ASID2 keeps read-write permissions" (permsAsid2 = readWrite)
+  expect "ws-i4 vspace: ASID1 mapping remains W^X compliant" permsAsid1.wxCompliant
+  expect "ws-i4 vspace: ASID2 mapping remains W^X compliant" permsAsid2.wxCompliant
+  assertInvariants "ws-i4 vspace: multi-asid sharing" st10
+
+private def wsI4IpcInterleavedSends : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨280⟩
+  let senderA : SeLe4n.ThreadId := ⟨2801⟩
+  let senderB : SeLe4n.ThreadId := ⟨2802⟩
+  let senderC : SeLe4n.ThreadId := ⟨2803⟩
+  let receiver : SeLe4n.ThreadId := ⟨2804⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject senderA.toObjId (.tcb { tid := senderA, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨3800⟩, vspaceRoot := ⟨3900⟩, ipcBuffer := ⟨0x1000⟩, ipcState := .ready })
+      |>.withObject senderB.toObjId (.tcb { tid := senderB, priority := ⟨49⟩, domain := ⟨0⟩, cspaceRoot := ⟨3800⟩, vspaceRoot := ⟨3900⟩, ipcBuffer := ⟨0x2000⟩, ipcState := .ready })
+      |>.withObject senderC.toObjId (.tcb { tid := senderC, priority := ⟨48⟩, domain := ⟨0⟩, cspaceRoot := ⟨3800⟩, vspaceRoot := ⟨3900⟩, ipcBuffer := ⟨0x3000⟩, ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨47⟩, domain := ⟨0⟩, cspaceRoot := ⟨3800⟩, vspaceRoot := ⟨3900⟩, ipcBuffer := ⟨0x4000⟩, ipcState := .ready })
+      |>.withRunnable [senderA, senderB, senderC, receiver]
+      |>.build)
+
+  let (_, st1) ← expectOkState "ws-i4 ipc: sender A enqueues"
+    (SeLe4n.Kernel.endpointSendDual epId senderA .empty st0)
+  let (_, st2) ← expectOkState "ws-i4 ipc: sender B enqueues"
+    (SeLe4n.Kernel.endpointSendDual epId senderB .empty st1)
+  let (_, st3) ← expectOkState "ws-i4 ipc: sender C enqueues"
+    (SeLe4n.Kernel.endpointSendDual epId senderC .empty st2)
+  let (firstSender, st4) ← expectOkState "ws-i4 ipc: first receive"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st3)
+  let (secondSender, st5) ← expectOkState "ws-i4 ipc: second receive"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st4)
+  let (thirdSender, st6) ← expectOkState "ws-i4 ipc: third receive"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st5)
+  expect "ws-i4 ipc: FIFO first sender" (firstSender = senderA)
+  expect "ws-i4 ipc: FIFO second sender" (secondSender = senderB)
+  expect "ws-i4 ipc: FIFO third sender" (thirdSender = senderC)
+
+  let (_, st7) ← expectOkState "ws-i4 ipc: interleaved send A"
+    (SeLe4n.Kernel.endpointSendDual epId senderA .empty st6)
+  let (senderAfterA, st8) ← expectOkState "ws-i4 ipc: interleaved receive after A"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st7)
+  expect "ws-i4 ipc: interleaved receive returns A" (senderAfterA = senderA)
+  let (_, st9) ← expectOkState "ws-i4 ipc: interleaved send B"
+    (SeLe4n.Kernel.endpointSendDual epId senderB .empty st8)
+  let (senderAfterB, st10) ← expectOkState "ws-i4 ipc: interleaved receive after B"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st9)
+  expect "ws-i4 ipc: interleaved receive returns B" (senderAfterB = senderB)
+  assertInvariants "ws-i4 ipc: interleaved send/receive" st10
+
+private def wsI4LifecycleTransactionChains : IO Unit := do
+  let cnodeId : SeLe4n.ObjId := ⟨290⟩
+  let endpointId : SeLe4n.ObjId := ⟨291⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let childSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨1⟩ }
+  let grandchildSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
+  let extraSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨3⟩ }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject endpointId (.endpoint {})
+      |>.withObject cnodeId (.cnode {
+          depth := 0
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ]
+        })
+      |>.build)
+
+  let (_, st1) ← expectOkState "ws-i4 lifecycle: mint root→child (attenuate grant)"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot childSlot (AccessRightSet.ofList [.read, .write]) none st0)
+  let (_, st2) ← expectOkState "ws-i4 lifecycle: mint child→grandchild (read-only)"
+    (SeLe4n.Kernel.cspaceMintWithCdt childSlot grandchildSlot (AccessRightSet.ofList [.read]) none st1)
+  let grandchildCap := SeLe4n.Model.SystemState.lookupSlotCap st2 grandchildSlot
+  expect "ws-i4 lifecycle: grandchild rights are read-only"
+    (grandchildCap.map (fun cap => cap.rights) = some (AccessRightSet.ofList [.read]))
+
+  let grantGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := ⟨99⟩
+    cspaceRoot := cnodeId
+    capAddr := ⟨2⟩
+    capDepth := 4
+    requiredRight := .grant
+  }
+  expectError "ws-i4 lifecycle: grandchild cannot mint without grant"
+    (SeLe4n.Kernel.apiCspaceMint grantGate grandchildSlot extraSlot
+      (AccessRightSet.ofList [.read]) none st2)
+    .illegalAuthority
+
+  let (revokeReport, st3) ← expectOkState "ws-i4 lifecycle: strict revoke root"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st2)
+  expect "ws-i4 lifecycle: strict revoke has no descendant deletion failures"
+    (revokeReport.firstFailure = none)
+  expect "ws-i4 lifecycle: strict revoke deleted exactly two descendants"
+    (revokeReport.deletedSlots.length = 2)
+  expect "ws-i4 lifecycle: strict revoke deleted child slot"
+    (childSlot ∈ revokeReport.deletedSlots)
+  expect "ws-i4 lifecycle: strict revoke deleted grandchild slot"
+    (grandchildSlot ∈ revokeReport.deletedSlots)
+  expect "ws-i4 lifecycle: child slot removed"
+    (SeLe4n.Model.SystemState.lookupSlotCap st3 childSlot = none)
+  expect "ws-i4 lifecycle: grandchild slot removed"
+    (SeLe4n.Model.SystemState.lookupSlotCap st3 grandchildSlot = none)
+  expect "ws-i4 lifecycle: child detached from CDT"
+    (SeLe4n.Model.SystemState.lookupCdtNodeOfSlot st3 childSlot = none)
+  expect "ws-i4 lifecycle: grandchild detached from CDT"
+    (SeLe4n.Model.SystemState.lookupCdtNodeOfSlot st3 grandchildSlot = none)
+  assertInvariants "ws-i4 lifecycle: cascading revoke" st3
+
 private def buildParameterizedTopology
     (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : SystemState :=
   let threads : List (SeLe4n.ObjId × KernelObject) :=
@@ -339,8 +491,11 @@ private def runOperationChainSuite : IO Unit := do
   chain4ServiceStartDependentStop
   chain5CopyMoveDelete
   chain6NotificationBadgeAccumulation
+  wsI4VspaceMultiAsidSharing
+  wsI4IpcInterleavedSends
+  wsI4LifecycleTransactionChains
   schedulerStressChecks
-  IO.println "all WS-I3 operation-chain checks passed"
+  IO.println "all WS-I3/WS-I4 operation-chain checks passed"
 
 end SeLe4n.Testing
 
