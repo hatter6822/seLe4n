@@ -124,3 +124,5 @@ When a claim changes:
 3. refresh this table row(s) for changed claims,
 4. run at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3 anchors/policies changed).
 
+
+| Next major planning slice is WS-J1: register-indexed authoritative namespace migration superseding WS-I5 Part A for authority-resolution paths. | `docs/audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`, `docs/WORKSTREAM_HISTORY.md`, `README.md` | `./scripts/test_smoke.sh` | Documentation planning update: defines phased delivery (WS-J1-A..E), risk register, validation gates, and file impact map. |

@@ -8,7 +8,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 - **Version:** 0.14.10 (Lean v4.28.0).
 - **Codebase metrics:** 34,171 production LoC across 67 files; 2,886 test LoC across 3 suites; 1,086 theorem/lemma declarations (zero sorry/axiom); 2,006 total declarations across 70 modules.
 - **Latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues.
-- **Next workstreams:** WS-I5 documentation/code-quality polish, then Raspberry Pi 5 hardware binding (WS-F/WS-H and WS-I1..WS-I4 completed).
+- **Next workstreams:** WS-J1 register-indexed authoritative namespaces, then Raspberry Pi 5 hardware binding (WS-F/WS-H complete; WS-I1..WS-I4 completed).
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-I5 (v0.14.10 improvement portfolio; WS-I1..WS-I4 completed); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces (v0.15.4 plan); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -224,13 +224,14 @@ re-verified — zero sorry/axiom.
 See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 for the full technical breakdown.
 
-## Next: WS-I5 and Raspberry Pi 5 hardware binding
+## Next: WS-J1 and Raspberry Pi 5 hardware binding
 
-All WS-F and WS-H remediation workstreams are completed. The active remaining
-improvement workstream is **WS-I5** (documentation and code-quality polish).
+All WS-F and WS-H remediation workstreams are completed. The active next
+workstream is **WS-J1** (register-indexed authoritative namespace migration;
+plan-first, then staged implementation).
 
 See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
-[`docs/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md),
+[`docs/audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),
 and [Next Development Path](22-next-slice-development-path.md).
 
 ## Hardware roadmap
