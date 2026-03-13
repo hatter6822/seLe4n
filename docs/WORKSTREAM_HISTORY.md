@@ -48,6 +48,16 @@ full details.
 | **WS-I4** | Subsystem coverage expansion (VSpace multi-ASID, IPC interleaving, lifecycle cascading revoke chains) | LOW — **COMPLETED** (v0.15.3) |
 | **WS-I5** | Documentation and code-quality polish (remaining low-priority recommendations) | LOW — pending |
 
+### WS-J1 workstream (register namespace authority modeling)
+
+A new planning slice supersedes the WS-I5 Part A documentation-only treatment of
+`RegName`/`RegValue` for authority-bearing register paths. See
+[`AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-J1** | Allow register values to index authoritative kernel namespaces directly through typed decode/resolve paths, preserving determinism and proof obligations | HIGH — planned |
+
 ### Raspberry Pi 5 hardware binding
 
 After the remaining workstreams, the next major milestone is populating the RPi5
