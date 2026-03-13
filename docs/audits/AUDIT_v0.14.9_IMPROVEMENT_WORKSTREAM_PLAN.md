@@ -1067,9 +1067,9 @@ workstream:
 | R-03: Scenario ID traceability | WS-I1 | C | Planned |
 | R-04: Semantic L-08 proof validation | WS-I2 | A | Planned |
 | R-05: Tier 3 property correctness checks | WS-I2 | B | Planned |
-| R-06: Multi-operation chain tests | WS-I3 | A | Planned |
-| R-07: Scheduler stress tests | WS-I3 | B | Planned |
-| R-08: Declassification tests | WS-I3 | C | Planned |
+| R-06: Multi-operation chain tests | WS-I3 | A | Completed (v0.15.2) |
+| R-07: Scheduler stress tests | WS-I3 | B | Completed (v0.15.2) |
+| R-08: Declassification tests | WS-I3 | C | Completed (v0.15.2) |
 | R-09: VSpace multi-ASID sharing tests | WS-I4 | A | Planned |
 | R-10: IPC interleaved send tests | WS-I4 | B | Planned |
 | R-11: Lifecycle transaction chain tests | WS-I4 | C | Planned |

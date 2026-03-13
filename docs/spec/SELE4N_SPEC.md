@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 2,006 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-I3+ (v0.14.9 improvement portfolio; WS-I1/WS-I2 completed) |
+| **Next workstreams** | WS-I4/WS-I5 (v0.14.9 improvement portfolio; WS-I1/WS-I2/WS-I3 completed) |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -248,6 +248,7 @@ critical testing infrastructure recommendations from the v0.14.9 audit.
 - **Part B (R-02 — Mandatory determinism):** `scripts/test_tier2_determinism.sh` runs the trace harness twice and diffs output, failing on any divergence. Integrated into `test_smoke.sh` Tier 2 gate (between trace and negative checks), making determinism a mandatory CI property rather than an optional Tier 4 extension.
 - **Part C (R-03 — Scenario ID traceability):** All 121 trace output lines tagged with unique scenario IDs (15 prefix families: ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY). Fixture format upgraded to pipe-delimited (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`). `tests/fixtures/scenario_registry.yaml` maps all 121 IDs to source functions and subsystems. `scripts/scenario_catalog.py validate-registry` checks bidirectional fixture↔registry consistency. Tier 0 hygiene validates registry on every PR.
 - **WS-I2 (v0.15.1):** proof/validation depth completed: Tier 0 now runs semantic L-08 theorem-body analysis (`scripts/check_proof_depth.py` with regex fallback), Tier 3 now runs Lean `#check` correctness anchors across scheduler/capability/IPC/lifecycle/service/VSpace/IF preservation theorems, and IF projection now supports optional memory-domain ownership (`memoryOwnership`) with backward-compatible default (`none`).
+- **WS-I3 (v0.15.2):** coverage expansion for operations completed: new `tests/OperationChainSuite.lean` adds 6 multi-operation chain tests plus scheduler stress checks; Tier 2 negative gate now runs the operation-chain suite; `tests/InformationFlowSuite.lean` adds declassification runtime checks (`declassifyStore`) for authorized downgrade, normal-flow rejection, policy-denied rejection, and multi-domain linear-order behavior.
 
 ### 5.14 Deferred Operations (WS-F5/D3)
 

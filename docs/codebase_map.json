@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "dfc63c50a100b5be215248e4df46bfdfe34628d1",
-      "tree_sha": "a8e85cb6caf6c8bd357c39ce0b806b8cd4e89ea5",
-      "committed_at_utc": "2026-03-12T18:41:21-04:00"
+      "branch": "work",
+      "commit_sha": "cbfb0d301fb9a98abe0e959255fffadf6c58af8b",
+      "tree_sha": "b99618bd7463d04413acb93a225d92b1fd752735",
+      "committed_at_utc": "2026-03-12T22:41:30+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "dcfa1217842dd2400070c691bbe6ae54931de80faaccd3b3a924b07d1d646801"
+    "source_digest": "4a9598b99e32cfdfe7ce25eaca0d0e08a86b2c67ec099925cc454c12ac330804"
   },
   "summary": {
-    "module_count": 70,
-    "declaration_count": 2013
+    "module_count": 71,
+    "declaration_count": 2030
   },
   "readme_sync": {
     "version": "0.14.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 67,
     "production_loc": 34285,
-    "test_files": 3,
-    "test_loc": 2886,
+    "test_files": 4,
+    "test_loc": 3231,
     "proved_theorem_lemma_decls": 1089,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -15948,7 +15948,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 815,
+          "line": 870,
           "called": []
         }
       ]
@@ -16272,6 +16272,158 @@
           "kind": "def",
           "name": "main",
           "line": 1785,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.OperationChainSuite",
+      "path": "tests/OperationChainSuite.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
+          "line": 17,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 19,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expectOkState",
+          "line": 25,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expectError",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "assertInvariants",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "alwaysAllowServicePolicy",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "buildSchedulerTopology",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "scheduleNTimes",
+          "line": 80,
+          "called": [
+            "assertInvariants",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRetypeMintRevokeChain",
+          "line": 96,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSendSendReceiveChain",
+          "line": 133,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMapLookupUnmapLookupChain",
+          "line": 153,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runServiceStartStopChain",
+          "line": 169,
+          "called": [
+            "alwaysAllowServicePolicy",
+            "expect",
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCopyMoveDeleteChain",
+          "line": 201,
+          "called": [
+            "assertInvariants",
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runNotificationSignalWaitChain",
+          "line": 232,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSchedulerStress",
+          "line": 250,
+          "called": [
+            "assertInvariants",
+            "buildSchedulerTopology",
+            "expect",
+            "expectOkState",
+            "scheduleNTimes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runOperationChainChecks",
+          "line": 278,
+          "called": [
+            "runCopyMoveDeleteChain",
+            "runMapLookupUnmapLookupChain",
+            "runNotificationSignalWaitChain",
+            "runRetypeMintRevokeChain",
+            "runSchedulerStress",
+            "runSendSendReceiveChain",
+            "runServiceStartStopChain"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 289,
           "called": []
         }
       ]
