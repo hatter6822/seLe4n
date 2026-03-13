@@ -36,7 +36,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ## 3) Next workstreams
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
-The active improvement portfolio is WS-I (v0.14.9). WS-I1 and WS-I2 are completed;
+The active improvement portfolio is WS-I (v0.14.10). WS-I1 and WS-I2 are completed;
 remaining follow-up workstreams are WS-I4..WS-I5.
 
 ### 3.1 WS-H11..H16 — Remaining v0.12.15 audit remediation
