@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 2,006 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-I5+ (v0.14.10 improvement portfolio; WS-I1/WS-I4 completed) |
+| **Next workstreams** | WS-I5 (v0.14.10 improvement portfolio; WS-I1..WS-I4 completed) + Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -288,7 +288,7 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 |-------|-------------|--------|
 | **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
 | **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
-| **H2** | Audit-driven proof deepening (close critical gaps) | Active (WS-F) |
+| **H2** | Audit-driven proof deepening (close critical gaps) | Complete (WS-F and WS-H portfolios) |
 | **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **H3-prep complete** |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 

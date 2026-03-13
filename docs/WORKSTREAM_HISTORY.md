@@ -43,10 +43,10 @@ full details.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-I1** | Test infrastructure hardening (inter-transition assertions, determinism promotion, scenario ID traceability) | HIGH — **COMPLETED** (v0.15.0) |
-| **WS-I2** | Proof & hygiene strengthening (L-08 regex upgrade, HashMap.fold migration, NI CDT frame lemmas, VSpace memory projection) | HIGH — pending |
-| **WS-I3** | Documentation completeness (codebase map automation, GitBook Tier 3 chapter, claim-evidence gap closure) | MEDIUM — pending |
-| **WS-I4** | Code quality refinement (RuntimeContract documentation, Service subsystem docstring expansion) | LOW — pending |
-| **WS-I5** | Coverage expansion (scheduler edge-case scenarios, information-flow declassification tests, platform contract stress tests) | LOW — pending |
+| **WS-I2** | Proof & hygiene strengthening (semantic L-08 validation, Tier 3 correctness anchors, VSpace memory ownership projection) | HIGH — **COMPLETED** (v0.15.1) |
+| **WS-I3** | Operations coverage expansion (multi-operation chains, scheduler stress, declassification checks) | MEDIUM — **COMPLETED** (v0.15.2) |
+| **WS-I4** | Subsystem coverage expansion (VSpace multi-ASID, IPC interleaving, lifecycle cascading revoke chains) | LOW — **COMPLETED** (v0.15.3) |
+| **WS-I5** | Documentation and code-quality polish (remaining low-priority recommendations) | LOW — pending |
 
 ### Raspberry Pi 5 hardware binding
 

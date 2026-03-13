@@ -36,10 +36,10 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ## 3) Next workstreams
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
-The active improvement portfolio is WS-I (v0.14.10). WS-I1 and WS-I2 are completed;
-remaining follow-up workstreams are WS-I4..WS-I5.
+The active improvement portfolio is WS-I (v0.14.10). WS-I1..WS-I4 are completed;
+remaining follow-up workstream is WS-I5.
 
-### 3.1 WS-H11..H16 — Remaining v0.12.15 audit remediation
+### 3.1 WS-H11..H16 — v0.12.15 audit remediation status (completed)
 
 See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
 for the full execution plan.
@@ -123,7 +123,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent slice from the active plans (WS-H11..H16 or WS-F5..F8; prefer the highest-priority pending item).
+1. Sync branch and choose one coherent slice from the active plans (currently WS-I5 documentation/code-quality polish or Raspberry Pi 5 binding prep).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.
