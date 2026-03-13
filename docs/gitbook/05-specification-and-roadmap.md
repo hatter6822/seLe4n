@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-I4+ (v0.14.10 improvement portfolio; WS-I1/WS-I3 completed); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-I5 (v0.14.10 improvement portfolio; WS-I1..WS-I4 completed); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -224,38 +224,19 @@ re-verified — zero sorry/axiom.
 See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 for the full technical breakdown.
 
-## Next: WS-H11..H16 and WS-F5..F8 (WS-F5 completed)
+## Next: WS-I5 and Raspberry Pi 5 hardware binding
 
-### Remaining v0.12.15 audit remediation (WS-H11..H16)
+All WS-F and WS-H remediation workstreams are completed. The active remaining
+improvement workstream is **WS-I5** (documentation and code-quality polish).
 
-WS-H1..H11 are completed. The remaining workstreams address Phases 4–5:
-scheduler/IPC alignment (H12), CSpace/service
-enrichment (H13), type safety (H14), platform hardening (H15), and
-testing/docs expansion (H16). WS-H11 added `PagePermissions` with W^X enforcement,
-abstract TLB model, bounded address translation checks, and extended
-`vspaceInvariantBundle` to 5 conjuncts.
-
-See [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
+See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
+[`docs/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md),
 and [Next Development Path](22-next-slice-development-path.md).
-
-### Remaining v0.12.2 audit remediation (WS-F7..F8)
-
-WS-F1..F6 (critical/high/medium priority) are completed. The remaining workstreams
-address low findings from the v0.12.2 audits:
-
-| ID | Focus | Priority |
-|----|-------|----------|
-| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium — **COMPLETED** (v0.14.9) |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium — **COMPLETED** (v0.14.9) |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low — **COMPLETED** |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low |
-
-See [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md).
 
 ## Hardware roadmap
 
 H0 (neutral semantics, complete) → H1 (boundary interfaces, complete) →
-H2 (proof deepening, WS-F remaining) → H3 (Raspberry Pi 5 binding) →
+H2 (proof deepening, complete) → H3 (Raspberry Pi 5 binding) →
 H4 (evidence convergence).
 
 See [Path to Real Hardware](10-path-to-real-hardware-mobile-first.md).

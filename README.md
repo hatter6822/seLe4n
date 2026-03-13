@@ -245,7 +245,7 @@ tests/                           Negative-state suite, information-flow suite, t
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-I5** — Remaining WS-I documentation/code-quality polish (Low priority). WS-I4 (subsystem coverage expansion) completed in v0.15.3, adding VSpace multi-ASID sharing tests, IPC interleaved-send ordering checks, and lifecycle cascading revoke/authority-degradation chains in `OperationChainSuite`.
+- **WS-I5** — Remaining WS-I documentation/code-quality polish (Low priority). WS-I1..WS-I4 are completed (v0.15.0–v0.15.3), including mandatory determinism checks, proof-validation depth upgrades, operation-chain coverage expansion, VSpace multi-ASID sharing tests, IPC interleaved-send ordering checks, and lifecycle cascading revoke/authority-degradation chains.
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters

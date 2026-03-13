@@ -20,7 +20,7 @@ Two independent audits of the v0.12.2 codebase:
 | **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | **Completed** |
 | **WS-F6** | Invariant quality (tautology reclassification, adapter hooks) | Medium | **Completed** |
 | **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | **Completed** |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | Planned |
+| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | **Completed** |
 
 ## Execution phases
 
@@ -30,12 +30,12 @@ Two independent audits of the v0.12.2 codebase:
 | ~~**P1**~~ | WS-F1, WS-F2, WS-F4 | Critical IPC/memory + proof gaps | **Completed** |
 | ~~**P2**~~ | WS-F3 | Info-flow completeness | **Completed** |
 | ~~**P3**~~ | ~~WS-F5, WS-F6~~ | ~~Model fidelity + invariant quality~~ | **Completed** |
-| **P4** | WS-F7, WS-F8 | Testing + cleanup | WS-F7 **Done**, WS-F8 Planned |
+| **P4** | WS-F7, WS-F8 | Testing + cleanup | **Completed** |
 
 ## Related: WS-G (completed)
 
 The WS-G kernel performance optimization portfolio (v0.12.6–v0.12.15) was
-completed between WS-F1..F4 and the remaining WS-F8 workstream.
+completed between WS-F1..F4 and WS-F8 closeout.
 See [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md).
 
 ## Prior completed portfolios
