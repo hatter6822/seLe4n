@@ -7,14 +7,14 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **next workstream:** WS-J1 (v0.15.4 register-indexed authoritative namespace migration plan). WS-F portfolio fully completed (F1..F8),
+- **next workstream:** WS-J1 (v0.14.10 register-indexed authoritative namespace migration plan). WS-F portfolio fully completed (F1..F8),
 - **recently completed:** WS-H15 (v0.14.7, platform & API hardening — `InterruptBoundaryContract` decidability, RPi5 contract hardening with substantive predicates, 13 capability-gated syscall wrappers, `AdapterProofHooks` concrete instantiation for Sim/RPi5, MMIO disjointness proof; closes A-33, A-41, A-42, M-13), WS-H14 (v0.14.6, type safety & Prelude foundations — `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal for type-safety enforcement, sentinel predicate completion), Module restructuring (v0.14.5, decomposed 9 monolithic files into 24 focused submodules via re-export hub pattern; zero code loss, 50 new helper theorems extracted, 209 Tier 3 anchor checks updated), WS-H13 (v0.14.4, CSpace/service model enrichment — `cspaceDepthConsistent` invariant, `resolveCapAddress` theorems, `serviceStop` backing-object verification, `serviceGraphInvariant` preservation, `cspaceMove` atomicity; addresses H-01, A-21, A-29, A-30, M-17/A-31), WS-H12f (v0.14.3, test harness update & documentation sync — dequeue-on-dispatch, context switch, and bounded message trace scenarios; legacy `endpointInvariant` comment cleanup; expected fixture updated; Tier 3 anchors added; documentation synchronized), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds — A-09 closed), WS-H12c (v0.14.0, per-TCB register context with inline context switch — H-03 closed), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics — H-04 closed), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues,
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning sources:
-[`docs/audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.15.4_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) for WS-J1 and
+[`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) for WS-J1 and
 [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](./audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) for completed WS-H remediation lineage.
 
 ---
@@ -37,7 +37,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 ## 3) Next workstreams
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
-The active near-term portfolio is WS-J1 (v0.15.4): register-indexed authoritative
+The active near-term portfolio is WS-J1 (v0.14.10): register-indexed authoritative
 namespace migration. WS-I1..WS-I4 are completed; WS-I5 Part A remains documented
 for historical rationale but is superseded for authority-resolution paths.
 
