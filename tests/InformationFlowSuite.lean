@@ -788,6 +788,65 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "WS-H8 enforcement boundary classification verified"
 
+  -- WS-I3/R-08: declassification runtime checks
+  let declassCtx : SeLe4n.Kernel.GenericLabelingContext :=
+    { policy := .linearOrder
+      objectDomainOf := fun oid => if oid = ⟨902⟩ then ⟨0⟩ else ⟨2⟩
+      threadDomainOf := fun _ => ⟨0⟩
+      endpointDomainOf := fun _ => ⟨0⟩
+      serviceDomainOf := fun _ => ⟨0⟩ }
+
+  let declassState :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨901⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ⟨902⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.build)
+
+  let allowDecl : SeLe4n.Kernel.DeclassificationPolicy :=
+    { canDeclassify := fun src dst => src = ⟨2⟩ && dst = ⟨0⟩ }
+  let denyDecl : SeLe4n.Kernel.DeclassificationPolicy :=
+    { canDeclassify := fun _ _ => false }
+
+  let declassObj : KernelObject := .notification { state := .active, waitingThreads := [], pendingBadge := some ⟨0xAA⟩ }
+
+  let allowedDeclass :=
+    SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
+  expect "WS-I3: declassify succeeds when normal flow denied and policy authorizes"
+    (match allowedDeclass with
+      | .ok ((), st') => st'.objects[(⟨902⟩ : SeLe4n.ObjId)]? == some declassObj
+      | _ => false)
+
+  let normalFlowAllowed :=
+    SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨0⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
+  expect "WS-I3: declassify fails when normal flow is already allowed"
+    (match normalFlowAllowed with
+      | .error .flowDenied => true
+      | _ => false)
+
+  let policyDenied :=
+    SeLe4n.Kernel.declassifyStore declassCtx denyDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
+  expect "WS-I3: declassify fails when declassification policy denies"
+    (match policyDenied with
+      | .error .flowDenied => true
+      | _ => false)
+
+  let triLevelAllow : SeLe4n.Kernel.DeclassificationPolicy :=
+    { canDeclassify := fun src dst => src = ⟨2⟩ && dst = ⟨0⟩ }
+  let triDenied := SeLe4n.Kernel.declassifyStore declassCtx triLevelAllow ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
+  let triAllowed := SeLe4n.Kernel.declassifyStore declassCtx triLevelAllow ⟨0⟩ ⟨2⟩ ⟨902⟩ declassObj declassState
+  expect "WS-I3: 3-level lattice high→low denied without declassification"
+    ((declassCtx.policy.canFlow ⟨2⟩ ⟨0⟩) = false)
+  expect "WS-I3: 3-level lattice high→low declassify succeeds when authorized"
+    (match triDenied with
+      | .ok ((), st') => st'.objects[(⟨902⟩ : SeLe4n.ObjId)]? == some declassObj
+      | _ => false)
+  expect "WS-I3: 3-level lattice low→high uses normal flow (declassify rejected)"
+    (match triAllowed with
+      | .error .flowDenied => true
+      | _ => false)
+
+  IO.println "WS-I3 declassification checks passed"
+
   -- WS-H8/A-36: ObservableState domain timing metadata coverage
   -- Verify that projectState includes domain timing fields
   let timingState :=

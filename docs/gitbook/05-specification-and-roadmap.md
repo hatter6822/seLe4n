@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-I2+ (v0.14.9 improvement portfolio); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-I4+ (v0.14.9 improvement portfolio; WS-I1/WS-I3 completed); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -74,6 +74,15 @@ boundaries (`endpointSendDual`/`endpointCall`/`endpointReply`/`endpointReplyRecv
 integrated into `ipcInvariantFull` 3-conjunct bundle. `checkBounds_iff_bounded`
 decidability bridge. Information-flow enforcement updated with bounds-before-flow
 ordering. Closes A-09 (HIGH).
+
+## Completed: WS-I3 Operations Coverage Expansion (v0.15.2)
+
+Phase 3 (operations-focused) of the WS-I improvement portfolio:
+
+- `tests/OperationChainSuite.lean` adds six compositional chain tests spanning lifecycle, CSpace, IPC, VSpace, service sequencing, and notifications.
+- Scheduler stress section adds 16-thread repeated scheduling, same-priority deterministic selection checks, and multi-domain isolation checks with `switchDomain` + `schedule`.
+- Tier 2 negative gate now executes `OperationChainSuite` via `scripts/test_tier2_negative.sh`.
+- `tests/InformationFlowSuite.lean` adds declassification runtime coverage for authorized downgrade, normal-flow rejection, policy-denied rejection, and a 3-domain lattice scenario.
 
 ## Completed: WS-I1 Critical Testing Infrastructure (v0.15.0)
 
