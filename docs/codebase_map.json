@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "93ba8562f4c528965675a5e043c93bd9acdef894",
-      "tree_sha": "1c132150f4b6874df134bd8bd82b0efd558c03cf",
-      "committed_at_utc": "2026-03-12T23:26:05-04:00"
+      "branch": "work",
+      "commit_sha": "17484d9d964640c832b49c915162d4a55c0a1f60",
+      "tree_sha": "d7f78398c514e87e0b34ea5ef939bb059363a765",
+      "committed_at_utc": "2026-03-13T05:18:22+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4da02426be772ec22275b8bad556ad98873a6ed057992fa6cd1ff5c4e6eb73c0"
+    "source_digest": "f9fca72a962ad3642176b556f07a629e6fa99a72a51961d3fb31579980b0cd8b"
   },
   "summary": {
     "module_count": 71,
-    "declaration_count": 2031
+    "declaration_count": 2034
   },
   "readme_sync": {
     "version": "0.14.10",
@@ -29,7 +29,7 @@
     "production_files": 67,
     "production_loc": 34286,
     "test_files": 4,
-    "test_loc": 3293,
+    "test_loc": 3459,
     "proved_theorem_lemma_decls": 1089,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -16279,7 +16279,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 18,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -16385,14 +16385,46 @@
         },
         {
           "kind": "def",
-          "name": "buildParameterizedTopology",
+          "name": "chain7VSpaceMultiAsidSharedPage",
           "line": 210,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain8IpcInterleavedSendOrdering",
+          "line": 259,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain9LifecycleCascadingRevokeAndAttenuation",
+          "line": 306,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "buildParameterizedTopology",
+          "line": 373,
           "called": []
         },
         {
           "kind": "def",
           "name": "scheduleNTimes",
-          "line": 243,
+          "line": 406,
           "called": [
             "assertInvariants",
             "runKernelState"
@@ -16401,7 +16433,7 @@
         {
           "kind": "def",
           "name": "schedulerStressChecks",
-          "line": 253,
+          "line": 416,
           "called": [
             "assertInvariants",
             "buildParameterizedTopology",
@@ -16414,7 +16446,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 335,
+          "line": 498,
           "called": [
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
@@ -16422,13 +16454,16 @@
             "chain4ServiceStartDependentStop",
             "chain5CopyMoveDelete",
             "chain6NotificationBadgeAccumulation",
+            "chain7VSpaceMultiAsidSharedPage",
+            "chain8IpcInterleavedSendOrdering",
+            "chain9LifecycleCascadingRevokeAndAttenuation",
             "schedulerStressChecks"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 347,
+          "line": 513,
           "called": []
         }
       ]

@@ -207,6 +207,169 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
     (received = some (SeLe4n.Badge.ofNat 0x11))
   assertInvariants "chain6: signal→signal→wait" st3
 
+private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
+  let asid1 : SeLe4n.ASID := ⟨31⟩
+  let asid2 : SeLe4n.ASID := ⟨32⟩
+  let vaddr1 : SeLe4n.VAddr := ⟨0x2000⟩
+  let vaddr2 : SeLe4n.VAddr := ⟨0x3000⟩
+  let paddr : SeLe4n.PAddr := ⟨0x1000⟩
+  let roPerms : PagePermissions := { read := true, write := false, execute := false }
+  let rwPerms : PagePermissions := { read := true, write := true, execute := false }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨2700⟩ (.vspaceRoot { asid := asid1, mappings := {} })
+      |>.withObject ⟨2701⟩ (.vspaceRoot { asid := asid2, mappings := {} })
+      |>.build)
+
+  let (_, st1) ← expectOkState "chain7: map shared page into asid1"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 paddr default st0)
+  let (_, st2) ← expectOkState "chain7: map shared page into asid2"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 vaddr2 paddr default st1)
+  let (asid1Resolved, st3) ← expectOkState "chain7: lookup asid1 shared page"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st2)
+  let (asid2Resolved, st4) ← expectOkState "chain7: lookup asid2 shared page"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st3)
+  expect "chain7: shared page lookup matches in asid1" (asid1Resolved = paddr)
+  expect "chain7: shared page lookup matches in asid2" (asid2Resolved = paddr)
+
+  let (_, st5) ← expectOkState "chain7: unmap shared page from asid1"
+    (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid1 vaddr1 st4)
+  expectError "chain7: asid1 lookup faults after unmap"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st5) .translationFault
+  let (asid2StillMapped, st6) ← expectOkState "chain7: asid2 mapping survives asid1 unmap"
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st5)
+  expect "chain7: asid2 retains shared mapping" (asid2StillMapped = paddr)
+
+  let (_, st7) ← expectOkState "chain7: remap asid1 as read-only"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 paddr roPerms st6)
+  let (_, st8) ← expectOkState "chain7: remap asid2 as read-write"
+    (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid2 vaddr2 st7)
+  let (_, st9) ← expectOkState "chain7: map asid2 read-write permissions"
+    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 vaddr2 paddr rwPerms st8)
+  let ((_, asid1Perms), st10) ← expectOkState "chain7: lookupFull asid1 perms"
+    (SeLe4n.Kernel.Architecture.vspaceLookupFull asid1 vaddr1 st9)
+  let ((_, asid2Perms), st11) ← expectOkState "chain7: lookupFull asid2 perms"
+    (SeLe4n.Kernel.Architecture.vspaceLookupFull asid2 vaddr2 st10)
+  expect "chain7: asid1 mapping is read-only" (asid1Perms = roPerms)
+  expect "chain7: asid2 mapping is read-write" (asid2Perms = rwPerms)
+  expect "chain7: asid1 permissions remain W^X-compliant" asid1Perms.wxCompliant
+  expect "chain7: asid2 permissions remain W^X-compliant" asid2Perms.wxCompliant
+  assertInvariants "chain7: multi-asid shared mapping semantics" st11
+
+private def chain8IpcInterleavedSendOrdering : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨2800⟩
+  let tidA : SeLe4n.ThreadId := ⟨2810⟩
+  let tidB : SeLe4n.ThreadId := ⟨2811⟩
+  let tidC : SeLe4n.ThreadId := ⟨2812⟩
+  let tidD : SeLe4n.ThreadId := ⟨2813⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
+      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
+      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
+      |>.withRunnable [tidA, tidB, tidC, tidD]
+      |>.build)
+
+  let (_, st1) ← expectOkState "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st0)
+  let (_, st2) ← expectOkState "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st1)
+  let (_, st3) ← expectOkState "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC .empty st2)
+  let (firstSender, st4) ← expectOkState "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD st3)
+  let (secondSender, st5) ← expectOkState "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD st4)
+  let (thirdSender, st6) ← expectOkState "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD st5)
+  expect "chain8: FIFO #1 returns sender A" (firstSender = tidA)
+  expect "chain8: FIFO #2 returns sender B" (secondSender = tidB)
+  expect "chain8: FIFO #3 returns sender C" (thirdSender = tidC)
+  let fifoEndpointObj := st6.objects[epId]?
+  expect "chain8: endpoint send queue drained after FIFO receives"
+    (match fifoEndpointObj with
+     | some (.endpoint ep) => ep.sendQ.head = none && ep.sendQ.tail = none
+     | _ => false)
+  assertInvariants "chain8: three-sender FIFO ordering" st6
+
+  let (_, st7) ← expectOkState "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st6)
+  let (interleaveFirst, st8) ← expectOkState "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD st7)
+  let (_, st9) ← expectOkState "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st8)
+  let (interleaveSecond, st10) ← expectOkState "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD st9)
+  expect "chain8: interleaved receive #1 sender A" (interleaveFirst = tidA)
+  expect "chain8: interleaved receive #2 sender B" (interleaveSecond = tidB)
+  let interleavedEndpointObj := st10.objects[epId]?
+  expect "chain8: endpoint queues empty after interleaved receive"
+    (match interleavedEndpointObj with
+     | some (.endpoint ep) =>
+         ep.sendQ.head = none && ep.sendQ.tail = none &&
+         ep.receiveQ.head = none && ep.receiveQ.tail = none
+     | _ => false)
+  assertInvariants "chain8: interleaved send/receive queue integrity" st10
+
+private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
+  let targetId : SeLe4n.ObjId := ⟨2900⟩
+  let rootCNode : SeLe4n.ObjId := ⟨2901⟩
+  let childCNode : SeLe4n.ObjId := ⟨2902⟩
+  let grandCNode : SeLe4n.ObjId := ⟨2903⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let childSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := childCNode, slot := ⟨0⟩ }
+  let grandSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := grandCNode, slot := ⟨0⟩ }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject targetId (.endpoint {})
+      |>.withObject rootCNode (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ]
+        })
+      |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.build)
+
+  let (_, st1) ← expectOkState "chain9: mint root→child with CDT"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot childSlot (AccessRightSet.ofList [.read, .write]) none st0)
+  let (_, st2) ← expectOkState "chain9: mint child→grandchild with CDT"
+    (SeLe4n.Kernel.cspaceMintWithCdt childSlot grandSlot (AccessRightSet.ofList [.read]) none st1)
+
+  let childCap := SystemState.lookupSlotCap st2 childSlot
+  let grandCap := SystemState.lookupSlotCap st2 grandSlot
+  expect "chain9: child rights attenuated to read+write"
+    (childCap.map Capability.rights = some (AccessRightSet.ofList [.read, .write]))
+  expect "chain9: grandchild rights attenuated to read"
+    (grandCap.map Capability.rights = some (AccessRightSet.ofList [.read]))
+
+  expectError "chain9: grandchild cannot mint additional write right"
+    (SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ } (AccessRightSet.ofList [.read, .write]) none st2)
+    .invalidCapability
+
+  let noGrantGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := ⟨42⟩
+    cspaceRoot := grandCNode
+    capAddr := ⟨0⟩
+    capDepth := 4
+    requiredRight := .grant
+  }
+  expectError "chain9: grandchild syscall gate has no grant right"
+    (SeLe4n.Kernel.syscallLookupCap noGrantGate st2)
+    .illegalAuthority
+  expectError "chain9: grandchild cannot apiCspaceMint without grant"
+    (SeLe4n.Kernel.apiCspaceMint noGrantGate grandSlot { cnode := grandCNode, slot := ⟨1⟩ }
+      (AccessRightSet.ofList [.read]) none st2)
+    .illegalAuthority
+
+  let (_, st3) ← expectOkState "chain9: revoke root cascades descendants"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st2)
+  expect "chain9: child slot removed after root revoke"
+    (SystemState.lookupSlotCap st3 childSlot = none)
+  expect "chain9: grandchild slot removed after root revoke"
+    (SystemState.lookupSlotCap st3 grandSlot = none)
+  expect "chain9: child CDT node detached"
+    (SystemState.lookupCdtNodeOfSlot st3 childSlot = none)
+  expect "chain9: grandchild CDT node detached"
+    (SystemState.lookupCdtNodeOfSlot st3 grandSlot = none)
+  assertInvariants "chain9: cascading revoke and authority degradation" st3
+
 private def buildParameterizedTopology
     (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) : SystemState :=
   let threads : List (SeLe4n.ObjId × KernelObject) :=
@@ -339,8 +502,11 @@ private def runOperationChainSuite : IO Unit := do
   chain4ServiceStartDependentStop
   chain5CopyMoveDelete
   chain6NotificationBadgeAccumulation
+  chain7VSpaceMultiAsidSharedPage
+  chain8IpcInterleavedSendOrdering
+  chain9LifecycleCascadingRevokeAndAttenuation
   schedulerStressChecks
-  IO.println "all WS-I3 operation-chain checks passed"
+  IO.println "all WS-I3/WS-I4 operation-chain checks passed"
 
 end SeLe4n.Testing
 
