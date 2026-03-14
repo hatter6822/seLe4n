@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/testing-trace-evidence-9c8Af",
-      "commit_sha": "b6fd7266004db0ecaecb66cbf84e5e6f2daa037e",
-      "tree_sha": "5352d8c0e0b7fdc79cd7f885d02fff99b31b558b",
-      "committed_at_utc": "2026-03-14T04:26:04+00:00"
+      "commit_sha": "7cea30a7dd8ae092c76686e3cca07d04951ed46a",
+      "tree_sha": "3dbc9e7aa8b0df3dc15c8c8bb7c2a9ae1c94f357",
+      "committed_at_utc": "2026-03-14T05:16:16+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7b0847be489845eb26a70e9c325393f24933e685d5c82d389cf2a93ac14f6a7f"
+    "source_digest": "99399287557d01fb37768458bcf87a2715d27a858c6d8f40c701c364a054cee7"
   },
   "summary": {
     "module_count": 72,
@@ -27,9 +27,9 @@
     "version": "0.15.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35416,
+    "production_loc": 35415,
     "test_files": 4,
-    "test_loc": 3733,
+    "test_loc": 3752,
     "proved_theorem_lemma_decls": 1128,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -16297,7 +16297,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1357,
+          "line": 1356,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -16323,13 +16323,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1396,
+          "line": 1395,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1447,
+          "line": 1446,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -16337,7 +16337,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1461,
+          "line": 1460,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -16345,7 +16345,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1469,
+          "line": 1468,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17142,15 +17142,16 @@
         {
           "kind": "def",
           "name": "chain11RegisterDecodeIpcTransfer",
-          "line": 586,
+          "line": 595,
           "called": [
-            "assertInvariants"
+            "assertInvariants",
+            "expect"
           ]
         },
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 637,
+          "line": 656,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -17169,7 +17170,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 654,
+          "line": 673,
           "called": []
         }
       ]

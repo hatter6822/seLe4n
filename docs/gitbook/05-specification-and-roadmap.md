@@ -15,8 +15,8 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.15.9` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 35,416 across 68 files |
-| Test LoC | 3,733 across 4 suites |
+| Production LoC | 35,415 across 68 files |
+| Test LoC | 3,752 across 4 suites |
 | Proved declarations | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4), J1-B completed (v0.15.5), J1-C completed (v0.15.6; v0.15.7), J1-D completed (v0.15.8), J1-E completed (v0.15.9, testing and trace evidence), J1-F pending (CdtNodeId cleanup + docs); Raspberry Pi 5 hardware binding |

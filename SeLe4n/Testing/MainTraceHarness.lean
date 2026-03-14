@@ -1261,10 +1261,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨500⟩]
+      |>.withCurrent (some ⟨500⟩)
       |>.build)
-  let stWithCurrent := { stRdt with scheduler := { stRdt.scheduler with current := some ⟨500⟩ } }
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stWithCurrent with
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRdt with
   | .ok (_, stPost) =>
       match stPost.objects[rdtEp]? with
       | some (.endpoint ep) =>
@@ -1298,9 +1297,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
+      |>.withCurrent (some ⟨500⟩)
       |>.build)
-  let stInvSc := { stInvalidSyscall with scheduler := { stInvalidSyscall.scheduler with current := some ⟨500⟩ } }
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvSc with
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvalidSyscall with
   | .error err =>
       IO.println s!"[RDT-006] syscallEntry invalid syscall decode error: {reprStr err}"
   | .ok _ =>
@@ -1331,9 +1330,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
+      |>.withCurrent (some ⟨500⟩)
       |>.build)
-  let stMalMsg := { stMalformedMsgInfo with scheduler := { stMalformedMsgInfo.scheduler with current := some ⟨500⟩ } }
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalMsg with
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalformedMsgInfo with
   | .error err =>
       IO.println s!"[RDT-008] syscallEntry malformed msgInfo decode error: {reprStr err}"
   | .ok _ =>
@@ -1346,7 +1345,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
     syscallNumReg := ⟨7⟩
   }
-  match SeLe4n.Kernel.syscallEntry outOfBoundsLayout 32 stWithCurrent with
+  match SeLe4n.Kernel.syscallEntry outOfBoundsLayout 32 stRdt with
   | .error err =>
       IO.println s!"[RDT-010] syscallEntry out-of-bounds layout error: {reprStr err}"
   | .ok _ =>

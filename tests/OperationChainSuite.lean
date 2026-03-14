@@ -553,12 +553,12 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨300⟩, ⟨301⟩]
+      |>.withRunnable [⟨301⟩]
+      |>.withCurrent (some ⟨300⟩)
       |>.build)
 
-  -- Step 1: Sender does syscallEntry (send) → queues on endpoint
-  let stSend := { st0 with scheduler := { st0.scheduler with current := some ⟨300⟩ } }
-  let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stSend with
+  -- Step 1: Sender (current) does syscallEntry (send) → queues on endpoint
+  let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
     | .ok (_, st') => pure st'
     | .error err => throw <| IO.userError s!"chain10 send failed: {reprStr err}"
   -- Verify sender queued on endpoint
@@ -567,19 +567,28 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       expect "chain10 sender queued on endpoint" (ep.sendQ.head.isSome)
   | _ => throw <| IO.userError "chain10: endpoint not found after send"
 
-  -- Step 2: Receiver does syscallEntry (receive) → dequeues sender
-  let stRecv := { stAfterSend with scheduler := { stAfterSend.scheduler with current := some ⟨301⟩ } }
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
+  -- Verify sender's TCB is blocked on send
+  match stAfterSend.objects[senderId]? with
+  | some (.tcb senderTcb) =>
+      expect "chain10 sender blocked on send" (senderTcb.ipcState == .blockedOnSend epId)
+  | _ => throw <| IO.userError "chain10: sender TCB not found after send"
+
+  -- Step 2: Dispatch receiver — remove from runQueue before making current
+  let stRecv := { stAfterSend with scheduler := { stAfterSend.scheduler with
+    current := some ⟨301⟩,
+    runQueue := stAfterSend.scheduler.runQueue.remove ⟨301⟩ } }
+  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
       match stAfterRecv.objects[epId]? with
       | some (.endpoint ep) =>
           expect "chain10 endpoint empty after receive" ep.sendQ.head.isNone
       | _ => throw <| IO.userError "chain10: endpoint not found after receive"
+      pure stAfterRecv
   | .error err =>
       throw <| IO.userError s!"chain10 receive failed: {reprStr err}"
 
-  assertInvariants "chain10-register-decode-multi-syscall" st0
+  assertInvariants "chain10-register-decode-multi-syscall" stFinal
 
 /-- WS-J1-E: Register decode followed by IPC with message transfer.
 Exercises: decode registers → send with badge → verify badge on endpoint. -/
@@ -616,23 +625,33 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨400⟩]
+      |>.withCurrent (some ⟨400⟩)
       |>.build)
 
   -- syscallEntry send: the badge from the CNode cap should be attached
-  let stSend := { st0 with scheduler := { st0.scheduler with current := some ⟨400⟩ } }
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stSend with
+  let stSend := st0
+  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stSend with
   | .ok (_, stAfter) =>
+      -- Verify sender queued on endpoint
       match stAfter.objects[epId]? with
       | some (.endpoint ep) =>
-          -- The sender should be queued with the badge from the cap
-          let senderQueued := ep.sendQ.head.isSome
-          IO.println s!"operation-chain check passed [chain11 sender queued with badge: {senderQueued}]"
+          expect "chain11 sender queued on endpoint" ep.sendQ.head.isSome
       | _ => throw <| IO.userError "chain11: endpoint not found"
+      -- Verify the badge from the cap was attached to the sender's pending message
+      match stAfter.objects[senderId]? with
+      | some (.tcb senderTcb) =>
+          expect "chain11 sender blocked on send" (senderTcb.ipcState == .blockedOnSend epId)
+          match senderTcb.pendingMessage with
+          | some msg =>
+              expect "chain11 badge attached to message" (msg.badge == some badgeVal)
+              IO.println s!"operation-chain check passed [chain11 sender queued with badge: true]"
+          | none => throw <| IO.userError "chain11: sender has no pending message"
+      | _ => throw <| IO.userError "chain11: sender TCB not found"
+      pure stAfter
   | .error err =>
       throw <| IO.userError s!"chain11 send failed: {reprStr err}"
 
-  assertInvariants "chain11-register-decode-ipc-transfer" st0
+  assertInvariants "chain11-register-decode-ipc-transfer" stFinal
 
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
