@@ -10,11 +10,95 @@ import SeLe4n.Prelude
 
 namespace SeLe4n
 
-/-- General-purpose register index in the abstract machine model. -/
-abbrev RegName := Nat
+/-- Bounded general-purpose register index.
+    ARM64: 31 GPRs (x0–x30), plus pc and sp as separate fields.
+    Replaces the former `abbrev RegName := Nat` to prevent namespace confusion
+    between register indices and other Nat-typed fields. -/
+structure RegName where
+  val : Nat
+  deriving DecidableEq, Repr, Hashable, Inhabited
 
-/-- Register-sized machine word in the abstract machine model. -/
-abbrev RegValue := Nat
+namespace RegName
+
+/-- Constructor helper for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : RegName := ⟨n⟩
+
+/-- Projection helper for migration ergonomics. -/
+@[inline] def toNat (r : RegName) : Nat := r.val
+
+instance : ToString RegName where
+  toString r := toString r.toNat
+
+/-- Extensionality theorem for RegName. -/
+theorem ext {a b : RegName} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+end RegName
+
+/-- Register-width machine word. Carries the raw numeric value from which
+    typed kernel references are decoded at syscall boundaries.
+    Replaces the former `abbrev RegValue := Nat` to prevent namespace confusion
+    between register values and other Nat-typed fields. -/
+structure RegValue where
+  val : Nat
+  deriving DecidableEq, Repr, Hashable, Inhabited
+
+namespace RegValue
+
+/-- Constructor helper for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : RegValue := ⟨n⟩
+
+/-- Projection helper for migration ergonomics. -/
+@[inline] def toNat (r : RegValue) : Nat := r.val
+
+instance : ToString RegValue where
+  toString r := toString r.toNat
+
+/-- Extensionality theorem for RegValue. -/
+theorem ext {a b : RegValue} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+end RegValue
+
+-- ============================================================================
+-- LawfulHashable, EquivBEq, LawfulBEq instances for RegName and RegValue
+-- ============================================================================
+
+instance : LawfulHashable RegName where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : LawfulHashable RegValue where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+instance : EquivBEq RegName := ⟨⟩
+instance : EquivBEq RegValue := ⟨⟩
+
+instance : LawfulBEq RegName where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq RegValue where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+
+-- ============================================================================
+-- Roundtrip and injectivity proofs for RegName and RegValue
+-- ============================================================================
+
+/-- RegName roundtrip — construct then project. -/
+theorem RegName.toNat_ofNat (n : Nat) : (RegName.ofNat n).toNat = n := rfl
+/-- RegName roundtrip — project then reconstruct. -/
+theorem RegName.ofNat_toNat (r : RegName) : RegName.ofNat r.toNat = r := rfl
+/-- RegName injectivity. -/
+theorem RegName.ofNat_injective {n₁ n₂ : Nat} (h : RegName.ofNat n₁ = RegName.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+
+/-- RegValue roundtrip — construct then project. -/
+theorem RegValue.toNat_ofNat (n : Nat) : (RegValue.ofNat n).toNat = n := rfl
+/-- RegValue roundtrip — project then reconstruct. -/
+theorem RegValue.ofNat_toNat (r : RegValue) : RegValue.ofNat r.toNat = r := rfl
+/-- RegValue injectivity. -/
+theorem RegValue.ofNat_injective {n₁ n₂ : Nat} (h : RegValue.ofNat n₁ = RegValue.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
 
 /-- L-02/WS-E6: Byte-addressed memory store used by the abstract machine model.
 
@@ -43,19 +127,19 @@ structure RegisterFile where
   gpr : RegName → RegValue
 
 instance : Inhabited RegisterFile where
-  default := { pc := 0, sp := 0, gpr := fun _ => 0 }
+  default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
 
 /-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
-(`Nat → Nat`), only `pc` and `sp` are shown in trace output. -/
+(`RegName → RegValue`), only `pc` and `sp` are shown in trace output. -/
 instance : Repr RegisterFile where
-  reprPrec rf _ := s!"RegisterFile(pc={rf.pc}, sp={rf.sp})"
+  reprPrec rf _ := s!"RegisterFile(pc={rf.pc.val}, sp={rf.sp.val})"
 
 /-- WS-H12c: Manual `BEq` for `RegisterFile`. Compares `pc`, `sp`, and the
 first 32 GPRs (standard ARM64 register count). This is sufficient for the
 abstract kernel model where GPR indices are bounded by architecture. -/
 instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
-    (List.range 32).all fun i => a.gpr i == b.gpr i
+    (List.range 32).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
@@ -64,13 +148,13 @@ structure MachineState where
   timer : Nat
 
 instance : Inhabited MachineState where
-  default := { regs := default, memory := fun _ => 0, timer := 0 }
+  default := { regs := default, memory := (fun _ => 0), timer := 0 }
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
 
 def writeReg (rf : RegisterFile) (r : RegName) (v : RegValue) : RegisterFile :=
-  { rf with gpr := fun r' => if r' = r then v else rf.gpr r' }
+  { rf with gpr := fun r' => if r'.val = r.val then v else rf.gpr r' }
 
 def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
   ms.memory addr
@@ -79,7 +163,7 @@ def writeMem (ms : MachineState) (addr : PAddr) (value : UInt8) : MachineState :
   { ms with memory := fun a => if a = addr then value else ms.memory a }
 
 def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
-  { ms with regs := { ms.regs with pc := pc } }
+  { ms with regs := { ms.regs with pc } }
 
 def tick (ms : MachineState) : MachineState :=
   { ms with timer := ms.timer + 1 }
@@ -95,7 +179,9 @@ theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : RegValue) :
 theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : RegValue)
     (hNe : r' ≠ r) :
     readReg (writeReg rf r v) r' = readReg rf r' := by
-  simp [readReg, writeReg, hNe]
+  simp [readReg, writeReg]
+  intro h
+  exact absurd (RegName.ext h) hNe
 
 theorem readMem_writeMem_eq (ms : MachineState) (addr : PAddr) (value : UInt8) :
     readMem (writeMem ms addr value) addr = value := by
@@ -142,14 +228,14 @@ This formalizes the zero-initialization assumption documented on `Memory`. -/
 theorem default_memory_returns_zero (addr : PAddr) :
     (default : MachineState).memory addr = 0 := rfl
 
-/-- L-02/WS-E6: Default register file has PC = 0.
+/-- L-02/WS-E6: Default register file has PC = RegValue 0.
 Combined with zero memory, this ensures the boot entry point is deterministic. -/
 theorem default_registerFile_pc_zero :
-    (default : RegisterFile).pc = 0 := rfl
+    (default : RegisterFile).pc = ⟨0⟩ := rfl
 
-/-- L-02/WS-E6: Default register file has SP = 0. -/
+/-- L-02/WS-E6: Default register file has SP = RegValue 0. -/
 theorem default_registerFile_sp_zero :
-    (default : RegisterFile).sp = 0 := rfl
+    (default : RegisterFile).sp = ⟨0⟩ := rfl
 
 /-- L-02/WS-E6: Default timer starts at zero. -/
 theorem default_timer_zero :

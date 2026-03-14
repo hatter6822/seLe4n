@@ -130,24 +130,29 @@ The `PlatformBinding` typeclass decouples kernel semantics from hardware:
 
 The simulation platform (`Platform/Sim/`) provides permissive contracts for testing. The RPi5 platform (`Platform/RPi5/`) provides substantive hardware-specific contracts (WS-H15b: SP-preservation register stability, GIC-400 IRQ range validation, MMIO disjointness proof, empty-initial-state boot checks). Both platforms provide concrete `AdapterProofHooks` instantiations (WS-H15d) grounding the adapter preservation chain end-to-end. Kernel logic is identical in both — only platform contracts differ.
 
-## 8. Syscall argument decode: register-sourced authority (WS-J1 planned)
+## 8. Syscall argument decode: register-sourced authority (WS-J1)
 
 The current model passes syscall arguments as pre-typed Lean parameters directly
 to `api*` wrappers. Real ARM64 hardware delivers syscall arguments in
 general-purpose registers (x0–x7), and the kernel must decode these raw machine
 words into typed references before any authority check can proceed.
 
-WS-J1 addresses this modeling gap:
+WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
 
-1. **Typed register wrappers**: `RegName` and `RegValue` become wrapper
-   structures (matching the 13 existing typed identifiers in `Prelude.lean`)
-   instead of bare `Nat` abbreviations.
-2. **Register decode layer**: A new `RegisterDecode.lean` module provides total,
-   deterministic functions that convert raw register words into typed kernel
-   references (`CPtr`, `MessageInfo`, `SyscallId`).
-3. **Syscall entry point**: `syscallEntry` reads arguments from the current
-   thread's register context (via the `contextMatchesCurrent` invariant from
-   WS-H12c) and dispatches through the decode layer to `api*` wrappers.
+1. **Typed register wrappers** (WS-J1-A — **completed**): `RegName` and
+   `RegValue` are now wrapper structures (`structure RegName where val : Nat` /
+   `structure RegValue where val : Nat`) with full instance suites
+   (`DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`,
+   `Repr`, `ToString`, `ofNat`/`toNat`, roundtrip/injectivity proofs), matching
+   the 15 existing typed identifiers. All 10 machine lemmas re-proved.
+   Zero sorry/axiom. Zero behavior change.
+2. **Register decode layer** (WS-J1-B — planned): A new `RegisterDecode.lean`
+   module will provide total, deterministic functions that convert raw register
+   words into typed kernel references (`CPtr`, `MessageInfo`, `SyscallId`).
+3. **Syscall entry point** (WS-J1-C — planned): `syscallEntry` reads arguments
+   from the current thread's register context (via the `contextMatchesCurrent`
+   invariant from WS-H12c) and dispatches through the decode layer to `api*`
+   wrappers.
 
 ```
 User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry

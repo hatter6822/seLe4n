@@ -221,11 +221,11 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
     { entries := [{ asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }] }
   let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlbWithEntries
   IO.println s!"[CAT-026] TLB flush entry count: {flushed.entries.length}"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll 7 99 st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll ⟨7⟩ ⟨99⟩ st1 with
   | .error err => IO.println s!"[CAT-027] adapter register write success path error: {reprStr err}"
   | .ok (_, stReg) =>
-      IO.println s!"[CAT-028] adapter register write success path value: {reprStr <| SeLe4n.readReg stReg.machine.regs 7}"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll 7 99 st1 with
+      IO.println s!"[CAT-028] adapter register write success path value: {(SeLe4n.readReg stReg.machine.regs ⟨7⟩).val}"
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll ⟨7⟩ ⟨99⟩ st1 with
   | .error err => IO.println s!"[CAT-029] adapter register write unsupported branch: {reprStr err}"
   | .ok _ =>
       IO.println "[CAT-030] unexpected adapter register write success under denied contract"
@@ -312,7 +312,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[SST-030] large queue scheduled current: {reprStr (stLargeScheduled.scheduler.current.map SeLe4n.ThreadId.toNat)}"
 
   -- WS-H12c: Context switch — verify machine.regs matches incoming thread's registerContext
-  let ctxRegFile : SeLe4n.RegisterFile := { pc := 42, sp := 1024, gpr := fun _ => 0 }
+  let ctxRegFile : SeLe4n.RegisterFile := { pc := ⟨42⟩, sp := ⟨1024⟩, gpr := fun _ => ⟨0⟩ }
   let ctxTcb1 : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
@@ -1020,8 +1020,8 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
 outgoing thread's registers and restores the incoming thread's registers. -/
 private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- Set up two threads with distinctive register contexts
-  let outgoingRegs : SeLe4n.RegisterFile := { pc := 100, sp := 2048, gpr := fun i => i + 10 }
-  let incomingRegs : SeLe4n.RegisterFile := { pc := 500, sp := 4096, gpr := fun i => i * 3 }
+  let outgoingRegs : SeLe4n.RegisterFile := { pc := ⟨100⟩, sp := ⟨2048⟩, gpr := fun i => ⟨i.val + 10⟩ }
+  let incomingRegs : SeLe4n.RegisterFile := { pc := ⟨500⟩, sp := ⟨4096⟩, gpr := fun i => ⟨i.val * 3⟩ }
   let outPrio : SeLe4n.Priority := ⟨50⟩
   let inPrio : SeLe4n.Priority := ⟨100⟩
   let outgoingTcb : KernelObject := .tcb {
@@ -1187,7 +1187,7 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[RCF-001] F7 timerOnly timer success: {reprStr stTimer.machine.timer}"
   | .error err =>
       IO.println s!"[RCF-002] F7 timerOnly timer unexpected error: {reprStr err}"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractTimerOnly 0 42 st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractTimerOnly ⟨0⟩ ⟨42⟩ st1 with
   | .error err =>
       IO.println s!"[RCF-003] F7 timerOnly register denied: {reprStr err}"
   | .ok _ =>
@@ -1208,7 +1208,7 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[RCF-009] F7 readOnlyMemory timer denied: {reprStr err}"
   | .ok _ =>
       IO.println "[RCF-010] F7 readOnlyMemory timer unexpected success"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractReadOnlyMemory 0 42 st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractReadOnlyMemory ⟨0⟩ ⟨42⟩ st1 with
   | .error err =>
       IO.println s!"[RCF-011] F7 readOnlyMemory register denied: {reprStr err}"
   | .ok _ =>

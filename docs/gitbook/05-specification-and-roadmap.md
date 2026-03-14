@@ -20,7 +20,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
 | Total declarations | 2,006 across 70 modules |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces with typed wrappers, syscall decode layer, and `CdtNodeId` cleanup (v0.14.10 plan, 6 phases); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B..F pending (decode layer, syscall entry, invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -226,9 +226,11 @@ for the full technical breakdown.
 
 ## Next: WS-J1 and Raspberry Pi 5 hardware binding
 
-All WS-F and WS-H remediation workstreams are completed. The active next
-workstream is **WS-J1** (register-indexed authoritative namespace migration;
-plan-first, then staged implementation).
+All WS-F and WS-H remediation workstreams are completed. The active
+workstream is **WS-J1** (register-indexed authoritative namespace migration).
+**WS-J1-A completed (v0.15.4):** typed `RegName`/`RegValue` wrapper structures
+with full instance suites, all machine lemmas re-proved, downstream compilation
+fixed. Next phase: WS-J1-B (register decode layer).
 
 See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
 [`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),
