@@ -407,7 +407,7 @@ structure SyscallRegisterLayout where
   msgInfoReg    : RegName
   msgRegs       : Array RegName
   syscallNumReg : RegName
-  deriving Repr
+  deriving Repr, DecidableEq
 
 /-- Default ARM64 syscall register layout following the seL4 convention:
     - x0: capability pointer (destination cap address)

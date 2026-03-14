@@ -733,6 +733,112 @@ def maxExtraCaps' : Nat := maxExtraCaps
 instance : ToString MessageInfo where
   toString mi := s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, label={mi.label})"
 
+-- ============================================================================
+-- Encode/decode round-trip proof (bitwise extraction lemmas)
+-- ============================================================================
+
+/-- Bitwise extraction: AND with 0x7F (127) recovers the low 7-bit field
+    when the field value fits in 7 bits. -/
+private theorem and_mask_127 (a b c : Nat) (ha : a < 128) :
+    (a ||| (b <<< 7) ||| (c <<< 9)) &&& 0x7F = a := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.testBit_and, Nat.testBit_or, Nat.testBit_shiftLeft]
+  by_cases hi : i < 7
+  · have h7 : ¬(7 ≤ i) := by omega
+    have h9 : ¬(9 ≤ i) := by omega
+    simp only [h7, h9, decide_false, Bool.false_and, Bool.or_false]
+    have hmask : (127 : Nat).testBit i = true := by
+      have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 := by omega
+      rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> native_decide
+    rw [hmask, Bool.and_true]
+  · have hmask : (127 : Nat).testBit i = false := by
+      apply Nat.testBit_lt_two_pow
+      calc (127 : Nat) < 2 ^ 7 := by decide
+        _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
+    rw [hmask, Bool.and_false]
+    symm; apply Nat.testBit_lt_two_pow
+    calc a < 128 := ha
+      _ = 2 ^ 7 := by decide
+      _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
+
+/-- Bitwise extraction: shift right 7 then AND with 0x3 recovers the 2-bit
+    extraCaps field from position [7..8]. -/
+private theorem shift7_and_mask_3 (a b c : Nat) (ha : a < 128) (hb : b < 4) :
+    ((a ||| (b <<< 7) ||| (c <<< 9)) >>> 7) &&& 0x3 = b := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.testBit_and, Nat.testBit_shiftRight, Nat.testBit_or, Nat.testBit_shiftLeft]
+  by_cases hi : i < 2
+  · have h7 : 7 ≤ 7 + i := by omega
+    have h9 : ¬(9 ≤ 7 + i) := by omega
+    simp only [h7, h9, decide_true, decide_false, Bool.true_and, Bool.false_and, Bool.or_false]
+    have ha_bit : a.testBit (7 + i) = false := by
+      apply Nat.testBit_lt_two_pow
+      calc a < 128 := ha
+        _ = 2 ^ 7 := by decide
+        _ ≤ 2 ^ (7 + i) := Nat.pow_le_pow_right (by omega) (by omega)
+    simp only [ha_bit, Bool.false_or]
+    have : (7 + i) - 7 = i := by omega
+    rw [this]
+    have hmask : (3 : Nat).testBit i = true := by
+      have : i = 0 ∨ i = 1 := by omega
+      rcases this with rfl | rfl <;> native_decide
+    rw [hmask, Bool.and_true]
+  · have hmask : (3 : Nat).testBit i = false := by
+      apply Nat.testBit_lt_two_pow
+      calc (3 : Nat) < 2 ^ 2 := by decide
+        _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
+    rw [hmask, Bool.and_false]
+    symm; apply Nat.testBit_lt_two_pow
+    calc b < 4 := hb
+      _ = 2 ^ 2 := by decide
+      _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
+
+/-- Bitwise extraction: shift right 9 recovers the label field from position [9..]. -/
+private theorem shift9_extracts_label (a b c : Nat) (ha : a < 128) (hb : b < 4) :
+    (a ||| (b <<< 7) ||| (c <<< 9)) >>> 9 = c := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.testBit_shiftRight, Nat.testBit_or, Nat.testBit_shiftLeft]
+  have h9 : 9 ≤ 9 + i := by omega
+  have h7 : 7 ≤ 9 + i := by omega
+  simp only [h9, h7, decide_true, Bool.true_and]
+  have ha_bit : a.testBit (9 + i) = false := by
+    apply Nat.testBit_lt_two_pow
+    calc a < 128 := ha
+      _ = 2 ^ 7 := by decide
+      _ ≤ 2 ^ (9 + i) := Nat.pow_le_pow_right (by omega) (by omega)
+  simp only [ha_bit, Bool.false_or]
+  have hb_bit : b.testBit ((9 + i) - 7) = false := by
+    have : (9 + i) - 7 = i + 2 := by omega
+    rw [this]
+    apply Nat.testBit_lt_two_pow
+    calc b < 4 := hb
+      _ = 2 ^ 2 := by decide
+      _ ≤ 2 ^ (i + 2) := Nat.pow_le_pow_right (by omega) (by omega)
+  simp only [hb_bit, Bool.false_or]
+  have : (9 + i) - 9 = i := by omega
+  rw [this]
+
+/-- Round-trip: encoding then decoding a MessageInfo recovers the original,
+    provided the fields satisfy the seL4 message-info bounds.
+    This completes the round-trip proof surface for all three register decode
+    components (CPtr, SyscallId, and MessageInfo). -/
+theorem encode_decode_roundtrip (mi : MessageInfo)
+    (hLen : mi.length ≤ maxMessageRegisters)
+    (hCaps : mi.extraCaps ≤ maxExtraCaps) :
+    MessageInfo.decode (MessageInfo.encode mi) = some mi := by
+  unfold encode decode
+  have hLen128 : mi.length < 128 := by unfold maxMessageRegisters at hLen; omega
+  have hCaps4 : mi.extraCaps < 4 := by unfold maxExtraCaps at hCaps; omega
+  rw [and_mask_127 mi.length mi.extraCaps mi.label hLen128]
+  rw [shift7_and_mask_3 mi.length mi.extraCaps mi.label hLen128 hCaps4]
+  rw [shift9_extracts_label mi.length mi.extraCaps mi.label hLen128 hCaps4]
+  simp only [maxMessageRegisters, maxExtraCaps]
+  have : mi.length ≤ 120 ∧ mi.extraCaps ≤ 3 := ⟨hLen, hCaps⟩
+  simp [this.1, this.2]
+
 end MessageInfo
 
 /-- Result of decoding raw register values into typed syscall arguments.
