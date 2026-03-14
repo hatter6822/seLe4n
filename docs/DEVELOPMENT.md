@@ -38,8 +38,11 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
 The active near-term portfolio is WS-J1 (v0.14.10): register-indexed authoritative
-namespace migration. WS-I1..WS-I4 are completed; WS-I5 Part A remains documented
-for historical rationale but is superseded for authority-resolution paths.
+namespace migration with typed register wrappers, syscall argument decode layer,
+and `CdtNodeId` cleanup (6 phases: J1-A through J1-F). WS-I1..WS-I4 are completed;
+WS-I5 Part A (R-12) is superseded by WS-J1, which replaces `RegName`/`RegValue`
+`abbrev Nat` definitions with typed wrapper structures and introduces a
+`RegisterDecode.lean` module to close the syscall argument decode gap.
 
 ### 3.1 WS-H11..H16 — v0.12.15 audit remediation status (completed)
 

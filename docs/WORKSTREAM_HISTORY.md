@@ -48,15 +48,27 @@ full details.
 | **WS-I4** | Subsystem coverage expansion (VSpace multi-ASID, IPC interleaving, lifecycle cascading revoke chains) | LOW — **COMPLETED** (v0.15.3) |
 | **WS-I5** | Documentation and code-quality polish (remaining low-priority recommendations) | LOW — pending |
 
-### WS-J1 workstream (register namespace authority modeling)
+### WS-J1 workstream (register-indexed authoritative namespaces)
 
-A new planning slice supersedes the WS-I5 Part A documentation-only treatment of
-`RegName`/`RegValue` for authority-bearing register paths. See
-[`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
+WS-J1 supersedes the WS-I5 Part A documentation-only treatment of
+`RegName`/`RegValue`. A comprehensive audit revealed that bare `Nat`
+abbreviations are insufficient: the syscall API bypasses the machine register
+file entirely, omitting the decode path where untrusted user-space register
+values become trusted kernel references. WS-J1 addresses this by:
+
+1. Replacing `RegName`/`RegValue` with typed wrapper structures.
+2. Introducing a `RegisterDecode.lean` module with total, deterministic decode
+   functions from raw register words to typed kernel identifiers.
+3. Adding `syscallEntry` as a register-sourced syscall dispatch path.
+4. Wrapping `CdtNodeId` (secondary bare-Nat alias) for consistency.
+5. Proving decode correctness, invariant preservation, and NI properties.
+
+See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)
+for the full workstream plan (6 phases: J1-A through J1-F).
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-J1** | Allow register values to index authoritative kernel namespaces directly through typed decode/resolve paths, preserving determinism and proof obligations | HIGH — planned |
+| **WS-J1** | Replace `abbrev Nat` register types with typed wrappers, add syscall argument decode layer bridging machine registers to typed kernel operations, wrap `CdtNodeId`, prove decode correctness and NI | HIGH — planned |
 
 ### Raspberry Pi 5 hardware binding
 
@@ -127,3 +139,4 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 | [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) | Performance audit baseline |
 | [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) | Prior end-to-end audit (v0.13.6) |
 | [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) |
+| [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) |

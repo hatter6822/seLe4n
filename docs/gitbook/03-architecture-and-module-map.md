@@ -46,9 +46,16 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `OfNat` instances removed for type-safety enforcement (WS-H14e),
   - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
 - `SeLe4n/Machine.lean`
-  - machine registers, memory abstraction, and pure update/read helpers,
-  - `MachineConfig` (register/address width, page size with `isPowerOfTwo` validation + correctness proof, ASID limit) and
-    `MemoryRegion`/`MemoryKind` for platform memory map declaration.
+  - machine registers (`RegName`, `RegValue` — currently `abbrev Nat`, planned
+    typed wrapper migration in WS-J1), memory abstraction, and pure update/read
+    helpers,
+  - `RegisterFile` with `pc`, `sp`, `gpr` fields; 10 read-after-write and frame
+    lemmas,
+  - `MachineConfig` (register/address width, page size with `isPowerOfTwo`
+    validation + correctness proof, ASID limit) and `MemoryRegion`/`MemoryKind`
+    for platform memory map declaration.
+  - **WS-J1 planned**: `SyscallRegisterLayout` for ARM64 register-to-argument
+    mapping, `MachineConfig.registerCount` for bounded register space.
 
 ### Model
 
@@ -156,6 +163,10 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
   - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
     `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1 planned)*
+  - Total, deterministic decode functions from raw register words to typed kernel
+    references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
+    `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

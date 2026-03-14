@@ -892,36 +892,40 @@ improvements that were deferred.
 **Dependencies**: None (fully independent)
 **Recommendations addressed**: R-12, R-13, R-14, R-17, R-18
 
-#### Part A: Document RegName/RegValue Design Decision (R-12)
+#### Part A: Replace RegName/RegValue with Typed Register Wrappers (R-12)
 
 **Problem**: `Machine.lean` defines `RegName` and `RegValue` as `abbrev Nat`
 (lines 14, 17), inconsistent with the typed-identifier convention used for all
-other identifiers (wrapper structures in `Prelude.lean`). The design decision
-is intentional but undocumented.
+other identifiers (wrapper structures in `Prelude.lean`). The original R-12
+recommendation was to *document* this as an intentional design decision.
 
-**Deliverables**:
+**Updated design decision**: After deeper audit (WS-J1 planning, v0.14.10+),
+the bare `Nat` approach was found to be insufficient. `RegName`/`RegValue` are
+the **only** `abbrev Nat` types that flow into authority-sensitive operations.
+The syscall API (`SyscallGate`) accepts pre-typed Lean parameters directly
+instead of extracting them from the machine register file, meaning the model
+omits the entire syscall argument decode path that real ARM64 hardware
+mandates. This is a modeling fidelity gap, not merely a documentation gap.
 
-1. Add a documentation comment block above lines 14–17 in `Machine.lean`:
-   ```lean
-   /-- Register names and values are intentionally defined as bare `Nat` aliases
-   (not wrapper structures like `ObjId`, `ThreadId`, etc.) for two reasons:
+**Superseded by**: WS-J1 (Register-Indexed Authoritative Namespaces), which:
+1. Replaces `RegName` and `RegValue` with typed wrapper structures matching
+   the `Prelude.lean` pattern (`DecidableEq`, `Hashable`, `LawfulHashable`,
+   `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `ofNat`/`toNat`).
+2. Introduces a `RegisterDecode.lean` module providing total, deterministic
+   decode functions from raw register words to typed kernel references.
+3. Adds `syscallEntry` as a register-sourced syscall dispatch path, closing
+   the gap between the model and real hardware.
+4. Also wraps `CdtNodeId` (secondary bare-Nat alias) for consistency.
 
-   1. **Abstract machine simplicity**: The register file is a mathematical
-      function `RegName → RegValue` used only within `MachineState`. It never
-      interacts with kernel object identifiers, so the type-safety benefit of
-      wrapping is minimal while the syntactic overhead is significant.
+See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)
+for the full workstream plan.
 
-   2. **Proof ergonomics**: Register read-after-write lemmas
-      (`readReg_writeReg_eq`, `readReg_writeReg_ne`) rely on `Nat` decidable
-      equality for `if r' = r then v else rf.gpr r'`. Wrapping would require
-      additional `DecidableEq` boilerplate with no safety improvement.
-
-   See `SeLe4n/Prelude.lean` for the project's typed-identifier convention and
-   the rationale for wrapping kernel-facing identifiers. -/
-   ```
-
-**Files modified**:
-- `SeLe4n/Machine.lean` — add documentation comment (~12 lines)
+**Files modified** (by WS-J1, not this workstream):
+- `SeLe4n/Machine.lean` — typed `RegName`/`RegValue` wrappers
+- `SeLe4n/Prelude.lean` — lawful instances
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — decode layer (new)
+- `SeLe4n/Kernel/API.lean` — `syscallEntry` dispatch
+- See WS-J1 plan for complete file impact map
 
 #### Part B: Information-Flow Architecture Readers' Guide (R-13)
 
