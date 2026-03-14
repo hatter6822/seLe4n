@@ -39,7 +39,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Prelude.lean`
   - object/thread IDs and kernel monad contract used globally,
-  - `Hashable`, `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances for all 15 typed identifiers (13 in Prelude + `RegName`/`RegValue` in Machine; WS-G1, WS-H14a, WS-J1-A),
+  - `Hashable`, `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances for all 16 typed identifiers (13 in Prelude + `RegName`/`RegValue` in Machine + `CdtNodeId` in Structures; WS-G1, WS-H14a, WS-J1-A, WS-J1-F),
   - `LawfulMonad` instance for `KernelM` with monad law proofs (WS-H14b),
   - identifier roundtrip lemmas (`toNat_ofNat`, `ofNat_toNat`) and injectivity proofs (WS-H14d),
   - sentinel predicate completion: `valid`, `valid_iff_not_reserved`, `sentinel_not_valid` (WS-H14f),
@@ -95,6 +95,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Object/Structures.lean` — CNode `Std.HashMap Slot Capability` slot store and
     local revoke helper (WS-G5), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
     mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
+    `CdtNodeId` typed wrapper with full instance suite (WS-J1-F),
     `KernelObject` discriminated union.
 
 - `SeLe4n/Model/State.lean`

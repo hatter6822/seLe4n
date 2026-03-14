@@ -1,3 +1,25 @@
+## [0.15.10] - 2026-03-14
+
+### WS-J1-F: CdtNodeId Cleanup and Documentation Sync
+
+- **Typed wrapper replacement**: Replaced `abbrev CdtNodeId := Nat` with
+  `structure CdtNodeId where val : Nat` in `Model/Object/Structures.lean`,
+  matching the typed wrapper pattern used by all 15 other kernel identifiers.
+- **Instance suite**: Added `DecidableEq`, `Hashable`, `LawfulHashable`,
+  `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`
+  conversion functions — all co-located with the type definition in
+  `Structures.lean`.
+- **Downstream compilation fixes**: Updated `SystemState` field defaults
+  (`cdtNextNode := ⟨0⟩`), monotone allocator (`⟨node.val + 1⟩`), and test
+  literals in `NegativeStateSuite.lean` to use explicit constructor syntax.
+- **Documentation synchronization**: Updated all canonical sources (README,
+  SELE4N_SPEC, DEVELOPMENT, WORKSTREAM_HISTORY, CLAIM_EVIDENCE_INDEX) and
+  GitBook chapters (03, 04, 05, 12) to reflect WS-J1-F completion.
+- **Codebase map regeneration**: `docs/codebase_map.json` regenerated with
+  updated declaration counts and version.
+- **Build jobs:** 140. Zero sorry/axiom. Zero warnings.
+- **Closes:** WS-J1 Phase F. **WS-J1 portfolio fully completed.**
+
 ## [0.15.7] - 2026-03-14
 
 ### WS-J1-C: Audit Refinements

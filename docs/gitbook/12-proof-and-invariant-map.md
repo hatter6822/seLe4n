@@ -758,8 +758,8 @@ Supporting infrastructure:
 
 **Typeclass instance hardening (A-03):**
 
-- `EquivBEq` instances for all 14 typed identifier types (13 in `Prelude.lean` + `SecurityDomain` in `Policy.lean`).
-- `LawfulBEq` instances for all 14 typed identifier types.
+- `EquivBEq` instances for all 16 typed identifier types (13 in `Prelude.lean` + `SecurityDomain` in `Policy.lean` + `RegName`/`RegValue` in `Machine.lean` via WS-J1-A + `CdtNodeId` in `Structures.lean` via WS-J1-F).
+- `LawfulBEq` instances for all 16 typed identifier types.
 - These close the gap where HashMap bridge lemmas required `EquivBEq` constraints that identifier types did not satisfy.
 
 **KernelM monad law proofs (A-04/M-11):**
@@ -777,7 +777,7 @@ Supporting infrastructure:
 
 **Identifier roundtrip & injectivity proofs (WS-H14d):**
 
-For each of the 14 identifier types:
+For each of the 16 identifier types:
 - `toNat_ofNat` — roundtrip: construct then project yields the original value.
 - `ofNat_toNat` — roundtrip: project then reconstruct yields the original identifier.
 - `ofNat_injective` — distinct values produce distinct identifiers.
@@ -785,9 +785,9 @@ For each of the 14 identifier types:
 
 **OfNat instance removal (A-02/M-10):**
 
-- All `OfNat` instances removed for 14 typed identifier types.
+- All `OfNat` instances removed for 16 typed identifier types.
 - Numeric literals can no longer implicitly coerce to typed identifiers.
-- All construction sites migrated to explicit `⟨n⟩` or `TypeName.ofNat n` syntax.
+- All construction sites migrated to explicit `⟨n⟩` or `TypeName.ofNat n` syntax (including `CdtNodeId` literals in tests via WS-J1-F).
 
 **Sentinel predicate completion (A-01):**
 
@@ -1178,6 +1178,10 @@ Tier 3 invariant surface anchors:
 - 5 definition anchors (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`, `validateRegBound`, `decodeSyscallArgs`)
 - 8 theorem anchors (round-trip, determinism, error-iff, always-ok, bounds-iff)
 
-**Planned CdtNodeId cleanup (WS-J1-F):**
+**Completed CdtNodeId cleanup (WS-J1-F, v0.15.10):**
 
-- `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`) with full instance suite
+- `CdtNodeId` — typed wrapper structure (replacing `abbrev CdtNodeId := Nat`) with full instance suite (`DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`)
+- All 16 kernel identifiers are now typed wrappers with explicit HashMap/HashSet instances
+- `SystemState` field defaults updated (`cdtNextNode := ⟨0⟩`), monotone allocator updated (`⟨node.val + 1⟩`)
+- Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
+- **WS-J1 portfolio fully completed**

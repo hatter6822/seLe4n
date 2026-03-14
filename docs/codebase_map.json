@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "646ea58a615ecf28d82a562edbaf25751b4fbf56",
-      "tree_sha": "9018bbc9b249f7c932256dfac650458777727602",
-      "committed_at_utc": "2026-03-14T01:46:45-04:00"
+      "branch": "claude/cdtnodeid-cleanup-docs-ojcqU",
+      "commit_sha": "4cd70f25f340f1eabac15f5528cf3bb7b15bf8b9",
+      "tree_sha": "d1f3c2303df70b7926ea999501da5a6402df0ee3",
+      "committed_at_utc": "2026-03-14T05:46:52+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1995cd4c80733b36f564a176daf371d004e2e9d9293945a4daca0d6a8f53f3d9"
+    "source_digest": "6dcc772539c3274ac97eb535965247626cbbc6931d2f4f11d482f446cb544883"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2122
+    "declaration_count": 2130
   },
   "readme_sync": {
-    "version": "0.15.9",
+    "version": "0.15.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35419,
+    "production_loc": 35455,
     "test_files": 4,
     "test_loc": 3752,
     "proved_theorem_lemma_decls": 1128,
@@ -11052,7 +11052,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 94,
+      "declaration_count": 102,
       "declarations": [
         {
           "kind": "namespace",
@@ -11539,15 +11539,77 @@
           "called": []
         },
         {
-          "kind": "abbrev",
+          "kind": "structure",
           "name": "CdtNodeId",
-          "line": 554,
+          "line": 558,
           "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:564>",
+          "line": 564,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "CdtNodeId",
+          "line": 567,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ofNat",
+          "line": 570,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "toNat",
+          "line": 573,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:575>",
+          "line": 575,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:581>",
+          "line": 581,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:585>",
+          "line": 585,
+          "called": [
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:588>",
+          "line": 588,
+          "called": [
+            "CdtNodeId"
+          ]
         },
         {
           "kind": "structure",
           "name": "CapDerivationEdge",
-          "line": 561,
+          "line": 597,
           "called": [
             "CdtNodeId",
             "DerivationOp"
@@ -11556,13 +11618,13 @@
         {
           "kind": "namespace",
           "name": "CapDerivationEdge",
-          "line": 567,
+          "line": 603,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChildOf",
-          "line": 569,
+          "line": 605,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -11571,7 +11633,7 @@
         {
           "kind": "def",
           "name": "isParentOf",
-          "line": 572,
+          "line": 608,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -11580,7 +11642,7 @@
         {
           "kind": "structure",
           "name": "CapDerivationTree",
-          "line": 581,
+          "line": 617,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -11589,13 +11651,13 @@
         {
           "kind": "namespace",
           "name": "CapDerivationTree",
-          "line": 589,
+          "line": 625,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 591,
+          "line": 627,
           "called": [
             "CapDerivationTree"
           ]
@@ -11603,7 +11665,7 @@
         {
           "kind": "def",
           "name": "addEdge",
-          "line": 595,
+          "line": 631,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -11613,7 +11675,7 @@
         {
           "kind": "def",
           "name": "childrenOf",
-          "line": 603,
+          "line": 639,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -11622,42 +11684,6 @@
         {
           "kind": "def",
           "name": "parentOf",
-          "line": 608,
-          "called": [
-            "CapDerivationTree",
-            "CdtNodeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "removeAsChild",
-          "line": 614,
-          "called": [
-            "CapDerivationTree",
-            "CdtNodeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "removeAsParent",
-          "line": 623,
-          "called": [
-            "CapDerivationTree",
-            "CdtNodeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "removeNode",
-          "line": 630,
-          "called": [
-            "CapDerivationTree",
-            "CdtNodeId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "descendantsOf",
           "line": 644,
           "called": [
             "CapDerivationTree",
@@ -11666,8 +11692,44 @@
         },
         {
           "kind": "def",
+          "name": "removeAsChild",
+          "line": 650,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "removeAsParent",
+          "line": 659,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "removeNode",
+          "line": 666,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "descendantsOf",
+          "line": 680,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "acyclic",
-          "line": 657,
+          "line": 693,
           "called": [
             "CapDerivationTree"
           ]
@@ -11675,13 +11737,13 @@
         {
           "kind": "theorem",
           "name": "empty_acyclic",
-          "line": 660,
+          "line": 696,
           "called": []
         },
         {
           "kind": "def",
           "name": "edgeWellFounded",
-          "line": 672,
+          "line": 708,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -11690,13 +11752,13 @@
         {
           "kind": "theorem",
           "name": "empty_edgeWellFounded",
-          "line": 682,
+          "line": 718,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "edgeWellFounded_sub",
-          "line": 691,
+          "line": 727,
           "called": [
             "CapDerivationTree"
           ]
@@ -11704,7 +11766,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_edges_sub",
-          "line": 702,
+          "line": 738,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -11714,7 +11776,7 @@
         {
           "kind": "def",
           "name": "childMapConsistent",
-          "line": 710,
+          "line": 746,
           "called": [
             "CapDerivationTree"
           ]
@@ -11722,13 +11784,13 @@
         {
           "kind": "theorem",
           "name": "empty_childMapConsistent",
-          "line": 715,
+          "line": 751,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "addEdge_childMapConsistent",
-          "line": 722,
+          "line": 758,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -11740,7 +11802,7 @@
         {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 766,
+          "line": 802,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -11749,7 +11811,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 773,
+          "line": 809,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -11760,15 +11822,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 787,
+          "line": 823,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:798>",
-          "line": 798,
+          "name": "<anonymous:instance:834>",
+          "line": 834,
           "called": [
             "KernelObject"
           ]
@@ -11776,19 +11838,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 808,
+          "line": 844,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 817,
+          "line": 853,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 819,
+          "line": 855,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -11797,7 +11859,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 831,
+          "line": 867,
           "called": []
         }
       ]

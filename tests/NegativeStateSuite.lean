@@ -266,9 +266,9 @@ private def runNegativeChecks : IO Unit := do
 
   -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
   let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
-  let moveSrcNode : CdtNodeId := 0
-  let moveParentNode : CdtNodeId := 1
-  let moveChildNode : CdtNodeId := 2
+  let moveSrcNode : CdtNodeId := ⟨0⟩
+  let moveParentNode : CdtNodeId := ⟨1⟩
+  let moveChildNode : CdtNodeId := ⟨2⟩
   let moveSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
@@ -279,7 +279,7 @@ private def runNegativeChecks : IO Unit := do
         |>.insert moveSrcNode slot0)
         |>.insert moveParentNode { cnode := cnodeId, slot := ⟨7⟩ })
         |>.insert moveChildNode { cnode := cnodeId, slot := ⟨8⟩ })
-      cdtNextNode := 3
+      cdtNextNode := ⟨3⟩
     }
   let (_, moveState) ← expectOkState "cspaceMove remaps slot-node pointer"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
@@ -306,9 +306,9 @@ private def runNegativeChecks : IO Unit := do
   let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨5⟩ }
   let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨6⟩ }
   let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := ⟨0⟩ }
-  let strictRootNode : CdtNodeId := 30
-  let strictChildNodeOk : CdtNodeId := 31
-  let strictChildNodeBad : CdtNodeId := 32
+  let strictRootNode : CdtNodeId := ⟨30⟩
+  let strictChildNodeOk : CdtNodeId := ⟨31⟩
+  let strictChildNodeBad : CdtNodeId := ⟨32⟩
   let strictSeed : SystemState :=
     { baseState with
       objects := baseState.objects.insert cnodeId (.cnode {
@@ -340,7 +340,7 @@ private def runNegativeChecks : IO Unit := do
         |>.insert strictRootNode strictRootSlot)
         |>.insert strictChildNodeOk strictChildSlotOk)
         |>.insert strictChildNodeBad strictChildSlotBad)
-      cdtNextNode := 33
+      cdtNextNode := ⟨33⟩
     }
 
   let (strictReport, strictState) ← expectOkState "cspaceRevokeCdtStrict returns report"

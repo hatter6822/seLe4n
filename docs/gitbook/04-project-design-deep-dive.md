@@ -171,6 +171,12 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
 5. **Testing and trace evidence** (WS-J1-E — **completed**, v0.15.9): 18 negative
    decode tests, 5 register-decode trace scenarios, 2 operation-chain tests,
    13 Tier 3 invariant surface anchors.
+6. **CdtNodeId cleanup** (WS-J1-F — **completed**, v0.15.10): Replaced
+   `abbrev CdtNodeId := Nat` with `structure CdtNodeId where val : Nat`,
+   added full instance suite (`DecidableEq`, `Hashable`, `LawfulHashable`,
+   `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`),
+   fixed downstream compilation, documentation synchronized. All 16 kernel
+   identifiers are now typed wrappers. **WS-J1 portfolio fully completed.**
 
 ```
 User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry
