@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "41d4e8e6a3fb467c0ffe4a09a6e3b6c84c4359b5",
-      "tree_sha": "1d6dfc9b111c6d5173901b0bee283fa159c49eff",
-      "committed_at_utc": "2026-03-14T16:09:43-04:00"
+      "branch": "claude/refine-syscall-decode-layer-WUkkk",
+      "commit_sha": "ccd08671d1e628d32f731db0a49c94b82e977ca7",
+      "tree_sha": "cb3303a3630c4b54f5264e2384f7e9b4f435aeea",
+      "committed_at_utc": "2026-03-14T20:09:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b965c9f4742a4cf0cde2791173d032054bcb6392908dc204c99e60bccd078a68"
+    "source_digest": "c9f4dd8cd9787a8104da7f2b48f66c9714406201f43d38f3ba41834d1bb9c279"
   },
   "summary": {
-    "module_count": 72,
-    "declaration_count": 2141
+    "module_count": 73,
+    "declaration_count": 2176
   },
   "readme_sync": {
-    "version": "0.16.0",
+    "version": "0.16.1",
     "lean_toolchain": "v4.28.0",
-    "production_files": 68,
-    "production_loc": 35685,
+    "production_files": 69,
+    "production_loc": 36095,
     "test_files": 4,
     "test_loc": 3755,
-    "proved_theorem_lemma_decls": 1138,
+    "proved_theorem_lemma_decls": 1157,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -42,19 +42,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 92,
+          "line": 93,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
-          "line": 100,
+          "line": 101,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_default",
-          "line": 105,
+          "line": 106,
           "called": [
             "apiInvariantBundle"
           ]
@@ -62,13 +62,13 @@
         {
           "kind": "structure",
           "name": "SyscallGate",
-          "line": 142,
+          "line": 143,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallLookupCap",
-          "line": 164,
+          "line": 165,
           "called": [
             "SyscallGate"
           ]
@@ -76,7 +76,7 @@
         {
           "kind": "def",
           "name": "syscallInvoke",
-          "line": 178,
+          "line": 179,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -85,7 +85,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 191,
+          "line": 192,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -94,7 +94,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_state_unchanged",
-          "line": 213,
+          "line": 214,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -104,7 +104,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 222,
+          "line": 223,
           "called": [
             "SyscallGate",
             "syscallInvoke",
@@ -114,7 +114,7 @@
         {
           "kind": "def",
           "name": "apiEndpointSend",
-          "line": 242,
+          "line": 243,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -123,7 +123,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReceive",
-          "line": 249,
+          "line": 250,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -132,7 +132,7 @@
         {
           "kind": "def",
           "name": "apiEndpointCall",
-          "line": 255,
+          "line": 256,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReply",
-          "line": 261,
+          "line": 262,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -150,7 +150,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMint",
-          "line": 266,
+          "line": 267,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -159,7 +159,7 @@
         {
           "kind": "def",
           "name": "apiCspaceCopy",
-          "line": 272,
+          "line": 273,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -168,7 +168,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMove",
-          "line": 277,
+          "line": 278,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -177,7 +177,7 @@
         {
           "kind": "def",
           "name": "apiCspaceDelete",
-          "line": 282,
+          "line": 283,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -186,7 +186,7 @@
         {
           "kind": "def",
           "name": "apiLifecycleRetype",
-          "line": 287,
+          "line": 288,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -195,7 +195,7 @@
         {
           "kind": "def",
           "name": "apiVspaceMap",
-          "line": 293,
+          "line": 294,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -204,7 +204,7 @@
         {
           "kind": "def",
           "name": "apiVspaceUnmap",
-          "line": 299,
+          "line": 300,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -213,7 +213,7 @@
         {
           "kind": "def",
           "name": "apiServiceStart",
-          "line": 304,
+          "line": 305,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -222,7 +222,7 @@
         {
           "kind": "def",
           "name": "apiServiceStop",
-          "line": 309,
+          "line": 310,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -231,25 +231,25 @@
         {
           "kind": "def",
           "name": "lookupThreadRegisterContext",
-          "line": 335,
+          "line": 336,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallRequiredRight",
-          "line": 344,
+          "line": 345,
           "called": []
         },
         {
           "kind": "def",
           "name": "dispatchWithCap",
-          "line": 362,
+          "line": 363,
           "called": []
         },
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 417,
+          "line": 418,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -260,7 +260,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 446,
+          "line": 447,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -269,7 +269,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 466,
+          "line": 467,
           "called": [
             "lookupThreadRegisterContext",
             "syscallEntry"
@@ -278,7 +278,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 494,
+          "line": 495,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -289,7 +289,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 530,
+          "line": 531,
           "called": [
             "dispatchSyscall_requires_right",
             "lookupThreadRegisterContext",
@@ -300,7 +300,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 565,
+          "line": 566,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -308,7 +308,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 575,
+          "line": 576,
           "called": [
             "syscallRequiredRight"
           ]
@@ -316,7 +316,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 583,
+          "line": 584,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -326,7 +326,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 592,
+          "line": 593,
           "called": [
             "syscallEntry"
           ]
@@ -334,7 +334,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 602,
+          "line": 603,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -343,7 +343,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 619,
+          "line": 620,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -353,13 +353,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 649,
+          "line": 650,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 658,
+          "line": 659,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -368,7 +368,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 669,
+          "line": 670,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -377,7 +377,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 684,
+          "line": 685,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -387,7 +387,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 699,
+          "line": 700,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -397,7 +397,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 722,
+          "line": 723,
           "called": [
             "syscallEntry"
           ]
@@ -405,7 +405,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 737,
+          "line": 738,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -1173,6 +1173,302 @@
           "called": [
             "array_mapM_except_size",
             "decodeSyscallArgs"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
+      "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
+      "declaration_count": 35,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "requireMsgReg",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "requireMsgReg_deterministic",
+          "line": 53,
+          "called": [
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requireMsgReg_error_iff",
+          "line": 57,
+          "called": [
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requireMsgReg_ok_iff",
+          "line": 65,
+          "called": [
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "CSpaceMintArgs",
+          "line": 78,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "CSpaceCopyArgs",
+          "line": 87,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "CSpaceMoveArgs",
+          "line": 94,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "CSpaceDeleteArgs",
+          "line": 101,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "LifecycleRetypeArgs",
+          "line": 111,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "VSpaceMapArgs",
+          "line": 119,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "VSpaceUnmapArgs",
+          "line": 128,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "decodeCSpaceMintArgs",
+          "line": 139,
+          "called": [
+            "CSpaceMintArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeCSpaceCopyArgs",
+          "line": 152,
+          "called": [
+            "CSpaceCopyArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeCSpaceMoveArgs",
+          "line": 160,
+          "called": [
+            "CSpaceMoveArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeCSpaceDeleteArgs",
+          "line": 168,
+          "called": [
+            "CSpaceDeleteArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeLifecycleRetypeArgs",
+          "line": 179,
+          "called": [
+            "LifecycleRetypeArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeVSpaceMapArgs",
+          "line": 190,
+          "called": [
+            "VSpaceMapArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeVSpaceUnmapArgs",
+          "line": 203,
+          "called": [
+            "VSpaceUnmapArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMintArgs_deterministic",
+          "line": 214,
+          "called": [
+            "decodeCSpaceMintArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceCopyArgs_deterministic",
+          "line": 217,
+          "called": [
+            "decodeCSpaceCopyArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMoveArgs_deterministic",
+          "line": 220,
+          "called": [
+            "decodeCSpaceMoveArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceDeleteArgs_deterministic",
+          "line": 223,
+          "called": [
+            "decodeCSpaceDeleteArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeLifecycleRetypeArgs_deterministic",
+          "line": 226,
+          "called": [
+            "decodeLifecycleRetypeArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceMapArgs_deterministic",
+          "line": 229,
+          "called": [
+            "decodeVSpaceMapArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceUnmapArgs_deterministic",
+          "line": 232,
+          "called": [
+            "decodeVSpaceUnmapArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requireMsgReg_unfold_ok",
+          "line": 240,
+          "called": [
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requireMsgReg_unfold_err",
+          "line": 243,
+          "called": [
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMintArgs_error_iff",
+          "line": 247,
+          "called": [
+            "decodeCSpaceMintArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceCopyArgs_error_iff",
+          "line": 276,
+          "called": [
+            "decodeCSpaceCopyArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMoveArgs_error_iff",
+          "line": 297,
+          "called": [
+            "decodeCSpaceMoveArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceDeleteArgs_error_iff",
+          "line": 318,
+          "called": [
+            "decodeCSpaceDeleteArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeLifecycleRetypeArgs_error_iff",
+          "line": 335,
+          "called": [
+            "decodeLifecycleRetypeArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceMapArgs_error_iff",
+          "line": 360,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceUnmapArgs_error_iff",
+          "line": 389,
+          "called": [
+            "decodeVSpaceUnmapArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
           ]
         }
       ]

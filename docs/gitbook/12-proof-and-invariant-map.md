@@ -1192,7 +1192,7 @@ Tier 3 invariant surface anchors:
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
 
-**Planned: WS-K full syscall dispatch completion (v0.16.0–v0.16.8):**
+**Planned: WS-K full syscall dispatch completion (v0.16.1–v0.16.8):**
 
 WS-K extends the WS-J1 decode layer to complete the full syscall surface:
 - `SyscallDecodeResult.msgRegs` — message register values extracted from x2–x5

@@ -1,3 +1,16 @@
+## [0.16.1] — Per-Syscall Argument Decode Layer (WS-K-B)
+
+- Added `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — layer 2 of the
+  two-layer syscall decode architecture
+- 7 per-syscall typed argument structures: `CSpaceMintArgs`, `CSpaceCopyArgs`,
+  `CSpaceMoveArgs`, `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`,
+  `VSpaceUnmapArgs`
+- 7 total decode functions with explicit `Except KernelError` error handling
+- 7 determinism theorems (trivial `rfl`)
+- 7 error-exclusivity theorems (`decode fails ↔ msgRegs.size < N`)
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+- Integrated into `API.lean` import graph
+
 ## [0.16.0] - 2026-03-14
 
 ### WS-K-A: Message Register Extraction into SyscallDecodeResult

@@ -1,8 +1,8 @@
 # seLe4n Workstream Plan — Full Syscall Dispatch Completion (WS-K)
 
-**Version target:** v0.16.0–v0.16.8
+**Version target:** v0.16.1–v0.16.8
 **Base version:** v0.15.10
-**Status:** In progress — K-A completed (v0.16.0)
+**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -458,32 +458,288 @@ Run `lake build` and `./scripts/test_smoke.sh` to confirm:
 ### WS-K-B — Per-Syscall Argument Decode Layer
 
 **Goal:** Define typed argument structures for each syscall family and total
-decode functions that extract them from `SyscallDecodeResult.msgRegs`.
+decode functions that extract them from `SyscallDecodeResult.msgRegs`. This is
+the second decode layer: `RegisterDecode.lean` converts raw registers into a
+flat `SyscallDecodeResult` (layer 1); this module converts the `msgRegs` array
+within that result into per-syscall typed argument structures (layer 2).
 
-**Tasks:**
-1. Define `CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
-   `CSpaceDeleteArgs` structures in a new file
-   `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`.
-2. Define `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs` in the
-   same file.
-3. Implement decode functions for each:
-   - `decodeCSpaceMintArgs : SyscallDecodeResult → Except KernelError CSpaceMintArgs`
-   - `decodeCSpaceCopyArgs : SyscallDecodeResult → Except KernelError CSpaceCopyArgs`
-   - `decodeCSpaceMoveArgs : SyscallDecodeResult → Except KernelError CSpaceMoveArgs`
-   - `decodeCSpaceDeleteArgs : SyscallDecodeResult → Except KernelError CSpaceDeleteArgs`
-   - `decodeLifecycleRetypeArgs : SyscallDecodeResult → Except KernelError LifecycleRetypeArgs`
-   - `decodeVSpaceMapArgs : SyscallDecodeResult → Except KernelError VSpaceMapArgs`
-   - `decodeVSpaceUnmapArgs : SyscallDecodeResult → Except KernelError VSpaceUnmapArgs`
-4. Each function checks `msgRegs.size` against minimum required register count
-   and returns `invalidMessageInfo` if insufficient.
-5. Add determinism theorem for each decode function (trivially `rfl`).
-6. Add error-exclusivity theorems: decode fails iff register count insufficient.
+**Design rationale:**
+
+The ARM64 syscall convention packs up to 4 message register values in x2–x5.
+After K-A, these arrive as `decoded.msgRegs : Array RegValue` with
+`decoded.msgRegs.size = layout.msgRegs.size` (guaranteed by
+`decodeMsgRegs_length`). Each syscall family requires a different number of
+message registers and interprets them differently:
+
+| Syscall family | Min regs | Register mapping |
+|---|---|---|
+| CSpace mint | 4 | x2=srcSlot, x3=dstSlot, x4=rights bitmask, x5=badge |
+| CSpace copy/move | 2 | x2=srcSlot, x3=dstSlot |
+| CSpace delete | 1 | x2=targetSlot |
+| Lifecycle retype | 3 | x2=targetObj, x3=newType tag, x4=size hint |
+| VSpace map | 4 | x2=asid, x3=vaddr, x4=paddr, x5=perms word |
+| VSpace unmap | 2 | x2=asid, x3=vaddr |
+
+A shared `requireMsgReg` helper provides safe indexing with a uniform error
+(`invalidMessageInfo`) on insufficient registers. All decode functions are
+pure `Except KernelError T` — no state access, no side effects.
+
+**Subtasks:**
+
+#### K-B.1 — Module skeleton and safe indexing helper (SyscallArgDecode.lean)
+
+Create `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` with:
+- Module docstring describing the two-layer decode architecture.
+- Imports: `SeLe4n.Model.State` only (same dependency discipline as
+  `RegisterDecode.lean`).
+- Shared `requireMsgReg` helper:
+  ```lean
+  @[inline] def requireMsgReg (regs : Array RegValue) (idx : Nat)
+      : Except KernelError RegValue :=
+    if h : idx < regs.size then .ok regs[idx]
+    else .error .invalidMessageInfo
+  ```
+  This provides bounds-checked indexing with the canonical error. Every
+  per-syscall decode function delegates to this, avoiding duplicated bounds
+  logic.
+- Determinism theorem for `requireMsgReg` (trivially `rfl`).
+- Error-exclusivity theorem for `requireMsgReg`:
+  ```lean
+  theorem requireMsgReg_error_iff (regs : Array RegValue) (idx : Nat) :
+      requireMsgReg regs idx = .error .invalidMessageInfo ↔ ¬(idx < regs.size)
+  ```
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (new)
+**Acceptance:** `lake build` passes; `requireMsgReg` compiles with theorems.
+
+#### K-B.2 — CSpace argument structures (SyscallArgDecode.lean)
+
+Define the four CSpace argument structures:
+```lean
+structure CSpaceMintArgs where
+  srcSlot : Slot
+  dstSlot : Slot
+  rights  : AccessRightSet
+  badge   : Badge
+  deriving Repr, DecidableEq
+
+structure CSpaceCopyArgs where
+  srcSlot : Slot
+  dstSlot : Slot
+  deriving Repr, DecidableEq
+
+structure CSpaceMoveArgs where
+  srcSlot : Slot
+  dstSlot : Slot
+  deriving Repr, DecidableEq
+
+structure CSpaceDeleteArgs where
+  targetSlot : Slot
+  deriving Repr, DecidableEq
+```
+
+Design notes:
+- `CSpaceMintArgs.badge` uses `Badge` (not `Option Badge`) because the raw
+  register always carries a value; the dispatch path can choose to pass
+  `some badge` or `none` based on a zero-check at the call site (K-C).
+- `CSpaceCopyArgs` and `CSpaceMoveArgs` are structurally identical but
+  semantically distinct — keeping them separate avoids accidental confusion
+  at dispatch call sites and makes the decode layer self-documenting.
+- All structures use typed identifiers (`Slot`, `AccessRightSet`, `Badge`)
+  — never raw `Nat`.
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 4 structures compile with `DecidableEq` and `Repr`.
+
+#### K-B.3 — CSpace decode functions (SyscallArgDecode.lean)
+
+Implement decode functions for each CSpace argument structure:
+```lean
+def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
+    : Except KernelError CSpaceMintArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  let r3 ← requireMsgReg decoded.msgRegs 3
+  pure { srcSlot := Slot.ofNat r0.val
+         dstSlot := Slot.ofNat r1.val
+         rights  := ⟨r2.val⟩
+         badge   := Badge.ofNat r3.val }
+
+def decodeCSpaceCopyArgs (decoded : SyscallDecodeResult)
+    : Except KernelError CSpaceCopyArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { srcSlot := Slot.ofNat r0.val, dstSlot := Slot.ofNat r1.val }
+
+def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
+    : Except KernelError CSpaceMoveArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { srcSlot := Slot.ofNat r0.val, dstSlot := Slot.ofNat r1.val }
+
+def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
+    : Except KernelError CSpaceDeleteArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { targetSlot := Slot.ofNat r0.val }
+```
+
+Each function short-circuits via `do` notation on the first insufficient
+register, producing `invalidMessageInfo`. The `do` desugaring of `Except`
+ensures left-to-right evaluation with early exit on error.
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 4 decode functions compile; `lake build` passes.
+
+#### K-B.4 — Lifecycle and VSpace argument structures (SyscallArgDecode.lean)
+
+Define the remaining 3 argument structures:
+```lean
+structure LifecycleRetypeArgs where
+  targetObj : ObjId
+  newType   : Nat          -- object type tag decoded from register
+  size      : Nat          -- object size hint
+  deriving Repr, DecidableEq
+
+structure VSpaceMapArgs where
+  asid  : ASID
+  vaddr : VAddr
+  paddr : PAddr
+  perms : Nat              -- raw permissions word (decoded to PagePermissions at dispatch)
+  deriving Repr, DecidableEq
+
+structure VSpaceUnmapArgs where
+  asid  : ASID
+  vaddr : VAddr
+  deriving Repr, DecidableEq
+```
+
+Design notes:
+- `LifecycleRetypeArgs.newType` stays as `Nat` because the type-tag →
+  `KernelObject` mapping is a dispatch-layer concern (K-D `objectOfTypeTag`),
+  not a decode-layer concern. The decode layer converts raw bits to typed
+  identifiers but does not interpret domain semantics.
+- `VSpaceMapArgs.perms` stays as `Nat` for the same reason — `PagePermissions`
+  construction with W^X validation happens at the dispatch boundary.
+- `VSpaceUnmapArgs` needs only 2 registers (ASID + vaddr).
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 3 structures compile with `DecidableEq` and `Repr`.
+
+#### K-B.5 — Lifecycle and VSpace decode functions (SyscallArgDecode.lean)
+
+Implement decode functions for the remaining structures:
+```lean
+def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
+    : Except KernelError LifecycleRetypeArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  pure { targetObj := ObjId.ofNat r0.val
+         newType   := r1.val
+         size      := r2.val }
+
+def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError VSpaceMapArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  let r3 ← requireMsgReg decoded.msgRegs 3
+  pure { asid  := ASID.ofNat r0.val
+         vaddr := VAddr.ofNat r1.val
+         paddr := PAddr.ofNat r2.val
+         perms := r3.val }
+
+def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError VSpaceUnmapArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { asid  := ASID.ofNat r0.val
+         vaddr := VAddr.ofNat r1.val }
+```
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 3 decode functions compile; `lake build` passes.
+
+#### K-B.6 — Determinism theorems (SyscallArgDecode.lean)
+
+Add a determinism theorem for each of the 7 decode functions. Since all
+functions are pure with no state access, these are trivially `rfl`:
+```lean
+theorem decodeCSpaceMintArgs_deterministic (d : SyscallDecodeResult) :
+    decodeCSpaceMintArgs d = decodeCSpaceMintArgs d := rfl
+-- ... (analogous for all 7)
+```
+
+These are stated explicitly for proof-surface anchoring — the invariant
+surface tests (Tier 3) reference them to ensure no regression introduces
+non-determinism.
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 7 theorems compile (zero sorry).
+
+#### K-B.7 — Error-exclusivity theorems (SyscallArgDecode.lean)
+
+For each decode function, prove that decode fails **if and only if** the
+`msgRegs` array has insufficient entries. This establishes the precise error
+contract that dispatch paths (K-C, K-D) and negative tests (K-G) rely on.
+
+```lean
+theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeCSpaceMintArgs d = .error e) ↔ d.msgRegs.size < 4
+
+theorem decodeCSpaceCopyArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeCSpaceCopyArgs d = .error e) ↔ d.msgRegs.size < 2
+
+theorem decodeCSpaceMoveArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeCSpaceMoveArgs d = .error e) ↔ d.msgRegs.size < 2
+
+theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeCSpaceDeleteArgs d = .error e) ↔ d.msgRegs.size < 1
+
+theorem decodeLifecycleRetypeArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeLifecycleRetypeArgs d = .error e) ↔ d.msgRegs.size < 3
+
+theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeVSpaceMapArgs d = .error e) ↔ d.msgRegs.size < 4
+
+theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔ d.msgRegs.size < 2
+```
+
+Proof strategy: unfold the decode function and `requireMsgReg`, then use
+`simp` with `Array.size` lemmas to reduce the goal to a comparison on
+`msgRegs.size`. The `do`-notation desugars to nested `Except.bind` calls
+that short-circuit on the first `requireMsgReg` failure — the proof proceeds
+by case-splitting on whether each index is in bounds.
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+**Acceptance:** All 7 theorems compile (zero sorry).
+
+#### K-B.8 — API import and build verification
+
+1. Add `import SeLe4n.Kernel.Architecture.SyscallArgDecode` to
+   `SeLe4n/Kernel/API.lean` so the dispatch layer (K-C) can reference
+   decode functions.
+2. Run `lake build` to verify zero compilation errors.
+3. Run `./scripts/test_smoke.sh` to verify all Tier 0–2 tests pass.
+4. Verify zero `sorry` in the new file:
+   `grep -c 'sorry' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` → 0.
+
+**Files modified:**
+- `SeLe4n/Kernel/API.lean` — Add import.
+
+**Acceptance:** `lake build` and `test_smoke.sh` pass; zero `sorry`.
 
 **Exit criteria:**
 - All 7 argument structures defined with `DecidableEq`, `Repr`.
-- All 7 decode functions are total with explicit error returns.
-- Determinism and error-exclusivity theorems proved.
-- `lake build` passes; `test_smoke.sh` passes.
+- All 7 decode functions are total with explicit `Except` error returns.
+- Shared `requireMsgReg` helper with bounds-checked indexing.
+- 7 determinism theorems proved (trivially `rfl`).
+- 7 error-exclusivity theorems proved (decode fails iff regs insufficient).
+- `requireMsgReg` error-exclusivity theorem proved.
+- API import added; `lake build` and `test_smoke.sh` pass.
+- Zero `sorry`/`axiom` in production proof surface.
 
 **Files created:**
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`

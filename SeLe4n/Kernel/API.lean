@@ -23,6 +23,7 @@ import SeLe4n.Kernel.InformationFlow.Invariant
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
+import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant

@@ -201,10 +201,12 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     layout's message registers via `Array.mapM`; `encodeMsgRegs` identity encoder;
     `decodeMsgRegs_length` / `decodeMsgRegs_roundtrip` theorems; extended
     `decode_components_roundtrip` to 4-conjunct.
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B, planned v0.16.1)*
-  - Per-syscall argument structures (`CSpaceMintArgs`, `VSpaceMapArgs`, etc.)
-    and total decode functions from `SyscallDecodeResult.msgRegs`. Planned as
-    part of WS-K full syscall dispatch completion.
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1)*
+  - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
+    7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
+    `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`),
+    7 total decode functions via shared `requireMsgReg` helper, 7 determinism
+    theorems, 7 error-exclusivity theorems. Zero sorry/axiom.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

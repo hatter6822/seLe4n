@@ -193,9 +193,10 @@ two-layer design. **Layer 1 completed (K-A, v0.16.0):**
 (x2–x5 on ARM64) into `SyscallDecodeResult.msgRegs` in a single
 validate-and-read pass via `Array.mapM`. The `decodeMsgRegs_length` theorem
 proves the output array size equals the layout's message register count. Layer 2
-(planned, K-B): `SyscallArgDecode.lean` will convert raw values into per-syscall
-typed argument structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`), enabling
-full dispatch for all 13 syscalls. See
+(completed, K-B v0.16.1): `SyscallArgDecode.lean` converts raw `msgRegs` values
+into per-syscall typed argument structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`)
+via a shared `requireMsgReg` bounds-checked helper, with 7 determinism and 7
+error-exclusivity theorems, enabling full dispatch for all 13 syscalls. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage
