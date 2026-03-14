@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/invariant-information-flow-integration-7Ssry",
-      "commit_sha": "99df0f97880d17a9fab3e85e58c8de8ce512269c",
-      "tree_sha": "c4fdb55ada67218bd39bb00dc859aca4d1177589",
-      "committed_at_utc": "2026-03-14T04:02:31+00:00"
+      "branch": "main",
+      "commit_sha": "3d80d65a5ef4d4cf52d97be4b322ab9c1c0c7c11",
+      "tree_sha": "0d894f9489a11ba789182ddd690052b6f5c9997a",
+      "committed_at_utc": "2026-03-14T00:25:56-04:00"
     }
   },
   "source_sync": {
