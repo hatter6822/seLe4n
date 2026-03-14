@@ -48,11 +48,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.1` (`lakefile.toml`) |
+| **Package version** | `0.16.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 35,455 across 68 Lean files |
-| **Test LoC** | 3,752 across 4 Lean test suites |
-| **Proved declarations** | 1,128 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 36,202 across 69 Lean files |
+| **Test LoC** | 3,755 across 4 Lean test suites |
+| **Proved declarations** | 1,161 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Next workstreams** | **WS-K** full syscall dispatch completion (in progress, v0.16.1–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode function update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. Remaining: full 13/13 dispatch (K-C/K-D), service policy (K-E), IPC message population (K-E), proofs (K-F), testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |

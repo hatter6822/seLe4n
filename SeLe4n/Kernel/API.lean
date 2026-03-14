@@ -329,6 +329,7 @@ This closes the gap where the prior model accepted pre-typed arguments directly,
 bypassing the register file entirely. -/
 
 open Architecture.RegisterDecode
+open Architecture.SyscallArgDecode
 
 /-- WS-J1-C: Extract the current thread's saved register context from its TCB.
 Returns `objectNotFound` if the thread ID does not correspond to any object,
@@ -357,12 +358,16 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .serviceStart    => .write
   | .serviceStop     => .write
 
-/-- WS-J1-C: Dispatch a decoded syscall to the appropriate internal kernel
+/-- WS-J1-C/K-C: Dispatch a decoded syscall to the appropriate internal kernel
 operation using the resolved capability's target. Called after cap resolution
-succeeds inside `syscallInvoke`. -/
-private def dispatchWithCap (syscallId : SyscallId) (tid : SeLe4n.ThreadId)
+succeeds inside `syscallInvoke`.
+
+WS-K-C: Accepts full `SyscallDecodeResult` so CSpace dispatch arms can
+extract per-syscall arguments from `decoded.msgRegs` via the typed decode
+functions in `SyscallArgDecode`. -/
+private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (cap : Capability) : Kernel Unit :=
-  match syscallId with
+  match decoded.syscallId with
   | .send =>
     match cap.target with
     | .object epId =>
@@ -385,13 +390,49 @@ private def dispatchWithCap (syscallId : SyscallId) (tid : SeLe4n.ThreadId)
     | .replyCap targetTid =>
       endpointReply tid targetTid { registers := #[], caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
-  -- CSpace operations: the cap targets a CNode object, but source/dest slot
-  -- indices come from message registers. Per-syscall argument decode and
-  -- dispatch wiring deferred to WS-K-B/K-C.
-  | .cspaceMint  => fun _ => .error .illegalState
-  | .cspaceCopy  => fun _ => .error .illegalState
-  | .cspaceMove  => fun _ => .error .illegalState
-  | .cspaceDelete => fun _ => .error .illegalState
+  -- WS-K-C: CSpace operations — cap targets a CNode, message registers
+  -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
+  | .cspaceMint =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMintArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            let badge : Option SeLe4n.Badge :=
+              if args.badge.val = 0 then none else some args.badge
+            cspaceMint src dst args.rights badge st
+    | _ => fun _ => .error .invalidCapability
+  | .cspaceCopy =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceCopyArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceCopy src dst st
+    | _ => fun _ => .error .invalidCapability
+  | .cspaceMove =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMoveArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceMove src dst st
+    | _ => fun _ => .error .invalidCapability
+  | .cspaceDelete =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceDeleteArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+            cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
   -- Lifecycle retype: the cap targets an untyped object, but new object type,
   -- target slot, and size come from message registers.
   | .lifecycleRetype => fun _ => .error .illegalState
@@ -428,7 +469,7 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        (syscallInvoke gate (dispatchWithCap decoded.syscallId tid)) st
+        (syscallInvoke gate (dispatchWithCap decoded tid)) st
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -512,7 +553,7 @@ theorem dispatchSyscall_requires_right
       have hInvoke := syscallInvoke_requires_right
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        (dispatchWithCap decoded.syscallId tid) st () st' hOk
+        (dispatchWithCap decoded tid) st () st' hOk
       obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
       exact ⟨cap, ref, hResolve, hSlot, hRight⟩
     · simp at hOk
@@ -575,6 +616,72 @@ theorem lookupThreadRegisterContext_state_unchanged
 exactly one `AccessRight`. -/
 theorem syscallRequiredRight_total (sid : SyscallId) :
     ∃ r, syscallRequiredRight sid = r := ⟨_, rfl⟩
+
+-- ============================================================================
+-- WS-K-C: CSpace dispatch delegation theorems
+-- ============================================================================
+
+/-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMint`
+is invoked with the decoded source slot, destination slot, rights, and badge
+from message registers. -/
+theorem dispatchWithCap_cspaceMint_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceMintArgs)
+    (hSyscall : decoded.syscallId = .cspaceMint)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+      let badge : Option SeLe4n.Badge :=
+        if args.badge.val = 0 then none else some args.badge
+      cspaceMint src dst args.rights badge := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+/-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
+is invoked with the decoded source and destination slots. -/
+theorem dispatchWithCap_cspaceCopy_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceCopyArgs)
+    (hSyscall : decoded.syscallId = .cspaceCopy)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceCopyArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+      cspaceCopy src dst := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+/-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
+is invoked with the decoded source and destination slots. -/
+theorem dispatchWithCap_cspaceMove_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceMoveArgs)
+    (hSyscall : decoded.syscallId = .cspaceMove)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceMoveArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+      cspaceMove src dst := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+/-- WS-K-C: When cspaceDelete dispatch succeeds, the kernel-level
+`cspaceDeleteSlot` is invoked with the decoded target slot. -/
+theorem dispatchWithCap_cspaceDelete_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs)
+    (hSyscall : decoded.syscallId = .cspaceDelete)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+      cspaceDeleteSlot addr := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
 -- WS-J1-D: Invariant preservation for syscall entry

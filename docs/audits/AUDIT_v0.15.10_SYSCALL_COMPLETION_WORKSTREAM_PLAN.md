@@ -2,7 +2,7 @@
 
 **Version target:** v0.16.1–v0.16.8
 **Base version:** v0.15.10
-**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1)
+**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -754,47 +754,229 @@ by case-splitting on whether each index is in bounds.
 ### WS-K-C — CSpace Syscall Dispatch
 
 **Goal:** Wire `cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDelete`
-through `dispatchWithCap` using decoded message register arguments.
+through `dispatchWithCap` using decoded message register arguments. Replace
+all 4 CSpace `.illegalState` stubs with real dispatch paths that decode
+per-syscall arguments from `SyscallDecodeResult.msgRegs` and delegate to the
+existing kernel-level CSpace operations.
 
-**Tasks:**
-1. Modify `dispatchWithCap` to accept `SyscallDecodeResult` instead of just
-   `SyscallId`:
-   ```lean
-   private def dispatchWithCap (decoded : SyscallDecodeResult)
-       (tid : SeLe4n.ThreadId) (cap : Capability) : Kernel Unit
-   ```
-2. Replace `cspaceMint` stub with:
-   ```lean
-   | .cspaceMint =>
-       match cap.target with
-       | .object cnodeId =>
-           fun st => match decodeCSpaceMintArgs decoded with
-           | .error e => .error e
-           | .ok args =>
-               let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-               let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-               cspaceMint src dst args.rights args.badge st
-       | _ => fun _ => .error .invalidCapability
-   ```
-3. Replace `cspaceCopy`, `cspaceMove`, `cspaceDelete` stubs with analogous
-   patterns using their respective decode functions.
-4. Update `dispatchSyscall` call site to pass full `decoded` to
-   `dispatchWithCap`.
-5. Verify all existing soundness theorems still hold (`dispatchSyscall_requires_right`,
-   `syscallEntry_implies_capability_held`, `syscallEntry_requires_valid_decode`).
-6. Add `dispatchWithCap_cspaceMint_delegates` theorem proving the dispatch path
-   delegates to the kernel-level `cspaceMint` operation.
+**Design rationale:**
+
+The `dispatchWithCap` function currently takes `SyscallId` as its first
+parameter and matches on it. CSpace syscalls need access to the full
+`SyscallDecodeResult` (specifically `msgRegs`) to extract slot indices,
+rights, and badge values. The signature change from `SyscallId` to
+`SyscallDecodeResult` is minimal: the match still dispatches on
+`decoded.syscallId`, but CSpace arms can now invoke `decodeCSpaceMintArgs`,
+`decodeCSpaceCopyArgs`, etc. on the full decode result.
+
+**Badge handling:** `CSpaceMintArgs.badge` is a `Badge` (always populated
+from the raw register), but `cspaceMint` accepts `Option Badge`. The dispatch
+layer converts using a zero-check: `if args.badge.val = 0 then none else
+some args.badge`. This mirrors seL4's convention where badge=0 means "no
+badge".
+
+**Soundness theorem impact:** The `dispatchSyscall_requires_right` theorem
+at API.lean:515 passes `dispatchWithCap decoded.syscallId tid` to
+`syscallInvoke_requires_right`. After the signature change, this becomes
+`dispatchWithCap decoded tid`. The theorem proof relies only on
+`syscallInvoke_requires_right` (which proves capability lookup succeeded)
+and does not inspect `dispatchWithCap`'s body, so it composes unchanged —
+the call site update in `dispatchSyscall` is the only change needed.
+
+**Subtasks:**
+
+#### K-C.1 — Signature change: `dispatchWithCap` accepts `SyscallDecodeResult`
+
+Change the first parameter of `dispatchWithCap` from `SyscallId` to
+`SyscallDecodeResult`. Update the match to dispatch on `decoded.syscallId`.
+All existing arms (IPC, service) continue to work because they only use
+`cap` and `tid`, not `decoded.msgRegs`. The signature becomes:
+```lean
+private def dispatchWithCap (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (cap : Capability) : Kernel Unit :=
+  match decoded.syscallId with
+  ...
+```
+
+Update the call site in `dispatchSyscall` (API.lean:431) from
+`dispatchWithCap decoded.syscallId tid` to `dispatchWithCap decoded tid`.
+
+**File:** `SeLe4n/Kernel/API.lean` (lines 363, 431)
+**Acceptance:** `lake build` passes; IPC and service dispatch unaffected.
+
+#### K-C.2 — Wire `cspaceMint` dispatch
+
+Replace the `.cspaceMint` stub (currently `fun _ => .error .illegalState`)
+with a full dispatch path:
+```lean
+| .cspaceMint =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMintArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            let badge : Option SeLe4n.Badge :=
+              if args.badge.val = 0 then none else some args.badge
+            cspaceMint src dst args.rights badge st
+    | _ => fun _ => .error .invalidCapability
+```
+
+The capability's target must be an `.object` pointing to the CNode where
+source and destination slots live. This matches seL4's design: the invoked
+capability targets the CNode, and message registers specify slot indices
+within that CNode. The `decodeCSpaceMintArgs` call extracts all 4 message
+register values (srcSlot, dstSlot, rights, badge).
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~391)
+**Acceptance:** `lake build` passes; `.cspaceMint` no longer returns `.illegalState`.
+
+#### K-C.3 — Wire `cspaceCopy` dispatch
+
+Replace the `.cspaceCopy` stub with:
+```lean
+| .cspaceCopy =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceCopyArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceCopy src dst st
+    | _ => fun _ => .error .invalidCapability
+```
+
+`cspaceCopy` takes only `(src dst : CSpaceAddr)` — no rights attenuation or
+badge, making this the simplest wiring after delete.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~392)
+**Acceptance:** `lake build` passes; `.cspaceCopy` no longer returns `.illegalState`.
+
+#### K-C.4 — Wire `cspaceMove` dispatch
+
+Replace the `.cspaceMove` stub with:
+```lean
+| .cspaceMove =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMoveArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceMove src dst st
+    | _ => fun _ => .error .invalidCapability
+```
+
+`cspaceMove` has the same signature as `cspaceCopy` (`src dst : CSpaceAddr`).
+The kernel operation handles atomicity: it inserts into dst, then deletes
+src, and transfers CDT edges. The dispatch layer is responsible only for
+address construction from decoded registers.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~393)
+**Acceptance:** `lake build` passes; `.cspaceMove` no longer returns `.illegalState`.
+
+#### K-C.5 — Wire `cspaceDelete` dispatch
+
+Replace the `.cspaceDelete` stub with:
+```lean
+| .cspaceDelete =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceDeleteArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+            cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+```
+
+Delete requires only 1 message register (the target slot). The invoked
+capability's target identifies the CNode, and the decoded `targetSlot`
+specifies which slot within it to delete.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~394)
+**Acceptance:** `lake build` passes; `.cspaceDelete` no longer returns `.illegalState`.
+
+#### K-C.6 — Verify existing soundness theorems compile unchanged
+
+After K-C.1–K-C.5, verify that all three existing soundness theorems still
+compile without modification:
+
+1. **`dispatchSyscall_requires_right`** (API.lean:495): The proof calls
+   `syscallInvoke_requires_right` with `dispatchWithCap decoded tid` (updated
+   from `dispatchWithCap decoded.syscallId tid`). Since
+   `syscallInvoke_requires_right` quantifies over any `op : Capability →
+   Kernel α`, the proof composes regardless of `dispatchWithCap`'s internal
+   changes.
+
+2. **`syscallEntry_implies_capability_held`** (API.lean:531): Threads through
+   `dispatchSyscall_requires_right`. No direct reference to `dispatchWithCap`.
+
+3. **`syscallEntry_requires_valid_decode`** (API.lean:467): Does not reference
+   `dispatchWithCap` at all — only proves decode succeeded.
+
+**File:** `SeLe4n/Kernel/API.lean` (lines 495, 531, 467)
+**Acceptance:** All three theorems compile (zero sorry); `lake build` passes.
+
+#### K-C.7 — Add CSpace delegation theorems
+
+Add four delegation theorems proving each CSpace dispatch path correctly
+delegates to the corresponding kernel operation. These theorems establish
+that when `dispatchWithCap` succeeds for a CSpace syscall, the underlying
+kernel operation was invoked with the correctly decoded arguments:
+
+```lean
+/-- K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMint`
+was invoked with the decoded source slot, destination slot, rights, and
+badge from message registers. -/
+theorem dispatchWithCap_cspaceMint_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId) (args : CSpaceMintArgs)
+    (hSyscall : decoded.syscallId = .cspaceMint)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+      let badge : Option SeLe4n.Badge :=
+        if args.badge.val = 0 then none else some args.badge
+      cspaceMint src dst args.rights badge
+```
+
+Analogous theorems for copy, move, and delete. All proofs are `by simp
+[dispatchWithCap, hSyscall, hTarget, hDecode]` — they unfold the dispatch
+function and substitute the hypotheses.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** All 4 theorems compile (zero sorry).
+
+#### K-C.8 — Build and smoke verification
+
+Run `lake build` and `./scripts/test_smoke.sh` to confirm:
+- Zero compilation errors
+- Zero `sorry` or `axiom` in production code
+- All Tier 0–2 tests pass
+- Existing trace output matches fixture (no dispatch-path changes affect
+  trace scenarios since CSpace syscalls were not previously traced)
+
+**Acceptance:** `test_smoke.sh` exits 0.
 
 **Exit criteria:**
-- All 4 CSpace syscalls fully dispatch to kernel operations.
+- `dispatchWithCap` accepts `SyscallDecodeResult` instead of `SyscallId`.
+- All 4 CSpace syscalls fully dispatch to kernel operations via decoded args.
 - No `.illegalState` stubs remain for CSpace syscalls.
-- Existing soundness theorems pass unchanged.
-- New delegation theorem proved.
+- `dispatchSyscall` call site updated to pass full `decoded`.
+- All 3 existing soundness theorems compile unchanged.
+- 4 new delegation theorems proved (one per CSpace syscall).
 - `lake build` passes; `test_smoke.sh` passes.
+- Zero `sorry`/`axiom` in production proof surface.
 
 **Files modified:**
-- `SeLe4n/Kernel/API.lean` — Replace CSpace stubs, update `dispatchWithCap`
-  signature.
+- `SeLe4n/Kernel/API.lean` — Signature change, 4 CSpace stubs replaced,
+  call site update, 4 delegation theorems added.
 
 **Version target:** v0.16.2
 
@@ -1215,14 +1397,17 @@ Update GitBook chapters and claim evidence index.
 - [x] K-A: `SyscallDecodeResult` includes `msgRegs : Array RegValue` (v0.16.0) ✓
 - [x] K-A: `decodeSyscallArgs` populates `msgRegs` from layout (v0.16.0) ✓
 - [x] K-A: `decodeMsgRegs_length` lemma proved (v0.16.0) ✓
-- [ ] K-B: All 7 argument structures defined (v0.16.1)
-- [ ] K-B: All 7 decode functions total with `Except` returns (v0.16.1)
-- [ ] K-B: Determinism and error-exclusivity theorems proved (v0.16.1)
-- [ ] K-C: `cspaceMint` dispatches through decode → operation (v0.16.2)
-- [ ] K-C: `cspaceCopy` dispatches through decode → operation (v0.16.2)
-- [ ] K-C: `cspaceMove` dispatches through decode → operation (v0.16.2)
-- [ ] K-C: `cspaceDelete` dispatches through decode → operation (v0.16.2)
-- [ ] K-C: Existing soundness theorems pass unchanged (v0.16.2)
+- [x] K-B: All 7 argument structures defined (v0.16.1) ✓
+- [x] K-B: All 7 decode functions total with `Except` returns (v0.16.1) ✓
+- [x] K-B: Determinism and error-exclusivity theorems proved (v0.16.1) ✓
+- [x] K-C.1: `dispatchWithCap` accepts `SyscallDecodeResult` (v0.16.2) ✓
+- [x] K-C.2: `cspaceMint` dispatches through decode → operation (v0.16.2) ✓
+- [x] K-C.3: `cspaceCopy` dispatches through decode → operation (v0.16.2) ✓
+- [x] K-C.4: `cspaceMove` dispatches through decode → operation (v0.16.2) ✓
+- [x] K-C.5: `cspaceDelete` dispatches through decode → operation (v0.16.2) ✓
+- [x] K-C.6: Existing soundness theorems pass unchanged (v0.16.2) ✓
+- [x] K-C.7: 4 CSpace delegation theorems proved (v0.16.2) ✓
+- [x] K-C.8: `lake build` + `test_smoke.sh` pass (v0.16.2) ✓
 - [ ] K-D: `lifecycleRetype` dispatches through decode → operation (v0.16.3)
 - [ ] K-D: `vspaceMap` dispatches through decode → operation (v0.16.3)
 - [ ] K-D: `vspaceUnmap` dispatches through decode → operation (v0.16.3)
