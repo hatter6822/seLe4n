@@ -1088,7 +1088,7 @@ delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits
 Types:
 - `SyscallId` — inductive covering 13 modeled syscalls with `toNat`/`ofNat?` encoding, `toNat_injective`/`ofNat_toNat`/`toNat_ofNat` proofs
 - `MessageInfo` — seL4 message-info word bit-field layout with `encode`/`decode`
-- `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7), `DecidableEq` and `BEq` instances
+- `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7), `DecidableEq` (provides `BEq` implicitly)
 - `SyscallDecodeResult` — typed decode output consumed by syscall dispatch
 - `MachineConfig.registerCount` — bounded register space per architecture
 

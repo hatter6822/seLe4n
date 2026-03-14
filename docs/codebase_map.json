@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-optimize-workstreams-o8Bmg",
-      "commit_sha": "f866c24c09a429aa7c3ca1c3e219d715f1302929",
-      "tree_sha": "0049f3ca99a83d9e9847f0121ad8be5eac27a29e",
-      "committed_at_utc": "2026-03-14T06:15:29+00:00"
+      "commit_sha": "721e22c63dbd73a772d1edf630fec12e582bfe28",
+      "tree_sha": "64ad395a34f20f9b49e5953535c03c2c44169f98",
+      "committed_at_utc": "2026-03-14T18:22:58+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "25548824e6ef17a873668915238cf51d45242a3580766097bf596cb72715f2ad"
+    "source_digest": "dfe8bedffa49ef52c19bced131cf0a996696654950edbe91ce24154695fd828c"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2137
+    "declaration_count": 2136
   },
   "readme_sync": {
     "version": "0.15.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35592,
+    "production_loc": 35586,
     "test_files": 4,
     "test_loc": 3752,
     "proved_theorem_lemma_decls": 1134,
@@ -10388,7 +10388,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 84,
+      "declaration_count": 83,
       "declarations": [
         {
           "kind": "namespace",
@@ -11065,17 +11065,9 @@
           ]
         },
         {
-          "kind": "instance",
-          "name": "<anonymous:instance:414>",
-          "line": 414,
-          "called": [
-            "SyscallRegisterLayout"
-          ]
-        },
-        {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 423,
+          "line": 417,
           "called": [
             "SyscallRegisterLayout"
           ]

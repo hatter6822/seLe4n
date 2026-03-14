@@ -1,7 +1,7 @@
 # seLe4n Workstream Plan — Register-Indexed Authoritative Namespaces (WS-J1)
 
 **Version target:** v0.14.10+
-**Status:** Planned
+**Status:** Completed (v0.15.10)
 **Priority:** High
 **Estimated effort:** 5–8 days
 **Dependencies:** WS-I1..WS-I4 complete baseline, no additional blockers
@@ -712,23 +712,23 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 
 ## 9. Completion evidence checklist
 
-- [ ] `RegName` and `RegValue` are typed wrapper structures (not `abbrev Nat`)
-- [ ] Full instance suite: `DecidableEq`, `Hashable`, `LawfulHashable`,
-      `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`
-- [ ] All 10 existing machine lemmas re-proved with typed registers
-- [ ] `RegisterDecode.lean` module merged with round-trip and determinism
-      lemmas (zero `sorry`/`axiom`)
-- [ ] `syscallEntry` wired through decode layer to `api*` wrappers
-- [ ] `syscallEntry` soundness theorems proved
-- [ ] `registerDecodeConsistent` invariant predicate added and preserved
-- [ ] NI theorems cover decode path via new `NonInterferenceStep` constructors
-- [ ] `CdtNodeId` converted to typed wrapper with full instance suite
-- [ ] Negative tests for every decode error path
-- [ ] Trace scenarios for register-sourced syscall execution
-- [ ] Fixtures updated with rationale
-- [ ] All canonical docs and GitBook mirrors synchronized
-- [ ] `./scripts/test_full.sh` passes
-- [ ] Zero `sorry`/`axiom` in production proof surface
+- [x] `RegName` and `RegValue` are typed wrapper structures (not `abbrev Nat`) — v0.15.4
+- [x] Full instance suite: `DecidableEq`, `Hashable`, `LawfulHashable`,
+      `EquivBEq`, `LawfulBEq`, `Repr`, `ToString` — v0.15.4
+- [x] All 10 existing machine lemmas re-proved with typed registers — v0.15.4
+- [x] `RegisterDecode.lean` module merged with round-trip and determinism
+      lemmas (zero `sorry`/`axiom`) — v0.15.5
+- [x] `syscallEntry` wired through decode layer to `api*` wrappers — v0.15.6
+- [x] `syscallEntry` soundness theorems proved — v0.15.6
+- [x] `registerDecodeConsistent` invariant predicate added and preserved — v0.15.8
+- [x] NI theorems cover decode path via new `NonInterferenceStep` constructors — v0.15.8
+- [x] `CdtNodeId` converted to typed wrapper with full instance suite — v0.15.10
+- [x] Negative tests for every decode error path — v0.15.9
+- [x] Trace scenarios for register-sourced syscall execution — v0.15.9
+- [x] Fixtures updated with rationale — v0.15.9
+- [x] All canonical docs and GitBook mirrors synchronized — v0.15.10
+- [x] `./scripts/test_full.sh` passes — verified
+- [x] Zero `sorry`/`axiom` in production proof surface — verified
 
 ---
 

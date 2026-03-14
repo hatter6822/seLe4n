@@ -409,12 +409,6 @@ structure SyscallRegisterLayout where
   syscallNumReg : RegName
   deriving Repr, DecidableEq
 
-/-- Manual `BEq` for `SyscallRegisterLayout` (field-wise comparison).
-    `DecidableEq` auto-derives this, but explicit `BEq` enables `==` in tests. -/
-instance : BEq SyscallRegisterLayout where
-  beq a b := a.capPtrReg == b.capPtrReg && a.msgInfoReg == b.msgInfoReg &&
-    a.msgRegs == b.msgRegs && a.syscallNumReg == b.syscallNumReg
-
 /-- Default ARM64 syscall register layout following the seL4 convention:
     - x0: capability pointer (destination cap address)
     - x1: message info word (length, extra caps, label)

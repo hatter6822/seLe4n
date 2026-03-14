@@ -78,7 +78,7 @@ open SeLe4n.Model
 /-- Extract typed syscall arguments from the current thread's register file
     using the platform's register layout convention.
     This is the single authoritative decode entry point. -/
-def decodeSyscallArgs
+@[inline] def decodeSyscallArgs
     (layout : SyscallRegisterLayout)
     (regs : RegisterFile)
     (regCount : Nat := 32) : Except KernelError SyscallDecodeResult := do
