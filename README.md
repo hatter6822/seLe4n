@@ -57,9 +57,9 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.15.6` |
+| **Version** | `0.15.7` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 35,012 across 68 files |
+| **Production Lean LoC** | 35,009 across 68 files |
 | **Test Lean LoC** | 3,459 across 4 test suites |
 | **Proved declarations** | 1,113 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

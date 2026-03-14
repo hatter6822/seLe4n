@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/syscall-entry-dispatch-4dYUY",
-      "commit_sha": "c74a13937e7c00e24262e1e8eb7582f915dacedb",
-      "tree_sha": "6730ba4d387a7f1d5ea96e66b50c1d85b113b071",
-      "committed_at_utc": "2026-03-14T03:24:35+00:00"
+      "commit_sha": "58f54acb23a954a9daa12a6a37184fe86226c2ae",
+      "tree_sha": "c3206d0787b547b04c69266fc39ca32aa877e670",
+      "committed_at_utc": "2026-03-14T03:36:48+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 2102
   },
   "readme_sync": {
-    "version": "0.15.6",
+    "version": "0.15.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
     "production_loc": 35009,

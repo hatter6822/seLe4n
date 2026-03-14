@@ -1,3 +1,22 @@
+## [0.15.7] - 2026-03-14
+
+### WS-J1-C: Audit Refinements
+
+- **CSpace/lifecycle/VSpace dispatch**: `dispatchWithCap` now returns
+  `illegalState` for operations requiring message-register data (CSpace
+  mint/copy/move/delete, lifecycle retype, VSpace map/unmap). Full MR-based
+  argument extraction deferred to WS-J1-E.
+- **Register count parameter**: `syscallEntry` accepts `regCount : Nat`
+  (default 32 for ARM64) forwarded to `decodeSyscallArgs` for architectural
+  register bounds validation.
+- **Strengthened capability-held theorem**: `syscallEntry_implies_capability_held`
+  now proves the full chain from entry success through TCB/CSpace lookup to
+  capability resolution with the required access right, composing with
+  `dispatchSyscall_requires_right`.
+- **Stability table**: added `syscallEntry`, `lookupThreadRegisterContext`,
+  `dispatchSyscall` entries.
+- **Build jobs:** 140. Zero sorry/axiom. Zero warnings.
+
 ## [0.15.6] - 2026-03-14
 
 ### WS-J1-C: Syscall Entry Point and Dispatch
