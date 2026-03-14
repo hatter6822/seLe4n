@@ -842,9 +842,14 @@ theorem encode_decode_roundtrip (mi : MessageInfo)
 end MessageInfo
 
 /-- Result of decoding raw register values into typed syscall arguments.
-    Produced by the register decode layer; consumed by syscall dispatch. -/
+    Produced by the register decode layer; consumed by syscall dispatch.
+    The `msgRegs` field carries raw values from the layout's message registers
+    (x2–x5 on ARM64). Default `#[]` ensures backward compatibility with
+    existing construction sites. Per-syscall argument decode (WS-K-B) extracts
+    typed arguments from this array. -/
 structure SyscallDecodeResult where
   capAddr   : SeLe4n.CPtr
   msgInfo   : MessageInfo
   syscallId : SyscallId
+  msgRegs   : Array SeLe4n.RegValue := #[]
   deriving Repr, DecidableEq

@@ -91,7 +91,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`), endpoint
     protocol fields, Notification, UntypedObject, `SyscallId` inductive (13
     modeled syscalls with round-trip/injectivity proofs), `MessageInfo` structure
-    (seL4 message-info bit-field layout), `SyscallDecodeResult` (WS-J1-B).
+    (seL4 message-info bit-field layout), `SyscallDecodeResult` with `msgRegs : Array RegValue` field (WS-J1-B; extended WS-K-A v0.16.0).
   - `Object/Structures.lean` — CNode `Std.HashMap Slot Capability` slot store and
     local revoke helper (WS-G5), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
     mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
@@ -193,10 +193,14 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
   - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
     `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B, v0.15.5)*
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
+  - WS-K-A: `decodeSyscallArgs` populates `SyscallDecodeResult.msgRegs` from
+    layout's message registers via `Array.mapM`; `encodeMsgRegs` identity encoder;
+    `decodeMsgRegs_length` / `decodeMsgRegs_roundtrip` theorems; extended
+    `decode_components_roundtrip` to 4-conjunct.
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B, planned v0.16.1)*
   - Per-syscall argument structures (`CSpaceMintArgs`, `VSpaceMapArgs`, etc.)
     and total decode functions from `SyscallDecodeResult.msgRegs`. Planned as

@@ -1901,8 +1901,11 @@ def runWSJ1DecodeChecks : IO Unit := do
 
   -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
   -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send
-  let _ ← expectOk "J1 decodeSyscallArgs all-zero registers (valid)"
+  -- K-A: Also verify msgRegs are populated with correct count (4 for ARM64 layout).
+  let decoded ← expectOk "J1 decodeSyscallArgs all-zero registers (valid)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout default 32)
+  unless decoded.msgRegs.size == 4 do
+    throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
   -- J1-NEG-18: Full syscallEntry with no current thread → illegalState
   let emptyState : SystemState := BootstrapBuilder.empty.build

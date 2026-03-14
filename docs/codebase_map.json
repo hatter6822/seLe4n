@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "bac3834d6d645f15603a1597c3deaa9684f17b54",
-      "tree_sha": "51936f7a6581b2b3fddf8c6b61394033cd3225c4",
-      "committed_at_utc": "2026-03-14T15:25:35-04:00"
+      "branch": "claude/refine-ws-k-a-plan-eKNco",
+      "commit_sha": "85dd865380648ed60310a29d84b710d87d8bb9a3",
+      "tree_sha": "b1d3fb9382de33194777880cd9e66d43c2995df9",
+      "committed_at_utc": "2026-03-14T19:25:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "dfe8bedffa49ef52c19bced131cf0a996696654950edbe91ce24154695fd828c"
+    "source_digest": "e57c777c130c410889470927228f9c6391ccc3987bb1b63048ee6ba1e9f5c363"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2136
+    "declaration_count": 2141
   },
   "readme_sync": {
-    "version": "0.15.10",
+    "version": "0.16.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35586,
+    "production_loc": 35685,
     "test_files": 4,
-    "test_loc": 3752,
-    "proved_theorem_lemma_decls": 1134,
+    "test_loc": 3755,
+    "proved_theorem_lemma_decls": 1138,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -984,7 +984,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 19,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -1012,32 +1012,38 @@
         },
         {
           "kind": "def",
+          "name": "encodeMsgRegs",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "decodeCapPtr",
-          "line": 55,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeMsgInfo",
-          "line": 61,
+          "line": 66,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSyscallId",
-          "line": 68,
+          "line": 73,
           "called": []
         },
         {
           "kind": "def",
           "name": "validateRegBound",
-          "line": 75,
+          "line": 80,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSyscallArgs",
-          "line": 81,
+          "line": 90,
           "called": [
             "decodeCapPtr",
             "decodeMsgInfo",
@@ -1048,7 +1054,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_roundtrip",
-          "line": 102,
+          "line": 113,
           "called": [
             "decodeCapPtr",
             "encodeCapPtr"
@@ -1057,7 +1063,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_roundtrip",
-          "line": 107,
+          "line": 118,
           "called": [
             "decodeSyscallId",
             "encodeSyscallId"
@@ -1066,7 +1072,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_roundtrip",
-          "line": 115,
+          "line": 126,
           "called": [
             "decodeMsgInfo",
             "encodeMsgInfo"
@@ -1074,24 +1080,34 @@
         },
         {
           "kind": "theorem",
+          "name": "decodeMsgRegs_roundtrip",
+          "line": 135,
+          "called": [
+            "encodeMsgRegs"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "decode_components_roundtrip",
-          "line": 127,
+          "line": 143,
           "called": [
             "decodeCapPtr",
             "decodeCapPtr_roundtrip",
             "decodeMsgInfo",
             "decodeMsgInfo_roundtrip",
+            "decodeMsgRegs_roundtrip",
             "decodeSyscallId",
             "decodeSyscallId_roundtrip",
             "encodeCapPtr",
             "encodeMsgInfo",
+            "encodeMsgRegs",
             "encodeSyscallId"
           ]
         },
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_deterministic",
-          "line": 144,
+          "line": 162,
           "called": [
             "decodeSyscallArgs"
           ]
@@ -1099,7 +1115,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_error_iff",
-          "line": 155,
+          "line": 173,
           "called": [
             "decodeSyscallId"
           ]
@@ -1107,7 +1123,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_error_iff",
-          "line": 164,
+          "line": 182,
           "called": [
             "decodeMsgInfo"
           ]
@@ -1115,7 +1131,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_always_ok",
-          "line": 173,
+          "line": 191,
           "called": [
             "decodeCapPtr"
           ]
@@ -1123,7 +1139,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_ok_iff",
-          "line": 178,
+          "line": 196,
           "called": [
             "validateRegBound"
           ]
@@ -1131,9 +1147,32 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_error_iff",
-          "line": 186,
+          "line": 204,
           "called": [
             "validateRegBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "list_mapM_except_length",
+          "line": 216,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "array_mapM_except_size",
+          "line": 241,
+          "called": [
+            "list_mapM_except_length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeMsgRegs_length",
+          "line": 256,
+          "called": [
+            "array_mapM_except_size",
+            "decodeSyscallArgs"
           ]
         }
       ]
@@ -12650,7 +12689,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 846,
+          "line": 850,
           "called": [
             "MessageInfo",
             "SyscallId"
@@ -17078,7 +17117,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1917,
+          "line": 1920,
           "called": []
         }
       ]

@@ -854,6 +854,12 @@ run_check "INVARIANT" rg -n '^theorem validateRegBound_error_iff' SeLe4n/Kernel/
 # Audit optimization: new round-trip and composition theorems.
 run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decode_components_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+
+# WS-K-A: Message register extraction definitions and theorems.
+run_check "INVARIANT" rg -n 'def encodeMsgRegs' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'msgRegs.*Array.*RegValue' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip' SeLe4n/Model/Object/Types.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
@@ -887,6 +893,11 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.syscallEntry_preserves_projection
 #check @SeLe4n.Kernel.syscallEntry_error_yields_NI_step
 #check @SeLe4n.Kernel.syscallEntry_success_yields_NI_step
+-- WS-K-A: Message register extraction theorems
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.encodeMsgRegs
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_roundtrip
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_length
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.decode_components_roundtrip
 EOF'
 
 finalize_report

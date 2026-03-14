@@ -1233,7 +1233,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   | .error err =>
       IO.println s!"[RDT-001] register decode unexpected error: {reprStr err}"
   | .ok decoded =>
-      IO.println s!"[RDT-002] register decode success: syscall={reprStr decoded.syscallId}, capAddr={decoded.capAddr.toNat}"
+      IO.println s!"[RDT-002] register decode success: syscall={reprStr decoded.syscallId}, capAddr={decoded.capAddr.toNat}, msgRegs={decoded.msgRegs.size}"
 
   -- RDT-003: Full syscallEntry with valid registers (send to endpoint).
   -- Build a self-contained state with a properly configured CNode (depth=4, radixWidth=4)

@@ -2,7 +2,7 @@
 
 **Version target:** v0.16.0–v0.16.8
 **Base version:** v0.15.10
-**Status:** Planned
+**Status:** In progress — K-A completed (v0.16.0)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -293,38 +293,163 @@ decoded message register array, capped by `maxMessageRegisters`.
 
 **Goal:** Extend `SyscallDecodeResult` with a `msgRegs : Array RegValue` field
 and update `decodeSyscallArgs` to populate it from the layout's message
-register array.
+register array. This is the foundational change that unblocks all subsequent
+WS-K phases (B through G), since per-syscall argument decode and IPC message
+population both depend on having raw message register values available in the
+decode result.
 
-**Tasks:**
-1. Add `msgRegs : Array RegValue` to `SyscallDecodeResult` in
-   `Model/Object/Types.lean`.
-2. Update `decodeSyscallArgs` in `RegisterDecode.lean` to read and store
-   message register values after bounds validation:
-   ```lean
-   let msgRegVals ← layout.msgRegs.mapM fun r => do
-     validateRegBound r regCount
-     pure (readReg regs r)
-   ```
-3. Update all call sites that construct `SyscallDecodeResult` directly
-   (tests, fixtures) to include the new `msgRegs` field.
-4. Add `decodeMsgRegs_length` lemma proving `decoded.msgRegs.size =
-   layout.msgRegs.size` when decode succeeds.
-5. Add round-trip lemma for message register values: encoding then decoding
-   the raw array preserves values.
-6. Verify `lake build` passes with zero errors.
+**Design rationale:**
+
+The existing `decodeSyscallArgs` (RegisterDecode.lean:81–95) already validates
+message register bounds (layout.msgRegs entries checked against regCount) but
+**discards** the values — the `for r in layout.msgRegs` loop validates bounds
+only, then the result is constructed without the values. The fix reads and stores
+the values in a single pass after bounds validation, preserving the existing
+validation semantics while capturing the data.
+
+The new `msgRegs` field uses a default value of `#[]` to ensure backward
+compatibility: all existing call sites that construct `SyscallDecodeResult`
+without specifying `msgRegs` compile unchanged. This eliminates migration risk
+and allows incremental adoption.
+
+**Subtasks:**
+
+#### K-A.1 — Structure extension (Types.lean)
+Add `msgRegs : Array RegValue := #[]` field to `SyscallDecodeResult` in
+`Model/Object/Types.lean`. The default value `#[]` ensures backward
+compatibility with all existing construction sites (tests, fixtures, proof
+references). Verify that `DecidableEq` and `Repr` deriving still synthesize
+correctly with the new field. No other file changes needed for this subtask.
+
+**File:** `SeLe4n/Model/Object/Types.lean` (line ~846)
+**Acceptance:** `lake build` passes; `grep -n 'msgRegs' SeLe4n/Model/Object/Types.lean` shows the field.
+
+#### K-A.2 — Decode function update (RegisterDecode.lean)
+Update `decodeSyscallArgs` to populate the `msgRegs` field. The existing
+bounds validation loop (`for r in layout.msgRegs do validateRegBound r regCount`)
+is replaced with a combined validate-and-read pass using `Array.mapM`:
+```lean
+let msgRegVals ← layout.msgRegs.mapM fun r => do
+  validateRegBound r regCount
+  pure (readReg regs r)
+pure { capAddr, msgInfo, syscallId, msgRegs := msgRegVals }
+```
+This is semantically equivalent to the existing bounds check followed by a
+separate read pass, but avoids iterating twice. The `mapM` short-circuits on
+the first out-of-bounds register, preserving the existing `invalidRegister`
+error behavior.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean` (lines 81–95)
+**Acceptance:** `decodeSyscallArgs` returns `SyscallDecodeResult` with populated `msgRegs`; existing tests still pass.
+
+#### K-A.3 — Encoding helper for message registers (RegisterDecode.lean)
+Add `encodeMsgRegs` helper that converts an array of `RegValue` back to raw
+register values (identity for the abstract model, but stated explicitly for
+proof surface completeness):
+```lean
+@[inline] def encodeMsgRegs (regs : Array RegValue) : Array RegValue := regs
+```
+This trivial encoding mirrors the existing `encodeCapPtr`/`encodeMsgInfo`/
+`encodeSyscallId` helpers and serves as the left half of the round-trip proof.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Definition compiles; used in round-trip lemma (K-A.5).
+
+#### K-A.4 — Length invariant lemma (RegisterDecode.lean)
+Prove `decodeMsgRegs_length`: when `decodeSyscallArgs` succeeds, the result's
+`msgRegs.size` equals `layout.msgRegs.size`. The proof unfolds the `mapM`
+definition and uses `Array.size_mapM` (or equivalent) to show the output array
+has the same length as the input layout array.
+```lean
+theorem decodeMsgRegs_length
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded : SyscallDecodeResult)
+    (hOk : decodeSyscallArgs layout regs regCount = .ok decoded) :
+    decoded.msgRegs.size = layout.msgRegs.size
+```
+This lemma is critical for K-B: per-syscall decode functions check
+`msgRegs.size ≥ N` and need to know the relationship between the result size
+and the platform layout.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Theorem stated and proved (zero sorry). Used in K-B decode functions.
+
+#### K-A.5 — Round-trip lemma for message register values (RegisterDecode.lean)
+Prove that encoding then decoding message register values preserves the
+original array. Since `encodeMsgRegs` is identity, this is a structural proof:
+```lean
+theorem decodeMsgRegs_roundtrip (vals : Array RegValue) :
+    encodeMsgRegs vals = vals
+```
+Additionally, extend `decode_components_roundtrip` to include the `msgRegs`
+component, showing that the full four-component round-trip holds:
+```lean
+theorem decode_components_roundtrip (decoded : SyscallDecodeResult) ... :
+    decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
+    decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
+    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId ∧
+    encodeMsgRegs decoded.msgRegs = decoded.msgRegs
+```
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Both theorems proved (zero sorry). Round-trip surface complete for all decode components.
+
+#### K-A.6 — Determinism extension (RegisterDecode.lean)
+Verify that the existing `decodeSyscallArgs_deterministic` theorem still holds
+with the updated function (it should, since the proof is `rfl` and the function
+remains pure). No changes expected, but explicit verification is required.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** `decodeSyscallArgs_deterministic` compiles unchanged.
+
+#### K-A.7 — Test call site updates
+Update all test files that directly construct `SyscallDecodeResult` or call
+`decodeSyscallArgs` to account for the new `msgRegs` field:
+
+- **`tests/NegativeStateSuite.lean`**: The 5 existing `decodeSyscallArgs` tests
+  (J1-NEG-13 through J1-NEG-17) call `decodeSyscallArgs` which now returns a
+  result with `msgRegs`. Tests that check `.error` results need no changes.
+  The J1-NEG-17 success test should verify `msgRegs.size = 4` (matching
+  `arm64DefaultLayout.msgRegs.size`).
+- **`SeLe4n/Testing/MainTraceHarness.lean`**: The RDT trace scenario at line
+  ~1232 calls `decodeSyscallArgs` and uses the result. Verify it compiles;
+  optionally add a trace line showing `msgRegs.size`.
+- **`tests/InvariantSurfaceSuite.lean`**: Add `#check` anchors for the new
+  `decodeMsgRegs_length` and `decodeMsgRegs_roundtrip` theorems.
+
+**Files:**
+- `tests/NegativeStateSuite.lean`
+- `SeLe4n/Testing/MainTraceHarness.lean`
+- `tests/InvariantSurfaceSuite.lean`
+
+**Acceptance:** All tests compile; `test_smoke.sh` passes.
+
+#### K-A.8 — Build and smoke verification
+Run `lake build` and `./scripts/test_smoke.sh` to confirm:
+- Zero compilation errors
+- Zero `sorry` or `axiom` in production code
+- All Tier 0–2 tests pass
+- Fixture output matches (or fixture updated if trace output changed)
+
+**Acceptance:** `test_smoke.sh` exits 0.
 
 **Exit criteria:**
-- `SyscallDecodeResult` includes `msgRegs` field.
-- `decodeSyscallArgs` reads and stores message register values.
-- Length invariant and round-trip lemma proved.
+- `SyscallDecodeResult` includes `msgRegs : Array RegValue := #[]` field.
+- `decodeSyscallArgs` reads and stores message register values in single pass.
+- `decodeMsgRegs_length` lemma proved: `decoded.msgRegs.size = layout.msgRegs.size`.
+- `decodeMsgRegs_roundtrip` and extended `decode_components_roundtrip` proved.
+- `decodeSyscallArgs_deterministic` compiles unchanged.
+- All test call sites updated and passing.
 - `lake build` passes; `test_smoke.sh` passes.
+- Zero `sorry`/`axiom` in production proof surface.
 
 **Files modified:**
-- `SeLe4n/Model/Object/Types.lean` — Add `msgRegs` field to structure.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Update decode function
-  and add lemmas.
-- `tests/*.lean` — Update any direct `SyscallDecodeResult` construction.
-- `SeLe4n/Testing/MainTraceHarness.lean` — Update trace scenarios.
+- `SeLe4n/Model/Object/Types.lean` — Add `msgRegs` field with default to structure.
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Update decode function,
+  add `encodeMsgRegs`, add length/round-trip lemmas.
+- `tests/NegativeStateSuite.lean` — Verify/update decode tests for msgRegs.
+- `SeLe4n/Testing/MainTraceHarness.lean` — Verify/update trace scenarios.
+- `tests/InvariantSurfaceSuite.lean` — Add Tier 3 anchors for new theorems.
 
 **Version target:** v0.16.0
 
@@ -831,9 +956,9 @@ Update GitBook chapters and claim evidence index.
 
 ## 9. Completion evidence checklist
 
-- [ ] K-A: `SyscallDecodeResult` includes `msgRegs : Array RegValue` (v0.16.0)
-- [ ] K-A: `decodeSyscallArgs` populates `msgRegs` from layout (v0.16.0)
-- [ ] K-A: `decodeMsgRegs_length` lemma proved (v0.16.0)
+- [x] K-A: `SyscallDecodeResult` includes `msgRegs : Array RegValue` (v0.16.0) ✓
+- [x] K-A: `decodeSyscallArgs` populates `msgRegs` from layout (v0.16.0) ✓
+- [x] K-A: `decodeMsgRegs_length` lemma proved (v0.16.0) ✓
 - [ ] K-B: All 7 argument structures defined (v0.16.1)
 - [ ] K-B: All 7 decode functions total with `Except` returns (v0.16.1)
 - [ ] K-B: Determinism and error-exclusivity theorems proved (v0.16.1)
