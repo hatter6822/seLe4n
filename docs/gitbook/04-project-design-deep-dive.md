@@ -187,6 +187,14 @@ The existing `api*` functions remain as the internal kernel API. `syscallEntry`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.
 
+**Planned extension (WS-K):** The decode architecture will expand to a two-layer
+design. Layer 1 (`RegisterDecode.decodeSyscallArgs`) extracts raw message register
+values (x2–x5) into `SyscallDecodeResult.msgRegs`. Layer 2
+(`SyscallArgDecode.lean`) converts raw values into per-syscall typed argument
+structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`), enabling full dispatch for
+all 13 syscalls. See
+[`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+
 ## 9. Testing: obligation-based coverage
 
 seLe4n defines coverage as **obligation coverage**: every transition, error path, and invariant component must have both a theorem and a fixture witness.

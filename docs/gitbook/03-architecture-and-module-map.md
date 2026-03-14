@@ -197,6 +197,10 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B, planned v0.16.1)*
+  - Per-syscall argument structures (`CSpaceMintArgs`, `VSpaceMapArgs`, etc.)
+    and total decode functions from `SyscallDecodeResult.msgRegs`. Planned as
+    part of WS-K full syscall dispatch completion.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

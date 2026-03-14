@@ -1188,3 +1188,18 @@ Tier 3 invariant surface anchors:
 - `SystemState` field defaults updated (`cdtNextNode := ⟨0⟩`), monotone allocator updated (`⟨node.val + 1⟩`)
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
+
+**Planned: WS-K full syscall dispatch completion (v0.16.0–v0.16.8):**
+
+WS-K extends the WS-J1 decode layer to complete the full syscall surface:
+- `SyscallDecodeResult.msgRegs` — message register values extracted from x2–x5
+- Per-syscall argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`,
+  `CSpaceMoveArgs`, `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`,
+  `VSpaceUnmapArgs`) in `SyscallArgDecode.lean`
+- Total decode functions for each argument structure
+- Full dispatch for all 13 syscalls (replacing 7 `.illegalState` stubs)
+- `ServiceConfig` for configuration-sourced service policy
+- `extractMessageRegisters` for IPC message body population
+- Round-trip proofs for all 7 argument decode functions
+- Deferred NI proofs completed (CSpace CRUD, lifecycle retype)
+- See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
