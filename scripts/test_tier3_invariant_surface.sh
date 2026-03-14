@@ -819,6 +819,25 @@ run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
 
+# WS-J1-D: Register decode consistency predicate and preservation anchors.
+run_check "INVARIANT" rg -n '^def registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem registerDecodeConsistent_of_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem writeRegisterState_preserves_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
+# WS-J1-D: syscallEntry invariant preservation and NI theorems in API.lean.
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lookupThreadRegisterContext_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_preserves_projection' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projection' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_yields_NI_step' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_success_yields_NI_step' SeLe4n/Kernel/API.lean
+# WS-J1-D: NonInterferenceStep constructors for decode path.
+run_check "INVARIANT" rg -n 'syscallDecodeError' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n 'syscallDispatchHigh' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
@@ -828,6 +847,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant
 import SeLe4n.Kernel.Service.Invariant.Acyclicity
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
+import SeLe4n.Kernel.API
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
 #check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
@@ -839,6 +859,16 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle
 #check @SeLe4n.Kernel.step_preserves_projection
 #check @SeLe4n.Kernel.composedNonInterference_step
+-- WS-J1-D: New decode/dispatch NI theorems
+#check @SeLe4n.Kernel.Architecture.registerDecodeConsistent
+#check @SeLe4n.Kernel.Architecture.registerDecodeConsistent_of_proofLayerInvariantBundle
+#check @SeLe4n.Kernel.syscallEntry_preserves_proofLayerInvariantBundle
+#check @SeLe4n.Kernel.decodeSyscallArgs_preserves_lowEquivalent
+#check @SeLe4n.Kernel.lookupThreadRegisterContext_preserves_lowEquivalent
+#check @SeLe4n.Kernel.syscallLookupCap_preserves_projection
+#check @SeLe4n.Kernel.syscallEntry_preserves_projection
+#check @SeLe4n.Kernel.syscallEntry_error_yields_NI_step
+#check @SeLe4n.Kernel.syscallEntry_success_yields_NI_step
 EOF'
 
 finalize_report
