@@ -74,6 +74,15 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     (`validateRegBound_ok_iff`, `validateRegBound_error_iff`),
   - self-contained module: imports only `Model.State`, no kernel subsystem
     dependencies (WS-J1-B).
+- `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C):
+  - `syscallEntry` — top-level register-sourced user-space entry point,
+  - `lookupThreadRegisterContext` — TCB register context extraction,
+  - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
+  - `dispatchWithCap` — per-syscall routing for all 13 kernel operations,
+  - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
+  - soundness theorems: `syscallEntry_requires_valid_decode`,
+    `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
+    `lookupThreadRegisterContext_state_unchanged`.
 
 ### Model
 

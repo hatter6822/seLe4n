@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "23af39b4d52745dc78a493e777e85e79c90e0cc6",
-      "tree_sha": "51b4f5bdc261e4e38bf4d9b2e3bd77255a31453a",
-      "committed_at_utc": "2026-03-13T23:01:26-04:00"
+      "branch": "claude/syscall-entry-dispatch-4dYUY",
+      "commit_sha": "b04c858122428c97ef126043b4a66acd9b004335",
+      "tree_sha": "9c52f85a2600ce610f4d93aed30651c21dbc51da",
+      "committed_at_utc": "2026-03-14T03:01:35+00:00"
     }
   },
   "source_sync": {
@@ -17,44 +17,44 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b1375be334e66d97f80de03becfc6f4d973f8d618382df3cbf650d8cf77d85b5"
+    "source_digest": "ab436fd2cc3bfd7654f1e578e156325602695b5fb33f70ff25c4ff8f8b7cd126"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2093
+    "declaration_count": 2102
   },
   "readme_sync": {
-    "version": "0.14.10",
+    "version": "0.15.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 34741,
+    "production_loc": 35012,
     "test_files": 4,
     "test_loc": 3459,
-    "proved_theorem_lemma_decls": 1108,
+    "proved_theorem_lemma_decls": 1113,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 22,
+      "declaration_count": 32,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 88,
+          "line": 89,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
-          "line": 96,
+          "line": 97,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_default",
-          "line": 101,
+          "line": 102,
           "called": [
             "apiInvariantBundle"
           ]
@@ -62,13 +62,13 @@
         {
           "kind": "structure",
           "name": "SyscallGate",
-          "line": 138,
+          "line": 139,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallLookupCap",
-          "line": 160,
+          "line": 161,
           "called": [
             "SyscallGate"
           ]
@@ -76,7 +76,7 @@
         {
           "kind": "def",
           "name": "syscallInvoke",
-          "line": 174,
+          "line": 175,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -85,7 +85,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 187,
+          "line": 188,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -94,7 +94,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_state_unchanged",
-          "line": 209,
+          "line": 210,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -104,7 +104,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 218,
+          "line": 219,
           "called": [
             "SyscallGate",
             "syscallInvoke",
@@ -114,7 +114,7 @@
         {
           "kind": "def",
           "name": "apiEndpointSend",
-          "line": 238,
+          "line": 239,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -123,7 +123,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReceive",
-          "line": 245,
+          "line": 246,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -132,7 +132,7 @@
         {
           "kind": "def",
           "name": "apiEndpointCall",
-          "line": 251,
+          "line": 252,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReply",
-          "line": 257,
+          "line": 258,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -150,7 +150,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMint",
-          "line": 262,
+          "line": 263,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -159,7 +159,7 @@
         {
           "kind": "def",
           "name": "apiCspaceCopy",
-          "line": 268,
+          "line": 269,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -168,7 +168,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMove",
-          "line": 273,
+          "line": 274,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -177,7 +177,7 @@
         {
           "kind": "def",
           "name": "apiCspaceDelete",
-          "line": 278,
+          "line": 279,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -186,7 +186,7 @@
         {
           "kind": "def",
           "name": "apiLifecycleRetype",
-          "line": 283,
+          "line": 284,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -195,7 +195,7 @@
         {
           "kind": "def",
           "name": "apiVspaceMap",
-          "line": 289,
+          "line": 290,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -204,7 +204,7 @@
         {
           "kind": "def",
           "name": "apiVspaceUnmap",
-          "line": 295,
+          "line": 296,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -213,7 +213,7 @@
         {
           "kind": "def",
           "name": "apiServiceStart",
-          "line": 300,
+          "line": 301,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -222,10 +222,94 @@
         {
           "kind": "def",
           "name": "apiServiceStop",
-          "line": 305,
+          "line": 306,
           "called": [
             "SyscallGate",
             "syscallInvoke"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lookupThreadRegisterContext",
+          "line": 332,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "syscallRequiredRight",
+          "line": 341,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "dispatchWithCap",
+          "line": 359,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "dispatchSyscall",
+          "line": 436,
+          "called": [
+            "SyscallGate",
+            "dispatchWithCap",
+            "syscallInvoke",
+            "syscallRequiredRight"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallEntry",
+          "line": 460,
+          "called": [
+            "dispatchSyscall",
+            "lookupThreadRegisterContext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallEntry_requires_valid_decode",
+          "line": 479,
+          "called": [
+            "lookupThreadRegisterContext",
+            "syscallEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallEntry_implies_capability_held",
+          "line": 511,
+          "called": [
+            "dispatchSyscall",
+            "lookupThreadRegisterContext",
+            "syscallEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchSyscall_requires_right",
+          "line": 539,
+          "called": [
+            "dispatchSyscall",
+            "dispatchWithCap",
+            "syscallInvoke_requires_right",
+            "syscallRequiredRight"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupThreadRegisterContext_state_unchanged",
+          "line": 568,
+          "called": [
+            "lookupThreadRegisterContext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallRequiredRight_total",
+          "line": 578,
+          "called": [
+            "syscallRequiredRight"
           ]
         }
       ]
@@ -10140,7 +10224,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 84,
+      "declaration_count": 83,
       "declarations": [
         {
           "kind": "namespace",
@@ -10674,13 +10758,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 328,
+          "line": 332,
           "called": []
         },
         {
           "kind": "def",
           "name": "totalRAM",
-          "line": 331,
+          "line": 335,
           "called": [
             "MachineConfig"
           ]
@@ -10688,7 +10772,7 @@
         {
           "kind": "def",
           "name": "addressInMap",
-          "line": 335,
+          "line": 339,
           "called": [
             "MachineConfig",
             "contains"
@@ -10697,7 +10781,7 @@
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 339,
+          "line": 343,
           "called": [
             "MemoryRegion"
           ]
@@ -10705,13 +10789,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 345,
+          "line": 349,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_spec",
-          "line": 349,
+          "line": 353,
           "called": [
             "isPowerOfTwo"
           ]
@@ -10719,7 +10803,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_pos",
-          "line": 355,
+          "line": 359,
           "called": [
             "isPowerOfTwo",
             "isPowerOfTwo_spec"
@@ -10728,38 +10812,6 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_0",
-          "line": 364,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_1",
-          "line": 365,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_2",
-          "line": 366,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_3",
-          "line": 367,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_4",
           "line": 368,
           "called": [
             "isPowerOfTwo"
@@ -10767,7 +10819,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_5",
+          "name": "isPowerOfTwo_of_pow2_1",
           "line": 369,
           "called": [
             "isPowerOfTwo"
@@ -10775,7 +10827,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_12",
+          "name": "isPowerOfTwo_of_pow2_2",
           "line": 370,
           "called": [
             "isPowerOfTwo"
@@ -10783,7 +10835,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_16",
+          "name": "isPowerOfTwo_of_pow2_3",
           "line": 371,
           "called": [
             "isPowerOfTwo"
@@ -10791,8 +10843,40 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_21",
+          "name": "isPowerOfTwo_of_pow2_4",
           "line": 372,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_5",
+          "line": 373,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_12",
+          "line": 374,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_16",
+          "line": 375,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_21",
+          "line": 376,
           "called": [
             "isPowerOfTwo"
           ]
@@ -10800,7 +10884,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 380,
+          "line": 384,
           "called": [
             "MachineConfig",
             "endAddr",
@@ -10809,17 +10893,9 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "registerCount",
-          "line": 391,
-          "called": [
-            "MachineConfig"
-          ]
-        },
-        {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 406,
+          "line": 405,
           "called": [
             "RegName"
           ]
@@ -10827,7 +10903,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 418,
+          "line": 417,
           "called": [
             "SyscallRegisterLayout"
           ]

@@ -1,3 +1,40 @@
+## [0.15.6] - 2026-03-14
+
+### WS-J1-C: Syscall Entry Point and Dispatch
+
+- **Syscall entry point**: `syscallEntry : SyscallRegisterLayout → Kernel Unit`
+  — top-level user-space entry point that reads the current thread's register
+  file, decodes raw register values via `decodeSyscallArgs`, and dispatches to
+  the appropriate capability-gated kernel operation.
+- **Register context lookup**: `lookupThreadRegisterContext : ThreadId → Kernel
+  RegisterFile` — extracts the saved register context from the current thread's
+  TCB, with `objectNotFound`/`illegalState` error paths.
+- **Syscall dispatch**: `dispatchSyscall : SyscallDecodeResult → ThreadId →
+  Kernel Unit` — constructs a `SyscallGate` from the caller's TCB and CSpace
+  root CNode, then routes through `syscallInvoke` to the appropriate internal
+  kernel operation based on the decoded `SyscallId`.
+- **Per-syscall routing**: `dispatchWithCap` handles all 13 modeled syscalls
+  (IPC send/receive/call/reply, CSpace mint/copy/move/delete, lifecycle retype,
+  VSpace map/unmap, service start/stop), extracting the target object from the
+  resolved capability's `CapTarget`.
+- **Right mapping**: `syscallRequiredRight : SyscallId → AccessRight` — total
+  function mapping each syscall to its required access right, matching the
+  authority requirements of the existing `api*` wrappers.
+- **MachineConfig field**: `registerCount` promoted from computed def to
+  configurable structure field with default 32 (ARM64).
+- **Soundness theorems**:
+  - `syscallEntry_requires_valid_decode` — successful entry implies register
+    decode succeeded.
+  - `syscallEntry_implies_capability_held` — successful entry implies dispatch
+    succeeded (capability was resolved and authorized).
+  - `dispatchSyscall_requires_right` — dispatch success implies the caller held
+    a capability with the required access right for the invoked syscall.
+  - `lookupThreadRegisterContext_state_unchanged` — register context lookup is
+    read-only.
+  - `syscallRequiredRight_total` — every syscall maps to exactly one right.
+- **Build jobs:** 140. Zero sorry/axiom. Zero warnings.
+- **Closes:** WS-J1 Phase C.
+
 ## [0.15.5] - 2026-03-14
 
 ### WS-J1-B: Register Decode Layer

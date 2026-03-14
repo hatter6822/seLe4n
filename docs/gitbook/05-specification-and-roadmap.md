@@ -15,11 +15,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.14.10` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 34,741 across 68 files |
+| Production LoC | 35,012 across 68 files |
 | Test LoC | 3,459 across 4 suites |
-| Proved declarations | 1,108 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,113 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C..F pending (syscall entry, invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch), J1-D..F pending (invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -52,7 +52,25 @@ WS-H16 (testing/documentation cleanup, v0.14.8) →
 WS-F5..F8 (model fidelity, invariant quality, testing, cleanup, v0.14.9) →
 WS-I1 (critical testing infrastructure, v0.15.0) →
 WS-J1-A (typed register wrappers, v0.15.4) →
-WS-J1-B (register decode layer, v0.15.5).
+WS-J1-B (register decode layer, v0.15.5) →
+WS-J1-C (syscall entry point and dispatch, v0.15.6).
+
+## Completed: WS-J1-C Syscall Entry Point and Dispatch (v0.15.6)
+
+Wired the register decode layer into a register-sourced syscall entry point.
+`syscallEntry` reads the current thread's saved register context via
+`lookupThreadRegisterContext`, decodes raw register values via `decodeSyscallArgs`,
+and dispatches through capability-gated `syscallInvoke` to the appropriate
+internal kernel operation. `dispatchSyscall` constructs a `SyscallGate` from the
+caller's TCB and CSpace root CNode, while `dispatchWithCap` routes all 13
+modeled syscalls (IPC, CSpace, lifecycle, VSpace, service) using the resolved
+capability's target. `syscallRequiredRight` provides a total mapping from
+`SyscallId` to `AccessRight`. `MachineConfig.registerCount` promoted from
+computed def to configurable structure field (default 32 for ARM64). Five
+soundness theorems proved: `syscallEntry_requires_valid_decode`,
+`syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
+`lookupThreadRegisterContext_state_unchanged`, `syscallRequiredRight_total`.
+Zero sorry/axiom. Closes WS-J1 Phase C.
 
 ## Completed: WS-J1-B Register Decode Layer (v0.15.5)
 
