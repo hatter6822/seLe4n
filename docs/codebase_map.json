@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-syscall-dispatch-WGzhD",
-      "commit_sha": "5a07c6955551b9042c839244d33ad38227dc74a2",
-      "tree_sha": "d5fedacb101ed5f22c13fd72b519861b9e121320",
-      "committed_at_utc": "2026-03-14T23:35:25+00:00"
+      "branch": "main",
+      "commit_sha": "c1ee1f4c0d2aa60e032db2fbd47eaba99781c7a5",
+      "tree_sha": "222fc8549281ab87dcdfe640415d1ee9b4ae7b1e",
+      "committed_at_utc": "2026-03-14T19:47:14-04:00"
     }
   },
   "source_sync": {
