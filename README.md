@@ -57,11 +57,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.15.7` |
+| **Version** | `0.15.8` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 35,009 across 68 files |
+| **Production Lean LoC** | 35,249 across 68 files |
 | **Test Lean LoC** | 3,459 across 4 test suites |
-| **Proved declarations** | 1,113 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,126 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](docs/audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -202,7 +202,7 @@ SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorem
   Enforcement/Soundness.lean     Correctness theorems, declassification
   Invariant/Helpers.lean         Shared NI proof infrastructure
   Invariant/Operations.lean      Per-operation NI proofs
-  Invariant/Composition.lean     Trace composition, 31-constructor NonInterferenceStep
+  Invariant/Composition.lean     Trace composition, 33-constructor NonInterferenceStep
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)

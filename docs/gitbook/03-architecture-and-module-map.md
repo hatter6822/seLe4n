@@ -192,13 +192,15 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
   - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
     `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1 planned)*
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B, v0.15.5)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.
+  - `registerDecodeConsistent` predicate bridging decode layer to kernel object
+    store validity (WS-J1-D).
 
 ### Platform layer (H3-prep)
 
@@ -238,7 +240,8 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
   - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of
     kernel operations (WS-H9/H10).
-  - `Invariant/Composition.lean` — 31-constructor `NonInterferenceStep` inductive;
+  - `Invariant/Composition.lean` — 33-constructor `NonInterferenceStep` inductive
+    (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`);
     `composedNonInterference_trace`; `declassifyStore_NI`;
     `InformationFlowConfigInvariant` bundle.
 

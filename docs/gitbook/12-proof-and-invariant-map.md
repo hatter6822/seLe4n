@@ -1127,9 +1127,32 @@ Soundness theorems:
 - `lookupThreadRegisterContext_state_unchanged` — register context lookup is read-only
 - `syscallRequiredRight_total` — every `SyscallId` maps to exactly one `AccessRight`
 
-**Planned proof surface (WS-J1-D..F):**
+**Completed invariant and information-flow integration (WS-J1-D, v0.15.8):**
 
-- `registerDecodeConsistent` — decoded register values index into valid kernel state.
-- `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
-- Decode-related `NonInterferenceStep` constructors with NI preservation.
-- `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`)
+Invariant predicate:
+- `registerDecodeConsistent` — current thread (if any) has a valid TCB, bridging the decode layer to the kernel object store; implied by `schedulerInvariantBundleFull` via `currentThreadValid`
+- `default_registerDecodeConsistent` — vacuously true for empty system state
+- `registerDecodeConsistent_of_proofLayerInvariantBundle` — extraction from top-level invariant bundle
+- `advanceTimerState_preserves_registerDecodeConsistent` — timer-only changes do not affect object store or scheduler
+- `writeRegisterState_preserves_registerDecodeConsistent` — register-only changes do not affect object store or scheduler
+
+Invariant preservation:
+- `syscallEntry_preserves_proofLayerInvariantBundle` — compositional: if the dispatched operation preserves the bundle, `syscallEntry` preserves it (decode is pure, lookup is read-only)
+- `syscallEntry_error_preserves_proofLayerInvariantBundle` — trivial (state unchanged on error)
+- `lookupThreadRegisterContext_preserves_proofLayerInvariantBundle` — read-only operation
+
+Non-interference:
+- `decodeSyscallArgs_preserves_lowEquivalent` — pure function, NI trivial
+- `lookupThreadRegisterContext_preserves_projection` — read-only, projection unchanged
+- `syscallEntry_preserves_projection` — compositional projection preservation
+- `NonInterferenceStep.syscallDecodeError` — decode failure step (state unchanged, `st' = st`)
+- `NonInterferenceStep.syscallDispatchHigh` — high-domain dispatch step (carries projection preservation proof)
+- `step_preserves_projection` extended with new constructor cases
+- `syscallEntry_error_yields_NI_step` — bridge: failed `syscallEntry` → `syscallDecodeError` NI step
+- `syscallEntry_success_yields_NI_step` — bridge: successful high-domain `syscallEntry` → `syscallDispatchHigh` NI step
+
+**Planned testing and CdtNodeId cleanup (WS-J1-E..F):**
+
+- Negative decode tests for every error path (invalid register, invalid syscall number, malformed message info)
+- Register-sourced trace scenarios and operation-chain tests
+- `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`) with full instance suite

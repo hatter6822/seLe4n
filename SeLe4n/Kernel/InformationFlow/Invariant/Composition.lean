@@ -219,6 +219,26 @@ inductive NonInterferenceStep
           threadObservable ctx observer tid = false)
       (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  /-- WS-J1-D: Syscall decode error — the decode failed, state is unchanged.
+      This covers all paths where `decodeSyscallArgs` or register lookup
+      returns an error before any state-modifying operation executes. -/
+  | syscallDecodeError
+      (hEq : st' = st)
+    : NonInterferenceStep ctx observer st st'
+  /-- WS-J1-D: Syscall dispatch through high-domain thread — the current thread
+      is non-observable, and the dispatched operation preserves the observer's
+      projection. The caller carries the projection proof (which follows from
+      the underlying operation's NI properties).
+
+      This constructor models the register-sourced syscall entry path
+      (`syscallEntry` in `Kernel/API.lean`): decode is pure (no state change),
+      register lookup is read-only, and the dispatch delegates to an existing
+      kernel operation whose NI step is already covered by other constructors. -/
+  | syscallDispatchHigh
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+    : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
@@ -481,6 +501,8 @@ theorem step_preserves_projection
     exact handleYield_preserves_projection ctx observer st st' hCH hAR hOp
   | timerTick hCH hCOH hAR hOp =>
     exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hOp
+  | syscallDecodeError hEq => subst hEq; rfl
+  | syscallDispatchHigh _ hProj => exact hProj
 
 /-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/
