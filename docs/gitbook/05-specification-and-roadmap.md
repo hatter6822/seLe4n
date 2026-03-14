@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 3,752 across 4 suites |
 | Proved declarations | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces — **PORTFOLIO COMPLETE** (J1-A v0.15.4, J1-B v0.15.5, J1-C v0.15.6/v0.15.7, J1-D v0.15.8, J1-E v0.15.9, J1-F v0.15.10). All 16 kernel identifiers are typed wrappers. Next: Raspberry Pi 5 hardware binding |
+| Next workstreams | **WS-K** full syscall dispatch completion (planned, v0.16.0–v0.16.8) — extends WS-J1 with message register extraction, per-syscall argument decode, full 13/13 dispatch, service policy, IPC message population. See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -56,7 +56,19 @@ WS-J1-B (register decode layer, v0.15.5) →
 WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) →
 WS-J1-D (invariant/NI integration, v0.15.8) →
 WS-J1-E (testing and trace evidence, v0.15.9) →
-WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10).
+WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10) →
+**WS-K (full syscall dispatch completion, v0.16.0–v0.16.8) — planned.**
+
+## Planned: WS-K Full Syscall Dispatch Completion (v0.16.0–v0.16.8)
+
+Completes the syscall surface established by WS-J1. Extends
+`SyscallDecodeResult` with message register values (x2–x5), defines per-syscall
+argument structures with total decode functions, wires all 13 syscalls through
+`dispatchWithCap` (replacing 7 `.illegalState` stubs), replaces service policy
+stubs with configuration-sourced predicates, populates IPC message bodies from
+decoded registers, and proves round-trip correctness, invariant preservation,
+and NI coverage for all new paths. 8 phases (K-A through K-H). See
+[workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-J1-F CdtNodeId Cleanup and Documentation Sync (v0.15.10)
 

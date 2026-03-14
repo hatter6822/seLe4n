@@ -70,6 +70,28 @@ for the full workstream plan (6 phases: J1-A through J1-F).
 |----|-------|----------|
 | **WS-J1** | Replace `abbrev Nat` register types with typed wrappers, add syscall argument decode layer bridging machine registers to typed kernel operations, wrap `CdtNodeId`, prove decode correctness and NI | HIGH — **J1-A COMPLETED** (v0.15.4), **J1-B COMPLETED** (v0.15.5), **J1-C COMPLETED** (v0.15.6; audit refinements v0.15.7), **J1-D COMPLETED** (v0.15.8), **J1-E COMPLETED** (v0.15.9), **J1-F COMPLETED** (v0.15.10) — **PORTFOLIO COMPLETE** |
 
+### WS-K workstream (full syscall dispatch completion)
+
+WS-K completes the syscall surface that WS-J1 established. WS-J1 built the
+typed register decode layer and 13-case dispatch skeleton, but 7 syscalls
+return `.illegalState` (CSpace mint/copy/move/delete, lifecycle retype,
+VSpace map/unmap), 2 service syscalls use `(fun _ => true)` policy stubs,
+and IPC messages carry empty register payloads. WS-K addresses all of these:
+
+1. Extending `SyscallDecodeResult` with message register values (x2–x5).
+2. Per-syscall argument structures with total decode functions.
+3. Full dispatch for all 13 syscalls (zero `.illegalState` stubs).
+4. Configuration-sourced service policy replacing permissive stubs.
+5. IPC message body population from decoded register contents.
+6. Round-trip proofs, NI integration, and deferred proof completion.
+
+See [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
+for the full workstream plan (8 phases: K-A through K-H).
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-K** | Extend `SyscallDecodeResult` with msgRegs, implement per-syscall argument decode, wire all 13 syscalls through dispatch, replace service policy stubs, populate IPC message bodies, prove round-trip correctness and NI, comprehensive testing and documentation | CRITICAL — **Planned** (v0.16.0–v0.16.8) |
+
 ### Raspberry Pi 5 hardware binding
 
 After the remaining workstreams, the next major milestone is populating the RPi5
@@ -146,3 +168,4 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 | [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) | Prior end-to-end audit (v0.13.6) |
 | [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) |
 | [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) |
+| [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) |
