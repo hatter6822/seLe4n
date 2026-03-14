@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/syscall-entry-dispatch-4dYUY",
-      "commit_sha": "58f54acb23a954a9daa12a6a37184fe86226c2ae",
-      "tree_sha": "c3206d0787b547b04c69266fc39ca32aa877e670",
-      "committed_at_utc": "2026-03-14T03:36:48+00:00"
+      "branch": "main",
+      "commit_sha": "a8ca959b446cb925857c3d48be8673652be0f517",
+      "tree_sha": "2d3219fdbdb83a15899ea79a55c439044bf451c4",
+      "committed_at_utc": "2026-03-13T23:44:11-04:00"
     }
   },
   "source_sync": {
