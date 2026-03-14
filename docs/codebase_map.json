@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "3d80d65a5ef4d4cf52d97be4b322ab9c1c0c7c11",
-      "tree_sha": "0d894f9489a11ba789182ddd690052b6f5c9997a",
-      "committed_at_utc": "2026-03-14T00:25:56-04:00"
+      "branch": "claude/testing-trace-evidence-9c8Af",
+      "commit_sha": "edda0aa597c163b49dab47371acca7de67f32139",
+      "tree_sha": "c996bba8171b9b4ccf3c00033759d4675197c89f",
+      "committed_at_utc": "2026-03-14T05:36:39+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2d12994e0f57c9c2cb5c006392079830182d575264224f63504d4deaaf18c2f7"
+    "source_digest": "1995cd4c80733b36f564a176daf371d004e2e9d9293945a4daca0d6a8f53f3d9"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2118
+    "declaration_count": 2122
   },
   "readme_sync": {
-    "version": "0.15.8",
+    "version": "0.15.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35276,
+    "production_loc": 35419,
     "test_files": 4,
-    "test_loc": 3459,
+    "test_loc": 3752,
     "proved_theorem_lemma_decls": 1128,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -15986,7 +15986,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 41,
+      "declaration_count": 42,
       "declarations": [
         {
           "kind": "namespace",
@@ -16288,8 +16288,16 @@
         },
         {
           "kind": "def",
+          "name": "runRegisterDecodeTrace",
+          "line": 1226,
+          "called": [
+            "checkInvariants"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1218,
+          "line": 1360,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -16304,6 +16312,7 @@
             "runIpcMessageBoundsTrace",
             "runIpcMessageTransferTrace",
             "runLifecycleAndEndpointTrace",
+            "runRegisterDecodeTrace",
             "runRuntimeContractFixtureTrace",
             "runSchedulerTimingDomainTrace",
             "runServiceAndStressTrace",
@@ -16314,13 +16323,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1256,
+          "line": 1399,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1307,
+          "line": 1450,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -16328,7 +16337,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1321,
+          "line": 1464,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -16336,7 +16345,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1329,
+          "line": 1472,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -16625,7 +16634,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 38,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -16939,8 +16948,17 @@
         },
         {
           "kind": "def",
+          "name": "runWSJ1DecodeChecks",
+          "line": 1793,
+          "called": [
+            "expectError",
+            "expectOk"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1785,
+          "line": 1917,
           "called": []
         }
       ]
@@ -16948,7 +16966,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 21,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -17114,9 +17132,29 @@
         },
         {
           "kind": "def",
-          "name": "runOperationChainSuite",
-          "line": 498,
+          "name": "chain10RegisterDecodeMultiSyscall",
+          "line": 505,
           "called": [
+            "assertInvariants",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain11RegisterDecodeIpcTransfer",
+          "line": 595,
+          "called": [
+            "assertInvariants",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runOperationChainSuite",
+          "line": 656,
+          "called": [
+            "chain10RegisterDecodeMultiSyscall",
+            "chain11RegisterDecodeIpcTransfer",
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
@@ -17132,7 +17170,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 513,
+          "line": 673,
           "called": []
         }
       ]

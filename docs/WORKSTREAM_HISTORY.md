@@ -68,7 +68,7 @@ for the full workstream plan (6 phases: J1-A through J1-F).
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-J1** | Replace `abbrev Nat` register types with typed wrappers, add syscall argument decode layer bridging machine registers to typed kernel operations, wrap `CdtNodeId`, prove decode correctness and NI | HIGH — **J1-A COMPLETED** (v0.15.4), **J1-B COMPLETED** (v0.15.5), **J1-C COMPLETED** (v0.15.6; audit refinements v0.15.7), **J1-D COMPLETED** (v0.15.8), J1-E..F pending |
+| **WS-J1** | Replace `abbrev Nat` register types with typed wrappers, add syscall argument decode layer bridging machine registers to typed kernel operations, wrap `CdtNodeId`, prove decode correctness and NI | HIGH — **J1-A COMPLETED** (v0.15.4), **J1-B COMPLETED** (v0.15.5), **J1-C COMPLETED** (v0.15.6; audit refinements v0.15.7), **J1-D COMPLETED** (v0.15.8), **J1-E COMPLETED** (v0.15.9), J1-F pending |
 
 ### Raspberry Pi 5 hardware binding
 

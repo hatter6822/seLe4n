@@ -495,6 +495,164 @@ private def schedulerStressChecks : IO Unit := do
     st := stSched
   expect "scheduler multi-domain isolation" isolated
 
+-- ============================================================================
+-- WS-J1-E: Register decode operation chains
+-- ============================================================================
+
+/-- WS-J1-E: Multi-syscall sequence via register decode path.
+Exercises: decode → send, then decode → receive on same endpoint.
+Verifies the full register-sourced authority chain across two syscalls. -/
+private def chain10RegisterDecodeMultiSyscall : IO Unit := do
+  -- Build state: two TCBs (sender=300, receiver=301), endpoint, CNode with caps
+  let senderId : SeLe4n.ObjId := ⟨300⟩
+  let receiverId : SeLe4n.ObjId := ⟨301⟩
+  let epId : SeLe4n.ObjId := ⟨302⟩
+  let cnodeId : SeLe4n.ObjId := ⟨303⟩
+  -- CNode slot 0: write cap to endpoint (for send)
+  -- CNode slot 1: read cap to endpoint (for receive)
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject senderId (.tcb {
+        tid := ⟨300⟩
+        priority := ⟨50⟩
+        domain := ⟨0⟩
+        cspaceRoot := cnodeId
+        vspaceRoot := ⟨20⟩
+        ipcBuffer := ⟨4096⟩
+        ipcState := .ready
+        registerContext := {  -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
+          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun _ => ⟨0⟩ }  -- send syscall, capAddr=0
+      })
+      |>.withObject receiverId (.tcb {
+        tid := ⟨301⟩
+        priority := ⟨40⟩
+        domain := ⟨0⟩
+        cspaceRoot := cnodeId
+        vspaceRoot := ⟨20⟩
+        ipcBuffer := ⟨8192⟩
+        ipcState := .ready
+        registerContext := {  -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
+          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r =>
+            if r.val == 0 then ⟨1⟩       -- capAddr = CPtr 1 (receive cap)
+            else if r.val == 7 then ⟨1⟩  -- syscallId = receive (1)
+            else ⟨0⟩ }
+      })
+      |>.withObject epId (.endpoint {})
+      |>.withObject cnodeId (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+          (⟨1⟩, { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
+        ]
+      })
+      |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withLifecycleObjectType senderId .tcb
+      |>.withLifecycleObjectType receiverId .tcb
+      |>.withLifecycleObjectType epId .endpoint
+      |>.withLifecycleObjectType cnodeId .cnode
+      |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨301⟩]
+      |>.withCurrent (some ⟨300⟩)
+      |>.build)
+
+  -- Step 1: Sender (current) does syscallEntry (send) → queues on endpoint
+  let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+    | .ok (_, st') => pure st'
+    | .error err => throw <| IO.userError s!"chain10 send failed: {reprStr err}"
+  -- Verify sender queued on endpoint
+  match stAfterSend.objects[epId]? with
+  | some (.endpoint ep) =>
+      expect "chain10 sender queued on endpoint" (ep.sendQ.head.isSome)
+  | _ => throw <| IO.userError "chain10: endpoint not found after send"
+
+  -- Verify sender's TCB is blocked on send
+  match stAfterSend.objects[senderId]? with
+  | some (.tcb senderTcb) =>
+      expect "chain10 sender blocked on send" (senderTcb.ipcState == .blockedOnSend epId)
+  | _ => throw <| IO.userError "chain10: sender TCB not found after send"
+
+  -- Step 2: Dispatch receiver — remove from runQueue before making current
+  let stRecv := { stAfterSend with scheduler := { stAfterSend.scheduler with
+    current := some ⟨301⟩,
+    runQueue := stAfterSend.scheduler.runQueue.remove ⟨301⟩ } }
+  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
+  | .ok (_, stAfterRecv) =>
+      -- After receive, endpoint sendQ should be empty (sender was dequeued)
+      match stAfterRecv.objects[epId]? with
+      | some (.endpoint ep) =>
+          expect "chain10 endpoint empty after receive" ep.sendQ.head.isNone
+      | _ => throw <| IO.userError "chain10: endpoint not found after receive"
+      pure stAfterRecv
+  | .error err =>
+      throw <| IO.userError s!"chain10 receive failed: {reprStr err}"
+
+  assertInvariants "chain10-register-decode-multi-syscall" stFinal
+
+/-- WS-J1-E: Register decode followed by IPC with message transfer.
+Exercises: decode registers → send with badge → verify badge on endpoint. -/
+private def chain11RegisterDecodeIpcTransfer : IO Unit := do
+  let senderId : SeLe4n.ObjId := ⟨400⟩
+  let epId : SeLe4n.ObjId := ⟨402⟩
+  let cnodeId : SeLe4n.ObjId := ⟨403⟩
+  let badgeVal : SeLe4n.Badge := ⟨0xBEEF⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject senderId (.tcb {
+        tid := ⟨400⟩
+        priority := ⟨50⟩
+        domain := ⟨0⟩
+        cspaceRoot := cnodeId
+        vspaceRoot := ⟨20⟩
+        ipcBuffer := ⟨4096⟩
+        ipcState := .ready
+        registerContext := {  -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
+          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun _ => ⟨0⟩ }
+      })
+      |>.withObject epId (.endpoint {})
+      |>.withObject cnodeId (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object epId,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := some badgeVal })
+        ]
+      })
+      |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withLifecycleObjectType senderId .tcb
+      |>.withLifecycleObjectType epId .endpoint
+      |>.withLifecycleObjectType cnodeId .cnode
+      |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withCurrent (some ⟨400⟩)
+      |>.build)
+
+  -- syscallEntry send: the badge from the CNode cap should be attached
+  let stSend := st0
+  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stSend with
+  | .ok (_, stAfter) =>
+      -- Verify sender queued on endpoint
+      match stAfter.objects[epId]? with
+      | some (.endpoint ep) =>
+          expect "chain11 sender queued on endpoint" ep.sendQ.head.isSome
+      | _ => throw <| IO.userError "chain11: endpoint not found"
+      -- Verify the badge from the cap was attached to the sender's pending message
+      match stAfter.objects[senderId]? with
+      | some (.tcb senderTcb) =>
+          expect "chain11 sender blocked on send" (senderTcb.ipcState == .blockedOnSend epId)
+          match senderTcb.pendingMessage with
+          | some msg =>
+              expect "chain11 badge attached to message" (msg.badge == some badgeVal)
+              IO.println s!"operation-chain check passed [chain11 sender queued with badge: true]"
+          | none => throw <| IO.userError "chain11: sender has no pending message"
+      | _ => throw <| IO.userError "chain11: sender TCB not found"
+      pure stAfter
+  | .error err =>
+      throw <| IO.userError s!"chain11 send failed: {reprStr err}"
+
+  assertInvariants "chain11-register-decode-ipc-transfer" stFinal
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -506,6 +664,8 @@ private def runOperationChainSuite : IO Unit := do
   chain8IpcInterleavedSendOrdering
   chain9LifecycleCascadingRevokeAndAttenuation
   schedulerStressChecks
+  chain10RegisterDecodeMultiSyscall
+  chain11RegisterDecodeIpcTransfer
   IO.println "all WS-I3/WS-I4 operation-chain checks passed"
 
 end SeLe4n.Testing

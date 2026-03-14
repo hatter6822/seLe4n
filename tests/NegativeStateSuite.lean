@@ -1780,6 +1780,138 @@ def runWSH16LifecycleChecks : IO Unit := do
 
   IO.println "all WS-H16/M-18 lifecycle negative checks passed"
 
+-- ============================================================================
+-- WS-J1-E: Register decode negative tests
+-- ============================================================================
+
+/-- WS-J1-E: Negative tests for the register decode path.
+Exercises every decode error branch:
+- Invalid register index (out of architectural bounds)
+- Invalid syscall number (not in the modeled set)
+- Malformed message info word (exceeds field bounds)
+- Decode of zero-valued registers (valid edge case) -/
+def runWSJ1DecodeChecks : IO Unit := do
+  -- J1-NEG-01: validateRegBound with out-of-bounds register index → invalidRegister
+  -- ARM64 has 32 GPRs; register index 32 is the first invalid index.
+  expectError "J1 validateRegBound out-of-bounds (32 ≥ 32)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨32⟩ 32)
+    .invalidRegister
+
+  -- J1-NEG-02: validateRegBound with large register index → invalidRegister
+  expectError "J1 validateRegBound large index (999 ≥ 32)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨999⟩ 32)
+    .invalidRegister
+
+  -- J1-NEG-03: validateRegBound at boundary (31 < 32) → success
+  let _ ← expectOk "J1 validateRegBound boundary (31 < 32)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
+
+  -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
+  -- SyscallId covers 0..12; value 13 is the first invalid number.
+  expectError "J1 decodeSyscallId invalid (13)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨13⟩)
+    .invalidSyscallNumber
+
+  -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
+  expectError "J1 decodeSyscallId invalid (9999)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨9999⟩)
+    .invalidSyscallNumber
+
+  -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceStop) → success
+  let _ ← expectOk "J1 decodeSyscallId valid boundary (12)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨12⟩)
+
+  -- J1-NEG-07: decodeMsgInfo with oversized length → invalidMessageInfo
+  -- maxMessageRegisters = 120 (7-bit field max 127, but bounded to 120).
+  -- Encode a word with length = 121 (exceeds bound).
+  let oversizedLength : SeLe4n.RegValue := ⟨121⟩  -- bits 0..6 = 121
+  expectError "J1 decodeMsgInfo oversized length (121 > 120)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo oversizedLength)
+    .invalidMessageInfo
+
+  -- J1-NEG-08: decodeMsgInfo with maximum 7-bit length field → invalidMessageInfo
+  -- The 7-bit length field can hold 0..127; any value 121..127 exceeds maxMessageRegisters=120.
+  let maxFieldLength : SeLe4n.RegValue := ⟨127⟩  -- bits 0..6 = 127 > 120
+  expectError "J1 decodeMsgInfo max 7-bit length (127 > 120)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo maxFieldLength)
+    .invalidMessageInfo
+
+  -- J1-NEG-09: decodeMsgInfo with valid boundary values → success
+  -- length=120, extraCaps=3, label=0 → valid.
+  let boundaryMsgInfo : SeLe4n.RegValue := ⟨120 ||| (3 <<< 7)⟩
+  let _ ← expectOk "J1 decodeMsgInfo valid boundary (len=120, caps=3)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo boundaryMsgInfo)
+
+  -- J1-NEG-10: decodeCapPtr with zero → always succeeds (CPtr space is unbounded)
+  let _ ← expectOk "J1 decodeCapPtr zero-valued register"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr ⟨0⟩)
+
+  -- J1-NEG-11: decodeSyscallId with zero → valid (SyscallId.send = 0)
+  let _ ← expectOk "J1 decodeSyscallId zero-valued register (send)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨0⟩)
+
+  -- J1-NEG-12: decodeMsgInfo with zero → valid (length=0, extraCaps=0, label=0)
+  let _ ← expectOk "J1 decodeMsgInfo zero-valued register"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo ⟨0⟩)
+
+  -- J1-NEG-13: decodeSyscallArgs with out-of-bounds layout register → invalidRegister
+  -- Use a layout where capPtrReg index exceeds registerCount.
+  let badLayout : SeLe4n.SyscallRegisterLayout := {
+    capPtrReg     := ⟨50⟩   -- exceeds 32-register bound
+    msgInfoReg    := ⟨1⟩
+    msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
+    syscallNumReg := ⟨7⟩
+  }
+  let defaultRegs : SeLe4n.RegisterFile := default
+  expectError "J1 decodeSyscallArgs out-of-bounds layout register"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badLayout defaultRegs 32)
+    .invalidRegister
+
+  -- J1-NEG-14: decodeSyscallArgs with out-of-bounds msgReg → invalidRegister
+  let badMsgRegLayout : SeLe4n.SyscallRegisterLayout := {
+    capPtrReg     := ⟨0⟩
+    msgInfoReg    := ⟨1⟩
+    msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨40⟩, ⟨5⟩]  -- index 40 exceeds bound
+    syscallNumReg := ⟨7⟩
+  }
+  expectError "J1 decodeSyscallArgs out-of-bounds msgReg"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badMsgRegLayout defaultRegs 32)
+    .invalidRegister
+
+  -- J1-NEG-15: decodeSyscallArgs with invalid syscall number in register → invalidSyscallNumber
+  -- Write syscall number 99 into x7.
+  let regsInvalidSyscall : SeLe4n.RegisterFile :=
+    { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
+        if r.val == 7 then ⟨99⟩  -- invalid syscall number
+        else ⟨0⟩ }
+  expectError "J1 decodeSyscallArgs invalid syscall in register"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
+    .invalidSyscallNumber
+
+  -- J1-NEG-16: decodeSyscallArgs with malformed msgInfo in register → invalidMessageInfo
+  -- Write an oversized length (127 > 120) into the msgInfo register (x1).
+  let regsInvalidMsgInfo : SeLe4n.RegisterFile :=
+    { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
+        if r.val == 1 then ⟨127⟩  -- length=127 > maxMessageRegisters=120
+        else if r.val == 7 then ⟨0⟩  -- valid syscall (send)
+        else ⟨0⟩ }
+  expectError "J1 decodeSyscallArgs malformed msgInfo in register"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
+    .invalidMessageInfo
+
+  -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
+  -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send
+  let _ ← expectOk "J1 decodeSyscallArgs all-zero registers (valid)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout default 32)
+
+  -- J1-NEG-18: Full syscallEntry with no current thread → illegalState
+  let emptyState : SystemState := BootstrapBuilder.empty.build
+  expectError "J1 syscallEntry no current thread"
+    (SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 emptyState)
+    .illegalState
+
+  IO.println "all WS-J1-E register decode negative checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1792,3 +1924,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
+  SeLe4n.Testing.runWSJ1DecodeChecks
