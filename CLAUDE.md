@@ -74,6 +74,7 @@ SeLe4n/Kernel/Service/*          Service orchestration + policy
     Invariant/Acyclicity.lean    Dependency acyclicity proofs
 SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend + RegisterDecode
   RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
+  SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
 SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
   Enforcement.lean               Re-export hub
     Enforcement/Wrappers.lean    Policy-gated operation wrappers
