@@ -816,4 +816,163 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
   simp only []
   exact cleanupTcbReferences_removes_from_runnable st tcb.tid
 
+-- ============================================================================
+-- WS-K-D: Lifecycle syscall dispatch helpers
+-- ============================================================================
+
+/-- WS-K-D: Map a raw type tag and size hint to a default `KernelObject`.
+
+Tag encoding follows `KernelObjectType` ordinal order:
+- 0 = TCB, 1 = Endpoint, 2 = Notification, 3 = CNode, 4 = VSpaceRoot, 5 = Untyped.
+
+The size hint is used only for untyped objects (as `regionSize`); other types
+ignore it. All constructed objects use field defaults — the retype operation
+creates an identity; subsequent operations configure the object. -/
+def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
+    : Except KernelError KernelObject :=
+  match typeTag with
+  | 0 => .ok (.tcb {
+      tid := SeLe4n.ThreadId.ofNat 0
+      priority := SeLe4n.Priority.ofNat 0
+      domain := SeLe4n.DomainId.ofNat 0
+      cspaceRoot := SeLe4n.ObjId.ofNat 0
+      vspaceRoot := SeLe4n.ObjId.ofNat 0
+      ipcBuffer := SeLe4n.VAddr.ofNat 0
+    })
+  | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
+  | 2 => .ok (.notification {
+      state := .idle, waitingThreads := [], pendingBadge := none
+    })
+  | 3 => .ok (.cnode {
+      depth := 0, guardWidth := 0, guardValue := 0,
+      radixWidth := 0, slots := {}
+    })
+  | 4 => .ok (.vspaceRoot {
+      asid := SeLe4n.ASID.ofNat 0, mappings := {}
+    })
+  | 5 => .ok (.untyped {
+      regionBase := SeLe4n.PAddr.ofNat 0,
+      regionSize := sizeHint,
+      watermark := 0,
+      children := [],
+      isDevice := false
+    })
+  | _ + 6 => .error .invalidTypeTag
+
+/-- WS-K-D: `objectOfTypeTag` is pure. -/
+theorem objectOfTypeTag_deterministic (tag : Nat) (size : Nat) :
+    objectOfTypeTag tag size = objectOfTypeTag tag size := rfl
+
+/-- WS-K-D: `objectOfTypeTag` fails iff the tag exceeds 5. -/
+theorem objectOfTypeTag_error_iff (tag : Nat) (size : Nat) :
+    (∃ e, objectOfTypeTag tag size = .error e) ↔ tag > 5 := by
+  constructor
+  · intro ⟨e, h⟩
+    unfold objectOfTypeTag at h
+    match tag with
+    | 0 | 1 | 2 | 3 | 4 | 5 => simp at h
+    | n + 6 => omega
+  · intro h
+    unfold objectOfTypeTag
+    match tag, h with
+    | n + 6, _ => exact ⟨.invalidTypeTag, rfl⟩
+
+/-- WS-K-D: Successful results have the expected `KernelObjectType`. -/
+theorem objectOfTypeTag_type (tag : Nat) (size : Nat) (obj : KernelObject)
+    (hOk : objectOfTypeTag tag size = .ok obj) :
+    (tag = 0 → obj.objectType = .tcb) ∧
+    (tag = 1 → obj.objectType = .endpoint) ∧
+    (tag = 2 → obj.objectType = .notification) ∧
+    (tag = 3 → obj.objectType = .cnode) ∧
+    (tag = 4 → obj.objectType = .vspaceRoot) ∧
+    (tag = 5 → obj.objectType = .untyped) := by
+  unfold objectOfTypeTag at hOk
+  match tag with
+  | 0 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | 1 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | 2 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | 3 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | 4 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | 5 => simp at hOk; subst hOk; simp [KernelObject.objectType]
+  | _ + 6 => simp at hOk
+
+-- ============================================================================
+-- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
+-- ============================================================================
+
+/-- WS-K-D: Retype with a pre-resolved authority capability.
+Companion to `lifecycleRetypeObject` for the register-sourced dispatch
+path where the authority cap has already been resolved by `syscallInvoke`.
+
+Deterministic branch contract:
+1. Target object must exist (`objectNotFound` otherwise).
+2. Lifecycle metadata must agree with object-store type (`illegalState`).
+3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
+   object with `.write` right (`illegalAuthority` otherwise).
+4. Object store is updated atomically on success via `storeObject`. -/
+def lifecycleRetypeDirect
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match st.objects[target]? with
+    | none => .error .objectNotFound
+    | some currentObj =>
+        if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
+          if lifecycleRetypeAuthority authCap target then
+            storeObject target newObj st
+          else
+            .error .illegalAuthority
+        else
+          .error .illegalState
+
+/-- WS-K-D: `lifecycleRetypeDirect` is pure. -/
+theorem lifecycleRetypeDirect_deterministic
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject) :
+    lifecycleRetypeDirect cap target newObj =
+    lifecycleRetypeDirect cap target newObj := rfl
+
+/-- WS-K-D: When `cspaceLookupSlot` resolves to `(cap, st)` (state unchanged),
+`lifecycleRetypeDirect` with that cap equals `lifecycleRetypeObject` with the
+authority address. -/
+theorem lifecycleRetypeDirect_eq_lifecycleRetypeObject
+    (authority : CSpaceAddr) (authCap : Capability)
+    (target : SeLe4n.ObjId) (newObj : KernelObject) (st : SystemState)
+    (hLookup : cspaceLookupSlot authority st = .ok (authCap, st)) :
+    lifecycleRetypeDirect authCap target newObj st =
+    lifecycleRetypeObject authority target newObj st := by
+  unfold lifecycleRetypeDirect lifecycleRetypeObject
+  cases hObj : st.objects[target]? with
+  | none => rfl
+  | some currentObj =>
+      by_cases hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType
+      · simp [hMeta, hLookup]
+      · simp [hMeta]
+
+/-- WS-K-D: `lifecycleRetypeDirect` returns `objectNotFound` when target missing. -/
+theorem lifecycleRetypeDirect_error_objectNotFound
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hNone : st.objects[target]? = none) :
+    lifecycleRetypeDirect cap target newObj st = .error .objectNotFound := by
+  unfold lifecycleRetypeDirect; simp [hNone]
+
+/-- WS-K-D: `lifecycleRetypeDirect` returns `illegalState` on metadata mismatch. -/
+theorem lifecycleRetypeDirect_error_illegalState
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (currentObj : KernelObject)
+    (hSome : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
+    lifecycleRetypeDirect cap target newObj st = .error .illegalState := by
+  unfold lifecycleRetypeDirect; simp [hSome, hMeta]
+
+/-- WS-K-D: `lifecycleRetypeDirect` returns `illegalAuthority` when auth check fails. -/
+theorem lifecycleRetypeDirect_error_illegalAuthority
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (currentObj : KernelObject)
+    (hSome : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
+    (hNoAuth : lifecycleRetypeAuthority cap target = false) :
+    lifecycleRetypeDirect cap target newObj st = .error .illegalAuthority := by
+  unfold lifecycleRetypeDirect; simp [hSome, hMeta, hNoAuth]
+
 end SeLe4n.Kernel

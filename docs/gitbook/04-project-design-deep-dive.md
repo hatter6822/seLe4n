@@ -201,7 +201,14 @@ error-exclusivity theorems, enabling full dispatch for all 13 syscalls. **Layer 
 (not just `SyscallId`), enabling CSpace dispatch arms to decode per-syscall
 arguments from `msgRegs`. All 4 CSpace syscalls (`cspaceMint`, `cspaceCopy`,
 `cspaceMove`, `cspaceDelete`) are fully wired through dispatch with 4 delegation
-theorems proved. See
+theorems proved. **Layer 4 (completed, K-D v0.16.3):** Lifecycle and VSpace
+syscall dispatch — all 3 remaining `.illegalState` stubs replaced with full
+dispatch logic. `objectOfTypeTag` maps raw type tags to default `KernelObject`
+constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
+`lifecycleRetypeDirect` accepts pre-resolved capabilities (avoiding
+double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
+round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
+`vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage

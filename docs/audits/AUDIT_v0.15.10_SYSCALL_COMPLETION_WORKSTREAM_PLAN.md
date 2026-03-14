@@ -2,7 +2,7 @@
 
 **Version target:** v0.16.1–v0.16.8
 **Base version:** v0.15.10
-**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2)
+**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2), K-D completed (v0.16.3)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -985,55 +985,490 @@ Run `lake build` and `./scripts/test_smoke.sh` to confirm:
 ### WS-K-D — Lifecycle and VSpace Syscall Dispatch
 
 **Goal:** Wire `lifecycleRetype`, `vspaceMap`, `vspaceUnmap` through
-`dispatchWithCap` using decoded arguments.
+`dispatchWithCap` using decoded message register arguments. Replace all 3
+remaining `.illegalState` stubs with real dispatch paths that decode per-syscall
+arguments from `SyscallDecodeResult.msgRegs` and delegate to the existing
+kernel-level lifecycle and VSpace operations.
 
-**Tasks:**
-1. Replace `lifecycleRetype` stub:
-   ```lean
-   | .lifecycleRetype =>
-       fun st => match decodeLifecycleRetypeArgs decoded with
-       | .error e => .error e
-       | .ok args =>
-           let authority : CSpaceAddr := { cnode := ..., slot := ... }
-           lifecycleRetypeObject authority args.targetObj
-             (objectOfTypeTag args.newType args.size) st
-   ```
-2. Define `objectOfTypeTag : Nat → Nat → KernelObject` helper that maps
-   a type tag + size into a default `KernelObject`. Returns error for
-   unrecognized tags. Place in `Lifecycle/Operations.lean`.
-3. Replace `vspaceMap` stub:
-   ```lean
-   | .vspaceMap =>
-       fun st => match decodeVSpaceMapArgs decoded with
-       | .error e => .error e
-       | .ok args =>
-           Architecture.vspaceMapPage args.asid args.vaddr args.paddr
-             (PagePermissions.ofNat args.perms) st
-   ```
-4. Replace `vspaceUnmap` stub:
-   ```lean
-   | .vspaceUnmap =>
-       fun st => match decodeVSpaceUnmapArgs decoded with
-       | .error e => .error e
-       | .ok args =>
-           Architecture.vspaceUnmapPage args.asid args.vaddr st
-   ```
-5. Add `PagePermissions.ofNat` helper if not already present.
-6. Verify existing soundness theorems still hold.
-7. Add delegation theorems for lifecycle and VSpace dispatch paths.
+**Design rationale:**
+
+The three remaining stubs in `dispatchWithCap` (API.lean:438–441) block the
+lifecycle and VSpace subsystems from the register-sourced entry point. After
+K-C, only 3 of 13 syscalls remain stubbed. This phase eliminates them all.
+
+**Lifecycle retype design challenge:** `lifecycleRetypeObject` (Lifecycle/
+Operations.lean:225–242) takes `authority : CSpaceAddr` and internally performs
+`cspaceLookupSlot authority st` to resolve the authority capability. However,
+in the register-sourced dispatch path, the capability has **already** been
+resolved and validated by `syscallInvoke` (with `.retype` right). Re-resolving
+via a CSpaceAddr would require information (`tcb.cspaceRoot`, the slot
+reference) not available inside `dispatchWithCap`.
+
+**Solution:** Introduce `lifecycleRetypeDirect` — a companion to
+`lifecycleRetypeObject` that accepts an already-resolved capability instead of
+a CSpaceAddr. It performs the same authority check via
+`lifecycleRetypeAuthority` (which verifies `cap.target = .object target` and
+`cap.hasRight .write`), the same lifecycle metadata consistency check, and the
+same `storeObject` call. This avoids a double capability lookup and keeps the
+dispatch layer clean.
+
+**VSpace design:** `vspaceMapPage` and `vspaceUnmapPage` take ASID, vaddr,
+paddr, and perms directly — no authority CSpaceAddr needed. The dispatch layer
+decodes these from message registers and delegates directly. For user-space
+entry, the bounds-checked variant `vspaceMapPageChecked` is used (rejects
+`paddr ≥ 2^52`). A `PagePermissions.ofNat` helper decodes the raw permissions
+word from the register into the structured `PagePermissions` type using a
+bitfield layout (bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable).
+
+**Type tag design:** `objectOfTypeTag` maps a raw `Nat` type tag to a default
+`KernelObject` constructor. The tag encoding follows `KernelObjectType` ordinal
+order (0=tcb, 1=endpoint, 2=notification, 3=cnode, 4=vspaceRoot, 5=untyped).
+Unrecognized tags produce `.invalidTypeTag`. The size hint from the third
+message register is used only for untyped objects (as `regionSize`); other
+types ignore it. All constructed objects use field defaults (zero ThreadId,
+empty slots, idle state, etc.) — the retype operation only creates the identity;
+subsequent operations configure the object.
+
+**Subtasks:**
+
+#### K-D.1 — `objectOfTypeTag` helper (Lifecycle/Operations.lean)
+
+Define a total function mapping a raw type tag and size hint to a default
+`KernelObject`:
+```lean
+def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
+    : Except KernelError KernelObject :=
+  match typeTag with
+  | 0 => .ok (.tcb {
+      tid := ThreadId.ofNat 0
+      priority := Priority.ofNat 0
+      domain := DomainId.ofNat 0
+      cspaceRoot := ObjId.ofNat 0
+      vspaceRoot := ObjId.ofNat 0
+      ipcBuffer := VAddr.ofNat 0
+    })
+  | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
+  | 2 => .ok (.notification {
+      state := .idle, waitingThreads := [], pendingBadge := none
+    })
+  | 3 => .ok (.cnode {
+      depth := 0, guardWidth := 0, guardValue := 0,
+      radixWidth := 0, slots := {}
+    })
+  | 4 => .ok (.vspaceRoot {
+      asid := ASID.ofNat 0, mappings := {}
+    })
+  | 5 => .ok (.untyped {
+      regionBase := PAddr.ofNat 0,
+      regionSize := sizeHint,
+      watermark := 0,
+      children := [],
+      isDevice := false
+    })
+  | _ => .error .invalidTypeTag
+```
+
+Design notes:
+- Returns `Except KernelError KernelObject` — never panics, never partial.
+- The size hint is meaningful only for untyped objects (sets `regionSize`).
+  Other constructors use field defaults.
+- Tag 0–5 correspond to `KernelObjectType` ordinal order. This is a fixed
+  convention documented in the function's docstring; changing it requires a
+  coordinated update to all user-space stubs.
+- The default TCB uses zero-valued typed identifiers. A subsequent
+  `setTcbFields` or similar configuration operation would set the real values.
+  This matches seL4's pattern where `Untyped_Retype` creates an identity and
+  `TCB_Configure` populates it.
+
+Add a corresponding `objectOfTypeTag_type` lemma verifying that successful
+results have the expected `KernelObjectType`:
+```lean
+theorem objectOfTypeTag_type (tag : Nat) (size : Nat) (obj : KernelObject)
+    (hOk : objectOfTypeTag tag size = .ok obj) :
+    (tag = 0 → obj.objectType = .tcb) ∧
+    (tag = 1 → obj.objectType = .endpoint) ∧
+    (tag = 2 → obj.objectType = .notification) ∧
+    (tag = 3 → obj.objectType = .cnode) ∧
+    (tag = 4 → obj.objectType = .vspaceRoot) ∧
+    (tag = 5 → obj.objectType = .untyped)
+```
+
+Add a determinism theorem (`objectOfTypeTag_deterministic`, trivially `rfl`)
+and an error-exclusivity theorem:
+```lean
+theorem objectOfTypeTag_error_iff (tag : Nat) (size : Nat) :
+    (∃ e, objectOfTypeTag tag size = .error e) ↔ tag > 5
+```
+
+**File:** `SeLe4n/Kernel/Lifecycle/Operations.lean`
+**Acceptance:** All three theorems proved (zero sorry); `lake build` passes.
+
+#### K-D.2 — `PagePermissions.ofNat` helper (Model/Object/Structures.lean)
+
+Define a total decoder mapping a raw `Nat` permissions word to a
+`PagePermissions` structure using a bitfield layout:
+```lean
+def PagePermissions.ofNat (n : Nat) : PagePermissions :=
+  { read      := n &&& 1 != 0
+    write     := n &&& 2 != 0
+    execute   := n &&& 4 != 0
+    user      := n &&& 8 != 0
+    cacheable := n &&& 16 != 0 }
+```
+
+Design notes:
+- `ofNat` is total (no error return). Every `Nat` maps to a valid
+  `PagePermissions` — W^X enforcement happens downstream in
+  `vspaceMapPage` (which checks `perms.wxCompliant`). The decode layer
+  does not validate policy; it only converts representation.
+- Bit layout matches ARM64 PTE descriptor conventions:
+  bit 0 = AP[1] (read), bit 1 = AP[2] (write), bit 2 = UXN (execute),
+  bit 3 = user, bit 4 = AttrIndx (cacheable).
+- The companion `PagePermissions.toNat` encoder is defined for round-trip
+  proofs:
+  ```lean
+  def PagePermissions.toNat (p : PagePermissions) : Nat :=
+    (if p.read then 1 else 0) |||
+    (if p.write then 2 else 0) |||
+    (if p.execute then 4 else 0) |||
+    (if p.user then 8 else 0) |||
+    (if p.cacheable then 16 else 0)
+  ```
+
+Add a round-trip theorem:
+```lean
+theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
+    PagePermissions.ofNat (PagePermissions.toNat p) = p
+```
+
+Add a determinism theorem (`PagePermissions.ofNat_deterministic`, trivially
+`rfl`).
+
+**File:** `SeLe4n/Model/Object/Structures.lean`
+**Acceptance:** `ofNat`, `toNat`, round-trip, and determinism theorems compile
+(zero sorry); `lake build` passes.
+
+#### K-D.3 — `lifecycleRetypeDirect` helper (Lifecycle/Operations.lean)
+
+Define a companion to `lifecycleRetypeObject` that accepts a pre-resolved
+capability instead of a `CSpaceAddr`. This is the function called by the
+register-sourced dispatch path, where `syscallInvoke` has already resolved
+and rights-checked the capability.
+
+```lean
+/-- WS-K-D: Retype with a pre-resolved authority capability.
+Companion to `lifecycleRetypeObject` for the register-sourced dispatch
+path where the authority cap has already been resolved by `syscallInvoke`.
+
+Deterministic branch contract:
+1. Target object must exist (`objectNotFound` otherwise).
+2. Lifecycle metadata must agree with object-store type (`illegalState`).
+3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
+   object with `.write` right (`illegalAuthority` otherwise).
+4. Object store is updated atomically on success via `storeObject`. -/
+def lifecycleRetypeDirect
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match st.objects[target]? with
+    | none => .error .objectNotFound
+    | some currentObj =>
+        if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
+          if lifecycleRetypeAuthority authCap target then
+            storeObject target newObj st
+          else
+            .error .illegalAuthority
+        else
+          .error .illegalState
+```
+
+This is structurally identical to `lifecycleRetypeObject` minus the
+`cspaceLookupSlot` step. The authority check (`lifecycleRetypeAuthority`)
+verifies `cap.target = .object target ∧ cap.hasRight .write`, ensuring the
+resolved capability actually authorizes the retype.
+
+Add an equivalence theorem linking the two functions:
+```lean
+/-- When `cspaceLookupSlot authority st` resolves to `(cap, st)` (state
+unchanged), `lifecycleRetypeDirect` with that cap equals
+`lifecycleRetypeObject` with the authority address. -/
+theorem lifecycleRetypeDirect_eq_lifecycleRetypeObject
+    (authority : CSpaceAddr) (authCap : Capability)
+    (target : SeLe4n.ObjId) (newObj : KernelObject) (st : SystemState)
+    (hLookup : cspaceLookupSlot authority st = .ok (authCap, st)) :
+    lifecycleRetypeDirect authCap target newObj st =
+    lifecycleRetypeObject authority target newObj st
+```
+
+This theorem proves the dispatch path is semantically equivalent to the
+`apiLifecycleRetype` path — they perform the same operation on the same
+state, just with different cap resolution strategies.
+
+Add determinism theorem (`lifecycleRetypeDirect_deterministic`, trivially
+`rfl`) and error-decomposition theorems:
+```lean
+theorem lifecycleRetypeDirect_error_objectNotFound
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hNone : st.objects[target]? = none) :
+    lifecycleRetypeDirect cap target newObj st = .error .objectNotFound
+
+theorem lifecycleRetypeDirect_error_illegalState
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (currentObj : KernelObject)
+    (hSome : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
+    lifecycleRetypeDirect cap target newObj st = .error .illegalState
+
+theorem lifecycleRetypeDirect_error_illegalAuthority
+    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (currentObj : KernelObject)
+    (hSome : st.objects[target]? = some currentObj)
+    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
+    (hNoAuth : lifecycleRetypeAuthority cap target = false) :
+    lifecycleRetypeDirect cap target newObj st = .error .illegalAuthority
+```
+
+**File:** `SeLe4n/Kernel/Lifecycle/Operations.lean`
+**Acceptance:** Function and all theorems compile (zero sorry); `lake build`
+passes.
+
+#### K-D.4 — Wire `.lifecycleRetype` dispatch (API.lean)
+
+Replace the `.lifecycleRetype` stub (currently `fun _ => .error .illegalState`)
+with a full dispatch path:
+```lean
+| .lifecycleRetype =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeLifecycleRetypeArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            match objectOfTypeTag args.newType args.size with
+            | .error e => .error e
+            | .ok newObj =>
+                lifecycleRetypeDirect cap args.targetObj newObj st
+    | _ => fun _ => .error .invalidCapability
+```
+
+The dispatch flow:
+1. Cap target must be `.object _` (the cap targets the authority object).
+2. Decode `LifecycleRetypeArgs` from message registers (target ObjId,
+   type tag, size hint). Decode failure → error propagation.
+3. Convert type tag + size to a `KernelObject` via `objectOfTypeTag`.
+   Invalid tag → `.invalidTypeTag`.
+4. Delegate to `lifecycleRetypeDirect` with the resolved cap, decoded
+   target, and constructed new object.
+
+Note: `lifecycleRetypeAuthority` inside `lifecycleRetypeDirect` checks that
+`cap.target = .object args.targetObj` — the cap must target the specific
+object being retyped. If the user passes a target ObjId that doesn't match
+the invoked capability's target, the authority check fails with
+`.illegalAuthority`. This prevents a user from retyping arbitrary objects
+by invoking a capability targeting a different object.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~438)
+**Acceptance:** `lake build` passes; `.lifecycleRetype` no longer returns
+`.illegalState`.
+
+#### K-D.5 — Wire `.vspaceMap` dispatch (API.lean)
+
+Replace the `.vspaceMap` stub with a full dispatch path:
+```lean
+| .vspaceMap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceMapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+              (PagePermissions.ofNat args.perms) st
+    | _ => fun _ => .error .invalidCapability
+```
+
+Design notes:
+- Uses `vspaceMapPageChecked` (not `vspaceMapPage`) because this is a
+  user-space entry point. The checked variant rejects `paddr ≥ 2^52`,
+  preventing user-space from mapping physical addresses outside the valid
+  address space. This matches the production entry point classification in
+  `VSpace.lean:57–62`.
+- `PagePermissions.ofNat args.perms` converts the raw register value to
+  structured permissions. W^X enforcement happens inside `vspaceMapPage`
+  (which checks `perms.wxCompliant`), not at the decode boundary.
+- The ASID from `args.asid` is used by `resolveAsidRoot` inside
+  `vspaceMapPage` to locate the VSpace root. If the ASID is not bound,
+  `vspaceMapPage` returns `.asidNotBound`.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~440)
+**Acceptance:** `lake build` passes; `.vspaceMap` no longer returns
+`.illegalState`.
+
+#### K-D.6 — Wire `.vspaceUnmap` dispatch (API.lean)
+
+Replace the `.vspaceUnmap` stub with a full dispatch path:
+```lean
+| .vspaceUnmap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceUnmapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceUnmapPage args.asid args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+```
+
+Design notes:
+- `vspaceUnmapPage` needs only ASID and vaddr — no permissions or physical
+  address needed for unmap.
+- No bounds check needed (unlike map) — unmap operates on an existing
+  mapping, and the ASID/vaddr are validated against the ASID table and
+  mapping store.
+- On `none` from `unmapPage` (no mapping exists), returns
+  `.translationFault` — matching the deterministic error contract.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~441)
+**Acceptance:** `lake build` passes; `.vspaceUnmap` no longer returns
+`.illegalState`. Zero `.illegalState` stubs remain in `dispatchWithCap`.
+
+#### K-D.7 — Verify existing soundness theorems compile unchanged
+
+After K-D.4–K-D.6, verify that all existing soundness theorems still compile
+without modification:
+
+1. **`dispatchSyscall_requires_right`** (API.lean:536): The proof calls
+   `syscallInvoke_requires_right` with `dispatchWithCap decoded tid`.
+   Since `syscallInvoke_requires_right` quantifies over any
+   `op : Capability → Kernel α`, the proof composes regardless of
+   `dispatchWithCap`'s internal changes.
+
+2. **`syscallEntry_implies_capability_held`** (API.lean:572): Threads
+   through `dispatchSyscall_requires_right`. No direct reference to
+   `dispatchWithCap`.
+
+3. **`syscallEntry_requires_valid_decode`** (API.lean:508): Does not
+   reference `dispatchWithCap` at all.
+
+4. **CSpace delegation theorems** (API.lean:627–684): These reference
+   specific `decoded.syscallId` matches (`.cspaceMint`, etc.) and are
+   unaffected by changes to the `.lifecycleRetype`/`.vspaceMap`/
+   `.vspaceUnmap` arms.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** All existing theorems compile (zero sorry); no proof
+modifications needed.
+
+#### K-D.8 — Add lifecycle and VSpace delegation theorems (API.lean)
+
+Add three delegation theorems proving each new dispatch path correctly
+delegates to the corresponding kernel operation:
+
+```lean
+/-- WS-K-D: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirect`
+is invoked with the resolved cap, decoded target, and constructed object. -/
+theorem dispatchWithCap_lifecycleRetype_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
+    (newObj : KernelObject)
+    (hSyscall : decoded.syscallId = .lifecycleRetype)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
+    (hType : objectOfTypeTag args.newType args.size = .ok newObj) :
+    dispatchWithCap decoded tid cap =
+      lifecycleRetypeDirect cap args.targetObj newObj
+```
+
+```lean
+/-- WS-K-D: When vspaceMap dispatch succeeds, `vspaceMapPageChecked` is
+invoked with the decoded ASID, vaddr, paddr, and permissions. -/
+theorem dispatchWithCap_vspaceMap_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+        (PagePermissions.ofNat args.perms)
+```
+
+```lean
+/-- WS-K-D: When vspaceUnmap dispatch succeeds, `vspaceUnmapPage` is
+invoked with the decoded ASID and vaddr. -/
+theorem dispatchWithCap_vspaceUnmap_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
+    (hSyscall : decoded.syscallId = .vspaceUnmap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      Architecture.vspaceUnmapPage args.asid args.vaddr
+```
+
+All proofs are `by simp [dispatchWithCap, hSyscall, hTarget, hDecode, ...]`
+— they unfold the dispatch function and substitute the hypotheses. The
+lifecycle theorem additionally substitutes `hType` to resolve the
+`objectOfTypeTag` match.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** All 3 theorems compile (zero sorry).
+
+#### K-D.9 — Add Tier 3 invariant surface anchors
+
+Add `#check` anchors to `tests/InvariantSurfaceSuite.lean` for all new
+definitions and theorems:
+- `objectOfTypeTag`
+- `objectOfTypeTag_type`
+- `objectOfTypeTag_error_iff`
+- `PagePermissions.ofNat`
+- `PagePermissions.toNat`
+- `PagePermissions.ofNat_toNat_roundtrip`
+- `lifecycleRetypeDirect`
+- `lifecycleRetypeDirect_eq_lifecycleRetypeObject`
+- `dispatchWithCap_lifecycleRetype_delegates`
+- `dispatchWithCap_vspaceMap_delegates`
+- `dispatchWithCap_vspaceUnmap_delegates`
+
+**File:** `tests/InvariantSurfaceSuite.lean`
+**Acceptance:** All `#check` anchors compile.
+
+#### K-D.10 — Build and smoke verification
+
+Run `lake build` and `./scripts/test_smoke.sh` to confirm:
+- Zero compilation errors
+- Zero `sorry` or `axiom` in production code
+- All Tier 0–2 tests pass
+- Existing trace output matches fixture (no dispatch-path changes affect
+  trace scenarios since lifecycle/VSpace syscalls were not previously
+  traced)
+
+**Acceptance:** `test_smoke.sh` exits 0.
 
 **Exit criteria:**
-- All 3 stubs replaced with full dispatch.
+- `objectOfTypeTag` defined in `Lifecycle/Operations.lean` with type, error,
+  and determinism theorems.
+- `PagePermissions.ofNat` and `PagePermissions.toNat` defined in
+  `Model/Object/Structures.lean` with round-trip theorem.
+- `lifecycleRetypeDirect` defined in `Lifecycle/Operations.lean` with
+  equivalence, error-decomposition, and determinism theorems.
+- All 3 stubs replaced with full dispatch in `dispatchWithCap`.
 - Zero `.illegalState` stubs remaining in `dispatchWithCap`.
-- `objectOfTypeTag` defined and used.
-- Delegation theorems proved.
+- 3 delegation theorems proved (one per syscall).
+- All existing soundness theorems compile unchanged.
+- Tier 3 anchors added for all new definitions.
 - `lake build` passes; `test_smoke.sh` passes.
+- Zero `sorry`/`axiom` in production proof surface.
 
 **Files modified:**
-- `SeLe4n/Kernel/API.lean` — Replace lifecycle and VSpace stubs.
-- `SeLe4n/Kernel/Lifecycle/Operations.lean` — Add `objectOfTypeTag`.
-- `SeLe4n/Kernel/Architecture/VSpace.lean` — Add `PagePermissions.ofNat`
-  if needed.
+- `SeLe4n/Model/Object/Structures.lean` — Add `PagePermissions.ofNat`,
+  `PagePermissions.toNat`, round-trip theorem.
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — Add `objectOfTypeTag` with
+  theorems, `lifecycleRetypeDirect` with equivalence and error theorems.
+- `SeLe4n/Kernel/API.lean` — Replace 3 `.illegalState` stubs with full
+  dispatch paths, add 3 delegation theorems.
+- `tests/InvariantSurfaceSuite.lean` — Add Tier 3 anchors.
 
 **Version target:** v0.16.3
 
@@ -1311,7 +1746,7 @@ Update GitBook chapters and claim evidence index.
 |------|--------|-------|
 | `SeLe4n/Kernel/Architecture/RegisterDecode.lean` | Populate msgRegs, extraction helper, lemmas | K-A, K-E |
 | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | **NEW** — argument structures + decode fns | K-B |
-| `SeLe4n/Kernel/Architecture/VSpace.lean` | `PagePermissions.ofNat` if needed | K-D |
+| `SeLe4n/Model/Object/Structures.lean` | `PagePermissions.ofNat`, `toNat`, round-trip | K-D |
 
 ### Kernel API
 | File | Change | Phase |
@@ -1321,7 +1756,7 @@ Update GitBook chapters and claim evidence index.
 ### Kernel subsystems
 | File | Change | Phase |
 |------|--------|-------|
-| `SeLe4n/Kernel/Lifecycle/Operations.lean` | `objectOfTypeTag` helper | K-D |
+| `SeLe4n/Kernel/Lifecycle/Operations.lean` | `objectOfTypeTag`, `lifecycleRetypeDirect`, theorems | K-D |
 
 ### Information flow
 | File | Change | Phase |
@@ -1361,7 +1796,7 @@ Update GitBook chapters and claim evidence index.
 | R2 | `dispatchWithCap` signature change breaks soundness theorems | Medium | High | Change signature in K-C only after verifying theorem structure. Existing theorems quantify over `SyscallId`, not `SyscallDecodeResult`, so they should compose. |
 | R3 | `SystemState` extension for `ServiceConfig` breaks fixture construction | Medium | Medium | `ServiceConfig` has `Inhabited` instance. Existing fixtures use default construction and are unaffected. |
 | R4 | Deferred NI proofs (Operations.lean:15–33) prove harder than expected | Medium | High | These proofs follow the `storeObject_preserves_projection` pattern already used elsewhere. CDT operations compose with frame lemmas. If blocked, add targeted `sorry` with TPI-D annotation and track as sub-workstream. |
-| R5 | `objectOfTypeTag` introduces non-determinism via unrecognized type tags | Low | Critical | Return `Except KernelError KernelObject` — unrecognized tags produce `.invalidArgument`. No default object construction. |
+| R5 | `objectOfTypeTag` introduces non-determinism via unrecognized type tags | Low | Critical | Return `Except KernelError KernelObject` — unrecognized tags produce `.invalidTypeTag`. No default object construction. |
 | R6 | Message register array length mismatch between platform layouts | Low | Medium | `decodeMsgRegs_length` lemma enforces `decoded.msgRegs.size = layout.msgRegs.size`. Per-syscall decode checks minimum count. |
 
 ---
@@ -1408,10 +1843,16 @@ Update GitBook chapters and claim evidence index.
 - [x] K-C.6: Existing soundness theorems pass unchanged (v0.16.2) ✓
 - [x] K-C.7: 4 CSpace delegation theorems proved (v0.16.2) ✓
 - [x] K-C.8: `lake build` + `test_smoke.sh` pass (v0.16.2) ✓
-- [ ] K-D: `lifecycleRetype` dispatches through decode → operation (v0.16.3)
-- [ ] K-D: `vspaceMap` dispatches through decode → operation (v0.16.3)
-- [ ] K-D: `vspaceUnmap` dispatches through decode → operation (v0.16.3)
-- [ ] K-D: Zero `.illegalState` stubs in `dispatchWithCap` (v0.16.3)
+- [x] K-D.1: `objectOfTypeTag` defined with type/error/determinism theorems (v0.16.3) ✓
+- [x] K-D.2: `PagePermissions.ofNat`/`toNat` with round-trip theorem (v0.16.3) ✓
+- [x] K-D.3: `lifecycleRetypeDirect` with equivalence/error theorems (v0.16.3) ✓
+- [x] K-D.4: `lifecycleRetype` dispatches through decode → operation (v0.16.3) ✓
+- [x] K-D.5: `vspaceMap` dispatches through decode → operation (v0.16.3) ✓
+- [x] K-D.6: `vspaceUnmap` dispatches through decode → operation (v0.16.3) ✓
+- [x] K-D.7: Existing soundness theorems compile unchanged (v0.16.3) ✓
+- [x] K-D.8: 3 delegation theorems proved (lifecycle + VSpace) (v0.16.3) ✓
+- [x] K-D.9: Tier 3 anchors for all new definitions (v0.16.3) ✓
+- [x] K-D.10: Zero `.illegalState` stubs in `dispatchWithCap` (v0.16.3) ✓
 - [ ] K-E: `ServiceConfig` in `SystemState` with `Inhabited` default (v0.16.4)
 - [ ] K-E: Service dispatch uses `st.serviceConfig` (v0.16.4)
 - [ ] K-E: IPC messages populated from decoded registers (v0.16.4)

@@ -1,3 +1,26 @@
+## [0.16.3] — Lifecycle and VSpace Syscall Dispatch (WS-K-D)
+
+- Wired all 3 remaining syscall stubs (`lifecycleRetype`, `vspaceMap`,
+  `vspaceUnmap`) through `dispatchWithCap` using decoded message register
+  arguments — zero `.illegalState` stubs remain; all 13 syscalls fully dispatch
+- Added `objectOfTypeTag` helper mapping raw type tags (0–5) to default
+  `KernelObject` constructors with dedicated `invalidTypeTag` error variant for
+  unrecognized tags; includes type, error-exclusivity, and determinism theorems
+- Added `lifecycleRetypeDirect` — companion to `lifecycleRetypeObject` for
+  register-sourced dispatch where the authority cap is already resolved by
+  `syscallInvoke`; avoids double capability lookup; includes equivalence theorem
+  linking it to `lifecycleRetypeObject`
+- Added `PagePermissions.ofNat`/`toNat` bitfield codec (bit 0=read, 1=write,
+  2=execute, 3=user, 4=cacheable) with round-trip theorem
+- `vspaceMap` dispatch uses `vspaceMapPageChecked` (bounds-checked variant,
+  rejects `paddr ≥ 2^52`) for user-space entry safety
+- 3 delegation theorems proved (`dispatchWithCap_lifecycleRetype_delegates`,
+  `dispatchWithCap_vspaceMap_delegates`, `dispatchWithCap_vspaceUnmap_delegates`)
+- All existing soundness theorems compile unchanged after dispatch changes
+- Tier 3 invariant surface anchors added for all new definitions and theorems
+- Refined WS-K-D workstream plan with 10 detailed subtasks (K-D.1–K-D.10)
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+
 ## [0.16.2] — CSpace Syscall Dispatch (WS-K-C)
 
 - Wired all 4 CSpace syscalls (`cspaceMint`, `cspaceCopy`, `cspaceMove`,

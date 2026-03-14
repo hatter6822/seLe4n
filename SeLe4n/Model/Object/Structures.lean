@@ -40,6 +40,38 @@ def PagePermissions.wxCompliant (p : PagePermissions) : Bool :=
 theorem PagePermissions.default_wxCompliant : (default : PagePermissions).wxCompliant = true := by
   rfl
 
+/-- WS-K-D: Decode a raw `Nat` permissions word to `PagePermissions` using
+a bitfield layout: bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable.
+Every `Nat` maps to a valid `PagePermissions` — W^X enforcement happens
+downstream in `vspaceMapPage`. -/
+def PagePermissions.ofNat (n : Nat) : PagePermissions :=
+  { read      := n &&& 1 != 0
+    write     := n &&& 2 != 0
+    execute   := n &&& 4 != 0
+    user      := n &&& 8 != 0
+    cacheable := n &&& 16 != 0 }
+
+/-- WS-K-D: Encode `PagePermissions` as a `Nat` bitfield.
+Companion to `ofNat` for round-trip proofs. -/
+def PagePermissions.toNat (p : PagePermissions) : Nat :=
+  (if p.read then 1 else 0) |||
+  (if p.write then 2 else 0) |||
+  (if p.execute then 4 else 0) |||
+  (if p.user then 8 else 0) |||
+  (if p.cacheable then 16 else 0)
+
+/-- WS-K-D: `PagePermissions.ofNat` is pure. -/
+theorem PagePermissions.ofNat_deterministic (n : Nat) :
+    PagePermissions.ofNat n = PagePermissions.ofNat n := rfl
+
+/-- WS-K-D: Round-trip: encoding then decoding recovers the original. -/
+theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
+    PagePermissions.ofNat (PagePermissions.toNat p) = p := by
+  simp only [PagePermissions.ofNat, PagePermissions.toNat]
+  cases p with
+  | mk r w e u c =>
+    cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> native_decide
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.

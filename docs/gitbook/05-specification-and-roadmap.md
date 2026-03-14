@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.16.2` |
+| Version | `0.16.3` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 36,202 across 69 files |
 | Test LoC | 3,755 across 4 suites |
 | Proved declarations | 1,161 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | **WS-K** full syscall dispatch completion (in progress, v0.16.2–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C completed** (v0.16.2): all 4 CSpace syscalls wired through `dispatchWithCap` using decoded message register arguments, 4 delegation theorems proved. Remaining: lifecycle/VSpace dispatch (K-D), service policy + IPC message population (K-E), proofs (K-F), testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
+| Next workstreams | **WS-K** full syscall dispatch completion (in progress, v0.16.3–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C completed** (v0.16.2): all 4 CSpace syscalls wired through `dispatchWithCap` using decoded message register arguments, 4 delegation theorems proved. **K-D completed** (v0.16.3): all 3 remaining syscall stubs wired — zero `.illegalState` stubs remain, all 13 syscalls fully dispatch; `objectOfTypeTag`, `lifecycleRetypeDirect`, `PagePermissions.ofNat`/`toNat`; 3 delegation theorems. Remaining: service policy + IPC message population (K-E), proofs (K-F), testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
