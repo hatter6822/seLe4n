@@ -158,7 +158,7 @@ Every milestone-moving PR should include:
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent slice from the active plans (currently WS-J1 register-namespace migration planning/implementation or Raspberry Pi 5 binding prep).
+1. Sync branch and choose one coherent slice from the active plans (currently Raspberry Pi 5 hardware binding prep — WS-J1 register-namespace migration is fully completed).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

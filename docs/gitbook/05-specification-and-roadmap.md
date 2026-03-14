@@ -55,7 +55,22 @@ WS-J1-A (typed register wrappers, v0.15.4) →
 WS-J1-B (register decode layer, v0.15.5) →
 WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) →
 WS-J1-D (invariant/NI integration, v0.15.8) →
-WS-J1-E (testing and trace evidence, v0.15.9).
+WS-J1-E (testing and trace evidence, v0.15.9) →
+WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10).
+
+## Completed: WS-J1-F CdtNodeId Cleanup and Documentation Sync (v0.15.10)
+
+Final cleanup phase of WS-J1. Replaced `abbrev CdtNodeId := Nat` with
+`structure CdtNodeId where val : Nat` in `Model/Object/Structures.lean`,
+matching the typed wrapper pattern used by all other kernel identifiers. Added
+full instance suite (`DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`,
+`LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`) co-located with
+the type definition. Fixed downstream compilation: `SystemState` field defaults
+(`cdtNextNode := ⟨0⟩`), monotone allocator (`⟨node.val + 1⟩`), test literals
+in `NegativeStateSuite.lean`. All documentation synchronized across canonical
+sources and GitBook chapters. Codebase map regenerated. All 16 kernel identifiers
+are now typed wrappers. Zero sorry/axiom. Closes WS-J1 Phase F.
+**WS-J1 portfolio fully completed.**
 
 ## Completed: WS-J1-E Testing and Trace Evidence (v0.15.9)
 
