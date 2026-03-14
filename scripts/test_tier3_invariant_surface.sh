@@ -862,6 +862,17 @@ run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_length' SeLe4n/Kernel/Archit
 run_check "INVARIANT" rg -n 'msgRegs.*Array.*RegValue' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip' SeLe4n/Model/Object/Types.lean
 
+# WS-K-B: Per-syscall argument decode layer definitions and theorems.
+run_check "INVARIANT" rg -n 'def requireMsgReg' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure CSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure VSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeVSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
@@ -898,6 +909,32 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_roundtrip
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_length
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decode_components_roundtrip
+-- WS-K-B: Per-syscall argument decode structures, functions, and theorems
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg_ok_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceCopyArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMoveArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.LifecycleRetypeArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnmapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_deterministic
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
 EOF'
 
 finalize_report

@@ -1120,7 +1120,7 @@ Determinism & error exclusivity:
 Functions:
 - `lookupThreadRegisterContext` — extracts saved register context from current thread's TCB
 - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight` (13 cases)
-- `dispatchWithCap` — per-syscall routing: IPC send/receive/call/reply and service start/stop extract targets from resolved capability's `CapTarget`; CSpace mint/copy/move/delete, lifecycle retype, and VSpace map/unmap return `illegalState` (MR-dependent args, deferred to WS-J1-E)
+- `dispatchWithCap` — per-syscall routing: IPC send/receive/call/reply and service start/stop extract targets from resolved capability's `CapTarget`; CSpace mint/copy/move/delete, lifecycle retype, and VSpace map/unmap return `illegalState` (MR-dependent args, deferred to WS-K-C/K-D)
 - `dispatchSyscall` — constructs `SyscallGate` from caller's TCB and CSpace root CNode, routes through `syscallInvoke`
 - `syscallEntry` — top-level register-sourced entry point: reads `scheduler.current`, extracts registers, decodes (with configurable `regCount`, default 32), dispatches
 - `MachineConfig.registerCount` — promoted from computed def to configurable structure field (default 32)
@@ -1192,14 +1192,26 @@ Tier 3 invariant surface anchors:
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
 
-**Planned: WS-K full syscall dispatch completion (v0.16.1–v0.16.8):**
+**WS-K full syscall dispatch completion (v0.16.1–v0.16.8, in progress):**
 
-WS-K extends the WS-J1 decode layer to complete the full syscall surface:
-- `SyscallDecodeResult.msgRegs` — message register values extracted from x2–x5
-- Per-syscall argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`,
-  `CSpaceMoveArgs`, `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`,
-  `VSpaceUnmapArgs`) in `SyscallArgDecode.lean`
-- Total decode functions for each argument structure
+WS-K extends the WS-J1 decode layer to complete the full syscall surface.
+
+**Completed — K-A (v0.16.0):** `SyscallDecodeResult.msgRegs` field added with
+`Array RegValue` type and `#[]` default. `decodeSyscallArgs` updated to
+validate-and-read message registers in a single `Array.mapM` pass.
+`decodeMsgRegs_length` theorem proves output size equals layout size.
+`decodeMsgRegs_roundtrip` and extended `decode_components_roundtrip` proved.
+`encodeMsgRegs` identity helper added for proof surface completeness.
+
+**Completed — K-B (v0.16.1):** `SyscallArgDecode.lean` defines per-syscall typed
+argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
+`CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`)
+and total decode functions via shared `requireMsgReg` bounds-checked helper.
+7 determinism theorems (trivially `rfl`), 7 error-exclusivity theorems
+(decode fails iff `msgRegs.size < required`), `requireMsgReg_error_iff` and
+`requireMsgReg_ok_iff` helper theorems. Zero sorry/axiom.
+
+**Remaining (K-C through K-H):**
 - Full dispatch for all 13 syscalls (replacing 7 `.illegalState` stubs)
 - `ServiceConfig` for configuration-sourced service policy
 - `extractMessageRegisters` for IPC message body population
