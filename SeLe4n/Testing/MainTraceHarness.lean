@@ -1216,10 +1216,10 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
   checkInvariants counter "post-runtime-contract-fixtures" st1
 
 -- ============================================================================
--- WS-J1-E: Register decode trace scenarios
+-- Register decode trace scenarios (established WS-J1-E, extended WS-K-A)
 -- ============================================================================
 
-/-- WS-J1-E: Exercise the register-sourced syscall entry path:
+/-- Exercise the register-sourced syscall entry path:
 1. Successful register decode → capability check → kernel operation (send)
 2. Failed register decode (invalid syscall number) → explicit error return
 3. Register decode with namespace mismatch (out-of-bounds register index) -/

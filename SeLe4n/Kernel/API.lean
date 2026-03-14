@@ -385,8 +385,8 @@ private def dispatchWithCap (syscallId : SyscallId) (tid : SeLe4n.ThreadId)
       endpointReply tid targetTid { registers := #[], caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   -- CSpace operations: the cap targets a CNode object, but source/dest slot
-  -- indices come from message registers (not modeled in SyscallDecodeResult).
-  -- Full MR-based argument extraction deferred to WS-J1-E.
+  -- indices come from message registers. Per-syscall argument decode and
+  -- dispatch wiring deferred to WS-K-B/K-C.
   | .cspaceMint  => fun _ => .error .illegalState
   | .cspaceCopy  => fun _ => .error .illegalState
   | .cspaceMove  => fun _ => .error .illegalState
