@@ -1143,7 +1143,9 @@ Invariant preservation:
 
 Non-interference:
 - `decodeSyscallArgs_preserves_lowEquivalent` — pure function, NI trivial
+- `lookupThreadRegisterContext_preserves_lowEquivalent` — read-only, low-equivalence preserved across paired lookups
 - `lookupThreadRegisterContext_preserves_projection` — read-only, projection unchanged
+- `syscallLookupCap_preserves_projection` — read-only capability lookup, projection unchanged
 - `syscallEntry_preserves_projection` — compositional projection preservation
 - `NonInterferenceStep.syscallDecodeError` — decode failure step (state unchanged, `st' = st`)
 - `NonInterferenceStep.syscallDispatchHigh` — high-domain dispatch step (carries projection preservation proof)

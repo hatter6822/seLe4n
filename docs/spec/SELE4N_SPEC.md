@@ -50,9 +50,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.15.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 35,009 across 68 Lean files |
+| **Production LoC** | 35,276 across 68 Lean files |
 | **Test LoC** | 3,459 across 4 Lean test suites |
-| **Proved declarations** | 1,126 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
 | **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch; v0.15.7, audit refinements), J1-D completed (v0.15.8, invariant/NI integration), J1-E..F pending (testing, CdtNodeId cleanup) + Raspberry Pi 5 hardware binding |

@@ -641,12 +641,14 @@ theorem syscallEntry_preserves_proofLayerInvariantBundle
 -- WS-J1-D: Non-interference theorems for the syscall decode path
 -- ============================================================================
 
-/-- WS-J1-D: `decodeSyscallArgs` is a pure function (no state) and trivially
-preserves low-equivalence. Stated for proof-surface anchoring. -/
+/-- WS-J1-D: `decodeSyscallArgs` is a pure function over the register file —
+it does not access or modify kernel state. Any two low-equivalent states remain
+low-equivalent regardless of the decode result, because decode operates on the
+register file (a `RegisterFile` value, not part of `SystemState`) and produces
+a `SyscallDecodeResult` without state side-effects. -/
 theorem decodeSyscallArgs_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
-    (_layout : SeLe4n.SyscallRegisterLayout) (_regs : SeLe4n.RegisterFile)
-    (_regCount : Nat) (s₁ s₂ : SystemState)
+    (s₁ s₂ : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂) :
     lowEquivalent ctx observer s₁ s₂ :=
   hLow
@@ -660,6 +662,31 @@ theorem lookupThreadRegisterContext_preserves_projection
     (hOk : lookupThreadRegisterContext tid st = .ok (regs, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   have hEq := lookupThreadRegisterContext_state_unchanged tid st regs st' hOk
+  subst hEq; rfl
+
+/-- WS-J1-D: `lookupThreadRegisterContext` is read-only and preserves
+low-equivalence. Two low-equivalent states remain so after lookup. -/
+theorem lookupThreadRegisterContext_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (tid : SeLe4n.ThreadId)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (regs₁ regs₂ : SeLe4n.RegisterFile)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hOk₁ : lookupThreadRegisterContext tid s₁ = .ok (regs₁, s₁'))
+    (hOk₂ : lookupThreadRegisterContext tid s₂ = .ok (regs₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have h₁ := lookupThreadRegisterContext_state_unchanged tid s₁ regs₁ s₁' hOk₁
+  have h₂ := lookupThreadRegisterContext_state_unchanged tid s₂ regs₂ s₂' hOk₂
+  subst h₁; subst h₂; exact hLow
+
+/-- WS-J1-D: `syscallLookupCap` is read-only and preserves the observer's
+projection. Capability resolution and right-checking do not modify state. -/
+theorem syscallLookupCap_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (gate : SyscallGate) (st st' : SystemState) (cap : Capability)
+    (hOk : syscallLookupCap gate st = .ok (cap, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  have hEq := syscallLookupCap_preserves_state gate st st' cap hOk
   subst hEq; rfl
 
 /-- WS-J1-D: `syscallEntry` preserves the observer's projection when the

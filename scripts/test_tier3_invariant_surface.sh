@@ -829,6 +829,8 @@ run_check "INVARIANT" rg -n '^theorem writeRegisterState_preserves_registerDecod
 run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntry_error_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lookupThreadRegisterContext_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_preserves_projection' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projection' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntry_error_yields_NI_step' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntry_success_yields_NI_step' SeLe4n/Kernel/API.lean
@@ -862,6 +864,8 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.registerDecodeConsistent_of_proofLayerInvariantBundle
 #check @SeLe4n.Kernel.syscallEntry_preserves_proofLayerInvariantBundle
 #check @SeLe4n.Kernel.decodeSyscallArgs_preserves_lowEquivalent
+#check @SeLe4n.Kernel.lookupThreadRegisterContext_preserves_lowEquivalent
+#check @SeLe4n.Kernel.syscallLookupCap_preserves_projection
 #check @SeLe4n.Kernel.syscallEntry_preserves_projection
 #check @SeLe4n.Kernel.syscallEntry_error_yields_NI_step
 #check @SeLe4n.Kernel.syscallEntry_success_yields_NI_step

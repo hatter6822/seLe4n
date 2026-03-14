@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/invariant-information-flow-integration-7Ssry",
-      "commit_sha": "74252d87ddbd138a276aadd030e5de9aab50c0c7",
-      "tree_sha": "1b6ce4c0c8bed63e20ab2d17754b642f11c0e75a",
-      "committed_at_utc": "2026-03-14T03:44:18+00:00"
+      "commit_sha": "99df0f97880d17a9fab3e85e58c8de8ce512269c",
+      "tree_sha": "c4fdb55ada67218bd39bb00dc859aca4d1177589",
+      "committed_at_utc": "2026-03-14T04:02:31+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9f45a8d3d0687e9788d9331a1373526fa8bbbd9b764035409010adc23098ebc1"
+    "source_digest": "2d12994e0f57c9c2cb5c006392079830182d575264224f63504d4deaaf18c2f7"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2116
+    "declaration_count": 2118
   },
   "readme_sync": {
-    "version": "0.15.7",
+    "version": "0.15.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35249,
+    "production_loc": 35276,
     "test_files": 4,
     "test_loc": 3459,
-    "proved_theorem_lemma_decls": 1126,
+    "proved_theorem_lemma_decls": 1128,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 41,
+      "declaration_count": 43,
       "declarations": [
         {
           "kind": "namespace",
@@ -353,13 +353,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 646,
+          "line": 649,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 656,
+          "line": 658,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -367,8 +367,27 @@
         },
         {
           "kind": "theorem",
+          "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
+          "line": 669,
+          "called": [
+            "lookupThreadRegisterContext",
+            "lookupThreadRegisterContext_state_unchanged"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallLookupCap_preserves_projection",
+          "line": 684,
+          "called": [
+            "SyscallGate",
+            "syscallLookupCap",
+            "syscallLookupCap_preserves_state"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 672,
+          "line": 699,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -378,7 +397,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 695,
+          "line": 722,
           "called": [
             "syscallEntry"
           ]
@@ -386,7 +405,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 710,
+          "line": 737,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
