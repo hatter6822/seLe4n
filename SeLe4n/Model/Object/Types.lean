@@ -577,3 +577,168 @@ theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
   · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
 
 end UntypedObject
+
+-- ============================================================================
+-- Syscall decode types — register-sourced syscall argument decoding
+-- ============================================================================
+
+/-- Typed syscall identifier covering the modeled syscall set.
+    Maps to the syscall number register value (x7 on ARM64).
+    Each variant corresponds to exactly one kernel API entry point. -/
+inductive SyscallId where
+  | send
+  | receive
+  | call
+  | reply
+  | cspaceMint
+  | cspaceCopy
+  | cspaceMove
+  | cspaceDelete
+  | lifecycleRetype
+  | vspaceMap
+  | vspaceUnmap
+  | serviceStart
+  | serviceStop
+  deriving Repr, DecidableEq, Inhabited
+
+namespace SyscallId
+
+/-- Encode a syscall identifier to its numeric value for the syscall number
+    register. The encoding matches the canonical ordering and is injective. -/
+@[inline] def toNat : SyscallId → Nat
+  | .send           => 0
+  | .receive        => 1
+  | .call           => 2
+  | .reply          => 3
+  | .cspaceMint     => 4
+  | .cspaceCopy     => 5
+  | .cspaceMove     => 6
+  | .cspaceDelete   => 7
+  | .lifecycleRetype => 8
+  | .vspaceMap      => 9
+  | .vspaceUnmap    => 10
+  | .serviceStart   => 11
+  | .serviceStop    => 12
+
+/-- Total number of modeled syscalls. -/
+def count : Nat := 13
+
+/-- Decode a natural number to a syscall identifier.
+    Returns `none` for values outside the modeled set. -/
+@[inline] def ofNat? : Nat → Option SyscallId
+  | 0  => some .send
+  | 1  => some .receive
+  | 2  => some .call
+  | 3  => some .reply
+  | 4  => some .cspaceMint
+  | 5  => some .cspaceCopy
+  | 6  => some .cspaceMove
+  | 7  => some .cspaceDelete
+  | 8  => some .lifecycleRetype
+  | 9  => some .vspaceMap
+  | 10 => some .vspaceUnmap
+  | 11 => some .serviceStart
+  | 12 => some .serviceStop
+  | _  => none
+
+instance : ToString SyscallId where
+  toString
+    | .send           => "send"
+    | .receive        => "receive"
+    | .call           => "call"
+    | .reply          => "reply"
+    | .cspaceMint     => "cspaceMint"
+    | .cspaceCopy     => "cspaceCopy"
+    | .cspaceMove     => "cspaceMove"
+    | .cspaceDelete   => "cspaceDelete"
+    | .lifecycleRetype => "lifecycleRetype"
+    | .vspaceMap      => "vspaceMap"
+    | .vspaceUnmap    => "vspaceUnmap"
+    | .serviceStart   => "serviceStart"
+    | .serviceStop    => "serviceStop"
+
+/-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
+theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
+  cases s <;> rfl
+
+/-- Round-trip: decoding then encoding preserves the numeric value. -/
+theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) :
+    s.toNat = n := by
+  revert s
+  match n with
+  | 0  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 1  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 2  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 3  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 4  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 5  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 6  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 7  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 8  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 9  => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 10 => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 11 => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 12 => intro s h; simp [ofNat?] at h; subst h; rfl
+  | n + 13 => intro s h; simp [ofNat?] at h
+
+/-- Injectivity: the toNat encoding is injective. -/
+theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
+  have ha := ofNat_toNat a
+  have hb := ofNat_toNat b
+  rw [h] at ha
+  rw [ha] at hb
+  exact Option.some.inj hb
+
+end SyscallId
+
+/-- Decoded message-info word layout, matching seL4's `seL4_MessageInfo_t`.
+    Encodes the metadata carried in the message-info register (x1 on ARM64):
+    - `length`: number of message registers used (0..120)
+    - `extraCaps`: number of extra capabilities transferred (0..3)
+    - `label`: user-specified label/tag for message discrimination -/
+structure MessageInfo where
+  length    : Nat
+  extraCaps : Nat
+  label     : Nat
+  deriving Repr, DecidableEq, Inhabited
+
+namespace MessageInfo
+
+/-- Maximum message length in registers (matches seL4 seL4_MsgMaxLength). -/
+def maxLength : Nat := maxMessageRegisters
+
+/-- Maximum extra capabilities per message (matches seL4 seL4_MsgMaxExtraCaps). -/
+def maxExtraCaps' : Nat := maxExtraCaps
+
+/-- Encode a MessageInfo into a single register word.
+    Bit layout (seL4 convention):
+    - bits  0..6  : length (7 bits, max 120)
+    - bits  7..8  : extraCaps (2 bits, max 3)
+    - bits  9..31 : label (23 bits)
+    This is a simplified model; real seL4 uses different bit widths. -/
+@[inline] def encode (mi : MessageInfo) : Nat :=
+  mi.length ||| (mi.extraCaps <<< 7) ||| (mi.label <<< 9)
+
+/-- Decode a raw word into MessageInfo fields by extracting bit fields.
+    Returns `none` if the length or extraCaps fields exceed their bounds. -/
+@[inline] def decode (w : Nat) : Option MessageInfo :=
+  let length    := w &&& 0x7F          -- bits 0..6
+  let extraCaps := (w >>> 7) &&& 0x3   -- bits 7..8
+  let label     := w >>> 9             -- bits 9+
+  if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps then
+    some { length, extraCaps, label }
+  else
+    none
+
+instance : ToString MessageInfo where
+  toString mi := s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, label={mi.label})"
+
+end MessageInfo
+
+/-- Result of decoding raw register values into typed syscall arguments.
+    Produced by the register decode layer; consumed by syscall dispatch. -/
+structure SyscallDecodeResult where
+  capAddr   : SeLe4n.CPtr
+  msgInfo   : MessageInfo
+  syscallId : SyscallId
+  deriving Repr, DecidableEq

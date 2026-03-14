@@ -1070,34 +1070,51 @@ structural properties rather than just symbol existence:
 - `runWSH16LifecycleChecks` test function exists
 - `schedule` uses O(1) `runQueue` membership
 
-## 30. WS-J1 Register-indexed authoritative namespaces (planned)
+## 30. WS-J1 Register-indexed authoritative namespaces
 
 WS-J1 introduces a register decode layer and typed register wrappers,
 closing the gap between the abstract model and real ARM64 syscall argument
 delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
 
-**Planned proof surface:**
-
-- `decodeCapPtr_roundtrip` — decode ∘ encode = identity for CPtr values.
-- `decodeMsgInfo_roundtrip` — decode ∘ encode = identity for MessageInfo.
-- `decodeSyscallArgs_deterministic` — identical register inputs produce identical decode results.
-- `syscallEntry_requires_valid_decode` — successful syscall entry implies valid register decode.
-- `syscallEntry_implies_capability_held` — successful capability-gated syscall implies caller held required right (threads through `syscallInvoke_requires_right`).
-- `registerDecodeConsistent` — decoded register values index into valid kernel state.
-- `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
-- Decode-related `NonInterferenceStep` constructors with NI preservation.
-
-**Completed types (WS-J1-A):**
+**Completed types (WS-J1-A, v0.15.4):**
 
 - `RegName` — typed wrapper structure with `DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `ofNat`/`toNat`, roundtrip/injectivity proofs
 - `RegValue` — typed wrapper structure with identical instance suite
 - `RegisterFile.gpr` — updated from `Nat → Nat` to `RegName → RegValue`
 - All 10 machine lemmas (`readReg_writeReg_eq/ne`, `writeReg_preserves_pc/sp`, etc.) re-proved for typed wrappers
 
-**Planned types (WS-J1-B..F):**
+**Completed decode layer (WS-J1-B, v0.15.5):**
 
-- `SyscallId` — inductive covering modeled syscall set
-- `MessageInfo` — seL4 message-info word layout
-- `SyscallRegisterLayout` — ARM64 register-to-argument mapping
-- `SyscallDecodeResult` — decoded syscall arguments
+Types:
+- `SyscallId` — inductive covering 13 modeled syscalls with `toNat`/`ofNat?` encoding, `toNat_injective`/`ofNat_toNat`/`toNat_ofNat` proofs
+- `MessageInfo` — seL4 message-info word bit-field layout with `encode`/`decode`
+- `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7)
+- `SyscallDecodeResult` — typed decode output consumed by syscall dispatch
+- `MachineConfig.registerCount` — bounded register space per architecture
+
+Decode functions (`RegisterDecode.lean`):
+- `decodeCapPtr` — total decode (every register value is a valid CPtr)
+- `decodeMsgInfo` — partial decode, validates length/extraCaps bounds
+- `decodeSyscallId` — partial decode, validates against modeled syscall set
+- `validateRegBound` — per-architecture register index bounds check
+- `decodeSyscallArgs` — entry point combining all register reads + bounds validation + decoding
+
+Round-trip theorems:
+- `decodeCapPtr_roundtrip` — `decodeCapPtr (encodeCapPtr c) = .ok c`
+- `decodeSyscallId_roundtrip` — `decodeSyscallId (encodeSyscallId s) = .ok s`
+
+Determinism & error exclusivity:
+- `decodeSyscallArgs_deterministic` — identical inputs produce identical results
+- `decodeSyscallId_error_iff` — fails iff `SyscallId.ofNat?` returns `none`
+- `decodeMsgInfo_error_iff` — fails iff `MessageInfo.decode` returns `none`
+- `decodeCapPtr_always_ok` — every register value decodes to some CPtr
+- `validateRegBound_ok_iff` / `validateRegBound_error_iff` — bounds iff-theorems
+
+**Planned proof surface (WS-J1-C..F):**
+
+- `syscallEntry_requires_valid_decode` — successful syscall entry implies valid register decode.
+- `syscallEntry_implies_capability_held` — successful capability-gated syscall implies caller held required right (threads through `syscallInvoke_requires_right`).
+- `registerDecodeConsistent` — decoded register values index into valid kernel state.
+- `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
+- Decode-related `NonInterferenceStep` constructors with NI preservation.
 - `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`)

@@ -386,6 +386,39 @@ def wellFormed (cfg : MachineConfig) : Bool :=
   && cfg.physicalAddressWidth > 0
   && cfg.memoryMap.all (·.endAddr ≤ 2 ^ cfg.physicalAddressWidth)
 
+/-- Number of general-purpose registers in the architecture.
+    ARM64: 31 GPRs (x0–x30). Default 32 includes x0–x30 plus xzr. -/
+def registerCount (cfg : MachineConfig) : Nat :=
+  if cfg.registerWidth = 64 then 32 else 16
+
 end MachineConfig
+
+-- ============================================================================
+-- Syscall register layout — mapping from hardware registers to syscall arguments
+-- ============================================================================
+
+/-- Mapping from architecture-specific registers to typed syscall arguments.
+    Encodes the real hardware convention for syscall argument passing:
+    - capPtrReg: destination capability pointer register (x0 on ARM64)
+    - msgInfoReg: message info word register (x1 on ARM64)
+    - msgRegs: inline message registers (x2–x5 on ARM64)
+    - syscallNumReg: syscall number register (x7 on ARM64) -/
+structure SyscallRegisterLayout where
+  capPtrReg     : RegName
+  msgInfoReg    : RegName
+  msgRegs       : Array RegName
+  syscallNumReg : RegName
+  deriving Repr
+
+/-- Default ARM64 syscall register layout following the seL4 convention:
+    - x0: capability pointer (destination cap address)
+    - x1: message info word (length, extra caps, label)
+    - x2–x5: inline message registers
+    - x7: syscall number -/
+def arm64DefaultLayout : SyscallRegisterLayout :=
+  { capPtrReg     := ⟨0⟩    -- x0
+    msgInfoReg    := ⟨1⟩    -- x1
+    msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]  -- x2–x5
+    syscallNumReg := ⟨7⟩ }  -- x7
 
 end SeLe4n

@@ -45,7 +45,19 @@ Each component has a clear semantic meaning. Bundle composition is explicit and 
 
 Every claimed semantic property has both a theorem (machine-checked) and a runtime witness (fixture-checked). If a refactor changes behavior, the fixture breaks before the PR lands.
 
-### 1.5 Operations/Invariant split
+### 1.5 Register decode boundary — type-safe syscall argument parsing
+
+On real ARM64 hardware, syscall arguments arrive in general-purpose registers (x0–x7). The kernel must decode these raw untrusted values into typed kernel identifiers before any authority check can proceed. seLe4n models this boundary explicitly with `RegisterDecode.lean`:
+
+- **Total decode functions** return `Except KernelError` — no partial functions at the syscall boundary.
+- **Round-trip lemmas** prove that encoding then decoding recovers the original value (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`).
+- **Determinism theorem** proves decode of identical register states produces identical results.
+- **Error exclusivity** theorems map each error variant to exactly one failure mode (`decodeSyscallId_error_iff`, `decodeMsgInfo_error_iff`).
+- **Platform-configurable layout** via `SyscallRegisterLayout` — the ARM64 default maps x0=capPtr, x1=msgInfo, x2–x5=msgRegs, x7=syscallNum.
+
+This closes the gap between machine registers and kernel transitions: nothing happens at the syscall boundary that isn't either proved or explicitly modeled as an error. The module is self-contained (no kernel subsystem imports), ensuring the decode layer cannot accidentally depend on kernel state it's supposed to validate.
+
+### 1.6 Operations/Invariant split
 
 Every kernel subsystem is split into two files:
 

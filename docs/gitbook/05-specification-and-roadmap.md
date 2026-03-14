@@ -15,12 +15,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.14.10` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 34,171 across 67 files |
-| Test LoC | 2,886 across 3 suites |
-| Proved declarations | 1,086 theorem/lemma declarations (zero sorry/axiom) |
-| Total declarations | 2,006 across 70 modules |
+| Production LoC | 34,741 across 68 files |
+| Test LoC | 3,459 across 4 suites |
+| Proved declarations | 1,108 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B..F pending (decode layer, syscall entry, invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C..F pending (syscall entry, invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -51,7 +50,23 @@ WS-H14 (type safety & Prelude foundations, v0.14.6) →
 WS-H15 (platform/API hardening, v0.14.7) →
 WS-H16 (testing/documentation cleanup, v0.14.8) →
 WS-F5..F8 (model fidelity, invariant quality, testing, cleanup, v0.14.9) →
-WS-I1 (critical testing infrastructure, v0.15.0).
+WS-I1 (critical testing infrastructure, v0.15.0) →
+WS-J1-A (typed register wrappers, v0.15.4) →
+WS-J1-B (register decode layer, v0.15.5).
+
+## Completed: WS-J1-B Register Decode Layer (v0.15.5)
+
+Register decode layer closing the gap between raw machine registers and typed
+kernel operations. `SyscallId` inductive (13 modeled syscalls with injective
+encoding and round-trip proofs), `MessageInfo` structure (seL4 message-info
+bit-field layout with `encode`/`decode`), `SyscallDecodeResult` typed output,
+total deterministic decode functions (`decodeCapPtr`, `decodeMsgInfo`,
+`decodeSyscallId`, `validateRegBound`, `decodeSyscallArgs`) in self-contained
+`RegisterDecode.lean` module, `SyscallRegisterLayout` with `arm64DefaultLayout`
+(x0–x7 convention), `MachineConfig.registerCount`, 3 new `KernelError` variants
+(`invalidRegister`, `invalidSyscallNumber`, `invalidMessageInfo`), round-trip
+lemmas, determinism theorem, error exclusivity theorems. Zero sorry/axiom.
+Closes WS-J1 Phase B.
 
 ## Completed: WS-H12e Cross-Subsystem Invariant Reconciliation (v0.14.2)
 
