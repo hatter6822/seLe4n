@@ -1110,10 +1110,25 @@ Determinism & error exclusivity:
 - `decodeCapPtr_always_ok` — every register value decodes to some CPtr
 - `validateRegBound_ok_iff` / `validateRegBound_error_iff` — bounds iff-theorems
 
-**Planned proof surface (WS-J1-C..F):**
+**Completed syscall entry point and dispatch (WS-J1-C, v0.15.6; refinements v0.15.7):**
 
-- `syscallEntry_requires_valid_decode` — successful syscall entry implies valid register decode.
-- `syscallEntry_implies_capability_held` — successful capability-gated syscall implies caller held required right (threads through `syscallInvoke_requires_right`).
+Functions:
+- `lookupThreadRegisterContext` — extracts saved register context from current thread's TCB
+- `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight` (13 cases)
+- `dispatchWithCap` — per-syscall routing: IPC send/receive/call/reply and service start/stop extract targets from resolved capability's `CapTarget`; CSpace mint/copy/move/delete, lifecycle retype, and VSpace map/unmap return `illegalState` (MR-dependent args, deferred to WS-J1-E)
+- `dispatchSyscall` — constructs `SyscallGate` from caller's TCB and CSpace root CNode, routes through `syscallInvoke`
+- `syscallEntry` — top-level register-sourced entry point: reads `scheduler.current`, extracts registers, decodes (with configurable `regCount`, default 32), dispatches
+- `MachineConfig.registerCount` — promoted from computed def to configurable structure field (default 32)
+
+Soundness theorems:
+- `syscallEntry_requires_valid_decode` — successful entry implies `decodeSyscallArgs` returned `.ok`
+- `syscallEntry_implies_capability_held` — successful entry implies full capability-resolution chain: TCB/CSpace root lookup succeeded, capability with required access right resolved from decoded `capAddr`
+- `dispatchSyscall_requires_right` — dispatch success implies capability with required access right was held (threads through `syscallInvoke_requires_right`)
+- `lookupThreadRegisterContext_state_unchanged` — register context lookup is read-only
+- `syscallRequiredRight_total` — every `SyscallId` maps to exactly one `AccessRight`
+
+**Planned proof surface (WS-J1-D..F):**
+
 - `registerDecodeConsistent` — decoded register values index into valid kernel state.
 - `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
 - Decode-related `NonInterferenceStep` constructors with NI preservation.

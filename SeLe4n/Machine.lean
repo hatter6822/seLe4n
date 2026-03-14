@@ -323,6 +323,10 @@ structure MachineConfig where
   maxASID : Nat
   /-- Platform memory map: declared physical memory regions. -/
   memoryMap : List MemoryRegion
+  /-- WS-J1-C: Number of general-purpose registers in the architecture.
+      ARM64: 32 (x0–x30 plus xzr). Used by the register decode layer to
+      validate register indices at syscall boundaries. -/
+  registerCount : Nat := 32
   deriving Repr
 
 namespace MachineConfig
@@ -385,11 +389,6 @@ def wellFormed (cfg : MachineConfig) : Bool :=
   && cfg.virtualAddressWidth > 0
   && cfg.physicalAddressWidth > 0
   && cfg.memoryMap.all (·.endAddr ≤ 2 ^ cfg.physicalAddressWidth)
-
-/-- Number of general-purpose registers in the architecture.
-    ARM64: 31 GPRs (x0–x30). Default 32 includes x0–x30 plus xzr. -/
-def registerCount (cfg : MachineConfig) : Nat :=
-  if cfg.registerWidth = 64 then 32 else 16
 
 end MachineConfig
 
