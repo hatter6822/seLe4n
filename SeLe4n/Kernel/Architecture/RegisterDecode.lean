@@ -109,6 +109,31 @@ theorem decodeSyscallId_roundtrip (s : SyscallId) :
   simp [decodeSyscallId, encodeSyscallId]
   rw [SyscallId.ofNat_toNat s]
 
+/-- Round-trip: encoding then decoding a MessageInfo recovers the original,
+    provided the fields satisfy seL4 message-info bounds.
+    Completes the round-trip proof surface for all three decode components. -/
+theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
+    (hLen : mi.length ≤ maxMessageRegisters)
+    (hCaps : mi.extraCaps ≤ maxExtraCaps) :
+    decodeMsgInfo (encodeMsgInfo mi) = .ok mi := by
+  simp only [decodeMsgInfo, encodeMsgInfo]
+  have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps
+  simp only [h]
+
+/-- All three per-component round-trips compose: given a well-formed
+    `SyscallDecodeResult`, encoding each field then decoding recovers
+    the original. Stated as individual component equalities that can be
+    composed at the call site for any register layout. -/
+theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
+    (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
+    (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps) :
+    decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
+    decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
+    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId :=
+  ⟨decodeCapPtr_roundtrip decoded.capAddr,
+   decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps,
+   decodeSyscallId_roundtrip decoded.syscallId⟩
+
 -- ============================================================================
 -- Determinism theorem
 -- ============================================================================

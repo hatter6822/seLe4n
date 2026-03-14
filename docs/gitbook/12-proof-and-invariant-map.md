@@ -1088,7 +1088,7 @@ delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits
 Types:
 - `SyscallId` — inductive covering 13 modeled syscalls with `toNat`/`ofNat?` encoding, `toNat_injective`/`ofNat_toNat`/`toNat_ofNat` proofs
 - `MessageInfo` — seL4 message-info word bit-field layout with `encode`/`decode`
-- `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7)
+- `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7), `DecidableEq` and `BEq` instances
 - `SyscallDecodeResult` — typed decode output consumed by syscall dispatch
 - `MachineConfig.registerCount` — bounded register space per architecture
 
@@ -1102,6 +1102,9 @@ Decode functions (`RegisterDecode.lean`):
 Round-trip theorems:
 - `decodeCapPtr_roundtrip` — `decodeCapPtr (encodeCapPtr c) = .ok c`
 - `decodeSyscallId_roundtrip` — `decodeSyscallId (encodeSyscallId s) = .ok s`
+- `decodeMsgInfo_roundtrip` — `decodeMsgInfo (encodeMsgInfo mi) = .ok mi` (requires `mi.length ≤ maxMessageRegisters ∧ mi.extraCaps ≤ maxExtraCaps`; delegates to `MessageInfo.encode_decode_roundtrip` bitwise proof)
+- `decode_components_roundtrip` — composite: all three per-component round-trips hold simultaneously for any well-formed `SyscallDecodeResult`
+- `MessageInfo.encode_decode_roundtrip` — bit-field round-trip: `MessageInfo.decode (MessageInfo.encode mi) = some mi` (proved via `Nat.testBit` extensionality with three bitwise extraction helper lemmas: `and_mask_127`, `shift7_and_mask_3`, `shift9_extracts_label`)
 
 Determinism & error exclusivity:
 - `decodeSyscallArgs_deterministic` — identical inputs produce identical results
@@ -1176,7 +1179,7 @@ Operation-chain tests (`tests/OperationChainSuite.lean`):
 
 Tier 3 invariant surface anchors:
 - 5 definition anchors (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`, `validateRegBound`, `decodeSyscallArgs`)
-- 8 theorem anchors (round-trip, determinism, error-iff, always-ok, bounds-iff)
+- 11 theorem anchors (round-trip ×4 including `decodeMsgInfo_roundtrip`, `decode_components_roundtrip`, `encode_decode_roundtrip`; determinism; error-iff ×2; always-ok; bounds-iff ×2)
 
 **Completed CdtNodeId cleanup (WS-J1-F, v0.15.10):**
 

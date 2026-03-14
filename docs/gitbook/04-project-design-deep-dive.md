@@ -50,7 +50,7 @@ Every claimed semantic property has both a theorem (machine-checked) and a runti
 On real ARM64 hardware, syscall arguments arrive in general-purpose registers (x0–x7). The kernel must decode these raw untrusted values into typed kernel identifiers before any authority check can proceed. seLe4n models this boundary explicitly with `RegisterDecode.lean`:
 
 - **Total decode functions** return `Except KernelError` — no partial functions at the syscall boundary.
-- **Round-trip lemmas** prove that encoding then decoding recovers the original value (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`).
+- **Round-trip lemmas** prove that encoding then decoding recovers the original value for all three decode components: `decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` (bitwise proof via `Nat.testBit` extensionality over seL4 message-info bit-field layout). The composite `decode_components_roundtrip` theorem proves all three round-trips hold simultaneously. The underlying `MessageInfo.encode_decode_roundtrip` proves the bit-field extraction at the type level.
 - **Determinism theorem** proves decode of identical register states produces identical results.
 - **Error exclusivity** theorems map each error variant to exactly one failure mode (`decodeSyscallId_error_iff`, `decodeMsgInfo_error_iff`).
 - **Platform-configurable layout** via `SyscallRegisterLayout` — the ARM64 default maps x0=capPtr, x1=msgInfo, x2–x5=msgRegs, x7=syscallNum.

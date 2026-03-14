@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "1b4fc63abaf41ce43503af709a78ddfaa52cfd1b",
-      "tree_sha": "5212ec856c754aefec9ee0faf72f9d2d5d59425f",
-      "committed_at_utc": "2026-03-14T02:15:20-04:00"
+      "branch": "claude/audit-optimize-workstreams-o8Bmg",
+      "commit_sha": "f866c24c09a429aa7c3ca1c3e219d715f1302929",
+      "tree_sha": "0049f3ca99a83d9e9847f0121ad8be5eac27a29e",
+      "committed_at_utc": "2026-03-14T06:15:29+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6dcc772539c3274ac97eb535965247626cbbc6931d2f4f11d482f446cb544883"
+    "source_digest": "25548824e6ef17a873668915238cf51d45242a3580766097bf596cb72715f2ad"
   },
   "summary": {
     "module_count": 72,
-    "declaration_count": 2130
+    "declaration_count": 2137
   },
   "readme_sync": {
     "version": "0.15.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35455,
+    "production_loc": 35592,
     "test_files": 4,
     "test_loc": 3752,
-    "proved_theorem_lemma_decls": 1128,
+    "proved_theorem_lemma_decls": 1134,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -984,7 +984,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 17,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -1065,8 +1065,33 @@
         },
         {
           "kind": "theorem",
+          "name": "decodeMsgInfo_roundtrip",
+          "line": 115,
+          "called": [
+            "decodeMsgInfo",
+            "encodeMsgInfo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decode_components_roundtrip",
+          "line": 127,
+          "called": [
+            "decodeCapPtr",
+            "decodeCapPtr_roundtrip",
+            "decodeMsgInfo",
+            "decodeMsgInfo_roundtrip",
+            "decodeSyscallId",
+            "decodeSyscallId_roundtrip",
+            "encodeCapPtr",
+            "encodeMsgInfo",
+            "encodeSyscallId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "decodeSyscallArgs_deterministic",
-          "line": 119,
+          "line": 144,
           "called": [
             "decodeSyscallArgs"
           ]
@@ -1074,7 +1099,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_error_iff",
-          "line": 130,
+          "line": 155,
           "called": [
             "decodeSyscallId"
           ]
@@ -1082,7 +1107,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_error_iff",
-          "line": 139,
+          "line": 164,
           "called": [
             "decodeMsgInfo"
           ]
@@ -1090,7 +1115,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_always_ok",
-          "line": 148,
+          "line": 173,
           "called": [
             "decodeCapPtr"
           ]
@@ -1098,7 +1123,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_ok_iff",
-          "line": 153,
+          "line": 178,
           "called": [
             "validateRegBound"
           ]
@@ -1106,7 +1131,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_error_iff",
-          "line": 161,
+          "line": 186,
           "called": [
             "validateRegBound"
           ]
@@ -10363,7 +10388,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 83,
+      "declaration_count": 84,
       "declarations": [
         {
           "kind": "namespace",
@@ -11040,9 +11065,17 @@
           ]
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:414>",
+          "line": 414,
+          "called": [
+            "SyscallRegisterLayout"
+          ]
+        },
+        {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 417,
+          "line": 423,
           "called": [
             "SyscallRegisterLayout"
           ]
@@ -11867,7 +11900,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 91,
+      "declaration_count": 95,
       "declarations": [
         {
           "kind": "namespace",
@@ -12590,9 +12623,42 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "and_mask_127",
+          "line": 742,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "shift7_and_mask_3",
+          "line": 767,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "shift9_extracts_label",
+          "line": 799,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "encode_decode_roundtrip",
+          "line": 828,
+          "called": [
+            "MessageInfo",
+            "and_mask_127",
+            "decode",
+            "encode",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "shift7_and_mask_3",
+            "shift9_extracts_label"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 740,
+          "line": 846,
           "called": [
             "MessageInfo",
             "SyscallId"
