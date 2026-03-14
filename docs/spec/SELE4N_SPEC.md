@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.15.7` (`lakefile.toml`) |
+| **Package version** | `0.15.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 35,276 across 68 Lean files |
-| **Test LoC** | 3,459 across 4 Lean test suites |
+| **Production LoC** | 35,416 across 68 Lean files |
+| **Test LoC** | 3,733 across 4 Lean test suites |
 | **Proved declarations** | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch; v0.15.7, audit refinements), J1-D completed (v0.15.8, invariant/NI integration), J1-E..F pending (testing, CdtNodeId cleanup) + Raspberry Pi 5 hardware binding |
+| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch; v0.15.7, audit refinements), J1-D completed (v0.15.8, invariant/NI integration), J1-E completed (v0.15.9, testing and trace evidence), J1-F pending (CdtNodeId cleanup + docs) + Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

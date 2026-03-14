@@ -55,7 +55,18 @@ to configurable field; 5 soundness theorems proved.
 for MR-dependent ops (full MR extraction deferred to WS-J1-E), `syscallEntry` accepts
 `regCount` parameter for architectural bounds, `syscallEntry_implies_capability_held`
 strengthened to full capability-resolution chain.
-Next phase: WS-J1-D (invariant and information-flow integration for decode path).
+**WS-J1-D completed (v0.15.8):** invariant and information-flow integration for
+decode path; `decodeSyscallArgs_preserves_lowEquivalent` NI theorem; capability
+invariant preservation through `syscallEntry`; scheduler invariant preservation
+through register decode; bridge theorems in Enforcement/Soundness and
+InformationFlow/Invariant/Composition.
+**WS-J1-E completed (v0.15.9):** testing and trace evidence — 18 negative
+decode tests in `NegativeStateSuite.lean`; 5 register-decode trace scenarios
+(RDT-002 through RDT-010) in `MainTraceHarness.lean`; 2 operation-chain tests
+(`chain10RegisterDecodeMultiSyscall`, `chain11RegisterDecodeIpcTransfer`) in
+`OperationChainSuite.lean`; fixture updates; 13 Tier 3 invariant surface
+anchors for RegisterDecode definitions and theorems.
+Next phase: WS-J1-F (CdtNodeId cleanup + documentation sync).
 WS-I1..WS-I4 are completed; WS-I5 Part A (R-12) is superseded by WS-J1.
 
 ### 3.1 WS-H11..H16 — v0.12.15 audit remediation status (completed)

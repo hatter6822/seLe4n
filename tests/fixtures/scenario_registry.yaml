@@ -588,11 +588,36 @@ scenarios:
     function: runRuntimeContractFixtureTrace
     subsystem: Platform
     description: "F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented"
+  RDT-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRegisterDecodeTrace
+    subsystem: Architecture
+    description: "register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0"
+  RDT-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRegisterDecodeTrace
+    subsystem: Architecture
+    description: "syscallEntry send success, endpoint has sender: true"
+  RDT-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRegisterDecodeTrace
+    subsystem: Architecture
+    description: "syscallEntry invalid syscall decode error: SeLe4n.Model.KernelError.invalidSy"
+  RDT-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRegisterDecodeTrace
+    subsystem: Architecture
+    description: "syscallEntry malformed msgInfo decode error: SeLe4n.Model.KernelError.invalid"
+  RDT-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRegisterDecodeTrace
+    subsystem: Architecture
+    description: "syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidReg"
   ITR-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMainTraceFrom
     subsystem: Testing
-    description: "inter-transition invariant checks: 17 passed"
+    description: "inter-transition invariant checks: 18 passed"
   PTY-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runParameterizedTopologyCheck

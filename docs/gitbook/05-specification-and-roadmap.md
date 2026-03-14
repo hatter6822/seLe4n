@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.15.7` |
+| Version | `0.15.9` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 35,009 across 68 files |
-| Test LoC | 3,459 across 4 suites |
-| Proved declarations | 1,113 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 35,416 across 68 files |
+| Test LoC | 3,733 across 4 suites |
+| Proved declarations | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch; v0.15.7, audit refinements), J1-D..F pending (invariant/NI, testing, CdtNodeId); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4), J1-B completed (v0.15.5), J1-C completed (v0.15.6; v0.15.7), J1-D completed (v0.15.8), J1-E completed (v0.15.9, testing and trace evidence), J1-F pending (CdtNodeId cleanup + docs); Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -53,7 +53,33 @@ WS-F5..F8 (model fidelity, invariant quality, testing, cleanup, v0.14.9) →
 WS-I1 (critical testing infrastructure, v0.15.0) →
 WS-J1-A (typed register wrappers, v0.15.4) →
 WS-J1-B (register decode layer, v0.15.5) →
-WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7).
+WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) →
+WS-J1-D (invariant/NI integration, v0.15.8) →
+WS-J1-E (testing and trace evidence, v0.15.9).
+
+## Completed: WS-J1-E Testing and Trace Evidence (v0.15.9)
+
+Testing and trace evidence for the register decode layer. 18 negative decode
+tests in `NegativeStateSuite.lean` covering `validateRegBound`, `decodeSyscallId`,
+`decodeMsgInfo`, `decodeCapPtr`, `decodeSyscallArgs`, and `syscallEntry` error
+paths. 5 register-decode trace scenarios (RDT-002 through RDT-010) in
+`MainTraceHarness.lean`: standalone decode success, full `syscallEntry` send via
+register decode, invalid syscall number, malformed message info, out-of-bounds
+register layout. 2 operation-chain tests (`chain10RegisterDecodeMultiSyscall`,
+`chain11RegisterDecodeIpcTransfer`) in `OperationChainSuite.lean`. Fixture and
+scenario registry updates. 13 Tier 3 invariant surface anchors for
+RegisterDecode definitions and theorems. Zero sorry/axiom. Closes WS-J1 Phase E.
+
+## Completed: WS-J1-D Invariant and NI Integration (v0.15.8)
+
+Invariant and information-flow integration for the register decode path.
+`registerDecodeConsistent` predicate bridging the decode layer to the kernel
+object store. Invariant preservation through `syscallEntry` (compositional:
+decode is pure, lookup is read-only). Non-interference: `decodeSyscallArgs_preserves_lowEquivalent`,
+`lookupThreadRegisterContext_preserves_lowEquivalent/projection`,
+`syscallEntry_preserves_projection`. Two new `NonInterferenceStep` constructors:
+`syscallDecodeError` and `syscallDispatchHigh`. Bridge theorems connecting
+`syscallEntry` outcomes to NI steps. Zero sorry/axiom. Closes WS-J1 Phase D.
 
 ## Completed: WS-J1-C Syscall Entry Point and Dispatch (v0.15.6; refinements v0.15.7)
 
@@ -266,9 +292,9 @@ for the full technical breakdown.
 
 All WS-F and WS-H remediation workstreams are completed. The active
 workstream is **WS-J1** (register-indexed authoritative namespace migration).
-**WS-J1-A completed (v0.15.4):** typed `RegName`/`RegValue` wrapper structures
-with full instance suites, all machine lemmas re-proved, downstream compilation
-fixed. Next phase: WS-J1-B (register decode layer).
+J1-A through J1-E are completed (v0.15.4–v0.15.9): typed register wrappers,
+decode layer, syscall entry point, invariant/NI integration, and testing/trace
+evidence. Next phase: WS-J1-F (CdtNodeId cleanup + documentation sync).
 
 See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
 [`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),

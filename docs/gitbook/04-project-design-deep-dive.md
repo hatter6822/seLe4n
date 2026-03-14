@@ -158,13 +158,19 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
    `Repr`, `ToString`, `ofNat`/`toNat`, roundtrip/injectivity proofs), matching
    the 15 existing typed identifiers. All 10 machine lemmas re-proved.
    Zero sorry/axiom. Zero behavior change.
-2. **Register decode layer** (WS-J1-B — planned): A new `RegisterDecode.lean`
-   module will provide total, deterministic functions that convert raw register
-   words into typed kernel references (`CPtr`, `MessageInfo`, `SyscallId`).
-3. **Syscall entry point** (WS-J1-C — planned): `syscallEntry` reads arguments
-   from the current thread's register context (via the `contextMatchesCurrent`
-   invariant from WS-H12c) and dispatches through the decode layer to `api*`
-   wrappers.
+2. **Register decode layer** (WS-J1-B — **completed**, v0.15.5): `RegisterDecode.lean`
+   provides total, deterministic functions that convert raw register
+   words into typed kernel references (`CPtr`, `MessageInfo`, `SyscallId`),
+   with round-trip lemmas, determinism theorem, and error exclusivity proofs.
+3. **Syscall entry point** (WS-J1-C — **completed**, v0.15.6): `syscallEntry` reads
+   arguments from the current thread's register context and dispatches through
+   the decode layer to `api*` wrappers via `SyscallGate`/`syscallInvoke`.
+4. **Invariant/NI integration** (WS-J1-D — **completed**, v0.15.8):
+   `registerDecodeConsistent` predicate, invariant preservation through
+   `syscallEntry`, NI bridge theorems (`syscallDecodeError`, `syscallDispatchHigh`).
+5. **Testing and trace evidence** (WS-J1-E — **completed**, v0.15.9): 18 negative
+   decode tests, 5 register-decode trace scenarios, 2 operation-chain tests,
+   13 Tier 3 invariant surface anchors.
 
 ```
 User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry

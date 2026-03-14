@@ -1153,8 +1153,31 @@ Non-interference:
 - `syscallEntry_error_yields_NI_step` — bridge: failed `syscallEntry` → `syscallDecodeError` NI step
 - `syscallEntry_success_yields_NI_step` — bridge: successful high-domain `syscallEntry` → `syscallDispatchHigh` NI step
 
-**Planned testing and CdtNodeId cleanup (WS-J1-E..F):**
+**Completed testing and trace evidence (WS-J1-E, v0.15.9):**
 
-- Negative decode tests for every error path (invalid register, invalid syscall number, malformed message info)
-- Register-sourced trace scenarios and operation-chain tests
+Negative decode tests (`tests/NegativeStateSuite.lean`):
+- `validateRegBound` out-of-bounds and boundary-pass (register index 32 ≥ 32, 31 < 32)
+- `decodeSyscallId` invalid number and boundary-pass (99 not modeled, 0 = send)
+- `decodeMsgInfo` oversized length and boundary-pass (127 > maxMessageRegisters, valid info)
+- `decodeCapPtr` zero-valued register (total, always succeeds)
+- `decodeSyscallArgs` bad layout, bad msgReg, invalid syscall in register, malformed msgInfo in register, all-zero valid decode
+- `syscallEntry` no current thread (returns `objectNotFound`)
+
+Register-decode trace scenarios (`SeLe4n/Testing/MainTraceHarness.lean`):
+- RDT-002: standalone decode success (syscall=send, capAddr=0)
+- RDT-003: full `syscallEntry` send via register decode (endpoint has sender)
+- RDT-006: invalid syscall number decode error
+- RDT-008: malformed msgInfo decode error
+- RDT-010: out-of-bounds register layout error
+
+Operation-chain tests (`tests/OperationChainSuite.lean`):
+- `chain10RegisterDecodeMultiSyscall` — multi-syscall sequence (send then receive) via register decode
+- `chain11RegisterDecodeIpcTransfer` — register decode with badge-carrying capability and IPC transfer
+
+Tier 3 invariant surface anchors:
+- 5 definition anchors (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`, `validateRegBound`, `decodeSyscallArgs`)
+- 8 theorem anchors (round-trip, determinism, error-iff, always-ok, bounds-iff)
+
+**Planned CdtNodeId cleanup (WS-J1-F):**
+
 - `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`) with full instance suite

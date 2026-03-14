@@ -1215,6 +1215,145 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println "[RCF-012] F7 readOnlyMemory register unexpected success"
   checkInvariants counter "post-runtime-contract-fixtures" st1
 
+-- ============================================================================
+-- WS-J1-E: Register decode trace scenarios
+-- ============================================================================
+
+/-- WS-J1-E: Exercise the register-sourced syscall entry path:
+1. Successful register decode → capability check → kernel operation (send)
+2. Failed register decode (invalid syscall number) → explicit error return
+3. Register decode with namespace mismatch (out-of-bounds register index) -/
+private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- RDT-002: Verify standalone decode succeeds with valid registers.
+  -- x0=0 (capPtr), x1=0 (msgInfo: len=0, caps=0, label=0), x7=0 (send).
+  let validRegs : SeLe4n.RegisterFile :=
+    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+      gpr := fun _ => ⟨0⟩ }
+  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout validRegs 32 with
+  | .error err =>
+      IO.println s!"[RDT-001] register decode unexpected error: {reprStr err}"
+  | .ok decoded =>
+      IO.println s!"[RDT-002] register decode success: syscall={reprStr decoded.syscallId}, capAddr={decoded.capAddr.toNat}"
+
+  -- RDT-003: Full syscallEntry with valid registers (send to endpoint).
+  -- Build a self-contained state with a properly configured CNode (depth=4, radixWidth=4)
+  -- so that resolveCapAddress succeeds through the register-sourced path.
+  let rdtTid : SeLe4n.ObjId := ⟨500⟩
+  let rdtEp : SeLe4n.ObjId := ⟨501⟩
+  let rdtCn : SeLe4n.ObjId := ⟨502⟩
+  let stRdt : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject rdtTid (.tcb {
+        tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready,
+        registerContext := validRegs })
+      |>.withObject rdtEp (.endpoint {})
+      |>.withObject rdtCn (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object rdtEp,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none })
+        ] })
+      |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withLifecycleObjectType rdtTid .tcb
+      |>.withLifecycleObjectType rdtEp .endpoint
+      |>.withLifecycleObjectType rdtCn .cnode
+      |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨500⟩]
+      |>.build)
+  let stWithCurrent := { stRdt with scheduler := { stRdt.scheduler with current := some ⟨500⟩ } }
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stWithCurrent with
+  | .ok (_, stPost) =>
+      match stPost.objects[rdtEp]? with
+      | some (.endpoint ep) =>
+          let hasSender := ep.sendQ.head.isSome
+          IO.println s!"[RDT-003] syscallEntry send success, endpoint has sender: {hasSender}"
+      | _ => IO.println "[RDT-004] syscallEntry send success, but endpoint not found"
+  | .error err =>
+      IO.println s!"[RDT-005] syscallEntry send error: {reprStr err}"
+
+  -- RDT-006: syscallEntry with invalid syscall number → decode error.
+  let invalidSyscallRegs : SeLe4n.RegisterFile :=
+    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+      gpr := fun r =>
+        if r.val == 7 then ⟨99⟩  -- invalid syscall number
+        else ⟨0⟩ }
+  let stInvalidSyscall : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject rdtTid (.tcb {
+        tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready,
+        registerContext := invalidSyscallRegs })
+      |>.withObject rdtEp (.endpoint {})
+      |>.withObject rdtCn (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object rdtEp,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none })
+        ] })
+      |>.withLifecycleObjectType rdtTid .tcb
+      |>.withLifecycleObjectType rdtEp .endpoint
+      |>.withLifecycleObjectType rdtCn .cnode
+      |>.build)
+  let stInvSc := { stInvalidSyscall with scheduler := { stInvalidSyscall.scheduler with current := some ⟨500⟩ } }
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvSc with
+  | .error err =>
+      IO.println s!"[RDT-006] syscallEntry invalid syscall decode error: {reprStr err}"
+  | .ok _ =>
+      IO.println "[RDT-007] unexpected syscallEntry success with invalid syscall"
+
+  -- RDT-008: syscallEntry with malformed msgInfo → decode error.
+  let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
+    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+      gpr := fun r =>
+        if r.val == 1 then ⟨127⟩  -- length=127 > 120 → invalid
+        else if r.val == 7 then ⟨0⟩  -- valid syscall (send)
+        else ⟨0⟩ }
+  let stMalformedMsgInfo : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject rdtTid (.tcb {
+        tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready,
+        registerContext := malformedMsgInfoRegs })
+      |>.withObject rdtEp (.endpoint {})
+      |>.withObject rdtCn (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object rdtEp,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none })
+        ] })
+      |>.withLifecycleObjectType rdtTid .tcb
+      |>.withLifecycleObjectType rdtEp .endpoint
+      |>.withLifecycleObjectType rdtCn .cnode
+      |>.build)
+  let stMalMsg := { stMalformedMsgInfo with scheduler := { stMalformedMsgInfo.scheduler with current := some ⟨500⟩ } }
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalMsg with
+  | .error err =>
+      IO.println s!"[RDT-008] syscallEntry malformed msgInfo decode error: {reprStr err}"
+  | .ok _ =>
+      IO.println "[RDT-009] unexpected syscallEntry success with malformed msgInfo"
+
+  -- RDT-010: Register decode with namespace mismatch — out-of-bounds layout
+  let outOfBoundsLayout : SeLe4n.SyscallRegisterLayout := {
+    capPtrReg     := ⟨50⟩  -- exceeds 32-register bound
+    msgInfoReg    := ⟨1⟩
+    msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
+    syscallNumReg := ⟨7⟩
+  }
+  match SeLe4n.Kernel.syscallEntry outOfBoundsLayout 32 stWithCurrent with
+  | .error err =>
+      IO.println s!"[RDT-010] syscallEntry out-of-bounds layout error: {reprStr err}"
+  | .ok _ =>
+      IO.println "[RDT-011] unexpected syscallEntry success with out-of-bounds layout"
+
+  checkInvariants counter "post-register-decode-trace" st1
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -1242,6 +1381,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runUntypedMemoryTrace counter st1
   runSyscallGateTrace counter st1
   runRuntimeContractFixtureTrace counter st1
+  runRegisterDecodeTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"
