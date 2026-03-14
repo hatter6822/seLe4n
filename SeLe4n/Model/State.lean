@@ -143,7 +143,7 @@ structure SystemState where
   cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
   cdtSlotNode : Std.HashMap SlotRef CdtNodeId := {}
   cdtNodeSlot : Std.HashMap CdtNodeId SlotRef := {}
-  cdtNextNode : CdtNodeId := 0
+  cdtNextNode : CdtNodeId := ⟨0⟩
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -168,7 +168,7 @@ instance : Inhabited SystemState where
     cdt := .empty
     cdtSlotNode := {}
     cdtNodeSlot := {}
-    cdtNextNode := 0
+    cdtNextNode := ⟨0⟩
   }
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
@@ -740,7 +740,7 @@ def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × Syste
       let st' :=
         {
           st with
-            cdtNextNode := node + 1
+            cdtNextNode := ⟨node.val + 1⟩
             cdtSlotNode := st.cdtSlotNode.insert ref node
             cdtNodeSlot := st.cdtNodeSlot.insert node ref
         }

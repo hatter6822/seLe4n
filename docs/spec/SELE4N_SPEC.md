@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.15.9` (`lakefile.toml`) |
+| **Package version** | `0.15.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 35,419 across 68 Lean files |
+| **Production LoC** | 35,455 across 68 Lean files |
 | **Test LoC** | 3,752 across 4 Lean test suites |
 | **Proved declarations** | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C completed (v0.15.6, syscall entry point and dispatch; v0.15.7, audit refinements), J1-D completed (v0.15.8, invariant/NI integration), J1-E completed (v0.15.9, testing and trace evidence), J1-F pending (CdtNodeId cleanup + docs) + Raspberry Pi 5 hardware binding |
+| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — **PORTFOLIO COMPLETE** (J1-A v0.15.4, J1-B v0.15.5, J1-C v0.15.6/v0.15.7, J1-D v0.15.8, J1-E v0.15.9, J1-F v0.15.10). All 16 kernel identifiers are typed wrappers. Next: Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -114,7 +114,7 @@ semantic and proof foundations of the previous one.
 - **WS-H12d/A-09:** IPC message payloads bounded by `maxMessageRegisters` (120) and `maxExtraCaps` (3), matching seL4's `seL4_MsgMaxLength`/`seL4_MsgMaxExtraCaps`. Bounds enforced at all IPC send boundaries with `ipcMessageTooLarge`/`ipcMessageTooManyCaps` errors. `IpcMessage.bounded` predicate with proven send-produces-bounded theorems.
 - Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
 - Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `serviceRestartChecked`) exercised by default in trace and probe harnesses.
-- **WS-G1:** All 13 typed identifiers and the composite `SlotRef` key have `Hashable` instances with `@[inline]` for zero overhead. `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, enabling O(1) hash-based data structures for kernel performance optimization (WS-G2..G9).
+- **WS-G1/WS-J1:** All 16 typed identifiers and the composite `SlotRef` key have `Hashable` instances with `@[inline]` for zero overhead. `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, enabling O(1) hash-based data structures for kernel performance optimization (WS-G2..G9). WS-J1-A added `RegName`/`RegValue` (v0.15.4); WS-J1-F added `CdtNodeId` (v0.15.10).
 
 ---
 
@@ -149,7 +149,7 @@ Authoritative detail:
 
 ### 5.1 Completed — Data Structure Optimization
 
-- **WS-G1:** ~~Typed identifier Hashable instances~~ **COMPLETED** — `Hashable` + `LawfulHashable` for all 13 typed identifiers; `Std.HashMap`/`Std.HashSet` imports; zero-overhead foundation for O(1) lookups (v0.12.6)
+- **WS-G1:** ~~Typed identifier Hashable instances~~ **COMPLETED** — `Hashable` + `LawfulHashable` for all 16 typed identifiers (13 original + `RegName`/`RegValue` via WS-J1-A + `CdtNodeId` via WS-J1-F); `Std.HashMap`/`Std.HashSet` imports; zero-overhead foundation for O(1) lookups (v0.12.6, extended v0.15.4/v0.15.10)
 - **WS-G2:** ~~Object store & ObjectIndex HashMap~~ **COMPLETED** — `objects : Std.HashMap ObjId KernelObject` replacing closure-chain accumulation; `objectIndexSet : Std.HashSet ObjId` shadow set for O(1) membership; `objectTypes : Std.HashMap ObjId KernelObjectType` lifecycle metadata; 9 bridge lemmas; full proof migration (599 theorems verified); closes F-P01, F-P10, F-P13 (v0.12.7)
 - **WS-G3:** ~~ASID Resolution Table~~ **COMPLETED** — `asidTable : Std.HashMap ASID ObjId` in `SystemState`; `resolveAsidRoot` rewritten from O(n) `objectIndex.findSome?` to O(1) HashMap lookup with object-store validation; bidirectional `asidTableConsistent` invariant (soundness + completeness); `vspaceInvariantBundle` extended to 3-conjunct; erase-before-insert maintenance in `storeObject`; 3 bridge lemmas; round-trip theorems simplified; closes F-P06 (v0.12.8)
 

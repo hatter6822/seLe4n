@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.15.9` |
+| Version | `0.15.10` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 35,419 across 68 files |
+| Production LoC | 35,455 across 68 files |
 | Test LoC | 3,752 across 4 suites |
 | Proved declarations | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4), J1-B completed (v0.15.5), J1-C completed (v0.15.6; v0.15.7), J1-D completed (v0.15.8), J1-E completed (v0.15.9, testing and trace evidence), J1-F pending (CdtNodeId cleanup + docs); Raspberry Pi 5 hardware binding |
+| Next workstreams | WS-J1 register-indexed authoritative namespaces — **PORTFOLIO COMPLETE** (J1-A v0.15.4, J1-B v0.15.5, J1-C v0.15.6/v0.15.7, J1-D v0.15.8, J1-E v0.15.9, J1-F v0.15.10). All 16 kernel identifiers are typed wrappers. Next: Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -55,7 +55,22 @@ WS-J1-A (typed register wrappers, v0.15.4) →
 WS-J1-B (register decode layer, v0.15.5) →
 WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) →
 WS-J1-D (invariant/NI integration, v0.15.8) →
-WS-J1-E (testing and trace evidence, v0.15.9).
+WS-J1-E (testing and trace evidence, v0.15.9) →
+WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10).
+
+## Completed: WS-J1-F CdtNodeId Cleanup and Documentation Sync (v0.15.10)
+
+Final cleanup phase of WS-J1. Replaced `abbrev CdtNodeId := Nat` with
+`structure CdtNodeId where val : Nat` in `Model/Object/Structures.lean`,
+matching the typed wrapper pattern used by all other kernel identifiers. Added
+full instance suite (`DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`,
+`LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`) co-located with
+the type definition. Fixed downstream compilation: `SystemState` field defaults
+(`cdtNextNode := ⟨0⟩`), monotone allocator (`⟨node.val + 1⟩`), test literals
+in `NegativeStateSuite.lean`. All documentation synchronized across canonical
+sources and GitBook chapters. Codebase map regenerated. All 16 kernel identifiers
+are now typed wrappers. Zero sorry/axiom. Closes WS-J1 Phase F.
+**WS-J1 portfolio fully completed.**
 
 ## Completed: WS-J1-E Testing and Trace Evidence (v0.15.9)
 
@@ -291,10 +306,10 @@ for the full technical breakdown.
 ## Next: WS-J1 and Raspberry Pi 5 hardware binding
 
 All WS-F and WS-H remediation workstreams are completed. The active
-workstream is **WS-J1** (register-indexed authoritative namespace migration).
-J1-A through J1-E are completed (v0.15.4–v0.15.9): typed register wrappers,
-decode layer, syscall entry point, invariant/NI integration, and testing/trace
-evidence. Next phase: WS-J1-F (CdtNodeId cleanup + documentation sync).
+workstream was **WS-J1** (register-indexed authoritative namespace migration).
+All 6 phases (J1-A through J1-F) are completed (v0.15.4–v0.15.10): typed register
+wrappers, decode layer, syscall entry point, invariant/NI integration, testing/trace
+evidence, and CdtNodeId cleanup. **WS-J1 portfolio fully completed.**
 
 See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
 [`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),

@@ -550,8 +550,44 @@ inductive DerivationOp where
 /-- Stable CDT node identifier.
 
 Nodes are stable across CSpace slot moves: slots point to nodes, and edges are
-between nodes (not slot addresses). -/
-abbrev CdtNodeId := Nat
+between nodes (not slot addresses).
+
+WS-J1-F: Typed wrapper replacing `abbrev CdtNodeId := Nat` for consistency
+with all other kernel identifiers. Provides explicit `Hashable`, `LawfulHashable`,
+`EquivBEq`, `LawfulBEq` instances for HashMap/HashSet keying. -/
+structure CdtNodeId where
+  val : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- WS-J1-F: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable CdtNodeId where
+  hash a := hash a.val
+
+namespace CdtNodeId
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : CdtNodeId := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (id : CdtNodeId) : Nat := id.val
+
+instance : ToString CdtNodeId where
+  toString id := toString id.toNat
+
+end CdtNodeId
+
+/-- WS-J1-F: LawfulHashable for CdtNodeId HashMap/HashSet proof support. -/
+instance : LawfulHashable CdtNodeId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+/-- WS-J1-F: EquivBEq for CdtNodeId HashMap proof support. -/
+instance : EquivBEq CdtNodeId := ⟨⟩
+
+/-- WS-J1-F: LawfulBEq for CdtNodeId HashMap/HashSet proof support. -/
+instance : LawfulBEq CdtNodeId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
 
 /-- A single edge in the Capability Derivation Tree.
 
