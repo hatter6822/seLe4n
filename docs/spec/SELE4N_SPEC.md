@@ -50,13 +50,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.14.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 34,171 across 67 Lean files |
-| **Test LoC** | 2,886 across 3 Lean test suites |
-| **Proved declarations** | 1,086 theorem/lemma declarations (zero sorry/axiom) |
-| **Total declarations** | 2,006 across 70 modules |
+| **Production LoC** | 34,741 across 68 Lean files |
+| **Test LoC** | 3,459 across 4 Lean test suites |
+| **Proved declarations** | 1,108 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B..F pending (decode layer, syscall entry, invariant/NI, testing, CdtNodeId cleanup) + Raspberry Pi 5 hardware binding |
+| **Next workstreams** | WS-J1 register-indexed authoritative namespaces — J1-A completed (v0.15.4, typed `RegName`/`RegValue` wrappers), J1-B completed (v0.15.5, register decode layer with `RegisterDecode.lean`), J1-C..F pending (syscall entry, invariant/NI, testing, CdtNodeId cleanup) + Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -132,7 +131,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning |
 | **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context |
-| **Syscall boundary** *(WS-J1 planned)* | C code extracts args from registers | Typed register wrappers + total decode layer with round-trip lemmas, determinism proof, and NI coverage |
+| **Syscall boundary** *(WS-J1-A/B completed)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, round-trip lemmas, determinism proof, and error exclusivity (J1-B); NI coverage pending (J1-D) |
 
 These are not abstract research extensions — they are design decisions that will be
 carried forward into the production kernel.

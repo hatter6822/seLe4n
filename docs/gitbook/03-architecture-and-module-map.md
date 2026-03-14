@@ -56,15 +56,33 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `MachineConfig` (register/address width, page size with `isPowerOfTwo`
     validation + correctness proof, ASID limit) and `MemoryRegion`/`MemoryKind`
     for platform memory map declaration.
-  - **WS-J1-B planned**: `SyscallRegisterLayout` for ARM64 register-to-argument
-    mapping, `MachineConfig.registerCount` for bounded register space.
+  - `SyscallRegisterLayout` mapping hardware registers to syscall arguments,
+    `arm64DefaultLayout` constant (x0=capPtr, x1=msgInfo, x2–x5=msgRegs,
+    x7=syscallNum), `MachineConfig.registerCount` (WS-J1-B).
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+  - total deterministic decode functions from raw register values to typed
+    kernel references: `decodeCapPtr` (total), `decodeMsgInfo` (partial,
+    validates bounds), `decodeSyscallId` (partial, validates syscall set),
+    `validateRegBound` (architecture-specific register index bounds),
+    `decodeSyscallArgs` (entry point combining all register reads),
+  - encode helpers for round-trip proofs (`encodeCapPtr`, `encodeMsgInfo`,
+    `encodeSyscallId`),
+  - correctness theorems: round-trip (`decodeCapPtr_roundtrip`,
+    `decodeSyscallId_roundtrip`), determinism (`decodeSyscallArgs_deterministic`),
+    error exclusivity (`decodeSyscallId_error_iff`, `decodeMsgInfo_error_iff`),
+    universal success (`decodeCapPtr_always_ok`), bounds iff-theorems
+    (`validateRegBound_ok_iff`, `validateRegBound_error_iff`),
+  - self-contained module: imports only `Model.State`, no kernel subsystem
+    dependencies (WS-J1-B).
 
 ### Model
 
 - `SeLe4n/Model/Object.lean` (re-export hub)
   - `Object/Types.lean` — capability rights/targets, TCB structure + IPC state +
     intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`), endpoint
-    protocol fields, Notification, UntypedObject.
+    protocol fields, Notification, UntypedObject, `SyscallId` inductive (13
+    modeled syscalls with round-trip/injectivity proofs), `MessageInfo` structure
+    (seL4 message-info bit-field layout), `SyscallDecodeResult` (WS-J1-B).
   - `Object/Structures.lean` — CNode `Std.HashMap Slot Capability` slot store and
     local revoke helper (WS-G5), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
     mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),

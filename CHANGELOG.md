@@ -1,3 +1,34 @@
+## [0.15.5] - 2026-03-14
+
+### WS-J1-B: Register Decode Layer
+
+- **Syscall decode types**: `SyscallId` inductive (13 modeled syscalls with
+  injective `toNat`/total `ofNat?` encoding, round-trip and injectivity
+  theorems), `MessageInfo` structure (seL4 message-info word layout with
+  bit-field encode/decode), `SyscallDecodeResult` (typed decode output
+  consumed by syscall dispatch).
+- **Register decode functions**: `decodeCapPtr` (total, unbounded CPtr address
+  space), `decodeMsgInfo` (partial, validates length/extraCaps bounds),
+  `decodeSyscallId` (partial, validates against modeled syscall set),
+  `validateRegBound` (per-architecture register index bounds check),
+  `decodeSyscallArgs` (entry point combining all register reads and decodes).
+- **Platform configuration**: `SyscallRegisterLayout` structure mapping
+  hardware registers to syscall arguments, `arm64DefaultLayout` constant
+  (x0=capPtr, x1=msgInfo, x2–x5=msgRegs, x7=syscallNum),
+  `MachineConfig.registerCount` field.
+- **KernelError variants**: `invalidRegister`, `invalidSyscallNumber`,
+  `invalidMessageInfo` for explicit decode failure reporting.
+- **Correctness theorems**: `decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`
+  (encode-then-decode recovery), `decodeSyscallArgs_deterministic` (pure
+  determinism), `decodeSyscallId_error_iff`, `decodeMsgInfo_error_iff` (error
+  exclusivity), `validateRegBound_ok_iff`/`error_iff` (bounds iff-theorems),
+  `decodeCapPtr_always_ok` (universal CPtr success), `SyscallId.toNat_injective`
+  (encoding injectivity).
+- **New file**: `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — self-contained
+  module importing only `Model.State`, no kernel subsystem dependencies.
+- **Build jobs:** 140. Zero sorry/axiom. Zero warnings.
+- **Closes:** WS-J1 Phase B.
+
 ## [0.14.10] - 2026-03-13
 
 ### WS-I1: Critical Testing Infrastructure

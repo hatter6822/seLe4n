@@ -43,6 +43,9 @@ inductive KernelError where
   | ipcMessageTooLarge      -- WS-H12d/A-09: IPC message registers exceed maxMessageRegisters (120)
   | ipcMessageTooManyCaps   -- WS-H12d/A-09: IPC message caps exceed maxExtraCaps (3)
   | backingObjectMissing    -- WS-H13/A-29: service backing object not in object store
+  | invalidRegister         -- WS-J1-B: register index out of architectural bounds
+  | invalidSyscallNumber    -- WS-J1-B: syscall number register value not in modeled set
+  | invalidMessageInfo      -- WS-J1-B: malformed message-info word (length/caps out of bounds)
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.
