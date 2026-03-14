@@ -187,12 +187,15 @@ The existing `api*` functions remain as the internal kernel API. `syscallEntry`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.
 
-**Planned extension (WS-K):** The decode architecture will expand to a two-layer
-design. Layer 1 (`RegisterDecode.decodeSyscallArgs`) extracts raw message register
-values (x2–x5) into `SyscallDecodeResult.msgRegs`. Layer 2
-(`SyscallArgDecode.lean`) converts raw values into per-syscall typed argument
-structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`), enabling full dispatch for
-all 13 syscalls. See
+**WS-K extension (in progress):** The decode architecture is expanding to a
+two-layer design. **Layer 1 completed (K-A, v0.16.0):**
+`RegisterDecode.decodeSyscallArgs` now extracts raw message register values
+(x2–x5 on ARM64) into `SyscallDecodeResult.msgRegs` in a single
+validate-and-read pass via `Array.mapM`. The `decodeMsgRegs_length` theorem
+proves the output array size equals the layout's message register count. Layer 2
+(planned, K-B): `SyscallArgDecode.lean` will convert raw values into per-syscall
+typed argument structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`), enabling
+full dispatch for all 13 syscalls. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage

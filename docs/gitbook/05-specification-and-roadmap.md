@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.15.10` |
+| Version | `0.16.0` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 35,455 across 68 files |
 | Test LoC | 3,752 across 4 suites |
 | Proved declarations | 1,128 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | **WS-K** full syscall dispatch completion (planned, v0.16.0–v0.16.8) — extends WS-J1 with message register extraction, per-syscall argument decode, full 13/13 dispatch, service policy, IPC message population. See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
+| Next workstreams | **WS-K** full syscall dispatch completion (in progress, v0.16.0–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. Remaining: per-syscall argument decode (K-B), full 13/13 dispatch (K-C/K-D), service policy (K-E), IPC message population (K-E), proofs (K-F), testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

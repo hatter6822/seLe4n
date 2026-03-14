@@ -1,3 +1,31 @@
+## [0.16.0] - 2026-03-14
+
+### WS-K-A: Message Register Extraction into SyscallDecodeResult
+
+- **SyscallDecodeResult extension**: Added `msgRegs : Array RegValue := #[]`
+  field to `SyscallDecodeResult` in `Model/Object/Types.lean`. Default value
+  ensures backward compatibility with all existing construction sites.
+- **Decode function update**: Updated `decodeSyscallArgs` in
+  `RegisterDecode.lean` to validate and read message registers (x2–x5 on
+  ARM64) in a single pass via `Array.mapM`, replacing the previous
+  bounds-only validation loop.
+- **Encoding helper**: Added `encodeMsgRegs` identity encoder for round-trip
+  proof surface completeness.
+- **Length invariant**: Proved `decodeMsgRegs_length` — when decode succeeds,
+  `decoded.msgRegs.size = layout.msgRegs.size`. Proved via novel
+  `list_mapM_except_length` / `array_mapM_except_size` helper lemmas.
+- **Round-trip lemma**: Proved `decodeMsgRegs_roundtrip` — encoding then
+  decoding message register values is identity.
+- **Extended composition**: Updated `decode_components_roundtrip` to include
+  the `msgRegs` component (4-conjunct from 3-conjunct).
+- **Test updates**: NegativeStateSuite J1-NEG-17 now verifies `msgRegs.size = 4`
+  for ARM64 layout. MainTraceHarness RDT-002 trace output includes `msgRegs`
+  count. Trace fixture updated. 4 new Tier 3 surface anchors added.
+- **Workstream plan refinement**: WS-K-A section decomposed into 8 detailed
+  subtasks (K-A.1 through K-A.8) with per-subtask acceptance criteria.
+- **Build jobs:** 140. Zero sorry/axiom. Zero warnings.
+- **Closes:** WS-K Phase A.
+
 ## [0.15.10] - 2026-03-14
 
 ### WS-J1-F: CdtNodeId Cleanup and Documentation Sync

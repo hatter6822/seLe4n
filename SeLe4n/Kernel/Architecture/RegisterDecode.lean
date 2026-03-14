@@ -45,6 +45,11 @@ open SeLe4n.Model
 /-- Encode a syscall identifier as a register value. -/
 @[inline] def encodeSyscallId (s : SyscallId) : RegValue := ⟨s.toNat⟩
 
+/-- Encode message register values (identity in the abstract model).
+    Stated explicitly for proof-surface completeness and round-trip symmetry
+    with the other `encode*` helpers. -/
+@[inline] def encodeMsgRegs (regs : Array RegValue) : Array RegValue := regs
+
 -- ============================================================================
 -- Decode functions — total with explicit error returns
 -- ============================================================================
@@ -77,22 +82,28 @@ open SeLe4n.Model
 
 /-- Extract typed syscall arguments from the current thread's register file
     using the platform's register layout convention.
-    This is the single authoritative decode entry point. -/
+    This is the single authoritative decode entry point.
+
+    Message register values (x2–x5 on ARM64) are validated for bounds and
+    read in a single pass via `Array.mapM`. The resulting `msgRegs` array
+    has the same length as `layout.msgRegs` (proved by `decodeMsgRegs_length`). -/
 @[inline] def decodeSyscallArgs
     (layout : SyscallRegisterLayout)
     (regs : RegisterFile)
     (regCount : Nat := 32) : Except KernelError SyscallDecodeResult := do
-  -- Validate register bounds for all layout registers
+  -- Validate register bounds for fixed-position registers
   validateRegBound layout.capPtrReg regCount
   validateRegBound layout.msgInfoReg regCount
   validateRegBound layout.syscallNumReg regCount
-  for r in layout.msgRegs do
+  -- Validate and read message registers in a single pass
+  let msgRegVals ← layout.msgRegs.mapM fun r => do
     validateRegBound r regCount
-  -- Read and decode each register
+    pure (readReg regs r)
+  -- Read and decode fixed-position registers
   let capAddr ← decodeCapPtr (readReg regs layout.capPtrReg)
   let msgInfo ← decodeMsgInfo (readReg regs layout.msgInfoReg)
   let syscallId ← decodeSyscallId (readReg regs layout.syscallNumReg)
-  pure { capAddr, msgInfo, syscallId }
+  pure { capAddr, msgInfo, syscallId, msgRegs := msgRegVals }
 
 -- ============================================================================
 -- Round-trip lemmas
@@ -120,19 +131,26 @@ theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
   have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps
   simp only [h]
 
-/-- All three per-component round-trips compose: given a well-formed
+/-- Round-trip: encoding then decoding message register values is identity. -/
+theorem decodeMsgRegs_roundtrip (vals : Array RegValue) :
+    encodeMsgRegs vals = vals := rfl
+
+/-- All four per-component round-trips compose: given a well-formed
     `SyscallDecodeResult`, encoding each field then decoding recovers
-    the original. Stated as individual component equalities that can be
-    composed at the call site for any register layout. -/
+    the original. Includes `msgRegs` identity round-trip.
+    Stated as individual component equalities that can be composed at the
+    call site for any register layout. -/
 theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
     (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
-    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId :=
+    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId ∧
+    encodeMsgRegs decoded.msgRegs = decoded.msgRegs :=
   ⟨decodeCapPtr_roundtrip decoded.capAddr,
    decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps,
-   decodeSyscallId_roundtrip decoded.syscallId⟩
+   decodeSyscallId_roundtrip decoded.syscallId,
+   decodeMsgRegs_roundtrip decoded.msgRegs⟩
 
 -- ============================================================================
 -- Determinism theorem
@@ -189,5 +207,81 @@ theorem validateRegBound_error_iff (r : RegName) (bound : Nat) :
   constructor
   · intro h; split at h <;> simp_all
   · intro h; simp at h; simp [h]
+
+-- ============================================================================
+-- Message register length invariant
+-- ============================================================================
+
+/-- Helper: `List.mapM` with `Except` preserves list length on success. -/
+private theorem list_mapM_except_length {α β ε : Type}
+    (f : α → Except ε β) (xs : List α) (ys : List β)
+    (h : List.mapM f xs = Except.ok ys) :
+    ys.length = xs.length := by
+  induction xs generalizing ys with
+  | nil =>
+    simp [List.mapM, List.mapM.loop, pure, Except.pure] at h
+    subst h; rfl
+  | cons a as ih =>
+    rw [List.mapM_cons] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i b hb
+      split at h
+      · simp at h
+      · rename_i bs hbs
+        simp only [pure, Except.pure] at h
+        have hEq : ys = b :: bs := Except.ok.inj h.symm
+        rw [hEq, List.length_cons, List.length_cons]
+        congr 1
+        exact ih bs hbs
+
+/-- Helper: `Array.mapM` with `Except` preserves array size on success.
+    Proved via `List.mapM` length preservation and `Array.toList_mapM`. -/
+private theorem array_mapM_except_size {α β ε : Type}
+    (f : α → Except ε β) (arr : Array α) (result : Array β)
+    (h : arr.mapM f = Except.ok result) :
+    result.size = arr.size := by
+  have hList := Array.toList_mapM (f := f) (xs := arr)
+  rw [h] at hList
+  simp only [Functor.map, Except.map] at hList
+  have hLen := list_mapM_except_length f arr.toList result.toList hList.symm
+  rw [Array.size, Array.size]
+  exact hLen
+
+/-- When `decodeSyscallArgs` succeeds, the `msgRegs` array in the result has
+    the same size as the layout's `msgRegs` array. This guarantees that
+    per-syscall decode functions (WS-K-B) can rely on the array length matching
+    the platform convention (4 for ARM64). -/
+theorem decodeMsgRegs_length
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded : SyscallDecodeResult)
+    (hOk : decodeSyscallArgs layout regs regCount = .ok decoded) :
+    decoded.msgRegs.size = layout.msgRegs.size := by
+  unfold decodeSyscallArgs at hOk
+  simp only [bind, Except.bind] at hOk
+  -- Each `split at hOk` case-splits on a validateRegBound/mapM/decode result.
+  -- The `.error` branch contradicts `hOk = .ok decoded`.
+  split at hOk
+  · simp at hOk
+  · split at hOk
+    · simp at hOk
+    · split at hOk
+      · simp at hOk
+      · split at hOk
+        · simp at hOk
+        · rename_i msgRegVals hMapM
+          split at hOk
+          · simp at hOk
+          · split at hOk
+            · simp at hOk
+            · split at hOk
+              · simp at hOk
+              · simp only [pure, Except.pure] at hOk
+                have hEq := Except.ok.inj hOk
+                have hMsgRegs : decoded.msgRegs = msgRegVals :=
+                  (congrArg SyscallDecodeResult.msgRegs hEq).symm
+                rw [hMsgRegs]
+                exact array_mapM_except_size _ _ _ hMapM
 
 end SeLe4n.Kernel.Architecture.RegisterDecode
