@@ -2,10 +2,11 @@
 
 ### WS-J1-C: Syscall Entry Point and Dispatch
 
-- **Syscall entry point**: `syscallEntry : SyscallRegisterLayout → Kernel Unit`
+- **Syscall entry point**: `syscallEntry : SyscallRegisterLayout → Nat → Kernel Unit`
   — top-level user-space entry point that reads the current thread's register
-  file, decodes raw register values via `decodeSyscallArgs`, and dispatches to
-  the appropriate capability-gated kernel operation.
+  file, decodes raw register values via `decodeSyscallArgs` (with configurable
+  `regCount`, default 32), and dispatches to the appropriate capability-gated
+  kernel operation.
 - **Register context lookup**: `lookupThreadRegisterContext : ThreadId → Kernel
   RegisterFile` — extracts the saved register context from the current thread's
   TCB, with `objectNotFound`/`illegalState` error paths.
@@ -13,10 +14,11 @@
   Kernel Unit` — constructs a `SyscallGate` from the caller's TCB and CSpace
   root CNode, then routes through `syscallInvoke` to the appropriate internal
   kernel operation based on the decoded `SyscallId`.
-- **Per-syscall routing**: `dispatchWithCap` handles all 13 modeled syscalls
-  (IPC send/receive/call/reply, CSpace mint/copy/move/delete, lifecycle retype,
-  VSpace map/unmap, service start/stop), extracting the target object from the
-  resolved capability's `CapTarget`.
+- **Per-syscall routing**: `dispatchWithCap` handles all 13 modeled syscalls.
+  IPC ops (send/receive/call/reply) and service ops extract the target from the
+  resolved capability's `CapTarget`. CSpace ops (mint/copy/move/delete),
+  lifecycle retype, and VSpace ops (map/unmap) return `illegalState` as they
+  require message-register data not yet available in the decode path.
 - **Right mapping**: `syscallRequiredRight : SyscallId → AccessRight` — total
   function mapping each syscall to its required access right, matching the
   authority requirements of the existing `api*` wrappers.

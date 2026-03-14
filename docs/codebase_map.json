@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/syscall-entry-dispatch-4dYUY",
-      "commit_sha": "b04c858122428c97ef126043b4a66acd9b004335",
-      "tree_sha": "9c52f85a2600ce610f4d93aed30651c21dbc51da",
-      "committed_at_utc": "2026-03-14T03:01:35+00:00"
+      "commit_sha": "c74a13937e7c00e24262e1e8eb7582f915dacedb",
+      "tree_sha": "6730ba4d387a7f1d5ea96e66b50c1d85b113b071",
+      "committed_at_utc": "2026-03-14T03:24:35+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ab436fd2cc3bfd7654f1e578e156325602695b5fb33f70ff25c4ff8f8b7cd126"
+    "source_digest": "cd10da436ad3c229e0308c3ff78acc91d1edea58f10f746c947725e47d957fb5"
   },
   "summary": {
     "module_count": 72,
@@ -27,7 +27,7 @@
     "version": "0.15.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 68,
-    "production_loc": 35012,
+    "production_loc": 35009,
     "test_files": 4,
     "test_loc": 3459,
     "proved_theorem_lemma_decls": 1113,
@@ -42,19 +42,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 89,
+          "line": 92,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
-          "line": 97,
+          "line": 100,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_default",
-          "line": 102,
+          "line": 105,
           "called": [
             "apiInvariantBundle"
           ]
@@ -62,13 +62,13 @@
         {
           "kind": "structure",
           "name": "SyscallGate",
-          "line": 139,
+          "line": 142,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallLookupCap",
-          "line": 161,
+          "line": 164,
           "called": [
             "SyscallGate"
           ]
@@ -76,7 +76,7 @@
         {
           "kind": "def",
           "name": "syscallInvoke",
-          "line": 175,
+          "line": 178,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -85,7 +85,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 188,
+          "line": 191,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -94,7 +94,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_state_unchanged",
-          "line": 210,
+          "line": 213,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -104,7 +104,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 219,
+          "line": 222,
           "called": [
             "SyscallGate",
             "syscallInvoke",
@@ -114,7 +114,7 @@
         {
           "kind": "def",
           "name": "apiEndpointSend",
-          "line": 239,
+          "line": 242,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -123,7 +123,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReceive",
-          "line": 246,
+          "line": 249,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -132,7 +132,7 @@
         {
           "kind": "def",
           "name": "apiEndpointCall",
-          "line": 252,
+          "line": 255,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "apiEndpointReply",
-          "line": 258,
+          "line": 261,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -150,7 +150,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMint",
-          "line": 263,
+          "line": 266,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -159,7 +159,7 @@
         {
           "kind": "def",
           "name": "apiCspaceCopy",
-          "line": 269,
+          "line": 272,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -168,7 +168,7 @@
         {
           "kind": "def",
           "name": "apiCspaceMove",
-          "line": 274,
+          "line": 277,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -177,7 +177,7 @@
         {
           "kind": "def",
           "name": "apiCspaceDelete",
-          "line": 279,
+          "line": 282,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -186,7 +186,7 @@
         {
           "kind": "def",
           "name": "apiLifecycleRetype",
-          "line": 284,
+          "line": 287,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -195,7 +195,7 @@
         {
           "kind": "def",
           "name": "apiVspaceMap",
-          "line": 290,
+          "line": 293,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -204,7 +204,7 @@
         {
           "kind": "def",
           "name": "apiVspaceUnmap",
-          "line": 296,
+          "line": 299,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -213,7 +213,7 @@
         {
           "kind": "def",
           "name": "apiServiceStart",
-          "line": 301,
+          "line": 304,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -222,7 +222,7 @@
         {
           "kind": "def",
           "name": "apiServiceStop",
-          "line": 306,
+          "line": 309,
           "called": [
             "SyscallGate",
             "syscallInvoke"
@@ -231,25 +231,25 @@
         {
           "kind": "def",
           "name": "lookupThreadRegisterContext",
-          "line": 332,
+          "line": 335,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallRequiredRight",
-          "line": 341,
+          "line": 344,
           "called": []
         },
         {
           "kind": "def",
           "name": "dispatchWithCap",
-          "line": 359,
+          "line": 362,
           "called": []
         },
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 436,
+          "line": 417,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -260,7 +260,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 460,
+          "line": 446,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -269,18 +269,8 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 479,
+          "line": 466,
           "called": [
-            "lookupThreadRegisterContext",
-            "syscallEntry"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "syscallEntry_implies_capability_held",
-          "line": 511,
-          "called": [
-            "dispatchSyscall",
             "lookupThreadRegisterContext",
             "syscallEntry"
           ]
@@ -288,7 +278,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 539,
+          "line": 494,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -298,8 +288,19 @@
         },
         {
           "kind": "theorem",
+          "name": "syscallEntry_implies_capability_held",
+          "line": 530,
+          "called": [
+            "dispatchSyscall_requires_right",
+            "lookupThreadRegisterContext",
+            "syscallEntry",
+            "syscallRequiredRight"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 568,
+          "line": 565,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -307,7 +308,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 578,
+          "line": 575,
           "called": [
             "syscallRequiredRight"
           ]

@@ -70,6 +70,9 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | Stable |
 | `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | Stable |
 | `apiServiceStart`, `apiServiceStop` | Syscall Service (WS-H15c) | Stable |
+| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
+| `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
+| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |
 
 ## Deferred operations (WS-F5/D3)
 
@@ -381,41 +384,19 @@ private def dispatchWithCap (syscallId : SyscallId) (tid : SeLe4n.ThreadId)
     | .replyCap targetTid =>
       endpointReply tid targetTid { registers := #[], caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
-  | .cspaceMint =>
-    match cap.target with
-    | .cnodeSlot cnode slot =>
-      cspaceMint { cnode, slot } { cnode, slot } cap.rights cap.badge
-    | _ => fun _ => .error .invalidCapability
-  | .cspaceCopy =>
-    match cap.target with
-    | .cnodeSlot cnode slot =>
-      cspaceCopy { cnode, slot } { cnode, slot }
-    | _ => fun _ => .error .invalidCapability
-  | .cspaceMove =>
-    match cap.target with
-    | .cnodeSlot cnode slot =>
-      cspaceMove { cnode, slot } { cnode, slot }
-    | _ => fun _ => .error .invalidCapability
-  | .cspaceDelete =>
-    match cap.target with
-    | .cnodeSlot cnode slot =>
-      cspaceDeleteSlot { cnode, slot }
-    | _ => fun _ => .error .invalidCapability
-  | .lifecycleRetype =>
-    match cap.target with
-    | .object targetId =>
-      lifecycleRetypeObject { cnode := ⟨0⟩, slot := ⟨0⟩ } targetId (.endpoint {})
-    | _ => fun _ => .error .invalidCapability
-  | .vspaceMap =>
-    match cap.target with
-    | .object _ =>
-      fun _ => .error .illegalState  -- VSpace map requires ASID/vaddr/paddr from MRs
-    | _ => fun _ => .error .invalidCapability
-  | .vspaceUnmap =>
-    match cap.target with
-    | .object _ =>
-      fun _ => .error .illegalState  -- VSpace unmap requires ASID/vaddr from MRs
-    | _ => fun _ => .error .invalidCapability
+  -- CSpace operations: the cap targets a CNode object, but source/dest slot
+  -- indices come from message registers (not modeled in SyscallDecodeResult).
+  -- Full MR-based argument extraction deferred to WS-J1-E.
+  | .cspaceMint  => fun _ => .error .illegalState
+  | .cspaceCopy  => fun _ => .error .illegalState
+  | .cspaceMove  => fun _ => .error .illegalState
+  | .cspaceDelete => fun _ => .error .illegalState
+  -- Lifecycle retype: the cap targets an untyped object, but new object type,
+  -- target slot, and size come from message registers.
+  | .lifecycleRetype => fun _ => .error .illegalState
+  -- VSpace operations: ASID, vaddr, and paddr come from message registers.
+  | .vspaceMap  => fun _ => .error .illegalState
+  | .vspaceUnmap => fun _ => .error .illegalState
   | .serviceStart =>
     match cap.target with
     | .object objId =>
@@ -456,8 +437,14 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
 
 Reads the current thread's register file, decodes raw register values into
 typed kernel references, and dispatches to the appropriate kernel operation.
-This is the single authoritative user-space → kernel transition boundary. -/
-def syscallEntry (layout : SeLe4n.SyscallRegisterLayout) : Kernel Unit :=
+This is the single authoritative user-space → kernel transition boundary.
+
+The `regCount` parameter (default 32 for ARM64) should match
+`MachineConfig.registerCount` of the active platform binding. It is used by
+`decodeSyscallArgs` to validate that all layout register indices are within
+architectural bounds. -/
+def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
+    (regCount : Nat := 32) : Kernel Unit :=
   fun st =>
     match st.scheduler.current with
     | none => .error .illegalState
@@ -465,7 +452,7 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout) : Kernel Unit :=
       match lookupThreadRegisterContext tid st with
       | .error e => .error e
       | .ok (regs, _) =>
-        match decodeSyscallArgs layout regs with
+        match decodeSyscallArgs layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
           dispatchSyscall decoded tid st
@@ -477,12 +464,13 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout) : Kernel Unit :=
 /-- WS-J1-C: If `syscallEntry` succeeds, the register values decoded
 successfully — i.e., `decodeSyscallArgs` returned `.ok`. -/
 theorem syscallEntry_requires_valid_decode
-    (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout st = .ok ((), st')) :
+    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
     ∃ tid regs decoded,
       st.scheduler.current = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      decodeSyscallArgs layout regs = .ok decoded := by
+      decodeSyscallArgs layout regs regCount = .ok decoded := by
   unfold syscallEntry at hOk
   split at hOk
   · simp at hOk
@@ -493,45 +481,12 @@ theorem syscallEntry_requires_valid_decode
       split at hOk
       · simp at hOk
       next decoded hDecode =>
-        -- Extract that _st_regs = st from the lookupThreadRegisterContext definition
         have hStEq : _st_regs = st := by
           unfold lookupThreadRegisterContext at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
         subst hStEq
         exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode⟩
-
-/-- WS-J1-C: If `syscallEntry` succeeds for a capability-gated operation,
-the caller held the required access right. Threads through the existing
-`syscallInvoke_requires_right` theorem.
-
-The conclusion states: there exists a current thread with a valid TCB and
-CSpace root CNode, and the capability resolved from the decoded capAddr
-grants the required right for the invoked syscall. -/
-theorem syscallEntry_implies_capability_held
-    (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout st = .ok ((), st')) :
-    ∃ tid regs decoded,
-      st.scheduler.current = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      decodeSyscallArgs layout regs = .ok decoded ∧
-      (dispatchSyscall decoded tid st = .ok ((), st')) := by
-  unfold syscallEntry at hOk
-  split at hOk
-  · simp at hOk
-  next tid hCurrent =>
-    split at hOk
-    · simp at hOk
-    next regs _st_regs hLookup =>
-      split at hOk
-      · simp at hOk
-      next decoded hDecode =>
-        have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext at hLookup
-          split at hLookup <;> simp at hLookup
-          exact hLookup.2.symm
-        subst hStEq
-        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, hOk⟩
 
 /-- WS-J1-C: If `dispatchSyscall` succeeds, the caller held a capability
 with the required access right for the invoked syscall. Threads through
@@ -563,6 +518,48 @@ theorem dispatchSyscall_requires_right
     · simp at hOk
   · simp at hOk
   · simp at hOk
+
+/-- WS-J1-C: If `syscallEntry` succeeds for a capability-gated operation,
+the caller held the required access right. Threads through the existing
+`syscallInvoke_requires_right` theorem via `dispatchSyscall_requires_right`.
+
+The conclusion proves the full chain: there exists a current thread with a
+valid TCB and CSpace root CNode, the register decode succeeded, and a
+capability with the required access right was resolved from the decoded
+capAddr through the caller's CSpace. -/
+theorem syscallEntry_implies_capability_held
+    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
+    ∃ tid regs decoded,
+      st.scheduler.current = some tid ∧
+      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
+      decodeSyscallArgs layout regs regCount = .ok decoded ∧
+      ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
+        ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
+          ∃ cap ref,
+            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
+            SystemState.lookupSlotCap st ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  unfold syscallEntry at hOk
+  split at hOk
+  · simp at hOk
+  next tid hCurrent =>
+    split at hOk
+    · simp at hOk
+    next regs _st_regs hLookup =>
+      split at hOk
+      · simp at hOk
+      next decoded hDecode =>
+        have hStEq : _st_regs = st := by
+          unfold lookupThreadRegisterContext at hLookup
+          split at hLookup <;> simp at hLookup
+          exact hLookup.2.symm
+        have hDispatch := dispatchSyscall_requires_right decoded tid _st_regs st' (hStEq ▸ hOk)
+        rw [hStEq] at hDispatch hLookup
+        obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
+        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
+               tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
