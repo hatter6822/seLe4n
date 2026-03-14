@@ -1192,7 +1192,7 @@ Tier 3 invariant surface anchors:
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
 
-**WS-K full syscall dispatch completion (v0.16.2–v0.16.8, in progress):**
+**WS-K full syscall dispatch completion (v0.16.3–v0.16.8, in progress):**
 
 WS-K extends the WS-J1 decode layer to complete the full syscall surface.
 
@@ -1220,8 +1220,19 @@ of `dispatchWithCap` changed from `SyscallId` to `SyscallDecodeResult`.
 `dispatchWithCap_cspaceDelete_delegates`. All 3 existing soundness theorems
 compile unchanged. Zero sorry/axiom.
 
-**Remaining (K-D through K-H):**
-- Full dispatch for lifecycle/VSpace syscalls (replacing 3 `.illegalState` stubs)
+**Completed — K-D (v0.16.3):** Lifecycle and VSpace syscall dispatch —
+all 3 remaining `.illegalState` stubs in `dispatchWithCap` replaced with full
+dispatch logic. `objectOfTypeTag` (6-arm match, type tag → default
+`KernelObject`) with determinism and error-exclusivity theorems.
+`lifecycleRetypeDirect` accepts pre-resolved capability (avoiding double
+`cspaceLookupSlot`), with equivalence theorem to `lifecycleRetypeObject`.
+`PagePermissions.ofNat`/`toNat` bitfield codec with `native_decide` round-trip
+proof. `vspaceMapPageChecked` used for bounds-safe dispatch. 3 delegation
+theorems proved: `dispatchWithCap_lifecycleRetype_delegates`,
+`dispatchWithCap_vspaceMap_delegates`, `dispatchWithCap_vspaceUnmap_delegates`.
+All 13 syscalls now fully dispatch. Zero sorry/axiom. 18 new Tier 3 anchors.
+
+**Remaining (K-E through K-H):**
 - `ServiceConfig` for configuration-sourced service policy
 - `extractMessageRegisters` for IPC message body population
 - Round-trip proofs for all 7 argument decode functions

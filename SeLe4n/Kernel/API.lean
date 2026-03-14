@@ -358,13 +358,17 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .serviceStart    => .write
   | .serviceStop     => .write
 
-/-- WS-J1-C/K-C: Dispatch a decoded syscall to the appropriate internal kernel
-operation using the resolved capability's target. Called after cap resolution
-succeeds inside `syscallInvoke`.
+/-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
+kernel operation using the resolved capability's target. Called after cap
+resolution succeeds inside `syscallInvoke`.
 
-WS-K-C: Accepts full `SyscallDecodeResult` so CSpace dispatch arms can
-extract per-syscall arguments from `decoded.msgRegs` via the typed decode
-functions in `SyscallArgDecode`. -/
+WS-K-C: Accepts full `SyscallDecodeResult` so dispatch arms can extract
+per-syscall arguments from `decoded.msgRegs` via the typed decode functions
+in `SyscallArgDecode`.
+
+WS-K-D: Lifecycle and VSpace stubs replaced with full dispatch. All 13
+syscalls now route to real kernel operations — zero `.illegalState` stubs
+remain. -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (cap : Capability) : Kernel Unit :=
   match decoded.syscallId with
@@ -433,12 +437,39 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
     | _ => fun _ => .error .invalidCapability
-  -- Lifecycle retype: the cap targets an untyped object, but new object type,
-  -- target slot, and size come from message registers.
-  | .lifecycleRetype => fun _ => .error .illegalState
-  -- VSpace operations: ASID, vaddr, and paddr come from message registers.
-  | .vspaceMap  => fun _ => .error .illegalState
-  | .vspaceUnmap => fun _ => .error .illegalState
+  -- WS-K-D: Lifecycle retype — cap targets the authority object, message
+  -- registers carry target ObjId, type tag, and size hint.
+  | .lifecycleRetype =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeLifecycleRetypeArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            match objectOfTypeTag args.newType args.size with
+            | .error e => .error e
+            | .ok newObj =>
+                lifecycleRetypeDirect cap args.targetObj newObj st
+    | _ => fun _ => .error .invalidCapability
+  -- WS-K-D: VSpace map — ASID, vaddr, paddr, perms from message registers.
+  -- Uses bounds-checked variant (rejects paddr ≥ 2^52) for user-space entry.
+  | .vspaceMap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceMapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+              (PagePermissions.ofNat args.perms) st
+    | _ => fun _ => .error .invalidCapability
+  -- WS-K-D: VSpace unmap — ASID and vaddr from message registers.
+  | .vspaceUnmap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceUnmapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceUnmapPage args.asid args.vaddr st
+    | _ => fun _ => .error .invalidCapability
   | .serviceStart =>
     match cap.target with
     | .object objId =>
@@ -681,6 +712,52 @@ theorem dispatchWithCap_cspaceDelete_delegates
     dispatchWithCap decoded tid cap =
       let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
       cspaceDeleteSlot addr := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+-- ============================================================================
+-- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
+-- ============================================================================
+
+/-- WS-K-D: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirect`
+is invoked with the resolved cap, decoded target, and constructed object. -/
+theorem dispatchWithCap_lifecycleRetype_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
+    (newObj : KernelObject)
+    (hSyscall : decoded.syscallId = .lifecycleRetype)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
+    (hType : objectOfTypeTag args.newType args.size = .ok newObj) :
+    dispatchWithCap decoded tid cap =
+      lifecycleRetypeDirect cap args.targetObj newObj := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode, hType]
+
+/-- WS-K-D: When vspaceMap dispatch succeeds, `vspaceMapPageChecked` is
+invoked with the decoded ASID, vaddr, paddr, and permissions. -/
+theorem dispatchWithCap_vspaceMap_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+        (PagePermissions.ofNat args.perms) := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+/-- WS-K-D: When vspaceUnmap dispatch succeeds, `vspaceUnmapPage` is
+invoked with the decoded ASID and vaddr. -/
+theorem dispatchWithCap_vspaceUnmap_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
+    (hSyscall : decoded.syscallId = .vspaceUnmap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
+    dispatchWithCap decoded tid cap =
+      Architecture.vspaceUnmapPage args.asid args.vaddr := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 -- ============================================================================

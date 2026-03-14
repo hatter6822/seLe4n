@@ -935,6 +935,25 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
+
+-- WS-K-D: Lifecycle and VSpace dispatch helpers
+#check @SeLe4n.Kernel.objectOfTypeTag
+#check @SeLe4n.Kernel.objectOfTypeTag_type
+#check @SeLe4n.Kernel.objectOfTypeTag_error_iff
+#check @SeLe4n.Kernel.objectOfTypeTag_deterministic
+#check @SeLe4n.Model.PagePermissions.ofNat
+#check @SeLe4n.Model.PagePermissions.toNat
+#check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip
+#check @SeLe4n.Model.PagePermissions.ofNat_deterministic
+#check @SeLe4n.Kernel.lifecycleRetypeDirect
+#check @SeLe4n.Kernel.lifecycleRetypeDirect_deterministic
+#check @SeLe4n.Kernel.lifecycleRetypeDirect_eq_lifecycleRetypeObject
+#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_objectNotFound
+#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_illegalState
+#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_illegalAuthority
+#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
 EOF'
 
 finalize_report
