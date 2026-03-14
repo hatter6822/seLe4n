@@ -1294,9 +1294,11 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := none })
         ] })
+      |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
+      |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.withCurrent (some ⟨500⟩)
       |>.build)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvalidSyscall with
@@ -1327,9 +1329,11 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := none })
         ] })
+      |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
+      |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.withCurrent (some ⟨500⟩)
       |>.build)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalformedMsgInfo with
