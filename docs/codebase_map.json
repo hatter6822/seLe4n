@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/register-decode-layer-k3ls6",
-      "commit_sha": "052f640745860d2be31d75d85de6c01c566e8e17",
-      "tree_sha": "0388079f4bba34e6ef2f4d989fc4b657b86ef86e",
-      "committed_at_utc": "2026-03-14T02:43:36+00:00"
+      "branch": "main",
+      "commit_sha": "23af39b4d52745dc78a493e777e85e79c90e0cc6",
+      "tree_sha": "51b4f5bdc261e4e38bf4d9b2e3bd77255a31453a",
+      "committed_at_utc": "2026-03-13T23:01:26-04:00"
     }
   },
   "source_sync": {
