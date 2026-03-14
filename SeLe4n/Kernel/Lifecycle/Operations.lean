@@ -857,7 +857,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       children := [],
       isDevice := false
     })
-  | _ + 6 => .error .illegalState
+  | _ + 6 => .error .invalidTypeTag
 
 /-- WS-K-D: `objectOfTypeTag` is pure. -/
 theorem objectOfTypeTag_deterministic (tag : Nat) (size : Nat) :
@@ -875,7 +875,7 @@ theorem objectOfTypeTag_error_iff (tag : Nat) (size : Nat) :
   · intro h
     unfold objectOfTypeTag
     match tag, h with
-    | n + 6, _ => exact ⟨.illegalState, rfl⟩
+    | n + 6, _ => exact ⟨.invalidTypeTag, rfl⟩
 
 /-- WS-K-D: Successful results have the expected `KernelObjectType`. -/
 theorem objectOfTypeTag_type (tag : Nat) (size : Nat) (obj : KernelObject)

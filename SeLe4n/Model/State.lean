@@ -46,6 +46,7 @@ inductive KernelError where
   | invalidRegister         -- WS-J1-B: register index out of architectural bounds
   | invalidSyscallNumber    -- WS-J1-B: syscall number register value not in modeled set
   | invalidMessageInfo      -- WS-J1-B: malformed message-info word (length/caps out of bounds)
+  | invalidTypeTag          -- WS-K-D: retype type tag not in modeled object set (0–5)
   deriving Repr, DecidableEq
 
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.

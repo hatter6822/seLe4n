@@ -1223,7 +1223,8 @@ compile unchanged. Zero sorry/axiom.
 **Completed — K-D (v0.16.3):** Lifecycle and VSpace syscall dispatch —
 all 3 remaining `.illegalState` stubs in `dispatchWithCap` replaced with full
 dispatch logic. `objectOfTypeTag` (6-arm match, type tag → default
-`KernelObject`) with determinism and error-exclusivity theorems.
+`KernelObject`, dedicated `invalidTypeTag` error variant for unrecognized tags)
+with determinism and error-exclusivity theorems.
 `lifecycleRetypeDirect` accepts pre-resolved capability (avoiding double
 `cspaceLookupSlot`), with equivalence theorem to `lifecycleRetypeObject`.
 `PagePermissions.ofNat`/`toNat` bitfield codec with `native_decide` round-trip

@@ -1023,7 +1023,7 @@ bitfield layout (bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable).
 **Type tag design:** `objectOfTypeTag` maps a raw `Nat` type tag to a default
 `KernelObject` constructor. The tag encoding follows `KernelObjectType` ordinal
 order (0=tcb, 1=endpoint, 2=notification, 3=cnode, 4=vspaceRoot, 5=untyped).
-Unrecognized tags produce `.illegalState`. The size hint from the third
+Unrecognized tags produce `.invalidTypeTag`. The size hint from the third
 message register is used only for untyped objects (as `regionSize`); other
 types ignore it. All constructed objects use field defaults (zero ThreadId,
 empty slots, idle state, etc.) — the retype operation only creates the identity;
@@ -1065,7 +1065,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       children := [],
       isDevice := false
     })
-  | _ => .error .illegalState
+  | _ => .error .invalidTypeTag
 ```
 
 Design notes:
@@ -1256,7 +1256,7 @@ The dispatch flow:
 2. Decode `LifecycleRetypeArgs` from message registers (target ObjId,
    type tag, size hint). Decode failure → error propagation.
 3. Convert type tag + size to a `KernelObject` via `objectOfTypeTag`.
-   Invalid tag → `.illegalState`.
+   Invalid tag → `.invalidTypeTag`.
 4. Delegate to `lifecycleRetypeDirect` with the resolved cap, decoded
    target, and constructed new object.
 
@@ -1796,7 +1796,7 @@ Update GitBook chapters and claim evidence index.
 | R2 | `dispatchWithCap` signature change breaks soundness theorems | Medium | High | Change signature in K-C only after verifying theorem structure. Existing theorems quantify over `SyscallId`, not `SyscallDecodeResult`, so they should compose. |
 | R3 | `SystemState` extension for `ServiceConfig` breaks fixture construction | Medium | Medium | `ServiceConfig` has `Inhabited` instance. Existing fixtures use default construction and are unaffected. |
 | R4 | Deferred NI proofs (Operations.lean:15–33) prove harder than expected | Medium | High | These proofs follow the `storeObject_preserves_projection` pattern already used elsewhere. CDT operations compose with frame lemmas. If blocked, add targeted `sorry` with TPI-D annotation and track as sub-workstream. |
-| R5 | `objectOfTypeTag` introduces non-determinism via unrecognized type tags | Low | Critical | Return `Except KernelError KernelObject` — unrecognized tags produce `.illegalState`. No default object construction. |
+| R5 | `objectOfTypeTag` introduces non-determinism via unrecognized type tags | Low | Critical | Return `Except KernelError KernelObject` — unrecognized tags produce `.invalidTypeTag`. No default object construction. |
 | R6 | Message register array length mismatch between platform layouts | Low | Medium | `decodeMsgRegs_length` lemma enforces `decoded.msgRegs.size = layout.msgRegs.size`. Per-syscall decode checks minimum count. |
 
 ---

@@ -204,7 +204,8 @@ arguments from `msgRegs`. All 4 CSpace syscalls (`cspaceMint`, `cspaceCopy`,
 theorems proved. **Layer 4 (completed, K-D v0.16.3):** Lifecycle and VSpace
 syscall dispatch — all 3 remaining `.illegalState` stubs replaced with full
 dispatch logic. `objectOfTypeTag` maps raw type tags to default `KernelObject`
-constructors; `lifecycleRetypeDirect` accepts pre-resolved capabilities (avoiding
+constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
+`lifecycleRetypeDirect` accepts pre-resolved capabilities (avoiding
 double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
 `vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`. See

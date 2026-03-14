@@ -4,7 +4,7 @@
   `vspaceUnmap`) through `dispatchWithCap` using decoded message register
   arguments — zero `.illegalState` stubs remain; all 13 syscalls fully dispatch
 - Added `objectOfTypeTag` helper mapping raw type tags (0–5) to default
-  `KernelObject` constructors with explicit `Except KernelError` error on
+  `KernelObject` constructors with dedicated `invalidTypeTag` error variant for
   unrecognized tags; includes type, error-exclusivity, and determinism theorems
 - Added `lifecycleRetypeDirect` — companion to `lifecycleRetypeObject` for
   register-sourced dispatch where the authority cap is already resolved by
