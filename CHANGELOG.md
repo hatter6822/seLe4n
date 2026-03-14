@@ -1,3 +1,23 @@
+## [0.16.2] — CSpace Syscall Dispatch (WS-K-C)
+
+- Wired all 4 CSpace syscalls (`cspaceMint`, `cspaceCopy`, `cspaceMove`,
+  `cspaceDelete`) through `dispatchWithCap` using decoded message register
+  arguments from `SyscallArgDecode`
+- Changed `dispatchWithCap` signature from `SyscallId` to `SyscallDecodeResult`
+  so CSpace dispatch arms can extract per-syscall typed arguments from
+  `decoded.msgRegs`
+- `cspaceMint` dispatch: decodes srcSlot, dstSlot, rights bitmask, and badge
+  from 4 message registers; badge=0 maps to `none` (seL4 convention)
+- `cspaceCopy`/`cspaceMove` dispatch: decodes srcSlot and dstSlot from 2
+  message registers; delegates to kernel-level copy/move with CDT integration
+- `cspaceDelete` dispatch: decodes targetSlot from 1 message register
+- 4 delegation theorems proved (`dispatchWithCap_cspaceMint_delegates`, etc.)
+- All 3 existing soundness theorems (`dispatchSyscall_requires_right`,
+  `syscallEntry_implies_capability_held`, `syscallEntry_requires_valid_decode`)
+  compile unchanged after signature refactoring
+- Refined WS-K-C workstream plan with 8 detailed subtasks (K-C.1–K-C.8)
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+
 ## [0.16.1] — Per-Syscall Argument Decode Layer (WS-K-B)
 
 - Added `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — layer 2 of the

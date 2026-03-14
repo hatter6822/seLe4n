@@ -1192,7 +1192,7 @@ Tier 3 invariant surface anchors:
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
 
-**WS-K full syscall dispatch completion (v0.16.1–v0.16.8, in progress):**
+**WS-K full syscall dispatch completion (v0.16.2–v0.16.8, in progress):**
 
 WS-K extends the WS-J1 decode layer to complete the full syscall surface.
 
@@ -1211,8 +1211,17 @@ and total decode functions via shared `requireMsgReg` bounds-checked helper.
 (decode fails iff `msgRegs.size < required`), `requireMsgReg_error_iff` and
 `requireMsgReg_ok_iff` helper theorems. Zero sorry/axiom.
 
-**Remaining (K-C through K-H):**
-- Full dispatch for all 13 syscalls (replacing 7 `.illegalState` stubs)
+**Completed — K-C (v0.16.2):** All 4 CSpace syscalls (`cspaceMint`,
+`cspaceCopy`, `cspaceMove`, `cspaceDelete`) wired through `dispatchWithCap`
+using decoded message register arguments from `SyscallArgDecode`. Signature
+of `dispatchWithCap` changed from `SyscallId` to `SyscallDecodeResult`.
+4 delegation theorems proved: `dispatchWithCap_cspaceMint_delegates`,
+`dispatchWithCap_cspaceCopy_delegates`, `dispatchWithCap_cspaceMove_delegates`,
+`dispatchWithCap_cspaceDelete_delegates`. All 3 existing soundness theorems
+compile unchanged. Zero sorry/axiom.
+
+**Remaining (K-D through K-H):**
+- Full dispatch for lifecycle/VSpace syscalls (replacing 3 `.illegalState` stubs)
 - `ServiceConfig` for configuration-sourced service policy
 - `extractMessageRegisters` for IPC message body population
 - Round-trip proofs for all 7 argument decode functions

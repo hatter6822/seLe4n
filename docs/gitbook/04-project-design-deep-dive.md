@@ -196,7 +196,12 @@ proves the output array size equals the layout's message register count. Layer 2
 (completed, K-B v0.16.1): `SyscallArgDecode.lean` converts raw `msgRegs` values
 into per-syscall typed argument structures (e.g., `CSpaceMintArgs`, `VSpaceMapArgs`)
 via a shared `requireMsgReg` bounds-checked helper, with 7 determinism and 7
-error-exclusivity theorems, enabling full dispatch for all 13 syscalls. See
+error-exclusivity theorems, enabling full dispatch for all 13 syscalls. **Layer 3
+(completed, K-C v0.16.2):** `dispatchWithCap` now accepts `SyscallDecodeResult`
+(not just `SyscallId`), enabling CSpace dispatch arms to decode per-syscall
+arguments from `msgRegs`. All 4 CSpace syscalls (`cspaceMint`, `cspaceCopy`,
+`cspaceMove`, `cspaceDelete`) are fully wired through dispatch with 4 delegation
+theorems proved. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage
