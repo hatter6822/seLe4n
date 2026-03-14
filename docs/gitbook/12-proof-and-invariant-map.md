@@ -1069,3 +1069,30 @@ structural properties rather than just symbol existence:
 - `runQueueThreadPriorityConsistent` definition and default theorem exist
 - `runWSH16LifecycleChecks` test function exists
 - `schedule` uses O(1) `runQueue` membership
+
+## 30. WS-J1 Register-indexed authoritative namespaces (planned)
+
+WS-J1 introduces a register decode layer and typed register wrappers,
+closing the gap between the abstract model and real ARM64 syscall argument
+delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
+
+**Planned proof surface:**
+
+- `decodeCapPtr_roundtrip` — decode ∘ encode = identity for CPtr values.
+- `decodeMsgInfo_roundtrip` — decode ∘ encode = identity for MessageInfo.
+- `decodeSyscallArgs_deterministic` — identical register inputs produce identical decode results.
+- `syscallEntry_requires_valid_decode` — successful syscall entry implies valid register decode.
+- `syscallEntry_implies_capability_held` — successful capability-gated syscall implies caller held required right (threads through `syscallInvoke_requires_right`).
+- `registerDecodeConsistent` — decoded register values index into valid kernel state.
+- `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
+- Decode-related `NonInterferenceStep` constructors with NI preservation.
+
+**Planned types:**
+
+- `RegName` — typed wrapper structure (replacing `abbrev Nat`)
+- `RegValue` — typed wrapper structure (replacing `abbrev Nat`)
+- `SyscallId` — inductive covering modeled syscall set
+- `MessageInfo` — seL4 message-info word layout
+- `SyscallRegisterLayout` — ARM64 register-to-argument mapping
+- `SyscallDecodeResult` — decoded syscall arguments
+- `CdtNodeId` — typed wrapper structure (replacing `abbrev Nat`)

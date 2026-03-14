@@ -70,9 +70,31 @@ addresses low-priority findings from the v0.12.2 audits:
 See [v0.12.2 Audit Remediation (WS-F)](24-comprehensive-audit-2026-workstream-planning.md)
 for the full execution plan.
 
-## After remaining workstreams: Raspberry Pi 5 binding (H3)
+## WS-J1: Register-indexed authoritative namespaces
 
-Once WS-F closes remaining proof and model gaps:
+The next high-priority workstream replaces `RegName`/`RegValue` bare `Nat`
+aliases with typed wrapper structures and introduces a syscall argument decode
+layer. This closes the modeling gap where the `api*` wrappers accept pre-typed
+Lean parameters instead of extracting arguments from the machine register file,
+as real ARM64 hardware does.
+
+Six phases:
+
+| Phase | Focus |
+|-------|-------|
+| **J1-A** | Typed `RegName`/`RegValue` wrappers + compatibility bridge |
+| **J1-B** | Register decode layer (`RegisterDecode.lean`) |
+| **J1-C** | `syscallEntry` dispatch + soundness theorems |
+| **J1-D** | Invariant and NI integration |
+| **J1-E** | Testing and trace evidence |
+| **J1-F** | `CdtNodeId` cleanup and documentation sync |
+
+See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)
+for the full workstream plan.
+
+## After WS-J1: Raspberry Pi 5 binding (H3)
+
+Once WS-J1 closes the register modeling gap:
 
 1. Populate RPi5 runtime contract with hardware-validated predicates.
 2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.

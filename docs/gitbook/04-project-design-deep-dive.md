@@ -130,7 +130,35 @@ The `PlatformBinding` typeclass decouples kernel semantics from hardware:
 
 The simulation platform (`Platform/Sim/`) provides permissive contracts for testing. The RPi5 platform (`Platform/RPi5/`) provides substantive hardware-specific contracts (WS-H15b: SP-preservation register stability, GIC-400 IRQ range validation, MMIO disjointness proof, empty-initial-state boot checks). Both platforms provide concrete `AdapterProofHooks` instantiations (WS-H15d) grounding the adapter preservation chain end-to-end. Kernel logic is identical in both — only platform contracts differ.
 
-## 8. Testing: obligation-based coverage
+## 8. Syscall argument decode: register-sourced authority (WS-J1 planned)
+
+The current model passes syscall arguments as pre-typed Lean parameters directly
+to `api*` wrappers. Real ARM64 hardware delivers syscall arguments in
+general-purpose registers (x0–x7), and the kernel must decode these raw machine
+words into typed references before any authority check can proceed.
+
+WS-J1 addresses this modeling gap:
+
+1. **Typed register wrappers**: `RegName` and `RegValue` become wrapper
+   structures (matching the 13 existing typed identifiers in `Prelude.lean`)
+   instead of bare `Nat` abbreviations.
+2. **Register decode layer**: A new `RegisterDecode.lean` module provides total,
+   deterministic functions that convert raw register words into typed kernel
+   references (`CPtr`, `MessageInfo`, `SyscallId`).
+3. **Syscall entry point**: `syscallEntry` reads arguments from the current
+   thread's register context (via the `contextMatchesCurrent` invariant from
+   WS-H12c) and dispatches through the decode layer to `api*` wrappers.
+
+```
+User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry
+    → SyscallGate → api* wrapper → internal kernel operation
+```
+
+The existing `api*` functions remain as the internal kernel API. `syscallEntry`
+models the user-space boundary where untrusted register values become trusted
+kernel references — exactly where real-world confusion attacks occur.
+
+## 9. Testing: obligation-based coverage
 
 seLe4n defines coverage as **obligation coverage**: every transition, error path, and invariant component must have both a theorem and a fixture witness.
 
@@ -143,7 +171,7 @@ seLe4n defines coverage as **obligation coverage**: every transition, error path
 
 Tier 3 is the key innovation: it checks that named theorems and definitions still exist after refactors. If you rename `chooseThread_preserves_schedulerInvariantBundle`, Tier 3 fails.
 
-## 9. Related chapters
+## 10. Related chapters
 
 - [Architecture & Module Map](03-architecture-and-module-map.md) — module responsibilities and dependency flow
 - [Kernel Performance Optimization](08-kernel-performance-optimization.md) — WS-G technical breakdown

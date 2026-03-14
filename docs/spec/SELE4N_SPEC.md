@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Total declarations** | 2,006 across 70 modules |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | WS-J1 register-indexed authoritative namespaces (v0.14.10 plan) + Raspberry Pi 5 hardware binding |
+| **Next workstreams** | WS-J1 register-indexed authoritative namespaces with typed register wrappers, syscall decode layer, and `CdtNodeId` cleanup (v0.14.10 plan, 6 phases: J1-A through J1-F) + Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -132,6 +132,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning |
 | **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context |
+| **Syscall boundary** *(WS-J1 planned)* | C code extracts args from registers | Typed register wrappers + total decode layer with round-trip lemmas, determinism proof, and NI coverage |
 
 These are not abstract research extensions — they are design decisions that will be
 carried forward into the production kernel.

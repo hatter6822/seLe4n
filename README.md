@@ -245,7 +245,7 @@ tests/                           Negative-state suite, information-flow suite, t
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-J1** — Register-indexed authoritative kernel namespaces (High priority planning slice). This supersedes WS-I5 Part A’s documentation-only treatment of `RegName`/`RegValue` and defines a staged migration from raw register `Nat` payloads to typed namespace references resolved against authoritative state registries (plan: `docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`).
+- **WS-J1** — Register-indexed authoritative namespaces (High priority, 6 phases). Replaces `RegName`/`RegValue` bare `Nat` aliases with typed wrapper structures, introduces a `RegisterDecode.lean` module with total decode functions from raw register words to typed kernel references, adds `syscallEntry` as a register-sourced syscall dispatch path closing the gap between the model and real ARM64 hardware, wraps `CdtNodeId` for consistency, and proves decode correctness, invariant preservation, and NI properties (plan: [`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters
