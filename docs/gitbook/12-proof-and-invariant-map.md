@@ -1087,10 +1087,15 @@ delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits
 - `syscallEntry_preserves_proofLayerInvariantBundle` — success and error paths preserve top-level invariant.
 - Decode-related `NonInterferenceStep` constructors with NI preservation.
 
-**Planned types:**
+**Completed types (WS-J1-A):**
 
-- `RegName` — typed wrapper structure (replacing `abbrev Nat`)
-- `RegValue` — typed wrapper structure (replacing `abbrev Nat`)
+- `RegName` — typed wrapper structure with `DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`, `Repr`, `ToString`, `ofNat`/`toNat`, roundtrip/injectivity proofs
+- `RegValue` — typed wrapper structure with identical instance suite
+- `RegisterFile.gpr` — updated from `Nat → Nat` to `RegName → RegValue`
+- All 10 machine lemmas (`readReg_writeReg_eq/ne`, `writeReg_preserves_pc/sp`, etc.) re-proved for typed wrappers
+
+**Planned types (WS-J1-B..F):**
+
 - `SyscallId` — inductive covering modeled syscall set
 - `MessageInfo` — seL4 message-info word layout
 - `SyscallRegisterLayout` — ARM64 register-to-argument mapping

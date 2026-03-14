@@ -39,22 +39,24 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 - `SeLe4n/Prelude.lean`
   - object/thread IDs and kernel monad contract used globally,
-  - `Hashable`, `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances for all 13 typed identifiers (WS-G1, WS-H14a),
+  - `Hashable`, `EquivBEq`, `LawfulBEq`, `LawfulHashable` instances for all 15 typed identifiers (13 in Prelude + `RegName`/`RegValue` in Machine; WS-G1, WS-H14a, WS-J1-A),
   - `LawfulMonad` instance for `KernelM` with monad law proofs (WS-H14b),
   - identifier roundtrip lemmas (`toNat_ofNat`, `ofNat_toNat`) and injectivity proofs (WS-H14d),
   - sentinel predicate completion: `valid`, `valid_iff_not_reserved`, `sentinel_not_valid` (WS-H14f),
   - `OfNat` instances removed for type-safety enforcement (WS-H14e),
   - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
 - `SeLe4n/Machine.lean`
-  - machine registers (`RegName`, `RegValue` — currently `abbrev Nat`, planned
-    typed wrapper migration in WS-J1), memory abstraction, and pure update/read
-    helpers,
-  - `RegisterFile` with `pc`, `sp`, `gpr` fields; 10 read-after-write and frame
-    lemmas,
+  - machine registers (`RegName`, `RegValue` — typed wrapper structures with
+    `DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`,
+    `Repr`, `ToString`, `ofNat`/`toNat`; migrated from `abbrev Nat` in WS-J1-A),
+    memory abstraction, and pure update/read helpers,
+  - `RegisterFile` with `pc : RegValue`, `sp : RegValue`, `gpr : RegName → RegValue`
+    fields; 10 read-after-write and frame lemmas (re-proved for typed wrappers),
+  - roundtrip/injectivity theorems for `RegName` and `RegValue`,
   - `MachineConfig` (register/address width, page size with `isPowerOfTwo`
     validation + correctness proof, ASID limit) and `MemoryRegion`/`MemoryKind`
     for platform memory map declaration.
-  - **WS-J1 planned**: `SyscallRegisterLayout` for ARM64 register-to-argument
+  - **WS-J1-B planned**: `SyscallRegisterLayout` for ARM64 register-to-argument
     mapping, `MachineConfig.registerCount` for bounded register space.
 
 ### Model
