@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-service-policy-ipc-rMOO4",
-      "commit_sha": "40204ed81609374b1f10c7c70df121449f89fe0a",
-      "tree_sha": "a0819bc4813cf13fed2af4a81c5619ab4ccc7411",
-      "committed_at_utc": "2026-03-14T23:47:23+00:00"
+      "branch": "main",
+      "commit_sha": "22640458be10f9f7b77ef54f959fd896fe550195",
+      "tree_sha": "5297d5f47d7f2a74253c69e5b1c8182ba9b35ceb",
+      "committed_at_utc": "2026-03-14T21:42:17-04:00"
     }
   },
   "source_sync": {
