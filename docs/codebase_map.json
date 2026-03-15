@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-closeout-docs-mlQwc",
-      "commit_sha": "505db0e2d7099177f4ee24b891ade3ca6aeb6712",
-      "tree_sha": "a41125a94bb473fc71886662d2940d020cd59a2f",
-      "committed_at_utc": "2026-03-15T23:24:18+00:00"
+      "branch": "main",
+      "commit_sha": "65d703160400a5495134eeaadf259b9651294cd8",
+      "tree_sha": "f93bd73512d984139ff1a1c9b67a15c14362fee3",
+      "committed_at_utc": "2026-03-15T19:41:11-04:00"
     }
   },
   "source_sync": {
