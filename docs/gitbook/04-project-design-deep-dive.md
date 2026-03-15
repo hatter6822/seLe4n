@@ -57,7 +57,33 @@ On real ARM64 hardware, syscall arguments arrive in general-purpose registers (x
 
 This closes the gap between machine registers and kernel transitions: nothing happens at the syscall boundary that isn't either proved or explicitly modeled as an error. The module is self-contained (no kernel subsystem imports), ensuring the decode layer cannot accidentally depend on kernel state it's supposed to validate.
 
-### 1.6 Operations/Invariant split
+### 1.6 Two-layer syscall argument decode (WS-K)
+
+The syscall boundary uses a two-layer decode architecture that converts raw ARM64 register values into typed kernel arguments:
+
+**Layer 1 — RegisterDecode.lean:** Converts the raw register file (x0–x7) into a flat `SyscallDecodeResult` containing `capAddr : CPtr`, `msgInfo : MessageInfo`, `syscallId : SyscallId`, and `msgRegs : Array RegValue`. This layer handles architecture-specific register layout via `SyscallRegisterLayout` and provides total decode with explicit `Except` errors. Round-trip, determinism, and error-exclusivity theorems are proved at this layer.
+
+**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Seven structures cover the syscall families:
+
+| Syscall family | Structure | Min regs | Fields |
+|---|---|---|---|
+| CSpace mint | `CSpaceMintArgs` | 4 | srcSlot, dstSlot, rights, badge |
+| CSpace copy | `CSpaceCopyArgs` | 2 | srcSlot, dstSlot |
+| CSpace move | `CSpaceMoveArgs` | 2 | srcSlot, dstSlot |
+| CSpace delete | `CSpaceDeleteArgs` | 1 | targetSlot |
+| Lifecycle retype | `LifecycleRetypeArgs` | 3 | targetObj, newType, size |
+| VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, paddr, perms |
+| VSpace unmap | `VSpaceUnmapArgs` | 2 | asid, vaddr |
+
+A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Seven encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
+
+**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 13 syscalls are fully wired — zero `.illegalState` stubs remain.
+
+**Service policy:** `ServiceConfig` in `SystemState` holds policy predicates (`allowStart`, `allowStop`) for service start/stop operations, replacing the original permissive `(fun _ => true)` stubs with configuration-sourced, auditable predicates.
+
+**IPC message population:** `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with a triple bound (info.length, maxMessageRegisters, msgRegs.size). IPC send/call/reply dispatch arms populate message bodies from decoded registers instead of empty arrays.
+
+### 1.7 Operations/Invariant split
 
 Every kernel subsystem is split into two files:
 
@@ -187,7 +213,7 @@ The existing `api*` functions remain as the internal kernel API. `syscallEntry`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.
 
-**WS-K extension (in progress):** The decode architecture is expanding to a
+**WS-K extension (completed, v0.16.0–v0.16.8):** The decode architecture uses a
 two-layer design. **Layer 1 completed (K-A, v0.16.0):**
 `RegisterDecode.decodeSyscallArgs` now extracts raw message register values
 (x2–x5 on ARM64) into `SyscallDecodeResult.msgRegs` in a single

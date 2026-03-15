@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.16.7` |
+| Version | `0.16.8` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 36,979 across 69 files |
-| Test LoC | 3,755 across 4 suites |
+| Production LoC | 37,139 across 69 files |
+| Test LoC | 4,037 across 4 suites |
 | Proved declarations | 1,198 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | **WS-K** full syscall dispatch completion (in progress, v0.16.7–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C completed** (v0.16.2): all 4 CSpace syscalls wired, 4 delegation theorems. **K-D completed** (v0.16.3): all 3 remaining stubs wired — zero `.illegalState` stubs, 13/13 dispatch. **K-E completed** (v0.16.4): `ServiceConfig`-sourced policy, IPC message population, 5 delegation theorems. **K-F completed** (v0.16.5): layer-2 round-trip proofs, extraction round-trip, preservation composition, NI integration. **K-G completed** (v0.16.7): `lifecycleRevokeDeleteRetype` NI proofs, `NonInterferenceStep` extended to 34 constructors, deferred proof completion. Remaining: docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
+| Next workstreams | **WS-K** full syscall dispatch completion — **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). **K-A** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. **K-B** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C** (v0.16.2): all 4 CSpace syscalls wired, 4 delegation theorems. **K-D** (v0.16.3): all 3 remaining stubs wired — zero `.illegalState` stubs, 13/13 dispatch. **K-E** (v0.16.4): `ServiceConfig`-sourced policy, IPC message population, 5 delegation theorems. **K-F** (v0.16.5): layer-2 round-trip proofs, extraction round-trip, preservation composition, NI integration. **K-G** (v0.16.7): `lifecycleRevokeDeleteRetype` NI proofs, `NonInterferenceStep` extended to 34 constructors. **K-H** (v0.16.8): documentation sync, metrics regeneration, version bump, workstream closeout. See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -57,19 +57,30 @@ WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) 
 WS-J1-D (invariant/NI integration, v0.15.8) →
 WS-J1-E (testing and trace evidence, v0.15.9) →
 WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10) →
-**WS-K (full syscall dispatch completion, v0.16.2–v0.16.8) — in progress.**
+**WS-K (full syscall dispatch completion, v0.16.0–v0.16.8) — PORTFOLIO COMPLETE.**
 
-## In Progress: WS-K Full Syscall Dispatch Completion (v0.16.7–v0.16.8)
+## Completed: WS-K Full Syscall Dispatch Completion (v0.16.0–v0.16.8)
 
-Completes the syscall surface established by WS-J1. Extends
-`SyscallDecodeResult` with message register values (x2–x5), defines per-syscall
-argument structures with total decode functions, wires all 13 syscalls through
-`dispatchWithCap` (replacing 7 `.illegalState` stubs), replaces service policy
-stubs with configuration-sourced predicates, populates IPC message bodies from
-decoded registers, and proves round-trip correctness, invariant preservation,
-and NI coverage for all new paths. 8 phases (K-A through K-H). K-A through K-G
-completed (v0.16.0–v0.16.7); K-H remaining. See
+Completed the syscall surface established by WS-J1. Extended
+`SyscallDecodeResult` with message register values (x2–x5), defined per-syscall
+argument structures with total decode functions, wired all 13 syscalls through
+`dispatchWithCap` (replacing 7 `.illegalState` stubs), replaced service policy
+stubs with configuration-sourced predicates, populated IPC message bodies from
+decoded registers, and proved round-trip correctness, invariant preservation,
+and NI coverage for all new paths. All 8 phases (K-A through K-H) completed
+(v0.16.0–v0.16.8). See
 [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+
+## Next: Raspberry Pi 5 Hardware Binding
+
+The next major milestone is populating the RPi5 platform stubs with
+hardware-validated contracts:
+
+1. Populate RPi5 runtime contract with hardware-validated predicates.
+2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.
+3. Implement GIC-400 interrupt routing with IRQ acknowledgment.
+4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
+5. Define boot sequence as a verified initial state construction.
 
 ## Completed: WS-J1-F CdtNodeId Cleanup and Documentation Sync (v0.15.10)
 

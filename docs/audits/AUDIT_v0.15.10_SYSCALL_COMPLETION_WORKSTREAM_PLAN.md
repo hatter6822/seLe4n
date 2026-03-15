@@ -1,8 +1,8 @@
 # seLe4n Workstream Plan — Full Syscall Dispatch Completion (WS-K)
 
-**Version target:** v0.16.1–v0.16.8
+**Version target:** v0.16.0–v0.16.8
 **Base version:** v0.15.10
-**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2), K-D completed (v0.16.3), K-E completed (v0.16.4)
+**Status:** **COMPLETED** — K-A (v0.16.0), K-B (v0.16.1), K-C (v0.16.2), K-D (v0.16.3), K-E (v0.16.4), K-F (v0.16.5–v0.16.6), K-G (v0.16.7), K-H (v0.16.8)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -2521,59 +2521,391 @@ warnings across all tiers.
 
 ### WS-K-H — Documentation Sync and Workstream Closeout
 
-**Goal:** Synchronize all documentation with the completed implementation.
-Update GitBook chapters and claim evidence index.
+**Goal:** Synchronize all project documentation with the completed WS-K
+implementation (K-A through K-G), update GitBook mirror chapters, regenerate
+machine-readable metrics, bump the version to v0.16.8, and close the WS-K
+portfolio. This phase introduces no code changes to the Lean source — it is
+purely a documentation, metrics, and version-management operation.
 
-**Tasks:**
-1. Update `docs/WORKSTREAM_HISTORY.md`:
-   - Add WS-K portfolio entry with status, version range, and phase summary.
-2. Update `docs/spec/SELE4N_SPEC.md`:
-   - Syscall dispatch section: document complete 13/13 dispatch.
-   - Message register extraction: document register layout → typed args.
-   - Service policy: document `ServiceConfig` mechanism.
-3. Update `docs/DEVELOPMENT.md`:
-   - Active workstreams section: add WS-K entry.
-   - Next steps: update to reflect post-WS-K state.
-4. Update `docs/CLAIM_EVIDENCE_INDEX.md`:
-   - Add claims for WS-K-A through WS-K-G with test commands.
-   - Update WS-J1 claims to note that WS-K extends them.
-5. Update `docs/gitbook/` chapters:
-   - `03-architecture-and-module-map.md` — Add `SyscallArgDecode.lean` to
-     module map.
-   - `04-project-design-deep-dive.md` — Document decode architecture
-     (two-layer: raw registers → SyscallDecodeResult → per-syscall args).
-   - `05-specification-and-roadmap.md` — Update roadmap milestones.
-   - `12-proof-and-invariant-map.md` — Add round-trip and delegation theorems
-     to the proof map.
-6. Regenerate `docs/codebase_map.json`:
-   ```bash
-   python3 ./scripts/generate_codebase_map.py --pretty --output docs/codebase_map.json
+**Design rationale:**
+
+WS-K delivered 8 major implementation phases across 10+ Lean source files,
+introducing per-syscall argument decode structures, full 13/13 syscall dispatch,
+service policy configuration, IPC message body population, 44+ new theorems
+(round-trip, delegation, preservation, NI), 21 negative tests, 8 trace
+scenarios, and 34 `NonInterferenceStep` constructors. The documentation layer
+must now reflect this completed state accurately across 11 files in 4 categories:
+canonical root docs, GitBook mirrors, machine-readable metrics, and the
+workstream plan itself.
+
+The subtask decomposition below follows a strict dependency order:
+
+1. **K-H.1–K-H.4** (canonical root docs) — update the four root documentation
+   files that are the source of truth. These are independent of each other and
+   can be done in any order.
+2. **K-H.5–K-H.8** (GitBook mirrors) — update the four GitBook chapters that
+   summarize and link to canonical sources. These depend on K-H.1–K-H.4 being
+   accurate, since GitBook must mirror canonical content.
+3. **K-H.9** (metrics regeneration) — regenerate `docs/codebase_map.json` from
+   the Lean source. This depends on all code being final (which it is after K-G).
+4. **K-H.10** (README metrics sync) — update `README.md` metrics from the
+   regenerated `codebase_map.json`. Depends on K-H.9.
+5. **K-H.11** (version bump) — bump `lakefile.toml` version to `0.16.8` and
+   update all version references across documentation. Depends on K-H.1–K-H.10.
+6. **K-H.12** (workstream plan closeout) — update this file's status and
+   checklist. Depends on all prior subtasks.
+7. **K-H.13** (final validation) — run `test_full.sh` to verify zero breakage.
+   Depends on K-H.12.
+
+**Subtasks:**
+
+#### K-H.1 — Update `docs/WORKSTREAM_HISTORY.md`
+
+Update the canonical workstream history to reflect WS-K portfolio completion.
+
+**Changes:**
+1. Update the WS-K table row (line ~93) to change K-H status from "planned"
+   to "**COMPLETED**" with version annotation `(v0.16.8)`.
+2. Add a `WS-K-H` entry to the "Completed workstream portfolio" table
+   (line ~114) with a scope summary covering all documentation files updated,
+   metrics regenerated, and version bumped.
+3. Update the "What's next" section (line ~73) to move WS-K from "in progress"
+   to completed and update the next priority to Raspberry Pi 5 hardware binding.
+
+**File:** `docs/WORKSTREAM_HISTORY.md`
+**Acceptance:** WS-K shows as fully completed; next priority is RPi5 binding.
+
+#### K-H.2 — Update `docs/spec/SELE4N_SPEC.md`
+
+Update the project specification with WS-K completion details.
+
+**Changes:**
+1. Update the "Current State Snapshot" table (line ~51):
+   - Version: `0.16.8`
+   - Update "Next workstreams" cell to show WS-K **PORTFOLIO COMPLETE** with
+     all 8 phases (K-A through K-H) and version annotations. Update next
+     priority to Raspberry Pi 5 hardware binding.
+2. Update the "Proved declarations" count and "Production LoC" if changed by
+   metrics regeneration (K-H.9).
+
+**File:** `docs/spec/SELE4N_SPEC.md` (line ~47–62)
+**Acceptance:** Spec reflects WS-K complete with accurate metrics.
+
+#### K-H.3 — Update `docs/DEVELOPMENT.md`
+
+Update the development guide with WS-K completion and post-WS-K priorities.
+
+**Changes:**
+1. Update the "active workstream" line (line ~10) to show WS-K **PORTFOLIO
+   COMPLETE** (v0.16.0–v0.16.8) with all 8 phases listed. Add K-F completed
+   (v0.16.5–v0.16.6), K-G completed (v0.16.7), K-H completed (v0.16.8).
+2. Update "Next workstreams" section (line ~38):
+   - Change WS-K description from "in progress" to "**PORTFOLIO COMPLETE**".
+   - Update version from `v0.16.7` to `v0.16.8`.
+   - Add brief summary: "All 8 phases completed — full syscall dispatch with
+     message register extraction, per-syscall argument decode, 13/13 dispatch,
+     service policy configuration, IPC message population, 44+ theorems, 34
+     NI step constructors."
+   - Update next priority to Raspberry Pi 5 hardware binding.
+
+**File:** `docs/DEVELOPMENT.md` (lines ~10, ~38–48)
+**Acceptance:** WS-K shows as complete; RPi5 binding is next priority.
+
+#### K-H.4 — Update `docs/CLAIM_EVIDENCE_INDEX.md`
+
+Add WS-K claims to the claim evidence index.
+
+**Changes:**
+1. Update the existing WS-K claim row (line ~73) to reflect full portfolio
+   completion (K-A through K-H) with version range v0.16.0–v0.16.8.
+2. Ensure the claim covers all major deliverables:
+   - K-A: `SyscallDecodeResult.msgRegs` field, `decodeMsgRegs_length` lemma
+   - K-B: 7 argument structures, 7 decode functions, 14 theorems
+   - K-C: 4 CSpace syscalls wired, 4 delegation theorems
+   - K-D: 3 remaining stubs wired (zero `.illegalState`), `objectOfTypeTag`,
+     `lifecycleRetypeDirect`, `PagePermissions.ofNat`/`toNat`
+   - K-E: `ServiceConfig`-sourced policy, IPC message population, 5 delegation
+     theorems
+   - K-F: 7 encode functions, 8 round-trip proofs, preservation composition,
+     `retypeFromUntyped_preserves_lowEquivalent` NI proof
+   - K-G: `lifecycleRevokeDeleteRetype` NI proof, 34 `NonInterferenceStep`
+     constructors
+   - K-H: Documentation sync, metrics regeneration, version bump
+3. Evidence commands: `./scripts/test_full.sh` (Tiers 0–3) + `lake build`.
+4. Evidence artifacts: All 13 dispatch arms in `dispatchWithCap`, 21 negative
+   tests, 8 trace scenarios, Tier 3 anchors, zero sorry/axiom.
+
+**File:** `docs/CLAIM_EVIDENCE_INDEX.md` (line ~73)
+**Acceptance:** WS-K claim row is comprehensive with evidence commands.
+
+#### K-H.5 — Update `docs/gitbook/03-architecture-and-module-map.md`
+
+Update the GitBook architecture chapter with WS-K module additions.
+
+**Changes:**
+1. Add `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` entry to the
+   Architecture subsystem section (after `RegisterDecode.lean`, line ~196):
    ```
-7. Update `README.md` metrics via `report_current_state.py` if applicable.
-8. Update this workstream plan status from "Planned" to "Completed" with
-   version annotations on all checklist items.
-9. Run `test_full.sh` one final time to verify documentation changes don't
-   break Tier 0 hygiene (website link check).
+   - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1;
+     extended WS-K-F v0.16.5)*
+     - Layer-2 per-syscall argument decode: 7 typed argument structures
+       (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
+       `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`,
+       `VSpaceUnmapArgs`) with total `Except KernelError` decode functions,
+     - shared `requireMsgReg` safe-indexing helper with bounds-checked access,
+     - 7 encode functions for round-trip symmetry,
+     - 7 determinism theorems, 7 error-exclusivity theorems,
+     - 7 round-trip proofs (`decode ∘ encode = id`) with `decode_layer2_roundtrip_all`
+       composition,
+     - self-contained module: imports only `Model.State` (same discipline as
+       `RegisterDecode.lean`).
+   ```
+2. Update the `RegisterDecode.lean` entry (line ~196) to note WS-K-A/K-E
+   extensions: `msgRegs` field population, `extractMessageRegisters` helper,
+   `encodeMsgRegs` helper, `extractMessageRegisters_length`/
+   `extractMessageRegisters_ipc_bounded`/`extractMessageRegisters_deterministic`
+   theorems, `extractMessageRegisters_roundtrip` proof.
+3. Update `SeLe4n/Kernel/API.lean` entry (line ~77) to note WS-K-C/K-D/K-E
+   additions: `dispatchWithCap` accepts `SyscallDecodeResult` (not `SyscallId`),
+   all 13 syscalls fully dispatch (zero `.illegalState` stubs), 12 delegation
+   theorems, `ServiceConfig`-sourced policy, IPC message body population.
+4. Update `SeLe4n/Model/State.lean` entry (line ~101) to note WS-K-E addition:
+   `ServiceConfig` structure, `SystemState.serviceConfig` field.
+5. Update `SeLe4n/Kernel/Lifecycle/Operations.lean` entry (line ~149) to note
+   WS-K-D additions: `objectOfTypeTag`, `lifecycleRetypeDirect`.
+6. Update `SeLe4n/Model/Object/Structures.lean` entry (line ~95) to note WS-K-D
+   addition: `PagePermissions.ofNat`/`toNat` with round-trip theorem.
+
+**File:** `docs/gitbook/03-architecture-and-module-map.md`
+**Acceptance:** Module map includes all WS-K additions; entries accurate.
+
+#### K-H.6 — Update `docs/gitbook/04-project-design-deep-dive.md`
+
+Update the GitBook design chapter with the two-layer decode architecture.
+
+**Changes:**
+1. Add a new subsection `1.7 Two-layer syscall argument decode` after section
+   1.6 (line ~69), documenting:
+   - **Layer 1** (RegisterDecode.lean): raw register file → flat
+     `SyscallDecodeResult` with `capAddr`, `msgInfo`, `syscallId`, `msgRegs`.
+     Total decode with explicit `Except` errors. Round-trip and determinism
+     proofs.
+   - **Layer 2** (SyscallArgDecode.lean): `SyscallDecodeResult.msgRegs` →
+     per-syscall typed argument structures. 7 structures covering CSpace
+     (mint/copy/move/delete), lifecycle (retype), and VSpace (map/unmap).
+     Shared `requireMsgReg` safe-indexing. Round-trip proofs with encode
+     functions.
+   - **Dispatch integration**: `dispatchWithCap` routes `SyscallDecodeResult`
+     through the appropriate layer-2 decode function, then delegates to the
+     kernel operation with typed arguments. All 13 syscalls fully wired.
+   - **Service policy**: `ServiceConfig` structure in `SystemState` replaces
+     `(fun _ => true)` stubs. Policy predicates are configuration-sourced and
+     auditable.
+   - **IPC message population**: `extractMessageRegisters` converts
+     `Array RegValue` → `Array Nat` with triple bound (info.length,
+     maxMessageRegisters, msgRegs.size). IPC send/call/reply populate
+     message bodies from decoded registers.
+2. Include the decode architecture diagram from section 3.3 of this workstream
+   plan (adapted for prose context).
+
+**File:** `docs/gitbook/04-project-design-deep-dive.md`
+**Acceptance:** Two-layer decode architecture documented with design rationale.
+
+#### K-H.7 — Update `docs/gitbook/05-specification-and-roadmap.md`
+
+Update the GitBook roadmap chapter with WS-K completion.
+
+**Changes:**
+1. Update the "Current state" table (line ~14):
+   - Version: `0.16.8`
+   - Update "Next workstreams" cell to show WS-K **PORTFOLIO COMPLETE** and
+     RPi5 binding as next priority.
+   - Update "Proved declarations" and "Production LoC" from regenerated metrics.
+2. Add `WS-K-H (documentation sync, v0.16.8)` to the milestone history
+   timeline (line ~60).
+3. Update the "In Progress" section header (line ~62) to "Completed: WS-K Full
+   Syscall Dispatch Completion (v0.16.0–v0.16.8)". Update body text to reflect
+   all 8 phases completed.
+4. Add a new "Next: Raspberry Pi 5 Hardware Binding" subsection after the WS-K
+   section, outlining the next major milestone.
+
+**File:** `docs/gitbook/05-specification-and-roadmap.md`
+**Acceptance:** WS-K shown as complete; roadmap reflects post-WS-K priorities.
+
+#### K-H.8 — Update `docs/gitbook/12-proof-and-invariant-map.md`
+
+Update the GitBook proof map with WS-K proof deliverables.
+
+**Changes:**
+1. Add a new section after the existing NI section documenting WS-K proof
+   surface additions:
+   - **Layer-2 round-trip proofs** (SyscallArgDecode.lean, WS-K-F):
+     7 encode/decode round-trip theorems (`encodeCSpaceMintArgs`/
+     `decodeCSpaceMintArgs` round-trip, etc.) with `decode_layer2_roundtrip_all`
+     composed conjunction.
+   - **Layer-1 extraction round-trip** (RegisterDecode.lean, WS-K-F):
+     `extractMessageRegisters_roundtrip`.
+   - **Delegation theorems** (API.lean, WS-K-C/K-D/K-E): 12 theorems proving
+     each dispatch arm correctly delegates to the corresponding kernel
+     operation with decoded arguments (4 CSpace + 3 lifecycle/VSpace +
+     2 service + 3 IPC).
+   - **Preservation composition** (API.lean, WS-K-F):
+     `dispatchWithCap_layer2_decode_pure` (decode depends only on `msgRegs`),
+     `dispatchWithCap_preservation_composition_witness`.
+   - **NI coverage extension** (Composition.lean, WS-K-F/K-G):
+     `retypeFromUntyped_preserves_lowEquivalent`,
+     `lifecycleRevokeDeleteRetype_preserves_lowEquivalent`,
+     `cspaceRevoke_preserves_projection` (standalone),
+     `lifecycleRevokeDeleteRetype_preserves_projection`,
+     `NonInterferenceStep` extended to 34 constructors,
+     `syscallNI_coverage_witness` exhaustive match.
+   - **Error-exclusivity theorems** (SyscallArgDecode.lean, WS-K-B):
+     7 theorems mapping decode failure to insufficient registers.
+   - **Type tag and permissions** (Lifecycle/Operations.lean, Structures.lean,
+     WS-K-D): `objectOfTypeTag_type`, `objectOfTypeTag_error_iff`,
+     `PagePermissions_ofNat_toNat_roundtrip`.
+2. Update the NI coverage section to note 34 constructors (up from 33 as of
+   WS-K-F, extended by WS-K-G's `lifecycleRevokeDeleteRetype` constructor).
+
+**File:** `docs/gitbook/12-proof-and-invariant-map.md`
+**Acceptance:** All WS-K proof deliverables documented in proof map.
+
+#### K-H.9 — Regenerate `docs/codebase_map.json`
+
+Regenerate the machine-readable codebase map from current Lean sources.
+
+**Command:**
+```bash
+python3 ./scripts/generate_codebase_map.py --pretty --output docs/codebase_map.json
+```
+
+**Verification:**
+```bash
+python3 ./scripts/generate_codebase_map.py --check
+```
+
+This updates module counts, declaration counts, LoC metrics, and the
+`readme_sync` key that drives README.md and spec metrics. The regeneration
+captures all WS-K additions (new file `SyscallArgDecode.lean`, new theorems,
+new structures, extended functions).
+
+**File:** `docs/codebase_map.json`
+**Acceptance:** `--check` passes; `readme_sync` metrics are current.
+
+#### K-H.10 — Sync README.md metrics
+
+Update `README.md` metrics from the regenerated `codebase_map.json`.
+
+**Changes:**
+1. Update the version badge (line ~11): `0.16.8`.
+2. Update the "Current state" table (lines ~58–67) with metrics from the
+   regenerated `codebase_map.json` `readme_sync` key:
+   - Version: `0.16.8`
+   - Production LoC: (from `readme_sync.production_loc`)
+   - Test LoC: (from `readme_sync.test_loc`)
+   - Proved declarations: (from `readme_sync.proved_theorem_lemma_decls`)
+
+**Cross-check:**
+```bash
+python3 ./scripts/report_current_state.py
+```
+
+Compare output against README table to confirm consistency.
+
+**File:** `README.md` (lines ~11, ~58–67)
+**Acceptance:** README metrics match `codebase_map.json` `readme_sync` values.
+
+#### K-H.11 — Version bump to v0.16.8
+
+Bump the project version in `lakefile.toml` and propagate to all version
+references.
+
+**Changes:**
+1. `lakefile.toml` line 8: change `version = "0.16.7"` to `version = "0.16.8"`.
+2. Verify all documentation version references updated in K-H.1–K-H.10:
+   - `README.md` badge and table
+   - `docs/spec/SELE4N_SPEC.md` table
+   - `docs/gitbook/05-specification-and-roadmap.md` table
+   - `docs/DEVELOPMENT.md` version reference
+   - `docs/WORKSTREAM_HISTORY.md` version annotations
+
+**File:** `lakefile.toml`
+**Acceptance:** `grep -r '0\.16\.7' docs/ README.md lakefile.toml` → 0 matches.
+
+#### K-H.12 — Workstream plan closeout
+
+Update this workstream plan document to reflect WS-K portfolio completion.
+
+**Changes:**
+1. Update the status line (line ~5) from "In progress" to "**COMPLETED**" with
+   version range v0.16.0–v0.16.8.
+2. Update the completion evidence checklist (section 9, lines ~2735–2739):
+   mark all K-H items as `[x]` with version `(v0.16.8)`.
+
+**File:** This file (`docs/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`)
+**Acceptance:** All checklist items show `[x]`; status is "COMPLETED".
+
+#### K-H.13 — Final validation
+
+Run `test_full.sh` to verify all documentation changes are consistent and no
+Tier 0 hygiene checks are broken (website link manifest, forbidden marker scan,
+documentation sync).
+
+**Command:**
+```bash
+./scripts/test_full.sh
+```
+
+**Expected result:** All tiers pass (0–3). Specifically:
+- Tier 0: `test_tier0_hygiene.sh` — website link check passes (no protected
+  paths renamed), forbidden marker scan passes (zero sorry/axiom), doc sync
+  passes.
+- Tier 1: `lake build` — compiles cleanly (no Lean source changes in K-H).
+- Tier 2: trace, negative-state, determinism, information-flow suites pass.
+- Tier 3: invariant surface anchors pass.
+
+**Acceptance:** `test_full.sh` exits 0.
 
 **Exit criteria:**
-- All documentation files listed above updated and consistent.
-- `docs/codebase_map.json` regenerated.
-- GitBook chapters mirror canonical sources.
-- `test_full.sh` passes (including Tier 0 link check).
-- Workstream plan status updated to "Completed".
+- K-H.1: `docs/WORKSTREAM_HISTORY.md` shows WS-K portfolio complete (K-A
+  through K-H, v0.16.0–v0.16.8).
+- K-H.2: `docs/spec/SELE4N_SPEC.md` current state reflects v0.16.8, WS-K
+  complete, accurate metrics.
+- K-H.3: `docs/DEVELOPMENT.md` active workstream shows WS-K complete, next
+  priority is RPi5 hardware binding.
+- K-H.4: `docs/CLAIM_EVIDENCE_INDEX.md` has comprehensive WS-K claim with
+  evidence commands and artifacts.
+- K-H.5: `docs/gitbook/03-architecture-and-module-map.md` includes
+  `SyscallArgDecode.lean` and all WS-K module updates.
+- K-H.6: `docs/gitbook/04-project-design-deep-dive.md` documents two-layer
+  decode architecture with design rationale.
+- K-H.7: `docs/gitbook/05-specification-and-roadmap.md` shows WS-K complete,
+  roadmap updated.
+- K-H.8: `docs/gitbook/12-proof-and-invariant-map.md` documents all WS-K
+  proof deliverables (44+ theorems, 34 NI constructors).
+- K-H.9: `docs/codebase_map.json` regenerated and `--check` passes.
+- K-H.10: `README.md` metrics match `codebase_map.json` `readme_sync` values.
+- K-H.11: `lakefile.toml` version is `0.16.8`; zero `0.16.7` references in
+  docs.
+- K-H.12: This workstream plan status is "COMPLETED"; all checklist items
+  are `[x]`.
+- K-H.13: `test_full.sh` exits 0 with all tiers passing.
+- Zero `sorry`/`axiom` in production proof surface (unchanged from K-G).
+- Zero website-linked paths renamed or removed.
 
 **Files modified:**
-- `docs/WORKSTREAM_HISTORY.md`
-- `docs/spec/SELE4N_SPEC.md`
-- `docs/DEVELOPMENT.md`
-- `docs/CLAIM_EVIDENCE_INDEX.md`
-- `docs/gitbook/03-architecture-and-module-map.md`
-- `docs/gitbook/04-project-design-deep-dive.md`
-- `docs/gitbook/05-specification-and-roadmap.md`
-- `docs/gitbook/12-proof-and-invariant-map.md`
-- `docs/codebase_map.json`
-- `README.md`
-- This file (status update).
+- `docs/WORKSTREAM_HISTORY.md` — WS-K portfolio completion, K-H entry
+- `docs/spec/SELE4N_SPEC.md` — Current state, version, metrics
+- `docs/DEVELOPMENT.md` — Active workstream, next priorities
+- `docs/CLAIM_EVIDENCE_INDEX.md` — WS-K claim row update
+- `docs/gitbook/03-architecture-and-module-map.md` — Module map additions
+- `docs/gitbook/04-project-design-deep-dive.md` — Two-layer decode section
+- `docs/gitbook/05-specification-and-roadmap.md` — Roadmap, milestone, version
+- `docs/gitbook/12-proof-and-invariant-map.md` — Proof map additions
+- `docs/codebase_map.json` — Regenerated metrics
+- `README.md` — Version badge, metrics table
+- `lakefile.toml` — Version bump to 0.16.8
+- This file — Status update, checklist closeout
 
 **Version target:** v0.16.8
 
@@ -2732,11 +3064,19 @@ Update GitBook chapters and claim evidence index.
 - [x] K-G5: 8 trace scenarios with full Layer-2 decode pipeline (v0.16.7) ✓
 - [x] K-G6: 11 `rg` + 23 `#check` Tier 3 anchors for K-F/K-G (v0.16.7) ✓
 - [x] K-G7: Fixture update + `test_full.sh` passes zero failures (v0.16.7) ✓
-- [ ] K-H: `docs/WORKSTREAM_HISTORY.md` updated (v0.16.8)
-- [ ] K-H: `docs/spec/SELE4N_SPEC.md` updated (v0.16.8)
-- [ ] K-H: GitBook chapters synchronized (v0.16.8)
-- [ ] K-H: `docs/codebase_map.json` regenerated (v0.16.8)
-- [ ] K-H: `test_full.sh` exits 0 including Tier 0 hygiene (v0.16.8)
+- [x] K-H.1: `docs/WORKSTREAM_HISTORY.md` updated — WS-K portfolio complete (v0.16.8) ✓
+- [x] K-H.2: `docs/spec/SELE4N_SPEC.md` updated — version, metrics, WS-K complete (v0.16.8) ✓
+- [x] K-H.3: `docs/DEVELOPMENT.md` updated — WS-K complete, RPi5 next (v0.16.8) ✓
+- [x] K-H.4: `docs/CLAIM_EVIDENCE_INDEX.md` updated — WS-K claims comprehensive (v0.16.8) ✓
+- [x] K-H.5: `docs/gitbook/03-architecture-and-module-map.md` updated — SyscallArgDecode + WS-K modules (v0.16.8) ✓
+- [x] K-H.6: `docs/gitbook/04-project-design-deep-dive.md` updated — two-layer decode architecture (v0.16.8) ✓
+- [x] K-H.7: `docs/gitbook/05-specification-and-roadmap.md` updated — WS-K complete, roadmap (v0.16.8) ✓
+- [x] K-H.8: `docs/gitbook/12-proof-and-invariant-map.md` updated — WS-K proof deliverables (v0.16.8) ✓
+- [x] K-H.9: `docs/codebase_map.json` regenerated and `--check` passes (v0.16.8) ✓
+- [x] K-H.10: `README.md` metrics synced from `codebase_map.json` (v0.16.8) ✓
+- [x] K-H.11: `lakefile.toml` version bumped to `0.16.8` (v0.16.8) ✓
+- [x] K-H.12: Workstream plan status updated to "COMPLETED" (v0.16.8) ✓
+- [x] K-H.13: `test_full.sh` exits 0 including Tier 0 hygiene (v0.16.8) ✓
 
 ---
 
