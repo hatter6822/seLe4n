@@ -15,11 +15,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.16.8` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 37,139 across 69 files |
-| Test LoC | 4,037 across 4 suites |
+| Production LoC | 37,245 across 69 files |
+| Test LoC | 4,098 across 4 suites |
 | Proved declarations | 1,198 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| Next workstreams | **WS-K** full syscall dispatch completion — **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). **K-A** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode update, length/round-trip lemmas. **K-B** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C** (v0.16.2): all 4 CSpace syscalls wired, 4 delegation theorems. **K-D** (v0.16.3): all 3 remaining stubs wired — zero `.illegalState` stubs, 13/13 dispatch. **K-E** (v0.16.4): `ServiceConfig`-sourced policy, IPC message population, 5 delegation theorems. **K-F** (v0.16.5): layer-2 round-trip proofs, extraction round-trip, preservation composition, NI integration. **K-G** (v0.16.7): `lifecycleRevokeDeleteRetype` NI proofs, `NonInterferenceStep` extended to 34 constructors. **K-H** (v0.16.8): documentation sync, metrics regeneration, version bump, workstream closeout. See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (J1-A through J1-F, v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
+| Latest audit | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit |
+| Next workstreams | **WS-L** IPC subsystem audit & remediation — 5 phases: L1 (performance), L2 (code quality), L3 (proof strengthening), L4 (test coverage — partially complete), L5 (documentation — in progress). Supersedes WS-I5. See [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

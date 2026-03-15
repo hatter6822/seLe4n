@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "cccc4bedcbae014fb1c414d84f6de0037c5262b6",
-      "tree_sha": "7e0c5c8a45900dcce6a49fedb86c547b43243fe7",
-      "committed_at_utc": "2026-03-15T01:03:08-04:00"
+      "branch": "claude/audit-ipc-subsystem-cS7z8",
+      "commit_sha": "eeafb3e7bfee1d21679dc9dbc4c9c383e1e58a69",
+      "tree_sha": "8ca718d68342e5139e48e546ea3fa9ca6516cef6",
+      "committed_at_utc": "2026-03-15T05:03:17+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b6ca09c148409d6ce5cbfe40df6bb1697c90248e609538c6ac518095688ae197"
+    "source_digest": "77f768f7045fb73b7c34ac198be360958165b33535bac31ea4b06f3f4a58d265"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2235
+    "declaration_count": 2238
   },
   "readme_sync": {
     "version": "0.16.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 37139,
+    "production_loc": 37245,
     "test_files": 4,
-    "test_loc": 4037,
+    "test_loc": 4098,
     "proved_theorem_lemma_decls": 1198,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -16928,7 +16928,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 43,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -17246,8 +17246,26 @@
         },
         {
           "kind": "def",
+          "name": "runReplyRecvRoundtripTrace",
+          "line": 1548,
+          "called": [
+            "checkInvariants",
+            "demoEndpoint"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMultiEndpointInterleavingTrace",
+          "line": 1604,
+          "called": [
+            "checkInvariants",
+            "demoEndpoint"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1544,
+          "line": 1648,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17262,7 +17280,9 @@
             "runIpcMessageBoundsTrace",
             "runIpcMessageTransferTrace",
             "runLifecycleAndEndpointTrace",
+            "runMultiEndpointInterleavingTrace",
             "runRegisterDecodeTrace",
+            "runReplyRecvRoundtripTrace",
             "runRuntimeContractFixtureTrace",
             "runSchedulerTimingDomainTrace",
             "runServiceAndStressTrace",
@@ -17274,13 +17294,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1584,
+          "line": 1690,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1635,
+          "line": 1741,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -17288,7 +17308,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1649,
+          "line": 1755,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -17296,7 +17316,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1657,
+          "line": 1763,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17593,7 +17613,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 40,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -17924,8 +17944,17 @@
         },
         {
           "kind": "def",
+          "name": "runWSL4BlockedThreadChecks",
+          "line": 2205,
+          "called": [
+            "expectError",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 2201,
+          "line": 2261,
           "called": []
         }
       ]

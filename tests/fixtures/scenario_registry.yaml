@@ -653,11 +653,46 @@ scenarios:
     function: runSyscallDispatchTrace
     subsystem: Architecture
     description: "round-trip decode msgRegs.size=4 first=10"
+  RRC-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv caller state after receive: blockedOnReply"
+  RRC-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv caller unblocked: true"
+  RRC-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv caller reply registers: some [100, 200, 300]"
+  RRC-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv server blocked on receive: true"
+  MEI-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep recv1 registers: some [11, 22]"
+  MEI-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep recv2 registers: some [33, 44]"
+  MEI-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep endpoint1 queues empty: true"
   ITR-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMainTraceFrom
     subsystem: Testing
-    description: "inter-transition invariant checks: 19 passed"
+    description: "inter-transition invariant checks: 21 passed"
   PTY-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runParameterizedTopologyCheck

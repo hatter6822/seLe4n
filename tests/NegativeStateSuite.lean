@@ -2196,6 +2196,66 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "all WS-K-G comprehensive tests passed"
 
+-- ============================================================================
+-- WS-L4-C: Blocked thread IPC rejection tests
+-- ============================================================================
+
+/-- Verify that threads already blocked on IPC operations are rejected when
+attempting further IPC operations. -/
+def runWSL4BlockedThreadChecks : IO Unit := do
+  IO.println "\n--- WS-L4-C: Blocked thread IPC rejection tests ---"
+
+  -- Use a fresh state with endpoint, notification, and 2 threads
+  let epId : SeLe4n.ObjId := ⟨40⟩
+  let ntfnId : SeLe4n.ObjId := ⟨42⟩
+  let tid7 : SeLe4n.ThreadId := ⟨7⟩
+
+  let blockedState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint { sendQ := {}, receiveQ := {} })
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ⟨7⟩ (.tcb {
+        tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready
+      })
+      |>.withObject ⟨8⟩ (.tcb {
+        tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+        ipcState := .ready
+      })
+      |>.withRunnable [⟨7⟩, ⟨8⟩]
+    ).build
+
+  -- Block thread 7 on send (no receiver → enqueues on sendQ)
+  let (_, stSendBlocked) ← expectOkState "L4-C setup: send blocks thread 7"
+    (SeLe4n.Kernel.endpointSendDual epId tid7 .empty blockedState)
+
+  -- Attempt another send on same endpoint while already blocked → alreadyWaiting
+  expectError "L4-C blocked-on-send rejects second send"
+    (SeLe4n.Kernel.endpointSendDual epId tid7 .empty stSendBlocked)
+    .alreadyWaiting
+
+  -- Block thread 7 on receive instead
+  let (_, stRecvBlocked) ← expectOkState "L4-C setup: receive blocks thread 7"
+    (SeLe4n.Kernel.endpointReceiveDual epId tid7 blockedState)
+
+  -- Attempt second receive on same endpoint while already blocked → alreadyWaiting
+  expectError "L4-C blocked-on-receive rejects second receive"
+    (SeLe4n.Kernel.endpointReceiveDual epId tid7 stRecvBlocked)
+    .alreadyWaiting
+
+  -- Block thread 7 on notification wait
+  let (_, stNtfnBlocked) ← expectOkState "L4-C setup: notification wait blocks thread 7"
+    (SeLe4n.Kernel.notificationWait ntfnId tid7 blockedState)
+
+  -- Attempt send while blocked on notification → alreadyWaiting
+  expectError "L4-C blocked-on-notification rejects send"
+    (SeLe4n.Kernel.endpointSendDual epId tid7 .empty stNtfnBlocked)
+    .alreadyWaiting
+
+  IO.println "all WS-L4-C blocked thread IPC rejection tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2210,3 +2270,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH16LifecycleChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
+  SeLe4n.Testing.runWSL4BlockedThreadChecks
