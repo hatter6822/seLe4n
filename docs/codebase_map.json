@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "b222188fb9eb25c737d03a7bd517cb02b4c1acf0",
+      "branch": "claude/implement-type-proofs-GShUO",
+      "commit_sha": "8126395df2aff8e1199a6e85e49d74115744b96c",
       "tree_sha": "d2d319f7fecd73c4d75f0da7274bf657b1b2630b",
-      "committed_at_utc": "2026-03-14T23:18:58-04:00"
+      "committed_at_utc": "2026-03-15T03:13:08+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e26e7eb23be67f4f41aa7186219c698217c3d3a311ec2aa3a223b2fc41a0bda9"
+    "source_digest": "63b509695f460c6957be213f976e7a514a90a0bc9e1687acac977e57f21762dd"
   },
   "summary": {
     "module_count": 73,
@@ -27,7 +27,7 @@
     "version": "0.16.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 36979,
+    "production_loc": 36954,
     "test_files": 4,
     "test_loc": 3755,
     "proved_theorem_lemma_decls": 1198,
@@ -6012,7 +6012,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_step",
-          "line": 518,
+          "line": 493,
           "called": [
             "NonInterferenceStep",
             "step_preserves_projection"
@@ -6021,7 +6021,7 @@
         {
           "kind": "inductive",
           "name": "NonInterferenceTrace",
-          "line": 530,
+          "line": 505,
           "called": [
             "NonInterferenceStep"
           ]
@@ -6029,7 +6029,7 @@
         {
           "kind": "theorem",
           "name": "trace_preserves_projection",
-          "line": 540,
+          "line": 515,
           "called": [
             "NonInterferenceTrace",
             "step_preserves_projection"
@@ -6038,7 +6038,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_trace",
-          "line": 551,
+          "line": 526,
           "called": [
             "NonInterferenceTrace",
             "trace_preserves_projection"
@@ -6047,19 +6047,19 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 579,
+          "line": 554,
           "called": []
         },
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 603,
+          "line": 578,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 613,
+          "line": 588,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -6067,7 +6067,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 632,
+          "line": 607,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -6075,7 +6075,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 670,
+          "line": 645,
           "called": [
             "NonInterferenceStep",
             "NonInterferenceTrace",
