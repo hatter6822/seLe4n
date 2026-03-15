@@ -1,6 +1,6 @@
 ## [0.16.11] — IPC Proof Strengthening (WS-L3)
 
-- Added 14 new theorems and 1 new invariant definition strengthening formal
+- Added 22 new theorems and 1 new invariant definition strengthening formal
   assurance of the IPC dual-queue subsystem
 - L3-A: Enqueue-dequeue round-trip theorem — proves that a thread enqueued
   into an empty queue can be successfully dequeued via popHead

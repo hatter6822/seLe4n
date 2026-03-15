@@ -63,10 +63,14 @@ L3-C: `ipcStateQueueConsistent` invariant definition (blocked → endpoint exist
 plus queue-operation preservation (popHead, enqueue). Forward endpoint preservation
 helpers (`storeTcbQueueLinks_endpoint_forward`, `endpointQueuePopHead_endpoint_forward`,
 `endpointQueueEnqueue_endpoint_forward`).
+L3-C3: high-level `ipcStateQueueConsistent` preservation for `endpointSendDual`,
+`endpointReceiveDual`, `endpointReply` — plus 5 sub-operation helpers
+(`ensureRunnable`, `removeRunnable`, `storeTcbIpcStateAndMessage`,
+`storeTcbIpcState`, `storeTcbPendingMessage`).
 L3-D: tail consistency for `endpointQueueRemoveDual` — non-tail removal preserves
 tail (`_preserves_tail_of_nonTail`), tail removal characterization (`_tail_update`).
 L3-E: already resolved (pre-existing in `CallReplyRecv.lean:797`).
-14 new theorems, 1 new invariant definition. Zero sorry/axiom; all proofs
+22 new theorems, 1 new invariant definition. Zero sorry/axiom; all proofs
 machine-checked.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
