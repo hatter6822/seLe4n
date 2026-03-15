@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-ipc-workstream-4D5YG",
-      "commit_sha": "76f288f580bf6de7e5bcc62864e90d5de9aa00f7",
-      "tree_sha": "31dbe34282871fd5b8a118c8e455a5ef5106859c",
-      "committed_at_utc": "2026-03-15T08:21:42+00:00"
+      "branch": "main",
+      "commit_sha": "2da65ffd75e5b8ce0c618376c40322fd168de267",
+      "tree_sha": "cd05efc29f76a4976702d1c78a63842c30cb086b",
+      "committed_at_utc": "2026-03-15T08:07:54-04:00"
     }
   },
   "source_sync": {
