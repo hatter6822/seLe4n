@@ -1,3 +1,27 @@
+## [0.16.12] — IPC Test Coverage Expansion (WS-L4)
+
+- Completed WS-L4 phase: filled all 4 IPC test coverage gaps (L-T01, L-T02,
+  L-T04, L-T05) with 16 new scenario IDs across 3 test functions
+- L4-A2: Extended `runReplyRecvRoundtripTrace` with second-sender rendezvous
+  path — verifies `endpointReplyRecv` replies to caller A AND immediately
+  receives caller B's message in a single atomic operation (RRC-002, RRC-006)
+- L4-B: New `runEndpointLifecycleTrace` — endpoint retype while senders are
+  blocked on sendQ, validates graceful-failure-by-guard model: senders retain
+  stale `blockedOnSend` state, stale IPC operations are rejected (ELC-001
+  through ELC-004)
+- L4-D2/D3: Extended `runMultiEndpointInterleavingTrace` from 2 to 3 endpoints
+  with out-of-order receive (EP3 before EP1) and FIFO verification on EP1
+  second message round (MEI-004, MEI-005, MEI-006)
+- L4-C: Blocked thread IPC rejection tests already complete (v0.16.11)
+- Refined WS-L4 workstream plan with detailed gap analysis, sub-step breakdown,
+  and implementation status tracking
+- Updated fixture files and scenario registry for all new scenario IDs
+- Inter-transition invariant check count: 22 (up from 21)
+- Regenerated `docs/codebase_map.json` — 38,349 production LoC, 1,224 proved
+  declarations
+- Bumped `lakefile.toml` version to 0.16.12
+- Zero sorry/axiom; all proofs machine-checked; test_full.sh passes
+
 ## [0.16.11] — IPC Proof Strengthening (WS-L3)
 
 - Added 22 new theorems and 1 new invariant definition strengthening formal

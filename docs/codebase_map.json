@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "cb706cb6648b9f06652f5b281f8fb1e510d564ae",
-      "tree_sha": "546a60d9f67d94aa05c54e93f2260e989aa5cd7a",
-      "committed_at_utc": "2026-03-15T16:48:38-04:00"
+      "branch": "claude/refine-test-coverage-plan-d41qs",
+      "commit_sha": "94f7ccea8b6999a2bf4274e5df823e0b5ed810ba",
+      "tree_sha": "18e0e50ebbb16811ff59944d11cf7c7eaf88e974",
+      "committed_at_utc": "2026-03-15T20:48:49+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6aee71807c2257d3e26e6cdd4e0ab23784cf6576afc606773104a8de06010619"
+    "source_digest": "2bf7e5a2e59582bbef367a64541d33c04d186abeacf465db9ad5d5ebcf1bcd28"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2267
+    "declaration_count": 2268
   },
   "readme_sync": {
-    "version": "0.16.11",
+    "version": "0.16.12",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 38186,
+    "production_loc": 38349,
     "test_files": 4,
     "test_loc": 4098,
     "proved_theorem_lemma_decls": 1224,
@@ -17151,7 +17151,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 45,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -17478,8 +17478,16 @@
         },
         {
           "kind": "def",
+          "name": "runEndpointLifecycleTrace",
+          "line": 1632,
+          "called": [
+            "checkInvariants"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1604,
+          "line": 1730,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -17488,7 +17496,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1648,
+          "line": 1810,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17499,6 +17507,7 @@
             "runCapabilityAndArchitectureTrace",
             "runCapabilityIpcTrace",
             "runDequeueOnDispatchTrace",
+            "runEndpointLifecycleTrace",
             "runInlineContextSwitchTrace",
             "runIpcMessageBoundsTrace",
             "runIpcMessageTransferTrace",
@@ -17517,13 +17526,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1690,
+          "line": 1853,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1741,
+          "line": 1904,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -17531,7 +17540,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1755,
+          "line": 1918,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -17539,7 +17548,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1763,
+          "line": 1926,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

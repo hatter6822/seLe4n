@@ -658,6 +658,11 @@ scenarios:
     function: runReplyRecvRoundtripTrace
     subsystem: IPC
     description: "replyRecv caller state after receive: blockedOnReply"
+  RRC-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv callerB state after rendezvous: blockedOnReply"
   RRC-003:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runReplyRecvRoundtripTrace
@@ -672,7 +677,32 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runReplyRecvRoundtripTrace
     subsystem: IPC
-    description: "replyRecv server blocked on receive: true"
+    description: "replyRecv server not blocked (rendezvous): true"
+  RRC-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runReplyRecvRoundtripTrace
+    subsystem: IPC
+    description: "replyRecv server received callerB registers: some [70, 80, 90]"
+  ELC-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runEndpointLifecycleTrace
+    subsystem: IPC
+    description: "lifecycle senders blocked: true"
+  ELC-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runEndpointLifecycleTrace
+    subsystem: IPC
+    description: "lifecycle retype-delete succeeded: true"
+  ELC-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runEndpointLifecycleTrace
+    subsystem: IPC
+    description: "lifecycle senders retain stale blocked state: true"
+  ELC-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runEndpointLifecycleTrace
+    subsystem: IPC
+    description: "lifecycle stale endpoint send rejected: true"
   MEI-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMultiEndpointInterleavingTrace
@@ -688,11 +718,26 @@ scenarios:
     function: runMultiEndpointInterleavingTrace
     subsystem: IPC
     description: "multi-ep endpoint1 queues empty: true"
+  MEI-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep ep3 out-of-order recv registers: some [55, 66]"
+  MEI-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep ep1 FIFO second recv registers: some [77, 88]"
+  MEI-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runMultiEndpointInterleavingTrace
+    subsystem: IPC
+    description: "multi-ep all 3 endpoints drained: true"
   ITR-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMainTraceFrom
     subsystem: Testing
-    description: "inter-transition invariant checks: 21 passed"
+    description: "inter-transition invariant checks: 22 passed"
   PTY-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runParameterizedTopologyCheck

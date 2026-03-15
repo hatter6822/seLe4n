@@ -51,7 +51,7 @@ comprehensive end-to-end audit of the IPC subsystem identified 3 performance
 optimizations, 5 proof strengthening opportunities, and 5 test coverage gaps.
 WS-L also resolves all deferred WS-I5 items. 5 phases: L1 (performance — **COMPLETED** v0.16.9), L2
 (code quality — **COMPLETED** v0.16.10), L3 (proof strengthening —
-**COMPLETED** v0.16.11), L4 (test coverage — partially complete),
+**COMPLETED** v0.16.11), L4 (test coverage — **COMPLETED** v0.16.12),
 L5 (documentation — in progress). See
 [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
