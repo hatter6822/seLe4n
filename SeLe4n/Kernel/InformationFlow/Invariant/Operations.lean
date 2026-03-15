@@ -1252,6 +1252,7 @@ theorem endpointReply_preserves_projection
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
     cases hIpc : tcb.ipcState with
     | blockedOnReply ep replyTarget =>
       -- Resolve ipcState match and storeTcbIpcStateAndMessage in hStep

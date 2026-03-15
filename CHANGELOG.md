@@ -1,3 +1,20 @@
+## [0.16.9] — IPC Performance Optimization (WS-L1)
+
+- Eliminated 4 redundant TCB lookups on IPC hot paths (L-P01, L-P02, L-P03)
+- Changed `endpointQueuePopHead` return type to `(ThreadId × TCB × SystemState)`,
+  providing pre-dequeue TCB to callers (L1-A)
+- Added `storeTcbIpcStateAndMessage_fromTcb` and `storeTcbIpcState_fromTcb`
+  variants with equivalence theorems — zero new preservation lemmas needed (L1-B, L1-C)
+- Added `lookupTcb_preserved_by_storeObject_notification` helper for cross-store
+  TCB stability
+- Updated all transport lemmas and preservation theorems for new PopHead return type
+  (~18 mechanical pattern-match updates across 6 invariant files)
+- Refined WS-L1 workstream plan with smaller task units and optimal implementation
+  strategy (equivalence-theorem approach vs. duplicated lemmas)
+- Regenerated `docs/codebase_map.json`
+- Bumped `lakefile.toml` version to 0.16.9
+- Zero sorry/axiom; all proofs machine-checked; test_full.sh passes
+
 ## [0.16.8] — Documentation Sync and Workstream Closeout (WS-K-H)
 
 - Synchronized all project documentation with completed WS-K implementation

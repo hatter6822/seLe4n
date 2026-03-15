@@ -296,7 +296,7 @@ theorem endpointQueuePopHead_returns_head
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st : SystemState)
     (ep : Endpoint) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
-    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st')) :
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid := by
   unfold endpointQueuePopHead at hPop
   rw [hObj] at hPop; simp only at hPop
@@ -320,7 +320,7 @@ theorem endpointQueuePopHead_returns_head
           | error e => simp
           | ok st3 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
-            rintro ⟨rfl, _⟩; rfl
+            rintro ⟨rfl, _, _⟩; rfl
         | some nextTid =>
           simp only []
           cases hLkNext : lookupTcb pair.2 nextTid with
@@ -335,8 +335,56 @@ theorem endpointQueuePopHead_returns_head
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                rintro ⟨rfl, _⟩; rfl
+                rintro ⟨rfl, _, _⟩; rfl
 
+/-- Helper: endpointQueuePopHead returns the pre-state TCB for the dequeued thread.
+The returned TCB matches the one at tid.toObjId in the pre-state st. -/
+theorem endpointQueuePopHead_returns_pre_tcb
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st : SystemState)
+    (ep : Endpoint) (tid : SeLe4n.ThreadId) (headTcb : TCB) (st' : SystemState)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    st.objects[tid.toObjId]? = some (.tcb headTcb) := by
+  unfold endpointQueuePopHead at hPop
+  rw [hObj] at hPop; simp only at hPop
+  cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+  | none => simp [hHead] at hPop
+  | some headTid =>
+    simp only [hHead] at hPop
+    cases hLk : lookupTcb st headTid with
+    | none => simp [hLk] at hPop
+    | some tcb =>
+      simp only [hLk] at hPop
+      revert hPop
+      cases hStore : storeObject endpointId _ st with
+      | error e => simp
+      | ok pair =>
+        simp only []
+        cases tcb.queueNext with
+        | none =>
+          simp only []
+          cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+          | error e => simp
+          | ok st3 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            rintro ⟨rfl, rfl, _⟩
+            exact lookupTcb_some_objects st headTid tcb hLk
+        | some nextTid =>
+          simp only []
+          cases hLkNext : lookupTcb pair.2 nextTid with
+          | none => simp
+          | some nextTcb =>
+            simp only []
+            cases hLink : storeTcbQueueLinks pair.2 nextTid _ _ _ with
+            | error e => simp
+            | ok st2 =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                rintro ⟨rfl, rfl, _⟩
+                exact lookupTcb_some_objects st headTid tcb hLk
 
 -- ============================================================================
 -- Scheduler invariant bundle preservation
@@ -483,7 +531,9 @@ theorem notificationWait_preserves_uniqueWaiters
               cases hStore : storeObject notificationId _ st with
               | error e => simp
               | ok pair =>
-                simp only []
+                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hLookup hStore
+                simp only [storeTcbIpcState_fromTcb_eq hLk']
                 cases hTcb : storeTcbIpcState pair.2 waiter _ with
                 | error e => simp
                 | ok st2 =>

@@ -69,6 +69,24 @@ def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : Thre
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
+/-- WS-L1/L1-C: Variant of `storeTcbIpcState` that accepts a pre-looked-up
+TCB, bypassing the internal `lookupTcb`. Use when the caller has already
+validated the TCB and no intervening operation has modified it. -/
+def storeTcbIpcState_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
+  match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+  | .error e => .error e
+  | .ok ((), st') => .ok st'
+
+/-- WS-L1/L1-C: Equivalence theorem — `_fromTcb` produces identical results
+to the original when the provided TCB matches the state. -/
+theorem storeTcbIpcState_fromTcb_eq
+    (hLookup : lookupTcb st tid = some tcb) :
+    storeTcbIpcState_fromTcb st tid tcb ipcState =
+    storeTcbIpcState st tid ipcState := by
+  unfold storeTcbIpcState_fromTcb storeTcbIpcState
+  simp [hLookup]
+
 /-- WS-F1: Store a pending IPC message in a thread's TCB.
 Used during IPC send to stage the message for transfer. -/
 def storeTcbPendingMessage (st : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) : Except KernelError SystemState :=
@@ -89,6 +107,48 @@ def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
       match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
+
+/-- WS-L1/L1-B: Variant of `storeTcbIpcStateAndMessage` that accepts a
+pre-looked-up TCB, bypassing the internal `lookupTcb`. Use when the caller
+has already validated the TCB on the same state. -/
+def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    : Except KernelError SystemState :=
+  match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  | .error e => .error e
+  | .ok ((), st') => .ok st'
+
+/-- WS-L1/L1-B: Equivalence theorem — `_fromTcb` produces identical results
+to the original when the provided TCB matches the state. All existing
+preservation theorems for `storeTcbIpcStateAndMessage` apply to `_fromTcb`
+via rewriting with this theorem. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_eq
+    (hLookup : lookupTcb st tid = some tcb) :
+    storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg =
+    storeTcbIpcStateAndMessage st tid ipcState msg := by
+  unfold storeTcbIpcStateAndMessage_fromTcb storeTcbIpcStateAndMessage
+  simp [hLookup]
+
+/-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
+(different ObjId from any TCB). Used to justify `_fromTcb` usage after an
+intervening notification store. Accepts both `((), st')` and `pair` forms. -/
+theorem lookupTcb_preserved_by_storeObject_notification
+    {st : SystemState} {pair : Unit × SystemState} {tid : SeLe4n.ThreadId}
+    {tcb : TCB} {notifId : SeLe4n.ObjId} {ntfn : Notification}
+    {obj : KernelObject}
+    (hLookup : lookupTcb st tid = some tcb)
+    (hNtfn : st.objects[notifId]? = some (.notification ntfn))
+    (hStore : storeObject notifId obj st = .ok pair) :
+    lookupTcb pair.2 tid = some tcb := by
+  have hStore' : storeObject notifId obj st = .ok ((), pair.2) := by
+    rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore; exact hStore
+  have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+  have hNe : tid.toObjId ≠ notifId := by
+    intro heq; rw [← heq] at hNtfn; rw [hNtfn] at hTcbObj; cases hTcbObj
+  have hPreserved := storeObject_objects_ne st pair.2 notifId tid.toObjId obj hNe hStore'
+  unfold lookupTcb at hLookup ⊢
+  rw [hPreserved]
+  exact hLookup
 
 /-- Signal a notification: wake one waiter or mark one pending badge. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
@@ -166,7 +226,9 @@ def notificationWait
                   match storeObject notificationId (.notification ntfn') st with
                   | .error e => .error e
                   | .ok ((), st') =>
-                      match storeTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+                      -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
+                      -- does not modify waiter's TCB, so tcb is still valid in st'
+                      match storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) with
                       | .error e => .error e
                       | .ok st'' => .ok (none, removeRunnable st'' waiter)
     | some _ => .error .invalidCapability
@@ -443,6 +505,9 @@ theorem notificationWait_badge_path_notification
             | ok pair =>
               simp only []
               intro hStep
+              -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hStore
+              rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
               revert hStep
               cases hTcb : storeTcbIpcState pair.2 waiter _ with
               | error e => simp
@@ -527,6 +592,9 @@ theorem notificationWait_wait_path_notification
             | ok pair =>
               simp only []
               intro hStep
+              -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hStore
+              rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
               revert hStep
               cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
               | error e => simp

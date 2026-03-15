@@ -811,6 +811,8 @@ theorem notificationWait_projection_preserved
             | error e => simp
             | ok pair =>
               simp only []
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
               cases hTcb : storeTcbIpcState pair.2 waiter _ with
               | error e => simp
               | ok st2 =>

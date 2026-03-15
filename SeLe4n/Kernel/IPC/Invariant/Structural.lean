@@ -486,6 +486,7 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
   | none => simp [hLookup] at hStep
   | some tcb =>
       simp only [hLookup] at hStep
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
       cases hIpc : tcb.ipcState with
       | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
         | blockedOnCall _ => simp [hIpc] at hStep
@@ -747,7 +748,7 @@ private theorem storeTcbQueueLinks_append_tail_preserves_linkInteg
 theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st'))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink⟩ := hInv
@@ -794,7 +795,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
               | error e => simp at hStep
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨rfl, rfl⟩ := hStep
+                obtain ⟨rfl, _, rfl⟩ := hStep
                 have hLink1 := storeObject_endpoint_preserves_tcbQueueLinkIntegrity
                   st pair.2 endpointId _ hStoreEp hPreEp hLink
                 have hTransport : ∀ (x : SeLe4n.ThreadId) (t : TCB),
@@ -870,7 +871,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                   | error e => simp [hStoreEpB, hLkN, hStN, hClH] at hStep
                   | ok st3 =>
                     simp [hStoreEpB, hLkN, hStN, hClH] at hStep
-                    obtain ⟨rfl, rfl⟩ := hStep
+                    obtain ⟨rfl, _, rfl⟩ := hStep
                     -- Key facts
                     have hNeEpNextB : endpointId ≠ nextTid.toObjId := by
                       intro h; have := lookupTcb_some_objects pairB.2 nextTid nextTcb hLkN
@@ -1439,7 +1440,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
         | error e => simp [hPop] at hStep
         | ok pair =>
           simp only [hPop] at hStep
-          cases hStore : storeTcbIpcStateAndMessage pair.2 pair.1 .ready (some msg) with
+          cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1503,16 +1504,33 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
           simp only [hPop] at hStep
           have hInv1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant
             _ _ _ _ _ hPop hInv
-          -- Case on lookupTcb to determine senderMsg and senderWasCall
-          cases hLk : lookupTcb pair.2 pair.1 with
-          | none =>
-            simp only [hLk] at hStep
-            -- senderWasCall = false, senderMsg = none → send path
-            cases hStore : storeTcbIpcStateAndMessage pair.2 pair.1 .ready none with
+          -- Case-split on returned TCB's ipcState to determine senderWasCall
+          cases hSenderIpc : pair.2.1.ipcState with
+          | blockedOnCall epCall =>
+            -- Call path: senderWasCall = true
+            simp only [hSenderIpc, ite_true] at hStep
+            cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1
+                (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              cases hMsg : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver none with
+              cases hMsg : storeTcbPendingMessage st2 receiver pair.2.1.pendingMessage with
+              | error e => simp [hMsg] at hStep
+              | ok st3 =>
+                simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
+                exact storeTcbPendingMessage_preserves_dualQueueSystemInvariant _ _ _ _ hMsg
+                  (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                    _ _ _ _ _ hStore hInv1)
+          | ready | blockedOnSend _ | blockedOnReceive _
+            | blockedOnReply _ _ | blockedOnNotification _ =>
+            -- Send path: senderWasCall = false
+            simp only [hSenderIpc] at hStep
+            cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hStore] at hStep
+            | ok st2 =>
+              simp only [hStore] at hStep
+              cases hMsg : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver
+                  pair.2.1.pendingMessage with
               | error e => simp [hMsg] at hStep
               | ok st3 =>
                 simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
@@ -1520,41 +1538,6 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   (ensureRunnable_preserves_dualQueueSystemInvariant _ _
                     (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                       _ _ _ _ _ hStore hInv1))
-          | some tcb =>
-            simp only [hLk] at hStep
-            cases hIpc : tcb.ipcState with
-            | blockedOnCall epCall =>
-              -- Call path: senderWasCall = true
-              simp only [hIpc] at hStep
-              cases hStore : storeTcbIpcStateAndMessage pair.2 pair.1
-                  (.blockedOnReply endpointId (some receiver)) none with
-              | error e => simp [hStore] at hStep
-              | ok st2 =>
-                simp only [hStore] at hStep
-                cases hMsg : storeTcbPendingMessage st2 receiver tcb.pendingMessage with
-                | error e => simp [hMsg] at hStep
-                | ok st3 =>
-                  simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
-                  exact storeTcbPendingMessage_preserves_dualQueueSystemInvariant _ _ _ _ hMsg
-                    (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                      _ _ _ _ _ hStore hInv1)
-            | ready | blockedOnSend _ | blockedOnReceive _
-              | blockedOnReply _ _ | blockedOnNotification _ =>
-              -- Send path: senderWasCall = false
-              simp only [hIpc] at hStep
-              cases hStore : storeTcbIpcStateAndMessage pair.2 pair.1 .ready none with
-              | error e => simp [hStore] at hStep
-              | ok st2 =>
-                simp only [hStore] at hStep
-                cases hMsg : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver
-                    tcb.pendingMessage with
-                | error e => simp [hMsg] at hStep
-                | ok st3 =>
-                  simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
-                  exact storeTcbPendingMessage_preserves_dualQueueSystemInvariant _ _ _ _ hMsg
-                    (ensureRunnable_preserves_dualQueueSystemInvariant _ _
-                      (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                        _ _ _ _ _ hStore hInv1))
       | none =>
         -- Path B: enqueue receiver, block
         simp only [hHead] at hStep
@@ -1604,6 +1587,7 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
     cases hIpc : tcb.ipcState with
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
       simp [hIpc] at hStep
@@ -1716,7 +1700,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
           simp only [hPop] at hStep
           have hInv1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant
             _ _ _ _ _ hPop hInv
-          cases hStore1 : storeTcbIpcStateAndMessage pair.2 pair.1 .ready (some msg) with
+          cases hStore1 : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
           | error e => simp [hStore1] at hStep
           | ok st2 =>
             simp only [hStore1] at hStep
@@ -2172,6 +2156,8 @@ theorem notificationWait_preserves_allPendingMessagesBounded
                 | error e => simp
                 | ok pair =>
                     simp only []
+                    have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+                    simp only [storeTcbIpcState_fromTcb_eq hLk']
                     have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
                       st pair.2 notificationId _ hStore hInv
                     cases hIpc : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
@@ -2205,6 +2191,7 @@ theorem endpointReply_preserves_allPendingMessagesBounded
   | none => simp [hLookup] at hStep
   | some tcb =>
       simp only [hLookup] at hStep
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
       cases hIpc : tcb.ipcState with
       | ready => simp [hIpc] at hStep
       | blockedOnSend _ => simp [hIpc] at hStep

@@ -222,6 +222,8 @@ theorem notificationWait_preserves_ipcInvariant
             | error e => simp
             | ok pair =>
               simp only []
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
               have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId
                 _ hInv hStore (notificationWait_result_wellFormed_wait waiter ntfn.waitingThreads)
               cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
@@ -312,6 +314,8 @@ theorem notificationWait_preserves_schedulerInvariantBundle
             | error e => simp
             | ok pair =>
               simp only []
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
               cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
               | error e => simp
               | ok st'' =>
@@ -666,6 +670,8 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
             | error e => simp
             | ok pair =>
               simp only []
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
               cases hTcb : storeTcbIpcState pair.2 waiter
                   (.blockedOnNotification notificationId) with
               | error e => simp
@@ -966,7 +972,10 @@ theorem notificationWait_preserves_badgeWellFormed
             cases hStore1 : storeObject notificationId _ st with
             | error e => simp
             | ok pair1 =>
-              simp only []; intro hStep; revert hStep
+              simp only []
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjSrc hStore1
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
+              intro hStep; revert hStep
               cases hStoreTcb : storeTcbIpcState pair1.2 waiter _ with
               | error e => simp
               | ok st2 =>

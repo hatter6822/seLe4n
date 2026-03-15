@@ -25,11 +25,22 @@ all deferred WS-I5 items.
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — planned |
+| **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — **COMPLETED** (v0.16.9) |
 | **WS-L2** | Code quality: HashMap.fold migration for detachCNodeSlots (closes WS-I5/R-17) | MEDIUM — planned |
 | **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — planned |
 | **WS-L4** | Test coverage: ReplyRecv positive-path, blocked thread rejection, multi-endpoint interleaving | MEDIUM — **PARTIALLY COMPLETE** |
 | **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
+
+**WS-L1** (v0.16.9): Eliminated 4 redundant TCB lookups on IPC hot paths.
+L1-A: changed `endpointQueuePopHead` return type to `(ThreadId × TCB × SystemState)`,
+providing pre-dequeue TCB to callers and eliminating redundant `lookupTcb` in
+`endpointReceiveDual`. L1-B: added `storeTcbIpcStateAndMessage_fromTcb` with
+equivalence theorem, eliminating redundant lookups in `endpointReply` and
+`endpointReplyRecv`. L1-C: added `storeTcbIpcState_fromTcb` with equivalence
+theorem, eliminating redundant lookup in `notificationWait`. Added
+`lookupTcb_preserved_by_storeObject_notification` helper for cross-store TCB
+stability. ~18 mechanical pattern-match updates across 6 invariant files. Zero
+sorry/axiom; all proofs machine-checked.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).
