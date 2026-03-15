@@ -83,7 +83,29 @@ A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo`
 
 **IPC message population:** `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with a triple bound (info.length, maxMessageRegisters, msgRegs.size). IPC send/call/reply dispatch arms populate message bodies from decoded registers instead of empty arrays.
 
-### 1.7 Operations/Invariant split
+### 1.7 IPC hot-path optimization (WS-L1)
+
+IPC operations are the kernel's hottest paths. The WS-L audit (v0.16.8)
+identified 4 redundant TCB lookups on critical IPC paths where a TCB was
+fetched, used, and then fetched again in the next step.
+
+**Pass-through TCB pattern:** `endpointQueuePopHead` was changed to return the
+pre-dequeue TCB alongside the thread ID and updated state. Callers
+(`endpointReceiveDual`, transport preservation theorems) receive the TCB
+directly, eliminating a redundant `lookupTcb` on the hot path.
+
+**`_fromTcb` variants:** `storeTcbIpcStateAndMessage_fromTcb` and
+`storeTcbIpcState_fromTcb` accept an already-looked-up TCB and skip the
+internal lookup. Equivalence theorems prove these produce identical results
+to the lookup-based originals. `endpointReply`, `endpointReplyRecv`, and
+`notificationWait` use these variants.
+
+This is a zero-behavior-change refactor — all ~18 pattern-match sites across
+6 invariant files were mechanically updated, with all proofs re-checked. The
+optimization targets the same principle that seL4's hand-tuned C
+implementation uses: avoid redundant kernel-object lookups on IPC fast paths.
+
+### 1.8 Operations/Invariant split
 
 Every kernel subsystem is split into two files:
 

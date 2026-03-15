@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.16.12` |
+| Version | `0.16.13` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 38,349 across 69 files |
-| Test LoC | 4,098 across 4 suites |
+| Test LoC | 4,115 across 4 suites |
 | Proved declarations | 1,224 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit |
-| Next workstreams | **WS-L** IPC subsystem audit & remediation — 5 phases: L1 (performance — **COMPLETED** v0.16.9), L2 (code quality — **COMPLETED** v0.16.10), L3 (proof strengthening — **COMPLETED** v0.16.11), L4 (test coverage — **COMPLETED** v0.16.12), L5 (documentation — in progress). Supersedes WS-I5. See [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-L** IPC subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). All 5 phases delivered: L1 (performance), L2 (code quality), L3 (proof strengthening), L4 (test coverage), L5 (documentation & closeout). Superseded WS-I5. See [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -57,7 +57,12 @@ WS-J1-C (syscall entry point and dispatch, v0.15.6; audit refinements, v0.15.7) 
 WS-J1-D (invariant/NI integration, v0.15.8) →
 WS-J1-E (testing and trace evidence, v0.15.9) →
 WS-J1-F (CdtNodeId cleanup + documentation sync, v0.15.10) →
-**WS-K (full syscall dispatch completion, v0.16.0–v0.16.8) — PORTFOLIO COMPLETE.**
+**WS-K (full syscall dispatch completion, v0.16.0–v0.16.8) — PORTFOLIO COMPLETE.** →
+WS-L1 (IPC performance optimization, v0.16.9) →
+WS-L2 (code quality — HashMap.fold migration, v0.16.10) →
+WS-L3 (proof strengthening — 22 theorems, v0.16.11) →
+WS-L4 (test coverage expansion, v0.16.12) →
+**WS-L5 (documentation & closeout, v0.16.13) — WS-L PORTFOLIO COMPLETE.**
 
 ## Completed: WS-K Full Syscall Dispatch Completion (v0.16.0–v0.16.8)
 
