@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 4,098 across 4 suites |
 | Proved declarations | 1,202 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit |
-| Next workstreams | **WS-L** IPC subsystem audit & remediation — 5 phases: L1 (performance), L2 (code quality), L3 (proof strengthening), L4 (test coverage — partially complete), L5 (documentation — in progress). Supersedes WS-I5. See [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-L** IPC subsystem audit & remediation — 5 phases: L1 (performance — **COMPLETED** v0.16.9), L2 (code quality — **COMPLETED** v0.16.10), L3 (proof strengthening), L4 (test coverage — partially complete), L5 (documentation — in progress). Supersedes WS-I5. See [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

@@ -489,16 +489,16 @@ The actual `detachCNodeSlots` definition is at `Kernel/Lifecycle/Operations.lean
 1. **Proof update strategy for S1**: `detachCNodeSlots` has 3 preservation
    theorems (`_objects_eq`, `_lifecycle_eq`, `_scheduler_eq`) that prove
    through `List.foldl` induction over `cn.slots.toList`. Switching to
-   `HashMap.fold` changes the proof structure — the `List.foldl` / `List.cons`
-   case split must be replaced with `HashMap.fold` reasoning. Since
-   `HashMap.fold` internally iterates over key-value pairs in an unspecified
-   order but applies the same function, and all three theorems prove that the
-   fold body preserves the property unconditionally (for any pair), the proofs
-   generalize cleanly. Strategy: rewrite proofs using a generic fold invariant
-   helper that lifts per-step preservation to full-fold preservation.
+   `HashMap.fold` changes the proof goal but the underlying proof structure
+   can be preserved. Strategy: use `Std.HashMap.fold_eq_foldl_toList` (from
+   Lean 4.28.0 stdlib) to rewrite the `HashMap.fold` back to `List.foldl`
+   on `m.toList`, then apply the existing `List.foldl` induction proof. The
+   lambda shape changes from `(fun acc' pair => ... pair.1)` to
+   `(fun a b => ... b.fst)` but these are definitionally equal since
+   `Prod.fst = Prod.1`.
 2. **Test code (S2–S4)**: These are decidable runtime checks in
    `InvariantChecks.lean`. No proofs reference them. Migration is mechanical:
-   replace `.toList.foldr f init` with `.fold init (fun acc k v => f (k, v) acc)`.
+   replace `.toList.foldr f init` with `.fold (fun acc k v => f (k, v) acc) init`.
 3. **Execution order**: S2–S4 first (zero proof cascade, fast validation),
    then S1 (requires proof updates, higher risk).
 
@@ -524,15 +524,14 @@ cn.slots.toList.foldr (fun (slot, cap) inner => ... ) acc
 ```
 with:
 ```lean
-cn.slots.fold acc (fun inner slot cap => ... )
+cn.slots.fold (fun inner slot cap => ... ) acc
 ```
 
-Note: `HashMap.fold` passes `(acc, key, value)` as separate arguments, not as
-a tuple `(key, value)`. The lambda signature changes from `(slot, cap)` tuple
-destructuring to `inner slot cap` positional arguments. The fold direction
-difference (`foldr` → `fold`) does not affect correctness because each check
-element is independent (list concatenation is order-insensitive for check
-validation).
+Note: `HashMap.fold` signature is `fold (f : γ → α → β → γ) (init : γ) (m)`,
+so in dot notation `m.fold f init`. The lambda receives `(acc, key, value)` as
+separate arguments, not as a tuple `(key, value)`. The fold direction difference
+(`foldr` → `fold`) does not affect correctness because each check element is
+independent (list concatenation is order-insensitive for check validation).
 
 **Exit**: `lake build` succeeds.
 
@@ -554,7 +553,7 @@ cdt.childMap.toList.foldr (fun (parent, children) acc => ... ) []
 ```
 with:
 ```lean
-cdt.childMap.fold [] (fun acc parent children => ... )
+cdt.childMap.fold (fun acc parent children => ... ) []
 ```
 
 Note: The inner `children.foldr` on `List CdtNodeId` is correct and does NOT
@@ -584,7 +583,7 @@ induction and must be updated.
 
 ##### L2-B.1: Replace `.toList.foldl` with `.fold` in `detachCNodeSlots`
 
-**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 82–85
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 82–85 (definition only)
 
 Replace:
 ```lean
@@ -596,9 +595,9 @@ def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : 
 with:
 ```lean
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
-  cn.slots.fold st (fun acc slot _cap =>
+  cn.slots.fold (fun acc slot _cap =>
     SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }
-  )
+  ) st
 ```
 
 This eliminates the intermediate `List (Slot × Capability)` allocation.
@@ -607,7 +606,7 @@ This eliminates the intermediate `List (Slot × Capability)` allocation.
 
 ##### L2-B.2: Update `detachCNodeSlots_objects_eq` proof
 
-**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 87–103
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 88–104
 
 The current proof uses `List.foldl` induction:
 ```lean
@@ -617,16 +616,16 @@ have key : ∀ (l : List ...) (acc : SystemState),
 ```
 
 This must be replaced with a proof that works over `HashMap.fold`. Strategy:
-use `Std.HashMap.fold_induction` or equivalent fold reasoning, proving that
-the fold body `(fun acc slot _cap => detachSlotFromCdt acc ...)` preserves
-`.objects` at each step (which is already established by
-`detachSlotFromCdt_objects_eq`).
+use `Std.HashMap.fold_eq_foldl_toList` to rewrite `HashMap.fold f init m` to
+`m.toList.foldl (fun a b => f a b.fst b.snd) init`, then apply the existing
+`List.foldl` induction proof which proves the fold body preserves `.objects`
+at each step (already established by `detachSlotFromCdt_objects_eq`).
 
 **Exit**: Theorem compiles with zero `sorry`.
 
 ##### L2-B.3: Update `detachCNodeSlots_lifecycle_eq` proof
 
-**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 105–121
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 107–123
 
 Same proof update pattern as L2-B.2, using `detachSlotFromCdt_lifecycle_eq`
 as the per-step preservation lemma.
@@ -635,7 +634,7 @@ as the per-step preservation lemma.
 
 ##### L2-B.4: Update `detachCNodeSlots_scheduler_eq` proof
 
-**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 176–193
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 178–196
 
 Same proof update pattern as L2-B.2. The per-step preservation fact is proven
 inline: `(SystemState.detachSlotFromCdt acc ref).scheduler = acc.scheduler`
