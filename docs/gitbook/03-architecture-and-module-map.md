@@ -193,7 +193,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
   - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
     `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0)*
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
@@ -201,6 +201,9 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     layout's message registers via `Array.mapM`; `encodeMsgRegs` identity encoder;
     `decodeMsgRegs_length` / `decodeMsgRegs_roundtrip` theorems; extended
     `decode_components_roundtrip` to 4-conjunct.
+  - WS-K-E: `extractMessageRegisters` converts `Array RegValue` → `Array Nat` for
+    IPC message population with triple bound; `extractMessageRegisters_length`,
+    `extractMessageRegisters_ipc_bounded`, `extractMessageRegisters_deterministic`.
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1)*
   - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
     7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,

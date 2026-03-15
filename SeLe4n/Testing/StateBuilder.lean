@@ -25,6 +25,7 @@ structure BootstrapBuilder where
   machine : SeLe4n.MachineState := default
   objects : List (SeLe4n.ObjId × KernelObject) := []
   services : List (ServiceId × ServiceGraphEntry) := []
+  serviceConfig : ServiceConfig := default
   runnable : List SeLe4n.ThreadId := []
   current : Option SeLe4n.ThreadId := none
   irqHandlers : List (SeLe4n.Irq × SeLe4n.ObjId) := []
@@ -43,6 +44,11 @@ def withService
     (sid : ServiceId)
     (entry : ServiceGraphEntry) : BootstrapBuilder :=
   { builder with services := (sid, entry) :: builder.services }
+
+def withServiceConfig
+    (builder : BootstrapBuilder)
+    (config : ServiceConfig) : BootstrapBuilder :=
+  { builder with serviceConfig := config }
 
 def withRunnable (builder : BootstrapBuilder) (queue : List SeLe4n.ThreadId) : BootstrapBuilder :=
   { builder with runnable := queue }
@@ -86,6 +92,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndex := builder.objects.map Prod.fst
     objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
     services := Std.HashMap.ofList builder.services
+    serviceConfig := builder.serviceConfig
     scheduler := {
       -- WS-G4 fix: use actual TCB priorities for RunQueue bucketing
       runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>

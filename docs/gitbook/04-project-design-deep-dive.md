@@ -208,7 +208,16 @@ constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
 `lifecycleRetypeDirect` accepts pre-resolved capabilities (avoiding
 double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
-`vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`. See
+`vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`.
+**Layer 5 (completed, K-E v0.16.4):** Service policy and IPC message population.
+`ServiceConfig` in `SystemState` replaces `(fun _ => true)` stubs — service
+start/stop dispatch reads configurable policy predicates from
+`st.serviceConfig.allowStart`/`allowStop`. `extractMessageRegisters` converts
+decoded `Array RegValue` to `Array Nat` (matching `IpcMessage.registers` type)
+with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`); `.send`,
+`.call`, `.reply` dispatch arms now populate message bodies instead of empty arrays.
+5 delegation theorems proved; `extractMessageRegisters_length` and
+`extractMessageRegisters_ipc_bounded` lemmas ensure IPC message boundedness. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage

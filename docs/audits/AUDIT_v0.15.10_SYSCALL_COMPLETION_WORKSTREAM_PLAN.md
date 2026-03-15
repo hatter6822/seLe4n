@@ -2,7 +2,7 @@
 
 **Version target:** v0.16.1–v0.16.8
 **Base version:** v0.15.10
-**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2), K-D completed (v0.16.3)
+**Status:** In progress — K-A completed (v0.16.0), K-B completed (v0.16.1), K-C completed (v0.16.2), K-D completed (v0.16.3), K-E completed (v0.16.4)
 **Priority:** Critical
 **Estimated effort:** 12–18 days
 **Dependencies:** WS-J1 (completed v0.15.10)
@@ -1478,64 +1478,441 @@ Run `lake build` and `./scripts/test_smoke.sh` to confirm:
 
 **Goal:** Replace `(fun _ => true)` service policy stubs with
 configuration-sourced predicates. Populate IPC message bodies from decoded
-message registers.
+message registers. This phase closes the two remaining dispatch-layer gaps
+identified in audit findings §2.3 (service policy stubs) and §2.4 (empty
+IPC message bodies).
 
-**Tasks:**
-1. Define `ServiceConfig` structure in `Model/State.lean`:
-   ```lean
-   structure ServiceConfig where
-     allowStart : ServicePolicy
-     allowStop  : ServicePolicy
-     deriving Inhabited
-   ```
-   The `Inhabited` instance provides `(fun _ => true)` as default, preserving
-   backward compatibility for existing tests.
-2. Add `serviceConfig : ServiceConfig` field to `SystemState`.
-3. Update `dispatchWithCap` for `.serviceStart`:
-   ```lean
-   | .serviceStart =>
-       match cap.target with
-       | .object objId =>
-           fun st => serviceStart (ServiceId.ofNat objId.toNat)
-                       st.serviceConfig.allowStart st
-       | _ => fun _ => .error .invalidCapability
-   ```
-4. Update `.serviceStop` analogously with `st.serviceConfig.allowStop`.
-5. Define `extractMessageRegisters`:
-   ```lean
-   def extractMessageRegisters (msgRegs : Array RegValue)
-       (info : MessageInfo) : Array RegValue :=
-     msgRegs.extract 0 (min info.length maxMessageRegisters)
-   ```
-6. Update IPC dispatch paths (send, call, reply) to populate message bodies:
-   ```lean
-   | .send =>
-       match cap.target with
-       | .object epId =>
-           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-           endpointSendDual epId tid
-             { registers := body, caps := #[], badge := cap.badge }
-   ```
-7. Add `extractMessageRegisters_length` lemma: result length ≤
-   `maxMessageRegisters`.
-8. Add `extractMessageRegisters_deterministic` theorem.
-9. Update all `SystemState` construction sites (default state, test fixtures)
-   to include `serviceConfig` field.
+**Design rationale:**
+
+After K-D, all 13 syscalls dispatch to real kernel operations. Two
+quality-of-implementation gaps remain:
+
+1. **Service policy stubs.** The `.serviceStart` and `.serviceStop` dispatch
+   arms pass `(fun _ => true)` as the `ServicePolicy` argument. Any thread
+   with a capability to the service object can start/stop it unconditionally.
+   The fix introduces a `ServiceConfig` record in `SystemState` that carries
+   configurable `allowStart`/`allowStop` predicates. The dispatch layer reads
+   the policy from state, making the gate auditable and testable.
+
+2. **Empty IPC message bodies.** The `.send`, `.call`, and `.reply` dispatch
+   arms construct `IpcMessage` with `registers := #[]`, discarding the message
+   register values that `decodeSyscallArgs` already captured into
+   `decoded.msgRegs`. The fix introduces `extractMessageRegisters` to convert
+   `Array RegValue` to `Array Nat` (matching `IpcMessage.registers : Array Nat`)
+   and populate the message body.
+
+**Key type observation:** `IpcMessage.registers` is `Array Nat`, not
+`Array RegValue`. The `extractMessageRegisters` function must convert via
+`RegValue.val` (the `.val` projection on the `RegValue` wrapper structure).
+This conversion is a no-op in the abstract model (both carry `Nat` payloads)
+but is type-correct and explicit.
+
+**Inline vs. IPC buffer registers:** On ARM64, only 4 inline message registers
+(x2–x5) are available at the register-decode level. The `MessageInfo.length`
+field can encode up to 120, but the register-decode layer only captures the
+inline subset. `extractMessageRegisters` extracts `min info.length msgRegs.size`
+values, bounded above by `maxMessageRegisters`. The full 120-register IPC buffer
+transport is a future-workstream concern (shared-memory IPC buffer reads).
+
+**Subtasks:**
+
+#### K-E.1 — ServiceConfig structure (Model/State.lean)
+
+Define the service policy configuration record above the `SystemState`
+structure:
+```lean
+/-- Configuration record holding policy predicates for service operations.
+    The dispatch layer reads these from `SystemState.serviceConfig` to gate
+    `serviceStart` and `serviceStop` transitions.
+    `Inhabited` default is `(fun _ => true)` — all operations allowed. -/
+structure ServiceConfig where
+  allowStart : ServicePolicy
+  allowStop  : ServicePolicy
+
+instance : Inhabited ServiceConfig where
+  default := { allowStart := fun _ => true, allowStop := fun _ => true }
+```
+
+Design notes:
+- `ServicePolicy` is `ServiceGraphEntry → Bool` (defined in
+  `Service/Operations.lean:40`). The `ServiceConfig` fields use this same
+  type, maintaining consistency with `serviceStart`/`serviceStop` signatures.
+- The `Inhabited` instance provides permissive defaults (`fun _ => true`),
+  ensuring all existing `SystemState` construction sites (which use `default`)
+  continue to work unchanged. This is the same backward-compatibility strategy
+  used for `objectIndexSet` and `asidTable` (both default to `{}`).
+- `ServiceConfig` does not derive `DecidableEq` or `Repr` because function
+  fields (`ServicePolicy`) are not decidably comparable. The `Inhabited`
+  instance is sufficient for the testing and default-construction use cases.
+
+**File:** `SeLe4n/Model/State.lean` (before `SystemState` definition)
+**Acceptance:** `lake build` passes; `ServiceConfig` has `Inhabited` instance.
+
+#### K-E.2 — SystemState extension (Model/State.lean)
+
+Add `serviceConfig : ServiceConfig := default` field to `SystemState`. The
+default value ensures all existing construction sites compile unchanged —
+`BootstrapBuilder.build`, `Inhabited SystemState`, and direct struct literals
+in test files all omit the new field and get the permissive default.
+
+```lean
+structure SystemState where
+  ...
+  services : Std.HashMap ServiceId ServiceGraphEntry
+  serviceConfig : ServiceConfig := default    -- NEW
+  scheduler : SchedulerState
+  ...
+```
+
+Place the field immediately after `services` for logical grouping — service
+entries and service configuration belong together.
+
+**File:** `SeLe4n/Model/State.lean` (line ~135)
+**Acceptance:** `lake build` passes; all existing `SystemState` construction
+sites compile unchanged.
+
+#### K-E.3 — extractMessageRegisters helper (RegisterDecode.lean)
+
+Define the message register extraction function that converts `Array RegValue`
+to `Array Nat` (matching `IpcMessage.registers : Array Nat`) and bounds-limits
+the result:
+```lean
+/-- Extract message register values for IPC message population.
+    Converts `RegValue` wrappers to raw `Nat` values and limits the result
+    to `min info.length (min maxMessageRegisters msgRegs.size)` entries.
+
+    The length is bounded three ways:
+    1. `info.length` — the sender's declared message length.
+    2. `maxMessageRegisters` (120) — the seL4 protocol maximum.
+    3. `msgRegs.size` — the platform's inline register count (4 on ARM64).
+
+    Returns `Array Nat` to match `IpcMessage.registers : Array Nat`. -/
+@[inline] def extractMessageRegisters (msgRegs : Array RegValue)
+    (info : MessageInfo) : Array Nat :=
+  let count := min info.length (min maxMessageRegisters msgRegs.size)
+  (msgRegs.extract 0 count).map RegValue.val
+```
+
+Design notes:
+- `Array.extract 0 count` takes the first `count` elements, or fewer if the
+  array is shorter (extract is total and clamps silently).
+- `.map RegValue.val` converts each `RegValue` to its underlying `Nat`.
+- The function is pure and total — no `Except`, no state access.
+- `@[inline]` matches the existing encode/decode helper convention.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean` (after `encodeMsgRegs`)
+**Acceptance:** Function compiles; `lake build` passes.
+
+#### K-E.4 — extractMessageRegisters_length lemma (RegisterDecode.lean)
+
+Prove that the extracted array's size is bounded by `maxMessageRegisters`:
+```lean
+/-- The extracted message register array has at most `maxMessageRegisters`
+    entries. This guarantees `IpcMessage.bounded` for the registers component
+    when the message is constructed from the extraction result. -/
+theorem extractMessageRegisters_length (msgRegs : Array RegValue)
+    (info : MessageInfo) :
+    (extractMessageRegisters msgRegs info).size ≤ maxMessageRegisters
+```
+
+Proof strategy: unfold `extractMessageRegisters`, use `Array.size_map` and
+`Array.size_extract` to reduce to `min info.length (min maxMessageRegisters
+msgRegs.size) ≤ maxMessageRegisters`, which follows from `Nat.min_le_right`.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Theorem proved (zero sorry).
+
+#### K-E.5 — extractMessageRegisters_bounded lemma (RegisterDecode.lean)
+
+Prove that an `IpcMessage` constructed from `extractMessageRegisters` output
+satisfies the IPC bounded predicate (registers ≤ 120, caps = 0 ≤ 3):
+```lean
+/-- An IpcMessage constructed from extracted registers with empty caps
+    satisfies `IpcMessage.bounded`. -/
+theorem extractMessageRegisters_ipc_bounded (msgRegs : Array RegValue)
+    (info : MessageInfo) (badge : Option SeLe4n.Badge) :
+    IpcMessage.bounded {
+      registers := extractMessageRegisters msgRegs info,
+      caps := #[],
+      badge := badge }
+```
+
+This composes `extractMessageRegisters_length` with `IpcMessage.empty_bounded`
+for the caps component.
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Theorem proved (zero sorry).
+
+#### K-E.6 — extractMessageRegisters_deterministic theorem (RegisterDecode.lean)
+
+State the determinism theorem for `extractMessageRegisters`. Since the function
+is pure, this is trivially `rfl`:
+```lean
+theorem extractMessageRegisters_deterministic (msgRegs : Array RegValue)
+    (info : MessageInfo) :
+    extractMessageRegisters msgRegs info =
+    extractMessageRegisters msgRegs info := rfl
+```
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+**Acceptance:** Theorem compiles (zero sorry).
+
+#### K-E.7 — Update `.serviceStart` dispatch (API.lean)
+
+Replace the `(fun _ => true)` policy stub with a state-sourced policy
+read from `st.serviceConfig.allowStart`:
+```lean
+| .serviceStart =>
+    match cap.target with
+    | .object objId =>
+        fun st => serviceStart (ServiceId.ofNat objId.toNat)
+                    st.serviceConfig.allowStart st
+    | _ => fun _ => .error .invalidCapability
+```
+
+The key change is replacing the inline `(fun _ => true)` lambda with
+`st.serviceConfig.allowStart`. Since `serviceStart` takes `ServicePolicy`
+(which is `ServiceGraphEntry → Bool`) as its second argument, and
+`st.serviceConfig.allowStart` has exactly that type, the substitution is
+type-correct. The `st` at the end is the `Kernel` state argument
+(the `fun st =>` lambda feeds it to `serviceStart`).
+
+**Design note:** The `st` in `st.serviceConfig.allowStart` and the `st` passed
+to `serviceStart` are the **same** state — the dispatch reads the policy from
+the current state, then passes the same state to the kernel operation. This is
+important: the policy is evaluated against the current state, not a stale one.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~473–477)
+**Acceptance:** `lake build` passes; `.serviceStart` uses config policy.
+
+#### K-E.8 — Update `.serviceStop` dispatch (API.lean)
+
+Analogous replacement for `.serviceStop`:
+```lean
+| .serviceStop =>
+    match cap.target with
+    | .object objId =>
+        fun st => serviceStop (ServiceId.ofNat objId.toNat)
+                    st.serviceConfig.allowStop st
+    | _ => fun _ => .error .invalidCapability
+```
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~478–482)
+**Acceptance:** `lake build` passes; `.serviceStop` uses config policy.
+
+#### K-E.9 — Update `.send` IPC dispatch (API.lean)
+
+Populate the IPC message body from decoded message registers:
+```lean
+| .send =>
+    match cap.target with
+    | .object epId =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge }
+    | _ => fun _ => .error .invalidCapability
+```
+
+The `extractMessageRegisters` call converts `decoded.msgRegs : Array RegValue`
+to `Array Nat` and caps the length. The `body` replaces the previous `#[]`.
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~375–379)
+**Acceptance:** `lake build` passes; `.send` populates message body.
+
+#### K-E.10 — Update `.call` IPC dispatch (API.lean)
+
+Populate the IPC message body for `.call`:
+```lean
+| .call =>
+    match cap.target with
+    | .object epId =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        endpointCall epId tid { registers := body, caps := #[], badge := cap.badge }
+    | _ => fun _ => .error .invalidCapability
+```
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~387–391)
+**Acceptance:** `lake build` passes; `.call` populates message body.
+
+#### K-E.11 — Update `.reply` IPC dispatch (API.lean)
+
+Populate the IPC message body for `.reply`:
+```lean
+| .reply =>
+    match cap.target with
+    | .replyCap targetTid =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge }
+    | _ => fun _ => .error .invalidCapability
+```
+
+**File:** `SeLe4n/Kernel/API.lean` (line ~392–396)
+**Acceptance:** `lake build` passes; `.reply` populates message body.
+
+#### K-E.12 — Service dispatch delegation theorems (API.lean)
+
+Add two delegation theorems proving service dispatch correctly reads
+policy from `SystemState.serviceConfig`:
+
+```lean
+/-- K-E: When serviceStart dispatch is invoked, the policy is sourced from
+`st.serviceConfig.allowStart`. -/
+theorem dispatchWithCap_serviceStart_uses_config
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .serviceStart)
+    (hTarget : cap.target = .object objId) :
+    dispatchWithCap decoded tid cap =
+      fun st => serviceStart (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStart st
+
+/-- K-E: When serviceStop dispatch is invoked, the policy is sourced from
+`st.serviceConfig.allowStop`. -/
+theorem dispatchWithCap_serviceStop_uses_config
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .serviceStop)
+    (hTarget : cap.target = .object objId) :
+    dispatchWithCap decoded tid cap =
+      fun st => serviceStop (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStop st
+```
+
+All proofs are `by simp [dispatchWithCap, hSyscall, hTarget]`.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** Both theorems compile (zero sorry).
+
+#### K-E.13 — IPC message population delegation theorems (API.lean)
+
+Add three delegation theorems proving IPC dispatch populates message bodies:
+
+```lean
+/-- K-E: When send dispatch is invoked, the IPC message body is populated
+from decoded message registers via `extractMessageRegisters`. -/
+theorem dispatchWithCap_send_populates_msg
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .send)
+    (hTarget : cap.target = .object epId) :
+    dispatchWithCap decoded tid cap =
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge }
+```
+
+Analogous theorems for `.call` and `.reply` (`.reply` matches on
+`.replyCap targetTid`).
+
+All proofs are `by simp [dispatchWithCap, hSyscall, hTarget]`.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** All 3 theorems compile (zero sorry).
+
+#### K-E.14 — Verify existing soundness theorems compile unchanged
+
+After K-E.7–K-E.13, verify that all existing soundness theorems still compile
+without modification:
+
+1. **`dispatchSyscall_requires_right`**: The proof calls
+   `syscallInvoke_requires_right` with `dispatchWithCap decoded tid`. Since
+   `syscallInvoke_requires_right` quantifies over any `op : Capability →
+   Kernel α`, the proof composes regardless of `dispatchWithCap`'s internal
+   changes to service and IPC arms.
+
+2. **`syscallEntry_implies_capability_held`**: Threads through
+   `dispatchSyscall_requires_right`. No direct reference to `dispatchWithCap`.
+
+3. **`syscallEntry_requires_valid_decode`**: Does not reference
+   `dispatchWithCap` at all.
+
+4. **CSpace and lifecycle/VSpace delegation theorems** (K-C, K-D): These
+   reference specific `decoded.syscallId` matches (`.cspaceMint`, etc.) and
+   are unaffected by changes to the `.serviceStart`/`.serviceStop`/IPC arms.
+
+**File:** `SeLe4n/Kernel/API.lean`
+**Acceptance:** All existing theorems compile (zero sorry); no proof
+modifications needed.
+
+#### K-E.15 — StateBuilder and fixture updates
+
+Verify that `BootstrapBuilder.build` compiles unchanged. The new
+`serviceConfig` field has a default value (`default`), so `build` — which
+constructs `SystemState` with struct literal syntax omitting `serviceConfig` —
+picks up the default automatically.
+
+For test scenarios that need non-default policies (K-G), add a builder
+combinator:
+```lean
+def withServiceConfig (builder : BootstrapBuilder) (config : ServiceConfig)
+    : BootstrapBuilder :=
+  { builder with serviceConfig := config }
+```
+
+This requires adding `serviceConfig : ServiceConfig := default` to
+`BootstrapBuilder` and threading it through `build`.
+
+**Files:**
+- `SeLe4n/Testing/StateBuilder.lean` — Add `serviceConfig` field and combinator.
+**Acceptance:** `lake build` passes; existing tests compile unchanged.
+
+#### K-E.16 — Tier 3 invariant surface anchors
+
+Add `#check` anchors to `tests/InvariantSurfaceSuite.lean` for all new
+definitions and theorems:
+- `ServiceConfig`
+- `extractMessageRegisters`
+- `extractMessageRegisters_length`
+- `extractMessageRegisters_bounded` (the `_ipc_bounded` variant)
+- `extractMessageRegisters_deterministic`
+- `dispatchWithCap_serviceStart_uses_config`
+- `dispatchWithCap_serviceStop_uses_config`
+- `dispatchWithCap_send_populates_msg`
+- `dispatchWithCap_call_populates_msg`
+- `dispatchWithCap_reply_populates_msg`
+
+**File:** `tests/InvariantSurfaceSuite.lean`
+**Acceptance:** All `#check` anchors compile.
+
+#### K-E.17 — Build and smoke verification
+
+Run `lake build` and `./scripts/test_smoke.sh` to confirm:
+- Zero compilation errors
+- Zero `sorry` or `axiom` in production code
+- All Tier 0–2 tests pass
+- Trace fixture still matches (IPC trace scenarios will now show populated
+  message bodies — fixture must be updated if trace output changes)
+
+**Acceptance:** `test_smoke.sh` exits 0.
 
 **Exit criteria:**
-- No `(fun _ => true)` policy stubs in `dispatchWithCap`.
-- IPC messages carry register contents (not empty arrays).
-- `ServiceConfig` in `SystemState` with `Inhabited` default.
-- Length and determinism lemmas proved.
+- `ServiceConfig` structure defined with `Inhabited` default in `Model/State.lean`.
+- `SystemState` includes `serviceConfig : ServiceConfig := default` field.
+- `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with triple
+  bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`).
+- `extractMessageRegisters_length` lemma: result size ≤ `maxMessageRegisters`.
+- `extractMessageRegisters_ipc_bounded` lemma: constructed `IpcMessage` is bounded.
+- `extractMessageRegisters_deterministic` theorem proved (trivially `rfl`).
+- `.serviceStart`/`.serviceStop` dispatch reads policy from `st.serviceConfig`.
+- `.send`/`.call`/`.reply` dispatch populates message body from decoded registers.
+- No `(fun _ => true)` policy stubs remain in `dispatchWithCap`.
+- No `registers := #[]` in IPC dispatch arms (replaced with extracted registers).
+- 2 service delegation theorems proved.
+- 3 IPC message population delegation theorems proved.
+- All existing soundness theorems compile unchanged.
+- `BootstrapBuilder` extended with `serviceConfig` field and `withServiceConfig`
+  combinator.
+- Tier 3 anchors added for all new definitions and theorems.
 - `lake build` passes; `test_smoke.sh` passes.
+- Zero `sorry`/`axiom` in production proof surface.
 
 **Files modified:**
 - `SeLe4n/Model/State.lean` — Add `ServiceConfig`, extend `SystemState`.
-- `SeLe4n/Kernel/API.lean` — Replace stubs, populate IPC messages.
+- `SeLe4n/Kernel/API.lean` — Replace service stubs, populate IPC messages,
+  add 5 delegation theorems.
 - `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Add
-  `extractMessageRegisters`.
-- `tests/*.lean` — Update `SystemState` construction.
-- `SeLe4n/Testing/StateBuilder.lean` — Update builder defaults.
+  `extractMessageRegisters` with length, bounded, and determinism theorems.
+- `SeLe4n/Testing/StateBuilder.lean` — Add `serviceConfig` field and
+  `withServiceConfig` combinator to `BootstrapBuilder`.
+- `tests/InvariantSurfaceSuite.lean` — Add Tier 3 anchors.
 
 **Version target:** v0.16.4
 
@@ -1744,7 +2121,7 @@ Update GitBook chapters and claim evidence index.
 ### Architecture layer
 | File | Change | Phase |
 |------|--------|-------|
-| `SeLe4n/Kernel/Architecture/RegisterDecode.lean` | Populate msgRegs, extraction helper, lemmas | K-A, K-E |
+| `SeLe4n/Kernel/Architecture/RegisterDecode.lean` | Populate msgRegs, extraction helper + length/bounded/determinism lemmas | K-A, K-E |
 | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | **NEW** — argument structures + decode fns | K-B |
 | `SeLe4n/Model/Object/Structures.lean` | `PagePermissions.ofNat`, `toNat`, round-trip | K-D |
 
@@ -1853,10 +2230,23 @@ Update GitBook chapters and claim evidence index.
 - [x] K-D.8: 3 delegation theorems proved (lifecycle + VSpace) (v0.16.3) ✓
 - [x] K-D.9: Tier 3 anchors for all new definitions (v0.16.3) ✓
 - [x] K-D.10: Zero `.illegalState` stubs in `dispatchWithCap` (v0.16.3) ✓
-- [ ] K-E: `ServiceConfig` in `SystemState` with `Inhabited` default (v0.16.4)
-- [ ] K-E: Service dispatch uses `st.serviceConfig` (v0.16.4)
-- [ ] K-E: IPC messages populated from decoded registers (v0.16.4)
-- [ ] K-E: `extractMessageRegisters_length` lemma proved (v0.16.4)
+- [x] K-E.1: `ServiceConfig` structure with `Inhabited` default (v0.16.4) ✓
+- [x] K-E.2: `SystemState` extended with `serviceConfig` field (v0.16.4) ✓
+- [x] K-E.3: `extractMessageRegisters` converts `Array RegValue` → `Array Nat` (v0.16.4) ✓
+- [x] K-E.4: `extractMessageRegisters_length` lemma proved (v0.16.4) ✓
+- [x] K-E.5: `extractMessageRegisters_ipc_bounded` lemma proved (v0.16.4) ✓
+- [x] K-E.6: `extractMessageRegisters_deterministic` theorem proved (v0.16.4) ✓
+- [x] K-E.7: `.serviceStart` dispatch uses `st.serviceConfig.allowStart` (v0.16.4) ✓
+- [x] K-E.8: `.serviceStop` dispatch uses `st.serviceConfig.allowStop` (v0.16.4) ✓
+- [x] K-E.9: `.send` IPC message populated from decoded registers (v0.16.4) ✓
+- [x] K-E.10: `.call` IPC message populated from decoded registers (v0.16.4) ✓
+- [x] K-E.11: `.reply` IPC message populated from decoded registers (v0.16.4) ✓
+- [x] K-E.12: 2 service delegation theorems proved (v0.16.4) ✓
+- [x] K-E.13: 3 IPC message population delegation theorems proved (v0.16.4) ✓
+- [x] K-E.14: All existing soundness theorems compile unchanged (v0.16.4) ✓
+- [x] K-E.15: `BootstrapBuilder` extended with `serviceConfig` (v0.16.4) ✓
+- [x] K-E.16: Tier 3 anchors for all new definitions (v0.16.4) ✓
+- [x] K-E.17: `lake build` + `test_smoke.sh` pass (v0.16.4) ✓
 - [ ] K-F: Round-trip proofs for all 7 argument structures (v0.16.5)
 - [ ] K-F: Message register extraction round-trip proved (v0.16.5)
 - [ ] K-F: Deferred NI proofs completed (v0.16.5)

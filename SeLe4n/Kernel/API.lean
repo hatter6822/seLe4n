@@ -372,10 +372,12 @@ remain. -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (cap : Capability) : Kernel Unit :=
   match decoded.syscallId with
+  -- WS-K-E: IPC send — message body populated from decoded message registers.
   | .send =>
     match cap.target with
     | .object epId =>
-      endpointSendDual epId tid { registers := #[], caps := #[], badge := cap.badge }
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -384,15 +386,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- WS-K-E: IPC call — message body populated from decoded message registers.
   | .call =>
     match cap.target with
     | .object epId =>
-      endpointCall epId tid { registers := #[], caps := #[], badge := cap.badge }
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointCall epId tid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
+  -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
     match cap.target with
     | .replyCap targetTid =>
-      endpointReply tid targetTid { registers := #[], caps := #[], badge := cap.badge }
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -470,15 +476,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok args =>
             Architecture.vspaceUnmapPage args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
+  -- WS-K-E: Service start — policy sourced from SystemState.serviceConfig.
   | .serviceStart =>
     match cap.target with
     | .object objId =>
-      serviceStart (ServiceId.ofNat objId.toNat) (fun _ => true)
+      fun st => serviceStart (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStart st
     | _ => fun _ => .error .invalidCapability
+  -- WS-K-E: Service stop — policy sourced from SystemState.serviceConfig.
   | .serviceStop =>
     match cap.target with
     | .object objId =>
-      serviceStop (ServiceId.ofNat objId.toNat) (fun _ => true)
+      fun st => serviceStop (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStop st
     | _ => fun _ => .error .invalidCapability
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -759,6 +769,70 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     dispatchWithCap decoded tid cap =
       Architecture.vspaceUnmapPage args.asid args.vaddr := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+
+-- ============================================================================
+-- WS-K-E: Service policy and IPC message population delegation theorems
+-- ============================================================================
+
+/-- WS-K-E: When serviceStart dispatch is invoked, the policy is sourced from
+`st.serviceConfig.allowStart` — not a hardcoded `(fun _ => true)` stub. -/
+theorem dispatchWithCap_serviceStart_uses_config
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .serviceStart)
+    (hTarget : cap.target = .object objId) :
+    dispatchWithCap decoded tid cap =
+      fun st => serviceStart (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStart st := by
+  simp [dispatchWithCap, hSyscall, hTarget]
+
+/-- WS-K-E: When serviceStop dispatch is invoked, the policy is sourced from
+`st.serviceConfig.allowStop` — not a hardcoded `(fun _ => true)` stub. -/
+theorem dispatchWithCap_serviceStop_uses_config
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .serviceStop)
+    (hTarget : cap.target = .object objId) :
+    dispatchWithCap decoded tid cap =
+      fun st => serviceStop (ServiceId.ofNat objId.toNat)
+                  st.serviceConfig.allowStop st := by
+  simp [dispatchWithCap, hSyscall, hTarget]
+
+/-- WS-K-E: When send dispatch is invoked, the IPC message body is populated
+from decoded message registers via `extractMessageRegisters`. -/
+theorem dispatchWithCap_send_populates_msg
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .send)
+    (hTarget : cap.target = .object epId) :
+    dispatchWithCap decoded tid cap =
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge } := by
+  simp [dispatchWithCap, hSyscall, hTarget]
+
+/-- WS-K-E: When call dispatch is invoked, the IPC message body is populated
+from decoded message registers via `extractMessageRegisters`. -/
+theorem dispatchWithCap_call_populates_msg
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (hSyscall : decoded.syscallId = .call)
+    (hTarget : cap.target = .object epId) :
+    dispatchWithCap decoded tid cap =
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointCall epId tid { registers := body, caps := #[], badge := cap.badge } := by
+  simp [dispatchWithCap, hSyscall, hTarget]
+
+/-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
+from decoded message registers via `extractMessageRegisters`. -/
+theorem dispatchWithCap_reply_populates_msg
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (cap : Capability) (targetTid : SeLe4n.ThreadId)
+    (hSyscall : decoded.syscallId = .reply)
+    (hTarget : cap.target = .replyCap targetTid) :
+    dispatchWithCap decoded tid cap =
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
+  simp [dispatchWithCap, hSyscall, hTarget]
 
 -- ============================================================================
 -- WS-J1-D: Invariant preservation for syscall entry

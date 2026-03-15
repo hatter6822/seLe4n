@@ -50,6 +50,21 @@ open SeLe4n.Model
     with the other `encode*` helpers. -/
 @[inline] def encodeMsgRegs (regs : Array RegValue) : Array RegValue := regs
 
+/-- Extract message register values for IPC message population.
+    Converts `RegValue` wrappers to raw `Nat` values and limits the result
+    to `min info.length (min maxMessageRegisters msgRegs.size)` entries.
+
+    The length is bounded three ways:
+    1. `info.length` — the sender's declared message length.
+    2. `maxMessageRegisters` (120) — the seL4 protocol maximum.
+    3. `msgRegs.size` — the platform's inline register count (4 on ARM64).
+
+    Returns `Array Nat` to match `IpcMessage.registers : Array Nat`. -/
+@[inline] def extractMessageRegisters (msgRegs : Array RegValue)
+    (info : MessageInfo) : Array Nat :=
+  let count := min info.length (min maxMessageRegisters msgRegs.size)
+  (msgRegs.extract 0 count).map RegValue.val
+
 -- ============================================================================
 -- Decode functions — total with explicit error returns
 -- ============================================================================
@@ -151,6 +166,40 @@ theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
    decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps,
    decodeSyscallId_roundtrip decoded.syscallId,
    decodeMsgRegs_roundtrip decoded.msgRegs⟩
+
+-- ============================================================================
+-- Message register extraction lemmas
+-- ============================================================================
+
+/-- The extracted message register array has at most `maxMessageRegisters`
+    entries. This guarantees `IpcMessage.bounded` for the registers component
+    when the message is constructed from the extraction result. -/
+theorem extractMessageRegisters_length (msgRegs : Array RegValue)
+    (info : MessageInfo) :
+    (extractMessageRegisters msgRegs info).size ≤ maxMessageRegisters := by
+  unfold extractMessageRegisters
+  simp [Array.size_map, Array.size_extract]
+  omega
+
+/-- An IpcMessage constructed from extracted registers with empty caps
+    satisfies `IpcMessage.bounded`. -/
+theorem extractMessageRegisters_ipc_bounded (msgRegs : Array RegValue)
+    (info : MessageInfo) (badge : Option SeLe4n.Badge) :
+    IpcMessage.bounded {
+      registers := extractMessageRegisters msgRegs info,
+      caps := #[],
+      badge := badge } := by
+  unfold IpcMessage.bounded
+  constructor
+  · exact extractMessageRegisters_length msgRegs info
+  · simp [maxExtraCaps, Array.size]
+
+/-- Determinism: extracting message registers from the same inputs produces
+    the same result. Trivially `rfl` since the function is pure. -/
+theorem extractMessageRegisters_deterministic (msgRegs : Array RegValue)
+    (info : MessageInfo) :
+    extractMessageRegisters msgRegs info =
+    extractMessageRegisters msgRegs info := rfl
 
 -- ============================================================================
 -- Determinism theorem

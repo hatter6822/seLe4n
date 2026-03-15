@@ -1,3 +1,31 @@
+## [0.16.4] — Service Policy and IPC Message Population (WS-K-E)
+
+- Replaced `(fun _ => true)` service policy stubs in `dispatchWithCap` with
+  configuration-sourced predicates: `.serviceStart` reads
+  `st.serviceConfig.allowStart`, `.serviceStop` reads `st.serviceConfig.allowStop`
+- Added `ServiceConfig` structure in `Model/State.lean` with `Inhabited` default
+  (permissive `fun _ => true`), preserving backward compatibility
+- Extended `SystemState` with `serviceConfig : ServiceConfig := default` field
+- Added `extractMessageRegisters` in `RegisterDecode.lean` — converts
+  `Array RegValue` → `Array Nat` (matching `IpcMessage.registers : Array Nat`)
+  with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`)
+- Updated `.send`, `.call`, `.reply` IPC dispatch arms to populate message bodies
+  from decoded registers instead of empty arrays (`registers := #[]`)
+- Proved `extractMessageRegisters_length` (result size ≤ `maxMessageRegisters`),
+  `extractMessageRegisters_ipc_bounded` (constructed `IpcMessage` satisfies
+  `bounded`), `extractMessageRegisters_deterministic`
+- 5 delegation theorems proved (`dispatchWithCap_serviceStart_uses_config`,
+  `dispatchWithCap_serviceStop_uses_config`, `dispatchWithCap_send_populates_msg`,
+  `dispatchWithCap_call_populates_msg`, `dispatchWithCap_reply_populates_msg`)
+- All existing soundness theorems compile unchanged
+- `BootstrapBuilder` extended with `serviceConfig` field and `withServiceConfig`
+  combinator for test scenario configuration
+- 11 Tier 3 invariant surface anchors (rg + #check) for all new definitions
+- Refined WS-K-E workstream plan with 17 detailed subtasks (K-E.1–K-E.17)
+- Zero `(fun _ => true)` policy stubs remain in `dispatchWithCap`
+- Zero `registers := #[]` in IPC dispatch arms
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+
 ## [0.16.3] — Lifecycle and VSpace Syscall Dispatch (WS-K-D)
 
 - Wired all 3 remaining syscall stubs (`lifecycleRetype`, `vspaceMap`,
