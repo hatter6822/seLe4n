@@ -1,3 +1,25 @@
+## [0.16.8] — Documentation Sync and Workstream Closeout (WS-K-H)
+
+- Synchronized all project documentation with completed WS-K implementation
+  (K-A through K-G): canonical root docs, GitBook mirrors, metrics, version
+- Updated `docs/WORKSTREAM_HISTORY.md` with WS-K portfolio completion
+  (v0.16.0–v0.16.8, all 8 phases)
+- Updated `docs/spec/SELE4N_SPEC.md` with v0.16.8 current state snapshot,
+  WS-K PORTFOLIO COMPLETE status, and updated metrics
+- Updated `docs/DEVELOPMENT.md` with WS-K completion and RPi5 next priority
+- Updated `docs/CLAIM_EVIDENCE_INDEX.md` with comprehensive WS-K claim row
+  covering all deliverables and evidence commands
+- Updated GitBook chapters: architecture module map (03), design deep dive (04),
+  specification and roadmap (05), proof and invariant map (12)
+- Added `SyscallArgDecode.lean` entry to architecture module map with WS-K-B/K-F
+  annotations
+- Added two-layer syscall argument decode section to design deep dive
+- Documented WS-K proof surface (44+ theorems) in proof and invariant map
+- Regenerated `docs/codebase_map.json` with current Lean source metrics
+- Synced `README.md` metrics from regenerated codebase map
+- Bumped `lakefile.toml` version to 0.16.8
+- Zero code changes to Lean source — documentation-only workstream
+
 ## [0.16.7] — Comprehensive Testing for Syscall Dispatch Completion (WS-K-G)
 
 - Refined WS-K-G workstream plan into 7 granular sub-phases (K-G1 through K-G7)
