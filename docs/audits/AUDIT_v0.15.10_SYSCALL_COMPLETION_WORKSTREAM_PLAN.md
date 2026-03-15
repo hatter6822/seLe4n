@@ -1920,69 +1920,215 @@ Run `lake build` and `./scripts/test_smoke.sh` to confirm:
 
 ### WS-K-F — Proofs: Round-Trip, Preservation, and NI Integration
 
-**Goal:** Prove round-trip correctness for all new decode paths, preservation
-of the proof-layer invariant bundle across new dispatch paths, and extend NI
-coverage.
+**Goal:** Prove round-trip correctness for all new decode paths, verify
+preservation of the proof-layer invariant bundle across new dispatch paths,
+complete remaining NI lifecycle proofs, and confirm full NI coverage.
+
+WS-K-F is subdivided into six granular sub-phases. Each sub-phase is an
+independently committable unit that builds on the previous phase and can be
+validated in isolation via `lake build`.
+
+---
+
+#### K-F1 — Encode Functions for All 7 Argument Structures
+
+**Scope:** Define canonical encode functions that invert the Layer 2 decode
+functions. These are the encode-side of the round-trip contract.
 
 **Tasks:**
-1. **Round-trip proofs** in `SyscallArgDecode.lean`:
-   - `decodeCSpaceMintArgs_roundtrip`: encoding CSpaceMintArgs into message
-     registers then decoding recovers the original.
-   - Analogous for all 7 argument structures.
-   - Pattern: define `encodeCSpaceMintArgs : CSpaceMintArgs → Array RegValue`,
-     then prove `decodeCSpaceMintArgs ∘ encodeCSpaceMintArgs = .ok`.
+1. Define `encodeCSpaceMintArgs : CSpaceMintArgs → Array RegValue`:
+   maps `srcSlot`, `dstSlot`, `rights`, `badge` fields to a 4-element
+   `RegValue` array via `.toNat` / `.val`.
+2. Define `encodeCSpaceCopyArgs : CSpaceCopyArgs → Array RegValue`:
+   maps `srcSlot`, `dstSlot` to a 2-element array.
+3. Define `encodeCSpaceMoveArgs : CSpaceMoveArgs → Array RegValue`:
+   maps `srcSlot`, `dstSlot` to a 2-element array.
+4. Define `encodeCSpaceDeleteArgs : CSpaceDeleteArgs → Array RegValue`:
+   maps `targetSlot` to a 1-element array.
+5. Define `encodeLifecycleRetypeArgs : LifecycleRetypeArgs → Array RegValue`:
+   maps `targetObj`, `newType`, `size` to a 3-element array.
+6. Define `encodeVSpaceMapArgs : VSpaceMapArgs → Array RegValue`:
+   maps `asid`, `vaddr`, `paddr`, `perms` to a 4-element array.
+7. Define `encodeVSpaceUnmapArgs : VSpaceUnmapArgs → Array RegValue`:
+   maps `asid`, `vaddr` to a 2-element array.
 
-2. **Message register extraction round-trip** in `RegisterDecode.lean`:
-   - `extractMessageRegisters_roundtrip`: for well-formed inputs, extracting
-     from the array of encoded values recovers the originals.
+**Pattern:** Each encode function constructs `#[⟨field₁.toNat⟩, ⟨field₂.toNat⟩, ...]`
+mirroring the decode function's `requireMsgReg` index order. The encode is pure,
+deterministic, and requires no imports beyond `Model.State`.
 
-3. **Invariant preservation** — verify that
-   `proofLayerInvariantBundle` is preserved across new dispatch paths:
-   - CSpace dispatch: composes with existing CSpace preservation theorems.
-   - Lifecycle dispatch: composes with existing lifecycle preservation.
-   - VSpace dispatch: composes with existing VSpace preservation.
-   - Service config: policy change does not affect invariant (policy is
-     read-only during dispatch).
-   - IPC message population: does not affect state (message is an argument,
-     not a state mutation).
+**File modified:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
 
-4. **NI integration** — verify existing `NonInterferenceStep` constructors
-   suffice:
-   - `cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`,
-     `lifecycleRetype`, `vspaceMapPage`, `vspaceUnmapPage` constructors
-     already exist (Composition.lean:52–144).
-   - `serviceStart`, `serviceStop` constructors already exist (lines 91–105).
-   - `syscallDispatchHigh` constructor covers the register-sourced entry path.
-   - **Assessment:** No new NI constructors needed — existing 33 constructors
-     cover all dispatch paths. The decode is pure (no state change) and the
-     argument extraction is pure. The dispatch delegates to operations already
-     covered.
+---
 
-5. **Deferred NI proof completion** — the operations module
-   (`InformationFlow/Invariant/Operations.lean:15–33`) lists deferred proofs
-   for `cspaceDeleteSlot`, `cspaceCopy`, `cspaceMove`,
-   `lifecycleRevokeDeleteRetype`. Complete these using `storeObject`-level
-   projection lemmas and CDT frame lemmas now that the dispatch path is live.
+#### K-F2 — Round-Trip Proofs for All 7 Argument Structures
 
-6. Add `dispatchWithCap_preserves_bundle` theorem or verify it follows from
-   per-operation preservation.
+**Scope:** Prove that encoding then decoding each argument structure recovers
+the original, anchoring the Layer 2 decode contract.
 
-**Exit criteria:**
-- Round-trip proofs for all 7 argument structures.
-- Message register extraction round-trip proved.
-- Invariant preservation verified for all new dispatch paths.
-- NI coverage confirmed (no gaps in `NonInterferenceStep` constructors).
-- Deferred NI proofs for CSpace/lifecycle operations completed.
+**Tasks:**
+1. `decodeCSpaceMintArgs_roundtrip`: for any `args : CSpaceMintArgs`,
+   `decodeCSpaceMintArgs ⟨encodeCSpaceMintArgs args, ...⟩ = .ok args`.
+   Proof: unfold encode/decode, apply `Slot.ofNat_toNat`, `Badge.ofNat_toNat`,
+   and `AccessRightSet` field identity.
+2. `decodeCSpaceCopyArgs_roundtrip`: analogous, using `Slot.ofNat_toNat`.
+3. `decodeCSpaceMoveArgs_roundtrip`: analogous, using `Slot.ofNat_toNat`.
+4. `decodeCSpaceDeleteArgs_roundtrip`: analogous, single-field.
+5. `decodeLifecycleRetypeArgs_roundtrip`: using `ObjId.ofNat_toNat`.
+6. `decodeVSpaceMapArgs_roundtrip`: using `ASID.ofNat_toNat`, `VAddr.ofNat_toNat`,
+   `PAddr.ofNat_toNat`.
+7. `decodeVSpaceUnmapArgs_roundtrip`: using `ASID.ofNat_toNat`, `VAddr.ofNat_toNat`.
+8. `decode_layer2_roundtrip_all`: composed conjunction theorem stating all 7
+   round-trips hold simultaneously (parallel to `decode_components_roundtrip`
+   in `RegisterDecode.lean`).
+
+**Proof pattern:** Each theorem creates a `SyscallDecodeResult` stub with
+`msgRegs := encodeXxxArgs args` and proves the decode returns `.ok args`.
+The key lemma chain is: `requireMsgReg` unfolds to array indexing → the
+`#[...]` literal has known size → `simp` resolves the index → `ofNat_toNat`
+collapses the wrapper → structure eta gives `args`.
+
+**File modified:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+
+---
+
+#### K-F3 — Extraction Round-Trip Proof
+
+**Scope:** Prove that encoding message register values into an array and
+extracting them via `extractMessageRegisters` recovers the originals,
+completing the Layer 1 extraction contract.
+
+**Tasks:**
+1. `extractMessageRegisters_roundtrip`: for an array `vals` and a
+   `MessageInfo` with `length = vals.size` and `length ≤ maxMessageRegisters`,
+   `extractMessageRegisters vals info = vals`.
+   Proof: unfold `extractMessageRegisters`, show that `Array.extract` with
+   `min(info.length, maxMessageRegisters)` = `vals.size` returns the full
+   array, then `Array.map id` = identity.
+
+**File modified:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+
+---
+
+#### K-F4 — Dispatch-Level Invariant Preservation
+
+**Scope:** Prove that `dispatchWithCap` preserves `proofLayerInvariantBundle`
+by composing per-operation preservation theorems.
+
+**Tasks:**
+1. Verify that each dispatch arm in `dispatchWithCap` (API.lean:372–493)
+   delegates to an operation whose preservation theorem already exists:
+   - CSpace mint/copy/move/delete: existing theorems in
+     `Capability/Invariant/Preservation.lean`.
+   - Lifecycle retype: existing theorem in `Lifecycle/Invariant.lean`.
+   - VSpace map/unmap: existing theorem in `Architecture/VSpaceInvariant.lean`.
+   - Service start/stop: existing theorems in `Service/Invariant/Policy.lean`.
+   - IPC send/call/reply/recv: existing theorems in
+     `IPC/Invariant/EndpointPreservation.lean`.
+2. Add `dispatchWithCap_decode_pure` theorem: Layer 2 decode functions do not
+   modify state (they operate on the `SyscallDecodeResult` value, not
+   `SystemState`). Therefore, the only state-modifying operation is the
+   delegated kernel call.
+3. Add `dispatchWithCap_preserves_bundle` theorem: for each dispatch arm,
+   if the pre-state satisfies `proofLayerInvariantBundle` and the delegated
+   operation succeeds, the post-state satisfies `proofLayerInvariantBundle`.
+   This is a match-on-syscall proof that invokes the appropriate per-operation
+   preservation theorem in each branch.
+
+**Files modified:**
+- `SeLe4n/Kernel/API.lean` — `dispatchWithCap_decode_pure`,
+  `dispatchWithCap_preserves_bundle`.
+
+---
+
+#### K-F5 — Complete Remaining NI Lifecycle Proofs
+
+**Scope:** Write the two remaining deferred NI `lowEquivalent` proofs for
+lifecycle operations, and update the stale deferred-proof comment.
+
+**Tasks:**
+1. `lifecycleRetypeObject_preserves_lowEquivalent`: retype at a non-observable
+   target preserves low-equivalence. Proof delegates to
+   `lifecycleRetypeObject_ok_as_storeObject` (decomposition lemma) then
+   `storeObject_at_unobservable_preserves_lowEquivalent`.
+2. `retypeFromUntyped_preserves_lowEquivalent`: retype-from-untyped at
+   non-observable targets preserves low-equivalence. Proof decomposes into
+   two `storeObject` calls (untyped update + child creation), each at a
+   non-observable target, then composes via transitivity.
+3. Update the stale deferred-proof comment at
+   `InformationFlow/Invariant/Operations.lean:15–33` to reflect that all 5
+   originally deferred proofs are now complete:
+   - `cspaceDeleteSlot_preserves_lowEquivalent` — completed WS-H9
+   - `cspaceCopy_preserves_lowEquivalent` — completed WS-H9
+   - `cspaceMove_preserves_lowEquivalent` — completed WS-H9
+   - `lifecycleRetypeObject_preserves_lowEquivalent` — completed K-F5
+   - `retypeFromUntyped_preserves_lowEquivalent` — completed K-F5
+
+**File modified:**
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`
+
+---
+
+#### K-F6 — NI Coverage Verification
+
+**Scope:** Confirm that all dispatch paths introduced in WS-K are covered by
+existing `NonInterferenceStep` constructors. No new constructors needed.
+
+**Tasks:**
+1. Verify that the 33 existing `NonInterferenceStep` constructors
+   (Composition.lean:34–241) cover every operation reachable from
+   `dispatchWithCap`:
+   - `.cspaceMint` (line 52) — covers `cspaceMint` dispatch arm.
+   - `.cspaceCopy` (line 129) — covers `cspaceCopy` dispatch arm.
+   - `.cspaceMove` (line 135) — covers `cspaceMove` dispatch arm.
+   - `.cspaceDeleteSlot` (line 141) — covers `cspaceDelete` dispatch arm.
+   - `.lifecycleRetype` (line 63) — covers `lifecycleRetype` dispatch arm.
+   - `.vspaceMapPage` (line 113) — covers `vspaceMap` dispatch arm.
+   - `.vspaceUnmapPage` (line 119) — covers `vspaceUnmap` dispatch arm.
+   - `.serviceStart` (line 91) — covers `serviceStart` dispatch arm.
+   - `.serviceStop` (line 96) — covers `serviceStop` dispatch arm.
+   - `.endpointSendDual` (line 41) — covers IPC send dispatch arm.
+   - `.endpointCallHigh` (line 157) — covers IPC call dispatch arm.
+   - `.endpointReply` (line 146) — covers IPC reply dispatch arm.
+   - `.endpointReceiveDualHigh` (line 152) — covers IPC recv dispatch arm.
+   - `.syscallDecodeError` (line 225) — covers decode failure path.
+   - `.syscallDispatchHigh` (line 237) — covers high-domain dispatch path.
+2. Add `syscallEntry_NI_coverage` theorem: if `syscallEntry` succeeds from a
+   high-domain thread, the transition is a `NonInterferenceStep`. If decode
+   fails, state is unchanged and the `syscallDecodeError` constructor applies.
+3. Verify `step_preserves_projection` (Composition.lean:245–505) handles all
+   constructors — confirmed by exhaustive pattern match.
+
+**Assessment:** No new `NonInterferenceStep` constructors are required. The
+Layer 2 decode is pure (no state change) and argument extraction is pure.
+Every dispatch arm delegates to a kernel operation already covered by an
+existing constructor.
+
+**Files modified:**
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` — verification
+  theorem (no structural changes to existing proofs).
+
+---
+
+**Combined exit criteria:**
+- 7 encode functions defined (K-F1).
+- 7 round-trip proofs + composed conjunction theorem (K-F2).
+- Message register extraction round-trip proved (K-F3).
+- `dispatchWithCap_preserves_bundle` theorem proved (K-F4).
+- 2 lifecycle NI `lowEquivalent` proofs completed; stale comment updated (K-F5).
+- NI coverage verification theorem; all 33 constructors confirmed (K-F6).
 - Zero `sorry` / `axiom` in production proof surface.
 - `lake build` passes; `test_full.sh` passes.
 
-**Files modified:**
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — Round-trip proofs.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Extraction round-trip.
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — Complete
-  deferred NI proofs.
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` — Verify
-  coverage (likely no changes needed).
+**All files modified (combined):**
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — Encode functions,
+  round-trip proofs (K-F1, K-F2).
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Extraction round-trip
+  (K-F3).
+- `SeLe4n/Kernel/API.lean` — Dispatch preservation theorem (K-F4).
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — Lifecycle NI
+  proofs, stale comment update (K-F5).
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` — NI coverage
+  verification theorem (K-F6).
 
 **Version target:** v0.16.5
 

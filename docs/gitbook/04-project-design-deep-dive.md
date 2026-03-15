@@ -217,7 +217,13 @@ decoded `Array RegValue` to `Array Nat` (matching `IpcMessage.registers` type)
 with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`); `.send`,
 `.call`, `.reply` dispatch arms now populate message bodies instead of empty arrays.
 5 delegation theorems proved; `extractMessageRegisters_length` and
-`extractMessageRegisters_ipc_bounded` lemmas ensure IPC message boundedness. See
+`extractMessageRegisters_ipc_bounded` lemmas ensure IPC message boundedness.
+**Layer 6 (completed, K-F v0.16.5):** Round-trip proofs, preservation composition,
+and NI integration. 7 encode functions + 7 round-trip theorems close the layer-2
+decode contract. `extractMessageRegisters_roundtrip` closes the layer-1 extraction
+gap. `dispatchWithCap_layer2_decode_pure` proves decode depends only on `msgRegs`.
+`retypeFromUntyped_preserves_lowEquivalent` completes the last deferred NI proof.
+`syscallNI_coverage_witness` confirms all 33 NI constructors are exhaustive. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage

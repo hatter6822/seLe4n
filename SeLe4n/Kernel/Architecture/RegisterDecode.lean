@@ -194,6 +194,26 @@ theorem extractMessageRegisters_ipc_bounded (msgRegs : Array RegValue)
   · exact extractMessageRegisters_length msgRegs info
   · simp [maxExtraCaps, Array.size]
 
+/-- Round-trip: encoding `Nat` values as `RegValue` wrappers then extracting
+    via `extractMessageRegisters` recovers the originals, provided the
+    `MessageInfo.length` equals the array size and both are within
+    `maxMessageRegisters`. -/
+theorem extractMessageRegisters_roundtrip
+    (vals : Array Nat)
+    (info : MessageInfo)
+    (hLen : info.length = vals.size)
+    (hBound : vals.size ≤ maxMessageRegisters) :
+    extractMessageRegisters (vals.map (fun n => ⟨n⟩)) info = vals := by
+  unfold extractMessageRegisters
+  have hSz : (vals.map (fun n => (⟨n⟩ : RegValue))).size = vals.size := Array.size_map ..
+  -- The count simplifies to vals.size given our hypotheses
+  have hCount : min info.length (min maxMessageRegisters (vals.map (fun n => (⟨n⟩ : RegValue))).size)
+      = vals.size := by rw [hSz, hLen]; omega
+  -- Array.extract 0 n with n ≥ size returns the full array, then map RegValue.val ∘ RegValue.mk = id
+  ext i
+  · simp [Array.size_extract, Array.size_map, hSz]; omega
+  · simp [Array.getElem_extract, Array.getElem_map]
+
 /-- Determinism: extracting message registers from the same inputs produces
     the same result. Trivially `rfl` since the function is pure. -/
 theorem extractMessageRegisters_deterministic (msgRegs : Array RegValue)

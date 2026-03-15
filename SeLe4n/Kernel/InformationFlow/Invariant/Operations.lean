@@ -12,23 +12,23 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-! ### WS-F3: Capability CRUD operations — deferred proofs
+/-! ### WS-F3/K-F5: Capability CRUD and Lifecycle NI proofs — all completed
 
-The following capability operations have NI properties that follow from
-compositional reasoning over `storeObject`-level primitives. Their formal
-proofs are deferred to a follow-up workstream (WS-F4) once decomposition
-lemmas for CDT-aware operations (`cspaceDeleteSlot`, `cspaceCopy`,
-`cspaceMove`) are available:
+The following capability and lifecycle operations have NI properties that
+follow from compositional reasoning over `storeObject`-level primitives.
 
-- `cspaceDeleteSlot_preserves_lowEquivalent`
-- `cspaceCopy_preserves_lowEquivalent`
-- `cspaceMove_preserves_lowEquivalent`
-- `lifecycleRevokeDeleteRetype_preserves_lowEquivalent`
-- `retypeFromUntyped_preserves_lowEquivalent`
+**CSpace operations (completed WS-H9):**
+- `cspaceDeleteSlot_preserves_lowEquivalent` — line 978
+- `cspaceCopy_preserves_lowEquivalent` — line 1099
+- `cspaceMove_preserves_lowEquivalent` — line 1158
+
+**Lifecycle operations (completed WS-K-F5):**
+- `lifecycleRetypeObject_preserves_lowEquivalent` — Helpers.lean:670
+- `retypeFromUntyped_preserves_lowEquivalent` — end of this file
 
 The pattern for each is identical: all mutations happen at non-observable
 targets via `storeObject`, and CDT/lifecycle metadata is not part of
-`ObservableState`. The proofs will compose `storeObject_preserves_projection`
+`ObservableState`. The proofs compose `storeObject_preserves_projection`
 with CDT-specific frame lemmas.
 -/
 
@@ -1533,4 +1533,43 @@ theorem timerTick_preserves_lowEquivalent
     timerTick_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hCurrentObjHigh₁ hAllRunnable₁ hStep₁,
     timerTick_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hCurrentObjHigh₂ hAllRunnable₂ hStep₂]
   exact hLow
+
+-- ============================================================================
+-- WS-K-F5: Lifecycle NI proofs — completing deferred proof list
+-- ============================================================================
+
+/-- WS-K-F5: `retypeFromUntyped` at non-observable targets preserves
+low-equivalence. The operation decomposes (via `retypeFromUntyped_ok_decompose`)
+into a read-only `cspaceLookupSlot` followed by two `storeObject` calls —
+one for the untyped watermark advance and one for the new child. Both targets
+are non-observable, so each store preserves low-equivalence. -/
+theorem retypeFromUntyped_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject) (allocSize : Nat)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hUntypedHigh : objectObservable ctx observer untypedId = false)
+    (hChildHigh : objectObservable ctx observer childId = false)
+    (hStep₁ : retypeFromUntyped authority untypedId childId newObj allocSize s₁ = .ok ((), s₁'))
+    (hStep₂ : retypeFromUntyped authority untypedId childId newObj allocSize s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  -- Decompose each step into constituent storeObject calls
+  rcases retypeFromUntyped_ok_decompose s₁ s₁' authority untypedId childId newObj allocSize hStep₁ with
+    ⟨ut₁, ut₁', cap₁, stL₁, stUt₁, _, _, _, _, hLookup₁, _, _, hStoreUt₁, hStoreChild₁⟩
+  rcases retypeFromUntyped_ok_decompose s₂ s₂' authority untypedId childId newObj allocSize hStep₂ with
+    ⟨ut₂, ut₂', cap₂, stL₂, stUt₂, _, _, _, _, hLookup₂, _, _, hStoreUt₂, hStoreChild₂⟩
+  -- Lookup is read-only: stL₁ = s₁, stL₂ = s₂
+  have hEqL₁ := cspaceLookupSlot_ok_state_eq s₁ authority cap₁ stL₁ hLookup₁
+  have hEqL₂ := cspaceLookupSlot_ok_state_eq s₂ authority cap₂ stL₂ hLookup₂
+  rw [hEqL₁] at hStoreUt₁; rw [hEqL₂] at hStoreUt₂
+  -- First storeObject (untyped update) at non-observable untypedId
+  have hMid := storeObject_at_unobservable_preserves_lowEquivalent
+    ctx observer untypedId (.untyped ut₁') (.untyped ut₂') s₁ s₂ stUt₁ stUt₂
+    hLow hUntypedHigh hStoreUt₁ hStoreUt₂
+  -- Second storeObject (child creation) at non-observable childId
+  exact storeObject_at_unobservable_preserves_lowEquivalent
+    ctx observer childId newObj newObj stUt₁ stUt₂ s₁' s₂'
+    hMid hChildHigh hStoreChild₁ hStoreChild₂
 

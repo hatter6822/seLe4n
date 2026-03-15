@@ -1,3 +1,32 @@
+## [0.16.5] — Proofs: Round-Trip, Preservation, and NI Integration (WS-K-F)
+
+- Added 7 encode functions in `SyscallArgDecode.lean` (`encodeCSpaceMintArgs`,
+  `encodeCSpaceCopyArgs`, `encodeCSpaceMoveArgs`, `encodeCSpaceDeleteArgs`,
+  `encodeLifecycleRetypeArgs`, `encodeVSpaceMapArgs`, `encodeVSpaceUnmapArgs`)
+  completing the encode/decode symmetry for all layer-2 typed argument structures
+- Proved 7 layer-2 round-trip theorems via structure eta reduction (`rcases + rfl`)
+  with `decode_layer2_roundtrip_all` composed conjunction
+- Added `extractMessageRegisters_roundtrip` in `RegisterDecode.lean` — proves
+  encoding `Nat` values as `RegValue` then extracting recovers the originals
+  (closes the layer-1 extraction round-trip gap)
+- Added `dispatchWithCap_layer2_decode_pure` in `API.lean` — proves all 7
+  layer-2 decode functions depend only on `msgRegs` (two `SyscallDecodeResult`
+  values with identical `msgRegs` produce identical decode results)
+- Added `dispatchWithCap_preservation_composition_witness` structural
+  preservation theorem in `API.lean` — witnesses compositional invariant
+  preservation through the syscall entry → decode → dispatch → subsystem pipeline
+- Added `retypeFromUntyped_preserves_lowEquivalent` NI theorem in
+  `InformationFlow/Invariant/Operations.lean` — completes the last deferred
+  NI proof using two-stage `storeObject_at_unobservable_preserves_lowEquivalent`
+  composition through intermediate untyped update state
+- Added `syscallNI_coverage_witness` in `InformationFlow/Invariant/Composition.lean`
+  — witnesses that (1) decode-error path produces a valid NI step, (2) every NI
+  step composes into a trace, and (3) `step_preserves_projection` is total over
+  all 33 `NonInterferenceStep` constructors
+- Refined WS-K-F workstream plan into 6 granular sub-phases (K-F1 through K-F6)
+  with detailed task breakdowns, proof patterns, and exit criteria
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+
 ## [0.16.4] — Service Policy and IPC Message Population (WS-K-E)
 
 - Replaced `(fun _ => true)` service policy stubs in `dispatchWithCap` with

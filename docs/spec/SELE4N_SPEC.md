@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.4` (`lakefile.toml`) |
+| **Package version** | `0.16.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 36,621 across 69 Lean files |
+| **Production LoC** | 36,868 across 69 Lean files |
 | **Test LoC** | 3,755 across 4 Lean test suites |
-| **Proved declarations** | 1,182 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,195 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues |
-| **Next workstreams** | **WS-K** full syscall dispatch completion (in progress, v0.16.4–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode function update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C completed** (v0.16.2): all 4 CSpace syscalls wired, 4 delegation theorems. **K-D completed** (v0.16.3): all 3 remaining stubs wired — zero `.illegalState` stubs, 13/13 dispatch. **K-E completed** (v0.16.4): `ServiceConfig`-sourced policy, IPC message population from decoded registers, 5 delegation theorems. Remaining: proofs (K-F), testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
+| **Next workstreams** | **WS-K** full syscall dispatch completion (in progress, v0.16.4–v0.16.8) — **K-A completed** (v0.16.0): `SyscallDecodeResult.msgRegs` field, decode function update, length/round-trip lemmas. **K-B completed** (v0.16.1): per-syscall typed argument decode layer with 7 structures, 7 decode functions, 14 theorems. **K-C completed** (v0.16.2): all 4 CSpace syscalls wired, 4 delegation theorems. **K-D completed** (v0.16.3): all 3 remaining stubs wired — zero `.illegalState` stubs, 13/13 dispatch. **K-E completed** (v0.16.4): `ServiceConfig`-sourced policy, IPC message population from decoded registers, 5 delegation theorems. **K-F completed** (v0.16.5): layer-2 round-trip proofs, extraction round-trip, preservation composition, NI integration. Remaining: testing (K-G), docs (K-H). See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). After WS-K: Raspberry Pi 5 hardware binding |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

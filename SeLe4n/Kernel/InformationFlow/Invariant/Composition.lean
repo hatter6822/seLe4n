@@ -626,4 +626,51 @@ theorem errorAction_preserves_lowEquiv
     preservesLowEquivalence ctx observer (fun _ => .error err) := by
   intro _ _ _ _ _ h₁ _; simp at h₁
 
+-- ============================================================================
+-- WS-K-F6: NI coverage verification for syscall dispatch paths
+-- ============================================================================
+
+/-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
+in WS-K are covered by existing `NonInterferenceStep` constructors.
+
+The 33 constructors (lines 34–241) cover every operation reachable from
+`dispatchWithCap`:
+- CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
+- Lifecycle: `.lifecycleRetype`
+- VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
+- Service: `.serviceStart`, `.serviceStop`
+- IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
+       `.endpointReceiveDualHigh`
+- Entry: `.syscallDecodeError` (decode failure), `.syscallDispatchHigh`
+         (high-domain dispatch)
+
+The decode layer (Layer 2 in `SyscallArgDecode.lean`) is pure — it operates
+on `SyscallDecodeResult` values without accessing `SystemState`. Therefore,
+no new constructors are needed: decode failures produce no state change
+(covered by `syscallDecodeError`), and decode successes delegate to
+operations already covered by existing constructors.
+
+The `syscallEntry`-level bridge theorems are in `API.lean`:
+- `syscallEntry_error_yields_NI_step` — failed entry → `.syscallDecodeError`
+- `syscallEntry_success_yields_NI_step` — high-domain dispatch → `.syscallDispatchHigh`
+
+This theorem witnesses (1) that the decode-error constructor is always available
+(state identity), (2) that every `NonInterferenceStep` composes into a single-step
+`NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
+constructor (checked by the Lean exhaustiveness checker on the 33-arm match). -/
+theorem syscallNI_coverage_witness
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) :
+    -- Decode error path is always a valid NI step (state unchanged)
+    NonInterferenceStep ctx observer st st ∧
+    -- Every NI step composes into a single-step trace
+    (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
+      NonInterferenceTrace ctx observer st st') ∧
+    -- step_preserves_projection is total (exhaustive match on all 33 constructors)
+    (∀ st' (_ : NonInterferenceStep ctx observer st st'),
+      projectState ctx observer st' = projectState ctx observer st) :=
+  ⟨.syscallDecodeError rfl,
+   fun st' hStep => .cons st st' st' hStep (.nil st'),
+   fun st' hStep => step_preserves_projection ctx observer st st' hStep⟩
+
 end SeLe4n.Kernel

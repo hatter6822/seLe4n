@@ -193,7 +193,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean`
   - Abstract TLB model (`TlbEntry`, `TlbState`), flush operations (`adapterFlushTlb`, `adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`),
     `tlbConsistent` invariant with flush-restoration theorems, cross-ASID isolation proof.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4)*
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4, WS-K-F v0.16.5)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
@@ -204,12 +204,16 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - WS-K-E: `extractMessageRegisters` converts `Array RegValue` → `Array Nat` for
     IPC message population with triple bound; `extractMessageRegisters_length`,
     `extractMessageRegisters_ipc_bounded`, `extractMessageRegisters_deterministic`.
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1)*
+  - WS-K-F: `extractMessageRegisters_roundtrip` closes layer-1 extraction
+    round-trip gap.
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1; extended WS-K-F v0.16.5)*
   - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
     7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
     `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`),
     7 total decode functions via shared `requireMsgReg` helper, 7 determinism
-    theorems, 7 error-exclusivity theorems. Zero sorry/axiom.
+    theorems, 7 error-exclusivity theorems.
+  - WS-K-F: 7 encode functions, 7 round-trip theorems (`rcases + rfl`),
+    `decode_layer2_roundtrip_all` composed conjunction. Zero sorry/axiom.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

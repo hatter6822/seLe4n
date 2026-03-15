@@ -1248,10 +1248,19 @@ bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`). IPC dispatch arms
 `dispatchWithCap_reply_populates_msg`. All existing soundness theorems compile
 unchanged. Zero sorry/axiom. 11 new Tier 3 anchors.
 
-**Remaining (K-F through K-H):**
-- Round-trip proofs for all 7 argument decode functions
-- Message register extraction round-trip
-- Deferred NI proofs completed (CSpace CRUD, lifecycle retype)
+**Completed — K-F (v0.16.5) — Proofs: round-trip, preservation, and NI integration:**
+7 encode functions (`encodeCSpaceMintArgs` through `encodeVSpaceUnmapArgs`) completing
+encode/decode symmetry. 7 round-trip theorems via structure eta reduction (`rcases + rfl`)
+with `decode_layer2_roundtrip_all` composed conjunction. `extractMessageRegisters_roundtrip`
+closes layer-1 extraction gap. `dispatchWithCap_layer2_decode_pure` proves decode
+functions depend only on `msgRegs` (two results with same `msgRegs` produce same decode).
+`dispatchWithCap_preservation_composition_witness` structural preservation theorem.
+`retypeFromUntyped_preserves_lowEquivalent` NI theorem (two-stage store composition).
+`syscallNI_coverage_witness` witnesses decode-error NI step availability, step→trace
+composition, and `step_preserves_projection` totality over all 33 constructors.
+Zero sorry/axiom.
+
+**Remaining (K-G through K-H):**
 - Comprehensive testing (14+ negative-state, 6+ trace scenarios)
 - Documentation sync and workstream closeout
 - See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
