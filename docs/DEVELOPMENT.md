@@ -46,9 +46,17 @@ configuration, IPC message population, 44+ theorems, 34 NI step constructors,
 comprehensive testing, and documentation sync. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
-The **next major milestone** is **Raspberry Pi 5 hardware binding**: populating
-RPi5 platform stubs with hardware-validated contracts, implementing ARMv8
-multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
+The **active workstream** is **WS-L** (IPC subsystem audit & remediation): a
+comprehensive end-to-end audit of the IPC subsystem identified 3 performance
+optimizations, 5 proof strengthening opportunities, and 5 test coverage gaps.
+WS-L also resolves all deferred WS-I5 items. 5 phases: L1 (performance), L2
+(code quality), L3 (proof strengthening), L4 (test coverage — partially
+complete), L5 (documentation — in progress). See
+[`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
+
+The **next major milestone** after WS-L is **Raspberry Pi 5 hardware binding**:
+populating RPi5 platform stubs with hardware-validated contracts, implementing
+ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.
 
 **WS-J1 (completed):** register-indexed authoritative
@@ -259,6 +267,34 @@ keeping CI robust across branch/merge-only commits while still detecting real
 declaration-surface drift. Post-merge enforcement runs in
 `.github/workflows/codebase_map_sync.yml`, which auto-regenerates and commits
 the map on `main` when drift is detected.
+
+### Test fixture update process (WS-L5-B)
+
+When adding new trace scenarios to `MainTraceHarness.lean`:
+
+1. Add `IO.println` calls with `[PREFIX-NNN]` scenario IDs.
+2. Rebuild: `lake build`.
+3. Run `lake exe sele4n` and verify new output lines appear.
+4. Add fixture expectations to `tests/fixtures/main_trace_smoke.expected` using
+   the format: `PREFIX-NNN | SUBSYSTEM | expected_trace_fragment`.
+5. Add scenario registry entries to `tests/fixtures/scenario_registry.yaml` with
+   `source`, `function`, `subsystem`, and `description` fields.
+6. If the inter-transition invariant check count changes (ITR-001), update the
+   count in both the fixture file and the scenario registry.
+7. Validate: `./scripts/test_smoke.sh` (includes Tier 0 registry validation +
+   Tier 2 fixture comparison).
+
+### Metrics regeneration process (WS-L5-C)
+
+When modifying production Lean source files:
+
+1. Run `./scripts/report_current_state.py` to get updated metrics.
+2. Update metrics in `README.md`, `docs/spec/SELE4N_SPEC.md`, and
+   `docs/gitbook/05-specification-and-roadmap.md` — all three must match.
+3. Run `./scripts/generate_codebase_map.py --pretty --output docs/codebase_map.json`
+   to regenerate the machine-readable map.
+4. Validate with `./scripts/generate_codebase_map.py --pretty --check`.
+5. Verify: `./scripts/test_docs_sync.sh` (checks codebase map freshness).
 
 ---
 

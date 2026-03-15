@@ -463,6 +463,29 @@ Full execution plan: [`docs/dev_history/audits/execution_plans/00_INDEX.md`](../
 
 ## 15. Information-flow layering (WS-B7 baseline + WS-D2 enforcement and non-interference)
 
+### Readers' guide: 3-layer IF architecture (WS-L5-A)
+
+The information-flow subsystem is organized in three architectural layers:
+
+1. **Policy layer** (`InformationFlow/Policy.lean`): Defines security labels
+   (confidentiality + integrity lattice), domain flow policies, observer
+   projection, and the `lowEquivalent` relation. This is the *specification* —
+   it says which information flows are allowed.
+
+2. **Enforcement layer** (`InformationFlow/Enforcement/Wrappers.lean`,
+   `Enforcement/Soundness.lean`): Implements policy-gated wrappers (e.g.,
+   `endpointSendDualChecked`) that check flow authorization before delegating
+   to the underlying operation. Soundness theorems prove that if the checked
+   wrapper succeeds, the underlying operation was authorized.
+
+3. **Invariant layer** (`InformationFlow/Invariant/Operations.lean`,
+   `Invariant/Composition.lean`, `Invariant/Helpers.lean`): Contains
+   per-operation non-interference (NI) proofs showing that kernel transitions
+   preserve `lowEquivalent` for unobservable state changes. The composition
+   layer (`composedNonInterference_trace`) chains single-step NI proofs into
+   trace-level non-interference using the `NonInterferenceStep` inductive type
+   (34 constructors as of v0.16.8).
+
 ### IF-M1 baseline (WS-B7 complete)
 
 Policy and projection primitives:

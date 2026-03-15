@@ -378,10 +378,12 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **Active workstream**: WS-L (IPC subsystem audit & remediation) — `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
+- **WS-I5**: Superseded by WS-L
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audit**: `docs/audits/AUDIT_CODEBASE_v0.13.6.md` — zero critical issues
-- **All prior workstreams completed**: WS-B through WS-F8 (see `docs/WORKSTREAM_HISTORY.md`)
+- **Latest audit**: `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` — IPC subsystem end-to-end audit
+- **All prior workstreams completed**: WS-B through WS-K (see `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

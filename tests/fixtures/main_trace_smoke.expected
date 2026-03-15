@@ -132,7 +132,14 @@ KSD-005 | Architecture | vspaceMap via decoded regs paddr: 8192
 KSD-006 | Service | serviceStart config-sourced policy status: some (SeLe4n.Model.ServiceStatus.running)
 KSD-007 | IPC | IPC message body from registers: #[111, 222, 333, 444]
 KSD-008 | Architecture | round-trip decode msgRegs.size=4 first=10
-ITR-001 | Testing | inter-transition invariant checks: 19 passed
+RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply
+RRC-003 | IPC | replyRecv caller unblocked: true
+RRC-004 | IPC | replyRecv caller reply registers: some [100, 200, 300]
+RRC-005 | IPC | replyRecv server blocked on receive: true
+MEI-001 | IPC | multi-ep recv1 registers: some [11, 22]
+MEI-002 | IPC | multi-ep recv2 registers: some [33, 44]
+MEI-003 | IPC | multi-ep endpoint1 queues empty: true
+ITR-001 | Testing | inter-transition invariant checks: 21 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

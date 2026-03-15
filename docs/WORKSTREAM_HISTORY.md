@@ -15,6 +15,25 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-L workstream (IPC subsystem audit & remediation)
+
+WS-L is the active workstream, created from a comprehensive end-to-end audit of
+the IPC subsystem (9,195 LoC, 12 files). The audit found zero critical issues,
+zero sorry/axiom, but identified 3 performance optimization opportunities, 5
+proof strengthening opportunities, and 5 test coverage gaps. WS-L also resolves
+all deferred WS-I5 items.
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — planned |
+| **WS-L2** | Code quality: HashMap.fold migration for detachCNodeSlots (closes WS-I5/R-17) | MEDIUM — planned |
+| **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — planned |
+| **WS-L4** | Test coverage: ReplyRecv positive-path, blocked thread rejection, multi-endpoint interleaving | MEDIUM — **PARTIALLY COMPLETE** |
+| **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
+
+See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
+for the full workstream plan (5 phases: L1 through L5).
+
 ### Remaining WS-H workstreams
 
 WS-H1..H16 are all completed. No remaining WS-H workstreams.
@@ -46,7 +65,7 @@ full details.
 | **WS-I2** | Proof & hygiene strengthening (semantic L-08 validation, Tier 3 correctness anchors, VSpace memory ownership projection) | HIGH — **COMPLETED** (v0.15.1) |
 | **WS-I3** | Operations coverage expansion (multi-operation chains, scheduler stress, declassification checks) | MEDIUM — **COMPLETED** (v0.15.2) |
 | **WS-I4** | Subsystem coverage expansion (VSpace multi-ASID, IPC interleaving, lifecycle cascading revoke chains) | LOW — **COMPLETED** (v0.15.3) |
-| **WS-I5** | Documentation and code-quality polish (remaining low-priority recommendations) | LOW — pending |
+| **WS-I5** | Documentation and code-quality polish (remaining low-priority recommendations) | LOW — **SUPERSEDED by WS-L** (all R-12..R-18 items resolved within WS-L) |
 
 ### WS-J1 workstream (register-indexed authoritative namespaces)
 

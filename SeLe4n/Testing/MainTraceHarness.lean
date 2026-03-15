@@ -1541,6 +1541,110 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
 
   checkInvariants counter "post-syscall-dispatch-trace" st1
 
+-- ============================================================================
+-- WS-L4-A: ReplyRecv positive-path roundtrip trace
+-- ============================================================================
+
+private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  let epId := demoEndpoint
+  let callerId : SeLe4n.ThreadId := ⟨1⟩
+  let serverId : SeLe4n.ThreadId := ⟨12⟩
+  -- Start with fresh endpoint
+  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep }
+  -- Step 1: First caller calls endpoint (no receiver yet → enqueues on sendQ)
+  let callMsg1 : IpcMessage := { registers := #[50, 60], caps := #[], badge := some ⟨789⟩ }
+  match SeLe4n.Kernel.endpointCall epId callerId callMsg1 stFresh with
+  | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
+  | .ok (_, stCalled1) =>
+      -- Step 2: Server receives (dequeues caller, caller → blockedOnReply)
+      match SeLe4n.Kernel.endpointReceiveDual epId serverId stCalled1 with
+      | .error err => IO.println s!"[RRC-002] replyRecv recv error: {reprStr err}"
+      | .ok (_, stRecvd) =>
+          -- Verify caller is blockedOnReply
+          let callerState := match SeLe4n.Kernel.lookupTcb stRecvd callerId with
+            | some tcb => match tcb.ipcState with
+              | .blockedOnReply _ _ => "blockedOnReply"
+              | _ => "other"
+            | none => "missing"
+          IO.println s!"[RRC-001] replyRecv caller state after receive: {callerState}"
+          -- Step 3: Server uses endpointReplyRecv to reply to caller AND receive next
+          -- Since no next sender is queued, server should block on receiveQ
+          let replyMsg : IpcMessage := { registers := #[100, 200, 300], caps := #[], badge := none }
+          match SeLe4n.Kernel.endpointReplyRecv epId serverId callerId replyMsg stRecvd with
+          | .error err =>
+              IO.println s!"[RRC-002] replyRecv operation error: {reprStr err}"
+          | .ok (_, stReplyRecvd) =>
+              -- Verify caller is now ready (reply delivered)
+              let callerReady := match SeLe4n.Kernel.lookupTcb stReplyRecvd callerId with
+                | some tcb => match tcb.ipcState with
+                  | .ready => true
+                  | _ => false
+                | none => false
+              IO.println s!"[RRC-003] replyRecv caller unblocked: {callerReady}"
+              -- Verify caller received the reply message
+              let callerReply := match SeLe4n.Kernel.lookupTcb stReplyRecvd callerId with
+                | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                | none => none
+              IO.println s!"[RRC-004] replyRecv caller reply registers: {reprStr callerReply}"
+              -- Verify server is now blocked on receive (no more senders)
+              let serverBlocked := match SeLe4n.Kernel.lookupTcb stReplyRecvd serverId with
+                | some tcb => match tcb.ipcState with
+                  | .blockedOnReceive _ => true
+                  | _ => false
+                | none => false
+              IO.println s!"[RRC-005] replyRecv server blocked on receive: {serverBlocked}"
+
+  checkInvariants counter "post-replyrecv-roundtrip-trace" st1
+
+-- ============================================================================
+-- WS-L4-D: Multi-endpoint interleaving trace
+-- ============================================================================
+
+private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  let epId1 := demoEndpoint
+  let epId2 : SeLe4n.ObjId := ⟨200⟩
+  let senderId : SeLe4n.ThreadId := ⟨1⟩
+  let receiverId : SeLe4n.ThreadId := ⟨12⟩
+  -- Create two separate endpoints
+  let ep1 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep2 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let stFresh : SystemState := { st1 with
+    objects := (st1.objects.insert epId1 ep1).insert epId2 ep2 }
+  -- Send on endpoint 1
+  let msg1 : IpcMessage := { registers := #[11, 22], caps := #[], badge := some ⟨100⟩ }
+  match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1 stFresh with
+  | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
+  | .ok (_, stSent1) =>
+      -- Receive from endpoint 1 — should get msg1
+      match SeLe4n.Kernel.endpointReceiveDual epId1 receiverId stSent1 with
+      | .error err => IO.println s!"[MEI-002] multi-ep recv1 error: {reprStr err}"
+      | .ok (_, stRecv1) =>
+          let recvRegs1 := match SeLe4n.Kernel.lookupTcb stRecv1 receiverId with
+            | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+            | none => none
+          IO.println s!"[MEI-001] multi-ep recv1 registers: {reprStr recvRegs1}"
+          -- Send on endpoint 2
+          let msg2 : IpcMessage := { registers := #[33, 44], caps := #[], badge := some ⟨200⟩ }
+          match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2 stRecv1 with
+          | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
+          | .ok (_, stSent2) =>
+              -- Receive from endpoint 2 — should get msg2 (independent from ep1)
+              match SeLe4n.Kernel.endpointReceiveDual epId2 receiverId stSent2 with
+              | .error err => IO.println s!"[MEI-004] multi-ep recv2 error: {reprStr err}"
+              | .ok (_, stRecv2) =>
+                  let recvRegs2 := match SeLe4n.Kernel.lookupTcb stRecv2 receiverId with
+                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                    | none => none
+                  IO.println s!"[MEI-002] multi-ep recv2 registers: {reprStr recvRegs2}"
+                  -- Verify cross-endpoint independence: ep1 queue is empty
+                  let ep1Empty := match stRecv2.objects[epId1]? with
+                    | some (.endpoint ep) => ep.sendQ.head.isNone && ep.receiveQ.head.isNone
+                    | _ => false
+                  IO.println s!"[MEI-003] multi-ep endpoint1 queues empty: {ep1Empty}"
+
+  checkInvariants counter "post-multi-endpoint-interleaving-trace" st1
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -1570,6 +1674,8 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runRuntimeContractFixtureTrace counter st1
   runRegisterDecodeTrace counter st1
   runSyscallDispatchTrace counter st1
+  runReplyRecvRoundtripTrace counter st1
+  runMultiEndpointInterleavingTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"
