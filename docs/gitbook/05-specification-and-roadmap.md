@@ -69,7 +69,24 @@ stubs with configuration-sourced predicates, populated IPC message bodies from
 decoded registers, and proved round-trip correctness, invariant preservation,
 and NI coverage for all new paths. All 8 phases (K-A through K-H) completed
 (v0.16.0–v0.16.8). See
-[workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+[workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+
+## Active: WS-L IPC Subsystem Audit & Remediation (v0.16.8)
+
+A comprehensive end-to-end audit of the IPC subsystem (9,195 LoC, 12 files)
+found zero critical issues and zero sorry/axiom, but identified 3 performance
+optimization opportunities, 5 proof strengthening opportunities, and 5 test
+coverage gaps. WS-L also resolves all deferred WS-I5 items.
+
+| Phase | Focus | Priority | Status |
+|-------|-------|----------|--------|
+| **WS-L1** | IPC performance optimization (redundant TCB lookups) | HIGH | Planned |
+| **WS-L2** | Code quality: HashMap.fold migration | MEDIUM | Planned |
+| **WS-L3** | Proof strengthening: round-trip, consistency, preservation | MEDIUM | Planned |
+| **WS-L4** | Test coverage: ReplyRecv, blocked-thread, interleaving | MEDIUM | Partially complete |
+| **WS-L5** | Documentation: IF readers' guide, fixture process, metrics | LOW | In progress |
+
+See [WS-L workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## Next: Raspberry Pi 5 Hardware Binding
 
@@ -280,7 +297,7 @@ WS-H9 extends NI coverage from ~25% to >80% of kernel operations (C-02/A-40 CRIT
 adding 27 new NI preservation theorems across scheduler, IPC, CSpace, VSpace, and
 observable-state operations. `NonInterferenceStep` inductive extended from 11 to 28
 constructors. `composedNonInterference_trace` covers all constructors. See
-[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H5 IPC Dual-Queue Structural Invariant (v0.12.19)
 
@@ -290,7 +307,7 @@ intrusive dual-queue IPC implementation, closing C-04/A-22 (CRITICAL), A-23
 emptiness iff, boundary link consistency, TCB existence), `dualQueueSystemInvariant`
 (all endpoints well-formed + `tcbQueueLinkIntegrity` doubly-linked forward/reverse
 consistency). 13 preservation theorems cover all dual-queue operations. See
-[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H3 Build/CI Infrastructure Fixes (v0.12.17)
 
@@ -299,7 +316,7 @@ audit: `run_check` return value fix (H-12) so failure is correctly signaled in
 continue mode, `test_docs_sync.sh` integration into the smoke CI job and
 `test_smoke.sh` entrypoint (M-19), and a `rg` availability guard with `grep -P`
 fallback in Tier 3 (M-20). See
-[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H2 Lifecycle Safety Guards (v0.12.16)
 
@@ -308,19 +325,19 @@ childId self-overwrite and collision guards in `retypeFromUntyped`, TCB schedule
 cleanup on retype via `lifecycleRetypeWithCleanup`, CNode CDT slot detach, and
 atomic dual-store retype. Proved `lifecycleRetypeWithCleanup_ok_runnable_no_dangling`
 — no dangling run queue entries after TCB retype. See
-[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-H1 IPC call-path semantic fix (v0.12.16)
 
 WS-H1 addresses the IPC call-path semantic gap identified in the v0.12.15 audit:
 `blockedOnCall` state for call/reply semantics, reply-target scoping to prevent
 confused-deputy attacks, and 5-conjunct `ipcSchedulerContractPredicates` with full
-invariant proof maintenance. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+invariant proof maintenance. See [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-G kernel performance optimization
 
 The WS-G portfolio (v0.12.6–v0.12.15) closed all 14 findings from the
-[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
+[v0.12.5 performance audit](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md),
 migrating every kernel hot path to O(1) hash-based structures. All proofs
 re-verified — zero sorry/axiom.
 
@@ -336,8 +353,8 @@ wrappers, decode layer, syscall entry point, invariant/NI integration, testing/t
 evidence, and CdtNodeId cleanup. **WS-J1 portfolio fully completed.**
 
 See [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
-[`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),
-and [Next Development Path](22-next-slice-development-path.md).
+[`docs/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md),
+and [Next Development Path](../dev_history/gitbook/22-next-slice-development-path.md).
 
 ## Hardware roadmap
 

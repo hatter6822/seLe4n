@@ -253,7 +253,7 @@ gap. `dispatchWithCap_layer2_decode_pure` proves decode depends only on `msgRegs
 `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` completes the deferred
 composed lifecycle NI proof. `NonInterferenceStep` extended to 34 constructors.
 `syscallNI_coverage_witness` confirms all 34 NI constructors are exhaustive. See
-[`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage
 

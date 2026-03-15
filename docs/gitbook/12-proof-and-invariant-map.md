@@ -1097,7 +1097,7 @@ structural properties rather than just symbol existence:
 
 WS-J1 introduces a register decode layer and typed register wrappers,
 closing the gap between the abstract model and real ARM64 syscall argument
-delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
+delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md).
 
 **Completed types (WS-J1-A, v0.15.4):**
 
@@ -1296,7 +1296,7 @@ to reflect 34-constructor exhaustive match. Zero sorry/axiom.
 All project documentation synchronized with WS-K implementation. Metrics
 regenerated (`docs/codebase_map.json`). Version bumped to v0.16.8.
 WS-K portfolio fully complete (K-A through K-H, v0.16.0–v0.16.8).
-See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+See [workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ### WS-K proof surface summary
 

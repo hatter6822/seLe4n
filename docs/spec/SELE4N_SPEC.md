@@ -141,11 +141,11 @@ carried forward into the production kernel.
 ## 5. Completed Workstream Portfolio (WS-G) and Next Steps
 
 The WS-G portfolio addressed kernel performance optimization findings from the
-[v0.12.5 performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
+[v0.12.5 performance audit](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
 All 9 workstreams completed (v0.12.6–v0.12.15), closing all 14 findings.
 
 Authoritative detail:
-[`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
+[`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
 
 ### 5.1 Completed — Data Structure Optimization
 
@@ -358,9 +358,9 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 | Artifact | Path |
 |----------|------|
-| Codebase audit v1 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md) |
-| Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
-| Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
+| Codebase audit v1 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`](../dev_history/audits/AUDIT_CODEBASE_v0.12.2_v1.md) |
+| Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
+| Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
 
 ### 9.2 Prior Baselines (completed)
 

@@ -18,9 +18,9 @@ Every topic has exactly one canonical source. GitBook chapters summarize and lin
 |-------|-----------------|-----------------|-------------|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Spec is normative; chapter digests and links |
 | seL4 reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only |
-| Active audit findings | `docs/audits/AUDIT_CODEBASE_v0.12.2_*.md` | `19-*`, `24-*` | Findings canonical in audits |
-| Workstream execution | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `24-*` | Status tables in canonical plan |
-| Contributor workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Checklists canonical in root |
+| Active audit findings | `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` | `05-*` | Findings canonical in audits |
+| Workstream execution | `docs/WORKSTREAM_HISTORY.md` | `05-*` | Status tables in canonical plan |
+| Contributor workflow | `docs/DEVELOPMENT.md` | — | Checklists canonical in root |
 | Test/CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Root owns gate semantics |
 | Claim/evidence mapping | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Root owns claim table |
 | ADRs | `docs/*_ADR.md` | `26-*`, `30-*` | ADRs canonical; chapters link back |

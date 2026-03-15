@@ -65,5 +65,5 @@ Hardening is validated by standard test gates:
 ## Related
 
 - [CI Maturity and Telemetry](29-ci-maturity-and-telemetry-baseline.md) — WS-B10 observability
-- [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md) — quality gate contract
+- [End-to-End Audit and Quality Gates](../dev_history/gitbook/19-end-to-end-audit-and-quality-gates.md) — quality gate contract
 - [Testing & CI](07-testing-and-ci.md) — tier definitions

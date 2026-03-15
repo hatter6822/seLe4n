@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 34,171 lines of production Lean across 67 files, 2,886 lines across 3 Lean test suites,
-1,086 theorem/lemma declarations, zero unsound constructs, 2,006 total declarations across 70 modules.
+Current state: 37,245 lines of production Lean across 69 files, 4,098 lines across 4 Lean test suites,
+1,198 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -73,14 +73,12 @@ M7 (audit remediation).
 
 ### What's next
 
-The immediate next steps are:
+**WS-L** (IPC subsystem audit & remediation) is the active workstream — 5 phases
+covering performance optimization, code quality, proof strengthening, test
+coverage, and documentation. After WS-L: **Raspberry Pi 5 hardware binding (H3)**.
 
-1. **WS-F8** — Remaining v0.12.2 audit remediation (low priority):
-   cleanup. WS-F5 (model fidelity), WS-F6 (invariant quality), and WS-F7 (testing expansion) completed.
-3. **Raspberry Pi 5 hardware binding (H3)** — ARM64 code generation and hardware bring-up.
-
-See [Next Development Path](22-next-slice-development-path.md) and
-[v0.12.15 Audit Workstream Plan](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
+See [Specification & Roadmap](05-specification-and-roadmap.md) and
+[WS-L workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
@@ -121,6 +119,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Audit findings: [`AUDIT_CODEBASE_v0.12.2_v1.md`](../audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](../audits/AUDIT_CODEBASE_v0.12.2_v2.md)
-- Active workstream plan: [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) (WS-H10..H16)
+- Active workstream plan: [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) (WS-L)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

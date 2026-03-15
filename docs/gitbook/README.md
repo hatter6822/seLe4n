@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.14.10 (Lean v4.28.0).
-- **Codebase metrics:** 34,171 production LoC across 67 files; 2,886 test LoC across 3 suites; 1,086 theorem/lemma declarations (zero sorry/axiom); 2,006 total declarations across 70 modules.
-- **Latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues.
-- **Next workstreams:** WS-J1 register-indexed authoritative namespaces, then Raspberry Pi 5 hardware binding (WS-F/WS-H complete; WS-I1..WS-I4 completed).
+- **Version:** 0.16.8 (Lean v4.28.0).
+- **Codebase metrics:** 37,245 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,198 theorem/lemma declarations (zero sorry/axiom).
+- **Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.
+- **Active workstream:** WS-L IPC subsystem audit & remediation (5 phases: L1–L5). All prior portfolios (WS-B through WS-K) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.
@@ -26,16 +26,15 @@ Specification documents:
 3. [Architecture & Module Map](03-architecture-and-module-map.md)
 4. [Project Design Deep Dive](04-project-design-deep-dive.md)
 5. [Specification & Roadmap](05-specification-and-roadmap.md)
-6. [Development Workflow](06-development-workflow.md)
-7. [Testing & CI](07-testing-and-ci.md)
-8. [Codebase Reference](11-codebase-reference.md)
+6. [Testing & CI](07-testing-and-ci.md)
+7. [Codebase Reference](11-codebase-reference.md)
 
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
-  [Next Development Path](22-next-slice-development-path.md)
+  [Specification & Roadmap](05-specification-and-roadmap.md)
 
 ## Development history
 

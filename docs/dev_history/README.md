@@ -29,6 +29,18 @@ Nothing here drives active development, planning, or execution.
 | `AUDIT_v0.9.32.md` | Independent audit (WS-C scope) |
 | `AUDIT_v0.9.32_WORKSTREAM_PLAN.md` | WS-C execution portfolio (completed) |
 | `AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md` | WS-C theorem obligations (closed) |
+| `AUDIT_CODEBASE_v0.12.2_v1.md` | v0.12.2 executive summary audit (WS-F scope, completed) |
+| `AUDIT_CODEBASE_v0.12.2_v2.md` | v0.12.2 end-to-end detailed audit (WS-F scope, completed) |
+| `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | WS-F execution portfolio (completed, 33/33 findings closed) |
+| `AUDIT_CODEBASE_v0.12.15_v1.md` | v0.12.15 executive summary audit (WS-H scope, completed) |
+| `AUDIT_CODEBASE_v0.12.15_v2.md` | v0.12.15 end-to-end detailed audit (WS-H scope, completed) |
+| `AUDIT_v0.12.15_WORKSTREAM_PLAN.md` | WS-H execution portfolio (completed, H1–H16) |
+| `KERNEL_PERFORMANCE_AUDIT_v0.12.5.md` | v0.12.5 performance audit (WS-G, all 14 findings closed) |
+| `KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | WS-G execution portfolio (completed, 9 workstreams) |
+| `AUDIT_CODEBASE_v0.13.6.md` | v0.13.6 end-to-end codebase audit (completed) |
+| `AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` | WS-I portfolio (completed, I1–I4; I5 superseded by WS-L) |
+| `AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md` | WS-J1 register namespace migration (completed, J1-A through J1-F) |
+| `AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` | WS-K full syscall dispatch (completed, K-A through K-H) |
 
 ### Historical GitBook chapters (`gitbook/`)
 
@@ -45,6 +57,10 @@ Nothing here drives active development, planning, or execution.
 | `21-m7-current-slice-outcomes-and-workstreams.md` | M7 outcomes and workstreams |
 | `23-m7-remediation-closeout-packet.md` | M7 remediation closeout mirror |
 | `32-v0.11.0-audit-workstream-planning.md` | WS-D/WS-E audit workstream planning |
+| `06-development-workflow.md` | Development workflow (superseded by `docs/DEVELOPMENT.md`) |
+| `19-end-to-end-audit-and-quality-gates.md` | End-to-end audit and quality gates (v0.12.2 baseline) |
+| `22-next-slice-development-path.md` | Next development path (v0.14.10 baseline, superseded) |
+| `24-comprehensive-audit-2026-workstream-planning.md` | WS-F audit remediation planning (completed) |
 
 ### Licensing research (`licensing_research/`)
 
@@ -55,6 +71,7 @@ Nothing here drives active development, planning, or execution.
 
 ## Audit lineage
 
-For the **active** audit baseline, see `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`,
-`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`, and `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`.
+For the **active** audit and workstream plan, see
+`docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (WS-L).
+For workstream history, see `docs/WORKSTREAM_HISTORY.md`.
 The files here provide the predecessor audit chain for traceability only.

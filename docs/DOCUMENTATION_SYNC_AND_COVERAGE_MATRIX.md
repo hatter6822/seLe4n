@@ -14,9 +14,8 @@ Use this file during planning and PR review to keep documentation status aligned
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active audit findings baseline | `docs/audits/AUDIT_CODEBASE_v0.12.2_v1.md`, `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` | `19-end-to-end-audit-and-quality-gates.md`, `24-comprehensive-audit-2026-workstream-planning.md` | Findings remain canonical in `docs/audits`; chapters provide navigation, not duplicated prose. |
-| Active workstream execution portfolio (WS-H) | `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` | `22-next-slice-development-path.md` | Status tables live in canonical plan; GitBook chapter summarizes next steps. |
-| Remaining workstream execution portfolio (WS-F) | `docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` | `24-comprehensive-audit-2026-workstream-planning.md` | Status tables live in canonical plan; GitBook chapter is a concise mirror. |
+| Active audit / workstream (WS-L) | `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Findings and status tables canonical in audit plan; GitBook chapter summarizes and links back. |
+| Workstream history (all prior portfolios) | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; GitBook chapter provides navigation. |
 | Completed performance portfolio (WS-G) | `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
 | Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
@@ -24,10 +23,10 @@ Use this file during planning and PR review to keep documentation status aligned
 | Historical execution portfolios | `docs/dev_history/audits/` | Archived to `docs/dev_history/gitbook/` | Historical-only; see `docs/dev_history/README.md`. |
 | Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
 | Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | `30-ws-c7-model-structure-and-maintainability.md` | ADR is canonical; GitBook chapter stays concise and links back. |
-| Development workflow | `docs/DEVELOPMENT.md` | `06-development-workflow.md` | Command/process changes must update both. |
+| Development workflow | `docs/DEVELOPMENT.md` | — (archived to dev_history) | Canonical workflow in root doc. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require synchronized updates. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
-| Security trajectory | `docs/INFORMATION_FLOW_ROADMAP.md`, `docs/THREAT_MODEL.md` | `12-proof-and-invariant-map.md`, `22-next-slice-development-path.md`, `28-threat-model-and-security-hardening.md` | Milestone shifts must update roadmap and at least one active planning chapter. |
+| Security trajectory | `docs/INFORMATION_FLOW_ROADMAP.md`, `docs/THREAT_MODEL.md` | `12-proof-and-invariant-map.md`, `28-threat-model-and-security-hardening.md` | Milestone shifts must update roadmap and at least one active planning chapter. |
 
 ## 2) Test and verification coverage map
 
@@ -56,12 +55,9 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- Active planning baseline: `AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (WS-H11..H16 remaining).
-- Remaining WS-F planning: `AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (WS-F5..F8 remaining).
-- Recently completed: WS-H10 (security model foundations, v0.13.6), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (NI coverage >80%, v0.13.4), WS-H8 (enforcement-NI bridge, v0.13.2), WS-H6 (scheduler proof completion, v0.13.1).
-- Active findings baseline: `AUDIT_CODEBASE_v0.12.2_v1.md` + `v2`, `AUDIT_CODEBASE_v0.12.15_v1.md` + `v2`.
-- Completed portfolios: WS-H1..H10 (v0.13.6), WS-G (v0.12.15), WS-F1..F4 (v0.12.2), WS-E (v0.11.6), WS-D (v0.11.0), WS-C (v0.9.32), WS-B (v0.9.0).
-- Historical baselines: prior audits and workstream plans archived in `docs/dev_history/audits/`.
-- Quality-gate contract: Tier 0–3 required, Tier 4 nightly determinism evidence.
-- Hardware target: Raspberry Pi 5 (ARM64).
-- Metrics: 29,351 production LoC, 866 proved declarations (zero sorry/axiom), 84 build jobs.
+- **Active workstream**: WS-L IPC subsystem audit & remediation (`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`).
+- **Completed portfolios**: WS-B through WS-K (all completed). See `docs/WORKSTREAM_HISTORY.md`.
+- **Historical baselines**: prior audits and workstream plans archived in `docs/dev_history/audits/`.
+- **Quality-gate contract**: Tier 0–3 required, Tier 4 nightly determinism evidence.
+- **Hardware target**: Raspberry Pi 5 (ARM64).
+- **Metrics**: 37,245 production LoC, 4,098 test LoC, 1,198 proved declarations (zero sorry/axiom).

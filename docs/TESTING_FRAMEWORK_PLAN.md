@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **v0.12.2 codebase audit (WS-F portfolio) is active. WS-E1..E6 completed. Testing guards delivered WS-D/WS-E workstream behavior without regressing M1–M7 contracts. WS-E1 resolved shallow input-space exploration (M-10), missing runtime invariant checks (M-11), and fixture brittleness (L-07). WS-F7 targets further testing expansion.**
+Current stage context: **All prior workstreams completed through WS-K (v0.16.8). Active workstream: WS-L (IPC subsystem audit & remediation). Testing surface: 37,245 production LoC, 4,098 test LoC, 1,198 proved declarations (zero sorry/axiom). 4-tier CI enforces regression protection across 69 production files and 4 test suites.**
 
 ## 2. Current enforced tiers
 
