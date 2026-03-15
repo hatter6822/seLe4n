@@ -462,30 +462,213 @@ signature change (L1-A) which has the widest impact but is mechanically safe.
 
 ### WS-L2: Code Quality & Deferred Cleanup
 
-**Objective**: Close WS-I5/R-17 (HashMap.fold migration) and address minor code
-hygiene items discovered during audit.
+**Objective**: Eliminate all `Std.HashMap.toList.foldl/foldr` anti-patterns across
+the codebase, replacing them with direct `Std.HashMap.fold` calls that avoid
+intermediate list allocation. Close WS-I5/R-17 and address all related code
+hygiene items discovered during the IPC subsystem audit.
 
 **Priority**: MEDIUM — Phase 2
 **Dependencies**: None (parallel-safe with L1)
 **Findings addressed**: L-D04
 
-#### L2-A: HashMap.fold migration for `detachCNodeSlots` (L-D04)
+**Audit scope**: A codebase-wide search for `.toList.foldl` and `.toList.foldr`
+on `Std.HashMap` values identified **4 sites** requiring migration:
 
-**Problem**: `detachCNodeSlots` in `Object/Structures.lean` uses `.toList.foldl`
-instead of `.fold`. This creates an unnecessary intermediate list allocation.
+| Site | File | Line | Pattern | HashMap type |
+|------|------|------|---------|-------------|
+| S1 | `Kernel/Lifecycle/Operations.lean` | 83 | `.toList.foldl` | `Std.HashMap Slot Capability` |
+| S2 | `Testing/InvariantChecks.lean` | 96 | `.toList.foldr` | `Std.HashMap Slot Capability` |
+| S3 | `Testing/InvariantChecks.lean` | 112 | `.toList.foldr` | `Std.HashMap Slot Capability` |
+| S4 | `Testing/InvariantChecks.lean` | 271 | `.toList.foldr` | `Std.HashMap CdtNodeId (List CdtNodeId)` |
 
-**Deliverables**:
+Note: The original L-D04 description incorrectly referenced `Object/Structures.lean`.
+The actual `detachCNodeSlots` definition is at `Kernel/Lifecycle/Operations.lean:82`.
 
-1. Replace `.toList.foldl` with `.fold` in `detachCNodeSlots`.
-2. Verify all existing proofs compile unchanged.
-3. If proof adjustments are needed, use `HashMap.fold` lemmas.
+**Key design decisions**:
 
-**Files modified**:
-- `SeLe4n/Model/Object/Structures.lean` — fold migration
+1. **Proof update strategy for S1**: `detachCNodeSlots` has 3 preservation
+   theorems (`_objects_eq`, `_lifecycle_eq`, `_scheduler_eq`) that prove
+   through `List.foldl` induction over `cn.slots.toList`. Switching to
+   `HashMap.fold` changes the proof goal but the underlying proof structure
+   can be preserved. Strategy: use `Std.HashMap.fold_eq_foldl_toList` (from
+   Lean 4.28.0 stdlib) to rewrite the `HashMap.fold` back to `List.foldl`
+   on `m.toList`, then apply the existing `List.foldl` induction proof. The
+   lambda shape changes from `(fun acc' pair => ... pair.1)` to
+   `(fun a b => ... b.fst)` but these are definitionally equal since
+   `Prod.fst = Prod.1`.
+2. **Test code (S2–S4)**: These are decidable runtime checks in
+   `InvariantChecks.lean`. No proofs reference them. Migration is mechanical:
+   replace `.toList.foldr f init` with `.fold (fun acc k v => f (k, v) acc) init`.
+3. **Execution order**: S2–S4 first (zero proof cascade, fast validation),
+   then S1 (requires proof updates, higher risk).
 
-**Exit evidence**:
-- `lake build` succeeds
+---
+
+#### L2-A: Migrate `InvariantChecks.lean` fold patterns (S2, S3, S4)
+
+**Problem**: Three runtime invariant check functions in `Testing/InvariantChecks.lean`
+use `.toList.foldr` on `Std.HashMap` values, creating unnecessary intermediate
+`List` allocations on every invariant check invocation. While these are test-only
+functions, they execute on every trace run and should follow the same code quality
+standards as production code.
+
+**Sub-tasks**:
+
+##### L2-A.1: Migrate `cspaceSlotCoherencyChecks` (S2)
+
+**Scope**: `SeLe4n/Testing/InvariantChecks.lean`, line 96
+
+Replace:
+```lean
+cn.slots.toList.foldr (fun (slot, cap) inner => ... ) acc
+```
+with:
+```lean
+cn.slots.fold (fun inner slot cap => ... ) acc
+```
+
+Note: `HashMap.fold` signature is `fold (f : γ → α → β → γ) (init : γ) (m)`,
+so in dot notation `m.fold f init`. The lambda receives `(acc, key, value)` as
+separate arguments, not as a tuple `(key, value)`. The fold direction difference
+(`foldr` → `fold`) does not affect correctness because each check element is
+independent (list concatenation is order-insensitive for check validation).
+
+**Exit**: `lake build` succeeds.
+
+##### L2-A.2: Migrate `capabilityRightsStructuralChecks` (S3)
+
+**Scope**: `SeLe4n/Testing/InvariantChecks.lean`, line 112
+
+Same mechanical pattern as L2-A.1. Replace `.toList.foldr` with `.fold`.
+
+**Exit**: `lake build` succeeds.
+
+##### L2-A.3: Migrate `cdtChildMapConsistentCheck` (S4)
+
+**Scope**: `SeLe4n/Testing/InvariantChecks.lean`, line 271
+
+Replace:
+```lean
+cdt.childMap.toList.foldr (fun (parent, children) acc => ... ) []
+```
+with:
+```lean
+cdt.childMap.fold (fun acc parent children => ... ) []
+```
+
+Note: The inner `children.foldr` on `List CdtNodeId` is correct and does NOT
+need migration — `children` is already a `List`, not a `HashMap`.
+
+**Exit**: `lake build` succeeds.
+
+**Files modified (L2-A total)**:
+- `SeLe4n/Testing/InvariantChecks.lean` — 3 fold migrations
+
+**L2-A exit evidence**:
+- `lake build` succeeds with zero warnings
+- `test_smoke.sh` passes (invariant checks execute correctly)
+- Zero `sorry` (no proofs involved)
+
+---
+
+#### L2-B: Migrate `detachCNodeSlots` and update preservation proofs (S1, L-D04)
+
+**Problem**: `detachCNodeSlots` (Lifecycle/Operations.lean:82) uses
+`cn.slots.toList.foldl` instead of `cn.slots.fold`, creating an unnecessary
+intermediate list allocation on every CNode slot detachment during lifecycle
+retype operations. Three preservation theorems prove through `List.foldl`
+induction and must be updated.
+
+**Sub-tasks**:
+
+##### L2-B.1: Replace `.toList.foldl` with `.fold` in `detachCNodeSlots`
+
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 82–85 (definition only)
+
+Replace:
+```lean
+def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
+  cn.slots.toList.foldl (fun acc pair =>
+    SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := pair.1 }
+  ) st
+```
+with:
+```lean
+def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
+  cn.slots.fold (fun acc slot _cap =>
+    SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }
+  ) st
+```
+
+This eliminates the intermediate `List (Slot × Capability)` allocation.
+
+**Exit**: Definition compiles (proofs will temporarily break).
+
+##### L2-B.2: Update `detachCNodeSlots_objects_eq` proof
+
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 88–104
+
+The current proof uses `List.foldl` induction:
+```lean
+have key : ∀ (l : List ...) (acc : SystemState),
+  (l.foldl ...).objects = acc.objects := by
+  intro l; induction l with ...
+```
+
+This must be replaced with a proof that works over `HashMap.fold`. Strategy:
+use `Std.HashMap.fold_eq_foldl_toList` to rewrite `HashMap.fold f init m` to
+`m.toList.foldl (fun a b => f a b.fst b.snd) init`, then apply the existing
+`List.foldl` induction proof which proves the fold body preserves `.objects`
+at each step (already established by `detachSlotFromCdt_objects_eq`).
+
+**Exit**: Theorem compiles with zero `sorry`.
+
+##### L2-B.3: Update `detachCNodeSlots_lifecycle_eq` proof
+
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 107–123
+
+Same proof update pattern as L2-B.2, using `detachSlotFromCdt_lifecycle_eq`
+as the per-step preservation lemma.
+
+**Exit**: Theorem compiles with zero `sorry`.
+
+##### L2-B.4: Update `detachCNodeSlots_scheduler_eq` proof
+
+**Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean`, lines 178–196
+
+Same proof update pattern as L2-B.2. The per-step preservation fact is proven
+inline: `(SystemState.detachSlotFromCdt acc ref).scheduler = acc.scheduler`
+by `unfold SystemState.detachSlotFromCdt; split <;> rfl`.
+
+**Exit**: Theorem compiles with zero `sorry`.
+
+**Files modified (L2-B total)**:
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — definition + 3 proof updates
+
+**L2-B exit evidence**:
+- `lake build` succeeds with zero warnings
+- `test_full.sh` passes (lifecycle theorems are Tier 3 anchors)
+- Zero `sorry` in any updated proof
+
+---
+
+#### WS-L2 Aggregate Summary
+
+| Sub-task | Sites migrated | Proof updates | Risk |
+|----------|---------------|---------------|------|
+| L2-A (InvariantChecks) | 3 (S2, S3, S4) | 0 (test code only) | Low: mechanical, no proof cascade |
+| L2-B (detachCNodeSlots) | 1 (S1) | 3 theorems | Medium: proof structure changes |
+| **Total** | **4 `.toList` fold patterns** | **3 proof updates** | |
+
+**Recommended execution order**: L2-A (test code, zero risk) → L2-B (production
+code + proofs, medium risk). This allows validating the build after each step.
+
+**WS-L2 aggregate exit evidence**:
+- `lake build` succeeds with zero warnings
 - `test_full.sh` passes
+- Zero `sorry` in any new or updated code
+- Zero remaining `.toList.foldl` or `.toList.foldr` on `Std.HashMap` values
+- Verification: `rg '\.toList\.(foldl|foldr)' --type lean` returns zero hits
 
 ---
 
@@ -800,7 +983,7 @@ undocumented.
 | L-P01 | WS-L1 | L1-A | **COMPLETED** (v0.16.9) |
 | L-P02 | WS-L1 | L1-B | **COMPLETED** (v0.16.9) |
 | L-P03 | WS-L1 | L1-C | **COMPLETED** (v0.16.9) |
-| L-D04 | WS-L2 | L2-A | Planned |
+| L-D04 | WS-L2 | L2-A (S2–S4), L2-B (S1) | **COMPLETED** (v0.16.10) |
 | L-G01 | WS-L3 | L3-A | Planned |
 | L-G02 | WS-L3 | L3-B | Planned |
 | L-G03 | WS-L3 | L3-C | Planned |
@@ -838,6 +1021,7 @@ undocumented.
 | Risk | Mitigation |
 |------|------------|
 | L1-A signature change cascades to many theorems | Incremental: change signature first, fix compilation, then update proofs |
+| L2-B `HashMap.fold` proof structure differs from `List.foldl` induction | Use generic fold invariant helper; per-step preservation already proven |
 | L3-C consistency invariant too strong (blocks legitimate states) | Define as implication (blocked → queued), not biconditional initially |
 | L4-B endpoint deletion may not be implemented yet | Verify lifecycle subsystem supports endpoint deletion; adjust test if not |
 | Proof explosion in L3 theorems | Use existing compositional infrastructure (`contracts_of_same_scheduler_ipcState`) |

@@ -80,8 +80,8 @@ private theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef
     Iterates the CNode's slots and clears the cdtSlotNode/cdtNodeSlot
     bidirectional mappings for each slot, preventing orphaned CDT references. -/
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
-  cn.slots.toList.foldl (fun acc pair =>
-    SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := pair.1 }
+  cn.slots.fold (fun acc slot _cap =>
+    SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }
   ) st
 
 /-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
@@ -89,9 +89,10 @@ theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
   simp only [detachCNodeSlots]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun acc' pair =>
-      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).objects
+    (l.foldl (fun a b =>
+      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).objects
       = acc.objects := by
     intro l
     induction l with
@@ -107,9 +108,10 @@ theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   simp only [detachCNodeSlots]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun acc' pair =>
-      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).lifecycle
+    (l.foldl (fun a b =>
+      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).lifecycle
       = acc.lifecycle := by
     intro l
     induction l with
@@ -177,9 +179,10 @@ private theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
   simp only [detachCNodeSlots]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun acc' pair =>
-      SystemState.detachSlotFromCdt acc' { cnode := cnodeId, slot := pair.1 }) acc).scheduler
+    (l.foldl (fun a b =>
+      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).scheduler
       = acc.scheduler := by
     intro l
     induction l with
