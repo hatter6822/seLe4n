@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-documentation-workstream-5IXQZ",
-      "commit_sha": "2946c6c307b8153ac3ac374f53294801aa276d07",
-      "tree_sha": "403a8e043bfea47fbb34defc54608880d3d3637a",
-      "committed_at_utc": "2026-03-15T04:23:19+00:00"
+      "branch": "main",
+      "commit_sha": "5b46949451f9c7d24be3bd3f2dc941d75977fd25",
+      "tree_sha": "f27ee91f2d940146b5a5b5ffb5dfa373b87ee97d",
+      "committed_at_utc": "2026-03-15T00:44:52-04:00"
     }
   },
   "source_sync": {
