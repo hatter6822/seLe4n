@@ -25,6 +25,8 @@ follow from compositional reasoning over `storeObject`-level primitives.
 **Lifecycle operations (completed WS-K-F5):**
 - `lifecycleRetypeObject_preserves_lowEquivalent` — Helpers.lean:670
 - `retypeFromUntyped_preserves_lowEquivalent` — end of this file
+- `lifecycleRevokeDeleteRetype_preserves_projection` — end of this file
+- `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — end of this file
 
 The pattern for each is identical: all mutations happen at non-observable
 targets via `storeObject`, and CDT/lifecycle metadata is not part of
@@ -988,6 +990,42 @@ private theorem cspaceDeleteSlot_preserves_lowEquivalent
     cspaceDeleteSlot_preserves_projection ctx observer addr s₂ s₂' hAddrHigh hStep₂]
   exact hLow
 
+/-- cspaceRevoke at a non-observable CNode preserves projection.
+Extracted as a standalone theorem for compositional reasoning in
+`lifecycleRevokeDeleteRetype_preserves_projection`. -/
+theorem cspaceRevoke_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold cspaceRevoke at hStep
+  cases hL : cspaceLookupSlot addr st with
+  | error e => simp [hL] at hStep
+  | ok p =>
+    rcases p with ⟨par, stL⟩
+    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr par hL
+    subst stL
+    cases hC : st.objects[addr.cnode]? with
+    | none => simp [hL, hC] at hStep
+    | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL, hC] at hStep
+      | cnode cn =>
+        simp [hL, hC, storeObject] at hStep; cases hStep
+        rw [clearCapabilityRefsState_preserves_projectState]
+        simp only [projectState]; congr 1
+        · funext oid; by_cases hObs : objectObservable ctx observer oid
+          · simp [projectObjects, hObs]
+            have hNe : oid ≠ addr.cnode := by
+              intro hEq; subst hEq; simp [hAddrHigh] at hObs
+            simp [HashMap_getElem?_insert, Ne.symm hNe]
+          · simp [projectObjects, hObs]
+        · simp only [projectObjectIndex]
+          split
+          · rfl
+          · rw [List.filter_cons]; simp [hAddrHigh]
+
 /-- WS-H9: A state modification that only changes CDT fields preserves projection. -/
 private theorem cdt_only_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1572,4 +1610,53 @@ theorem retypeFromUntyped_preserves_lowEquivalent
   exact storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer childId newObj newObj stUt₁ stUt₂ s₁' s₂'
     hMid hChildHigh hStoreChild₁ hStoreChild₂
+
+-- ============================================================================
+-- lifecycleRevokeDeleteRetype NI proofs
+-- ============================================================================
+
+/-- `lifecycleRevokeDeleteRetype` at non-observable cleanup CNode and target
+preserves projection. The operation decomposes (via
+`lifecycleRevokeDeleteRetype_ok_implies_staged_steps`) into:
+1. `cspaceRevoke` at `cleanup` — projection preserved by `cspaceRevoke_preserves_projection`,
+2. `cspaceDeleteSlot` at `cleanup` — projection preserved by `cspaceDeleteSlot_preserves_projection`,
+3. `cspaceLookupSlot` at `cleanup` — read-only (fails with `invalidCapability`, no state change),
+4. `lifecycleRetypeObject` at `target` — projection preserved via `storeObject_preserves_projection`. -/
+theorem lifecycleRevokeDeleteRetype_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState)
+    (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
+    (hTargetHigh : objectObservable ctx observer target = false)
+    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
+    ⟨stRevoked, stDeleted, _, hRevoke, hDelete, _, hRetype⟩
+  rcases lifecycleRetypeObject_ok_as_storeObject stDeleted st' authority target newObj hRetype with
+    ⟨_, _, _, _, _, _, hStore⟩
+  rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hStore,
+      cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hDelete,
+      cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hRevoke]
+
+/-- `lifecycleRevokeDeleteRetype` at non-observable cleanup CNode and target
+preserves low-equivalence. Composes low-equivalence preservation across
+three sub-operations: `cspaceRevoke`, `cspaceDeleteSlot`, and
+`lifecycleRetypeObject`. -/
+theorem lifecycleRevokeDeleteRetype_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
+    (hTargetHigh : objectObservable ctx observer target = false)
+    (hStep₁ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₁ = .ok ((), s₁'))
+    (hStep₂ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [
+    lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
+      newObj s₁ s₁' hCleanupHigh hTargetHigh hStep₁,
+    lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
+      newObj s₂ s₂' hCleanupHigh hTargetHigh hStep₂]
+  exact hLow
 

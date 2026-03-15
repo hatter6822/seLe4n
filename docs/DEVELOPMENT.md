@@ -39,12 +39,12 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
 The WS-J1 portfolio (v0.14.10) is fully complete — all 6 phases closed.
-The active near-term portfolio is **WS-K** (v0.16.5): full syscall dispatch
+The active near-term portfolio is **WS-K** (v0.16.6): full syscall dispatch
 completion with message register extraction, per-syscall argument decode, and
 full dispatch for all 13 syscalls (8 phases: K-A through K-H). **K-A completed**
 (v0.16.0), **K-B completed** (v0.16.1), **K-C completed** (v0.16.2),
 **K-D completed** (v0.16.3), **K-E completed** (v0.16.4),
-**K-F completed** (v0.16.5). See
+**K-F completed** (v0.16.5), **K-G completed** (v0.16.6). See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 **WS-J1 (completed):** register-indexed authoritative

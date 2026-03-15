@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "dc4875f82a0cc0a87476eeea075cf7e9b017b7b3",
-      "tree_sha": "d89e6be547a53d2cade9ae3fe2a58c3f5ce96824",
-      "committed_at_utc": "2026-03-14T22:47:18-04:00"
+      "branch": "claude/implement-type-proofs-GShUO",
+      "commit_sha": "7521f3de4e4cf673541a295ee65b53e25c057297",
+      "tree_sha": "e25b21b95daf6bff0da81c75cb591a2ec753b33f",
+      "committed_at_utc": "2026-03-15T02:47:26+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c9e612207823e7f3bc99b5c106e891361c1afe0098e32a17e8bf26a4b6290cbf"
+    "source_digest": "e26e7eb23be67f4f41aa7186219c698217c3d3a311ec2aa3a223b2fc41a0bda9"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2230
+    "declaration_count": 2233
   },
   "readme_sync": {
-    "version": "0.16.5",
+    "version": "0.16.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 36883,
+    "production_loc": 36979,
     "test_files": 4,
     "test_loc": 3755,
-    "proved_theorem_lemma_decls": 1195,
+    "proved_theorem_lemma_decls": 1198,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -6004,7 +6004,7 @@
         {
           "kind": "theorem",
           "name": "step_preserves_projection",
-          "line": 245,
+          "line": 251,
           "called": [
             "NonInterferenceStep"
           ]
@@ -6012,7 +6012,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_step",
-          "line": 509,
+          "line": 518,
           "called": [
             "NonInterferenceStep",
             "step_preserves_projection"
@@ -6021,7 +6021,7 @@
         {
           "kind": "inductive",
           "name": "NonInterferenceTrace",
-          "line": 521,
+          "line": 530,
           "called": [
             "NonInterferenceStep"
           ]
@@ -6029,7 +6029,7 @@
         {
           "kind": "theorem",
           "name": "trace_preserves_projection",
-          "line": 531,
+          "line": 540,
           "called": [
             "NonInterferenceTrace",
             "step_preserves_projection"
@@ -6038,7 +6038,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_trace",
-          "line": 542,
+          "line": 551,
           "called": [
             "NonInterferenceTrace",
             "trace_preserves_projection"
@@ -6047,19 +6047,19 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 570,
+          "line": 579,
           "called": []
         },
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 594,
+          "line": 603,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 604,
+          "line": 613,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -6067,7 +6067,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 623,
+          "line": 632,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -6075,7 +6075,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 661,
+          "line": 670,
           "called": [
             "NonInterferenceStep",
             "NonInterferenceTrace",
@@ -6258,7 +6258,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 57,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -6269,19 +6269,19 @@
         {
           "kind": "theorem",
           "name": "serviceStart_preserves_lowEquivalent",
-          "line": 41,
+          "line": 43,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceStop_preserves_lowEquivalent",
-          "line": 114,
+          "line": 116,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceRestart_preserves_lowEquivalent",
-          "line": 182,
+          "line": 184,
           "called": [
             "serviceStart_preserves_lowEquivalent",
             "serviceStop_preserves_lowEquivalent"
@@ -6290,13 +6290,13 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_NI",
-          "line": 206,
+          "line": 208,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serviceRestartChecked_NI",
-          "line": 229,
+          "line": 231,
           "called": [
             "serviceRestart_preserves_lowEquivalent"
           ]
@@ -6304,103 +6304,103 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_NI",
-          "line": 261,
+          "line": 263,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationSignalChecked_NI",
-          "line": 284,
+          "line": 286,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceCopyChecked_NI",
-          "line": 318,
+          "line": 320,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceMoveChecked_NI",
-          "line": 341,
+          "line": 343,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "setCurrentThread_preserves_projection",
-          "line": 367,
+          "line": 369,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "remove_rq_preserves_projection",
-          "line": 407,
+          "line": 409,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "insert_rq_preserves_projection",
-          "line": 420,
+          "line": 422,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_machine",
-          "line": 435,
+          "line": 437,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_services",
-          "line": 445,
+          "line": 447,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_irqHandlers",
-          "line": 455,
+          "line": 457,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_objectIndex",
-          "line": 465,
+          "line": 467,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_projectObjects",
-          "line": 477,
+          "line": 479,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_projection",
-          "line": 511,
+          "line": 513,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_projection",
-          "line": 547,
+          "line": 549,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "projectObjects_ext_objects",
-          "line": 574,
+          "line": 576,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_with_sched_preserves_projection",
-          "line": 583,
+          "line": 585,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_projection",
-          "line": 624,
+          "line": 626,
           "called": [
             "remove_rq_preserves_projection",
             "restoreIncomingContext_preserves_projection",
@@ -6412,19 +6412,19 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_lowEquivalent",
-          "line": 693,
+          "line": 695,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_projection",
-          "line": 773,
+          "line": 775,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_lowEquivalent",
-          "line": 796,
+          "line": 798,
           "called": [
             "vspaceMapPage_preserves_projection"
           ]
@@ -6432,13 +6432,13 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_projection",
-          "line": 814,
+          "line": 816,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_lowEquivalent",
-          "line": 836,
+          "line": 838,
           "called": [
             "vspaceUnmapPage_preserves_projection"
           ]
@@ -6446,13 +6446,13 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_preserves_state",
-          "line": 854,
+          "line": 856,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_lowEquivalent_memoryOwnedHigh",
-          "line": 876,
+          "line": 878,
           "called": [
             "vspaceMapPage_preserves_lowEquivalent"
           ]
@@ -6460,7 +6460,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_lowEquivalent_memoryOwnedHigh",
-          "line": 897,
+          "line": 899,
           "called": [
             "vspaceUnmapPage_preserves_lowEquivalent"
           ]
@@ -6468,7 +6468,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_preserves_lowEquivalent",
-          "line": 916,
+          "line": 918,
           "called": [
             "vspaceLookup_preserves_state"
           ]
@@ -6476,13 +6476,13 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_projection",
-          "line": 933,
+          "line": 935,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_projection",
-          "line": 944,
+          "line": 946,
           "called": [
             "storeCapabilityRef_preserves_projection"
           ]
@@ -6490,21 +6490,27 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_lowEquivalent",
-          "line": 978,
+          "line": 980,
           "called": [
             "cspaceDeleteSlot_preserves_projection"
           ]
         },
         {
           "kind": "theorem",
+          "name": "cspaceRevoke_preserves_projection",
+          "line": 996,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "cdt_only_preserves_projection",
-          "line": 992,
+          "line": 1030,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_preserves_projection",
-          "line": 1017,
+          "line": 1055,
           "called": [
             "cdt_only_preserves_projection"
           ]
@@ -6512,7 +6518,7 @@
         {
           "kind": "theorem",
           "name": "attachSlotToCdtNode_preserves_projection",
-          "line": 1028,
+          "line": 1066,
           "called": [
             "cdt_only_preserves_projection"
           ]
@@ -6520,13 +6526,13 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_projection",
-          "line": 1037,
+          "line": 1075,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_projection",
-          "line": 1069,
+          "line": 1107,
           "called": [
             "cspaceInsertSlot_preserves_projection",
             "ensureCdtNodeForSlot_preserves_projection"
@@ -6535,7 +6541,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_lowEquivalent",
-          "line": 1099,
+          "line": 1137,
           "called": [
             "cspaceCopy_preserves_projection"
           ]
@@ -6543,7 +6549,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_projection",
-          "line": 1114,
+          "line": 1152,
           "called": [
             "cspaceDeleteSlot_preserves_projection",
             "cspaceInsertSlot_preserves_projection"
@@ -6552,7 +6558,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_lowEquivalent",
-          "line": 1158,
+          "line": 1196,
           "called": [
             "cspaceMove_preserves_projection"
           ]
@@ -6560,19 +6566,19 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_preserves_projection",
-          "line": 1178,
+          "line": 1216,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_projection",
-          "line": 1199,
+          "line": 1237,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_lowEquivalent",
-          "line": 1234,
+          "line": 1272,
           "called": [
             "endpointReply_preserves_projection"
           ]
@@ -6580,37 +6586,37 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualChecked_NI",
-          "line": 1259,
+          "line": 1297,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReceiveDual_preserves_lowEquivalent",
-          "line": 1287,
+          "line": 1325,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointCall_preserves_lowEquivalent",
-          "line": 1305,
+          "line": 1343,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_lowEquivalent",
-          "line": 1323,
+          "line": 1361,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_projection",
-          "line": 1347,
+          "line": 1385,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "handleYield_preserves_projection",
-          "line": 1360,
+          "line": 1398,
           "called": [
             "schedule_preserves_projection"
           ]
@@ -6618,7 +6624,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_lowEquivalent",
-          "line": 1409,
+          "line": 1447,
           "called": [
             "handleYield_preserves_projection"
           ]
@@ -6626,13 +6632,13 @@
         {
           "kind": "theorem",
           "name": "insert_tick_preserves_projection",
-          "line": 1431,
+          "line": 1469,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "timerTick_preserves_projection",
-          "line": 1450,
+          "line": 1488,
           "called": [
             "insert_tick_preserves_projection",
             "schedule_preserves_projection"
@@ -6641,7 +6647,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_lowEquivalent",
-          "line": 1513,
+          "line": 1551,
           "called": [
             "timerTick_preserves_projection"
           ]
@@ -6649,8 +6655,25 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_lowEquivalent",
-          "line": 1546,
+          "line": 1584,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_preserves_projection",
+          "line": 1625,
+          "called": [
+            "cspaceDeleteSlot_preserves_projection",
+            "cspaceRevoke_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRevokeDeleteRetype_preserves_lowEquivalent",
+          "line": 1645,
+          "called": [
+            "lifecycleRevokeDeleteRetype_preserves_projection"
+          ]
         }
       ]
     },

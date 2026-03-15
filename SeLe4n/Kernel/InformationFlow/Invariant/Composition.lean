@@ -65,6 +65,12 @@ inductive NonInterferenceStep
       (hTargetHigh : objectObservable ctx observer target = false)
       (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  | lifecycleRevokeDeleteRetype
+      (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+      (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
+      (hTargetHigh : objectObservable ctx observer target = false)
+      (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
   | notificationSignal
       (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
       (hNtfnHigh : objectObservable ctx observer notificationId = false)
@@ -312,6 +318,9 @@ theorem step_preserves_projection
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hOp with
       ⟨_, _, _, _, _, _, hStore⟩
     exact storeObject_preserves_projection ctx observer st st' target newObj hTH hStore
+  | lifecycleRevokeDeleteRetype authority cleanup target newObj hCH hTH hOp =>
+    exact lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
+      newObj st st' hCH hTH hOp
   | notificationSignal ntfnId badge hNH hCo hWD hOp =>
     exact notificationSignal_projection_preserved ctx observer ntfnId badge st st'
       hNH hCo hWD hOp
@@ -633,10 +642,10 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 33 constructors (lines 34–241) cover every operation reachable from
+The 34 constructors (lines 34–248) cover every operation reachable from
 `dispatchWithCap`:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
-- Lifecycle: `.lifecycleRetype`
+- Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
 - Service: `.serviceStart`, `.serviceStop`
 - IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
@@ -657,7 +666,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 33-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 34-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) :
@@ -666,7 +675,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 33 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,

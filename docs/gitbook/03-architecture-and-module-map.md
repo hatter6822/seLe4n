@@ -258,8 +258,9 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
   - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of
     kernel operations (WS-H9/H10).
-  - `Invariant/Composition.lean` — 33-constructor `NonInterferenceStep` inductive
-    (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`);
+  - `Invariant/Composition.lean` — 34-constructor `NonInterferenceStep` inductive
+    (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`;
+    WS-K-G: `lifecycleRevokeDeleteRetype`);
     `composedNonInterference_trace`; `declassifyStore_NI`;
     `InformationFlowConfigInvariant` bundle.
 
