@@ -208,6 +208,45 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
          vaddr := VAddr.ofNat r1.val }
 
 -- ============================================================================
+-- Encode functions (inverse of decode, for round-trip proofs)
+-- ============================================================================
+
+/-- Encode CSpace mint arguments into message registers.
+    Inverse of `decodeCSpaceMintArgs`. -/
+@[inline] def encodeCSpaceMintArgs (args : CSpaceMintArgs) : Array RegValue :=
+  #[⟨args.srcSlot.toNat⟩, ⟨args.dstSlot.toNat⟩, ⟨args.rights.bits⟩, ⟨args.badge.toNat⟩]
+
+/-- Encode CSpace copy arguments into message registers.
+    Inverse of `decodeCSpaceCopyArgs`. -/
+@[inline] def encodeCSpaceCopyArgs (args : CSpaceCopyArgs) : Array RegValue :=
+  #[⟨args.srcSlot.toNat⟩, ⟨args.dstSlot.toNat⟩]
+
+/-- Encode CSpace move arguments into message registers.
+    Inverse of `decodeCSpaceMoveArgs`. -/
+@[inline] def encodeCSpaceMoveArgs (args : CSpaceMoveArgs) : Array RegValue :=
+  #[⟨args.srcSlot.toNat⟩, ⟨args.dstSlot.toNat⟩]
+
+/-- Encode CSpace delete arguments into message registers.
+    Inverse of `decodeCSpaceDeleteArgs`. -/
+@[inline] def encodeCSpaceDeleteArgs (args : CSpaceDeleteArgs) : Array RegValue :=
+  #[⟨args.targetSlot.toNat⟩]
+
+/-- Encode lifecycle retype arguments into message registers.
+    Inverse of `decodeLifecycleRetypeArgs`. -/
+@[inline] def encodeLifecycleRetypeArgs (args : LifecycleRetypeArgs) : Array RegValue :=
+  #[⟨args.targetObj.toNat⟩, ⟨args.newType⟩, ⟨args.size⟩]
+
+/-- Encode VSpace map arguments into message registers.
+    Inverse of `decodeVSpaceMapArgs`. -/
+@[inline] def encodeVSpaceMapArgs (args : VSpaceMapArgs) : Array RegValue :=
+  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.paddr.toNat⟩, ⟨args.perms⟩]
+
+/-- Encode VSpace unmap arguments into message registers.
+    Inverse of `decodeVSpaceUnmapArgs`. -/
+@[inline] def encodeVSpaceUnmapArgs (args : VSpaceUnmapArgs) : Array RegValue :=
+  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩]
+
+-- ============================================================================
 -- Determinism theorems
 -- ============================================================================
 
@@ -405,5 +444,71 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
     · rw [requireMsgReg_unfold_ok _ _ h0]; simp
       rw [requireMsgReg_unfold_err _ _ (by omega)]
     · rw [requireMsgReg_unfold_err _ _ h0]
+
+-- ============================================================================
+-- Round-trip proofs: encode then decode recovers the original
+-- ============================================================================
+
+/-- Helper: a `SyscallDecodeResult` stub with given message registers.
+    Used exclusively for round-trip proof statements. -/
+private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
+  { capAddr := CPtr.ofNat 0
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .send
+    msgRegs := regs }
+
+/-- Round-trip: encoding then decoding CSpaceMintArgs recovers the original. -/
+theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs) :
+    decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args := by
+  rcases args with ⟨s, d, r, b⟩; rfl
+
+/-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original. -/
+theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs) :
+    decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args := by
+  rcases args with ⟨s, d⟩; rfl
+
+/-- Round-trip: encoding then decoding CSpaceMoveArgs recovers the original. -/
+theorem decodeCSpaceMoveArgs_roundtrip (args : CSpaceMoveArgs) :
+    decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args := by
+  rcases args with ⟨s, d⟩; rfl
+
+/-- Round-trip: encoding then decoding CSpaceDeleteArgs recovers the original. -/
+theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs) :
+    decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args := by
+  rcases args with ⟨t⟩; rfl
+
+/-- Round-trip: encoding then decoding LifecycleRetypeArgs recovers the original. -/
+theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
+    decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args := by
+  rcases args with ⟨o, t, s⟩; rfl
+
+/-- Round-trip: encoding then decoding VSpaceMapArgs recovers the original. -/
+theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) :
+    decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args := by
+  rcases args with ⟨a, v, p, n⟩; rfl
+
+/-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original. -/
+theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) :
+    decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args := by
+  rcases args with ⟨a, v⟩; rfl
+
+/-- Composed round-trip: all 7 argument structures satisfy the encode-decode
+    round-trip property. Parallel to `decode_components_roundtrip` in
+    `RegisterDecode.lean`. -/
+theorem decode_layer2_roundtrip_all :
+    (∀ args, decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
+    (∀ args, decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
+    (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
+    (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
+    (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
+    (∀ args, decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
+    (∀ args, decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) :=
+  ⟨decodeCSpaceMintArgs_roundtrip,
+   decodeCSpaceCopyArgs_roundtrip,
+   decodeCSpaceMoveArgs_roundtrip,
+   decodeCSpaceDeleteArgs_roundtrip,
+   decodeLifecycleRetypeArgs_roundtrip,
+   decodeVSpaceMapArgs_roundtrip,
+   decodeVSpaceUnmapArgs_roundtrip⟩
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

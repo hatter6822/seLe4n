@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "1f1d65002260ddd7b8bb778564f6a6908c838d9f",
-      "tree_sha": "90b6f2d8de4dcb171a3b1b11576c07926fa6af15",
-      "committed_at_utc": "2026-03-14T21:42:43-04:00"
+      "branch": "claude/refine-proofs-workstream-7wJPV",
+      "commit_sha": "ef2910fe8e099b453f95f1368105b14cacc4aaab",
+      "tree_sha": "a037ac24bfb991ae8676024af39292c9de9606b7",
+      "committed_at_utc": "2026-03-15T01:42:50+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "84dbebd327d994ced4ebd51305bdd98703cf7dd2504b2e5c71b777d84ee68525"
+    "source_digest": "d11b8d68353b9be0cee88abab7c16171d371195802bcaf0f62a79b54e782062d"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2209
+    "declaration_count": 2230
   },
   "readme_sync": {
-    "version": "0.16.4",
+    "version": "0.16.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 36621,
+    "production_loc": 36868,
     "test_files": 4,
     "test_loc": 3755,
-    "proved_theorem_lemma_decls": 1182,
+    "proved_theorem_lemma_decls": 1195,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 55,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -506,6 +506,22 @@
             "dispatchSyscall",
             "syscallEntry",
             "syscallEntry_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchWithCap_layer2_decode_pure",
+          "line": 1022,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchWithCap_preservation_composition_witness",
+          "line": 1045,
+          "called": [
+            "dispatchSyscall",
+            "syscallEntry",
+            "syscallEntry_preserves_proofLayerInvariantBundle"
           ]
         }
       ]
@@ -1080,7 +1096,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 28,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -1225,8 +1241,16 @@
         },
         {
           "kind": "theorem",
+          "name": "extractMessageRegisters_roundtrip",
+          "line": 201,
+          "called": [
+            "extractMessageRegisters"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "extractMessageRegisters_deterministic",
-          "line": 199,
+          "line": 219,
           "called": [
             "extractMessageRegisters"
           ]
@@ -1234,7 +1258,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_deterministic",
-          "line": 211,
+          "line": 231,
           "called": [
             "decodeSyscallArgs"
           ]
@@ -1242,7 +1266,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_error_iff",
-          "line": 222,
+          "line": 242,
           "called": [
             "decodeSyscallId"
           ]
@@ -1250,7 +1274,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_error_iff",
-          "line": 231,
+          "line": 251,
           "called": [
             "decodeMsgInfo"
           ]
@@ -1258,7 +1282,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_always_ok",
-          "line": 240,
+          "line": 260,
           "called": [
             "decodeCapPtr"
           ]
@@ -1266,7 +1290,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_ok_iff",
-          "line": 245,
+          "line": 265,
           "called": [
             "validateRegBound"
           ]
@@ -1274,7 +1298,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_error_iff",
-          "line": 253,
+          "line": 273,
           "called": [
             "validateRegBound"
           ]
@@ -1282,13 +1306,13 @@
         {
           "kind": "theorem",
           "name": "list_mapM_except_length",
-          "line": 265,
+          "line": 285,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "array_mapM_except_size",
-          "line": 290,
+          "line": 310,
           "called": [
             "list_mapM_except_length"
           ]
@@ -1296,7 +1320,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgRegs_length",
-          "line": 305,
+          "line": 325,
           "called": [
             "array_mapM_except_size",
             "decodeSyscallArgs"
@@ -1307,7 +1331,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 35,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "namespace",
@@ -1451,9 +1475,65 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "encodeCSpaceMintArgs",
+          "line": 216,
+          "called": [
+            "CSpaceMintArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeCSpaceCopyArgs",
+          "line": 221,
+          "called": [
+            "CSpaceCopyArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeCSpaceMoveArgs",
+          "line": 226,
+          "called": [
+            "CSpaceMoveArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeCSpaceDeleteArgs",
+          "line": 231,
+          "called": [
+            "CSpaceDeleteArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeLifecycleRetypeArgs",
+          "line": 236,
+          "called": [
+            "LifecycleRetypeArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeVSpaceMapArgs",
+          "line": 241,
+          "called": [
+            "VSpaceMapArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeVSpaceUnmapArgs",
+          "line": 246,
+          "called": [
+            "VSpaceUnmapArgs"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_deterministic",
-          "line": 214,
+          "line": 253,
           "called": [
             "decodeCSpaceMintArgs"
           ]
@@ -1461,7 +1541,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_deterministic",
-          "line": 217,
+          "line": 256,
           "called": [
             "decodeCSpaceCopyArgs"
           ]
@@ -1469,7 +1549,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_deterministic",
-          "line": 220,
+          "line": 259,
           "called": [
             "decodeCSpaceMoveArgs"
           ]
@@ -1477,7 +1557,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_deterministic",
-          "line": 223,
+          "line": 262,
           "called": [
             "decodeCSpaceDeleteArgs"
           ]
@@ -1485,7 +1565,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_deterministic",
-          "line": 226,
+          "line": 265,
           "called": [
             "decodeLifecycleRetypeArgs"
           ]
@@ -1493,7 +1573,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_deterministic",
-          "line": 229,
+          "line": 268,
           "called": [
             "decodeVSpaceMapArgs"
           ]
@@ -1501,7 +1581,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_deterministic",
-          "line": 232,
+          "line": 271,
           "called": [
             "decodeVSpaceUnmapArgs"
           ]
@@ -1509,7 +1589,7 @@
         {
           "kind": "theorem",
           "name": "requireMsgReg_unfold_ok",
-          "line": 240,
+          "line": 279,
           "called": [
             "requireMsgReg"
           ]
@@ -1517,7 +1597,7 @@
         {
           "kind": "theorem",
           "name": "requireMsgReg_unfold_err",
-          "line": 243,
+          "line": 282,
           "called": [
             "requireMsgReg"
           ]
@@ -1525,7 +1605,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_error_iff",
-          "line": 247,
+          "line": 286,
           "called": [
             "decodeCSpaceMintArgs",
             "requireMsgReg",
@@ -1536,7 +1616,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_error_iff",
-          "line": 276,
+          "line": 315,
           "called": [
             "decodeCSpaceCopyArgs",
             "requireMsgReg",
@@ -1547,7 +1627,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_error_iff",
-          "line": 297,
+          "line": 336,
           "called": [
             "decodeCSpaceMoveArgs",
             "requireMsgReg",
@@ -1558,7 +1638,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_error_iff",
-          "line": 318,
+          "line": 357,
           "called": [
             "decodeCSpaceDeleteArgs",
             "requireMsgReg",
@@ -1568,7 +1648,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_error_iff",
-          "line": 335,
+          "line": 374,
           "called": [
             "decodeLifecycleRetypeArgs",
             "requireMsgReg",
@@ -1579,7 +1659,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_error_iff",
-          "line": 360,
+          "line": 399,
           "called": [
             "decodeVSpaceMapArgs",
             "requireMsgReg",
@@ -1590,12 +1670,124 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_error_iff",
-          "line": 389,
+          "line": 428,
           "called": [
             "decodeVSpaceUnmapArgs",
             "requireMsgReg",
             "requireMsgReg_unfold_err",
             "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stubDecoded",
+          "line": 454,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMintArgs_roundtrip",
+          "line": 461,
+          "called": [
+            "CSpaceMintArgs",
+            "decodeCSpaceMintArgs",
+            "encodeCSpaceMintArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceCopyArgs_roundtrip",
+          "line": 466,
+          "called": [
+            "CSpaceCopyArgs",
+            "decodeCSpaceCopyArgs",
+            "encodeCSpaceCopyArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMoveArgs_roundtrip",
+          "line": 471,
+          "called": [
+            "CSpaceMoveArgs",
+            "decodeCSpaceMoveArgs",
+            "encodeCSpaceMoveArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceDeleteArgs_roundtrip",
+          "line": 476,
+          "called": [
+            "CSpaceDeleteArgs",
+            "decodeCSpaceDeleteArgs",
+            "encodeCSpaceDeleteArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeLifecycleRetypeArgs_roundtrip",
+          "line": 481,
+          "called": [
+            "LifecycleRetypeArgs",
+            "decodeLifecycleRetypeArgs",
+            "encodeLifecycleRetypeArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceMapArgs_roundtrip",
+          "line": 486,
+          "called": [
+            "VSpaceMapArgs",
+            "decodeVSpaceMapArgs",
+            "encodeVSpaceMapArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceUnmapArgs_roundtrip",
+          "line": 491,
+          "called": [
+            "VSpaceUnmapArgs",
+            "decodeVSpaceUnmapArgs",
+            "encodeVSpaceUnmapArgs",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decode_layer2_roundtrip_all",
+          "line": 498,
+          "called": [
+            "decodeCSpaceCopyArgs",
+            "decodeCSpaceCopyArgs_roundtrip",
+            "decodeCSpaceDeleteArgs",
+            "decodeCSpaceDeleteArgs_roundtrip",
+            "decodeCSpaceMintArgs",
+            "decodeCSpaceMintArgs_roundtrip",
+            "decodeCSpaceMoveArgs",
+            "decodeCSpaceMoveArgs_roundtrip",
+            "decodeLifecycleRetypeArgs",
+            "decodeLifecycleRetypeArgs_roundtrip",
+            "decodeVSpaceMapArgs",
+            "decodeVSpaceMapArgs_roundtrip",
+            "decodeVSpaceUnmapArgs",
+            "decodeVSpaceUnmapArgs_roundtrip",
+            "encodeCSpaceCopyArgs",
+            "encodeCSpaceDeleteArgs",
+            "encodeCSpaceMintArgs",
+            "encodeCSpaceMoveArgs",
+            "encodeLifecycleRetypeArgs",
+            "encodeVSpaceMapArgs",
+            "encodeVSpaceUnmapArgs",
+            "stubDecoded"
           ]
         }
       ]
@@ -5795,7 +5987,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Composition",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -5878,6 +6070,15 @@
           "line": 623,
           "called": [
             "preservesLowEquivalence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallNI_coverage_witness",
+          "line": 655,
+          "called": [
+            "NonInterferenceStep",
+            "NonInterferenceTrace"
           ]
         }
       ]
@@ -6056,7 +6257,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 56,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -6443,6 +6644,12 @@
           "called": [
             "timerTick_preserves_projection"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_preserves_lowEquivalent",
+          "line": 1546,
+          "called": []
         }
       ]
     },
