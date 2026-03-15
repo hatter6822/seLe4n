@@ -613,11 +613,51 @@ scenarios:
     function: runRegisterDecodeTrace
     subsystem: Architecture
     description: "syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidReg"
+  KSD-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Architecture
+    description: "cspaceMint via decoded regs destination populated: true"
+  KSD-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Architecture
+    description: "cspaceCopy via decoded regs target matches: true"
+  KSD-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Architecture
+    description: "cspaceDelete via decoded regs slot cleared: true"
+  KSD-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Lifecycle
+    description: "lifecycle retype via decoded regs new type: notification"
+  KSD-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Architecture
+    description: "vspaceMap via decoded regs paddr: 8192"
+  KSD-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Service
+    description: "serviceStart config-sourced policy status: running"
+  KSD-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: IPC
+    description: "IPC message body from registers: 4 registers"
+  KSD-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSyscallDispatchTrace
+    subsystem: Architecture
+    description: "round-trip decode msgRegs.size=4 first=10"
   ITR-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMainTraceFrom
     subsystem: Testing
-    description: "inter-transition invariant checks: 18 passed"
+    description: "inter-transition invariant checks: 19 passed"
   PTY-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runParameterizedTopologyCheck

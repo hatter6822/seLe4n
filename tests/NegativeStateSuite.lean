@@ -1915,6 +1915,287 @@ def runWSJ1DecodeChecks : IO Unit := do
 
   IO.println "all WS-J1-E register decode negative checks passed"
 
+-- ============================================================================
+-- WS-K-G: Comprehensive testing for WS-K syscall dispatch surface
+-- ============================================================================
+
+/-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
+dispatch, and error paths introduced in WS-K-A through WS-K-F.
+
+Organized into sub-phases:
+- K-G1: CSpace decode/dispatch error paths
+- K-G2: Lifecycle/VSpace decode/dispatch error paths
+- K-G3: Service policy and IPC message population boundaries
+- K-G4: Determinism verification across full decode pipeline -/
+def runWSKGChecks : IO Unit := do
+  IO.println "\n=== WS-K-G: Comprehensive syscall dispatch testing ==="
+
+  -- ---- K-G1: CSpace negative tests ----
+
+  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  let shortDecode : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .cspaceMint
+    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 4
+  }
+  expectError "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 2) → invalidMessageInfo
+  let oneRegDecode : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .cspaceCopy
+    msgRegs := #[⟨10⟩]  -- only 1, need 2
+  }
+  expectError "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs oneRegDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-03: decodeCSpaceMoveArgs with insufficient msgRegs (< 2) → invalidMessageInfo
+  expectError "K-G-NEG-03 cspaceMove decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs oneRegDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-04: decodeCSpaceDeleteArgs with zero msgRegs → invalidMessageInfo
+  let emptyDecode : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .cspaceDelete
+    msgRegs := #[]  -- empty
+  }
+  expectError "K-G-NEG-04 cspaceDelete decode empty msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-05: cspaceMint dispatch fails — CNode not found
+  let noCnodeState : SystemState := BootstrapBuilder.empty.build
+  let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨1⟩ }
+  expectError "K-G-NEG-05 cspaceMint CNode not found"
+    (SeLe4n.Kernel.cspaceMint mintAddr dstAddr ⟨0⟩ none noCnodeState)
+    .objectNotFound
+
+  -- K-G-NEG-06: cspaceCopy fails — source slot empty (invalidCapability)
+  let emptyCnodeState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨200⟩ (.cnode {
+        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+        slots := {}  -- no slots occupied
+      })
+      |>.withLifecycleObjectType ⟨200⟩ .cnode
+      |>.build)
+  let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨0⟩ }
+  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨1⟩ }
+  expectError "K-G-NEG-06 cspaceCopy source slot empty"
+    (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot emptyCnodeState)
+    .invalidCapability
+
+  IO.println "K-G1 CSpace negative tests passed"
+
+  -- ---- K-G2: Lifecycle/VSpace negative tests ----
+
+  -- K-G-NEG-07: decodeLifecycleRetypeArgs with insufficient msgRegs (< 3) → invalidMessageInfo
+  let twoRegDecode : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .lifecycleRetype
+    msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
+  }
+  expectError "K-G-NEG-07 lifecycleRetype decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs twoRegDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-08: objectOfTypeTag with invalid type tag (99) → invalidTypeTag
+  expectError "K-G-NEG-08 objectOfTypeTag invalid tag"
+    (SeLe4n.Kernel.objectOfTypeTag 99 0)
+    .invalidTypeTag
+
+  -- K-G-NEG-09: lifecycleRetypeDirect with non-existent target → objectNotFound
+  let emptyObjState : SystemState := BootstrapBuilder.empty.build
+  let authCap : Capability := {
+    target := .object ⟨500⟩
+    rights := AccessRightSet.ofList [.read, .write]
+    badge := none
+  }
+  expectError "K-G-NEG-09 lifecycleRetypeDirect object not found"
+    (SeLe4n.Kernel.lifecycleRetypeDirect authCap ⟨500⟩ (.endpoint {}) emptyObjState)
+    .objectNotFound
+
+  -- K-G-NEG-10: lifecycleRetypeDirect with wrong authority — cap targets different object
+  let retypeState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨300⟩ (.endpoint {})
+      |>.withLifecycleObjectType ⟨300⟩ .endpoint
+      |>.build)
+  let wrongAuthCap : Capability := {
+    target := .object ⟨999⟩  -- targets different object
+    rights := AccessRightSet.ofList [.read, .write]
+    badge := none
+  }
+  expectError "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
+    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) retypeState)
+    .illegalAuthority
+
+  -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  let threeRegDecode : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    syscallId := .vspaceMap
+    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
+  }
+  expectError "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode)
+    .invalidMessageInfo
+
+  -- K-G-NEG-12: vspaceMapPageChecked with W^X violation (perms = write+execute)
+  let vspaceAsid : SeLe4n.ASID := ⟨5⟩
+  let vspaceState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject ⟨400⟩ (.vspaceRoot { asid := vspaceAsid, mappings := {} })
+      |>.withLifecycleObjectType ⟨400⟩ .vspaceRoot
+      |>.build)
+  let wxPerms := PagePermissions.ofNat 6  -- bits 1+2 = write+execute
+  expectError "K-G-NEG-12 vspaceMap W^X violation"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid ⟨4096⟩ ⟨8192⟩ wxPerms) vspaceState)
+    .policyDenied
+
+  -- K-G-NEG-13: vspaceUnmapPage with no existing mapping → translationFault
+  expectError "K-G-NEG-13 vspaceUnmap no mapping"
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid ⟨4096⟩) vspaceState)
+    .translationFault
+
+  IO.println "K-G2 lifecycle/VSpace negative tests passed"
+
+  -- ---- K-G3: Service policy and IPC boundary tests ----
+
+  -- K-G-NEG-14: serviceStart denied by policy
+  let svcPolicyId : ServiceId := ⟨800⟩
+  let svcBackingId : SeLe4n.ObjId := ⟨801⟩
+  let denyStartState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject svcBackingId (.tcb {
+        tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready })
+      |>.withService svcPolicyId {
+        identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
+        status := .stopped
+        dependencies := []
+        isolatedFrom := []
+      }
+      |>.withServiceConfig { allowStart := fun _ => false, allowStop := fun _ => true }
+      |>.build)
+  expectError "K-G-NEG-14 serviceStart policy denied"
+    (SeLe4n.Kernel.serviceStart svcPolicyId (fun _ => false) denyStartState)
+    .policyDenied
+
+  -- K-G-NEG-15: serviceStop denied by policy
+  let denyStopState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject svcBackingId (.tcb {
+        tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready })
+      |>.withService svcPolicyId {
+        identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
+        status := .running
+        dependencies := []
+        isolatedFrom := []
+      }
+      |>.withServiceConfig { allowStart := fun _ => true, allowStop := fun _ => false }
+      |>.build)
+  expectError "K-G-NEG-15 serviceStop policy denied"
+    (SeLe4n.Kernel.serviceStop svcPolicyId (fun _ => false) denyStopState)
+    .policyDenied
+
+  -- K-G-NEG-16: extractMessageRegisters with empty msgRegs → empty result
+  let emptyExtract := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
+    #[] { length := 4, extraCaps := 0, label := 0 }
+  unless emptyExtract.size == 0 do
+    throw <| IO.userError s!"K-G-NEG-16: expected empty extraction, got size {emptyExtract.size}"
+  IO.println "negative check passed [K-G-NEG-16 extractMessageRegisters empty → empty]"
+
+  -- K-G-NEG-17: extractMessageRegisters with oversized info.length → capped by msgRegs.size
+  let cappedExtract := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
+    #[⟨10⟩, ⟨20⟩, ⟨30⟩, ⟨40⟩] { length := 200, extraCaps := 0, label := 0 }
+  unless cappedExtract.size == 4 do
+    throw <| IO.userError s!"K-G-NEG-17: expected size 4 (capped by msgRegs), got {cappedExtract.size}"
+  IO.println "negative check passed [K-G-NEG-17 extractMessageRegisters oversized length capped]"
+
+  -- K-G-NEG-18: objectOfTypeTag success for all 6 valid tags
+  for tag in [0, 1, 2, 3, 4, 5] do
+    match SeLe4n.Kernel.objectOfTypeTag tag 64 with
+    | .ok _ => pure ()
+    | .error e => throw <| IO.userError s!"K-G-NEG-18: objectOfTypeTag tag {tag} failed: {reprStr e}"
+  IO.println "negative check passed [K-G-NEG-18 objectOfTypeTag all 6 valid tags succeed]"
+
+  IO.println "K-G3 service/IPC boundary tests passed"
+
+  -- ---- K-G4: Determinism verification ----
+
+  -- K-G-DET-01: Layer 1+2 decode determinism (double invocation)
+  let detRegs : SeLe4n.RegisterFile := default
+  let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
+  let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
+  unless reprStr r1 == reprStr r2 do
+    throw <| IO.userError "K-G-DET-01: decodeSyscallArgs not deterministic"
+  match r1 with
+  | .ok d1 =>
+    -- Verify layer 2 decode determinism for all 7 functions
+    let m1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
+    let m2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
+    unless reprStr m1 == reprStr m2 do
+      throw <| IO.userError "K-G-DET-01: decodeCSpaceMintArgs not deterministic"
+    let c1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
+    let c2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
+    unless reprStr c1 == reprStr c2 do
+      throw <| IO.userError "K-G-DET-01: decodeCSpaceCopyArgs not deterministic"
+    let mv1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
+    let mv2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
+    unless reprStr mv1 == reprStr mv2 do
+      throw <| IO.userError "K-G-DET-01: decodeCSpaceMoveArgs not deterministic"
+    let del1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
+    let del2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
+    unless reprStr del1 == reprStr del2 do
+      throw <| IO.userError "K-G-DET-01: decodeCSpaceDeleteArgs not deterministic"
+    let lr1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
+    let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
+    unless reprStr lr1 == reprStr lr2 do
+      throw <| IO.userError "K-G-DET-01: decodeLifecycleRetypeArgs not deterministic"
+    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
+    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
+    unless reprStr vm1 == reprStr vm2 do
+      throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
+    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
+    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
+    unless reprStr vu1 == reprStr vu2 do
+      throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
+    IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"
+  | .error _ =>
+    throw <| IO.userError "K-G-DET-01: decodeSyscallArgs failed unexpectedly"
+
+  -- K-G-DET-02: extractMessageRegisters determinism
+  let info : MessageInfo := { length := 3, extraCaps := 0, label := 0 }
+  let regsArr : Array SeLe4n.RegValue := #[⟨100⟩, ⟨200⟩, ⟨300⟩, ⟨400⟩]
+  let e1 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
+  let e2 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
+  unless reprStr e1 == reprStr e2 do
+    throw <| IO.userError "K-G-DET-02: extractMessageRegisters not deterministic"
+  IO.println "determinism check passed [K-G-DET-02 extractMessageRegisters deterministic]"
+
+  -- K-G-DET-03: objectOfTypeTag determinism across all valid tags
+  for tag in [0, 1, 2, 3, 4, 5] do
+    let o1 := SeLe4n.Kernel.objectOfTypeTag tag 64
+    let o2 := SeLe4n.Kernel.objectOfTypeTag tag 64
+    unless reprStr o1 == reprStr o2 do
+      throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
+  IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
+
+  IO.println "all WS-K-G comprehensive tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1928,3 +2209,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
+  SeLe4n.Testing.runWSKGChecks

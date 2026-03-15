@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "34858ad20929470d7db340f378e17c762735727b",
-      "tree_sha": "cc31029ee8cda5856842de438011bed49c213d81",
-      "committed_at_utc": "2026-03-14T23:27:44-04:00"
+      "branch": "claude/refine-testing-workstream-NFp5X",
+      "commit_sha": "408678dd86d04416268e5f9bdf77c6d44d23c475",
+      "tree_sha": "ce80bd9f2192e8477df9a6c5f43fd57d748da607",
+      "committed_at_utc": "2026-03-15T03:27:52+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "63b509695f460c6957be213f976e7a514a90a0bc9e1687acac977e57f21762dd"
+    "source_digest": "2c041d3abb8ba2584b23d2f3b75c34fb2f8eb7ecb923133176fc8c7cd3467759"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2233
+    "declaration_count": 2235
   },
   "readme_sync": {
-    "version": "0.16.6",
+    "version": "0.16.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 36954,
+    "production_loc": 37100,
     "test_files": 4,
-    "test_loc": 3755,
+    "test_loc": 4037,
     "proved_theorem_lemma_decls": 1198,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -16928,7 +16928,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 42,
+      "declaration_count": 43,
       "declarations": [
         {
           "kind": "namespace",
@@ -17238,8 +17238,16 @@
         },
         {
           "kind": "def",
+          "name": "runSyscallDispatchTrace",
+          "line": 1362,
+          "called": [
+            "checkInvariants"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1360,
+          "line": 1505,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17258,6 +17266,7 @@
             "runRuntimeContractFixtureTrace",
             "runSchedulerTimingDomainTrace",
             "runServiceAndStressTrace",
+            "runSyscallDispatchTrace",
             "runSyscallGateTrace",
             "runUntypedMemoryTrace"
           ]
@@ -17265,13 +17274,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1399,
+          "line": 1545,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1450,
+          "line": 1596,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -17279,7 +17288,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1464,
+          "line": 1610,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -17287,7 +17296,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1472,
+          "line": 1618,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17584,7 +17593,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 39,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
@@ -17907,8 +17916,16 @@
         },
         {
           "kind": "def",
+          "name": "runWSKGChecks",
+          "line": 1930,
+          "called": [
+            "expectError"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 1920,
+          "line": 2201,
           "called": []
         }
       ]

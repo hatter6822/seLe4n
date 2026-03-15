@@ -224,7 +224,7 @@ Delivered (WS-F3 closeout):
 - NI coverage exceeds >80% of kernel operations.
 - Closes C-02/A-40 (CRITICAL), M-15 (MEDIUM).
 
-## WS-K-G — Lifecycle NI proof completion ✅ completed (v0.16.6)
+## WS-K-G — Lifecycle NI proof completion ✅ completed (v0.16.7)
 
 - `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — completes the deferred
   lifecycle NI proof for the composed revoke-delete-retype operation.
