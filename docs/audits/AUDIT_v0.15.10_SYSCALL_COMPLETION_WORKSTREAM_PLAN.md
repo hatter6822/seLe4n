@@ -2500,7 +2500,7 @@ warnings across all tiers.
   message extraction, and object type tag mapping.
 - 8 new trace scenarios covering all newly-wired dispatch paths with
   success-path validation.
-- 22 new `#check` type-level anchors for K-F encode, round-trip, preservation,
+- 23 new `#check` type-level anchors for K-F encode, round-trip, preservation,
   and NI definitions.
 - 11 new `rg` pattern anchors for K-F and K-G definitions.
 - `tests/fixtures/main_trace_smoke.expected` updated to match new trace output.
@@ -2509,8 +2509,9 @@ warnings across all tiers.
 
 **All files modified (combined):**
 - `tests/NegativeStateSuite.lean` — 21 new tests (K-G1 through K-G4).
-- `SeLe4n/Testing/MainTraceHarness.lean` — 8 new trace scenarios (K-G5).
-- `scripts/test_tier3_invariant_surface.sh` — 11 `rg` anchors + 22 `#check`
+- `SeLe4n/Testing/MainTraceHarness.lean` — 8 new trace scenarios with full
+  Layer-2 decode pipeline (K-G5).
+- `scripts/test_tier3_invariant_surface.sh` — 11 `rg` anchors + 23 `#check`
   anchors (K-G6).
 - `tests/fixtures/main_trace_smoke.expected` — Updated fixture (K-G7).
 
@@ -2724,13 +2725,13 @@ Update GitBook chapters and claim evidence index.
 - [x] K-F5: `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` proved (v0.16.6) ✓
 - [x] K-F6: `syscallNI_coverage_witness` with 34 constructors (v0.16.5–v0.16.6) ✓
 - [x] K-F: Zero `sorry`/`axiom` in production proof surface (v0.16.5–v0.16.6) ✓
-- [ ] K-G1: 6 CSpace negative-state tests (v0.16.7)
-- [ ] K-G2: 7 lifecycle/VSpace negative-state tests (v0.16.7)
-- [ ] K-G3: 5 service/IPC negative-state tests (v0.16.7)
-- [ ] K-G4: 3 determinism verification tests (v0.16.7)
-- [ ] K-G5: 8 trace scenarios for newly-wired syscalls (v0.16.7)
-- [ ] K-G6: 11 `rg` + 22 `#check` Tier 3 anchors for K-F/K-G (v0.16.7)
-- [ ] K-G7: Fixture update + `test_full.sh` passes zero failures (v0.16.7)
+- [x] K-G1: 6 CSpace negative-state tests (v0.16.7) ✓
+- [x] K-G2: 7 lifecycle/VSpace negative-state tests (v0.16.7) ✓
+- [x] K-G3: 5 service/IPC negative-state tests (v0.16.7) ✓
+- [x] K-G4: 3 determinism verification tests (v0.16.7) ✓
+- [x] K-G5: 8 trace scenarios with full Layer-2 decode pipeline (v0.16.7) ✓
+- [x] K-G6: 11 `rg` + 23 `#check` Tier 3 anchors for K-F/K-G (v0.16.7) ✓
+- [x] K-G7: Fixture update + `test_full.sh` passes zero failures (v0.16.7) ✓
 - [ ] K-H: `docs/WORKSTREAM_HISTORY.md` updated (v0.16.8)
 - [ ] K-H: `docs/spec/SELE4N_SPEC.md` updated (v0.16.8)
 - [ ] K-H: GitBook chapters synchronized (v0.16.8)

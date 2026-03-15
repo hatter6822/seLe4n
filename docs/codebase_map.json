@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-testing-workstream-NFp5X",
-      "commit_sha": "408678dd86d04416268e5f9bdf77c6d44d23c475",
-      "tree_sha": "ce80bd9f2192e8477df9a6c5f43fd57d748da607",
-      "committed_at_utc": "2026-03-15T03:27:52+00:00"
+      "commit_sha": "985e51d198f897f15ee923b31ce3bfa2c475d72a",
+      "tree_sha": "83873d27e6b252f04eceaaeee4096ec2758c9750",
+      "committed_at_utc": "2026-03-15T04:08:08+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2c041d3abb8ba2584b23d2f3b75c34fb2f8eb7ecb923133176fc8c7cd3467759"
+    "source_digest": "b6ca09c148409d6ce5cbfe40df6bb1697c90248e609538c6ac518095688ae197"
   },
   "summary": {
     "module_count": 73,
@@ -27,7 +27,7 @@
     "version": "0.16.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 37100,
+    "production_loc": 37139,
     "test_files": 4,
     "test_loc": 4037,
     "proved_theorem_lemma_decls": 1198,
@@ -17247,7 +17247,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1505,
+          "line": 1544,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -17274,13 +17274,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1545,
+          "line": 1584,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1596,
+          "line": 1635,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -17288,7 +17288,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1610,
+          "line": 1649,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -17296,7 +17296,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1618,
+          "line": 1657,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

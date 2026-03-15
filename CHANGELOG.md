@@ -8,8 +8,10 @@
   coverage, K-G4 (3 tests) determinism verification for decode pipeline
 - Added 8 trace scenarios in `MainTraceHarness.lean` (`runSyscallDispatchTrace`):
   KSD-001 through KSD-008 covering CSpace mint/copy/delete, lifecycle retype,
-  VSpace map, service start, IPC message population, and layer 1+2 round-trip
-- Added 33 Tier 3 invariant surface anchors (11 `rg` pattern checks + 22
+  VSpace map, service start, IPC message population, and layer 1+2 round-trip;
+  all scenarios exercise the full Layer-2 decode pipeline (SyscallDecodeResult →
+  typed args → kernel operation)
+- Added 34 Tier 3 invariant surface anchors (11 `rg` pattern checks + 23
   `#check` type-level validations) for K-F and K-G proof surface in
   `scripts/test_tier3_invariant_surface.sh`
 - Updated scenario registry with KSD-001 through KSD-008 entries

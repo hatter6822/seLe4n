@@ -1396,24 +1396,45 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       IO.println s!"[KSD-001] cspaceMint via decoded regs destination populated: {hasDst}"
 
   -- KSD-002: CSpace copy via decoded registers — success path
-  match SeLe4n.Kernel.cspaceCopy ksdSrcSlot ksdDstSlot stKsd with
-  | .error e => IO.println s!"[KSD-002] cspaceCopy dispatch error: {reprStr e}"
-  | .ok (_, stCopied) =>
-    match SeLe4n.Model.SystemState.lookupSlotCap stCopied ksdDstSlot with
-    | some dstCap =>
-      IO.println s!"[KSD-002] cspaceCopy via decoded regs target matches: {dstCap.target == .object ksdEpId}"
-    | none => IO.println "[KSD-002] cspaceCopy dst slot empty"
+  let copyDecoded : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 2, extraCaps := 0, label := 0 }
+    syscallId := .cspaceCopy
+    msgRegs := #[⟨0⟩, ⟨1⟩]  -- srcSlot=0, dstSlot=1
+  }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
+  | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
+  | .ok copyArgs =>
+    let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := copyArgs.srcSlot }
+    let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := copyArgs.dstSlot }
+    match SeLe4n.Kernel.cspaceCopy copySrc copyDst stKsd with
+    | .error e => IO.println s!"[KSD-002] cspaceCopy dispatch error: {reprStr e}"
+    | .ok (_, stCopied) =>
+      match SeLe4n.Model.SystemState.lookupSlotCap stCopied ksdDstSlot with
+      | some dstCap =>
+        IO.println s!"[KSD-002] cspaceCopy via decoded regs target matches: {dstCap.target == .object ksdEpId}"
+      | none => IO.println "[KSD-002] cspaceCopy dst slot empty"
 
   -- KSD-003: CSpace delete via decoded registers — success path
-  -- First copy into slot 1, then delete it
+  -- First copy into slot 1, then delete via decoded args
   match SeLe4n.Kernel.cspaceCopy ksdSrcSlot ksdDstSlot stKsd with
   | .error _ => IO.println "[KSD-003] cspaceCopy setup failed"
   | .ok (_, stSetup) =>
-    match SeLe4n.Kernel.cspaceDeleteSlot ksdDstSlot stSetup with
-    | .error e => IO.println s!"[KSD-003] cspaceDelete dispatch error: {reprStr e}"
-    | .ok (_, stDeleted) =>
-      let slotEmpty := (SeLe4n.Model.SystemState.lookupSlotCap stDeleted ksdDstSlot).isNone
-      IO.println s!"[KSD-003] cspaceDelete via decoded regs slot cleared: {slotEmpty}"
+    let deleteDecoded : SyscallDecodeResult := {
+      capAddr := ⟨0⟩
+      msgInfo := { length := 1, extraCaps := 0, label := 0 }
+      syscallId := .cspaceDelete
+      msgRegs := #[⟨1⟩]  -- targetSlot=1
+    }
+    match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs deleteDecoded with
+    | .error e => IO.println s!"[KSD-003] cspaceDelete decode error: {reprStr e}"
+    | .ok delArgs =>
+      let delAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := delArgs.targetSlot }
+      match SeLe4n.Kernel.cspaceDeleteSlot delAddr stSetup with
+      | .error e => IO.println s!"[KSD-003] cspaceDelete dispatch error: {reprStr e}"
+      | .ok (_, stDeleted) =>
+        let slotEmpty := (SeLe4n.Model.SystemState.lookupSlotCap stDeleted ksdDstSlot).isNone
+        IO.println s!"[KSD-003] cspaceDelete via decoded regs slot cleared: {slotEmpty}"
 
   -- KSD-004: Lifecycle retype via decoded registers — success path
   let ksdRetypeTargetId : SeLe4n.ObjId := ⟨602⟩
@@ -1422,19 +1443,28 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withObject ksdRetypeTargetId (.endpoint {})
       |>.withLifecycleObjectType ksdRetypeTargetId .endpoint
       |>.build)
-  match SeLe4n.Kernel.objectOfTypeTag 2 0 with  -- tag 2 = notification
-  | .error e => IO.println s!"[KSD-004] objectOfTypeTag error: {reprStr e}"
-  | .ok newObj =>
-    let retypeCap : SeLe4n.Model.Capability := {
-      target := .object ksdRetypeTargetId
-      rights := AccessRightSet.ofList [.read, .write]
-      badge := none
-    }
-    match SeLe4n.Kernel.lifecycleRetypeDirect retypeCap ksdRetypeTargetId newObj stRetype with
-    | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirect error: {reprStr e}"
-    | .ok (_, stRetyped) =>
-      let objKind := (stRetyped.objects[ksdRetypeTargetId]?).map KernelObject.objectType
-      IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"
+  let retypeDecoded : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 3, extraCaps := 0, label := 0 }
+    syscallId := .lifecycleRetype
+    msgRegs := #[⟨602⟩, ⟨2⟩, ⟨0⟩]  -- targetObj=602, typeTag=2(notification), size=0
+  }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs retypeDecoded with
+  | .error e => IO.println s!"[KSD-004] lifecycleRetype decode error: {reprStr e}"
+  | .ok retypeArgs =>
+    match SeLe4n.Kernel.objectOfTypeTag retypeArgs.newType retypeArgs.size with
+    | .error e => IO.println s!"[KSD-004] objectOfTypeTag error: {reprStr e}"
+    | .ok newObj =>
+      let retypeCap : SeLe4n.Model.Capability := {
+        target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
+        rights := AccessRightSet.ofList [.read, .write]
+        badge := none
+      }
+      match SeLe4n.Kernel.lifecycleRetypeDirect retypeCap ksdRetypeTargetId newObj stRetype with
+      | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirect error: {reprStr e}"
+      | .ok (_, stRetyped) =>
+        let objKind := (stRetyped.objects[ksdRetypeTargetId]?).map KernelObject.objectType
+        IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"
 
   -- KSD-005: VSpace map via decoded registers — success path
   let ksdAsid : SeLe4n.ASID := ⟨10⟩
@@ -1444,14 +1474,23 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withObject ksdVspaceId (.vspaceRoot { asid := ksdAsid, mappings := {} })
       |>.withLifecycleObjectType ksdVspaceId .vspaceRoot
       |>.build)
-  let readPerms := PagePermissions.ofNat 1  -- bit 0 = read only
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ksdAsid ⟨4096⟩ ⟨8192⟩ readPerms) stVspace with
-  | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
-  | .ok (_, stMapped) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup ksdAsid ⟨4096⟩ stMapped with
-    | .error _ => IO.println "[KSD-005] vspaceMap lookup failed after map"
-    | .ok (pa, _) =>
-      IO.println s!"[KSD-005] vspaceMap via decoded regs paddr: {pa.toNat}"
+  let vspaceDecoded : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    syscallId := .vspaceMap
+    msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨8192⟩, ⟨1⟩]  -- asid=10, vaddr=4096, paddr=8192, perms=1(read)
+  }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded with
+  | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
+  | .ok mapArgs =>
+    let readPerms := PagePermissions.ofNat mapArgs.perms
+    match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked mapArgs.asid mapArgs.vaddr mapArgs.paddr readPerms) stVspace with
+    | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
+    | .ok (_, stMapped) =>
+      match SeLe4n.Kernel.Architecture.vspaceLookup mapArgs.asid mapArgs.vaddr stMapped with
+      | .error _ => IO.println "[KSD-005] vspaceMap lookup failed after map"
+      | .ok (pa, _) =>
+        IO.println s!"[KSD-005] vspaceMap via decoded regs paddr: {pa.toNat}"
 
   -- KSD-006: Service start with config-sourced policy — success
   let ksdSvcId : ServiceId := ⟨900⟩
