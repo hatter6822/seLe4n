@@ -122,6 +122,74 @@ theorem endpointQueuePopHead_endpoint_backward_ne
                     have h2 := storeTcbQueueLinks_endpoint_backward _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext oid ep hLink h3
                     rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h2
 
+/-- WS-L3/L3-C: endpointQueuePopHead forward-preserves endpoints. If an endpoint
+exists at oid before popHead, some endpoint still exists there after. -/
+theorem endpointQueuePopHead_endpoint_forward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (headTcb : TCB) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint epOrig =>
+      simp only [hObj] at hStep; revert hStep
+      cases hHead : (if isReceiveQ then epOrig.receiveQ else epOrig.sendQ).head with
+      | none => simp
+      | some headTid =>
+        simp only []; cases hLookup : lookupTcb st headTid with
+        | none => simp
+        | some headTcbR =>
+          simp only []
+          cases headTcbR.queueNext with
+          | none =>
+            simp only []
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              dsimp only [hStore]; cases hLink : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, hEq⟩; subst hEq
+                -- Endpoint at oid survives storeObject (at endpointId) then storeTcbQueueLinks (at headTid)
+                have hEpSt1 : ∃ ep1, pair.2.objects[oid]? = some (.endpoint ep1) := by
+                  by_cases h : oid = endpointId
+                  · subst h; exact ⟨_, storeObject_objects_eq _ _ oid _ hStore⟩
+                  · exact ⟨ep, by rw [storeObject_objects_ne st pair.2 endpointId oid _ h hStore]; exact hEp⟩
+                obtain ⟨ep1, hEp1⟩ := hEpSt1
+                exact storeTcbQueueLinks_endpoint_forward _ _ headTid none none none oid ep1 hLink hEp1
+          | some nextTid =>
+            simp only []
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              dsimp only [hStore]
+              cases hLookupN : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                dsimp only [hLookupN]
+                cases hLink1 : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  dsimp only [hLink1]
+                  cases hLink2 : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, hEq⟩; subst hEq
+                    -- Chain: storeObject → storeTcbQueueLinks (nextTid) → storeTcbQueueLinks (headTid)
+                    have hEpSt1 : ∃ ep1, pair.2.objects[oid]? = some (.endpoint ep1) := by
+                      by_cases h : oid = endpointId
+                      · subst h; exact ⟨_, storeObject_objects_eq _ _ oid _ hStore⟩
+                      · exact ⟨ep, by rw [storeObject_objects_ne st pair.2 endpointId oid _ h hStore]; exact hEp⟩
+                    obtain ⟨ep1, hEp1⟩ := hEpSt1
+                    obtain ⟨ep2, hEp2⟩ := storeTcbQueueLinks_endpoint_forward _ _ nextTid none _ nextTcb.queueNext oid ep1 hLink1 hEp1
+                    exact storeTcbQueueLinks_endpoint_forward _ _ headTid none none none oid ep2 hLink2 hEp2
+
 /-- WS-F1: endpointQueuePopHead backward-preserves notifications. -/
 theorem endpointQueuePopHead_notification_backward
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
@@ -401,6 +469,66 @@ theorem endpointQueueEnqueue_endpoint_backward_ne
                     have h3 := storeTcbQueueLinks_endpoint_backward _ _ enqueueTid _ _ _ oid ep hStep hEp
                     have h2 := storeTcbQueueLinks_endpoint_backward _ _ tailTid _ _ _ oid ep hLink1 h3
                     rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h2
+
+/-- WS-L3/L3-C: endpointQueueEnqueue forward-preserves endpoints. -/
+theorem endpointQueueEnqueue_endpoint_forward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (enqueueTid : SeLe4n.ThreadId) (st st' : SystemState)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint epOrig =>
+      simp only [hObj] at hStep; revert hStep
+      cases hLookup : lookupTcb st enqueueTid with
+      | none => simp
+      | some tcb =>
+        simp only []
+        -- The function checks ipcState = .ready and queue fields; split on the if branches
+        split
+        · simp -- ipcState ≠ .ready → error
+        · split
+          · simp -- queue links present → error
+          ·
+            cases (if isReceiveQ then epOrig.receiveQ else epOrig.sendQ).tail with
+            | none =>
+              simp only []
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []; intro hLink
+                have hEpSt1 : ∃ ep1, pair.2.objects[oid]? = some (.endpoint ep1) := by
+                  by_cases h : oid = endpointId
+                  · subst h; exact ⟨_, storeObject_objects_eq _ _ oid _ hStore⟩
+                  · exact ⟨ep, by rw [storeObject_objects_ne st pair.2 endpointId oid _ h hStore]; exact hEp⟩
+                obtain ⟨ep1, hEp1⟩ := hEpSt1
+                exact storeTcbQueueLinks_endpoint_forward _ _ enqueueTid none _ none oid ep1 hLink hEp1
+            | some tailTid =>
+              simp only []
+              cases hLookupT : lookupTcb st tailTid with
+              | none => simp
+              | some tailTcb =>
+                simp only []
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid _ _ (some enqueueTid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []; intro hLink2
+                    have hEpSt1 : ∃ ep1, pair.2.objects[oid]? = some (.endpoint ep1) := by
+                      by_cases h : oid = endpointId
+                      · subst h; exact ⟨_, storeObject_objects_eq _ _ oid _ hStore⟩
+                      · exact ⟨ep, by rw [storeObject_objects_ne st pair.2 endpointId oid _ h hStore]; exact hEp⟩
+                    obtain ⟨ep1, hEp1⟩ := hEpSt1
+                    obtain ⟨ep2, hEp2⟩ := storeTcbQueueLinks_endpoint_forward _ _ tailTid _ _ _ oid ep1 hLink1 hEp1
+                    exact storeTcbQueueLinks_endpoint_forward _ _ enqueueTid _ _ none oid ep2 hLink2 hEp2
 
 /-- WS-F1: endpointQueueEnqueue backward-preserves notifications. -/
 theorem endpointQueueEnqueue_notification_backward
@@ -1503,5 +1631,380 @@ def endpointReplyRecv
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
+
+-- ============================================================================
+-- WS-L3/L3-D: Tail consistency theorems for endpointQueueRemoveDual
+-- ============================================================================
+
+/-- WS-L3/L3-D1: When removing a non-tail thread (queueNext = some _) from a
+dual queue, the post-state endpoint queue tail equals the pre-state tail.
+The newTail computation in endpointQueueRemoveDual returns q.tail unchanged
+when tcb.queueNext is Some. -/
+theorem endpointQueueRemoveDual_preserves_tail_of_nonTail
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcbR : TCB)
+    (nextTid : SeLe4n.ThreadId)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcbR)
+    (hNonTail : tcbR.queueNext = some nextTid)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
+      (if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) := by
+  unfold endpointQueueRemoveDual at hStep; revert hStep
+  rw [hObj]; simp only []
+  rw [hTcb]; simp only []
+  cases hPPrev : tcbR.queuePPrev with
+  | none => simp
+  | some pprev =>
+    simp only []
+    generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
+    split
+    · simp
+    · cases pprev with
+      | endpointHead =>
+        simp only []
+        split
+        · simp
+        · cases hStore1 : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair1 =>
+          simp only []; simp only [hNonTail]
+          cases hLookupN : lookupTcb pair1.2 nextTid with
+          | none => simp
+          | some nextTcb =>
+          simp only []; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
+          | error e => simp
+          | ok st2 =>
+          simp only []; cases hStore2 : storeObject endpointId _ st2 with
+          | error e => simp
+          | ok pair2 =>
+          simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+          | error e => simp
+          | ok st4 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have hNeTidEp : endpointId ≠ tid.toObjId :=
+              fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
+            rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hFinal,
+                storeObject_objects_eq _ _ endpointId _ hStore2]
+            refine ⟨_, rfl, ?_⟩
+            cases isReceiveQ <;> simp_all
+      | tcbNext prevTid =>
+        dsimp only
+        split
+        · simp
+        · cases hLookupP : lookupTcb st prevTid with
+          | none => simp
+          | some prevTcb =>
+          dsimp only [hLookupP]; split
+          · simp
+          · rename_i _ _ _ stAp heqAp
+            split at heqAp
+            · simp at heqAp
+            · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbR.queueNext with
+              | error e => simp [hLink0] at heqAp
+              | ok stPrev =>
+              simp [hLink0] at heqAp; subst heqAp
+              simp only [hNonTail]
+              cases hLookupN : lookupTcb stPrev nextTid with
+              | none => simp
+              | some nextTcb =>
+              dsimp only [hLookupN]; cases hLink1 : storeTcbQueueLinks stPrev nextTid _ _ nextTcb.queueNext with
+              | error e => simp
+              | ok st2 =>
+              dsimp only [hLink1]; cases hStore2 : storeObject endpointId _ st2 with
+              | error e => simp
+              | ok pair2 =>
+              dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+              | error e => simp
+              | ok st4 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                have hNeTidEp : endpointId ≠ tid.toObjId :=
+                  fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
+                rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hFinal,
+                    storeObject_objects_eq _ _ endpointId _ hStore2]
+                refine ⟨_, rfl, ?_⟩
+                cases isReceiveQ <;> simp_all
+
+/-- WS-L3/L3-D2: Complete characterization of tail behavior when removing
+the tail thread (queueNext = none). The new tail is either:
+- `none` when pprev = endpointHead (thread was sole element)
+- `some prevTid` when pprev = tcbNext prevTid (predecessor becomes tail) -/
+theorem endpointQueueRemoveDual_tail_update
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcbR : TCB)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcbR)
+    (hIsTail : tcbR.queueNext = none)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
+      match tcbR.queuePPrev with
+      | some .endpointHead => none
+      | some (.tcbNext prevTid) => some prevTid
+      | none => none := by
+  unfold endpointQueueRemoveDual at hStep; revert hStep
+  rw [hObj]; simp only []
+  rw [hTcb]; simp only []
+  cases hPPrev : tcbR.queuePPrev with
+  | none => simp
+  | some pprev =>
+    simp only []
+    generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
+    split
+    · simp
+    · cases pprev with
+      | endpointHead =>
+        simp only []
+        split
+        · simp
+        · cases hStore1 : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair1 =>
+          simp only []; simp only [hIsTail]
+          cases hStore2 : storeObject endpointId _ pair1.2 with
+          | error e => simp
+          | ok pair2 =>
+          simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+          | error e => simp
+          | ok st4 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEq⟩; subst hEq
+            have hNeTidEp : endpointId ≠ tid.toObjId :=
+              fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
+            rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hFinal,
+                storeObject_objects_eq _ _ endpointId _ hStore2]
+            refine ⟨_, rfl, ?_⟩
+            cases isReceiveQ <;> simp_all
+      | tcbNext prevTid =>
+        dsimp only
+        split
+        · simp
+        · cases hLookupP : lookupTcb st prevTid with
+          | none => simp
+          | some prevTcb =>
+          dsimp only [hLookupP]; split
+          · simp
+          · rename_i _ _ _ stAp heqAp
+            split at heqAp
+            · simp at heqAp
+            · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbR.queueNext with
+              | error e => simp [hLink0] at heqAp
+              | ok stPrev =>
+              simp [hLink0] at heqAp; subst heqAp
+              simp only [hIsTail]
+              cases hStore2 : storeObject endpointId _ stPrev with
+              | error e => simp
+              | ok pair2 =>
+              dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+              | error e => simp
+              | ok st4 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                have hNeTidEp : endpointId ≠ tid.toObjId :=
+                  fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
+                rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hFinal,
+                    storeObject_objects_eq _ _ endpointId _ hStore2]
+                refine ⟨_, rfl, ?_⟩
+                cases isReceiveQ <;> simp_all
+
+-- ============================================================================
+-- WS-L3/L3-A: Enqueue-dequeue round-trip theorems
+-- ============================================================================
+
+/-- WS-L3/L3-A1: After enqueue into an empty queue, the endpoint queue has
+head = some tid and tail = some tid. -/
+theorem endpointQueueEnqueue_empty_sets_head
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (ep : Endpoint)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hEmptyTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = none)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ else ep'.sendQ).head = some tid ∧
+      (if isReceiveQ then ep'.receiveQ else ep'.sendQ).tail = some tid := by
+  unfold endpointQueueEnqueue at hStep; revert hStep
+  rw [hObj]; simp only []
+  cases hLookup : lookupTcb st tid with
+  | none => simp
+  | some tcb =>
+    simp only []
+    split
+    · simp
+    · split
+      · simp
+      · generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
+        rw [show q.tail = none from by rw [← hQ]; exact hEmptyTail]
+        simp only []
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          cases hLink : storeTcbQueueLinks pair.2 tid none (some QueuePPrev.endpointHead) none with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            have hNe : endpointId ≠ tid.toObjId := fun h => by
+              rw [h] at hObj; rw [lookupTcb_some_objects st tid tcb hLookup] at hObj; cases hObj
+            have hEpPost := storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNe hLink
+            rw [hEpPost, storeObject_objects_eq _ _ endpointId _ hStore]
+            refine ⟨_, rfl, ?_, ?_⟩ <;> cases isReceiveQ <;> simp_all
+
+/-- WS-L3/L3-A2: After enqueue into an empty queue, the enqueued TCB has
+queueNext = none (single-element queue). -/
+theorem endpointQueueEnqueue_empty_queueNext_none
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (ep : Endpoint)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hEmptyTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = none)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queueNext = none := by
+  unfold endpointQueueEnqueue at hStep; revert hStep
+  rw [hObj]; simp only []
+  cases hLookup : lookupTcb st tid with
+  | none => simp
+  | some tcb =>
+    simp only []
+    split
+    · simp
+    · split
+      · simp
+      · generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
+        rw [show q.tail = none from by rw [← hQ]; exact hEmptyTail]
+        simp only []
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          cases hLink : storeTcbQueueLinks pair.2 tid none (some QueuePPrev.endpointHead) none with
+          | error e => simp
+          | ok st2 =>
+            simp only [Except.ok.injEq]
+            intro hEq; subst hEq
+            -- The store wrote tcbWithQueueLinks tcb none (some .endpointHead) none
+            -- so the resulting TCB has queueNext = none by definition
+            have hTcbForward := storeTcbQueueLinks_tcb_forward pair.2 st2 tid none
+              (some QueuePPrev.endpointHead) none
+            -- We need: the TCB at tid.toObjId has queueNext = none
+            -- lookupTcb succeeded during enqueue, so tid exists in pair.2
+            have hNe : endpointId ≠ tid.toObjId := fun h => by
+              rw [h] at hObj; rw [lookupTcb_some_objects st tid tcb hLookup] at hObj; cases hObj
+            have hTcbInPair : ∃ tcbP, pair.2.objects[tid.toObjId]? = some (.tcb tcbP) := by
+              rw [storeObject_objects_ne _ _ endpointId tid.toObjId _ hNe.symm hStore]
+              exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup⟩
+            obtain ⟨tcbP, hTcbP⟩ := hTcbInPair
+            obtain ⟨tcb'', hTcb''⟩ := hTcbForward tid.toObjId tcbP hLink hTcbP
+            -- tcb'' is tcbWithQueueLinks tcbP none (some .endpointHead) none
+            -- Its queueNext is none by definition of tcbWithQueueLinks
+            -- But we need to extract queueNext = none. Let's unfold.
+            unfold storeTcbQueueLinks at hLink
+            cases hLookup2 : lookupTcb pair.2 tid with
+            | none => simp [hLookup2] at hLink
+            | some tcb2 =>
+              rw [hLookup2] at hLink; simp only at hLink
+              cases hStore2 : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb2 none (some QueuePPrev.endpointHead) none)) pair.2 with
+              | error e => rw [hStore2] at hLink; simp at hLink
+              | ok pair2 =>
+                rw [hStore2] at hLink
+                have hEq2 := Except.ok.inj hLink; subst hEq2
+                rw [storeObject_objects_eq _ _ tid.toObjId _ hStore2]
+                exact ⟨_, rfl, rfl⟩
+
+/-- Helper: If `st.objects[tid.toObjId]?` contains a TCB and tid is not reserved,
+then `lookupTcb st tid` succeeds. -/
+private theorem lookupTcb_of_objects
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNotReserved : ¬tid.isReserved) :
+    lookupTcb st tid = some tcb := by
+  unfold lookupTcb
+  cases hRes : tid.isReserved
+  · simp [hObj]
+  · simp_all
+
+/-- Helper: If `endpointQueueEnqueue` succeeds with tid, then tid is not reserved. -/
+private theorem tid_not_reserved_of_enqueue
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ¬tid.isReserved := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        unfold lookupTcb at hLookup
+        cases hRes : tid.isReserved with
+        | false => simp
+        | true => simp [hRes] at hLookup
+
+/-- WS-L3/L3-A3: Composed round-trip theorem: if a thread is enqueued into an
+empty queue and then popHead is called on the same queue, popHead succeeds
+returning the same thread. -/
+theorem endpointQueueEnqueue_then_popHead_succeeds
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState) (ep : Endpoint)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hEmptyTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = none)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ tcb'' st'', endpointQueuePopHead endpointId isReceiveQ st' = .ok (tid, tcb'', st'') := by
+  obtain ⟨ep', hEp', hHead', _⟩ := endpointQueueEnqueue_empty_sets_head
+    endpointId isReceiveQ tid st st' ep hObj hEmptyTail hStep
+  obtain ⟨tcb', hTcb', hNextNone⟩ := endpointQueueEnqueue_empty_queueNext_none
+    endpointId isReceiveQ tid st st' ep hObj hEmptyTail hStep
+  have hNotReserved := tid_not_reserved_of_enqueue endpointId isReceiveQ tid st st' hStep
+  have hLookup' := lookupTcb_of_objects st' tid tcb' hTcb' hNotReserved
+  have hNe : tid.toObjId ≠ endpointId := fun h => by
+    rw [h] at hTcb'; rw [hEp'] at hTcb'; cases hTcb'
+  -- Unfold endpointQueuePopHead and step through computationally
+  unfold endpointQueuePopHead
+  -- Step 1: endpoint lookup → ep'
+  rw [hEp']
+  -- Step 2: queue head → some tid
+  -- After match reduces, q = if isReceiveQ then ep'.receiveQ else ep'.sendQ
+  -- and hHead' tells us q.head = some tid
+  simp only [hHead']
+  -- Step 3: lookupTcb → some tcb'
+  rw [hLookup']
+  -- Step 4: queueNext = none, so q' = {}, single element path
+  simp only [hNextNone]
+  -- Step 5: storeObject always succeeds
+  -- The ep constructed in popHead: if isReceiveQ then { ep' with receiveQ := {} }
+  --                                 else { ep' with sendQ := {} }
+  -- storeObject endpointId (.endpoint ...) st' produces some ((), st1)
+  cases hStoreEp : storeObject endpointId _ st' with
+  | error e => exfalso; unfold storeObject at hStoreEp; cases hStoreEp
+  | ok pair =>
+    obtain ⟨_, st1⟩ := pair
+    -- Step 6: since next = none, st2Result = .ok st1 (no next TCB update)
+    -- storeTcbQueueLinks needs lookupTcb st1 tid to succeed
+    -- TCB survives because tid.toObjId ≠ endpointId
+    have hTcbSt1 : st1.objects[tid.toObjId]? = some (.tcb tcb') := by
+      rw [storeObject_objects_ne st' st1 endpointId tid.toObjId _ hNe hStoreEp]
+      exact hTcb'
+    have hLookupSt1 := lookupTcb_of_objects st1 tid tcb' hTcbSt1 hNotReserved
+    -- Step 7: storeTcbQueueLinks succeeds
+    -- Reduce the match on Except.ok to expose storeTcbQueueLinks body
+    simp only []
+    -- Inline storeTcbQueueLinks: lookupTcb succeeds, storeObject always ok
+    unfold storeTcbQueueLinks
+    rw [hLookupSt1]; simp only []
+    -- Now match on storeObject result
+    cases hStore2 : storeObject tid.toObjId _ st1 with
+    | error e => exfalso; unfold storeObject at hStore2; cases hStore2
+    | ok pair2 =>
+      obtain ⟨_, st2⟩ := pair2
+      simp only []
+      exact ⟨tcb', st2, rfl⟩
 
 end SeLe4n.Kernel

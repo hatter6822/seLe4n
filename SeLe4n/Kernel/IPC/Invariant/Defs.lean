@@ -641,3 +641,31 @@ theorem notificationWait_result_wellFormed_wait
   · intro h; cases h
   · rfl
 
+-- ============================================================================
+-- WS-L3/L3-C: ipcState-queue consistency invariant
+-- ============================================================================
+
+/-- WS-L3/L3-C1: ipcState-endpoint consistency. If a thread's ipcState
+references an endpoint (blockedOnSend, blockedOnReceive, or blockedOnCall),
+that endpoint must exist in the system state. This captures the safety-
+critical forward direction of L-G03: no thread can be blocked on a
+nonexistent endpoint.
+
+Design note: we use the "endpoint exists" form rather than the stronger
+"thread is reachable from queue head" because: (1) it captures the key
+safety property, (2) endpointQueuePopHead doesn't update ipcState, creating
+a transient state where the thread is dequeued but still "blocked" until
+the caller sets it to .ready, and (3) the existence form composes cleanly
+with all queue and IPC operations. -/
+def ipcStateQueueConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    match tcb.ipcState with
+    | .blockedOnSend epId =>
+        ∃ ep, st.objects[epId]? = some (.endpoint ep)
+    | .blockedOnReceive epId =>
+        ∃ ep, st.objects[epId]? = some (.endpoint ep)
+    | .blockedOnCall epId =>
+        ∃ ep, st.objects[epId]? = some (.endpoint ep)
+    | _ => True
+

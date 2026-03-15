@@ -5,8 +5,8 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.16.9 (Lean v4.28.0).
-- **Codebase metrics:** 37,217 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,202 theorem/lemma declarations (zero sorry/axiom).
+- **Version:** 0.16.11 (Lean v4.28.0).
+- **Codebase metrics:** 38,186 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,224 theorem/lemma declarations (zero sorry/axiom).
 - **Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.
 - **Active workstream:** WS-L IPC subsystem audit & remediation (5 phases: L1–L5). All prior portfolios (WS-B through WS-K) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.

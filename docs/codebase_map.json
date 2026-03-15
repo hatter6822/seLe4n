@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "0c37457c8618e339b99a6cf7784c81ea1a73c836",
-      "tree_sha": "80a66e49ad40e8f5fd7aff1e2db38b85cb82dd57",
-      "committed_at_utc": "2026-03-15T09:12:52-04:00"
+      "branch": "claude/refine-proof-strengthening-XmfPP",
+      "commit_sha": "34dab217512ff55339cb4870975bf5a235f3ec57",
+      "tree_sha": "136cfd529eff76e46922bb202079201f81127d8c",
+      "committed_at_utc": "2026-03-15T16:04:35+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5c21ae376de0b95a27232a329fc63743c1e778517a6e8f69be030bdaf57654a6"
+    "source_digest": "6aee71807c2257d3e26e6cdd4e0ab23784cf6576afc606773104a8de06010619"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2244
+    "declaration_count": 2267
   },
   "readme_sync": {
-    "version": "0.16.10",
+    "version": "0.16.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 37220,
+    "production_loc": 38186,
     "test_files": 4,
     "test_loc": 4098,
-    "proved_theorem_lemma_decls": 1202,
+    "proved_theorem_lemma_decls": 1224,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3731,7 +3731,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Core",
       "path": "SeLe4n/Kernel/IPC/DualQueue/Core.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -3812,9 +3812,18 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_endpoint_forward",
+          "line": 174,
+          "called": [
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_ne"
+          ]
+        },
+        {
           "kind": "def",
           "name": "endpointQueuePopHead",
-          "line": 175,
+          "line": 193,
           "called": [
             "storeTcbQueueLinks"
           ]
@@ -3822,7 +3831,7 @@
         {
           "kind": "def",
           "name": "endpointQueueEnqueue",
-          "line": 213,
+          "line": 231,
           "called": [
             "storeTcbQueueLinks"
           ]
@@ -3832,7 +3841,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Transport",
       "path": "SeLe4n/Kernel/IPC/DualQueue/Transport.lean",
-      "declaration_count": 22,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -3854,62 +3863,74 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointQueuePopHead_endpoint_forward",
+          "line": 127,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "endpointQueuePopHead_notification_backward",
-          "line": 126,
+          "line": 194,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_tcb_forward",
-          "line": 184,
+          "line": 252,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_tcb_ipcState_backward",
-          "line": 241,
+          "line": 309,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_scheduler_eq",
-          "line": 306,
+          "line": 374,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_endpoint_backward_ne",
-          "line": 355,
+          "line": 423,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_endpoint_forward",
+          "line": 474,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_notification_backward",
-          "line": 406,
+          "line": 534,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_tcb_forward",
-          "line": 461,
+          "line": 589,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_tcb_ipcState_backward",
-          "line": 513,
+          "line": 641,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointQueueRemoveDual",
-          "line": 571,
+          "line": 699,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_scheduler_eq",
-          "line": 651,
+          "line": 779,
           "called": [
             "endpointQueueRemoveDual"
           ]
@@ -3917,7 +3938,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tcb_forward",
-          "line": 774,
+          "line": 902,
           "called": [
             "endpointQueueRemoveDual"
           ]
@@ -3925,7 +3946,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_endpoint_backward_ne",
-          "line": 904,
+          "line": 1032,
           "called": [
             "endpointQueueRemoveDual"
           ]
@@ -3933,7 +3954,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_notification_backward",
-          "line": 1024,
+          "line": 1152,
           "called": [
             "endpointQueueRemoveDual"
           ]
@@ -3941,7 +3962,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tcb_ipcState_backward",
-          "line": 1153,
+          "line": 1281,
           "called": [
             "endpointQueueRemoveDual"
           ]
@@ -3949,33 +3970,84 @@
         {
           "kind": "def",
           "name": "endpointSendDual",
-          "line": 1297,
+          "line": 1425,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointReceiveDual",
-          "line": 1343,
+          "line": 1471,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointCall",
-          "line": 1402,
+          "line": 1530,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointReply",
-          "line": 1446,
+          "line": 1574,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointReplyRecv",
-          "line": 1474,
+          "line": 1602,
           "called": [
             "endpointReceiveDual"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_tail_of_nonTail",
+          "line": 1643,
+          "called": [
+            "endpointQueueRemoveDual"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_tail_update",
+          "line": 1735,
+          "called": [
+            "endpointQueueRemoveDual"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_empty_sets_head",
+          "line": 1819,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_empty_queueNext_none",
+          "line": 1859,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupTcb_of_objects",
+          "line": 1920,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "tid_not_reserved_of_enqueue",
+          "line": 1931,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_then_popHead_succeeds",
+          "line": 1954,
+          "called": [
+            "endpointQueueEnqueue_empty_queueNext_none",
+            "endpointQueueEnqueue_empty_sets_head",
+            "lookupTcb_of_objects",
+            "tid_not_reserved_of_enqueue"
           ]
         }
       ]
@@ -4050,7 +4122,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Defs",
       "path": "SeLe4n/Kernel/IPC/Invariant/Defs.lean",
-      "declaration_count": 44,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -4371,6 +4443,12 @@
           "called": [
             "notificationQueueWellFormed"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcStateQueueConsistent",
+          "line": 660,
+          "called": []
         }
       ]
     },
@@ -4670,7 +4748,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 62,
+      "declaration_count": 74,
       "declarations": [
         {
           "kind": "namespace",
@@ -5141,6 +5219,99 @@
           "name": "endpointReplyRecv_preserves_ipcInvariantFull",
           "line": 2330,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_tcbQueueLinkIntegrity",
+          "line": 2348,
+          "called": [
+            "endpointQueuePopHead_preserves_dualQueueSystemInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity",
+          "line": 2359,
+          "called": [
+            "endpointQueueEnqueue_preserves_dualQueueSystemInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+          "line": 2388,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+          "line": 2416,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_ipcStateQueueConsistent",
+          "line": 2445,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_ipcStateQueueConsistent",
+          "line": 2455,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+          "line": 2469,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_ipcStateQueueConsistent",
+          "line": 2514,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_ipcStateQueueConsistent",
+          "line": 2557,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_ipcStateQueueConsistent",
+          "line": 2588,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_ipcStateQueueConsistent",
+          "line": 2642,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent",
+            "storeTcbPendingMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcStateQueueConsistent",
+          "line": 2714,
+          "called": [
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
         }
       ]
     },
