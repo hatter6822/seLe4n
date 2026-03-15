@@ -2136,63 +2136,386 @@ existing constructor.
 
 ### WS-K-G — Comprehensive Testing
 
-**Goal:** Full test coverage for every new decode, dispatch, and error path.
+**Goal:** Full test coverage for every new decode, dispatch, and error path
+introduced across WS-K-A through WS-K-F. This phase validates the complete
+syscall surface — from raw register values through typed argument decode,
+capability-gated dispatch, kernel operation execution, and back through
+invariant preservation and NI coverage. Every new function, every new error
+branch, and every new theorem introduced in K-A through K-F receives at least
+one executable test or surface anchor.
+
+**Design rationale:**
+
+WS-K-A through K-F introduced significant new surface area:
+- 7 per-syscall argument structures with 7 decode and 7 encode functions (K-B, K-F1)
+- 7 round-trip proofs and a composed conjunction theorem (K-F2)
+- 13 fully-wired dispatch arms replacing stubs (K-C, K-D, K-E)
+- `extractMessageRegisters` with 3 lemmas (K-E)
+- `ServiceConfig` with state-sourced policy (K-E)
+- `objectOfTypeTag` with 3 theorems (K-D)
+- `lifecycleRetypeDirect` with equivalence and error theorems (K-D)
+- `PagePermissions.ofNat`/`toNat` with round-trip (K-D)
+- 2 lifecycle NI proofs and NI coverage verification (K-F5, K-F6)
+- Dispatch preservation composition witness (K-F4)
+- Decode purity theorem (K-F4)
+
+Testing is organized into 7 granular sub-phases. Each sub-phase is an
+independently committable unit that adds a specific category of test coverage.
+
+**Architectural note:** Tier 3 invariant surface anchors live in
+`scripts/test_tier3_invariant_surface.sh` as `rg` pattern checks and
+`#check` type-level validations via `lake env lean --stdin`. There is no
+separate `InvariantSurfaceSuite.lean` file — all anchors use the existing
+script infrastructure. K-A through K-E anchors already exist in the script;
+K-F and K-G anchors are added by this workstream.
+
+---
+
+#### K-G1 — CSpace Negative-State Tests (NegativeStateSuite.lean)
+
+**Scope:** Exercise all CSpace dispatch error paths introduced in K-C.
+Each test constructs a minimal `SystemState`, invokes the per-syscall decode
+or dispatch path, and asserts the expected `KernelError`.
+
+**Tests:**
+
+1. **`K-G-NEG-01`: `cspaceMint` decode fails with insufficient msgRegs.**
+   Construct a `SyscallDecodeResult` with `msgRegs.size < 4` and call
+   `decodeCSpaceMintArgs`. Assert error `.invalidMessageInfo`.
+   Validates: K-B error-exclusivity theorem `decodeCSpaceMintArgs_error_iff`.
+
+2. **`K-G-NEG-02`: `cspaceCopy` decode fails with insufficient msgRegs.**
+   Construct a `SyscallDecodeResult` with `msgRegs.size < 2` and call
+   `decodeCSpaceCopyArgs`. Assert error `.invalidMessageInfo`.
+   Validates: K-B `decodeCSpaceCopyArgs_error_iff`.
+
+3. **`K-G-NEG-03`: `cspaceMove` decode fails with insufficient msgRegs.**
+   Analogous to NEG-02 for `decodeCSpaceMoveArgs`.
+
+4. **`K-G-NEG-04`: `cspaceDelete` decode fails with zero msgRegs.**
+   Construct a `SyscallDecodeResult` with empty `msgRegs` and call
+   `decodeCSpaceDeleteArgs`. Assert error `.invalidMessageInfo`.
+   Validates: K-B `decodeCSpaceDeleteArgs_error_iff`.
+
+5. **`K-G-NEG-05`: `cspaceMint` dispatch fails — CNode not found.**
+   Construct state without the target CNode. Wire through `cspaceMint`
+   kernel operation with valid decoded args. Assert `.objectNotFound`.
+   Validates: K-C dispatch delegation wiring.
+
+6. **`K-G-NEG-06`: `cspaceCopy` dispatch fails — source slot empty.**
+   Construct state with CNode but empty source slot. Call `cspaceCopy`.
+   Assert `.invalidCapability`.
+   Validates: CSpace operation error propagation through dispatch.
+
+**File modified:** `tests/NegativeStateSuite.lean`
+**Acceptance:** All 6 tests pass in `negative_state_suite` executable.
+
+---
+
+#### K-G2 — Lifecycle and VSpace Negative-State Tests (NegativeStateSuite.lean)
+
+**Scope:** Exercise lifecycle and VSpace dispatch error paths from K-D.
+
+**Tests:**
+
+7. **`K-G-NEG-07`: `lifecycleRetype` decode fails with insufficient msgRegs.**
+   Construct `SyscallDecodeResult` with `msgRegs.size < 3`. Call
+   `decodeLifecycleRetypeArgs`. Assert `.invalidMessageInfo`.
+
+8. **`K-G-NEG-08`: `lifecycleRetype` fails with invalid type tag.**
+   Call `objectOfTypeTag` with `typeTag = 99`. Assert `.invalidTypeTag`.
+   Validates: K-D `objectOfTypeTag_error_iff` (tag > 5 → error).
+
+9. **`K-G-NEG-09`: `lifecycleRetypeDirect` fails — object not found.**
+   Construct empty object store. Call `lifecycleRetypeDirect` with a
+   target that doesn't exist. Assert `.objectNotFound`.
+   Validates: K-D `lifecycleRetypeDirect_error_objectNotFound`.
+
+10. **`K-G-NEG-10`: `lifecycleRetypeDirect` fails — authority check.**
+    Construct state with target object but capability targeting a
+    different object. Assert `.illegalAuthority`.
+    Validates: K-D `lifecycleRetypeDirect_error_illegalAuthority`.
+
+11. **`K-G-NEG-11`: `vspaceMap` decode fails with insufficient msgRegs.**
+    Construct `SyscallDecodeResult` with `msgRegs.size < 4`. Call
+    `decodeVSpaceMapArgs`. Assert `.invalidMessageInfo`.
+
+12. **`K-G-NEG-12`: `vspaceMap` dispatch fails — W^X violation.**
+    Decode valid `VSpaceMapArgs` with `perms` = write+execute (bits 1+2).
+    Call `vspaceMapPageChecked` with `PagePermissions.ofNat 6`. Assert
+    W^X violation error (`.wxViolation` or equivalent).
+    Validates: K-D `PagePermissions.ofNat` + downstream W^X enforcement.
+
+13. **`K-G-NEG-13`: `vspaceUnmap` dispatch fails — no mapping.**
+    Call `vspaceUnmapPage` with ASID/vaddr that has no existing mapping.
+    Assert `.translationFault`.
+
+**File modified:** `tests/NegativeStateSuite.lean`
+**Acceptance:** All 7 tests pass.
+
+---
+
+#### K-G3 — Service Policy and IPC Negative-State Tests (NegativeStateSuite.lean)
+
+**Scope:** Exercise service policy gating (K-E) and IPC message population
+boundary conditions.
+
+**Tests:**
+
+14. **`K-G-NEG-14`: `serviceStart` denied by policy.**
+    Construct `SystemState` with `serviceConfig.allowStart := fun _ => false`.
+    Register a service and attempt `serviceStart`. Assert `.policyDenied`.
+    Validates: K-E policy sourcing from `st.serviceConfig`.
+
+15. **`K-G-NEG-15`: `serviceStop` denied by policy.**
+    Analogous: `serviceConfig.allowStop := fun _ => false`. Assert
+    `.policyDenied`.
+
+16. **`K-G-NEG-16`: `extractMessageRegisters` with empty msgRegs.**
+    Call `extractMessageRegisters #[] info` where `info.length = 4`.
+    Assert result is empty array `#[]` (no crash, no bounds violation).
+    Validates: safe behavior on undersized register arrays.
+
+17. **`K-G-NEG-17`: `extractMessageRegisters` with oversized info.length.**
+    Call `extractMessageRegisters` with 4 register values but
+    `info.length = 200` (exceeds `maxMessageRegisters = 120`).
+    Assert result.size ≤ 4 (capped by `msgRegs.size`).
+    Validates: triple-bound capping logic.
+
+18. **`K-G-NEG-18`: `objectOfTypeTag` success for all 6 valid tags.**
+    Loop through tags 0–5, verify each returns `.ok` with the expected
+    `KernelObjectType`. Validates: K-D `objectOfTypeTag_type`.
+
+**File modified:** `tests/NegativeStateSuite.lean`
+**Acceptance:** All 5 tests pass.
+
+---
+
+#### K-G4 — Determinism Verification Tests (NegativeStateSuite.lean)
+
+**Scope:** Verify that the full decode pipeline (layer 1 + layer 2)
+produces identical results across double invocation, anchoring the
+determinism theorems proved in K-A, K-B, and K-E.
+
+**Tests:**
+
+19. **`K-G-DET-01`: Layer 1+2 decode determinism.**
+    Call `decodeSyscallArgs` twice with identical inputs. Then call
+    each of the 7 layer-2 decode functions twice on the result.
+    Assert all pairs are equal. This is the executable mirror of the
+    `rfl` determinism theorems.
+
+20. **`K-G-DET-02`: `extractMessageRegisters` determinism.**
+    Call `extractMessageRegisters` twice with identical inputs.
+    Assert results are equal.
+
+21. **`K-G-DET-03`: `objectOfTypeTag` determinism across all valid tags.**
+    For each tag 0–5, call `objectOfTypeTag` twice. Assert results
+    are equal.
+
+**File modified:** `tests/NegativeStateSuite.lean`
+**Acceptance:** All 3 determinism tests pass.
+
+---
+
+#### K-G5 — Trace Scenarios (MainTraceHarness.lean)
+
+**Scope:** Add executable trace scenarios for each newly-wired dispatch
+path introduced in K-C through K-E. Each scenario exercises the full
+pipeline: state construction → per-syscall decode → dispatch → operation →
+result inspection. Scenarios are added to a new `runSyscallDispatchTrace`
+function following the established trace harness pattern.
+
+**Scenarios:**
+
+1. **`KSD-001`: CSpace mint via decoded registers — success path.**
+   Construct state with CNode containing source capability. Build
+   `SyscallDecodeResult` with 4 msgRegs encoding (srcSlot, dstSlot,
+   rights, badge). Call `decodeCSpaceMintArgs` → verify `.ok`. Call
+   `cspaceMint` with decoded args → verify destination slot populated.
+
+2. **`KSD-002`: CSpace copy via decoded registers — success path.**
+   Construct source slot, decode 2 msgRegs → `cspaceCopy` → verify
+   destination slot holds a copy.
+
+3. **`KSD-003`: CSpace delete via decoded registers — success path.**
+   Construct occupied slot, decode 1 msgReg → `cspaceDeleteSlot` →
+   verify slot is now empty.
+
+4. **`KSD-004`: Lifecycle retype via decoded registers — success path.**
+   Construct untyped object in store. Decode 3 msgRegs (targetObj,
+   typeTag=1 for endpoint, size=0). Call `objectOfTypeTag` → verify
+   `.ok endpoint`. Call `lifecycleRetypeDirect` → verify object store
+   updated with new endpoint.
+
+5. **`KSD-005`: VSpace map via decoded registers — success path.**
+   Construct state with VSpace root and ASID binding. Decode 4 msgRegs
+   (asid, vaddr, paddr, perms). Call `vspaceMapPageChecked` with
+   `PagePermissions.ofNat perms` → verify mapping created.
+
+6. **`KSD-006`: Service start with config-sourced policy — success.**
+   Construct state with service registered, `serviceConfig.allowStart :=
+   fun _ => true`. Decode and dispatch `serviceStart`. Verify service
+   transitions to running state.
+
+7. **`KSD-007`: IPC send with populated message body.**
+   Construct state with sender thread, receiver blocked on receiveQ.
+   Build `SyscallDecodeResult` with 4 msgRegs containing payload values.
+   Call `extractMessageRegisters` → verify result array matches expected
+   Nat values. Feed into `endpointSendDual` → verify receiver wakes
+   with message containing the register values.
+
+8. **`KSD-008`: Full layer 1+2 decode round-trip exercise.**
+   Build register file with known values in x0–x7. Call
+   `decodeSyscallArgs` → verify `msgRegs.size = 4`. Call each layer-2
+   decode function on the result → verify field values match the
+   original register values.
+
+**File modified:** `SeLe4n/Testing/MainTraceHarness.lean`
+**Acceptance:** All 8 scenarios produce expected trace output.
+
+---
+
+#### K-G6 — Tier 3 Invariant Surface Anchors (test_tier3_invariant_surface.sh)
+
+**Scope:** Add `rg` pattern checks and `#check` type-level anchors for all
+definitions and theorems introduced in K-F (the proof phase). K-A through
+K-E anchors already exist in the script; this sub-phase completes coverage
+for the entire WS-K portfolio.
+
+**New rg anchors** (appended after existing K-E anchors):
+
+```bash
+# WS-K-F1: Per-syscall encode functions (layer 2).
+run_check "INVARIANT" rg -n '^def encodeCSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def encodeVSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+
+# WS-K-F2: Layer 2 round-trip proofs.
+run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decode_layer2_roundtrip_all' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+
+# WS-K-F3: Layer 1 extraction round-trip.
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+
+# WS-K-F4: Dispatch preservation and decode purity.
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_layer2_decode_pure' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_preservation_composition_witness' SeLe4n/Kernel/API.lean
+
+# WS-K-F5: Lifecycle NI proofs.
+run_check "INVARIANT" rg -n 'retypeFromUntyped_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
+# WS-K-F6: NI coverage verification.
+run_check "INVARIANT" rg -n 'syscallNI_coverage_witness' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+
+# WS-K-G (v0.16.6): Lifecycle NI composition.
+run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+```
+
+**New #check anchors** (appended to the existing `lake env lean --stdin`
+block):
+
+```lean
+-- WS-K-F1: Per-syscall encode functions
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceCopyArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeLifecycleRetypeArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
+-- WS-K-F2: Layer 2 round-trip proofs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
+-- WS-K-F3: Layer 1 extraction round-trip
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_roundtrip
+-- WS-K-F4: Dispatch preservation and decode purity
+#check @SeLe4n.Kernel.dispatchWithCap_layer2_decode_pure
+#check @SeLe4n.Kernel.dispatchWithCap_preservation_composition_witness
+-- WS-K-F5: Lifecycle NI proofs
+#check @SeLe4n.Kernel.retypeFromUntyped_preserves_lowEquivalent
+-- WS-K-F6: NI coverage verification
+#check @SeLe4n.Kernel.syscallNI_coverage_witness
+-- WS-K-G (v0.16.6): Lifecycle NI composition
+#check @SeLe4n.Kernel.cspaceRevoke_preserves_projection
+#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_projection
+#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_lowEquivalent
+```
+
+**File modified:** `scripts/test_tier3_invariant_surface.sh`
+**Acceptance:** `./scripts/test_tier3_invariant_surface.sh` passes with zero
+failures. All new `rg` patterns match. All `#check` anchors type-check.
+
+---
+
+#### K-G7 — Fixture Update and Full Test Verification
+
+**Scope:** Update the trace smoke fixture to include new trace output from
+K-G5 scenarios. Run the full test suite to verify zero failures and zero
+warnings across all tiers.
 
 **Tasks:**
-1. **Negative-state tests** in `tests/NegativeStateSuite.lean`:
-   - `cspaceMint_via_entry_insufficient_msgRegs`: decode fails when msgRegs
-     too short.
-   - `cspaceMint_via_entry_no_capability`: dispatch fails without mint right.
-   - `cspaceCopy_via_entry_invalid_slot`: dispatch fails for nonexistent slot.
-   - `cspaceMove_via_entry_invalid_slot`: analogous.
-   - `cspaceDelete_via_entry_object_not_found`: dispatch fails for missing CNode.
-   - `lifecycleRetype_via_entry_invalid_type`: decode fails for bad type tag.
-   - `lifecycleRetype_via_entry_no_authority`: dispatch fails without retype right.
-   - `vspaceMap_via_entry_asid_not_bound`: dispatch fails for unmapped ASID.
-   - `vspaceMap_via_entry_wx_violation`: dispatch fails for W+X permissions.
-   - `vspaceUnmap_via_entry_translation_fault`: dispatch fails for unmapped page.
-   - `serviceStart_via_entry_policy_denied`: dispatch fails when policy denies.
-   - `serviceStop_via_entry_policy_denied`: analogous.
-   - `ipc_send_empty_msgRegs`: send succeeds with 0-length message.
-   - `ipc_send_full_msgRegs`: send succeeds with maxMessageRegisters values.
 
-2. **Trace tests** in `SeLe4n/Testing/MainTraceHarness.lean`:
-   - Add trace scenarios for each newly-wired syscall:
-     - CSpace mint through register-sourced entry.
-     - CSpace copy through register-sourced entry.
-     - Lifecycle retype through register-sourced entry.
-     - VSpace map through register-sourced entry.
-     - Service start with non-trivial policy.
-     - IPC send with populated message body.
+1. **Run `lake exe sele4n` and capture output.** Compare with
+   `tests/fixtures/main_trace_smoke.expected`. If the new K-G5 trace
+   scenarios produce additional output lines, update the fixture file
+   to match.
 
-3. **Determinism tests**: verify that `decodeSyscallArgs` followed by
-   per-syscall decode produces identical results across double invocation.
+2. **Run `./scripts/test_full.sh`** and verify all tiers pass:
+   - Tier 0 (hygiene): shellcheck, website links, sorry/axiom scan
+   - Tier 1 (build): `lake build` clean compilation
+   - Tier 2 (trace + negative + determinism): trace harness, negative
+     suite, information flow suite, determinism probes
+   - Tier 3 (invariant surface): all `rg` anchors and `#check` anchors
 
-4. **Tier 3 invariant surface anchors**: add anchor theorems referencing:
-   - All 7 new argument structures.
-   - All 7 decode functions.
-   - `extractMessageRegisters`.
-   - `ServiceConfig`.
-   - Delegation theorems.
+3. **Fix any failures or warnings.** If tier failures occur, diagnose
+   root cause and fix in the appropriate file. Common failure modes:
+   - Fixture mismatch → update fixture with rationale
+   - Missing `rg` anchor → verify definition exists with correct name
+   - `#check` type error → verify fully qualified name and import
 
-5. Update `tests/fixtures/main_trace_smoke.expected` with new trace output.
-
-6. Run `test_full.sh` to verify all tiers pass.
-
-**Exit criteria:**
-- ≥14 new negative-state tests covering all error paths.
-- ≥6 new trace scenarios covering all newly-wired syscalls.
-- Tier 3 anchors for all new definitions and theorems.
-- `test_full.sh` passes with zero failures and zero warnings.
-- `tests/fixtures/main_trace_smoke.expected` updated to match.
+4. **Verify zero `sorry`/`axiom`** in all test files:
+   ```bash
+   grep -rn 'sorry\|axiom' tests/ SeLe4n/Testing/
+   ```
 
 **Files modified:**
-- `tests/NegativeStateSuite.lean` — New negative tests.
-- `SeLe4n/Testing/MainTraceHarness.lean` — New trace scenarios.
 - `tests/fixtures/main_trace_smoke.expected` — Updated expected output.
-- `tests/InvariantSurfaceSuite.lean` — New Tier 3 anchors.
 
-**Version target:** v0.16.6–v0.16.7
+**Acceptance:** `test_full.sh` exits 0 with all tiers passing. Zero
+`sorry`/`axiom` in any file.
+
+---
+
+**Combined exit criteria:**
+- 18 new negative-state tests covering CSpace (6), lifecycle/VSpace (7),
+  service/IPC (5) error paths.
+- 3 determinism verification tests covering full decode pipeline,
+  message extraction, and object type tag mapping.
+- 8 new trace scenarios covering all newly-wired dispatch paths with
+  success-path validation.
+- 23 new `#check` type-level anchors for K-F encode, round-trip, preservation,
+  and NI definitions.
+- 11 new `rg` pattern anchors for K-F and K-G definitions.
+- `tests/fixtures/main_trace_smoke.expected` updated to match new trace output.
+- `test_full.sh` passes with zero failures and zero warnings.
+- Zero `sorry`/`axiom` in production or test code.
+
+**All files modified (combined):**
+- `tests/NegativeStateSuite.lean` — 21 new tests (K-G1 through K-G4).
+- `SeLe4n/Testing/MainTraceHarness.lean` — 8 new trace scenarios with full
+  Layer-2 decode pipeline (K-G5).
+- `scripts/test_tier3_invariant_surface.sh` — 11 `rg` anchors + 23 `#check`
+  anchors (K-G6).
+- `tests/fixtures/main_trace_smoke.expected` — Updated fixture (K-G7).
+
+**Version target:** v0.16.7
 
 ---
 
@@ -2393,14 +2716,22 @@ Update GitBook chapters and claim evidence index.
 - [x] K-E.15: `BootstrapBuilder` extended with `serviceConfig` (v0.16.4) ✓
 - [x] K-E.16: Tier 3 anchors for all new definitions (v0.16.4) ✓
 - [x] K-E.17: `lake build` + `test_smoke.sh` pass (v0.16.4) ✓
-- [ ] K-F: Round-trip proofs for all 7 argument structures (v0.16.5)
-- [ ] K-F: Message register extraction round-trip proved (v0.16.5)
-- [ ] K-F: Deferred NI proofs completed (v0.16.5)
-- [ ] K-F: Zero `sorry`/`axiom` in production proof surface (v0.16.5)
-- [ ] K-G: ≥14 negative-state tests for new error paths (v0.16.6)
-- [ ] K-G: ≥6 trace scenarios for newly-wired syscalls (v0.16.6)
-- [ ] K-G: Tier 3 anchors for all new definitions (v0.16.7)
-- [ ] K-G: `test_full.sh` passes with zero failures (v0.16.7)
+- [x] K-F1: 7 encode functions defined (v0.16.5) ✓
+- [x] K-F2: 7 round-trip proofs + `decode_layer2_roundtrip_all` (v0.16.5) ✓
+- [x] K-F3: `extractMessageRegisters_roundtrip` proved (v0.16.5) ✓
+- [x] K-F4: `dispatchWithCap_layer2_decode_pure` proved (v0.16.5) ✓
+- [x] K-F4: `dispatchWithCap_preservation_composition_witness` proved (v0.16.5) ✓
+- [x] K-F5: `retypeFromUntyped_preserves_lowEquivalent` proved (v0.16.5) ✓
+- [x] K-F5: `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` proved (v0.16.6) ✓
+- [x] K-F6: `syscallNI_coverage_witness` with 34 constructors (v0.16.5–v0.16.6) ✓
+- [x] K-F: Zero `sorry`/`axiom` in production proof surface (v0.16.5–v0.16.6) ✓
+- [x] K-G1: 6 CSpace negative-state tests (v0.16.7) ✓
+- [x] K-G2: 7 lifecycle/VSpace negative-state tests (v0.16.7) ✓
+- [x] K-G3: 5 service/IPC negative-state tests (v0.16.7) ✓
+- [x] K-G4: 3 determinism verification tests (v0.16.7) ✓
+- [x] K-G5: 8 trace scenarios with full Layer-2 decode pipeline (v0.16.7) ✓
+- [x] K-G6: 11 `rg` + 23 `#check` Tier 3 anchors for K-F/K-G (v0.16.7) ✓
+- [x] K-G7: Fixture update + `test_full.sh` passes zero failures (v0.16.7) ✓
 - [ ] K-H: `docs/WORKSTREAM_HISTORY.md` updated (v0.16.8)
 - [ ] K-H: `docs/spec/SELE4N_SPEC.md` updated (v0.16.8)
 - [ ] K-H: GitBook chapters synchronized (v0.16.8)

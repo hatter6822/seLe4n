@@ -1260,7 +1260,7 @@ functions depend only on `msgRegs` (two results with same `msgRegs` produce same
 composition, and `step_preserves_projection` totality over all 33 constructors.
 Zero sorry/axiom.
 
-**Completed — K-G (v0.16.6) — Lifecycle NI proof completion and deferred proof resolution:**
+**Completed — K-G (v0.16.7) — Lifecycle NI proof completion and deferred proof resolution:**
 `cspaceRevoke_preserves_projection` extracted as standalone theorem for compositional reuse.
 `lifecycleRevokeDeleteRetype_preserves_projection` chains projection preservation across
 three sub-operations (`cspaceRevoke`, `cspaceDeleteSlot`, `lifecycleRetypeObject`).

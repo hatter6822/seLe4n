@@ -886,6 +886,31 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_populates_msg' SeLe4n
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_populates_msg' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
 
+# WS-K-F1: Per-syscall encode functions (layer 2).
+run_check "INVARIANT" rg -n 'def encodeCSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodeVSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+
+# WS-K-F2: Layer 2 round-trip proofs.
+run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decode_layer2_roundtrip_all' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+
+# WS-K-F3: Layer 1 extraction round-trip.
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+
+# WS-K-F4: Dispatch preservation and decode purity.
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_layer2_decode_pure' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_preservation_composition_witness' SeLe4n/Kernel/API.lean
+
+# WS-K-F5: Lifecycle NI proofs.
+run_check "INVARIANT" rg -n 'retypeFromUntyped_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
+# WS-K-F6: NI coverage verification.
+run_check "INVARIANT" rg -n 'syscallNI_coverage_witness' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+
+# WS-K-G (v0.16.7): Lifecycle NI composition.
+run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
@@ -978,6 +1003,36 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.dispatchWithCap_send_populates_msg
 #check @SeLe4n.Kernel.dispatchWithCap_call_populates_msg
 #check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg
+-- WS-K-F1: Per-syscall encode functions
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceCopyArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeLifecycleRetypeArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
+-- WS-K-F2: Layer 2 round-trip proofs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
+-- WS-K-F3: Layer 1 extraction round-trip
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_roundtrip
+-- WS-K-F4: Dispatch preservation and decode purity
+#check @SeLe4n.Kernel.dispatchWithCap_layer2_decode_pure
+#check @SeLe4n.Kernel.dispatchWithCap_preservation_composition_witness
+-- WS-K-F5: Lifecycle NI proofs
+#check @SeLe4n.Kernel.retypeFromUntyped_preserves_lowEquivalent
+-- WS-K-F6: NI coverage verification
+#check @SeLe4n.Kernel.syscallNI_coverage_witness
+-- WS-K-G (v0.16.7): Lifecycle NI composition
+#check @SeLe4n.Kernel.cspaceRevoke_preserves_projection
+#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_projection
+#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_lowEquivalent
 EOF'
 
 finalize_report
