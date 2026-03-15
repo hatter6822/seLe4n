@@ -1017,18 +1017,23 @@ they operate on the `SyscallDecodeResult` value and never access or modify
 and any decode success passes the original state unmodified to the delegated
 kernel operation.
 
-Stated as: for any `SyscallDecodeResult`, the Layer 2 decode result depends
-only on `decoded.msgRegs`, not on any system state. -/
+Proved by showing that two `SyscallDecodeResult` values with the same
+`msgRegs` field produce identical decode results for all 7 structures —
+confirming that decode depends only on `msgRegs`, not on `capAddr`,
+`msgInfo`, or `syscallId`. -/
 theorem dispatchWithCap_layer2_decode_pure
-    (decoded : SyscallDecodeResult) :
-    (decodeCSpaceMintArgs decoded = decodeCSpaceMintArgs decoded) ∧
-    (decodeCSpaceCopyArgs decoded = decodeCSpaceCopyArgs decoded) ∧
-    (decodeCSpaceMoveArgs decoded = decodeCSpaceMoveArgs decoded) ∧
-    (decodeCSpaceDeleteArgs decoded = decodeCSpaceDeleteArgs decoded) ∧
-    (decodeLifecycleRetypeArgs decoded = decodeLifecycleRetypeArgs decoded) ∧
-    (decodeVSpaceMapArgs decoded = decodeVSpaceMapArgs decoded) ∧
-    (decodeVSpaceUnmapArgs decoded = decodeVSpaceUnmapArgs decoded) :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    (d₁ d₂ : SyscallDecodeResult) (hRegs : d₁.msgRegs = d₂.msgRegs) :
+    (decodeCSpaceMintArgs d₁ = decodeCSpaceMintArgs d₂) ∧
+    (decodeCSpaceCopyArgs d₁ = decodeCSpaceCopyArgs d₂) ∧
+    (decodeCSpaceMoveArgs d₁ = decodeCSpaceMoveArgs d₂) ∧
+    (decodeCSpaceDeleteArgs d₁ = decodeCSpaceDeleteArgs d₂) ∧
+    (decodeLifecycleRetypeArgs d₁ = decodeLifecycleRetypeArgs d₂) ∧
+    (decodeVSpaceMapArgs d₁ = decodeVSpaceMapArgs d₂) ∧
+    (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
+  simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
+    decodeCSpaceDeleteArgs, decodeLifecycleRetypeArgs, decodeVSpaceMapArgs,
+    decodeVSpaceUnmapArgs, requireMsgReg, hRegs]
+  trivial
 
 /-- WS-K-F4: Composition verification — `syscallEntry_preserves_proofLayerInvariantBundle`
 composes decode purity (no state change), read-only cap lookup (state unchanged),

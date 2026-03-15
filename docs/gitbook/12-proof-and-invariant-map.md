@@ -1252,10 +1252,12 @@ unchanged. Zero sorry/axiom. 11 new Tier 3 anchors.
 7 encode functions (`encodeCSpaceMintArgs` through `encodeVSpaceUnmapArgs`) completing
 encode/decode symmetry. 7 round-trip theorems via structure eta reduction (`rcases + rfl`)
 with `decode_layer2_roundtrip_all` composed conjunction. `extractMessageRegisters_roundtrip`
-closes layer-1 extraction gap. `dispatchWithCap_layer2_decode_pure` determinism witness
-and `dispatchWithCap_preservation_composition_witness` structural preservation theorem.
+closes layer-1 extraction gap. `dispatchWithCap_layer2_decode_pure` proves decode
+functions depend only on `msgRegs` (two results with same `msgRegs` produce same decode).
+`dispatchWithCap_preservation_composition_witness` structural preservation theorem.
 `retypeFromUntyped_preserves_lowEquivalent` NI theorem (two-stage store composition).
-`syscallNI_coverage_witness` for decode-error and dispatch NI trace composition.
+`syscallNI_coverage_witness` witnesses decode-error NI step availability, step→trace
+composition, and `step_preserves_projection` totality over all 33 constructors.
 Zero sorry/axiom.
 
 **Remaining (K-G through K-H):**

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-proofs-workstream-7wJPV",
-      "commit_sha": "ef2910fe8e099b453f95f1368105b14cacc4aaab",
-      "tree_sha": "a037ac24bfb991ae8676024af39292c9de9606b7",
-      "committed_at_utc": "2026-03-15T01:42:50+00:00"
+      "commit_sha": "5fafc0b2abe2dd96542d3d21c643eea4ae88b933",
+      "tree_sha": "0938c74a4bcea494231f57cb3ea6882c4c355bda",
+      "committed_at_utc": "2026-03-15T02:17:20+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d11b8d68353b9be0cee88abab7c16171d371195802bcaf0f62a79b54e782062d"
+    "source_digest": "c9e612207823e7f3bc99b5c106e891361c1afe0098e32a17e8bf26a4b6290cbf"
   },
   "summary": {
     "module_count": 73,
@@ -27,7 +27,7 @@
     "version": "0.16.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 36868,
+    "production_loc": 36883,
     "test_files": 4,
     "test_loc": 3755,
     "proved_theorem_lemma_decls": 1195,
@@ -511,13 +511,13 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1022,
+          "line": 1024,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1045,
+          "line": 1050,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -6075,10 +6075,11 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 655,
+          "line": 661,
           "called": [
             "NonInterferenceStep",
-            "NonInterferenceTrace"
+            "NonInterferenceTrace",
+            "step_preserves_projection"
           ]
         }
       ]
