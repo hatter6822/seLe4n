@@ -74,15 +74,22 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     (`validateRegBound_ok_iff`, `validateRegBound_error_iff`),
   - self-contained module: imports only `Model.State`, no kernel subsystem
     dependencies (WS-J1-B).
-- `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C):
+- `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
   - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
-  - `dispatchWithCap` — per-syscall routing for all 13 kernel operations,
+  - `dispatchWithCap` — per-syscall routing for all 13 kernel operations; accepts
+    `SyscallDecodeResult` (WS-K-C); all 13 syscalls fully dispatch with zero
+    `.illegalState` stubs (WS-K-C/K-D); `ServiceConfig`-sourced policy for
+    service start/stop (WS-K-E); IPC message body population from decoded
+    registers via `extractMessageRegisters` (WS-K-E),
   - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
   - soundness theorems: `syscallEntry_requires_valid_decode`,
     `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
-    `lookupThreadRegisterContext_state_unchanged`.
+    `lookupThreadRegisterContext_state_unchanged`,
+  - 12 delegation theorems (WS-K-C/K-D/K-E): 4 CSpace + 3 lifecycle/VSpace +
+    2 service + 3 IPC message population,
+  - `dispatchWithCap_layer2_decode_pure`, `dispatchWithCap_preservation_composition_witness` (WS-K-F).
 
 ### Model
 

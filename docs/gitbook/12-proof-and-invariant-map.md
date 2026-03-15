@@ -1192,7 +1192,7 @@ Tier 3 invariant surface anchors:
 - Test literals in `NegativeStateSuite.lean` migrated from bare `Nat` to explicit constructor syntax
 - **WS-J1 portfolio fully completed**
 
-**WS-K full syscall dispatch completion (v0.16.3–v0.16.8, in progress):**
+**WS-K full syscall dispatch completion (v0.16.0–v0.16.8, PORTFOLIO COMPLETE):**
 
 WS-K extends the WS-J1 decode layer to complete the full syscall surface.
 
@@ -1269,6 +1269,42 @@ deferred `lifecycleRevokeDeleteRetype` NI proof. `NonInterferenceStep` extended 
 `lifecycleRevokeDeleteRetype` constructor (34 total). `syscallNI_coverage_witness` updated
 to reflect 34-constructor exhaustive match. Zero sorry/axiom.
 
-**Remaining (K-H):**
-- Documentation sync and workstream closeout
-- See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
+**Completed — K-H (v0.16.8) — Documentation sync and workstream closeout:**
+All project documentation synchronized with WS-K implementation. Metrics
+regenerated (`docs/codebase_map.json`). Version bumped to v0.16.8.
+WS-K portfolio fully complete (K-A through K-H, v0.16.0–v0.16.8).
+See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+
+### WS-K proof surface summary
+
+The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
+
+**Layer-2 round-trip proofs** (SyscallArgDecode.lean, K-F):
+- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 6 analogous pairs)
+- `decode_layer2_roundtrip_all` — composed conjunction of all 7 round-trips
+
+**Layer-1 extraction round-trip** (RegisterDecode.lean, K-F):
+- `extractMessageRegisters_roundtrip` — closes layer-1 extraction gap
+
+**Delegation theorems** (API.lean, K-C/K-D/K-E):
+- 4 CSpace: `dispatchWithCap_cspaceMint_delegates`, `_cspaceCopy_delegates`, `_cspaceMove_delegates`, `_cspaceDelete_delegates`
+- 3 Lifecycle/VSpace: `dispatchWithCap_lifecycleRetype_delegates`, `_vspaceMap_delegates`, `_vspaceUnmap_delegates`
+- 2 Service: `dispatchWithCap_serviceStart_uses_config`, `_serviceStop_uses_config`
+- 3 IPC: `dispatchWithCap_send_populates_msg`, `_call_populates_msg`, `_reply_populates_msg`
+
+**Preservation and NI** (API.lean, Operations.lean, Composition.lean, K-F/K-G):
+- `dispatchWithCap_layer2_decode_pure` — decode depends only on `msgRegs`
+- `dispatchWithCap_preservation_composition_witness` — structural preservation
+- `retypeFromUntyped_preserves_lowEquivalent` — NI for untyped retype
+- `cspaceRevoke_preserves_projection` — standalone revoke projection preservation
+- `lifecycleRevokeDeleteRetype_preserves_projection` — chained 3-op projection
+- `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — two-run NI
+- `syscallNI_coverage_witness` — exhaustive 34-constructor match
+
+**Error-exclusivity theorems** (SyscallArgDecode.lean, K-B):
+- 7 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeVSpaceUnmapArgs_error_iff`
+
+**Type tag and permissions** (Lifecycle/Operations.lean, Structures.lean, K-D):
+- `objectOfTypeTag_type`, `objectOfTypeTag_error_iff`, `objectOfTypeTag_deterministic`
+- `PagePermissions_ofNat_toNat_roundtrip`
+- `lifecycleRetypeDirect_equivalence`, `lifecycleRetypeDirect_error`
