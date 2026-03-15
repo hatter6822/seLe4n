@@ -15,7 +15,11 @@
   preserves tail, tail removal characterization
 - L3-E: Identified as already resolved (pre-existing in `CallReplyRecv.lean:797`)
 - Refined WS-L3 workstream plan with granular subtask breakdown
-- Regenerated `docs/codebase_map.json` — 37,866 production LoC, 1,216 proved
+- L3-C3: high-level `ipcStateQueueConsistent` preservation theorems for
+  `endpointSendDual`, `endpointReceiveDual`, `endpointReply` — plus 5
+  sub-operation helpers (`ensureRunnable`, `removeRunnable`,
+  `storeTcbIpcStateAndMessage`, `storeTcbIpcState`, `storeTcbPendingMessage`)
+- Regenerated `docs/codebase_map.json` — 38,186 production LoC, 1,224 proved
   declarations
 - Bumped `lakefile.toml` version to 0.16.11
 - Zero sorry/axiom; all proofs machine-checked; test_full.sh passes

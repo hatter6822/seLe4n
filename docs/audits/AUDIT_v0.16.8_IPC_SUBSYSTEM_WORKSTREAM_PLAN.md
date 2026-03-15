@@ -805,8 +805,9 @@ Add preservation theorems to `Invariant/Structural.lean`:
 
 **L3-C3: Preservation for high-level IPC operations**
 
-Add preservation theorems to `EndpointPreservation.lean` and
-`CallReplyRecv.lean`:
+Add preservation theorems to `Structural.lean` (required by import
+dependency chain — these theorems depend on helpers from both
+`EndpointPreservation.lean` and `CallReplyRecv.lean`):
 - `endpointSendDual_preserves_ipcStateQueueConsistent`
 - `endpointReceiveDual_preserves_ipcStateQueueConsistent`
 - `endpointReply_preserves_ipcStateQueueConsistent`
@@ -815,13 +816,17 @@ Proof strategy: each operation either (a) enqueues a thread and sets its
 ipcState atomically (blockedOn* + enqueue), or (b) dequeues a thread and
 sets it to `.ready` (removing the forward obligation). Case (a) adds a
 new entry that trivially satisfies the forward implication. Case (b)
-removes the obligation by setting `.ready`.
+removes the obligation by setting `.ready`. Sub-operation helpers
+(`storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent`,
+`storeTcbIpcState_preserves_ipcStateQueueConsistent`,
+`storeTcbPendingMessage_preserves_ipcStateQueueConsistent`,
+`ensureRunnable_preserves_ipcStateQueueConsistent`,
+`removeRunnable_preserves_ipcStateQueueConsistent`) compose to cover
+all intermediate state transitions.
 
 **Files modified**:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — invariant definition + helper
-- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — queue-op preservation
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — high-level preservation
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` — high-level preservation
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — queue-op + high-level preservation
 
 **Exit evidence**:
 - `lake build` succeeds
@@ -1065,7 +1070,7 @@ undocumented.
 | L-D04 | WS-L2 | L2-A (S2–S4), L2-B (S1) | **COMPLETED** (v0.16.10) |
 | L-G01 | WS-L3 | L3-A | **COMPLETED** (v0.16.11) |
 | L-G02 | WS-L3 | L3-B | **COMPLETED** (v0.16.11) |
-| L-G03 | WS-L3 | L3-C | **COMPLETED** (v0.16.11) — C1 definition + C2 queue-op preservation; C3 high-level deferred |
+| L-G03 | WS-L3 | L3-C | **COMPLETED** (v0.16.11) — C1 definition + C2 queue-op preservation + C3 high-level preservation (all 3 theorems) |
 | L-G04 | WS-L3 | L3-D | **COMPLETED** (v0.16.11) |
 | L-G05 | WS-L3 | L3-E | **ALREADY RESOLVED** (pre-existing in `CallReplyRecv.lean:797`) |
 | L-T01 | WS-L4 | L4-A | Planned |

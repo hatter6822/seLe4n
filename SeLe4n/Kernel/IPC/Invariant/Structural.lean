@@ -2436,4 +2436,324 @@ theorem endpointQueueEnqueue_preserves_ipcStateQueueConsistent
     rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
     exact endpointQueueEnqueue_endpoint_forward endpointId isReceiveQ enqueueTid st st' epId ep hStep hEp
 
+-- ============================================================================
+-- WS-L3/L3-C3: ipcStateQueueConsistent preservation — sub-operation helpers
+-- ============================================================================
+
+/-- WS-L3/L3-C3 helper: `ensureRunnable` preserves `ipcStateQueueConsistent`.
+`ensureRunnable` only modifies the scheduler (run queue), not objects. -/
+theorem ensureRunnable_preserves_ipcStateQueueConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent (ensureRunnable st tid) := by
+  unfold ipcStateQueueConsistent
+  simp only [ensureRunnable_preserves_objects]
+  exact hInv
+
+/-- WS-L3/L3-C3 helper: `removeRunnable` preserves `ipcStateQueueConsistent`.
+`removeRunnable` only modifies the scheduler, not objects. -/
+theorem removeRunnable_preserves_ipcStateQueueConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent (removeRunnable st tid) := by
+  unfold ipcStateQueueConsistent
+  simp only [removeRunnable_preserves_objects]
+  exact hInv
+
+/-- WS-L3/L3-C3 helper: `storeTcbIpcStateAndMessage` preserves
+`ipcStateQueueConsistent` when the new ipcState satisfies the invariant
+obligation in the pre-state. Specifically:
+- If ipc = blockedOnSend/Receive/Call epId, then the endpoint at epId
+  must exist in the pre-state (the operation preserves it).
+- If ipc = ready/blockedOnReply/blockedOnNotification, no obligation. -/
+theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hInv : ipcStateQueueConsistent st)
+    (hNewIpc : match ipc with
+      | .blockedOnSend epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | .blockedOnReceive epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | .blockedOnCall epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | _ => True) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  by_cases hEq : tid'.toObjId = tid.toObjId
+  · -- Target TCB: ipcState was set to `ipc`
+    have hIpcEq := storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hStep tcb' (hEq ▸ hTcb')
+    rw [hIpcEq]
+    cases ipc with
+    | ready | blockedOnNotification _ | blockedOnReply _ _ => trivial
+    | blockedOnSend epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid _ msg epId ep hEp hStep⟩
+    | blockedOnReceive epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid _ msg epId ep hEp hStep⟩
+    | blockedOnCall epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid _ msg epId ep hEp hStep⟩
+  · -- Non-target TCB: object unchanged, pre-state invariant applies
+    have hObjEq := storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg tid'.toObjId hEq hStep
+    rw [hObjEq] at hTcb'
+    have hPre := hInv tid' tcb' hTcb'
+    match h : tcb'.ipcState with
+    | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+    | .blockedOnSend epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid ipc msg epId ep hEp hStep⟩
+    | .blockedOnReceive epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid ipc msg epId ep hEp hStep⟩
+    | .blockedOnCall epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid ipc msg epId ep hEp hStep⟩
+
+/-- WS-L3/L3-C3 helper: `storeTcbIpcState` preserves `ipcStateQueueConsistent`
+under the same conditions as `storeTcbIpcStateAndMessage`. -/
+theorem storeTcbIpcState_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hStep : storeTcbIpcState st tid ipc = .ok st')
+    (hInv : ipcStateQueueConsistent st)
+    (hNewIpc : match ipc with
+      | .blockedOnSend epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | .blockedOnReceive epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | .blockedOnCall epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
+      | _ => True) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  by_cases hEq : tid'.toObjId = tid.toObjId
+  · have hIpcEq := storeTcbIpcState_ipcState_eq st st' tid ipc hStep tcb' (hEq ▸ hTcb')
+    rw [hIpcEq]
+    cases ipc with
+    | ready | blockedOnNotification _ | blockedOnReply _ _ => trivial
+    | blockedOnSend epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid _ epId ep hEp hStep⟩
+    | blockedOnReceive epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid _ epId ep hEp hStep⟩
+    | blockedOnCall epId =>
+      obtain ⟨ep, hEp⟩ := hNewIpc
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid _ epId ep hEp hStep⟩
+  · have hObjEq := storeTcbIpcState_preserves_objects_ne st st' tid ipc tid'.toObjId hEq hStep
+    rw [hObjEq] at hTcb'
+    have hPre := hInv tid' tcb' hTcb'
+    match h : tcb'.ipcState with
+    | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+    | .blockedOnSend epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid ipc epId ep hEp hStep⟩
+    | .blockedOnReceive epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid ipc epId ep hEp hStep⟩
+    | .blockedOnCall epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbIpcState_preserves_endpoint st st' tid ipc epId ep hEp hStep⟩
+
+/-- WS-L3/L3-C3 helper: `storeTcbPendingMessage` preserves
+`ipcStateQueueConsistent`. This operation only changes pendingMessage,
+not ipcState, so the invariant is trivially preserved. -/
+theorem storeTcbPendingMessage_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st')
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  obtain ⟨tcb, hTcb, hIpc⟩ := storeTcbPendingMessage_tcb_ipcState_backward st st' tid msg tid' tcb' hStep hTcb'
+  have hPre := hInv tid' tcb hTcb
+  rw [← hIpc]
+  match h : tcb.ipcState with
+  | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+  | .blockedOnSend epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact ⟨ep, storeTcbPendingMessage_preserves_endpoint st st' tid msg epId ep hEp hStep⟩
+  | .blockedOnReceive epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact ⟨ep, storeTcbPendingMessage_preserves_endpoint st st' tid msg epId ep hEp hStep⟩
+  | .blockedOnCall epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact ⟨ep, storeTcbPendingMessage_preserves_endpoint st st' tid msg epId ep hEp hStep⟩
+
+-- ============================================================================
+-- WS-L3/L3-C3: ipcStateQueueConsistent preservation — high-level IPC ops
+-- ============================================================================
+
+/-- WS-L3/L3-C3: endpointSendDual preserves ipcStateQueueConsistent.
+Handshake path: PopHead (preserves) → storeTcbIpcStateAndMessage to .ready
+(removes obligation) → ensureRunnable (preserves).
+Blocking path: Enqueue (preserves) → storeTcbIpcStateAndMessage to
+.blockedOnSend endpointId (endpoint exists from initial lookup) →
+removeRunnable (preserves). -/
+theorem endpointSendDual_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcStateQueueConsistent st)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    ipcStateQueueConsistent st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok triple =>
+          simp only [hHead, hPop] at hStep
+          obtain ⟨receiver, _tcb, stPop⟩ := triple
+          cases hMsg : storeTcbIpcStateAndMessage stPop receiver .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hMsg
+                (endpointQueuePopHead_preserves_ipcStateQueueConsistent _ _ _ _ _ _ hPop hInv) trivial
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hMsg
+                (endpointQueueEnqueue_preserves_ipcStateQueueConsistent _ _ _ _ _ hEnq hInv)
+                (endpointQueueEnqueue_endpoint_forward _ _ sender st st1 endpointId ep hEnq hObj)
+
+/-- WS-L3/L3-C3: endpointReceiveDual preserves ipcStateQueueConsistent.
+Rendezvous (call): PopHead → storeTcbIpcStateAndMessage(.blockedOnReply, trivial)
+→ storeTcbPendingMessage (preserves).
+Rendezvous (send): PopHead → storeTcbIpcStateAndMessage(.ready, trivial) →
+ensureRunnable → storeTcbPendingMessage (preserves).
+Blocking: Enqueue → storeTcbIpcState(.blockedOnReceive epId, endpoint exists)
+→ removeRunnable (preserves). -/
+theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver resultTid : SeLe4n.ThreadId)
+    (hInv : ipcStateQueueConsistent st)
+    (hStep : endpointReceiveDual endpointId receiver st = .ok (resultTid, st')) :
+    ipcStateQueueConsistent st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok triple =>
+          simp only [hHead, hPop] at hStep
+          obtain ⟨sender, senderTcb, stPop⟩ := triple
+          have hInvPop := endpointQueuePopHead_preserves_ipcStateQueueConsistent
+            endpointId false st stPop sender senderTcb hPop hInv
+          -- Branch on senderWasCall
+          split at hStep
+          · -- Call path: storeTcbIpcStateAndMessage(.blockedOnReply) → storeTcbPendingMessage
+            cases hMsg : storeTcbIpcStateAndMessage stPop sender (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              cases hPM : storeTcbPendingMessage st2 receiver senderTcb.pendingMessage with
+              | error e => simp [hPM] at hStep
+              | ok st3 =>
+                simp only [hPM] at hStep
+                have hEq : st3 = st' := by
+                  have := Except.ok.inj hStep; exact (Prod.mk.inj this).2
+                subst hEq
+                exact storeTcbPendingMessage_preserves_ipcStateQueueConsistent _ _ _ _ hPM
+                  (storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hMsg hInvPop trivial)
+          · -- Send path: storeTcbIpcStateAndMessage(.ready) → ensureRunnable → storeTcbPendingMessage
+            cases hMsg : storeTcbIpcStateAndMessage stPop sender .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              cases hPM : storeTcbPendingMessage (ensureRunnable st2 sender) receiver senderTcb.pendingMessage with
+              | error e => simp [hPM] at hStep
+              | ok st3 =>
+                simp only [hPM] at hStep
+                have hEq : st3 = st' := by
+                  have := Except.ok.inj hStep; exact (Prod.mk.inj this).2
+                subst hEq
+                exact storeTcbPendingMessage_preserves_ipcStateQueueConsistent _ _ _ _ hPM
+                  (ensureRunnable_preserves_ipcStateQueueConsistent _ _
+                    (storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hMsg hInvPop trivial))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          | error e => simp [hIpc] at hStep
+          | ok st2 =>
+            simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hIpc
+                (endpointQueueEnqueue_preserves_ipcStateQueueConsistent _ _ _ _ _ hEnq hInv)
+                (endpointQueueEnqueue_endpoint_forward _ _ receiver st st1 endpointId ep hEnq hObj)
+
+/-- WS-L3/L3-C3: endpointReply preserves ipcStateQueueConsistent.
+Reply sets target from blockedOnReply to .ready (removes obligation),
+then ensureRunnable (preserves). The _fromTcb variant is rewritten to
+the standard form via the equivalence theorem. -/
+theorem endpointReply_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (hInv : ipcStateQueueConsistent st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    ipcStateQueueConsistent st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      -- Rewrite _fromTcb to standard form
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+      -- Resolve authorization check first (split match replyTarget, then if)
+      split at hStep
+      · -- replyTarget = some expected
+        split at hStep
+        · -- authorized = true: now hStep has the store match
+          cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp [hStore] at hStep
+          | ok st2 =>
+            simp only [hStore] at hStep
+            have hEq := (Prod.mk.inj (Except.ok.inj hStep)).2; rw [← hEq]
+            exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hStore hInv trivial
+        · -- authorized = false → error
+          simp at hStep
+      · -- replyTarget = none: authorized = true directly
+        cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+        | error e => simp [hStore] at hStep
+        | ok st2 =>
+          simp only [hStore] at hStep
+          have hEq := (Prod.mk.inj (Except.ok.inj hStep)).2; rw [← hEq]
+          exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
+            storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hStore hInv trivial
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ | blockedOnNotification _ =>
+      simp [hIpc] at hStep
+
 end SeLe4n.Kernel

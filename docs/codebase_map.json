@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-proof-strengthening-XmfPP",
-      "commit_sha": "9390cc99ad0a6151a625a4963943d6a712701628",
-      "tree_sha": "9724d9de783fc5f86b45f66526af19cd90e3e7a4",
-      "committed_at_utc": "2026-03-15T13:13:01+00:00"
+      "commit_sha": "34dab217512ff55339cb4870975bf5a235f3ec57",
+      "tree_sha": "136cfd529eff76e46922bb202079201f81127d8c",
+      "committed_at_utc": "2026-03-15T16:04:35+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fe031e5b4d84ba592f60f407538ce70360bea45f95c26d34d25a81d1754f6e09"
+    "source_digest": "6aee71807c2257d3e26e6cdd4e0ab23784cf6576afc606773104a8de06010619"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2259
+    "declaration_count": 2267
   },
   "readme_sync": {
     "version": "0.16.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 37866,
+    "production_loc": 38186,
     "test_files": 4,
     "test_loc": 4098,
-    "proved_theorem_lemma_decls": 1216,
+    "proved_theorem_lemma_decls": 1224,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -4748,7 +4748,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 66,
+      "declaration_count": 74,
       "declarations": [
         {
           "kind": "namespace",
@@ -5247,6 +5247,71 @@
           "name": "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
           "line": 2416,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_ipcStateQueueConsistent",
+          "line": 2445,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_ipcStateQueueConsistent",
+          "line": 2455,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+          "line": 2469,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_ipcStateQueueConsistent",
+          "line": 2514,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_ipcStateQueueConsistent",
+          "line": 2557,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_ipcStateQueueConsistent",
+          "line": 2588,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_ipcStateQueueConsistent",
+          "line": 2642,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent",
+            "storeTcbPendingMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcStateQueueConsistent",
+          "line": 2714,
+          "called": [
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
         }
       ]
     },
