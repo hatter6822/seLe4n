@@ -17,11 +17,11 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 
-WS-L is the active workstream, created from a comprehensive end-to-end audit of
-the IPC subsystem (9,195 LoC, 12 files). The audit found zero critical issues,
-zero sorry/axiom, but identified 3 performance optimization opportunities, 5
-proof strengthening opportunities, and 5 test coverage gaps. WS-L also resolves
-all deferred WS-I5 items.
+WS-L is a **completed** workstream portfolio (v0.16.9–v0.16.13), created from a
+comprehensive end-to-end audit of the IPC subsystem (9,195 LoC, 12 files). The
+audit found zero critical issues, zero sorry/axiom, but identified 3 performance
+optimization opportunities, 5 proof strengthening opportunities, and 5 test
+coverage gaps. WS-L resolved all deferred WS-I5 items. All 5 phases delivered.
 
 | ID | Focus | Priority |
 |----|-------|----------|
@@ -29,7 +29,7 @@ all deferred WS-I5 items.
 | **WS-L2** | Code quality: HashMap.fold migration — eliminate all `.toList.foldl/foldr` anti-patterns (closes WS-I5/R-17) | MEDIUM — **COMPLETED** (v0.16.10) |
 | **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — **COMPLETED** (v0.16.11) |
 | **WS-L4** | Test coverage: ReplyRecv positive-path + rendezvous, endpoint lifecycle with queued threads, blocked thread rejection, multi-endpoint interleaving (3 endpoints) | MEDIUM — **COMPLETED** (v0.16.12) |
-| **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
+| **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **COMPLETED** (v0.16.13) |
 
 **WS-L1** (v0.16.9): Eliminated 4 redundant TCB lookups on IPC hot paths.
 L1-A: changed `endpointQueuePopHead` return type to `(ThreadId × TCB × SystemState)`,
@@ -85,6 +85,19 @@ blocked on sendQ (ELC-001 through ELC-004). L4-D2/D3: extended
 `runMultiEndpointInterleavingTrace` from 2 to 3 endpoints with out-of-order
 receive and FIFO verification (MEI-004, MEI-005, MEI-006). L-T03 (cap transfer)
 intentionally deferred — CSpace IPC integration not yet modeled.
+
+**WS-L5** (v0.16.13): Documentation & workstream closeout. L5-A: added
+information-flow architecture readers' guide to `docs/gitbook/12-proof-and-invariant-map.md`
+documenting the 3-layer Policy → Enforcement → Invariant architecture with
+cross-references to all canonical source files. L5-B/L5-C: test fixture update
+process and metrics regeneration documentation delivered early in v0.16.12 (already
+present in `docs/DEVELOPMENT.md` §7). L5-D: split into 6 sub-tasks (D1–D6) for
+version bump, README/spec sync, DEVELOPMENT.md update, workstream history/claim
+evidence, GitBook sync, and test validation. Bumped version to 0.16.13.
+Regenerated `docs/codebase_map.json`. Updated metrics across README, SELE4N_SPEC,
+and GitBook chapters. Added WS-L3 theorem documentation to GitBook ch.12.
+All findings resolved (12/13, 1 intentionally deferred). All 4 WS-I5 deferred
+items closed. WS-L portfolio complete.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).
@@ -189,6 +202,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-L** | v0.16.9–v0.16.13 | IPC subsystem audit & remediation — comprehensive end-to-end audit of IPC subsystem (9,195 LoC, 12 files). L1: eliminated 4 redundant TCB lookups on IPC hot paths. L2: HashMap.fold migration (4 sites). L3: 22 new theorems + `ipcStateQueueConsistent` invariant. L4: 16 test scenario IDs, 4 coverage gaps filled. L5: IF readers' guide, version bump, full doc sync. 12/13 findings resolved, 1 deferred (L-T03). All WS-I5 deferred items closed. Zero sorry/axiom. | L1–L5 |
 | **WS-K-H** | v0.16.8 | Documentation sync and workstream closeout: updated `WORKSTREAM_HISTORY.md` with WS-K portfolio completion (K-A through K-H, v0.16.0–v0.16.8); updated `SELE4N_SPEC.md` current state snapshot with v0.16.8 version, updated metrics (37,139 production LoC, 4,037 test LoC, 1,198 proved declarations), and WS-K portfolio complete status; updated `DEVELOPMENT.md` active workstream to show WS-K complete, next priority as RPi5 hardware binding; updated `CLAIM_EVIDENCE_INDEX.md` WS-K claim row with comprehensive K-A through K-H deliverables and evidence commands; updated GitBook chapters: `03-architecture-and-module-map.md` (added `SyscallArgDecode.lean` module entry with 7 structures, 7 decode functions, 7 encode functions, 14 theorems), `04-project-design-deep-dive.md` (added section 1.7 documenting two-layer syscall argument decode architecture), `05-specification-and-roadmap.md` (version and roadmap update, WS-K complete, RPi5 next), `12-proof-and-invariant-map.md` (added WS-K proof surface: layer-2 round-trip proofs, delegation theorems, NI coverage extension to 34 constructors); regenerated `docs/codebase_map.json`; synced `README.md` metrics from `readme_sync`; bumped `lakefile.toml` version to 0.16.8; refined WS-K-H workstream plan from 9 flat tasks into 13 granular subtasks (K-H.1 through K-H.13) with dependency ordering, per-file change specifications, and explicit acceptance criteria; updated completion evidence checklist from 5 to 13 K-H items. Zero sorry/axiom. Closes WS-K Phase H. WS-K portfolio fully complete. | K-H |
 | **WS-K-G** | v0.16.7 | Lifecycle NI proof completion and deferred proof resolution: added `cspaceRevoke_preserves_projection` standalone theorem in `InformationFlow/Invariant/Operations.lean` extracted from inline proof for compositional reuse; added `lifecycleRevokeDeleteRetype_preserves_projection` theorem chaining projection preservation across `cspaceRevoke`, `cspaceDeleteSlot`, and `lifecycleRetypeObject` sub-operations; added `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` two-run NI theorem completing the previously deferred `lifecycleRevokeDeleteRetype` NI proof using compositional projection-preservation reasoning; extended `NonInterferenceStep` inductive with `lifecycleRevokeDeleteRetype` constructor (34 constructors total, up from 33); updated `step_preserves_projection` with the new constructor case; updated `syscallNI_coverage_witness` documentation to reflect 34-constructor exhaustive match. Zero sorry/axiom. Closes WS-K Phase G | K-G |
 | **WS-K-F** | v0.16.5 | Proofs: round-trip, preservation, and NI integration: added 7 encode functions in `SyscallArgDecode.lean` (`encodeCSpaceMintArgs` through `encodeVSpaceUnmapArgs`) completing encode/decode symmetry for all layer-2 structures; proved 7 round-trip theorems via structure eta reduction (`rcases + rfl`) with `decode_layer2_roundtrip_all` composed conjunction; added `extractMessageRegisters_roundtrip` in `RegisterDecode.lean` closing the layer-1 extraction round-trip gap; added `dispatchWithCap_layer2_decode_pure` proving decode functions depend only on `msgRegs` (two results with same `msgRegs` produce identical decode) and `dispatchWithCap_preservation_composition_witness` structural preservation theorem in `API.lean`; added `retypeFromUntyped_preserves_lowEquivalent` NI theorem completing the last deferred NI proof via two-stage `storeObject_at_unobservable_preserves_lowEquivalent` composition; added `syscallNI_coverage_witness` in `Composition.lean` witnessing decode-error NI step availability, step→trace composition, and `step_preserves_projection` totality over all 33 constructors; refined WS-K-F plan into 6 granular sub-phases (K-F1 through K-F6). Zero sorry/axiom. Closes WS-K Phase F | K-F |
@@ -243,7 +257,7 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 
 | Plan | Scope |
 |------|-------|
-| [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **active** |
+| [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **completed** (v0.16.13) |
 | [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) — completed |
 | [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) — completed |
 | [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) — completed |

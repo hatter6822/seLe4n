@@ -1332,3 +1332,158 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - `objectOfTypeTag_type`, `objectOfTypeTag_error_iff`, `objectOfTypeTag_deterministic`
 - `PagePermissions_ofNat_toNat_roundtrip`
 - `lifecycleRetypeDirect_equivalence`, `lifecycleRetypeDirect_error`
+
+## 30. WS-L3 IPC proof strengthening (v0.16.11)
+
+WS-L3 added 22 new theorems and 1 new invariant definition to strengthen
+formal assurance of the IPC dual-queue subsystem.
+
+**L3-A: Enqueue-dequeue round-trip** (`DualQueue/Core.lean`):
+
+- `endpointQueueEnqueue_empty_sets_head` — enqueue into empty queue sets head to enqueued thread.
+- `endpointQueueEnqueue_empty_queueNext_none` — enqueue into empty queue leaves `queueNext` as `none`.
+- `endpointQueueEnqueue_then_popHead_succeeds` — successfully enqueued thread can be dequeued without error.
+
+**L3-B: Queue link integrity preservation** (`DualQueue/Core.lean`, `DualQueue/Transport.lean`):
+
+- `endpointQueuePopHead_preserves_tcbQueueLinkIntegrity` — pop-head preserves doubly-linked list integrity.
+- `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` — enqueue preserves doubly-linked list integrity.
+
+**L3-C: ipcState-queue consistency invariant** (`Invariant/Defs.lean`, `Invariant/Structural.lean`):
+
+Definition:
+- `ipcStateQueueConsistent` — if a thread is `blockedOnSend epId` or `blockedOnReceive epId`, then the endpoint `epId` exists in the object store.
+
+Queue-operation preservation (L3-C1/C2):
+- `endpointQueuePopHead_preserves_ipcStateQueueConsistent`
+- `endpointQueueEnqueue_preserves_ipcStateQueueConsistent`
+- `storeTcbQueueLinks_endpoint_forward`
+- `endpointQueuePopHead_endpoint_forward`
+- `endpointQueueEnqueue_endpoint_forward`
+
+High-level IPC operation preservation (L3-C3):
+- `ensureRunnable_preserves_ipcStateQueueConsistent`
+- `removeRunnable_preserves_ipcStateQueueConsistent`
+- `storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent`
+- `storeTcbIpcState_preserves_ipcStateQueueConsistent`
+- `storeTcbPendingMessage_preserves_ipcStateQueueConsistent`
+- `endpointSendDual_preserves_ipcStateQueueConsistent`
+- `endpointReceiveDual_preserves_ipcStateQueueConsistent`
+- `endpointReply_preserves_ipcStateQueueConsistent`
+
+**L3-D: Tail consistency** (`DualQueue/Core.lean`):
+
+- `endpointQueueRemoveDual_preserves_tail_of_nonTail` — removing a non-tail element preserves tail pointer.
+- `endpointQueueRemoveDual_tail_update` — removing the tail element correctly updates the tail pointer.
+
+## 31. Information-flow architecture readers' guide (WS-L5-A)
+
+The information-flow subsystem is organized in three layers. Each layer has a
+clear responsibility, and the layers compose to deliver the IF-M4 multi-step
+non-interference theorem.
+
+### Layer 1 — Policy (`InformationFlow/Policy.lean`)
+
+The policy layer is the declarative security specification. It defines:
+
+- **`SecurityLabel`** — a product of `Confidentiality` (low | high) and
+  `Integrity` (untrusted | trusted).
+- **`securityFlowsTo`** — a decidable Boolean predicate: information may flow
+  from label A to label B only when both `confidentialityFlowsTo A.conf B.conf`
+  and `integrityFlowsTo A.integrity B.integrity` hold.
+- **`LabelingContext`** — assigns security labels to kernel objects, threads,
+  endpoints, services, and (optionally) memory domains.
+- **BIBA alternatives** — `bibaIntegrityFlowsTo`, `bibaSecurityFlowsTo`,
+  `bibaPolicy` with reflexivity and transitivity proofs.
+
+The policy layer contains **no state mutation and no theorems about kernel
+transitions**. It is a pure, mechanically-checkable specification of who may
+talk to whom.
+
+### Layer 2 — Enforcement (`InformationFlow/Enforcement/`)
+
+The enforcement layer wraps kernel operations with policy checks.
+
+**Wrappers** (`Enforcement/Wrappers.lean`): each wrapper embeds a single
+`securityFlowsTo` check before delegating to the underlying unchecked operation.
+If the policy denies the flow, the wrapper returns `KernelError.flowDenied`
+without mutating state. Seven operations are wrapped:
+
+| Wrapper | Underlying operation | Policy check |
+|---------|---------------------|--------------|
+| `endpointSendDualChecked` | `endpointSendDual` | sender → endpoint |
+| `notificationSignalChecked` | `notificationSignal` | signaler → notification |
+| `cspaceMintChecked` | `cspaceMint` | source CNode → destination |
+| `cspaceCopyChecked` | `cspaceCopy` | source CNode → destination |
+| `cspaceMoveChecked` | `cspaceMove` | source CNode → destination |
+| `endpointReceiveDualChecked` | `endpointReceiveDual` | receiver → endpoint |
+| `serviceRestartChecked` | `serviceRestart` | orchestrator → target |
+
+**Soundness** (`Enforcement/Soundness.lean`): for each wrapper, two theorems:
+
+1. **Transparency**: when policy allows, the wrapper produces the same result
+   as the unchecked operation (e.g., `notificationSignalChecked_eq_notificationSignal_when_allowed`).
+2. **Safety**: when policy denies, the wrapper returns `flowDenied` and the
+   state is unchanged (e.g., `notificationSignalChecked_flowDenied`).
+
+### Layer 3 — Invariant (`InformationFlow/Projection.lean`, `Invariant/`)
+
+The invariant layer proves that all kernel operations respect non-interference.
+
+**Projection** (`Projection.lean`): defines `ObservableState` — what a
+security-cleared observer can see. Fields include filtered objects, runnable
+threads, current thread, services, active domain, IRQ handlers, object index,
+domain timing metadata, and machine registers. Machine timer and memory are
+deliberately excluded (covert timing channel risk and pending VSpace domain
+ownership model, respectively).
+
+**Operations** (`Invariant/Operations.lean`): per-operation NI proofs. Each
+kernel primitive (CSpace CRUD, lifecycle retype/revoke, IPC send/receive/reply,
+scheduler transitions, notification signal/wait, service start/stop) has a
+`*_preserves_lowEquivalent` theorem proving that operating on a non-observable
+target does not change the observable state for any observer.
+
+**Composition** (`Invariant/Composition.lean`): the `NonInterferenceStep`
+inductive (34 constructors, one per kernel operation with domain-separation
+hypotheses) plus the primary theorems:
+
+- `composedNonInterference_step` — single-step IF-M4.
+- `composedNonInterference_trace` — multi-step IF-M4 over arbitrary traces.
+
+**Helpers** (`Invariant/Helpers.lean`): shared proof infrastructure. The core
+pattern is `storeObject_at_unobservable_preserves_lowEquivalent` — mutations to
+objects outside the observer's clearance are filtered out by projection.
+
+### Cross-layer connections
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Layer 1: Policy.lean                                │
+│   SecurityLabel, securityFlowsTo, LabelingContext   │
+│   (pure decidable specification)                    │
+└────────────────────┬────────────────────────────────┘
+                     │ embeds securityFlowsTo check
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│ Layer 2: Enforcement/Wrappers.lean + Soundness.lean │
+│   7 policy-gated wrappers + transparency/safety     │
+│   theorems (only safe calls proceed)                │
+└────────────────────┬────────────────────────────────┘
+                     │ safe calls reach the kernel
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│ Layer 3: Projection.lean + Invariant/*              │
+│   ObservableState projection → per-op NI proofs →   │
+│   composedNonInterference_trace (IF-M4)             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Source files** (relative to `SeLe4n/Kernel/`):
+
+- `InformationFlow/Policy.lean` — security label lattice
+- `InformationFlow/Enforcement/Wrappers.lean` — policy-gated wrappers
+- `InformationFlow/Enforcement/Soundness.lean` — wrapper correctness
+- `InformationFlow/Projection.lean` — observable state definition
+- `InformationFlow/Invariant/Helpers.lean` — shared frame lemmas
+- `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
+- `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4

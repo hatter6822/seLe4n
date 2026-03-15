@@ -112,7 +112,11 @@ workstream (WS-I5) to resolve.
 
 **Focus**: Resolve all deferred WS-I5 documentation items, update all docs.
 **Priority**: LOW — polish and completeness.
-**Estimated effort**: 4–6 hours.
+**Status**: **COMPLETED** (v0.16.13).
+**Sub-tasks**: L5-A (IF readers' guide), L5-B (fixture docs — early delivery v0.16.12),
+L5-C (metrics docs — early delivery v0.16.12), L5-D1 (version bump), L5-D2 (README/spec
+sync), L5-D3 (DEVELOPMENT.md update), L5-D4 (history/claims), L5-D5 (GitBook sync),
+L5-D6 (test validation).
 
 ### Dependency Graph
 
@@ -1070,7 +1074,8 @@ send on EP2 → receive EP2 → verify cross-endpoint independence.
 ### WS-L5: Documentation & Workstream Closeout
 
 **Objective**: Resolve all deferred WS-I5 documentation items, update all
-project documentation to reflect WS-L changes, regenerate metrics.
+project documentation to reflect WS-L changes, regenerate metrics, and close
+the WS-L portfolio with full evidence.
 
 **Priority**: LOW — Phase 5 (after all implementation phases)
 **Dependencies**: WS-L1 through WS-L4
@@ -1083,71 +1088,209 @@ information-flow architecture (Policy → Enforcement → Invariant).
 
 **Deliverables**:
 
-1. Add section to `docs/gitbook/12-proof-and-invariant-map.md` explaining:
-   - Layer 1: `Policy.lean` — security label lattice, flow rules
-   - Layer 2: `Enforcement/Wrappers.lean` — policy-gated operation wrappers
-   - Layer 3: `Invariant/*.lean` — per-operation NI proofs + composition
-2. Include cross-references to canonical source files.
+1. Add a new section to `docs/gitbook/12-proof-and-invariant-map.md` titled
+   "Information-flow architecture readers' guide" explaining:
+   - **Layer 1 — Policy** (`InformationFlow/Policy.lean`): `SecurityLabel`
+     product structure (`Confidentiality × Integrity`), `securityFlowsTo`
+     decidable predicate, `LabelingContext` for assigning labels to objects,
+     threads, endpoints, and services. Pure declarative specification with no
+     state mutation.
+   - **Layer 2 — Enforcement** (`InformationFlow/Enforcement/Wrappers.lean`,
+     `Enforcement/Soundness.lean`): thin policy-gated wrappers that embed
+     a single `securityFlowsTo` check before delegating to the underlying
+     unchecked operation. 7 wrapped operations (`endpointSendDualChecked`,
+     `notificationSignalChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
+     `cspaceMoveChecked`, `endpointReceiveDualChecked`, `serviceRestartChecked`).
+     Soundness theorems prove transparency on allowed flows and safe denial
+     on policy violations.
+   - **Layer 3 — Invariant** (`InformationFlow/Projection.lean`,
+     `Invariant/Helpers.lean`, `Invariant/Operations.lean`,
+     `Invariant/Composition.lean`): `ObservableState` projection defines what
+     each security-cleared observer can see. Per-operation NI theorems in
+     `Operations.lean` prove each kernel primitive preserves `lowEquivalent`
+     for non-observable targets. `Composition.lean` provides the multi-step
+     `composedNonInterference_trace` theorem (IF-M4). `Helpers.lean` provides
+     shared frame lemmas (`storeObject_at_unobservable_preserves_lowEquivalent`).
+   - **Cross-layer connections**: Policy feeds Enforcement (wrapper embeds
+     `securityFlowsTo` check); Enforcement's soundness guarantees only safe
+     calls reach the kernel; Invariant proves those calls preserve NI.
+2. Include cross-references to all canonical source files with relative paths.
 
 **Files modified**:
-- `docs/gitbook/12-proof-and-invariant-map.md` — new section
+- `docs/gitbook/12-proof-and-invariant-map.md` — new section (§22)
+
+**Exit evidence**:
+- New section present in GitBook chapter 12
+- All source file references resolve to existing paths
 
 #### L5-B: Test fixture update process documentation (L-D03)
 
 **Problem**: WS-I5/R-14 identified that the process for updating test fixtures
 is undocumented.
 
-**Deliverables**:
+**Status**: **COMPLETED** (v0.16.12) — documentation added to `docs/DEVELOPMENT.md`
+§7 "Test fixture update process (WS-L5-B)" as part of WS-L4 delivery.
 
-1. Add section to `docs/DEVELOPMENT.md` documenting:
-   - When fixtures need updating (new trace scenarios, changed output format)
-   - How to regenerate: `lake exe sele4n > tests/fixtures/main_trace_smoke.expected`
-   - How to verify: `diff` against prior version, inspect changes
-   - CI enforcement: Tier 2 smoke test validates fixture match
+**Delivered content** (in `docs/DEVELOPMENT.md` §7):
+- When fixtures need updating (new trace scenarios, changed output format)
+- Step-by-step regeneration: add scenario IDs, rebuild, run `lake exe sele4n`,
+  update `tests/fixtures/main_trace_smoke.expected` and `scenario_registry.yaml`
+- ITR-001 count update procedure
+- CI enforcement: Tier 0 registry validation + Tier 2 fixture comparison
 
-**Files modified**:
-- `docs/DEVELOPMENT.md` — new section
+**Files modified**: `docs/DEVELOPMENT.md` — section already present
 
 #### L5-C: Metrics regeneration documentation (L-D05)
 
 **Problem**: WS-I5/R-18 identified that metrics regeneration is manual and
 undocumented.
 
+**Status**: **COMPLETED** (v0.16.12) — documentation added to `docs/DEVELOPMENT.md`
+§7 "Metrics regeneration process (WS-L5-C)" as part of WS-L4 delivery.
+
+**Delivered content** (in `docs/DEVELOPMENT.md` §7):
+- Run `./scripts/report_current_state.py` for updated metrics
+- Update `README.md`, `docs/spec/SELE4N_SPEC.md`, and
+  `docs/gitbook/05-specification-and-roadmap.md` — all three must match
+- Regenerate `docs/codebase_map.json` via `generate_codebase_map.py`
+- Validate with `./scripts/test_docs_sync.sh`
+
+**Files modified**: `docs/DEVELOPMENT.md` — section already present
+
+#### L5-D1: Version bump and metrics regeneration
+
+**Problem**: WS-L implementation changes (L1–L4) added new theorems, test
+scenarios, and LoC that are not yet reflected in the canonical version string
+or metrics surfaces.
+
 **Deliverables**:
 
-1. Document the metrics regeneration process in `docs/DEVELOPMENT.md`:
-   - Run `./scripts/report_current_state.py`
-   - Update `README.md` metrics from `readme_sync` key in `codebase_map.json`
-   - Update `docs/spec/SELE4N_SPEC.md` current state snapshot
-   - Update `docs/gitbook/05-specification-and-roadmap.md` version
-2. Add reminder to PR checklist.
+1. Bump `lakefile.toml` version from `0.16.12` to `0.16.13`.
+2. Run `./scripts/report_current_state.py` to capture updated metrics.
+3. Run `./scripts/generate_codebase_map.py --pretty --output docs/codebase_map.json`
+   to regenerate the machine-readable codebase map.
+4. Validate with `./scripts/generate_codebase_map.py --pretty --check`.
 
 **Files modified**:
-- `docs/DEVELOPMENT.md` — metrics section
+- `lakefile.toml` — version bump
+- `docs/codebase_map.json` — regenerated
 
-#### L5-D: Documentation sync across all canonical sources
+**Exit evidence**:
+- `lakefile.toml` contains `version = "0.16.13"`
+- `generate_codebase_map.py --pretty --check` passes
 
-**Problem**: WS-L implementation changes require documentation updates.
+#### L5-D2: README and specification metrics sync
+
+**Problem**: `README.md` and `docs/spec/SELE4N_SPEC.md` metrics (version, LoC,
+theorem count) must match the regenerated codebase map.
 
 **Deliverables**:
 
-1. Update `README.md` — metrics sync from `codebase_map.json`
-2. Update `docs/spec/SELE4N_SPEC.md` — version, metrics, IPC subsystem status
-3. Update `docs/DEVELOPMENT.md` — active workstream reference
-4. Update `docs/CLAIM_EVIDENCE_INDEX.md` — add WS-L claim row
-5. Update `docs/WORKSTREAM_HISTORY.md` — add WS-L portfolio entry
-6. Update affected GitBook chapters:
-   - `docs/gitbook/03-architecture-and-module-map.md` — IPC module updates
-   - `docs/gitbook/04-project-design-deep-dive.md` — performance optimizations
-   - `docs/gitbook/05-specification-and-roadmap.md` — version and roadmap
-   - `docs/gitbook/12-proof-and-invariant-map.md` — new theorems
-7. Regenerate `docs/codebase_map.json`
-8. Bump `lakefile.toml` version
+1. Update `README.md` — version badge, production/test LoC, proved declaration
+   count, latest audit reference, and active workstream status (WS-L5 complete).
+2. Update `docs/spec/SELE4N_SPEC.md` — version, metrics, IPC subsystem status,
+   and workstream phase completions (L1–L5 all COMPLETED).
 
-**Files modified**: All documentation files listed above
+**Files modified**:
+- `README.md` — metrics section
+- `docs/spec/SELE4N_SPEC.md` — current state snapshot
 
 **Exit evidence**:
-- `test_full.sh` passes (includes Tier 3 documentation anchor checks)
+- Version `0.16.13` in both files
+- LoC and theorem counts match `report_current_state.py` output
+
+#### L5-D3: DEVELOPMENT.md workstream reference update
+
+**Problem**: `docs/DEVELOPMENT.md` §3 "Next workstreams" references WS-L5 as
+"in progress" and needs to reflect WS-L completion.
+
+**Deliverables**:
+
+1. Update §3 to mark WS-L5 as **COMPLETED** (v0.16.13).
+2. Update the "active workstream" reference to reflect the next milestone
+   (Raspberry Pi 5 hardware binding).
+3. Add WS-L to the completed workstream list in §1.
+
+**Files modified**:
+- `docs/DEVELOPMENT.md` — §1 and §3
+
+**Exit evidence**:
+- WS-L5 marked COMPLETED in §3
+- WS-L listed in §1 completed workstream section
+
+#### L5-D4: Workstream history and claim evidence update
+
+**Problem**: `docs/WORKSTREAM_HISTORY.md` and `docs/CLAIM_EVIDENCE_INDEX.md`
+must reflect WS-L portfolio completion.
+
+**Deliverables**:
+
+1. Update `docs/WORKSTREAM_HISTORY.md`:
+   - Mark WS-L5 as **COMPLETED** (v0.16.13) in the WS-L phase table.
+   - Update WS-L portfolio status from "IN PROGRESS" to "COMPLETED".
+   - Add WS-L5 summary (documentation sync, readers' guide, version bump).
+2. Update `docs/CLAIM_EVIDENCE_INDEX.md`:
+   - Update WS-L portfolio claim row to reflect L5 completion.
+   - Add WS-L5 documentation claim with evidence commands.
+
+**Files modified**:
+- `docs/WORKSTREAM_HISTORY.md` — WS-L phase table and portfolio status
+- `docs/CLAIM_EVIDENCE_INDEX.md` — WS-L claim rows
+
+**Exit evidence**:
+- WS-L portfolio shows 5/5 phases COMPLETED
+- Claim evidence index includes L5 deliverables
+
+#### L5-D5: GitBook chapter synchronization
+
+**Problem**: GitBook mirrors must reflect WS-L implementation changes and
+new documentation.
+
+**Deliverables**:
+
+1. Update `docs/gitbook/03-architecture-and-module-map.md`:
+   - Note WS-L1 IPC hot-path optimizations (TCB lookup elimination).
+2. Update `docs/gitbook/04-project-design-deep-dive.md`:
+   - Add subsection on IPC hot-path optimization design (pass-through TCB
+     pattern from `endpointQueuePopHead` to avoid re-lookup).
+3. Update `docs/gitbook/05-specification-and-roadmap.md`:
+   - Version bump to `0.16.13`.
+   - Update LoC/theorem metrics.
+   - Mark WS-L as COMPLETED in roadmap table.
+4. Update `docs/gitbook/12-proof-and-invariant-map.md`:
+   - Add WS-L3 theorems (enqueue-dequeue round-trip, queue link integrity
+     preservation, `ipcStateQueueConsistent` invariant + preservation,
+     tail consistency).
+   - Add information-flow readers' guide (L5-A deliverable, see above).
+
+**Files modified**:
+- `docs/gitbook/03-architecture-and-module-map.md` — IPC optimization note
+- `docs/gitbook/04-project-design-deep-dive.md` — hot-path design subsection
+- `docs/gitbook/05-specification-and-roadmap.md` — version and metrics
+- `docs/gitbook/12-proof-and-invariant-map.md` — new theorems + readers' guide
+
+**Exit evidence**:
+- All 4 GitBook chapters updated
+- Version and metrics consistent with README and spec
+
+#### L5-D6: Test suite validation and CI readiness
+
+**Problem**: All test tiers must pass after documentation and version changes.
+
+**Deliverables**:
+
+1. Run `./scripts/test_full.sh` (Tier 0–3).
+2. Fix any Tier 0 hygiene failures (website link manifest, forbidden markers).
+3. Fix any Tier 3 invariant surface anchor mismatches from new theorems or
+   documentation changes.
+4. Verify zero `sorry`/`axiom` in production proof surface.
+5. Verify zero warnings from `lake build`.
+
+**Files modified**: Test scripts and anchors only if failures require fixes.
+
+**Exit evidence**:
+- `test_full.sh` passes with zero failures
+- `lake build` completes with zero warnings
 - All metrics consistent across README, spec, GitBook
 
 ---
@@ -1170,25 +1313,28 @@ undocumented.
 | L-T04 | WS-L4 | L4-C (C1–C5) | **COMPLETED** (v0.16.11, extended v0.16.12) — 3 same-type + 2 cross-state rejection |
 | L-T05 | WS-L4 | L4-D (D1–D4) | **COMPLETED** (v0.16.12) — 3-endpoint out-of-order + FIFO verification |
 | L-D01 | — | — | Superseded (WS-J1) |
-| L-D02 | WS-L5 | L5-A | Planned |
-| L-D03 | WS-L5 | L5-B | Planned |
-| L-D05 | WS-L5 | L5-C | Planned |
+| L-D02 | WS-L5 | L5-A | **COMPLETED** (v0.16.13) |
+| L-D03 | WS-L5 | L5-B | **COMPLETED** (v0.16.12, early delivery) |
+| L-D05 | WS-L5 | L5-C | **COMPLETED** (v0.16.12, early delivery) |
 | L-T03 | — | — | Deferred (cap transfer requires CSpace IPC integration not yet modeled) |
 
 ---
 
 ## 7. Completion Evidence Checklist
 
-- [ ] `lake build` succeeds with zero warnings
-- [ ] `test_smoke.sh` passes
-- [ ] `test_full.sh` passes
-- [ ] Zero `sorry`/`axiom` in production proof surface
-- [ ] All 13 findings addressed (12 resolved, 1 intentionally deferred with rationale)
-- [ ] All 4 WS-I5 deferred items resolved
-- [ ] Documentation synchronized across all canonical sources
-- [ ] `codebase_map.json` regenerated
-- [ ] WS-L portfolio entry added to `WORKSTREAM_HISTORY.md`
-- [ ] WS-L claim row added to `CLAIM_EVIDENCE_INDEX.md`
+- [x] `lake build` succeeds with zero warnings
+- [x] `test_smoke.sh` passes
+- [x] `test_full.sh` passes
+- [x] Zero `sorry`/`axiom` in production proof surface
+- [x] All 13 findings addressed (12 resolved, 1 intentionally deferred with rationale)
+- [x] All 4 WS-I5 deferred items resolved (L-D01 superseded, L-D02/L5-A, L-D03/L5-B, L-D05/L5-C)
+- [x] Documentation synchronized across all canonical sources (L5-D1 through L5-D6)
+- [x] `codebase_map.json` regenerated (L5-D1)
+- [x] WS-L portfolio entry added to `WORKSTREAM_HISTORY.md` (L5-D4)
+- [x] WS-L claim row added to `CLAIM_EVIDENCE_INDEX.md` (L5-D4)
+- [x] Information-flow readers' guide added to GitBook ch.12 (L5-A)
+- [x] Version bumped to 0.16.13 (L5-D1)
+- [x] Metrics synchronized across README, spec, GitBook (L5-D2, L5-D5)
 
 ---
 

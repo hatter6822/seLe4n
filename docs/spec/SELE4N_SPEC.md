@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,198 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,224 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.12` (`lakefile.toml`) |
+| **Package version** | `0.16.13` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 38,349 across 69 Lean files |
-| **Test LoC** | 4,098 across 4 Lean test suites |
+| **Test LoC** | 4,115 across 4 Lean test suites |
 | **Proved declarations** | 1,224 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues |
-| **Next workstreams** | **WS-L** IPC subsystem audit & remediation — see [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). 5 phases: L1 (performance — **COMPLETED** v0.16.9), L2 (code quality — **COMPLETED** v0.16.10), L3 (proof strengthening — **COMPLETED** v0.16.11), L4 (test coverage — **COMPLETED** v0.16.12), L5 (documentation). Supersedes WS-I5 (pending). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |
+| **Next workstreams** | **WS-L** IPC subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). All 5 phases delivered: L1 (performance — v0.16.9), L2 (code quality — v0.16.10), L3 (proof strengthening — v0.16.11), L4 (test coverage — v0.16.12), L5 (documentation — v0.16.13). Superseded WS-I5. WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
