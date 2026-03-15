@@ -138,8 +138,8 @@ Phase 5: WS-L5 (Documentation)    [after all implementation phases]
 
 ### WS-L1: IPC Performance Optimization
 
-**Objective**: Eliminate 5 redundant TCB lookups on IPC hot paths (4 on the
-endpoint send/receive/reply critical path, 1 on the notification wait path),
+**Objective**: Eliminate 4 redundant TCB lookups on IPC hot paths (3 on the
+endpoint receive/reply critical path, 1 on the notification wait path),
 reducing per-operation overhead by ~15–20% on critical paths.
 
 **Priority**: HIGH — Phase 1
