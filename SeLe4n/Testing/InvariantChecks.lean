@@ -93,7 +93,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.toList.foldr (fun (slot, cap) inner =>
+        cn.slots.fold (fun inner slot cap =>
           let ok := match cap.target with
             | .object targetId => (st.objects[targetId]?).isSome
             | .cnodeSlot cnId _ => (st.objects[cnId]?).isSome
@@ -109,7 +109,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.toList.foldr (fun (slot, cap) inner =>
+        cn.slots.fold (fun inner slot cap =>
           let ok := match cap.badge with
             | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
             | none => true
@@ -268,7 +268,7 @@ and every edge has a corresponding childMap entry. -/
 private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool) :=
   let cdt := st.cdt
   -- Forward: every childMap entry has a corresponding edge
-  let forwardChecks := cdt.childMap.toList.foldr (fun (parent, children) acc =>
+  let forwardChecks := cdt.childMap.fold (fun acc parent children =>
     children.foldr (fun child inner =>
       let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
       (s!"cdt childMap→edges: parent={reprStr parent} child={reprStr child}", ok) :: inner) acc) []

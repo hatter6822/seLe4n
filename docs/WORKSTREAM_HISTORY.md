@@ -26,7 +26,7 @@ all deferred WS-I5 items.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — **COMPLETED** (v0.16.9) |
-| **WS-L2** | Code quality: HashMap.fold migration for detachCNodeSlots (closes WS-I5/R-17) | MEDIUM — planned |
+| **WS-L2** | Code quality: HashMap.fold migration — eliminate all `.toList.foldl/foldr` anti-patterns (closes WS-I5/R-17) | MEDIUM — **COMPLETED** (v0.16.10) |
 | **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — planned |
 | **WS-L4** | Test coverage: ReplyRecv positive-path, blocked thread rejection, multi-endpoint interleaving | MEDIUM — **PARTIALLY COMPLETE** |
 | **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
@@ -41,6 +41,17 @@ theorem, eliminating redundant lookup in `notificationWait`. Added
 `lookupTcb_preserved_by_storeObject_notification` helper for cross-store TCB
 stability. ~18 mechanical pattern-match updates across 6 invariant files. Zero
 sorry/axiom; all proofs machine-checked.
+
+**WS-L2** (v0.16.10): Eliminated all 4 `Std.HashMap.toList.foldl/foldr`
+anti-patterns across the codebase. L2-A: migrated 3 fold patterns in
+`Testing/InvariantChecks.lean` (`cspaceSlotCoherencyChecks`,
+`capabilityRightsStructuralChecks`, `cdtChildMapConsistentCheck`) from
+`.toList.foldr` to direct `HashMap.fold`. L2-B: migrated `detachCNodeSlots`
+in `Kernel/Lifecycle/Operations.lean` from `.toList.foldl` to `HashMap.fold`,
+updated 3 preservation proofs (`_objects_eq`, `_lifecycle_eq`, `_scheduler_eq`)
+using `Std.HashMap.fold_eq_foldl_toList` bridge lemma. Refined WS-L2 workstream
+plan with expanded scope covering all 4 sites (original plan only covered 1).
+Zero sorry/axiom; all proofs machine-checked.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).

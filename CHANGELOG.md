@@ -1,3 +1,20 @@
+## [0.16.10] — Code Quality & HashMap.fold Migration (WS-L2)
+
+- Eliminated all 4 `Std.HashMap.toList.foldl/foldr` anti-patterns across codebase,
+  replacing with direct `HashMap.fold` calls that avoid intermediate list allocation
+- L2-A: Migrated 3 fold patterns in `Testing/InvariantChecks.lean`
+  (`cspaceSlotCoherencyChecks`, `capabilityRightsStructuralChecks`,
+  `cdtChildMapConsistentCheck`) from `.toList.foldr` to `HashMap.fold`
+- L2-B: Migrated `detachCNodeSlots` in `Kernel/Lifecycle/Operations.lean` from
+  `.toList.foldl` to `HashMap.fold`; updated 3 preservation proofs
+  (`_objects_eq`, `_lifecycle_eq`, `_scheduler_eq`) using
+  `Std.HashMap.fold_eq_foldl_toList` bridge lemma
+- Refined WS-L2 workstream plan: expanded scope from 1 site to 4, added
+  sub-task breakdown with proof update strategy and risk assessment
+- Regenerated `docs/codebase_map.json`
+- Bumped `lakefile.toml` version to 0.16.10
+- Zero sorry/axiom; all proofs machine-checked; test_full.sh passes
+
 ## [0.16.9] — IPC Performance Optimization (WS-L1)
 
 - Eliminated 4 redundant TCB lookups on IPC hot paths (L-P01, L-P02, L-P03)

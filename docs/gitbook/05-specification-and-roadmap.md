@@ -13,9 +13,9 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.16.9` |
+| Version | `0.16.10` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 37,217 across 69 files |
+| Production LoC | 37,220 across 69 files |
 | Test LoC | 4,098 across 4 suites |
 | Proved declarations | 1,202 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit |
