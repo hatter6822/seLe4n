@@ -76,7 +76,8 @@ machine-checked.
 **WS-L4** (v0.16.12): IPC test coverage expansion. Filled all 4 test coverage
 gaps identified during the IPC subsystem audit: L-T01 (ReplyRecv positive-path),
 L-T02 (endpoint lifecycle with queued threads), L-T04 (blocked thread rejection),
-L-T05 (multi-endpoint interleaving). 16 new scenario IDs across 3 test functions.
+L-T05 (multi-endpoint interleaving). 9 new scenario IDs (16 total across L4
+test functions), 2 new cross-state blocked-thread rejection tests (L4-C4/C5).
 L4-A2: extended `runReplyRecvRoundtripTrace` with second-sender rendezvous
 path (RRC-002, RRC-006). L4-B: new `runEndpointLifecycleTrace` validates
 graceful-failure-by-guard model when endpoint is retyped while senders are

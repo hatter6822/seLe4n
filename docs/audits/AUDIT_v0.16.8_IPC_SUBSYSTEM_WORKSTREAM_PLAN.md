@@ -902,6 +902,8 @@ because CSpace-IPC integration is not yet modeled.
 | L4-C | C1 (send-while-blocked) | ✓ Complete | v0.16.11 |
 | L4-C | C2 (recv-while-blocked) | ✓ Complete | v0.16.11 |
 | L4-C | C3 (ntfn-while-blocked) | ✓ Complete | v0.16.11 |
+| L4-C | C4 (cross: recv→send diff ep) | ✓ Complete | v0.16.12 |
+| L4-C | C5 (cross: send→recv diff ep) | ✓ Complete | v0.16.12 |
 | L4-D | D1 (base 2-endpoint) | ✓ Complete | v0.16.11 |
 | L4-D | D2 (3rd endpoint + FIFO) | ✓ Complete | v0.16.12 |
 | L4-D | D3 (out-of-order recv) | ✓ Complete | v0.16.12 |
@@ -998,20 +1000,26 @@ graceful-failure-by-guard model, not automatic thread unblocking.
 - ELC-001 through ELC-004 visible in trace output
 - ITR-001 check count incremented
 
-#### L4-C: Blocked thread IPC rejection test (L-T04) — COMPLETED (v0.16.11)
+#### L4-C: Blocked thread IPC rejection test (L-T04) — COMPLETED (v0.16.11, extended v0.16.12)
 
 **Problem**: No explicit test verifies that a thread already blocked on IPC
 is rejected when attempting another IPC operation.
 
 **Resolution**: Implemented as `runWSL4BlockedThreadChecks` in
-`NegativeStateSuite.lean:2200–2257`. Three rejection scenarios validated:
+`NegativeStateSuite.lean:2200–2275`. Five rejection scenarios validated:
 
+Same-type rejection (v0.16.11):
 1. Thread blocked on send → second send rejected with `.alreadyWaiting`
 2. Thread blocked on receive → second receive rejected with `.alreadyWaiting`
 3. Thread blocked on notification wait → send rejected with `.alreadyWaiting`
 
-All three use `expectError` with `.alreadyWaiting` error variant. Invoked
-from `main` at NegativeStateSuite.lean:2273.
+Cross-state rejection (v0.16.12):
+4. Thread blocked on receive → send to *different* endpoint rejected with `.alreadyWaiting`
+5. Thread blocked on send → receive from *different* endpoint rejected with `.alreadyWaiting`
+
+All five use `expectError` with `.alreadyWaiting` error variant. Cross-state
+tests use a separate endpoint (ObjId 41) to ensure the enqueue path is taken
+(not the rendezvous path). Invoked from `main` at NegativeStateSuite.lean.
 
 #### L4-D: Multi-endpoint interleaving test (L-T05)
 
@@ -1159,7 +1167,7 @@ undocumented.
 | L-G05 | WS-L3 | L3-E | **ALREADY RESOLVED** (pre-existing in `CallReplyRecv.lean:797`) |
 | L-T01 | WS-L4 | L4-A (A1–A2) | **COMPLETED** (v0.16.12) — base roundtrip + A2 second-sender rendezvous |
 | L-T02 | WS-L4 | L4-B (B1–B4) | **COMPLETED** (v0.16.12) — lifecycle retype with queued senders + stale guard |
-| L-T04 | WS-L4 | L4-C (C1–C3) | **COMPLETED** (v0.16.11) |
+| L-T04 | WS-L4 | L4-C (C1–C5) | **COMPLETED** (v0.16.11, extended v0.16.12) — 3 same-type + 2 cross-state rejection |
 | L-T05 | WS-L4 | L4-D (D1–D4) | **COMPLETED** (v0.16.12) — 3-endpoint out-of-order + FIFO verification |
 | L-D01 | — | — | Superseded (WS-J1) |
 | L-D02 | WS-L5 | L5-A | Planned |

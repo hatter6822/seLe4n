@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-test-coverage-plan-d41qs",
-      "commit_sha": "94f7ccea8b6999a2bf4274e5df823e0b5ed810ba",
-      "tree_sha": "18e0e50ebbb16811ff59944d11cf7c7eaf88e974",
-      "committed_at_utc": "2026-03-15T20:48:49+00:00"
+      "commit_sha": "a73f4f79e37f1af0ce3a3b029a2c7c20d908eeb5",
+      "tree_sha": "eb0b97384331346cbab88cc1df0bae31e1abac08",
+      "committed_at_utc": "2026-03-15T21:15:57+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2bf7e5a2e59582bbef367a64541d33c04d186abeacf465db9ad5d5ebcf1bcd28"
+    "source_digest": "2470a7ea788105b3d77e09aad98475c98ceab52b44ebb4deef8e251bf59c0af4"
   },
   "summary": {
     "module_count": 73,
@@ -29,7 +29,7 @@
     "production_files": 69,
     "production_loc": 38349,
     "test_files": 4,
-    "test_loc": 4098,
+    "test_loc": 4115,
     "proved_theorem_lemma_decls": 1224,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -18186,7 +18186,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2261,
+          "line": 2278,
           "called": []
         }
       ]

@@ -136,12 +136,12 @@ RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply
 RRC-002 | IPC | replyRecv callerB state after rendezvous: blockedOnReply
 RRC-003 | IPC | replyRecv caller unblocked: true
 RRC-004 | IPC | replyRecv caller reply registers: some [100, 200, 300]
-RRC-005 | IPC | replyRecv server not blocked (rendezvous): true
+RRC-005 | IPC | replyRecv server ready after rendezvous: true
 RRC-006 | IPC | replyRecv server received callerB registers: some [70, 80, 90]
 ELC-001 | IPC | lifecycle senders blocked: true
 ELC-002 | IPC | lifecycle retype-delete succeeded: true
 ELC-003 | IPC | lifecycle senders retain stale blocked state: true
-ELC-004 | IPC | lifecycle stale endpoint send rejected: true
+ELC-004 | IPC | lifecycle stale endpoint send rejected (invalidCapability): true
 MEI-001 | IPC | multi-ep recv1 registers: some [11, 22]
 MEI-002 | IPC | multi-ep recv2 registers: some [33, 44]
 MEI-003 | IPC | multi-ep endpoint1 queues empty: true

@@ -2254,6 +2254,23 @@ def runWSL4BlockedThreadChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual epId tid7 .empty stNtfnBlocked)
     .alreadyWaiting
 
+  -- Cross-type: blocked on receive → send to DIFFERENT endpoint rejected
+  -- Uses a second endpoint where no receiver is waiting, forcing the enqueue path
+  -- which checks ipcState ≠ .ready and rejects with alreadyWaiting
+  let epId2 : SeLe4n.ObjId := ⟨41⟩
+  let stRecvBlockedWithEp2 : SystemState := { stRecvBlocked with
+    objects := stRecvBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
+  expectError "L4-C blocked-on-receive rejects send to different endpoint"
+    (SeLe4n.Kernel.endpointSendDual epId2 tid7 .empty stRecvBlockedWithEp2)
+    .alreadyWaiting
+
+  -- Cross-type: blocked on send → receive from DIFFERENT endpoint rejected
+  let stSendBlockedWithEp2 : SystemState := { stSendBlocked with
+    objects := stSendBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
+  expectError "L4-C blocked-on-send rejects receive from different endpoint"
+    (SeLe4n.Kernel.endpointReceiveDual epId2 tid7 stSendBlockedWithEp2)
+    .alreadyWaiting
+
   IO.println "all WS-L4-C blocked thread IPC rejection tests passed"
 
 end SeLe4n.Testing

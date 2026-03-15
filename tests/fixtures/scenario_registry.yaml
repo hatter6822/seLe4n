@@ -677,7 +677,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runReplyRecvRoundtripTrace
     subsystem: IPC
-    description: "replyRecv server not blocked (rendezvous): true"
+    description: "replyRecv server ready after rendezvous: true"
   RRC-006:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runReplyRecvRoundtripTrace
@@ -702,7 +702,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runEndpointLifecycleTrace
     subsystem: IPC
-    description: "lifecycle stale endpoint send rejected: true"
+    description: "lifecycle stale endpoint send rejected (invalidCapability): true"
   MEI-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMultiEndpointInterleavingTrace

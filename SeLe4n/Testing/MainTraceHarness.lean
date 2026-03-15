@@ -1610,13 +1610,13 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
                       | _ => "other"
                     | none => "missing"
                   IO.println s!"[RRC-002] replyRecv callerB state after rendezvous: {callerBState}"
-                  -- Verify server is NOT blocked (it received B's message via rendezvous)
+                  -- Verify server is ready (received B's message via rendezvous, not blocked)
                   let serverReady := match SeLe4n.Kernel.lookupTcb stReplyRecvd serverId with
                     | some tcb => match tcb.ipcState with
-                      | .blockedOnReceive _ => false
-                      | _ => true
+                      | .ready => true
+                      | _ => false
                     | none => false
-                  IO.println s!"[RRC-005] replyRecv server not blocked (rendezvous): {serverReady}"
+                  IO.println s!"[RRC-005] replyRecv server ready after rendezvous: {serverReady}"
                   -- L4-A2: Verify server received B's message registers
                   let serverMsg := match SeLe4n.Kernel.lookupTcb stReplyRecvd serverId with
                     | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
@@ -1635,14 +1635,12 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcSender1 : SeLe4n.ThreadId := ⟨1⟩
   let lcSender2 : SeLe4n.ThreadId := ⟨12⟩
   let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let lcCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨7⟩ }
-  -- Fresh endpoint and CNode with authority + cleanup caps
+  -- Fresh endpoint and CNode with authority cap for lifecycle retype
   let lcEp : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
     slots := Std.HashMap.ofList [
-      (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-      (⟨7⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
   }
   -- Build state with lifecycle metadata
@@ -1668,7 +1666,6 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
       |>.withLifecycleObjectType ⟨12⟩ .tcb
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.withLifecycleCapabilityRef lcAuthSlot (.object lcEpId)
-      |>.withLifecycleCapabilityRef lcCleanupSlot (.object lcEpId)
     ).build
   -- B1: Block both senders on the endpoint's sendQ
   let msg1 : IpcMessage := { registers := #[10, 20], caps := #[], badge := none }
@@ -1714,12 +1711,15 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
                 | none => false
               IO.println s!"[ELC-003] lifecycle senders retain stale blocked state: {s1StillBlocked && s2StillBlocked}"
               -- B3: Verify stale IPC operations on retyped endpoint are rejected
+              -- The endpoint was retyped to a notification, so endpointSendDual
+              -- pattern-matches `some (.endpoint ep)` which fails → falls to
+              -- `some _ => .error .invalidCapability`
               let msg3 : IpcMessage := { registers := #[99], caps := #[], badge := none }
               let staleResult := SeLe4n.Kernel.endpointSendDual lcEpId ⟨1⟩ msg3 stRetyped
               let staleRejected := match staleResult with
-                | .error _ => true
-                | .ok _ => false
-              IO.println s!"[ELC-004] lifecycle stale endpoint send rejected: {staleRejected}"
+                | .error .invalidCapability => true
+                | _ => false
+              IO.println s!"[ELC-004] lifecycle stale endpoint send rejected (invalidCapability): {staleRejected}"
 
   checkInvariants counter "post-endpoint-lifecycle-trace" st1
 
