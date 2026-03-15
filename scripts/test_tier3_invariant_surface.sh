@@ -874,6 +874,18 @@ run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
+# WS-K-E: Service policy configuration and IPC message population anchors.
+run_check "INVARIANT" rg -n '^structure ServiceConfig' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n 'def extractMessageRegisters' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_deterministic' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStart_uses_config' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStop_uses_config' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_populates_msg' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_populates_msg' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
+
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
@@ -955,6 +967,17 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
+-- WS-K-E: Service policy and IPC message population
+#check @SeLe4n.Model.ServiceConfig
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_length
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_ipc_bounded
+#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_deterministic
+#check @SeLe4n.Kernel.dispatchWithCap_serviceStart_uses_config
+#check @SeLe4n.Kernel.dispatchWithCap_serviceStop_uses_config
+#check @SeLe4n.Kernel.dispatchWithCap_send_populates_msg
+#check @SeLe4n.Kernel.dispatchWithCap_call_populates_msg
+#check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg
 EOF'
 
 finalize_report

@@ -1233,9 +1233,25 @@ theorems proved: `dispatchWithCap_lifecycleRetype_delegates`,
 `dispatchWithCap_vspaceMap_delegates`, `dispatchWithCap_vspaceUnmap_delegates`.
 All 13 syscalls now fully dispatch. Zero sorry/axiom. 18 new Tier 3 anchors.
 
-**Remaining (K-E through K-H):**
-- `ServiceConfig` for configuration-sourced service policy
-- `extractMessageRegisters` for IPC message body population
+**K-E (v0.16.4) — Service policy and IPC message population:**
+`ServiceConfig` structure in `SystemState` with `Inhabited` default (permissive
+`fun _ => true`). Service dispatch reads `st.serviceConfig.allowStart`/`allowStop`
+instead of hardcoded `(fun _ => true)` stubs. `extractMessageRegisters` converts
+`Array RegValue` → `Array Nat` (matching `IpcMessage.registers` type) with triple
+bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`). IPC dispatch arms
+(`.send`, `.call`, `.reply`) populate message bodies from decoded registers. Proved:
+`extractMessageRegisters_length` (result size ≤ `maxMessageRegisters`),
+`extractMessageRegisters_ipc_bounded` (constructed `IpcMessage` satisfies `bounded`),
+`extractMessageRegisters_deterministic`. 5 delegation theorems:
+`dispatchWithCap_serviceStart_uses_config`, `dispatchWithCap_serviceStop_uses_config`,
+`dispatchWithCap_send_populates_msg`, `dispatchWithCap_call_populates_msg`,
+`dispatchWithCap_reply_populates_msg`. All existing soundness theorems compile
+unchanged. Zero sorry/axiom. 11 new Tier 3 anchors.
+
+**Remaining (K-F through K-H):**
 - Round-trip proofs for all 7 argument decode functions
+- Message register extraction round-trip
 - Deferred NI proofs completed (CSpace CRUD, lifecycle retype)
+- Comprehensive testing (14+ negative-state, 6+ trace scenarios)
+- Documentation sync and workstream closeout
 - See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)

@@ -104,6 +104,23 @@ structure LifecycleMetadata where
   objectTypes : Std.HashMap SeLe4n.ObjId KernelObjectType
   capabilityRefs : Std.HashMap SlotRef CapTarget
 
+/-- Configuration record holding policy predicates for service operations.
+    The dispatch layer reads these from `SystemState.serviceConfig` to gate
+    `serviceStart` and `serviceStop` transitions.
+
+    Uses the expanded type `ServiceGraphEntry → Bool` rather than the
+    `ServicePolicy` alias (defined in `Service/Operations.lean`) to avoid
+    a circular import — `State.lean` is upstream of `Service/Operations.lean`.
+
+    `Inhabited` default is permissive (`fun _ => true`), preserving backward
+    compatibility for all existing `SystemState` construction sites. -/
+structure ServiceConfig where
+  allowStart : ServiceGraphEntry → Bool
+  allowStop  : ServiceGraphEntry → Bool
+
+instance : Inhabited ServiceConfig where
+  default := { allowStart := fun _ => true, allowStop := fun _ => true }
+
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- WS-G2/F-P01: Object store backed by `Std.HashMap` for O(1) amortized lookup.
@@ -133,6 +150,9 @@ structure SystemState where
       this set is the runtime fast path. -/
   objectIndexSet : Std.HashSet SeLe4n.ObjId := {}
   services : Std.HashMap ServiceId ServiceGraphEntry
+  /-- Service policy configuration for `serviceStart`/`serviceStop` gating.
+      Default permits all operations (backward compatible). -/
+  serviceConfig : ServiceConfig := default
   scheduler : SchedulerState
   irqHandlers : Std.HashMap SeLe4n.Irq SeLe4n.ObjId
   lifecycle : LifecycleMetadata
