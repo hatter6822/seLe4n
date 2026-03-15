@@ -288,32 +288,7 @@ theorem step_preserves_projection
       · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert,
               cspaceInsertSlot_preserves_machine st st' dst c hInsert]
   | cspaceRevoke addr hAddrH hOp =>
-    unfold cspaceRevoke at hOp
-    cases hL : cspaceLookupSlot addr st with
-    | error e => simp [hL] at hOp
-    | ok p =>
-      rcases p with ⟨par, stL⟩
-      have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr par hL
-      subst stL
-      cases hC : st.objects[addr.cnode]? with
-      | none => simp [hL, hC] at hOp
-      | some obj =>
-        cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL, hC] at hOp
-        | cnode cn =>
-          simp [hL, hC, storeObject] at hOp; cases hOp
-          rw [clearCapabilityRefsState_preserves_projectState]
-          simp only [projectState]; congr 1
-          · funext oid; by_cases hObs : objectObservable ctx observer oid
-            · simp [projectObjects, hObs]
-              have hNe : oid ≠ addr.cnode := by
-                intro hEq; subst hEq; simp [hAddrH] at hObs
-              simp [HashMap_getElem?_insert, Ne.symm hNe]
-            · simp [projectObjects, hObs]
-          · simp only [projectObjectIndex]
-            split
-            · rfl
-            · rw [List.filter_cons]; simp [hAddrH]
+    exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hOp
   | lifecycleRetype authority target newObj hTH hOp =>
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hOp with
       ⟨_, _, _, _, _, _, hStore⟩
