@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-proofs-workstream-7wJPV",
-      "commit_sha": "f641fb4b4b14a8991cd49404f799d089e2b8e9fe",
-      "tree_sha": "fa327c959982b9f9ab029f9d7ba986d67ca4b3f7",
-      "committed_at_utc": "2026-03-15T02:34:03+00:00"
+      "branch": "main",
+      "commit_sha": "dc4875f82a0cc0a87476eeea075cf7e9b017b7b3",
+      "tree_sha": "d89e6be547a53d2cade9ae3fe2a58c3f5ce96824",
+      "committed_at_utc": "2026-03-14T22:47:18-04:00"
     }
   },
   "source_sync": {
