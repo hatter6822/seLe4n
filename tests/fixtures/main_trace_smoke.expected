@@ -133,13 +133,22 @@ KSD-006 | Service | serviceStart config-sourced policy status: some (SeLe4n.Mode
 KSD-007 | IPC | IPC message body from registers: #[111, 222, 333, 444]
 KSD-008 | Architecture | round-trip decode msgRegs.size=4 first=10
 RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply
+RRC-002 | IPC | replyRecv callerB state after rendezvous: blockedOnReply
 RRC-003 | IPC | replyRecv caller unblocked: true
 RRC-004 | IPC | replyRecv caller reply registers: some [100, 200, 300]
-RRC-005 | IPC | replyRecv server blocked on receive: true
+RRC-005 | IPC | replyRecv server ready after rendezvous: true
+RRC-006 | IPC | replyRecv server received callerB registers: some [70, 80, 90]
+ELC-001 | IPC | lifecycle senders blocked: true
+ELC-002 | IPC | lifecycle retype-delete succeeded: true
+ELC-003 | IPC | lifecycle senders retain stale blocked state: true
+ELC-004 | IPC | lifecycle stale endpoint send rejected (invalidCapability): true
 MEI-001 | IPC | multi-ep recv1 registers: some [11, 22]
 MEI-002 | IPC | multi-ep recv2 registers: some [33, 44]
 MEI-003 | IPC | multi-ep endpoint1 queues empty: true
-ITR-001 | Testing | inter-transition invariant checks: 21 passed
+MEI-004 | IPC | multi-ep ep3 out-of-order recv registers: some [55, 66]
+MEI-005 | IPC | multi-ep ep1 FIFO second recv registers: some [77, 88]
+MEI-006 | IPC | multi-ep all 3 endpoints drained: true
+ITR-001 | Testing | inter-transition invariant checks: 22 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

@@ -28,7 +28,7 @@ all deferred WS-I5 items.
 | **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — **COMPLETED** (v0.16.9) |
 | **WS-L2** | Code quality: HashMap.fold migration — eliminate all `.toList.foldl/foldr` anti-patterns (closes WS-I5/R-17) | MEDIUM — **COMPLETED** (v0.16.10) |
 | **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — **COMPLETED** (v0.16.11) |
-| **WS-L4** | Test coverage: ReplyRecv positive-path, blocked thread rejection, multi-endpoint interleaving | MEDIUM — **PARTIALLY COMPLETE** |
+| **WS-L4** | Test coverage: ReplyRecv positive-path + rendezvous, endpoint lifecycle with queued threads, blocked thread rejection, multi-endpoint interleaving (3 endpoints) | MEDIUM — **COMPLETED** (v0.16.12) |
 | **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
 
 **WS-L1** (v0.16.9): Eliminated 4 redundant TCB lookups on IPC hot paths.
@@ -72,6 +72,19 @@ tail (`_preserves_tail_of_nonTail`), tail removal characterization (`_tail_updat
 L3-E: already resolved (pre-existing in `CallReplyRecv.lean:797`).
 22 new theorems, 1 new invariant definition. Zero sorry/axiom; all proofs
 machine-checked.
+
+**WS-L4** (v0.16.12): IPC test coverage expansion. Filled all 4 test coverage
+gaps identified during the IPC subsystem audit: L-T01 (ReplyRecv positive-path),
+L-T02 (endpoint lifecycle with queued threads), L-T04 (blocked thread rejection),
+L-T05 (multi-endpoint interleaving). 9 new scenario IDs (16 total across L4
+test functions), 2 new cross-state blocked-thread rejection tests (L4-C4/C5).
+L4-A2: extended `runReplyRecvRoundtripTrace` with second-sender rendezvous
+path (RRC-002, RRC-006). L4-B: new `runEndpointLifecycleTrace` validates
+graceful-failure-by-guard model when endpoint is retyped while senders are
+blocked on sendQ (ELC-001 through ELC-004). L4-D2/D3: extended
+`runMultiEndpointInterleavingTrace` from 2 to 3 endpoints with out-of-order
+receive and FIFO verification (MEI-004, MEI-005, MEI-006). L-T03 (cap transfer)
+intentionally deferred — CSpace IPC integration not yet modeled.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).

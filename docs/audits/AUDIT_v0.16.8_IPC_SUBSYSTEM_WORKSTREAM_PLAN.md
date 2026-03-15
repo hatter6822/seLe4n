@@ -877,13 +877,37 @@ No action required.
 
 ### WS-L4: Test Coverage Expansion
 
-**Objective**: Fill 5 test coverage gaps discovered during the IPC audit,
-adding runtime validation for ReplyRecv, lifecycle, capability transfer,
-blocked-thread rejection, and multi-endpoint interleaving.
+**Objective**: Fill test coverage gaps discovered during the IPC audit, adding
+runtime validation for ReplyRecv multi-sender paths, endpoint lifecycle with
+queued threads, blocked-thread rejection, and multi-endpoint interleaving with
+3+ endpoints. L-T03 (capability transfer during IPC) is intentionally deferred
+because CSpace-IPC integration is not yet modeled.
 
 **Priority**: MEDIUM — Phase 4
 **Dependencies**: WS-L1 (performance changes may affect operation signatures)
-**Findings addressed**: L-T01, L-T02, L-T03, L-T04, L-T05
+**Findings addressed**: L-T01, L-T02, L-T04, L-T05
+**Finding deferred**: L-T03 (cap transfer requires CSpace IPC integration not yet modeled)
+
+**Implementation status** (partial — items marked ✓ already implemented):
+
+| Task | Sub-step | Status | Version |
+|------|----------|--------|---------|
+| L4-A | A1 (base roundtrip) | ✓ Complete | v0.16.11 |
+| L4-A | A2 (second sender queued) | ✓ Complete | v0.16.12 |
+| L4-A | A3 (fixture + registry) | ✓ Complete | v0.16.12 |
+| L4-B | B1 (lifecycle fixture) | ✓ Complete | v0.16.12 |
+| L4-B | B2 (delete-with-senders) | ✓ Complete | v0.16.12 |
+| L4-B | B3 (stale-IPC guard) | ✓ Complete | v0.16.12 |
+| L4-B | B4 (fixture + registry) | ✓ Complete | v0.16.12 |
+| L4-C | C1 (send-while-blocked) | ✓ Complete | v0.16.11 |
+| L4-C | C2 (recv-while-blocked) | ✓ Complete | v0.16.11 |
+| L4-C | C3 (ntfn-while-blocked) | ✓ Complete | v0.16.11 |
+| L4-C | C4 (cross: recv→send diff ep) | ✓ Complete | v0.16.12 |
+| L4-C | C5 (cross: send→recv diff ep) | ✓ Complete | v0.16.12 |
+| L4-D | D1 (base 2-endpoint) | ✓ Complete | v0.16.11 |
+| L4-D | D2 (3rd endpoint + FIFO) | ✓ Complete | v0.16.12 |
+| L4-D | D3 (out-of-order recv) | ✓ Complete | v0.16.12 |
+| L4-D | D4 (fixture + registry) | ✓ Complete | v0.16.12 |
 
 #### L4-A: ReplyRecv positive-path test (L-T01)
 
@@ -891,87 +915,155 @@ blocked-thread rejection, and multi-endpoint interleaving.
 (NegativeStateSuite:572–589). No test exercises the positive path: server
 replies to caller, then immediately receives next sender's message.
 
-**Deliverables**:
+**Current state**: Base roundtrip implemented in `runReplyRecvRoundtripTrace`
+(MainTraceHarness.lean:1548–1598) with scenario IDs RRC-001, RRC-003, RRC-004,
+RRC-005. The test covers: caller calls → server receives → server ReplyRecv →
+verify caller unblocked with reply message → verify server blocked on receiveQ.
 
-1. Add `runReplyRecvRoundtripTrace` test function in `MainTraceHarness.lean`:
-   - Thread A calls endpoint (blockedOnCall → blockedOnReply)
-   - Thread B calls endpoint (queued on sendQ)
-   - Server thread uses ReplyRecv: replies to A, receives B's message
-   - Verify: A unblocked with reply message, server has B's message
-   - Verify: state transitions (A: blockedOnReply → ready, B: blockedOnCall → blockedOnReply)
-2. Add scenario IDs: `RRC-001` through `RRC-006`.
-3. Update fixture file with expected output.
+**Remaining gap**: The plan originally called for a second sender (Thread B)
+queued on the endpoint before ReplyRecv, so ReplyRecv both replies to Thread A
+AND immediately receives Thread B's message (the rendezvous-after-reply path).
+This is the more interesting positive-path scenario and exercises the dual
+reply+receive semantics of `endpointReplyRecv` more thoroughly.
+
+**Sub-steps**:
+
+- **A2: Add second-sender rendezvous to `runReplyRecvRoundtripTrace`**
+  1. After server receives caller A's message, have caller B call the same
+     endpoint (B enqueues on sendQ with `.blockedOnCall`).
+  2. Server issues `endpointReplyRecv`: replies to A with result message,
+     simultaneously receives B's message (rendezvous from sendQ).
+  3. Verify: A transitions `.blockedOnReply` → `.ready` with reply message.
+  4. Verify: B transitions `.blockedOnCall` → `.blockedOnReply` (server
+     received B's message, so B awaits reply).
+  5. Verify: server has B's pending message registers.
+  6. Emit scenario IDs: `RRC-002` (B's blockedOnReply state), `RRC-006`
+     (server received B's message registers).
+  7. Update `tests/fixtures/main_trace_smoke.expected` with RRC-002, RRC-006.
+  8. Update `tests/fixtures/scenario_registry.yaml` with RRC-002, RRC-006.
 
 **Files modified**:
-- `SeLe4n/Testing/MainTraceHarness.lean` — new test function
-- `tests/fixtures/main_trace_smoke.expected` — fixture update
+- `SeLe4n/Testing/MainTraceHarness.lean` — extend `runReplyRecvRoundtripTrace`
+- `tests/fixtures/main_trace_smoke.expected` — add RRC-002, RRC-006 fixture lines
+- `tests/fixtures/scenario_registry.yaml` — register RRC-002, RRC-006
 
 **Exit evidence**:
 - `test_smoke.sh` passes
-- RRC scenario IDs visible in trace output
+- All 6 RRC scenario IDs (RRC-001 through RRC-006) visible in trace output
+- ITR-001 check count incremented to reflect new invariant checks
 
 #### L4-B: Endpoint lifecycle with queued threads test (L-T02)
 
 **Problem**: No test exercises deletion of an endpoint while threads are blocked
-on its send/receive queues. This is a critical edge case for lifecycle safety.
+on its send queue. This is a critical edge case for lifecycle safety.
 
-**Deliverables**:
+**Design note**: Per `Lifecycle/Operations.lean:33–37`, endpoint queue cleanup
+during deletion is intentionally deferred. Blocked threads retain stale
+`ipcState` references after endpoint retype. Safety is maintained by
+`lookupTcb` guards on all subsequent IPC operations. The test validates this
+graceful-failure-by-guard model, not automatic thread unblocking.
 
-1. Add `runEndpointLifecycleTrace` test function in `MainTraceHarness.lean`:
-   - Enqueue 2 senders on endpoint
-   - Delete endpoint via lifecycle operation
-   - Verify: senders' ipcState transitions (blocked → ready or error)
-   - Verify: queue links cleared
-2. Add scenario IDs: `ELC-001` through `ELC-004`.
-3. Update fixture file.
+**Sub-steps**:
+
+- **B1: Build lifecycle-aware endpoint fixture**
+  1. Create a helper state with: endpoint, 2 TCBs (senders), lifecycle
+     metadata (`.withLifecycleObjectType`, `.withLifecycleCapabilityRef`),
+     a CNode with authority cap for the endpoint.
+  2. Block both senders on the endpoint's sendQ via `endpointSendDual`.
+  3. Emit `ELC-001`: confirm senders are `blockedOnSend`.
+
+- **B2: Execute retype-as-delete and verify graceful handling**
+  1. Use `lifecycleRevokeDeleteRetype` to delete (retype) the endpoint.
+  2. Verify: operation succeeds (`.ok`).
+  3. Verify: senders' `ipcState` still references the old endpoint ID
+     (stale but safe — no automatic cleanup).
+  4. Emit `ELC-002`: confirm retype succeeded.
+  5. Emit `ELC-003`: confirm senders retain stale `blockedOnSend` state.
+
+- **B3: Validate stale-IPC guard rejection**
+  1. Attempt `endpointSendDual` on the now-retyped object ID.
+  2. Verify: operation returns error (`.objectNotFound` or type mismatch)
+     because the endpoint object no longer exists under that ID.
+  3. Emit `ELC-004`: confirm stale endpoint operations are rejected.
+
+- **B4: Update fixtures and registry**
+  1. Add ELC-001 through ELC-004 to `main_trace_smoke.expected`.
+  2. Add ELC-001 through ELC-004 to `scenario_registry.yaml`.
 
 **Files modified**:
-- `SeLe4n/Testing/MainTraceHarness.lean` — new test function
-- `tests/fixtures/main_trace_smoke.expected` — fixture update
+- `SeLe4n/Testing/MainTraceHarness.lean` — new `runEndpointLifecycleTrace`
+- `tests/fixtures/main_trace_smoke.expected` — ELC fixture lines
+- `tests/fixtures/scenario_registry.yaml` — ELC registry entries
 
 **Exit evidence**:
 - `test_smoke.sh` passes
+- ELC-001 through ELC-004 visible in trace output
+- ITR-001 check count incremented
 
-#### L4-C: Blocked thread IPC rejection test (L-T04)
+#### L4-C: Blocked thread IPC rejection test (L-T04) — COMPLETED (v0.16.11, extended v0.16.12)
 
 **Problem**: No explicit test verifies that a thread already blocked on IPC
 is rejected when attempting another IPC operation.
 
-**Deliverables**:
+**Resolution**: Implemented as `runWSL4BlockedThreadChecks` in
+`NegativeStateSuite.lean:2200–2275`. Five rejection scenarios validated:
 
-1. Add negative test cases in `NegativeStateSuite.lean`:
-   - Thread blocked on send attempts another send → error
-   - Thread blocked on receive attempts send → error
-   - Thread blocked on notification wait attempts endpoint receive → error
-2. Verify error type is `alreadyWaiting` or `illegalState`.
+Same-type rejection (v0.16.11):
+1. Thread blocked on send → second send rejected with `.alreadyWaiting`
+2. Thread blocked on receive → second receive rejected with `.alreadyWaiting`
+3. Thread blocked on notification wait → send rejected with `.alreadyWaiting`
 
-**Files modified**:
-- `tests/NegativeStateSuite.lean` — new negative cases
+Cross-state rejection (v0.16.12):
+4. Thread blocked on receive → send to *different* endpoint rejected with `.alreadyWaiting`
+5. Thread blocked on send → receive from *different* endpoint rejected with `.alreadyWaiting`
 
-**Exit evidence**:
-- `test_smoke.sh` passes
+All five use `expectError` with `.alreadyWaiting` error variant. Cross-state
+tests use a separate endpoint (ObjId 41) to ensure the enqueue path is taken
+(not the rendezvous path). Invoked from `main` at NegativeStateSuite.lean.
 
 #### L4-D: Multi-endpoint interleaving test (L-T05)
 
 **Problem**: Existing tests use at most 2 endpoints. Complex interleaving
 across 3+ endpoints is not tested.
 
-**Deliverables**:
+**Current state**: Base 2-endpoint test implemented in
+`runMultiEndpointInterleavingTrace` (MainTraceHarness.lean:1604–1646) with
+scenario IDs MEI-001, MEI-002, MEI-003. Covers: send on EP1 → receive EP1 →
+send on EP2 → receive EP2 → verify cross-endpoint independence.
 
-1. Add `runMultiEndpointInterleavingTrace` in `MainTraceHarness.lean`:
-   - Create 3 endpoints
-   - Thread A sends to EP1, Thread B sends to EP2, Thread C sends to EP3
-   - Receiver receives from EP2 first, then EP1, then EP3
-   - Verify FIFO per-endpoint, cross-endpoint independence
-2. Add scenario IDs: `MEI-001` through `MEI-006`.
-3. Update fixture file.
+**Remaining gaps**:
+1. Only 2 endpoints used (plan specified 3+).
+2. No FIFO ordering verification within a single endpoint.
+3. No out-of-order receive verification (receive from EP2 before EP1).
+
+**Sub-steps**:
+
+- **D2: Add 3rd endpoint and FIFO verification**
+  1. Add EP3 (`ObjId ⟨201⟩`) to the endpoint set.
+  2. Send two messages to EP1 from different threads (or same thread
+     re-readied between sends) to create a 2-deep sendQ.
+  3. Receive both from EP1 and verify FIFO order (first-sent received first).
+  4. Emit `MEI-004`: confirm FIFO ordering on EP1.
+
+- **D3: Add out-of-order cross-endpoint receive**
+  1. Send on EP3, then send on EP1 (reversed creation order).
+  2. Receive from EP3 first, then EP1 — verify correct message isolation.
+  3. Emit `MEI-005`: confirm EP3 message received correctly.
+  4. Emit `MEI-006`: confirm all 3 endpoints' queues are empty after draining.
+
+- **D4: Update fixtures and registry**
+  1. Add MEI-004, MEI-005, MEI-006 to `main_trace_smoke.expected`.
+  2. Add MEI-004, MEI-005, MEI-006 to `scenario_registry.yaml`.
 
 **Files modified**:
-- `SeLe4n/Testing/MainTraceHarness.lean` — new test function
-- `tests/fixtures/main_trace_smoke.expected` — fixture update
+- `SeLe4n/Testing/MainTraceHarness.lean` — extend `runMultiEndpointInterleavingTrace`
+- `tests/fixtures/main_trace_smoke.expected` — add MEI-004/005/006 fixture lines
+- `tests/fixtures/scenario_registry.yaml` — register MEI-004/005/006
 
 **Exit evidence**:
 - `test_smoke.sh` passes
+- All 6 MEI scenario IDs (MEI-001 through MEI-006) visible in trace output
+- ITR-001 check count incremented
 
 ---
 
@@ -1073,10 +1165,10 @@ undocumented.
 | L-G03 | WS-L3 | L3-C | **COMPLETED** (v0.16.11) — C1 definition + C2 queue-op preservation + C3 high-level preservation (all 3 theorems) |
 | L-G04 | WS-L3 | L3-D | **COMPLETED** (v0.16.11) |
 | L-G05 | WS-L3 | L3-E | **ALREADY RESOLVED** (pre-existing in `CallReplyRecv.lean:797`) |
-| L-T01 | WS-L4 | L4-A | Planned |
-| L-T02 | WS-L4 | L4-B | Planned |
-| L-T04 | WS-L4 | L4-C | Planned |
-| L-T05 | WS-L4 | L4-D | Planned |
+| L-T01 | WS-L4 | L4-A (A1–A2) | **COMPLETED** (v0.16.12) — base roundtrip + A2 second-sender rendezvous |
+| L-T02 | WS-L4 | L4-B (B1–B4) | **COMPLETED** (v0.16.12) — lifecycle retype with queued senders + stale guard |
+| L-T04 | WS-L4 | L4-C (C1–C5) | **COMPLETED** (v0.16.11, extended v0.16.12) — 3 same-type + 2 cross-state rejection |
+| L-T05 | WS-L4 | L4-D (D1–D4) | **COMPLETED** (v0.16.12) — 3-endpoint out-of-order + FIFO verification |
 | L-D01 | — | — | Superseded (WS-J1) |
 | L-D02 | WS-L5 | L5-A | Planned |
 | L-D03 | WS-L5 | L5-B | Planned |
