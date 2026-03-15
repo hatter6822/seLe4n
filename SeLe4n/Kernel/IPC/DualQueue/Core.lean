@@ -169,6 +169,24 @@ theorem storeTcbQueueLinks_tcb_forward
         exact ⟨_, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
   · exact ⟨tcb, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep]; exact hTcb⟩
 
+/-- WS-L3/L3-C: storeTcbQueueLinks forward-preserves endpoint existence.
+An endpoint at any ObjId in the pre-state survives storeTcbQueueLinks. -/
+theorem storeTcbQueueLinks_endpoint_forward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
+  by_cases hEq : oid = tid.toObjId
+  · -- If oid = tid.toObjId, then st.objects[oid]? is both endpoint and TCB — contradiction
+    subst hEq; unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      rw [lookupTcb_some_objects st tid tcb hLookup] at hEp; cases hEp
+  · exact ⟨ep, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep]; exact hEp⟩
+
 -- WS-L1/L1-A: Return type includes pre-dequeue TCB. Non-queue fields
 -- (ipcState, pendingMessage, priority, domain) are accurate; queue link
 -- fields (queuePrev, queuePPrev, queueNext) are stale (cleared in post-state).

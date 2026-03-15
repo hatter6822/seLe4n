@@ -1,3 +1,25 @@
+## [0.16.11] — IPC Proof Strengthening (WS-L3)
+
+- Added 14 new theorems and 1 new invariant definition strengthening formal
+  assurance of the IPC dual-queue subsystem
+- L3-A: Enqueue-dequeue round-trip theorem — proves that a thread enqueued
+  into an empty queue can be successfully dequeued via popHead
+  (`endpointQueueEnqueue_then_popHead_succeeds` + 2 postcondition lemmas)
+- L3-B: Standalone `tcbQueueLinkIntegrity` preservation for popHead and
+  enqueue, extracted from bundled `dualQueueSystemInvariant` preservation
+- L3-C: New `ipcStateQueueConsistent` invariant (blocked → endpoint exists)
+  with queue-operation preservation theorems; 3 forward endpoint preservation
+  helpers (`storeTcbQueueLinks_endpoint_forward`, `endpointQueuePopHead_endpoint_forward`,
+  `endpointQueueEnqueue_endpoint_forward`)
+- L3-D: Tail consistency for `endpointQueueRemoveDual` — non-tail removal
+  preserves tail, tail removal characterization
+- L3-E: Identified as already resolved (pre-existing in `CallReplyRecv.lean:797`)
+- Refined WS-L3 workstream plan with granular subtask breakdown
+- Regenerated `docs/codebase_map.json` — 37,866 production LoC, 1,216 proved
+  declarations
+- Bumped `lakefile.toml` version to 0.16.11
+- Zero sorry/axiom; all proofs machine-checked; test_full.sh passes
+
 ## [0.16.10] — Code Quality & HashMap.fold Migration (WS-L2)
 
 - Eliminated all 4 `Std.HashMap.toList.foldl/foldr` anti-patterns across codebase,

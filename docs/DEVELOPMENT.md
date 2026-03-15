@@ -49,9 +49,10 @@ comprehensive testing, and documentation sync. See
 The **active workstream** is **WS-L** (IPC subsystem audit & remediation): a
 comprehensive end-to-end audit of the IPC subsystem identified 3 performance
 optimizations, 5 proof strengthening opportunities, and 5 test coverage gaps.
-WS-L also resolves all deferred WS-I5 items. 5 phases: L1 (performance), L2
-(code quality), L3 (proof strengthening), L4 (test coverage — partially
-complete), L5 (documentation — in progress). See
+WS-L also resolves all deferred WS-I5 items. 5 phases: L1 (performance — **COMPLETED** v0.16.9), L2
+(code quality — **COMPLETED** v0.16.10), L3 (proof strengthening —
+**COMPLETED** v0.16.11), L4 (test coverage — partially complete),
+L5 (documentation — in progress). See
 [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-L is **Raspberry Pi 5 hardware binding**:

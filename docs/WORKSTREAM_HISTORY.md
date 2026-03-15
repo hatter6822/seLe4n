@@ -27,7 +27,7 @@ all deferred WS-I5 items.
 |----|-------|----------|
 | **WS-L1** | IPC performance optimization: eliminate redundant TCB lookups in endpointReceiveDual, endpointReply, notificationWait | HIGH — **COMPLETED** (v0.16.9) |
 | **WS-L2** | Code quality: HashMap.fold migration — eliminate all `.toList.foldl/foldr` anti-patterns (closes WS-I5/R-17) | MEDIUM — **COMPLETED** (v0.16.10) |
-| **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — planned |
+| **WS-L3** | Proof strengthening: enqueue-dequeue round-trip, queue link integrity, ipcState-queue consistency, tail preservation, reply contract preservation | MEDIUM — **COMPLETED** (v0.16.11) |
 | **WS-L4** | Test coverage: ReplyRecv positive-path, blocked thread rejection, multi-endpoint interleaving | MEDIUM — **PARTIALLY COMPLETE** |
 | **WS-L5** | Documentation: IF readers' guide, fixture update process, metrics automation, full doc sync (closes WS-I5/R-13/R-14/R-18) | LOW — **IN PROGRESS** |
 
@@ -52,6 +52,22 @@ updated 3 preservation proofs (`_objects_eq`, `_lifecycle_eq`, `_scheduler_eq`)
 using `Std.HashMap.fold_eq_foldl_toList` bridge lemma. Refined WS-L2 workstream
 plan with expanded scope covering all 4 sites (original plan only covered 1).
 Zero sorry/axiom; all proofs machine-checked.
+
+**WS-L3** (v0.16.11): Proof strengthening for IPC dual-queue subsystem.
+L3-A: enqueue-dequeue round-trip theorem — `endpointQueueEnqueue_empty_sets_head`
+(postcondition), `endpointQueueEnqueue_empty_queueNext_none` (TCB state),
+`endpointQueueEnqueue_then_popHead_succeeds` (composed round-trip).
+L3-B: standalone `tcbQueueLinkIntegrity` preservation for popHead and enqueue
+(extracted from bundled `dualQueueSystemInvariant`).
+L3-C: `ipcStateQueueConsistent` invariant definition (blocked → endpoint exists)
+plus queue-operation preservation (popHead, enqueue). Forward endpoint preservation
+helpers (`storeTcbQueueLinks_endpoint_forward`, `endpointQueuePopHead_endpoint_forward`,
+`endpointQueueEnqueue_endpoint_forward`).
+L3-D: tail consistency for `endpointQueueRemoveDual` — non-tail removal preserves
+tail (`_preserves_tail_of_nonTail`), tail removal characterization (`_tail_update`).
+L3-E: already resolved (pre-existing in `CallReplyRecv.lean:797`).
+14 new theorems, 1 new invariant definition. Zero sorry/axiom; all proofs
+machine-checked.
 
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).

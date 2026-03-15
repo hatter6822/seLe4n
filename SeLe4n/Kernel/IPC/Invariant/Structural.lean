@@ -2339,4 +2339,101 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hStep,
    hDualQueue', hBounded', hBadge'⟩
 
+-- ============================================================================
+-- WS-L3/L3-B: Standalone tcbQueueLinkIntegrity preservation
+-- ============================================================================
+
+/-- WS-L3/L3-B1: PopHead preserves `tcbQueueLinkIntegrity` as a standalone
+property. Extracts from the bundled `dualQueueSystemInvariant` preservation. -/
+theorem endpointQueuePopHead_preserves_tcbQueueLinkIntegrity
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
+    (hInv : dualQueueSystemInvariant st) :
+    tcbQueueLinkIntegrity st' :=
+  (endpointQueuePopHead_preserves_dualQueueSystemInvariant
+    endpointId isReceiveQ st st' tid hStep hInv).2
+
+/-- WS-L3/L3-B2: Enqueue preserves `tcbQueueLinkIntegrity` as a standalone
+property. Extracts from the bundled `dualQueueSystemInvariant` preservation. -/
+theorem endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (enqueueTid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
+    (hInv : dualQueueSystemInvariant st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some enqueueTid ∧ ep.sendQ.tail ≠ some enqueueTid ∧
+      ep.receiveQ.head ≠ some enqueueTid ∧ ep.receiveQ.tail ≠ some enqueueTid)
+    (hTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid)) :
+    tcbQueueLinkIntegrity st' :=
+  (endpointQueueEnqueue_preserves_dualQueueSystemInvariant
+    endpointId isReceiveQ enqueueTid st st' hStep hInv hFreshTid hTailFresh).2
+
+-- ============================================================================
+-- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
+-- ============================================================================
+
+/-- WS-L3/L3-C2: PopHead preserves ipcStateQueueConsistent. PopHead does not
+modify any thread's ipcState and preserves all endpoints, so the forward
+implication (blocked → endpoint exists) is maintained. -/
+theorem endpointQueuePopHead_preserves_ipcStateQueueConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  -- Step 1: find the pre-state TCB with same ipcState
+  obtain ⟨tcb, hTcb, hIpc⟩ := endpointQueuePopHead_tcb_ipcState_backward
+    endpointId isReceiveQ st st' tid tid' tcb' hStep hTcb'
+  -- Step 2: apply pre-state invariant
+  have hPre := hInv tid' tcb hTcb
+  -- Step 3: show endpoints survive the operation
+  rw [← hIpc]
+  match h : tcb.ipcState with
+  | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+  | .blockedOnSend epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueuePopHead_endpoint_forward endpointId isReceiveQ st st' tid headTcb epId ep hStep hEp
+  | .blockedOnReceive epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueuePopHead_endpoint_forward endpointId isReceiveQ st st' tid headTcb epId ep hStep hEp
+  | .blockedOnCall epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueuePopHead_endpoint_forward endpointId isReceiveQ st st' tid headTcb epId ep hStep hEp
+
+/-- WS-L3/L3-C2: Enqueue preserves ipcStateQueueConsistent. Enqueue does not
+modify any thread's ipcState and preserves all endpoints. -/
+theorem endpointQueueEnqueue_preserves_ipcStateQueueConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (enqueueTid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  obtain ⟨tcb, hTcb, hIpc⟩ := endpointQueueEnqueue_tcb_ipcState_backward
+    endpointId isReceiveQ enqueueTid st st' tid' tcb' hStep hTcb'
+  have hPre := hInv tid' tcb hTcb
+  rw [← hIpc]
+  match h : tcb.ipcState with
+  | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+  | .blockedOnSend epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueueEnqueue_endpoint_forward endpointId isReceiveQ enqueueTid st st' epId ep hStep hEp
+  | .blockedOnReceive epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueueEnqueue_endpoint_forward endpointId isReceiveQ enqueueTid st st' epId ep hStep hEp
+  | .blockedOnCall epId =>
+    rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+    exact endpointQueueEnqueue_endpoint_forward endpointId isReceiveQ enqueueTid st st' epId ep hStep hEp
+
 end SeLe4n.Kernel

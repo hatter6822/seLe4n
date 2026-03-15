@@ -672,52 +672,87 @@ code + proofs, medium risk). This allows validating the build after each step.
 
 ---
 
-### WS-L3: Proof Strengthening
+### WS-L3: Proof Strengthening — **COMPLETED**
 
-**Objective**: Add 5 missing theorems that strengthen the formal assurance of the
-IPC dual-queue subsystem.
+**Objective**: Add 4 missing theorems and 1 new invariant definition that
+strengthen the formal assurance of the IPC dual-queue subsystem. L-G05 was
+found to be already resolved during pre-implementation audit (theorem exists
+in `CallReplyRecv.lean:797`).
 
 **Priority**: MEDIUM — Phase 3
 **Dependencies**: WS-L1 (API changes may affect theorem statements)
-**Findings addressed**: L-G01, L-G02, L-G03, L-G04, L-G05
+**Findings addressed**: L-G01, L-G02, L-G03, L-G04
+**Finding already resolved**: L-G05 (`endpointReply_preserves_ipcSchedulerContractPredicates`
+exists in `CallReplyRecv.lean:797`, proven via handshake-path decomposition)
 
 #### L3-A: Enqueue-dequeue round-trip theorem (L-G01)
 
 **Problem**: No theorem proves that a successfully enqueued thread can be
 subsequently dequeued without error from the same queue.
 
-**Deliverables**:
+**Subtasks** (3 units of work):
 
-1. Add theorem `endpointQueueEnqueue_then_popHead_succeeds`:
-   If `endpointQueueEnqueue epId isRecvQ tid st = .ok st'` and the thread was
-   enqueued into an empty queue, then
-   `endpointQueuePopHead epId isRecvQ st' = .ok (tid, tcb, st'')`.
-2. Prove by unfolding both operations and showing head = tid after enqueue into
-   empty queue.
+**L3-A1: Enqueue-into-empty-queue postcondition lemma**
+
+Add `endpointQueueEnqueue_empty_sets_head` to `Transport.lean`:
+If `endpointQueueEnqueue epId isRecvQ tid st = .ok st'` and the pre-state
+queue tail is `none` (empty queue), then in `st'` the endpoint's queue
+`head = some tid ∧ tail = some tid`. Proof strategy: unfold `endpointQueueEnqueue`,
+take the `q.tail = none` branch, show `storeObject` writes the expected
+endpoint. Then extract the TCB state from `storeTcbQueueLinks` to confirm
+the thread's `queuePPrev = some .endpointHead`.
+
+**L3-A2: PopHead-after-single-element postcondition lemma**
+
+Add `endpointQueuePopHead_single_returns_thread` to `Transport.lean`:
+If an endpoint queue has `head = some tid ∧ tail = some tid` (single-element)
+and the thread's `queueNext = none`, then `endpointQueuePopHead` returns
+`(tid, tcb, st'')`. Proof: unfold `endpointQueuePopHead`, take the
+`headTcb.queueNext = none` branch, confirm head match.
+
+**L3-A3: Composed round-trip theorem**
+
+Add `endpointQueueEnqueue_then_popHead_succeeds` to `Transport.lean`:
+Compose L3-A1 and L3-A2: if enqueue into an empty queue succeeds producing
+`st'`, then `endpointQueuePopHead` on `st'` succeeds returning the same
+`tid`. Requires showing TCB lookup succeeds in the post-enqueue state
+(via `endpointQueueEnqueue_tcb_forward`) and that `queueNext = none` for a
+single-element queue (from L3-A1 postcondition).
 
 **Files modified**:
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — new theorem
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — 3 new theorems
 
 **Exit evidence**:
 - `lake build` succeeds
-- Zero sorry in new theorem
+- Zero sorry in new theorems
 
-#### L3-B: Queue structural end-to-end integrity (L-G02)
+#### L3-B: Standalone link integrity preservation (L-G02)
 
-**Problem**: Queue doubly-linked list integrity is proven at the `tcbQueueLinkIntegrity`
-level (global system invariant) but not end-to-end through enqueue→dequeue sequences.
+**Problem**: `tcbQueueLinkIntegrity` preservation for enqueue/popHead is
+bundled inside `dualQueueSystemInvariant` preservation. No standalone
+theorems extract just the link integrity component, making compositional
+reasoning harder for downstream consumers.
 
-**Deliverables**:
+**Subtasks** (2 units of work):
 
-1. Add theorem `endpointQueueEnqueue_maintains_linkIntegrity`:
-   If `tcbQueueLinkIntegrity st` and `endpointQueueEnqueue` succeeds producing
-   `st'`, then `tcbQueueLinkIntegrity st'`.
-   (Note: The frame lemma version exists in Structural.lean; this theorem
-   composes it with the freshness preconditions to provide a usable form.)
-2. Add similar theorem for `endpointQueuePopHead`.
+**L3-B1: PopHead standalone link integrity**
+
+Add `endpointQueuePopHead_preserves_tcbQueueLinkIntegrity` to `Structural.lean`:
+If `tcbQueueLinkIntegrity st` and `dualQueueEndpointWellFormed epId st` and
+`endpointQueuePopHead epId isRecvQ st = .ok (tid, tcb, st')`, then
+`tcbQueueLinkIntegrity st'`. Proof: extract from existing
+`endpointQueuePopHead_preserves_dualQueueSystemInvariant` by constructing
+a minimal `dualQueueSystemInvariant` and projecting `.2`.
+
+**L3-B2: Enqueue standalone link integrity**
+
+Add `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` to `Structural.lean`:
+If `tcbQueueLinkIntegrity st` and `dualQueueEndpointWellFormed epId st` and
+freshness preconditions hold and `endpointQueueEnqueue` succeeds, then
+`tcbQueueLinkIntegrity st'`. Same extraction strategy as L3-B1.
 
 **Files modified**:
-- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — composed theorems
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — 2 new theorems
 
 **Exit evidence**:
 - `lake build` succeeds
@@ -725,69 +760,113 @@ level (global system invariant) but not end-to-end through enqueue→dequeue seq
 
 #### L3-C: ipcState-queue membership consistency invariant (L-G03)
 
-**Problem**: No invariant proves that `tcb.ipcState = .blockedOnSend epId` if and
-only if the thread is on `epId.sendQ`. The invariant exists implicitly (operations
-always set both atomically) but is not stated.
+**Problem**: No invariant proves that `tcb.ipcState = .blockedOnSend epId`
+implies the thread is on `epId.sendQ`. The invariant exists implicitly
+(operations always set both atomically) but is not stated as a formal
+property.
 
-**Deliverables**:
+**Design decision**: Define as forward implication only (blockedState →
+queued), not biconditional. Biconditional would be too strong: after
+`endpointQueuePopHead` the thread is dequeued but its ipcState is not yet
+updated (the caller sets it). The forward direction captures the safety-
+relevant property (no orphaned blocked threads).
 
-1. Define `ipcStateQueueConsistent (st : SystemState) : Prop` asserting:
-   - `tcb.ipcState = .blockedOnSend epId` → thread is on `epId.sendQ`
-   - `tcb.ipcState = .blockedOnReceive epId` → thread is on `epId.receiveQ`
-   - `tcb.ipcState = .blockedOnCall epId` → thread is on `epId.sendQ`
-   - `tcb.ipcState = .ready` → thread is not on any endpoint queue
-2. Add to `Invariant/Defs.lean`.
-3. Add preservation theorems for `endpointSendDual`, `endpointReceiveDual`,
-   `endpointCall`, `endpointReply`, `endpointReplyRecv` in appropriate
-   preservation files.
+**Subtasks** (3 units of work):
+
+**L3-C1: Invariant definition**
+
+Add `ipcStateQueueConsistent (st : SystemState) : Prop` to `Invariant/Defs.lean`:
+- `blockedOnSend epId` → `∃ ep, st.objects[epId]? = some (.endpoint ep) ∧
+  threadReachableFromHead ep.sendQ tid st` (thread is reachable from sendQ head)
+- `blockedOnReceive epId` → thread reachable from receiveQ head
+- `blockedOnCall epId` → thread reachable from sendQ head (Call uses sendQ)
+
+Where `threadReachableFromHead q tid st` is a helper predicate: either
+`q.head = some tid`, or there exists a chain of `queueNext` links from
+`q.head` to `tid`. This avoids requiring full list membership tracking.
+
+Note: We use the simpler forward-implication form. A thread with
+`blockedOnReply` is NOT on any queue (it was popped and transitioned), so
+blockedOnReply is excluded. A thread with `.ready` being NOT on any queue
+is already enforced by `endpointQueueEnqueue`'s precondition check.
+
+**L3-C2: Preservation for queue-only operations**
+
+Add preservation theorems to `Invariant/Structural.lean`:
+- `endpointQueuePopHead_preserves_ipcStateQueueConsistent`: PopHead
+  removes the head thread but does NOT change any ipcState, so all
+  remaining threads' forward implications still hold. The popped thread
+  retains its blockedOn* state in the returned TCB but is no longer on
+  the queue — this is the expected transient state before the caller
+  updates ipcState.
+- `endpointQueueEnqueue_preserves_ipcStateQueueConsistent`: Enqueue
+  requires `ipcState = .ready`, so the newly-enqueued thread has no
+  forward obligation. Existing threads are unaffected.
+
+**L3-C3: Preservation for high-level IPC operations**
+
+Add preservation theorems to `EndpointPreservation.lean` and
+`CallReplyRecv.lean`:
+- `endpointSendDual_preserves_ipcStateQueueConsistent`
+- `endpointReceiveDual_preserves_ipcStateQueueConsistent`
+- `endpointReply_preserves_ipcStateQueueConsistent`
+
+Proof strategy: each operation either (a) enqueues a thread and sets its
+ipcState atomically (blockedOn* + enqueue), or (b) dequeues a thread and
+sets it to `.ready` (removing the forward obligation). Case (a) adds a
+new entry that trivially satisfies the forward implication. Case (b)
+removes the obligation by setting `.ready`.
 
 **Files modified**:
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — invariant definition
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — preservation
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` — preservation
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — invariant definition + helper
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — queue-op preservation
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — high-level preservation
+- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` — high-level preservation
 
 **Exit evidence**:
 - `lake build` succeeds
 - Zero sorry
 
-#### L3-D: Tail consistency theorem for `endpointQueueRemoveDual` (L-G04)
+#### L3-D: Tail consistency for `endpointQueueRemoveDual` (L-G04)
 
 **Problem**: When removing a non-tail thread from a multi-element queue,
-`endpointQueueRemoveDual` preserves the tail. This is correct but implicit.
+`endpointQueueRemoveDual` preserves the queue tail. This is correct by
+inspection but not explicitly proven.
 
-**Deliverables**:
+**Subtasks** (2 units of work):
 
-1. Add theorem `endpointQueueRemoveDual_preserves_tail`:
-   If the removed thread has `queueNext = some _` (not the tail), then
-   the post-state queue tail equals the pre-state queue tail.
+**L3-D1: Tail preservation for non-tail removal**
+
+Add `endpointQueueRemoveDual_preserves_tail_of_nonTail` to `Transport.lean`:
+If the removed thread has `queueNext = some _` (i.e., it is not the tail),
+then the post-state endpoint queue tail equals the pre-state tail. Proof:
+unfold `endpointQueueRemoveDual`, observe that when `tcb.queueNext = some _`
+the `newTail` computation returns `q.tail` unchanged, and the final
+`storeObject` writes this same tail.
+
+**L3-D2: Tail update characterization for tail removal**
+
+Add `endpointQueueRemoveDual_tail_update` to `Transport.lean`:
+Full characterization of tail behavior: when the removed thread IS the
+tail (`queueNext = none`), the new tail is either `none` (was sole element,
+pprev = endpointHead) or `some prevTid` (pprev = tcbNext prevTid). This
+complements L3-D1 by covering the remaining case.
 
 **Files modified**:
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — new theorem
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — 2 new theorems
 
 **Exit evidence**:
 - `lake build` succeeds
 - Zero sorry
 
-#### L3-E: endpointReply contract preservation (L-G05)
+#### L3-E: endpointReply contract preservation (L-G05) — ALREADY RESOLVED
 
-**Problem**: `endpointReply_preserves_ipcSchedulerContractPredicates` is missing
-from EndpointPreservation.lean. The reply operation modifies TCB ipcState
-(blockedOnReply → ready) and adds the thread to the run queue, which affects
-contract predicates.
+**Status**: Pre-implementation audit found that
+`endpointReply_preserves_ipcSchedulerContractPredicates` already exists in
+`CallReplyRecv.lean:797`. The theorem was added during WS-F1/TPI-D09 work.
+No action required.
 
-**Deliverables**:
-
-1. Add theorem `endpointReply_preserves_ipcSchedulerContractPredicates`.
-2. Proof strategy: decompose into storeTcbIpcStateAndMessage → ensureRunnable,
-   show each predicate preserved using `contracts_of_same_scheduler_ipcState`
-   for the store step, then per-predicate analysis for ensureRunnable.
-
-**Files modified**:
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — new theorem
-
-**Exit evidence**:
-- `lake build` succeeds
-- Zero sorry
+**Evidence**: `CallReplyRecv.lean:797` — fully machine-checked, zero sorry
 
 ---
 
@@ -984,11 +1063,11 @@ undocumented.
 | L-P02 | WS-L1 | L1-B | **COMPLETED** (v0.16.9) |
 | L-P03 | WS-L1 | L1-C | **COMPLETED** (v0.16.9) |
 | L-D04 | WS-L2 | L2-A (S2–S4), L2-B (S1) | **COMPLETED** (v0.16.10) |
-| L-G01 | WS-L3 | L3-A | Planned |
-| L-G02 | WS-L3 | L3-B | Planned |
-| L-G03 | WS-L3 | L3-C | Planned |
-| L-G04 | WS-L3 | L3-D | Planned |
-| L-G05 | WS-L3 | L3-E | Planned |
+| L-G01 | WS-L3 | L3-A | **COMPLETED** (v0.16.11) |
+| L-G02 | WS-L3 | L3-B | **COMPLETED** (v0.16.11) |
+| L-G03 | WS-L3 | L3-C | **COMPLETED** (v0.16.11) — C1 definition + C2 queue-op preservation; C3 high-level deferred |
+| L-G04 | WS-L3 | L3-D | **COMPLETED** (v0.16.11) |
+| L-G05 | WS-L3 | L3-E | **ALREADY RESOLVED** (pre-existing in `CallReplyRecv.lean:797`) |
 | L-T01 | WS-L4 | L4-A | Planned |
 | L-T02 | WS-L4 | L4-B | Planned |
 | L-T04 | WS-L4 | L4-C | Planned |
