@@ -120,6 +120,8 @@ The `queuePPrev` field enables O(1) mid-queue removal without scanning — criti
 
 WS-H5 formalized this with `intrusiveQueueWellFormed` and `tcbQueueLinkIntegrity`, with 13 preservation theorems covering all queue operations.
 
+WS-L1 (v0.16.9) eliminated 4 redundant TCB lookups on IPC hot paths by returning the pre-dequeue TCB from `endpointQueuePopHead` and adding `_fromTcb` variants of store operations with equivalence theorems. This avoids O(log n) HashMap lookups on every endpoint receive, reply, and notification wait — zero new preservation lemmas needed.
+
 ## 4. Capability derivation tree: node-stable CDT
 
 seL4's CDT uses mutable doubly-linked lists. seLe4n replaces this with a node-stable design:

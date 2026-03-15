@@ -156,6 +156,7 @@ Preservation shape:
 - WS-F4 notification: `notificationSignal_preserves_ipcInvariant`, `notificationSignal_preserves_schedulerInvariantBundle`, `notificationWait_preserves_ipcInvariant`, `notificationWait_preserves_schedulerInvariantBundle` (F-12).
 - WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
 - WS-H5 dual-queue structural invariant: 13 `*_preserves_dualQueueSystemInvariant` theorems covering `endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`, plus 5 state-only ops (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`).
+- WS-L1 IPC performance optimization (v0.16.9): `endpointQueuePopHead` returns pre-dequeue TCB in 3-tuple `(ThreadId × TCB × SystemState)`, eliminating redundant lookups. `storeTcbIpcStateAndMessage_fromTcb` and `storeTcbIpcState_fromTcb` bypass internal lookup with equivalence theorems (`storeTcbIpcStateAndMessage_fromTcb_eq`, `storeTcbIpcState_fromTcb_eq`). `lookupTcb_preserved_by_storeObject_notification` proves cross-store TCB stability. 4 redundant O(log n) lookups eliminated; zero new preservation lemmas needed.
 
 ### 4.2 IPC message payload bounds (WS-H12d)
 

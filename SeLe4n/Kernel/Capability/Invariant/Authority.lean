@@ -454,6 +454,8 @@ theorem notificationWait_recovers_pending_badge
                   | error e => simp
                   | ok pair =>
                       simp only []
+                      have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+                      simp only [storeTcbIpcState_fromTcb_eq hLk']
                       intro hWait
                       revert hWait
                       cases storeTcbIpcState pair.2 waiter _ with

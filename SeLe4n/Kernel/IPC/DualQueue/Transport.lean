@@ -20,7 +20,7 @@ open SeLe4n.Model
 theorem endpointQueuePopHead_scheduler_eq
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
     (tid : SeLe4n.ThreadId)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st')) :
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     st'.scheduler = st.scheduler := by
   unfold endpointQueuePopHead at hStep
   cases hObj : st.objects[endpointId]? with
@@ -46,7 +46,7 @@ theorem endpointQueuePopHead_scheduler_eq
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
+                intro ⟨_, _, hEq⟩; subst hEq
                 exact (storeTcbQueueLinks_scheduler_eq _ _ headTid none none none hFinal).trans
                   (storeObject_scheduler_eq _ _ endpointId _ hStore)
             | some nextTid =>
@@ -63,7 +63,7 @@ theorem endpointQueuePopHead_scheduler_eq
                   | error e => simp
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
+                    intro ⟨_, _, hEq⟩; subst hEq
                     exact (storeTcbQueueLinks_scheduler_eq _ _ headTid none none none hFinal).trans
                       ((storeTcbQueueLinks_scheduler_eq _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hLink).trans
                         (storeObject_scheduler_eq _ _ endpointId _ hStore))
@@ -73,7 +73,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (oid : SeLe4n.ObjId) (ep : Endpoint)
     (hNe : oid ≠ endpointId)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st'))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
   unfold endpointQueuePopHead at hStep
@@ -100,7 +100,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
+                intro ⟨_, _, hEq⟩; subst hEq
                 have h1 := storeTcbQueueLinks_endpoint_backward _ _ headTid none none none oid ep hFinal hEp
                 rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h1
             | some nextTid =>
@@ -117,7 +117,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
                   | error e => simp
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
+                    intro ⟨_, _, hEq⟩; subst hEq
                     have h3 := storeTcbQueueLinks_endpoint_backward _ _ headTid none none none oid ep hFinal hEp
                     have h2 := storeTcbQueueLinks_endpoint_backward _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext oid ep hLink h3
                     rwa [storeObject_objects_ne st pair.2 endpointId oid _ hNe hStore] at h2
@@ -126,7 +126,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
 theorem endpointQueuePopHead_notification_backward
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st'))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
   unfold endpointQueuePopHead at hStep
@@ -153,7 +153,7 @@ theorem endpointQueuePopHead_notification_backward
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
+                intro ⟨_, _, hEq⟩; subst hEq
                 have h1 := storeTcbQueueLinks_notification_backward _ _ headTid none none none oid ntfn hFinal hNtfn
                 by_cases hEqId : oid = endpointId
                 · subst hEqId; rw [storeObject_objects_eq st pair.2 oid _ hStore] at h1; cases h1
@@ -172,7 +172,7 @@ theorem endpointQueuePopHead_notification_backward
                   | error e => simp
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
+                    intro ⟨_, _, hEq⟩; subst hEq
                     have h3 := storeTcbQueueLinks_notification_backward _ _ headTid none none none oid ntfn hFinal hNtfn
                     have h2 := storeTcbQueueLinks_notification_backward _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext oid ntfn hLink h3
                     by_cases hEqId : oid = endpointId
@@ -184,7 +184,7 @@ at oid in the pre-state, some TCB exists at oid in the post-state. -/
 theorem endpointQueuePopHead_tcb_forward
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (oid : SeLe4n.ObjId) (tcb : TCB)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st'))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
   unfold endpointQueuePopHead at hStep
@@ -216,7 +216,7 @@ theorem endpointQueuePopHead_tcb_forward
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
+                intro ⟨_, _, hEq⟩; subst hEq
                 exact storeTcbQueueLinks_tcb_forward pair.2 st3 headTid none none none oid tcb hFinal hTcb1
             | some nextTid =>
               simp only []
@@ -233,7 +233,7 @@ theorem endpointQueuePopHead_tcb_forward
                   | error e => simp
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
+                    intro ⟨_, _, hEq⟩; subst hEq
                     exact storeTcbQueueLinks_tcb_forward st2 st3 headTid none none none oid tcb2 hFinal hTcb2
 
 /-- WS-F1: endpointQueuePopHead backward-preserves TCB ipcStates. For any TCB
@@ -241,7 +241,7 @@ in the post-state, a TCB with the same ipcState exists in the pre-state. -/
 theorem endpointQueuePopHead_tcb_ipcState_backward
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st'))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   unfold endpointQueuePopHead at hStep
@@ -270,7 +270,7 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
               | error e => simp
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
+                intro ⟨_, _, hEq⟩; subst hEq
                 obtain ⟨tcb1, hTcb1, hIpc1⟩ := storeTcbQueueLinks_tcb_ipcState_backward _ _ headTid none none none hFinal anyTid tcb' hTcb'
                 by_cases hEqEp : anyTid.toObjId = endpointId
                 · rw [hEqEp] at hTcb1; rw [storeObject_objects_eq st pair.2 endpointId _ hStore] at hTcb1; cases hTcb1
@@ -290,7 +290,7 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
                   | error e => simp
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
+                    intro ⟨_, _, hEq⟩; subst hEq
                     obtain ⟨tcb2, hTcb2, hIpc2⟩ := storeTcbQueueLinks_tcb_ipcState_backward _ _ headTid none none none hFinal anyTid tcb' hTcb'
                     obtain ⟨tcb1, hTcb1, hIpc1⟩ := storeTcbQueueLinks_tcb_ipcState_backward _ _ nextTid _ _ _ hLink anyTid tcb2 hTcb2
                     by_cases hEqEp : anyTid.toObjId = endpointId
@@ -1305,9 +1305,10 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
+            -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
-            | .ok (receiver, st') =>
+            | .ok (receiver, _tcb, st') =>
                 -- WS-F1: Transfer message to receiver and unblock
                 match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
                 | .error e => .error e
@@ -1346,17 +1347,17 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     | some (.endpoint ep) =>
         match ep.sendQ.head with
         | some _ =>
+            -- WS-L1/L1-A: PopHead returns pre-dequeue TCB; read fields directly
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
-            | .ok (sender, st') =>
-                -- WS-F1/WS-H1: Extract message and IPC state from sender's TCB in a single lookup.
-                -- blockedOnCall → blockedOnReply (caller stays blocked awaiting reply)
-                -- blockedOnSend → ready (plain send, unblock sender)
-                let (senderMsg, senderWasCall) := match lookupTcb st' sender with
-                  | some tcb => (tcb.pendingMessage, match tcb.ipcState with
+            | .ok (sender, senderTcb, st') =>
+                -- WS-L1/L1-A: Read pendingMessage and ipcState directly from
+                -- returned TCB instead of redundant lookupTcb. These fields are
+                -- unchanged by PopHead (only queue links are modified).
+                let (senderMsg, senderWasCall) :=
+                  (senderTcb.pendingMessage, match senderTcb.ipcState with
                     | .blockedOnCall _ => true
                     | _ => false)
-                  | none => (none, false)
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
                   match storeTcbIpcStateAndMessage st' sender
@@ -1409,9 +1410,10 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
+            -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
-            | .ok (receiver, st') =>
+            | .ok (receiver, _tcb, st') =>
                 -- WS-F1: Transfer message to receiver and unblock
                 match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
                 | .error e => .error e
@@ -1458,7 +1460,8 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
               | some expected => replier == expected
               | none => true
             if authorized then
-              match storeTcbIpcStateAndMessage st target .ready (some msg) with
+              -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
+              match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
               | .error e => .error e
               | .ok st' => .ok ((), ensureRunnable st' target)
             else .error .replyCapInvalid
@@ -1488,8 +1491,8 @@ def endpointReplyRecv
               | some expected => receiver == expected
               | none => true
             if authorized then
-              -- WS-F1: Deliver reply message and unblock target
-              match storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+              -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
+              match storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
               | .error e => .error e
               | .ok st' =>
                   let st'' := ensureRunnable st' replyTarget

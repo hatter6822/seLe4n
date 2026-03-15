@@ -798,6 +798,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
   | none => simp [hLookup] at hStep
   | some tcb =>
       simp only [hLookup] at hStep
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
       cases hIpc : tcb.ipcState with
       | ready => simp [hIpc] at hStep
       | blockedOnSend _ => simp [hIpc] at hStep

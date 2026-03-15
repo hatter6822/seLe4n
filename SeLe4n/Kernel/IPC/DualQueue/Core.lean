@@ -169,10 +169,13 @@ theorem storeTcbQueueLinks_tcb_forward
         exact ⟨_, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
   · exact ⟨tcb, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep]; exact hTcb⟩
 
+-- WS-L1/L1-A: Return type includes pre-dequeue TCB. Non-queue fields
+-- (ipcState, pendingMessage, priority, domain) are accurate; queue link
+-- fields (queuePrev, queuePPrev, queueNext) are stale (cleared in post-state).
 def endpointQueuePopHead
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)
-    (st : SystemState) : Except KernelError (SeLe4n.ThreadId × SystemState) :=
+    (st : SystemState) : Except KernelError (SeLe4n.ThreadId × TCB × SystemState) :=
   match st.objects[endpointId]? with
   | some (.endpoint ep) =>
       let q := if isReceiveQ then ep.receiveQ else ep.sendQ
@@ -203,7 +206,7 @@ def endpointQueuePopHead
                   | .ok st2 =>
                       match storeTcbQueueLinks st2 tid none none none with
                       | .error e => .error e
-                      | .ok st3 => .ok (tid, st3)
+                      | .ok st3 => .ok (tid, headTcb, st3)
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 

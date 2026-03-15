@@ -48,11 +48,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.8` (`lakefile.toml`) |
+| **Package version** | `0.16.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 37,245 across 69 Lean files |
+| **Production LoC** | 37,217 across 69 Lean files |
 | **Test LoC** | 4,098 across 4 Lean test suites |
-| **Proved declarations** | 1,198 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,202 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues |
 | **Next workstreams** | **WS-L** IPC subsystem audit & remediation — see [workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). 5 phases: L1 (performance), L2 (code quality), L3 (proof strengthening), L4 (test coverage — partially complete), L5 (documentation). Supersedes WS-I5 (pending). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next after WS-L: Raspberry Pi 5 hardware binding** |

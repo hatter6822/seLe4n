@@ -138,89 +138,325 @@ Phase 5: WS-L5 (Documentation)    [after all implementation phases]
 
 ### WS-L1: IPC Performance Optimization
 
-**Objective**: Eliminate 3 redundant TCB lookups on IPC hot paths, reducing
-per-operation overhead by ~15–20% on critical paths.
+**Objective**: Eliminate 4 redundant TCB lookups on IPC hot paths (3 on the
+endpoint receive/reply critical path, 1 on the notification wait path),
+reducing per-operation overhead by ~15–20% on critical paths.
 
 **Priority**: HIGH — Phase 1
 **Dependencies**: None
 **Findings addressed**: L-P01, L-P02, L-P03
 
+**Key design decisions**:
+
+1. **Equivalence-theorem strategy**: Instead of duplicating preservation lemmas
+   for `_fromTcb` variants, each variant ships with an equivalence theorem
+   proving `_fromTcb st tid tcb ... = original st tid ...` when
+   `lookupTcb st tid = some tcb`. All existing preservation proofs apply via
+   `simp`/`rw` rewriting. Zero new preservation lemmas needed.
+
+2. **Pre-dequeue TCB semantics**: `endpointQueuePopHead` returns the TCB as
+   captured at the internal `lookupTcb` (Core.lean:182), before queue links are
+   cleared. Non-queue fields (`ipcState`, `pendingMessage`, `priority`,
+   `domain`) are unchanged by PopHead and safe to read. Queue link fields
+   (`queuePrev`, `queuePPrev`, `queueNext`) are stale and must not be written
+   back. Callers that need to write to the TCB (via `storeTcbIpcStateAndMessage`)
+   must still use the state-based lookup since the post-state TCB has cleared
+   queue links.
+
+3. **Cascade minimization**: Transport lemma and preservation theorem updates
+   for PopHead are purely mechanical pattern-match changes (`(tid, st')` →
+   `(tid, _tcb, st')`). Proof bodies are unchanged because `unfold
+   endpointQueuePopHead` produces the same case structure with an additional
+   binding.
+
+---
+
 #### L1-A: Return dequeued TCB from `endpointQueuePopHead` (L-P01)
 
 **Problem**: `endpointQueuePopHead` (Core.lean:172–208) internally looks up the
 head TCB at line 182 to read `queueNext`, but returns only `(ThreadId, SystemState)`.
-Callers like `endpointReceiveDual` (Transport.lean:1355) must re-lookup the same
-TCB to read `pendingMessage` and `ipcState`.
+The most impacted caller, `endpointReceiveDual` (Transport.lean:1355), must
+re-lookup the same TCB to read `pendingMessage` and `ipcState` — fields that
+PopHead did not modify. This is a redundant O(log n) HashMap lookup on every
+endpoint receive rendezvous.
 
-**Deliverables**:
+**Sub-tasks**:
 
-1. Change `endpointQueuePopHead` return type from
-   `Except KernelError (ThreadId × SystemState)` to
-   `Except KernelError (ThreadId × TCB × SystemState)`.
-2. Return the dequeued TCB (captured at line 182) as the second tuple element.
-3. Update all callers:
-   - `endpointSendDual` (Transport.lean:1308)
-   - `endpointReceiveDual` (Transport.lean:1349)
-   - `endpointCall` (Transport.lean:1412)
-4. Remove the redundant `lookupTcb` call at Transport.lean:1355.
-5. Update all transport lemmas in `Transport.lean` that reference
-   `endpointQueuePopHead` return type.
-6. Update preservation theorems in `EndpointPreservation.lean`,
-   `CallReplyRecv.lean`, `Structural.lean` that pattern-match on PopHead result.
+##### L1-A.1: Change PopHead signature and implementation (Core.lean)
 
-**Files modified**:
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` — signature + implementation
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — callers + transport lemmas
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — preservation proofs
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` — preservation proofs
-- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — structural preservation proofs
+**Scope**: `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, lines 172–208
 
-**Exit evidence**:
+1. Change return type from `Except KernelError (SeLe4n.ThreadId × SystemState)`
+   to `Except KernelError (SeLe4n.ThreadId × TCB × SystemState)`.
+2. At line 206, change `.ok (tid, st3)` to `.ok (tid, headTcb, st3)` where
+   `headTcb` is the TCB captured at line 182–184. This is the pre-dequeue TCB;
+   non-queue fields are accurate, queue link fields are stale (cleared in `st3`).
+3. No other changes to Core.lean.
+
+**Exit**: `Core.lean` compiles (callers will temporarily break).
+
+##### L1-A.2: Update PopHead transport lemmas (Transport.lean:19–299)
+
+**Scope**: 5 transport lemmas that pattern-match on PopHead result
+
+Each lemma's hypothesis changes mechanically:
+```
+hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, st')
+  →
+hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')
+```
+
+Affected lemmas (all in `Transport.lean`):
+- `endpointQueuePopHead_scheduler_eq` (lines 20–69)
+- `endpointQueuePopHead_endpoint_backward_ne` (lines 72–123)
+- `endpointQueuePopHead_notification_backward` (lines 126–180)
+- `endpointQueuePopHead_tcb_forward` (lines 184–237)
+- `endpointQueuePopHead_tcb_ipcState_backward` (lines 241–299)
+
+Proof bodies unchanged — `unfold endpointQueuePopHead at hStep` still produces
+the same case tree; the additional `headTcb` binding is consumed by existing
+`simp`/`cases` tactics.
+
+**Exit**: All transport lemmas compile.
+
+##### L1-A.3: Update `endpointReceiveDual` — eliminate redundant lookup
+
+**Scope**: `Transport.lean`, lines 1342–1388
+
+Change destructuring at line 1351 from `(sender, st')` to
+`(sender, senderTcb, st')`. Replace the redundant `lookupTcb st' sender`
+block (lines 1355–1359) with direct field access:
+```lean
+let (senderMsg, senderWasCall) :=
+  (senderTcb.pendingMessage, match senderTcb.ipcState with
+    | .blockedOnCall _ => true
+    | _ => false)
+```
+
+This eliminates 1 redundant lookup. The `senderTcb` fields `pendingMessage`
+and `ipcState` are unchanged by PopHead (only queue links are modified).
+
+**Exit**: `endpointReceiveDual` compiles with zero `lookupTcb` after PopHead.
+
+##### L1-A.4: Update `endpointSendDual` and `endpointCall` — mechanical
+
+**Scope**: `Transport.lean`, lines 1297–1324 and 1401–1433
+
+- `endpointSendDual` line 1311: `(receiver, st')` → `(receiver, _tcb, st')`
+- `endpointCall` line 1415: `(receiver, st')` → `(receiver, _tcb, st')`
+
+These callers don't use the returned TCB (they operate on the receiver, not the
+dequeued thread's TCB data). Change is purely mechanical.
+
+**Exit**: Both functions compile.
+
+##### L1-A.5: Update preservation theorems — mechanical cascade
+
+**Scope**: Preservation theorems across 3 invariant files
+
+All theorems that destructure PopHead results need the same mechanical update:
+`(tid, st')` → `(tid, _tcb, st')` in hypothesis patterns. The proof bodies
+are unchanged because `unfold endpointQueuePopHead` still works identically.
+
+Files and estimated theorem counts:
+- `EndpointPreservation.lean`: ~6 theorems referencing PopHead
+- `CallReplyRecv.lean`: ~4 theorems referencing PopHead
+- `Structural.lean`: ~8 theorems referencing PopHead
+
+**Exit**: `lake build` succeeds with zero warnings.
+
+**Files modified (L1-A total)**:
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` — signature + return value
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — lemmas + callers
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` — mechanical
+- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` — mechanical
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` — mechanical
+
+**L1-A exit evidence**:
 - `lake build` succeeds with zero warnings
 - `test_smoke.sh` passes
-- `rg "lookupTcb.*sender" Transport.lean` returns zero hits after PopHead call
+- `rg "lookupTcb.*sender" Transport.lean` returns zero hits in receive path
+
+---
 
 #### L1-B: Cache validated TCB in `endpointReply`/`endpointReplyRecv` (L-P02)
 
-**Problem**: `endpointReply` (Transport.lean:1451) calls `lookupTcb` to validate
-the target's `ipcState = .blockedOnReply`, then `storeTcbIpcStateAndMessage`
-(line 1461) internally calls `lookupTcb` again on the same thread.
+**Problem**: `endpointReply` (Transport.lean:1451) calls `lookupTcb st target`
+to validate `ipcState = .blockedOnReply`, then `storeTcbIpcStateAndMessage`
+(line 1461) internally calls `lookupTcb st target` again on the **same state**
+`st`. Similarly, `endpointReplyRecv` (line 1481/1492) has the same pattern.
+Each redundant lookup is an O(log n) HashMap operation on every reply.
 
-**Deliverables**:
+**Sub-tasks**:
 
-1. Add `storeTcbIpcStateAndMessage_fromTcb` variant that accepts a pre-looked-up
-   TCB instead of performing internal lookup.
-2. Update `endpointReply` to pass the validated TCB directly.
-3. Update `endpointReplyRecv` similarly.
-4. Add preservation lemmas for the `_fromTcb` variant mirroring existing ones.
+##### L1-B.1: Add `storeTcbIpcStateAndMessage_fromTcb` with equivalence theorem
 
-**Files modified**:
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — add `_fromTcb` variant
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — update callers
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` — add preservation lemmas
+**Scope**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, after line 91
 
-**Exit evidence**:
-- `lake build` succeeds
+1. Add the `_fromTcb` variant:
+   ```lean
+   def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+       (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+       : Except KernelError SystemState :=
+     match storeObject tid.toObjId
+       (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+     | .error e => .error e
+     | .ok ((), st') => .ok st'
+   ```
+
+2. Add equivalence theorem (immediately after):
+   ```lean
+   theorem storeTcbIpcStateAndMessage_fromTcb_eq
+       (hLookup : lookupTcb st tid = some tcb) :
+       storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg =
+       storeTcbIpcStateAndMessage st tid ipcState msg
+   ```
+   Proof: unfold both, rewrite with `hLookup`, `rfl`.
+
+This equivalence theorem means **zero new preservation lemmas** are needed.
+Any existing theorem about `storeTcbIpcStateAndMessage` applies to the
+`_fromTcb` variant via `rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup]`.
+
+**Exit**: New function and theorem compile with zero sorry.
+
+##### L1-B.2: Update `endpointReply` to use `_fromTcb`
+
+**Scope**: `Transport.lean`, lines 1444–1465
+
+At line 1461, replace:
+```lean
+match storeTcbIpcStateAndMessage st target .ready (some msg) with
+```
+with:
+```lean
+match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+```
+where `tcb` is the TCB already bound at line 1453. Both lookups operate on the
+same state `st`, so the TCB is guaranteed to match.
+
+**Exit**: `endpointReply` compiles. 1 redundant lookup eliminated.
+
+##### L1-B.3: Update `endpointReplyRecv` to use `_fromTcb`
+
+**Scope**: `Transport.lean`, lines 1471–1501
+
+At line 1492, replace:
+```lean
+match storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+```
+with:
+```lean
+match storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
+```
+where `tcb` is bound at line 1483. Same-state guarantee applies.
+
+**Exit**: `endpointReplyRecv` compiles. 1 redundant lookup eliminated.
+
+**Files modified (L1-B total)**:
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — new function + theorem
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` — 2 caller updates
+
+**L1-B exit evidence**:
+- `lake build` succeeds with zero warnings
 - `test_smoke.sh` passes
+- Zero new preservation lemmas needed (equivalence theorem covers all cases)
+
+---
 
 #### L1-C: Cache validated TCB in `notificationWait` (L-P03)
 
-**Problem**: `notificationWait` (Endpoint.lean:155) calls `lookupTcb` for the
-duplicate-wait check, then `storeTcbIpcState` (line 169) re-lookups the same TCB.
+**Problem**: `notificationWait` (Endpoint.lean:155) calls `lookupTcb st waiter`
+for the O(1) duplicate-wait check, then `storeTcbIpcState` (line 169) re-lookups
+the same TCB. The intermediate `storeObject` (line 165) modifies only the
+notification object at `notificationId`, not the waiter's TCB, so the looked-up
+TCB is still valid in the post-store state.
 
-**Deliverables**:
+**Sub-tasks**:
 
-1. Add `storeTcbIpcState_fromTcb` variant that accepts a pre-looked-up TCB.
-2. Update `notificationWait` to pass the cached TCB from line 155.
-3. Add preservation lemmas for the `_fromTcb` variant.
+##### L1-C.1: Add `storeTcbIpcState_fromTcb` with equivalence theorem
 
-**Files modified**:
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — add variant + update caller
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` — preservation lemmas
+**Scope**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, after `storeTcbIpcState`
 
-**Exit evidence**:
-- `lake build` succeeds
+1. Add the `_fromTcb` variant:
+   ```lean
+   def storeTcbIpcState_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+       (tcb : TCB) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
+     match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+     | .error e => .error e
+     | .ok ((), st') => .ok st'
+   ```
+
+2. Add equivalence theorem:
+   ```lean
+   theorem storeTcbIpcState_fromTcb_eq
+       (hLookup : lookupTcb st tid = some tcb) :
+       storeTcbIpcState_fromTcb st tid tcb ipcState =
+       storeTcbIpcState st tid ipcState
+   ```
+
+3. Add TCB cross-store stability lemma (used to justify `_fromTcb` usage
+   after an intervening `storeObject` at a different ObjId):
+   ```lean
+   theorem lookupTcb_preserved_by_storeObject_ne
+       (hLookup : lookupTcb st tid = some tcb)
+       (hNe : oid ≠ tid.toObjId)
+       (hStore : storeObject oid obj st = .ok ((), st')) :
+       lookupTcb st' tid = some tcb
+   ```
+   This lemma proves the TCB is unchanged when `storeObject` targets a
+   different ObjId — which is exactly the case in `notificationWait` where
+   the notification is stored at `notificationId` but the TCB is at
+   `waiter.toObjId`.
+
+**Exit**: New function, equivalence theorem, and stability lemma compile.
+
+##### L1-C.2: Update `notificationWait` to use `_fromTcb`
+
+**Scope**: `Endpoint.lean`, lines 138–173
+
+In the no-pending-badge branch, after `lookupTcb st waiter` succeeds with
+`tcb` at line 155, and after `storeObject notificationId (.notification ntfn')
+st` produces `st'` at line 165, replace:
+```lean
+match storeTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+```
+with:
+```lean
+match storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) with
+```
+**Correctness justification**: `storeObject` at `notificationId` does not modify
+the TCB at `waiter.toObjId` (different ObjId), so `lookupTcb st' waiter =
+some tcb` holds. The equivalence theorem then guarantees identical behavior.
+
+**Exit**: `notificationWait` compiles. 1 redundant lookup eliminated.
+
+**Files modified (L1-C total)**:
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — new function + theorems + caller
+
+**L1-C exit evidence**:
+- `lake build` succeeds with zero warnings
 - `test_smoke.sh` passes
+
+---
+
+#### WS-L1 Aggregate Summary
+
+| Sub-task | Lookups eliminated | Cascade scope | Risk |
+|----------|-------------------|---------------|------|
+| L1-A (PopHead TCB) | 1 (endpointReceiveDual) | ~18 theorem pattern-match updates | Medium: wide cascade but mechanical |
+| L1-B (reply _fromTcb) | 2 (endpointReply + ReplyRecv) | 2 caller updates, 0 new lemmas | Low: additive, equivalence theorem |
+| L1-C (notification _fromTcb) | 1 (notificationWait) | 1 caller update, 0 new lemmas | Low: additive, single file |
+| **Total** | **4 redundant lookups** | | |
+
+**Recommended execution order**: L1-B → L1-C → L1-A. Start with additive
+changes (new `_fromTcb` functions) that don't cascade, then tackle the
+signature change (L1-A) which has the widest impact but is mechanically safe.
+
+**WS-L1 aggregate exit evidence**:
+- `lake build` succeeds with zero warnings
+- `test_smoke.sh` passes
+- Zero `sorry` in any new theorem or function
+- 4 redundant `lookupTcb` calls eliminated across IPC hot paths
 
 ---
 
@@ -561,9 +797,9 @@ undocumented.
 
 | Finding | Phase | Task | Status |
 |---------|-------|------|--------|
-| L-P01 | WS-L1 | L1-A | Planned |
-| L-P02 | WS-L1 | L1-B | Planned |
-| L-P03 | WS-L1 | L1-C | Planned |
+| L-P01 | WS-L1 | L1-A | **COMPLETED** (v0.16.9) |
+| L-P02 | WS-L1 | L1-B | **COMPLETED** (v0.16.9) |
+| L-P03 | WS-L1 | L1-C | **COMPLETED** (v0.16.9) |
 | L-D04 | WS-L2 | L2-A | Planned |
 | L-G01 | WS-L3 | L3-A | Planned |
 | L-G02 | WS-L3 | L3-B | Planned |
