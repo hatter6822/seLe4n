@@ -1260,7 +1260,15 @@ functions depend only on `msgRegs` (two results with same `msgRegs` produce same
 composition, and `step_preserves_projection` totality over all 33 constructors.
 Zero sorry/axiom.
 
-**Remaining (K-G through K-H):**
-- Comprehensive testing (14+ negative-state, 6+ trace scenarios)
+**Completed — K-G (v0.16.6) — Lifecycle NI proof completion and deferred proof resolution:**
+`cspaceRevoke_preserves_projection` extracted as standalone theorem for compositional reuse.
+`lifecycleRevokeDeleteRetype_preserves_projection` chains projection preservation across
+three sub-operations (`cspaceRevoke`, `cspaceDeleteSlot`, `lifecycleRetypeObject`).
+`lifecycleRevokeDeleteRetype_preserves_lowEquivalent` two-run NI theorem completes the
+deferred `lifecycleRevokeDeleteRetype` NI proof. `NonInterferenceStep` extended with
+`lifecycleRevokeDeleteRetype` constructor (34 total). `syscallNI_coverage_witness` updated
+to reflect 34-constructor exhaustive match. Zero sorry/axiom.
+
+**Remaining (K-H):**
 - Documentation sync and workstream closeout
 - See [workstream plan](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)

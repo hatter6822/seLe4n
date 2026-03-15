@@ -224,6 +224,17 @@ Delivered (WS-F3 closeout):
 - NI coverage exceeds >80% of kernel operations.
 - Closes C-02/A-40 (CRITICAL), M-15 (MEDIUM).
 
+## WS-K-G — Lifecycle NI proof completion ✅ completed (v0.16.6)
+
+- `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — completes the deferred
+  lifecycle NI proof for the composed revoke-delete-retype operation.
+- `lifecycleRevokeDeleteRetype_preserves_projection` — standalone projection
+  preservation theorem chaining three sub-operations.
+- `cspaceRevoke_preserves_projection` — extracted for compositional reuse.
+- `NonInterferenceStep` extended from 33 to 34 constructors with
+  `lifecycleRevokeDeleteRetype` constructor.
+- All deferred NI proofs now fully resolved — zero `sorry`/`axiom`.
+
 ## WS-H10 — Security model foundations ✅ completed (v0.13.6)
 
 - `ObservableState` extended with domain-gated machine register file projection

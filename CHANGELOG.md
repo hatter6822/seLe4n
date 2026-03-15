@@ -1,3 +1,23 @@
+## [0.16.6] — Lifecycle NI Proof Completion and Deferred Proof Resolution (WS-K-G)
+
+- Added `cspaceRevoke_preserves_projection` standalone theorem in
+  `InformationFlow/Invariant/Operations.lean` — extracted from inline proof in
+  Composition.lean for compositional reuse in lifecycle NI proofs
+- Added `lifecycleRevokeDeleteRetype_preserves_projection` theorem — chains
+  projection preservation across `cspaceRevoke`, `cspaceDeleteSlot`, and
+  `lifecycleRetypeObject` sub-operations via their respective projection theorems
+- Added `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` two-run NI theorem
+  — completes the previously deferred `lifecycleRevokeDeleteRetype` NI proof
+  using compositional projection-preservation reasoning
+- Extended `NonInterferenceStep` inductive with `lifecycleRevokeDeleteRetype`
+  constructor (34 constructors total, up from 33) covering the composed
+  revoke-delete-retype lifecycle operation
+- Updated `step_preserves_projection` with the new constructor case using
+  the standalone `lifecycleRevokeDeleteRetype_preserves_projection` theorem
+- Updated `syscallNI_coverage_witness` documentation to reflect 34-constructor
+  exhaustive match (verified by Lean exhaustiveness checker)
+- Zero `sorry`, zero `axiom` — all proofs machine-checked
+
 ## [0.16.5] — Proofs: Round-Trip, Preservation, and NI Integration (WS-K-F)
 
 - Added 7 encode functions in `SyscallArgDecode.lean` (`encodeCSpaceMintArgs`,

@@ -223,7 +223,10 @@ and NI integration. 7 encode functions + 7 round-trip theorems close the layer-2
 decode contract. `extractMessageRegisters_roundtrip` closes the layer-1 extraction
 gap. `dispatchWithCap_layer2_decode_pure` proves decode depends only on `msgRegs`.
 `retypeFromUntyped_preserves_lowEquivalent` completes the last deferred NI proof.
-`syscallNI_coverage_witness` confirms all 33 NI constructors are exhaustive. See
+**Layer 7 (completed, K-G v0.16.6):** Lifecycle NI proof completion.
+`lifecycleRevokeDeleteRetype_preserves_lowEquivalent` completes the deferred
+composed lifecycle NI proof. `NonInterferenceStep` extended to 34 constructors.
+`syscallNI_coverage_witness` confirms all 34 NI constructors are exhaustive. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
 ## 9. Testing: obligation-based coverage
