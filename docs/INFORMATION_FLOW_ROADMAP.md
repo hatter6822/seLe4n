@@ -10,16 +10,17 @@ seLe4n proves capability, scheduler, IPC, lifecycle, service, and
 architecture-boundary invariants. The v0.12.2 audits identified that information-flow
 coverage was at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03).
 
-**Current state (post WS-H10, v0.13.6):** NI coverage now exceeds **80%** of
-kernel operations. The proof surface includes 69 NI preservation theorems
-(standalone `_preserves_lowEquivalent` + enforcement-NI bridges), a 31-constructor
-`NonInterferenceStep` inductive, `composedNonInterference_trace` covering all
-constructors, BIBA lattice alternatives with refl/trans proofs,
-`DeclassificationPolicy` with `declassifyStore_NI`, and
-`InformationFlowConfigInvariant` bundle. IF-M1 through IF-M4 and WS-F3 are all
-completed. WS-H8 (enforcement-NI bridge), WS-H9 (NI coverage extension), and
-WS-H10 (security model foundations) substantially advanced the proof surface
-beyond the original IF-M4 exit criteria. The remaining milestone is IF-M5
+**Current state (post WS-K, v0.16.8):** NI coverage exceeds **80%** of kernel
+operations. The proof surface includes NI preservation theorems across all
+subsystems, a **34-constructor** `NonInterferenceStep` inductive (extended by
+WS-J1-D and WS-K-G), `composedNonInterference_trace` covering all constructors,
+`syscallNI_coverage_witness` documenting exhaustive 34-constructor match, BIBA
+lattice alternatives with refl/trans proofs, `DeclassificationPolicy` with
+`declassifyStore_NI`, and `InformationFlowConfigInvariant` bundle. IF-M1 through
+IF-M4 and WS-F3 are all completed. WS-J1-D added `syscallDecodeError` and
+`syscallDispatchHigh` constructors. WS-K-G completed the last deferred NI proof
+(`lifecycleRevokeDeleteRetype_preserves_lowEquivalent`). WS-K-F proved
+`retypeFromUntyped_preserves_lowEquivalent`. The remaining milestone is IF-M5
 (platform-facing integration readiness).
 
 ## 2. Scope and assumptions

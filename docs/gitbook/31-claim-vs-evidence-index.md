@@ -59,6 +59,5 @@ When a claim changes:
 
 ## Related
 
-- [End-to-End Audit and Quality Gates](19-end-to-end-audit-and-quality-gates.md) — quality gate contract
-- [Testing & CI](07-testing-and-ci.md) — tier definitions
+- [Testing & CI](07-testing-and-ci.md) — tier definitions and quality gates
 - [Proof and Invariant Map](12-proof-and-invariant-map.md) — theorem inventory

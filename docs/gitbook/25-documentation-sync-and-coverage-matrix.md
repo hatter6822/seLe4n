@@ -14,9 +14,9 @@ When changing documentation, ensure the paired files are updated in the same PR:
 
 | Change area | Canonical doc | GitBook chapter |
 |-------------|--------------|-----------------|
-| Planning/workstream status | `docs/audits/AUDIT_v0.12.2*.md` | `24-*` |
+| Planning/workstream status | `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | `05-*` |
 | Workflow/test policy | `TESTING_FRAMEWORK_PLAN.md`, `CI_POLICY.md` | `07-*` |
-| Spec/roadmap | `docs/spec/SELE4N_SPEC.md`, `SEL4_SPEC.md` | `05-*`, `22-*` |
+| Spec/roadmap | `docs/spec/SELE4N_SPEC.md`, `SEL4_SPEC.md` | `05-*` |
 | Dedup ownership | `DOCS_DEDUPLICATION_MAP.md` | `27-*` |
 | Claim/evidence index | `CLAIM_EVIDENCE_INDEX.md` | `31-*` |
 | Security | `THREAT_MODEL.md`, `INFORMATION_FLOW_ROADMAP.md` | `28-*` |

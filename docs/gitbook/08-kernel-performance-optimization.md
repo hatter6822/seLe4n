@@ -2,7 +2,7 @@
 
 The WS-G portfolio (v0.12.6–v0.12.15) systematically eliminated every
 algorithmic bottleneck identified by the
-[v0.12.5 kernel performance audit](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
+[v0.12.5 kernel performance audit](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
 All 14 findings (F-P01 through F-P14) across 6 subsystems are resolved.
 Every invariant proof was re-verified — zero `sorry`, zero `axiom`.
 
@@ -218,7 +218,7 @@ Major structural changes concentrated in:
 
 ## 8. Canonical references
 
-- Audit: [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md)
-- Workstream plan: [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
+- Audit: [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md)
+- Workstream plan: [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
 - Changelog: [`CHANGELOG.md`](../../CHANGELOG.md) (v0.12.6–v0.12.15)
 

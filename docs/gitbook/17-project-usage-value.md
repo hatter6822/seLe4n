@@ -10,8 +10,8 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **30,491 lines** of production Lean code across 41 modules.
-- **920 theorem/lemma declarations** with zero sorry/axiom.
+- **37,245 lines** of production Lean code across 69 files.
+- **1,198 theorem/lemma declarations** with zero sorry/axiom.
 - **4-tier CI** with hygiene, build, trace, and invariant surface gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
 - **Executable trace harness** with fixture-backed evidence.
@@ -31,7 +31,7 @@ capability, and information-flow behavior. Catch violations at type-check time.
 
 ### C) Formal-methods engineering practice
 
-The milestone progression (Bootstrap → M7 → WS-B..H) provides a practical path
+The milestone progression (Bootstrap → M7 → WS-B..K) provides a practical path
 from state modeling through composed theorem surfaces to production kernel.
 
 ### D) Architecture and security review
@@ -48,7 +48,7 @@ platform-specific binding without invalidating core verification.
 
 | Team | Entry point | Value |
 |------|-------------|-------|
-| **Kernel developers** | Codebase reference (Ch. 11), development workflow (Ch. 6) | Understand semantics, contribute transitions and proofs |
+| **Kernel developers** | Codebase reference (Ch. 11), [`DEVELOPMENT.md`](../DEVELOPMENT.md) | Understand semantics, contribute transitions and proofs |
 | **Verification engineers** | Proof map (Ch. 12), invariant suites | Extend invariants, strengthen proof coverage |
 | **Security teams** | Threat model (Ch. 28), information-flow modules | Validate policy enforcement, stress failure paths |
 | **Platform teams** | Hardware path (Ch. 10), architecture modules | Plan Raspberry Pi 5 binding, track semantic drift |
@@ -56,6 +56,6 @@ platform-specific binding without invalidating core verification.
 ## 4. Key links
 
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
-- Active workstream: [v0.12.2 Audit Workstream Planning](24-comprehensive-audit-2026-workstream-planning.md)
+- Active workstream: [WS-L IPC Subsystem Audit](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
-- Next steps: [Next Development Path](22-next-slice-development-path.md)
+- Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)

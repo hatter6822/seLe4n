@@ -20,7 +20,7 @@ developed with this target in mind.
 |-------|-------------|--------|---------------|
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
-| **H2** | Audit-driven proof deepening | **CRIT/HIGH/MED resolved** (WS-F1..F7); WS-F8 remaining | Close CRIT/HIGH findings |
+| **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
 | **H3** | Platform binding — Raspberry Pi 5 hardware | **H3-prep complete** | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
@@ -33,7 +33,9 @@ All critical/high-priority audit findings are resolved by WS-F1..F4:
 - ~~**Information flow** (CRIT-02/03)~~: **RESOLVED** (WS-F3) — 15 NI theorems, CNode slot filtering.
 - ~~**Dual-queue verification** (CRIT-05)~~: **RESOLVED** (WS-F1) — dual-queue invariant proofs.
 
-Remaining low findings (WS-F8) do not block H3.
+All audit findings (WS-F1..F8) are resolved. WS-J1 (typed register decode layer)
+and WS-K (full syscall dispatch) are also complete, providing the typed
+user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
@@ -98,7 +100,6 @@ provides the organizational infrastructure for hardware binding:
 
 ## 5. What contributors can do now
 
-- Focus on remaining WS-F workstream (WS-F8 — WS-F1..F7 complete).
 - Review the `Platform/RPi5/` stubs and contribute hardware-specific knowledge.
 - Keep kernel transitions architecture-neutral — hardware assumptions belong in
   `PlatformBinding` instances, not in `Kernel/` modules.

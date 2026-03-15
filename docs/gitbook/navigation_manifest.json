@@ -1,10 +1,10 @@
 {
   "description": "This GitBook is the long-form guide for seLe4n \u2014 a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Version:** 0.14.10 (Lean v4.28.0).",
-    "**Codebase metrics:** 34,171 production LoC across 67 files; 2,886 test LoC across 3 suites; 1,086 theorem/lemma declarations (zero sorry/axiom); 2,006 total declarations across 70 modules.",
-    "**Latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](../audits/AUDIT_CODEBASE_v0.13.6.md) — zero critical issues.",
-    "**Next workstreams:** WS-J1 register-indexed authoritative namespaces, then Raspberry Pi 5 hardware binding (WS-F/WS-H complete; WS-I1..WS-I4 completed).",
+    "**Version:** 0.16.8 (Lean v4.28.0).",
+    "**Codebase metrics:** 37,245 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,198 theorem/lemma declarations (zero sorry/axiom).",
+    "**Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.",
+    "**Active workstream:** WS-L IPC subsystem audit & remediation (5 phases: L1–L5). All prior portfolios (WS-B through WS-K) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
     "**Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.",
@@ -30,10 +30,6 @@
     {
       "title": "Specification & Roadmap",
       "path": "05-specification-and-roadmap.md"
-    },
-    {
-      "title": "Development Workflow",
-      "path": "06-development-workflow.md"
     },
     {
       "title": "Testing & CI",
@@ -74,10 +70,6 @@
           "path": "05-specification-and-roadmap.md"
         },
         {
-          "title": "Development Workflow",
-          "path": "06-development-workflow.md"
-        },
-        {
           "title": "Testing & CI",
           "path": "07-testing-and-ci.md"
         },
@@ -98,14 +90,6 @@
     {
       "section": "Audit and quality",
       "pages": [
-        {
-          "title": "v0.12.2 Audit Remediation (WS-F)",
-          "path": "24-comprehensive-audit-2026-workstream-planning.md"
-        },
-        {
-          "title": "End-to-End Audit and Quality Gates",
-          "path": "19-end-to-end-audit-and-quality-gates.md"
-        },
         {
           "title": "Claim vs Evidence Index",
           "path": "31-claim-vs-evidence-index.md"
@@ -151,20 +135,16 @@
         {
           "title": "Project Usage and Value",
           "path": "17-project-usage-value.md"
-        },
-        {
-          "title": "Next Development Path",
-          "path": "22-next-slice-development-path.md"
         }
       ]
     }
   ],
   "current_workstream_doc": {
-    "label": "docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md",
-    "path": "../audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md"
+    "label": "docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md",
+    "path": "../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md"
   },
   "current_workstream_chapter": {
-    "title": "Next Development Path",
-    "path": "22-next-slice-development-path.md"
+    "title": "Specification & Roadmap",
+    "path": "05-specification-and-roadmap.md"
   }
 }

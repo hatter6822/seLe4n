@@ -42,7 +42,7 @@ WS-H1..H16 are all completed. No remaining WS-H workstreams.
 
 All WS-F workstreams are completed. The v0.12.2 audit remediation portfolio is
 100% closed (33/33 findings). See the
-[workstream plan](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for details.
+[workstream plan](dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) for details.
 
 | ID | Focus | Priority |
 |----|-------|----------|
@@ -56,7 +56,7 @@ All WS-F workstreams are completed. The v0.12.2 audit remediation portfolio is
 The v0.14.9 comprehensive codebase audit identified 18 non-blocking improvement
 recommendations across testing, proof quality, documentation, code quality, and
 coverage expansion. These are organized into 5 workstreams across 3 phases. See
-the [workstream plan](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) for
+the [workstream plan](dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) for
 full details.
 
 | ID | Focus | Priority |
@@ -82,7 +82,7 @@ values become trusted kernel references. WS-J1 addresses this by:
 4. Wrapping `CdtNodeId` (secondary bare-Nat alias) for consistency.
 5. Proving decode correctness, invariant preservation, and NI properties.
 
-See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)
+See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)
 for the full workstream plan (6 phases: J1-A through J1-F).
 
 | ID | Focus | Priority |
@@ -104,7 +104,7 @@ and IPC messages carried empty register payloads. WS-K addressed all of these:
 5. IPC message body population from decoded register contents.
 6. Round-trip proofs, NI integration, and deferred proof completion.
 
-See [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
+See [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md)
 for the full workstream plan (8 phases: K-A through K-H).
 
 | ID | Focus | Priority |
@@ -188,11 +188,11 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 
 | Plan | Scope |
 |------|-------|
-| [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) | WS-H portfolio (v0.12.15 audit findings) |
-| [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) | WS-F portfolio (v0.12.2 audit findings) |
-| [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) | WS-G portfolio (performance optimization) |
-| [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md) | Performance audit baseline |
-| [`AUDIT_CODEBASE_v0.13.6.md`](audits/AUDIT_CODEBASE_v0.13.6.md) | Prior end-to-end audit (v0.13.6) |
-| [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) |
-| [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) |
-| [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) |
+| [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **active** |
+| [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) — completed |
+| [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) — completed |
+| [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) — completed |
+| [`AUDIT_CODEBASE_v0.13.6.md`](dev_history/audits/AUDIT_CODEBASE_v0.13.6.md) | End-to-end audit (v0.13.6) — completed |
+| [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) | WS-H portfolio (v0.12.15 audit findings) — completed |
+| [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) | WS-G portfolio (performance optimization) — completed |
+| [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) | WS-F portfolio (v0.12.2 audit findings) — completed |

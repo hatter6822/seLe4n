@@ -12,7 +12,7 @@
 > traceability — it is not active guidance.
 >
 > See [Kernel Performance Optimization](gitbook/08-kernel-performance-optimization.md)
-> and [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
+> and [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
 > for the completed execution record.
 
 ## Context
