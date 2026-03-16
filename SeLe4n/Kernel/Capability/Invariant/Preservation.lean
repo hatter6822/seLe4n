@@ -252,7 +252,10 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair
             simp [hStore] at hStep
-            have hObjRef := clearCapabilityRefs_preserves_objects stMid st' _ hStep
+            -- M-P01: hStep now gives st' = revokeAndClearRefsState ...
+            have hObjRef : st'.objects = stMid.objects := by
+              have hFused := revokeAndClearRefsState_preserves_objects preCn addr.slot parent.target addr.cnode stMid
+              simp_all
             by_cases hEq : cnodeId = addr.cnode
             · rw [hEq] at hObj
               have hObjMid := storeObject_objects_eq st stMid addr.cnode
@@ -269,7 +272,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
                 rw [← hObjMid]; exact congrArg (·[cnodeId]?) hObjRef
               rw [this] at hObj
               exact hUnique cnodeId cn hObj
-  -- WS-H4: storeObject(CNode.revokeTargetLocal) → clearCapabilityRefs
+  -- WS-H4: storeObject(CNode.revokeTargetLocal) → revokeAndClearRefsState (M-P01)
   have ⟨hBounded', hComp', hAcyclic', hDepth'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' := by
     unfold cspaceRevoke at hStep
@@ -298,11 +301,14 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
             have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
               st stMid addr.cnode preCn (preCn.revokeTargetLocal addr.slot parent.target)
               hDepthPre hPre hStore rfl rfl rfl
-            have ⟨hClearCdt, hClearNS, _, hClearObj⟩ := clearCapabilityRefs_cdt_eq stMid st' _ hStep
-            exact ⟨cspaceSlotCountBounded_of_objects_eq stMid st' hBndMid hClearObj,
-              cdtCompleteness_of_objects_nodeSlot_eq stMid st' hCompMid hClearObj hClearNS,
-              cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hClearCdt,
-              cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hClearObj⟩
+            -- M-P01: Use revokeAndClearRefsState field preservation
+            have ⟨hClearCdt, hClearNS, _, hClearObj⟩ :=
+              revokeAndClearRefsState_cdt_eq preCn addr.slot parent.target addr.cnode stMid
+            rw [hStep] at *
+            exact ⟨cspaceSlotCountBounded_of_objects_eq stMid _ hBndMid hClearObj,
+              cdtCompleteness_of_objects_nodeSlot_eq stMid _ hCompMid hClearObj hClearNS,
+              cdtAcyclicity_of_cdt_eq stMid _ hAcyclicMid hClearCdt,
+              cspaceDepthConsistent_of_objects_eq stMid _ hDepthMid hClearObj⟩
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
     hBounded', hComp', hAcyclic', hDepth'⟩
 
@@ -801,9 +807,56 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 
+/-- M-P05: Shared reply-path infrastructure — if `storeTcbIpcStateAndMessage`
+succeeds and the target was a TCB (evidenced by `lookupTcb`), then
+`ensureRunnable` on the result preserves the capability invariant bundle.
+
+Extracted from `endpointReply_preserves_capabilityInvariantBundle` to eliminate
+duplicated proof across the authorized/unrestricted reply branches. Also
+provides reusable infrastructure for M3 (IPC capability transfer). -/
+private theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
+    (st st1 : SystemState) (target : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (tcb : TCB)
+    (hUnique : cspaceSlotUnique st)
+    (hBounded : cspaceSlotCountBounded st)
+    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hDepthPre : cspaceDepthConsistent st)
+    (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
+    (hLookup : lookupTcb st target = some tcb) :
+    capabilityInvariantBundle (ensureRunnable st1 target) := by
+  have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+      st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
+    intro cnodeId cn hCn1
+    by_cases hEq : cnodeId = target.toObjId
+    · subst hEq
+      have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
+        unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
+        | none => simp [hObj] at hLookup
+        | some obj => cases obj with
+          | tcb t => exact ⟨t, rfl⟩
+          | _ => simp [hObj] at hLookup
+      have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target ipc msg hTcb hTargetTcb
+      rcases hTcbPost with ⟨tcb', hTcb'⟩
+      rw [hTcb'] at hCn1; cases hCn1
+    · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg cnodeId hEq hTcb] at hCn1; exact hCn1
+  have hU1 : cspaceSlotUnique st1 := by
+    intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
+  have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
+    hU1 (ensureRunnable_preserves_objects st1 target)
+  have ⟨hBndE, hCompE, hAcyclicE⟩ :=
+    cdtPredicates_through_reply_path st st1 target ipc msg hBounded hComp hAcyclic hTcb
+  have hDepth1 : cspaceDepthConsistent st1 := by
+    intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
+  have hDepthE := cspaceDepthConsistent_of_objects_eq st1 _ hDepth1
+    (ensureRunnable_preserves_objects st1 target)
+  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU,
+    hBndE, hCompE, hAcyclicE, hDepthE⟩
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
-Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation). -/
+Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation).
+M-P05: Proof body delegated to `capabilityInvariantBundle_of_storeTcbAndEnsureRunnable`. -/
 theorem endpointReply_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (replier target : SeLe4n.ThreadId)
@@ -831,8 +884,8 @@ theorem endpointReply_preserves_capabilityInvariantBundle
       | blockedOnCall _ => simp [hIpc] at hStep
       | blockedOnReply epId _ =>
           simp only [hIpc] at hStep
-          -- WS-H1/M-02: replyTarget validation adds branching
-          -- Both branches share identical CNode backward-preservation proof.
+          -- WS-H1/M-02: replyTarget validation — both branches dispatch to
+          -- capabilityInvariantBundle_of_storeTcbAndEnsureRunnable.
           suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
               capabilityInvariantBundle (ensureRunnable st1 target) by
             split at hStep
@@ -857,35 +910,11 @@ theorem endpointReply_preserves_capabilityInvariantBundle
                   simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hStEq⟩; subst hStEq
                   exact this st1 hTcb
-          -- Shared proof body
+          -- Dispatch to extracted lemma
           intro st1 hTcb
-          have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-              st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
-            intro cnodeId cn hCn1
-            by_cases hEq : cnodeId = target.toObjId
-            · subst hEq
-              have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
-                unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
-                | none => simp [hObj] at hLookup
-                | some obj => cases obj with
-                  | tcb t => exact ⟨t, rfl⟩
-                  | _ => simp [hObj] at hLookup
-              have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target .ready (some msg) hTcb hTargetTcb
-              rcases hTcbPost with ⟨tcb', hTcb'⟩
-              rw [hTcb'] at hCn1; cases hCn1
-            · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target .ready (some msg) cnodeId hEq hTcb] at hCn1; exact hCn1
-          have hU1 : cspaceSlotUnique st1 := by
-            intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-          have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
-            hU1 (ensureRunnable_preserves_objects st1 target)
-          have ⟨hBndE, hCompE, hAcyclicE⟩ :=
-            cdtPredicates_through_reply_path st st1 target .ready (some msg) hBounded hComp hAcyclic hTcb
-          have hDepth1 : cspaceDepthConsistent st1 := by
-            intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-          have hDepthE := cspaceDepthConsistent_of_objects_eq st1 _ hDepth1
-            (ensureRunnable_preserves_objects st1 target)
-          exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU,
-            hBndE, hCompE, hAcyclicE, hDepthE⟩
+          exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
+            st st1 target .ready (some msg) tcb
+            hUnique hBounded hComp hAcyclic hDepthPre hTcb hLookup
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 

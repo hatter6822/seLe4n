@@ -1013,7 +1013,7 @@ theorem cspaceRevoke_preserves_projection
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
-        rw [clearCapabilityRefsState_preserves_projectState]
+        rw [revokeAndClearRefsState_preserves_projectState]
         simp only [projectState]; congr 1
         · funext oid; by_cases hObs : objectObservable ctx observer oid
           · simp [projectObjects, hObs]

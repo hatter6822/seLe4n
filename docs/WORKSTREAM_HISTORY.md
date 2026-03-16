@@ -27,7 +27,7 @@ capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
-| **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH |
+| **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH — **COMPLETED** (v0.16.15) |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test (resolves L-T03) | MEDIUM |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
@@ -49,6 +49,21 @@ M1-D1: `cspaceRevokeCdt_swallowed_error_consistent` — invariant preservation,
 object stability, and edge-set monotonicity through error-swallowing path.
 M1-D2: enriched `cspaceRevokeCdt` docstring with error-handling rationale.
 7 new proved declarations; zero sorry/axiom.
+
+**WS-M2** (v0.16.15): Performance optimization — 3 targeted improvements across
+the Capability subsystem hot paths. M2-A: fused `revokeAndClearRefsState` replaces
+the prior two-pass revoke pattern (one O(m) traversal to revoke children, then a
+second O(m) traversal to clear parent references) with a single O(m) pass that
+performs both revocation and reference clearing in one fold over the child set.
+M2-B: CDT `parentMap` index added to `CSpaceState` — `parentOf` lookups are now
+O(1) instead of scanning the CDT edge set; `removeNode`, `removeAsChild`, and
+`removeAsParent` are updated to maintain the index with targeted updates rather
+than full rebuilds. M2-C: reply lemma extraction — the proof body for
+`endpointReply` preservation is factored into a shared lemma consumed by both
+the direct-reply and reply-recv paths, eliminating duplicated proof obligations.
+Field preservation lemmas for non-interference proofs added to cover the new
+`parentMap` index field. Runtime `parentMapConsistent` check added and verified.
+Zero sorry/axiom.
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 
@@ -237,6 +252,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-M2** | v0.16.15 | Capability subsystem performance optimization. M2-A: fused `revokeAndClearRefsState` — single-pass O(m) fold replacing two O(m) passes (revoke children + clear parent references). M2-B: CDT `parentMap` index in `CSpaceState` — O(1) `parentOf` lookup; `removeNode`/`removeAsChild`/`removeAsParent` maintain the index with targeted updates. M2-C: shared reply lemma extraction — factored `endpointReply` preservation proof body consumed by both direct-reply and reply-recv paths. Field preservation lemmas for non-interference proofs added for new `parentMap` field. Runtime `parentMapConsistent` check added and verified. Zero sorry/axiom. | M2 |
 | **WS-L** | v0.16.9–v0.16.13 | IPC subsystem audit & remediation — comprehensive end-to-end audit of IPC subsystem (9,195 LoC, 12 files). L1: eliminated 4 redundant TCB lookups on IPC hot paths. L2: HashMap.fold migration (4 sites). L3: 22 new theorems + `ipcStateQueueConsistent` invariant. L4: 16 test scenario IDs, 4 coverage gaps filled. L5: IF readers' guide, version bump, full doc sync. 12/13 findings resolved, 1 deferred (L-T03). All WS-I5 deferred items closed. Zero sorry/axiom. | L1–L5 |
 | **WS-K-H** | v0.16.8 | Documentation sync and workstream closeout: updated `WORKSTREAM_HISTORY.md` with WS-K portfolio completion (K-A through K-H, v0.16.0–v0.16.8); updated `SELE4N_SPEC.md` current state snapshot with v0.16.8 version, updated metrics (37,139 production LoC, 4,037 test LoC, 1,198 proved declarations), and WS-K portfolio complete status; updated `DEVELOPMENT.md` active workstream to show WS-K complete, next priority as RPi5 hardware binding; updated `CLAIM_EVIDENCE_INDEX.md` WS-K claim row with comprehensive K-A through K-H deliverables and evidence commands; updated GitBook chapters: `03-architecture-and-module-map.md` (added `SyscallArgDecode.lean` module entry with 7 structures, 7 decode functions, 7 encode functions, 14 theorems), `04-project-design-deep-dive.md` (added section 1.7 documenting two-layer syscall argument decode architecture), `05-specification-and-roadmap.md` (version and roadmap update, WS-K complete, RPi5 next), `12-proof-and-invariant-map.md` (added WS-K proof surface: layer-2 round-trip proofs, delegation theorems, NI coverage extension to 34 constructors); regenerated `docs/codebase_map.json`; synced `README.md` metrics from `readme_sync`; bumped `lakefile.toml` version to 0.16.8; refined WS-K-H workstream plan from 9 flat tasks into 13 granular subtasks (K-H.1 through K-H.13) with dependency ordering, per-file change specifications, and explicit acceptance criteria; updated completion evidence checklist from 5 to 13 K-H items. Zero sorry/axiom. Closes WS-K Phase H. WS-K portfolio fully complete. | K-H |
 | **WS-K-G** | v0.16.7 | Lifecycle NI proof completion and deferred proof resolution: added `cspaceRevoke_preserves_projection` standalone theorem in `InformationFlow/Invariant/Operations.lean` extracted from inline proof for compositional reuse; added `lifecycleRevokeDeleteRetype_preserves_projection` theorem chaining projection preservation across `cspaceRevoke`, `cspaceDeleteSlot`, and `lifecycleRetypeObject` sub-operations; added `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` two-run NI theorem completing the previously deferred `lifecycleRevokeDeleteRetype` NI proof using compositional projection-preservation reasoning; extended `NonInterferenceStep` inductive with `lifecycleRevokeDeleteRetype` constructor (34 constructors total, up from 33); updated `step_preserves_projection` with the new constructor case; updated `syscallNI_coverage_witness` documentation to reflect 34-constructor exhaustive match. Zero sorry/axiom. Closes WS-K Phase G | K-G |
