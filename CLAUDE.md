@@ -128,7 +128,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1207 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~1271 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1058 lines)
-- `SeLe4n/Model/State.lean` (~982 lines)
+- `SeLe4n/Model/State.lean` (~1073 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~893 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~868 lines)
 - `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)

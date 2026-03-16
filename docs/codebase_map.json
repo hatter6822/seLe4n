@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-phase-2-optimization-x6cNY",
-      "commit_sha": "40966d340ded5fa0477fe1879fd9464e1c50d101",
-      "tree_sha": "311a591d83ce2974f7fe0d3cfaa052c83c793886",
-      "committed_at_utc": "2026-03-16T01:46:55+00:00"
+      "commit_sha": "b4ebcfbed00776c90f27da5befc2024eab21127c",
+      "tree_sha": "e2d8c9029674b7abea8ab6dee39adade49185d07",
+      "committed_at_utc": "2026-03-16T02:45:18+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6ba3cacc6690a4336d5e821e0c81dd6c98b086c0e96f444aa82615e2c86d9407"
+    "source_digest": "381413c5a91c67bce08acd2807dd9a968636ab80cf64d55c7cb8962f9f808215"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2301
+    "declaration_count": 2288
   },
   "readme_sync": {
     "version": "0.16.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
-    "production_loc": 39011,
+    "production_loc": 38868,
     "test_files": 4,
     "test_loc": 4115,
-    "proved_theorem_lemma_decls": 1251,
+    "proved_theorem_lemma_decls": 1240,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2516,7 +2516,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Defs",
       "path": "SeLe4n/Kernel/Capability/Invariant/Defs.lean",
-      "declaration_count": 61,
+      "declaration_count": 59,
       "declarations": [
         {
           "kind": "namespace",
@@ -2774,22 +2774,8 @@
         },
         {
           "kind": "theorem",
-          "name": "clearCapabilityRefsState_cdt_eq",
-          "line": 408,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefs_cdt_eq",
-          "line": 421,
-          "called": [
-            "clearCapabilityRefsState_cdt_eq"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "cdtPredicates_of_storeObject_nonCNode",
-          "line": 431,
+          "line": 409,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -2803,7 +2789,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_objects_cdtNodeSlot_eq",
-          "line": 446,
+          "line": 424,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -2816,7 +2802,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_detachSlotFromCdt",
-          "line": 461,
+          "line": 439,
           "called": [
             "cdtCompleteness"
           ]
@@ -2824,7 +2810,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_detachSlotFromCdt",
-          "line": 484,
+          "line": 462,
           "called": [
             "cdtAcyclicity"
           ]
@@ -2832,7 +2818,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_detachSlotFromCdt",
-          "line": 495,
+          "line": 473,
           "called": [
             "cspaceSlotCountBounded",
             "cspaceSlotCountBounded_of_objects_eq"
@@ -2841,7 +2827,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_detachSlotFromCdt",
-          "line": 503,
+          "line": 481,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_detachSlotFromCdt",
@@ -2854,7 +2840,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_objects_eq",
-          "line": 515,
+          "line": 493,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -2862,7 +2848,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_nonCNode",
-          "line": 524,
+          "line": 502,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -2870,7 +2856,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_sameCNode",
-          "line": 543,
+          "line": 521,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -2878,7 +2864,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_insertCNode",
-          "line": 572,
+          "line": 550,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -2886,7 +2872,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_detachSlotFromCdt",
-          "line": 588,
+          "line": 566,
           "called": [
             "cspaceDepthConsistent",
             "cspaceDepthConsistent_of_objects_eq"
@@ -2895,73 +2881,73 @@
         {
           "kind": "theorem",
           "name": "CNode.remove_depth_eq",
-          "line": 596,
+          "line": 574,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_guardWidth_eq",
-          "line": 599,
+          "line": 577,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_radixWidth_eq",
-          "line": 602,
+          "line": 580,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_slots_sub",
-          "line": 605,
+          "line": 583,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_depth_eq",
-          "line": 615,
+          "line": 593,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_guardWidth_eq",
-          "line": 618,
+          "line": 596,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_radixWidth_eq",
-          "line": 621,
+          "line": 599,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_slots_sub",
-          "line": 624,
+          "line": 602,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_depth_eq",
-          "line": 644,
+          "line": 622,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_guardWidth_eq",
-          "line": 647,
+          "line": 625,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_radixWidth_eq",
-          "line": 650,
+          "line": 628,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "boundedCompleteness_of_cdt_only_update",
-          "line": 655,
+          "line": 633,
           "called": [
             "cdtCompleteness",
             "cspaceSlotCountBounded"
@@ -2970,7 +2956,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_blocking_path",
-          "line": 665,
+          "line": 643,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -2988,7 +2974,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_handshake_path",
-          "line": 707,
+          "line": 685,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -3006,7 +2992,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_reply_path",
-          "line": 755,
+          "line": 733,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -6384,7 +6370,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Helpers",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean",
-      "declaration_count": 23,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -6416,32 +6402,26 @@
         },
         {
           "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_projectState",
-          "line": 174,
-          "called": []
-        },
-        {
-          "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_projectState",
-          "line": 193,
+          "line": 170,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "list_filter_ne_then_filter_eq",
-          "line": 218,
+          "line": 195,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "list_filter_append_singleton_unobs",
-          "line": 240,
+          "line": 217,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_projection",
-          "line": 248,
+          "line": 225,
           "called": [
             "list_filter_ne_then_filter_eq"
           ]
@@ -6449,13 +6429,13 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_projection",
-          "line": 294,
+          "line": 271,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_projection",
-          "line": 323,
+          "line": 300,
           "called": [
             "storeObject_preserves_projectObjectIndex"
           ]
@@ -6463,7 +6443,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbPendingMessage_preserves_projection",
-          "line": 373,
+          "line": 350,
           "called": [
             "storeObject_preserves_projectObjectIndex"
           ]
@@ -6471,7 +6451,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_projection",
-          "line": 409,
+          "line": 386,
           "called": [
             "storeObject_preserves_projectObjectIndex"
           ]
@@ -6479,7 +6459,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_projection",
-          "line": 447,
+          "line": 424,
           "called": [
             "storeObject_preserves_projectObjectIndex"
           ]
@@ -6487,13 +6467,13 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_lowEquivalent",
-          "line": 479,
+          "line": 456,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_lowEquivalent",
-          "line": 498,
+          "line": 475,
           "called": [
             "cspaceInsertSlot_preserves_projectObjectIndex"
           ]
@@ -6501,13 +6481,13 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_lowEquivalent",
-          "line": 581,
+          "line": 558,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lowEquivalent",
-          "line": 690,
+          "line": 667,
           "called": [
             "storeObject_at_unobservable_preserves_lowEquivalent"
           ]
@@ -6515,7 +6495,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_projection_preserved",
-          "line": 714,
+          "line": 691,
           "called": [
             "ensureRunnable_preserves_projection",
             "storeObject_preserves_projection",
@@ -6525,7 +6505,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_preserves_lowEquivalent",
-          "line": 758,
+          "line": 735,
           "called": [
             "notificationSignal_projection_preserved"
           ]
@@ -6533,7 +6513,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_projection_preserved",
-          "line": 787,
+          "line": 764,
           "called": [
             "removeRunnable_preserves_projection",
             "storeObject_preserves_projection",
@@ -6543,7 +6523,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_lowEquivalent",
-          "line": 845,
+          "line": 822,
           "called": [
             "notificationWait_projection_preserved"
           ]
@@ -6551,7 +6531,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_lowEquivalent",
-          "line": 870,
+          "line": 847,
           "called": [
             "cspaceInsertSlot_preserves_projectObjectIndex"
           ]
@@ -13862,7 +13842,7 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 108,
+      "declaration_count": 98,
       "declarations": [
         {
           "kind": "namespace",
@@ -14012,27 +13992,8 @@
         },
         {
           "kind": "def",
-          "name": "clearCapabilityRefsState",
-          "line": 260,
-          "called": [
-            "SlotRef",
-            "SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "clearCapabilityRefs",
-          "line": 272,
-          "called": [
-            "Kernel",
-            "SlotRef",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "revokeAndClearRefsState",
-          "line": 280,
+          "line": 262,
           "called": [
             "SystemState"
           ]
@@ -14040,7 +14001,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_objects",
-          "line": 291,
+          "line": 273,
           "called": [
             "SystemState"
           ]
@@ -14048,7 +14009,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_objects",
-          "line": 306,
+          "line": 288,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_objects",
@@ -14058,7 +14019,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_cdt",
-          "line": 314,
+          "line": 296,
           "called": [
             "SystemState"
           ]
@@ -14066,7 +14027,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_cdt_eq",
-          "line": 345,
+          "line": 327,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_cdt",
@@ -14077,7 +14038,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_fields",
-          "line": 359,
+          "line": 341,
           "called": [
             "SystemState"
           ]
@@ -14085,7 +14046,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_scheduler",
-          "line": 383,
+          "line": 365,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14095,7 +14056,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_machine",
-          "line": 391,
+          "line": 373,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14105,7 +14066,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_services",
-          "line": 399,
+          "line": 381,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14115,7 +14076,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_irqHandlers",
-          "line": 407,
+          "line": 389,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14125,7 +14086,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_objectIndex",
-          "line": 415,
+          "line": 397,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14135,7 +14096,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_objectIndexSet",
-          "line": 423,
+          "line": 405,
           "called": [
             "SystemState",
             "revokeAndClearRefsFoldBody_preserves_fields",
@@ -14145,7 +14106,7 @@
         {
           "kind": "def",
           "name": "setCurrentThread",
-          "line": 430,
+          "line": 412,
           "called": [
             "Kernel"
           ]
@@ -14153,7 +14114,7 @@
         {
           "kind": "def",
           "name": "lookupService",
-          "line": 436,
+          "line": 418,
           "called": [
             "SystemState"
           ]
@@ -14161,7 +14122,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_lookupService",
-          "line": 440,
+          "line": 422,
           "called": [
             "SystemState",
             "lookupService",
@@ -14172,7 +14133,7 @@
         {
           "kind": "def",
           "name": "hasServiceDependency",
-          "line": 449,
+          "line": 431,
           "called": [
             "SystemState",
             "lookupService"
@@ -14181,7 +14142,7 @@
         {
           "kind": "def",
           "name": "hasIsolationEdge",
-          "line": 455,
+          "line": 437,
           "called": [
             "SystemState",
             "lookupService"
@@ -14190,7 +14151,7 @@
         {
           "kind": "def",
           "name": "dependenciesSatisfied",
-          "line": 461,
+          "line": 443,
           "called": [
             "SystemState",
             "lookupService"
@@ -14199,7 +14160,7 @@
         {
           "kind": "def",
           "name": "storeServiceState",
-          "line": 471,
+          "line": 453,
           "called": [
             "SystemState"
           ]
@@ -14207,7 +14168,7 @@
         {
           "kind": "def",
           "name": "setServiceStatusState",
-          "line": 478,
+          "line": 460,
           "called": [
             "SystemState",
             "lookupService",
@@ -14217,7 +14178,7 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_eq",
-          "line": 483,
+          "line": 465,
           "called": [
             "SystemState",
             "lookupService",
@@ -14227,7 +14188,7 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_ne",
-          "line": 490,
+          "line": 472,
           "called": [
             "SystemState",
             "lookupService",
@@ -14237,7 +14198,7 @@
         {
           "kind": "theorem",
           "name": "setServiceStatusState_lookup_eq",
-          "line": 503,
+          "line": 485,
           "called": [
             "SystemState",
             "lookupService",
@@ -14248,7 +14209,7 @@
         {
           "kind": "theorem",
           "name": "setServiceStatusState_preserves_objects",
-          "line": 512,
+          "line": 494,
           "called": [
             "SystemState",
             "lookupService",
@@ -14259,7 +14220,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_services",
-          "line": 520,
+          "line": 502,
           "called": [
             "SystemState",
             "storeObject"
@@ -14268,7 +14229,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_scheduler",
-          "line": 530,
+          "line": 512,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14278,7 +14239,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_services",
-          "line": 539,
+          "line": 521,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14288,7 +14249,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objects",
-          "line": 548,
+          "line": 530,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14298,7 +14259,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_irqHandlers",
-          "line": 558,
+          "line": 540,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14308,7 +14269,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objectIndex",
-          "line": 568,
+          "line": 550,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14318,7 +14279,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_machine",
-          "line": 578,
+          "line": 560,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14327,91 +14288,8 @@
         },
         {
           "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_objects",
-          "line": 587,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefs_preserves_objects",
-          "line": 598,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefs",
-            "clearCapabilityRefsState_preserves_objects"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_scheduler",
-          "line": 607,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_machine",
-          "line": 618,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_services",
-          "line": 628,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_lookupService",
-          "line": 638,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState",
-            "clearCapabilityRefsState_preserves_services",
-            "lookupService"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_irqHandlers",
-          "line": 646,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "clearCapabilityRefsState_preserves_objectIndex",
-          "line": 657,
-          "called": [
-            "SlotRef",
-            "SystemState",
-            "clearCapabilityRefsState"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "storeCapabilityRef_lookup_eq",
-          "line": 667,
+          "line": 569,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14421,7 +14299,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq",
-          "line": 687,
+          "line": 589,
           "called": [
             "SystemState",
             "storeObject"
@@ -14430,7 +14308,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_ne",
-          "line": 697,
+          "line": 599,
           "called": [
             "SystemState",
             "storeObject"
@@ -14439,7 +14317,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq",
-          "line": 710,
+          "line": 612,
           "called": [
             "SystemState",
             "storeObject"
@@ -14448,7 +14326,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_irqHandlers_eq",
-          "line": 720,
+          "line": 622,
           "called": [
             "SystemState",
             "storeObject"
@@ -14457,7 +14335,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_machine_eq",
-          "line": 730,
+          "line": 632,
           "called": [
             "SystemState",
             "storeObject"
@@ -14466,7 +14344,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_cdt_eq",
-          "line": 741,
+          "line": 643,
           "called": [
             "SystemState",
             "storeObject"
@@ -14475,7 +14353,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot",
-          "line": 756,
+          "line": 658,
           "called": [
             "SystemState",
             "storeObject"
@@ -14484,7 +14362,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot_ne",
-          "line": 767,
+          "line": 669,
           "called": [
             "SystemState",
             "storeObject"
@@ -14493,7 +14371,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_non_vspaceRoot",
-          "line": 791,
+          "line": 693,
           "called": [
             "SystemState",
             "storeObject"
@@ -14502,7 +14380,7 @@
         {
           "kind": "def",
           "name": "objectIndexSetSync",
-          "line": 810,
+          "line": 712,
           "called": [
             "SystemState"
           ]
@@ -14510,7 +14388,7 @@
         {
           "kind": "theorem",
           "name": "objectIndexSetSync_contains_of_mem",
-          "line": 814,
+          "line": 716,
           "called": [
             "SystemState",
             "objectIndexSetSync"
@@ -14519,7 +14397,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_updates_objectTypeMeta",
-          "line": 820,
+          "line": 722,
           "called": [
             "SystemState",
             "storeObject"
@@ -14528,13 +14406,13 @@
         {
           "kind": "namespace",
           "name": "SystemState",
-          "line": 830,
+          "line": 732,
           "called": []
         },
         {
           "kind": "def",
           "name": "lookupCNode",
-          "line": 833,
+          "line": 735,
           "called": [
             "SystemState"
           ]
@@ -14542,7 +14420,7 @@
         {
           "kind": "def",
           "name": "lookupSlotCap",
-          "line": 839,
+          "line": 741,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14552,7 +14430,7 @@
         {
           "kind": "def",
           "name": "ownerOfSlot",
-          "line": 845,
+          "line": 747,
           "called": [
             "CSpaceOwner",
             "SlotRef"
@@ -14561,7 +14439,7 @@
         {
           "kind": "def",
           "name": "ownsSlot",
-          "line": 849,
+          "line": 751,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -14573,7 +14451,7 @@
         {
           "kind": "def",
           "name": "ownedSlots",
-          "line": 854,
+          "line": 756,
           "called": [
             "CSpaceOwner",
             "SystemState",
@@ -14583,7 +14461,7 @@
         {
           "kind": "def",
           "name": "lookupObjectTypeMeta",
-          "line": 860,
+          "line": 762,
           "called": [
             "SystemState"
           ]
@@ -14591,7 +14469,7 @@
         {
           "kind": "def",
           "name": "lookupCapabilityRefMeta",
-          "line": 864,
+          "line": 766,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14601,7 +14479,7 @@
         {
           "kind": "def",
           "name": "lookupCdtNodeOfSlot",
-          "line": 869,
+          "line": 771,
           "called": [
             "SlotRef",
             "SystemState"
@@ -14610,7 +14488,7 @@
         {
           "kind": "def",
           "name": "lookupCdtSlotOfNode",
-          "line": 873,
+          "line": 775,
           "called": [
             "SlotRef",
             "SystemState"
@@ -14619,7 +14497,7 @@
         {
           "kind": "def",
           "name": "observedCdtEdges",
-          "line": 877,
+          "line": 779,
           "called": [
             "SystemState",
             "lookupCdtSlotOfNode"
@@ -14628,7 +14506,7 @@
         {
           "kind": "theorem",
           "name": "observedCdtEdges_eq_projection",
-          "line": 883,
+          "line": 785,
           "called": [
             "SystemState",
             "lookupCdtSlotOfNode",
@@ -14638,7 +14516,7 @@
         {
           "kind": "def",
           "name": "attachSlotToCdtNode",
-          "line": 891,
+          "line": 793,
           "called": [
             "SlotRef",
             "SystemState"
@@ -14647,7 +14525,7 @@
         {
           "kind": "def",
           "name": "detachSlotFromCdt",
-          "line": 909,
+          "line": 811,
           "called": [
             "SlotRef",
             "SystemState"
@@ -14656,7 +14534,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlot",
-          "line": 920,
+          "line": 822,
           "called": [
             "SlotRef",
             "SystemState"
@@ -14665,7 +14543,7 @@
         {
           "kind": "theorem",
           "name": "attachSlotToCdtNode_objects_eq",
-          "line": 935,
+          "line": 837,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14675,7 +14553,7 @@
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_objects_eq",
-          "line": 939,
+          "line": 841,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14685,7 +14563,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_objects_eq",
-          "line": 944,
+          "line": 846,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14695,7 +14573,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_of_objects_eq",
-          "line": 950,
+          "line": 852,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14706,7 +14584,7 @@
         {
           "kind": "def",
           "name": "objectTypeMetadataConsistent",
-          "line": 958,
+          "line": 860,
           "called": [
             "SystemState",
             "lookupObjectTypeMeta"
@@ -14715,7 +14593,7 @@
         {
           "kind": "def",
           "name": "capabilityRefMetadataConsistent",
-          "line": 962,
+          "line": 864,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -14725,7 +14603,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataConsistent",
-          "line": 966,
+          "line": 868,
           "called": [
             "SystemState",
             "capabilityRefMetadataConsistent",
@@ -14735,7 +14613,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_none_of_lookupCNode_eq_none",
-          "line": 969,
+          "line": 871,
           "called": [
             "SlotRef",
             "SystemState",
@@ -14746,7 +14624,7 @@
         {
           "kind": "theorem",
           "name": "ownsSlot_iff",
-          "line": 976,
+          "line": 878,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -14759,7 +14637,7 @@
         {
           "kind": "theorem",
           "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
-          "line": 984,
+          "line": 886,
           "called": [
             "CSpaceOwner",
             "SystemState",
@@ -14770,7 +14648,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectTypeMetadataConsistent",
-          "line": 993,
+          "line": 895,
           "called": [
             "SystemState",
             "storeObject"
@@ -14779,7 +14657,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_capabilityRefMetadataConsistent",
-          "line": 1011,
+          "line": 913,
           "called": [
             "SystemState",
             "storeObject"
@@ -14788,7 +14666,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_lifecycleMetadataConsistent",
-          "line": 1021,
+          "line": 923,
           "called": [
             "SystemState",
             "storeObject",
@@ -14799,7 +14677,7 @@
         {
           "kind": "theorem",
           "name": "default_systemState_lifecycleConsistent",
-          "line": 1040,
+          "line": 942,
           "called": [
             "SystemState"
           ]
@@ -14807,7 +14685,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_type_change",
-          "line": 1062,
+          "line": 964,
           "called": [
             "SystemState",
             "storeObject",
@@ -14817,7 +14695,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_capref_at_stored",
-          "line": 1079,
+          "line": 981,
           "called": [
             "SystemState",
             "storeObject"
@@ -14826,7 +14704,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objectIndex_monotone",
-          "line": 1102,
+          "line": 1004,
           "called": [
             "SystemState",
             "storeObject"
@@ -14835,7 +14713,7 @@
         {
           "kind": "def",
           "name": "objectIndexLive",
-          "line": 1128,
+          "line": 1030,
           "called": [
             "SystemState"
           ]
@@ -14843,7 +14721,7 @@
         {
           "kind": "theorem",
           "name": "objectIndexLive_default",
-          "line": 1132,
+          "line": 1034,
           "called": [
             "objectIndexLive"
           ]
@@ -14851,7 +14729,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectIndexLive",
-          "line": 1141,
+          "line": 1043,
           "called": [
             "SystemState",
             "objectIndexLive",

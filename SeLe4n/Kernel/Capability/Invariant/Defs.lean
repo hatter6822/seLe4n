@@ -404,28 +404,6 @@ theorem storeCapabilityRef_cdt_eq
   unfold storeCapabilityRef at hStep
   simp at hStep; cases hStep; exact ⟨rfl, rfl, rfl, rfl⟩
 
-/-- WS-H4: clearCapabilityRefsState preserves CDT fields and objects. -/
-private theorem clearCapabilityRefsState_cdt_eq
-    (refs : List SlotRef) (st : SystemState) :
-    (clearCapabilityRefsState refs st).cdt = st.cdt ∧
-    (clearCapabilityRefsState refs st).cdtNodeSlot = st.cdtNodeSlot ∧
-    (clearCapabilityRefsState refs st).cdtSlotNode = st.cdtSlotNode ∧
-    (clearCapabilityRefsState refs st).objects = st.objects := by
-  induction refs generalizing st with
-  | nil => exact ⟨rfl, rfl, rfl, rfl⟩
-  | cons ref rest ih =>
-    simp only [clearCapabilityRefsState]
-    exact ih _
-
-/-- WS-H4: clearCapabilityRefs (monadic form) preserves CDT fields and objects. -/
-theorem clearCapabilityRefs_cdt_eq
-    (st st' : SystemState) (refs : List SlotRef)
-    (hStep : clearCapabilityRefs refs st = .ok ((), st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot ∧
-    st'.cdtSlotNode = st.cdtSlotNode ∧ st'.objects = st.objects := by
-  unfold clearCapabilityRefs at hStep; cases hStep
-  exact clearCapabilityRefsState_cdt_eq refs st
-
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/
 private theorem cdtPredicates_of_storeObject_nonCNode

@@ -24,7 +24,9 @@
 - Updated non-interference proofs (Helpers.lean, Operations.lean) to use
   `revokeAndClearRefsState_preserves_*` and `revokeAndClearRefsState_preserves_projectState`
 - Added `cdtParentMapConsistentCheck` runtime invariant check in test harness
-- 12 new proved declarations; zero sorry/axiom; all proofs machine-checked
+- Removed dead code: `clearCapabilityRefsState`, `clearCapabilityRefs`, and 11
+  associated preservation theorems — fully superseded by `revokeAndClearRefsState`
+- Net +1 proved declarations (12 added, 11 dead removed); zero sorry/axiom
 - All test tiers pass (test_full.sh); 150/150 trace fixtures matched
 - Bumped `lakefile.toml` version to 0.16.15
 

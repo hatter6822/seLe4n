@@ -166,29 +166,6 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
   unfold lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem]
 
--- ============================================================================
--- WS-E5: clearCapabilityRefsState preserves projection (used by composed proofs)
--- ============================================================================
-
-/-- clearCapabilityRefsState preserves the observer projection for any refs list. -/
-theorem clearCapabilityRefsState_preserves_projectState
-    (ctx : LabelingContext) (observer : IfObserver)
-    (refs : List SlotRef) (st : SystemState) :
-    projectState ctx observer (clearCapabilityRefsState refs st) =
-      projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext oid; simp [projectObjects, clearCapabilityRefsState_preserves_objects]
-  · simp [projectRunnable, clearCapabilityRefsState_preserves_scheduler]
-  · simp [projectCurrent, clearCapabilityRefsState_preserves_scheduler]
-  · funext sid; simp [projectServiceStatus, clearCapabilityRefsState_lookupService]
-  · simp [projectActiveDomain, clearCapabilityRefsState_preserves_scheduler]
-  · funext irq; simp [projectIrqHandlers, clearCapabilityRefsState_preserves_irqHandlers]
-  · simp [projectObjectIndex, clearCapabilityRefsState_preserves_objectIndex]
-  · simp [projectDomainTimeRemaining, clearCapabilityRefsState_preserves_scheduler]
-  · simp [projectDomainSchedule, clearCapabilityRefsState_preserves_scheduler]
-  · simp [projectDomainScheduleIndex, clearCapabilityRefsState_preserves_scheduler]
-  · simp [projectMachineRegs, clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_machine]
-
 /-- M-P01: revokeAndClearRefsState preserves the observer projection. -/
 theorem revokeAndClearRefsState_preserves_projectState
     (ctx : LabelingContext) (observer : IfObserver)

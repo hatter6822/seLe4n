@@ -256,27 +256,9 @@ def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit
       }
     .ok ((), { st with lifecycle := lifecycle' })
 
-/-- Pure state update that clears a finite list of slot-reference mappings. -/
-def clearCapabilityRefsState : List SlotRef → SystemState → SystemState
-  | [], st => st
-  | ref :: refs, st =>
-      clearCapabilityRefsState refs {
-        st with
-          lifecycle := {
-            st.lifecycle with
-              capabilityRefs := st.lifecycle.capabilityRefs.erase ref
-          }
-      }
-
-/-- Clear a finite list of slot-reference mappings. -/
-def clearCapabilityRefs (refs : List SlotRef) : Kernel Unit :=
-  fun st => .ok ((), clearCapabilityRefsState refs st)
-
 /-- M-P01: Fused revoke — filter CNode slots matching the revoke target and clear
 their capability refs in a single `HashMap.fold` pass, eliminating the intermediate
-`revokedRefs` list allocation and the second O(m) traversal through
-`clearCapabilityRefsState`. Semantically equivalent to building the refs list
-then calling `clearCapabilityRefsState`. -/
+refs-list allocation and second traversal of the legacy two-pass revoke path. -/
 def revokeAndClearRefsState
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
@@ -583,86 +565,6 @@ theorem storeCapabilityRef_preserves_machine
     st'.machine = st.machine := by
   unfold storeCapabilityRef at hStep
   simp at hStep; cases hStep; rfl
-
-theorem clearCapabilityRefsState_preserves_objects
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).objects = st.objects := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simpa [clearCapabilityRefsState] using
-        ih { st with lifecycle := { st.lifecycle with
-          capabilityRefs := st.lifecycle.capabilityRefs.erase ref } }
-
-theorem clearCapabilityRefs_preserves_objects
-    (st st' : SystemState)
-    (refs : List SlotRef)
-    (hStep : clearCapabilityRefs refs st = .ok ((), st')) :
-    st'.objects = st.objects := by
-  unfold clearCapabilityRefs at hStep
-  cases hStep
-  simpa using clearCapabilityRefsState_preserves_objects refs st
-
-theorem clearCapabilityRefsState_preserves_scheduler
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).scheduler = st.scheduler := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simp only [clearCapabilityRefsState]
-      exact ih _
-
-/-- WS-H10: clearCapabilityRefsState preserves machine state. -/
-theorem clearCapabilityRefsState_preserves_machine
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).machine = st.machine := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simp only [clearCapabilityRefsState]
-      exact ih _
-
-theorem clearCapabilityRefsState_preserves_services
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).services = st.services := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simp only [clearCapabilityRefsState]
-      exact ih _
-
-theorem clearCapabilityRefsState_lookupService
-    (refs : List SlotRef)
-    (st : SystemState)
-    (sid : ServiceId) :
-    lookupService (clearCapabilityRefsState refs st) sid = lookupService st sid := by
-  simp [lookupService, clearCapabilityRefsState_preserves_services]
-
-/-- WS-F3: clearCapabilityRefsState preserves IRQ handler mappings. -/
-theorem clearCapabilityRefsState_preserves_irqHandlers
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).irqHandlers = st.irqHandlers := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simp only [clearCapabilityRefsState]
-      exact ih _
-
-/-- WS-F3: clearCapabilityRefsState preserves the object index. -/
-theorem clearCapabilityRefsState_preserves_objectIndex
-    (refs : List SlotRef)
-    (st : SystemState) :
-    (clearCapabilityRefsState refs st).objectIndex = st.objectIndex := by
-  induction refs generalizing st with
-  | nil => rfl
-  | cons ref refs ih =>
-      simp only [clearCapabilityRefsState]
-      exact ih _
 
 theorem storeCapabilityRef_lookup_eq
     (st st' : SystemState)

@@ -468,10 +468,10 @@ this doubles the work on the revoke hot path.
 while the revoked-refs collection is a `HashMap.fold`. Fusing these requires a single
 `HashMap.fold` that performs both the match check AND the ref erasure in each iteration.
 
-**Design decision**: Keep the existing `clearCapabilityRefsState` and `clearCapabilityRefs`
-unchanged (they are used by other operations and have 15+ existing preservation theorems).
-Instead, introduce a fused helper alongside the existing functions, with an equivalence
-theorem bridging the two representations. This avoids cross-subsystem churn.
+**Design decision**: Introduce a fused helper `revokeAndClearRefsState` that replaces
+the two-pass pattern. The legacy `clearCapabilityRefsState` and `clearCapabilityRefs`
+definitions and their 11 preservation theorems were removed as dead code after the
+fused helper was adopted — no remaining callers existed.
 
 ##### Subtask M2-A1: Define `revokeAndClearRefsState` fused helper
 
