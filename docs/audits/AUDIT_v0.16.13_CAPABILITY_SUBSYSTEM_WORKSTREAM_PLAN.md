@@ -906,136 +906,770 @@ consistency theorems. ~6 new proved declarations; zero sorry/axiom.
 
 ### Phase 3: IPC Capability Transfer (WS-M3)
 
-**Target version**: 0.17.2
-**Files modified**: `Model/Object/Types.lean`, `Kernel/IPC/Operations/Endpoint.lean`,
+**Target version**: 0.16.16
+**Files modified**: `Model/Object/Types.lean`, `Model/Object/Structures.lean`,
 `Kernel/Capability/Operations.lean`, `Kernel/Capability/Invariant/Preservation.lean`,
-`Kernel/API.lean`
+`Kernel/IPC/DualQueue/Transport.lean`, `Kernel/IPC/Operations/Endpoint.lean`,
+`Kernel/IPC/Invariant/EndpointPreservation.lean`,
+`Kernel/IPC/Invariant/Structural.lean`, `Kernel/Architecture/SyscallArgDecode.lean`,
+`Kernel/API.lean`, `tests/OperationChainSuite.lean`,
+`tests/NegativeStateSuite.lean`, `SeLe4n/Testing/MainTraceHarness.lean`
 
 This phase resolves the last deferred item from WS-L (L-T03): capability transfer
 during IPC. In seL4, `seL4_Send`/`seL4_Call` can include extra capabilities in the
-message that are unwrapped at the receiver's CSpace. This is the mechanism by which
-a server can receive capabilities from a client.
+message that are unwrapped into the receiver's CSpace upon rendezvous. This is the
+mechanism by which a client delegates capabilities to a server (or vice versa).
 
-#### Task M3-A: Model IPC capability transfer types
+**Architectural alignment with seL4**: In the real seL4, capability unwrapping
+happens on the *receive* side of the IPC rendezvous — the kernel reads caps from
+the sender's TCB `pendingMessage`, resolves them in the sender's CSpace, attenuates
+rights through the endpoint capability's grant right, and installs the results into
+the receiver's CSpace. This model follows the same architecture: `endpointSendDual`
+continues to store `msg.caps` in the sender's TCB unmodified; the new
+`ipcUnwrapCaps` operation runs during the rendezvous (inside `endpointReceiveDual`
+and `endpointCall`'s immediate-handshake paths) when the receiver is known.
 
-**Problem**: `IpcMessage` currently carries `caps : List Capability` but there is no
-operation that actually transfers capabilities between CSpaces during IPC. The caps
-field is populated but never unwrapped into the receiver's CNode.
+**seL4 grant-right gate**: In seL4, capability transfer through IPC requires
+the endpoint capability to have the `Grant` right. If the endpoint capability
+lacks `Grant`, the extra capabilities in the message are silently dropped (not
+an error — the message registers still transfer, only the caps are skipped).
+This model replicates this behavior: `ipcUnwrapCaps` checks the endpoint
+capability's `Grant` right before attempting any transfers, and returns an
+empty result array if the right is absent.
+
+**Design constraints**:
+- `IpcMessage.caps` is `Array Capability` (bounded by `maxExtraCaps = 3`).
+- The existing `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, and
+  `endpointReply` signatures are preserved. Cap unwrapping is a new post-step.
+- Each transferred cap gets a CDT derivation edge (`.ipcTransfer`) from the
+  sender's slot to the receiver's slot, maintaining CDT completeness.
+- No new `KernelError` variants needed — transfer failures are recorded in
+  per-cap result entries, not propagated as kernel errors.
+
+Phase 3 is subdivided into 20 atomic subtasks across 7 tasks. Each subtask is
+independently buildable and testable. Tasks are ordered by dependency: M3-A
+(types) has no deps; M3-B (slot scanning) depends on M3-A; M3-C (single-cap
+transfer) depends on M3-A and M3-B; M3-D (batch unwrap) depends on M3-C;
+M3-E (IPC integration) depends on M3-D; M3-F (API wiring) depends on M3-E;
+M3-G (tests) depends on M3-E.
+
+---
+
+#### Task M3-A: Define IPC capability transfer types (M-D01)
+
+**Problem**: `IpcMessage` carries `caps : Array Capability` (Types.lean:167) but
+there is no result type to represent the outcome of unwrapping each transferred
+capability into the receiver's CSpace.
+
+##### Subtask M3-A1: Define `CapTransferResult` inductive
 
 **Implementation**:
-1. In `Model/Object/Types.lean`, define:
+1. In `Model/Object/Types.lean`, after `IpcMessage` (line 196), add:
    ```lean
-   /-- Result of attempting to unwrap a transferred capability into the receiver's CSpace. -/
+   /-- M-D01: Result of attempting to unwrap a single transferred capability
+   into the receiver's CSpace during IPC rendezvous.
+
+   seL4 semantics: each extra cap in the message is independently unwrapped.
+   Failures on one cap do not abort the transfer of subsequent caps. -/
    inductive CapTransferResult where
-     | inserted : SlotRef → CapTransferResult  -- successfully placed in receiver slot
-     | noSlot : CapTransferResult              -- no empty slot in receiver's CNode
-     | attenuationFailed : CapTransferResult   -- rights check failed
+     /-- Successfully installed in the receiver's CSpace at the given slot. -/
+     | installed (ref : SlotRef)
+     /-- No empty slot available in the receiver's CNode (receiver CSpace full). -/
+     | noSlot
+     /-- The endpoint capability lacks the Grant right — transfer silently skipped. -/
+     | grantDenied
      deriving Repr, DecidableEq
    ```
-2. In `Kernel/Capability/Operations.lean`, define:
+
+   **Design note**: The original plan included `attenuationFailed` but this is
+   incorrect for seL4 semantics. In seL4, the transferred capability inherits
+   the *sender's* rights as-is (the sender already attenuated when it placed the
+   cap in its message). The only gate is the endpoint's `Grant` right, which
+   controls whether *any* cap transfer occurs. If `Grant` is present, caps
+   transfer with full sender rights. This simplifies the model and aligns with
+   the actual seL4 implementation.
+
+##### Subtask M3-A2: Define `CapTransferSummary` result structure
+
+**Implementation**:
+1. In `Model/Object/Types.lean`, after `CapTransferResult`, add:
    ```lean
-   /-- Transfer a capability from the sender's message into the receiver's CSpace.
-
-   The transferred capability is attenuated to the intersection of:
-   - The sender's rights on the capability
-   - The receiver's rights on the receiving endpoint capability
-
-   This prevents privilege escalation through IPC: the receiver cannot gain
-   more authority than both the sender intended and the endpoint grants.
-
-   The destination slot is the first empty slot in the receiver's CSpace root CNode
-   starting from `receiverSlotBase`. -/
-   def ipcTransferCap
-       (senderCap : Capability)
-       (receiverRootId : SeLe4n.ObjId)
-       (receiverSlotBase : SeLe4n.Slot)
-       (endpointRights : AccessRightSet) : Kernel CapTransferResult
+   /-- M-D01: Aggregated results of unwrapping all extra capabilities in an
+   IPC message. One entry per cap in the original `msg.caps` array. -/
+   structure CapTransferSummary where
+     results : Array CapTransferResult := #[]
+     deriving Repr, DecidableEq
    ```
-3. Define the slot-scanning helper that finds the first empty slot:
+
+##### Subtask M3-A3: Add `DerivationOp.ipcTransfer` variant
+
+**Implementation**:
+1. In `Model/Object/Structures.lean`, extend the `DerivationOp` inductive
+   (which currently has `.mint`, `.copy`, `.move`) with:
    ```lean
-   /-- Find the first empty slot in a CNode starting from `base`, searching up to
-   `limit` consecutive slots. Returns `none` if all slots are occupied. -/
-   def findFirstEmptySlot (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) :
-       Option SeLe4n.Slot
+   | ipcTransfer  -- capability transferred via IPC rendezvous
+   ```
+   This allows CDT edges to distinguish IPC-transferred capabilities from
+   those created by explicit CSpace operations, which is needed for
+   revocation-exhaustiveness auditing and CDT visualization.
+
+**Verification**: `lake build` succeeds (all three subtasks are additive definitions).
+
+**Files**: `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Model/Object/Structures.lean`
+
+---
+
+#### Task M3-B: Implement bounded slot scanning (M-D01)
+
+**Problem**: The receiver's CSpace needs a mechanism to find the first available
+slot for each transferred capability. In seL4, the receiver specifies an IPC
+buffer region in its CSpace where incoming caps are placed. The model simplifies
+this: the receiver's TCB has `cspaceRoot : ObjId` pointing to its root CNode, and
+caps are placed starting from a configurable `receiverSlotBase`.
+
+##### Subtask M3-B1: Define `CNode.findFirstEmptySlot`
+
+**Implementation**:
+1. In `Model/Object/Structures.lean`, after the CNode slot operations section, add:
+   ```lean
+   /-- M-D01: Find the first empty slot in a CNode starting from `base`,
+   scanning up to `limit` consecutive slot indices. Returns `none` if all
+   scanned slots are occupied.
+
+   The iteration is bounded by `limit` (typically `maxExtraCaps = 3`) rather
+   than `2^radixWidth`, because we only need slots for the (at most 3) extra
+   caps in the message. Termination is structural on `limit`. -/
+   def CNode.findFirstEmptySlot (cn : CNode) (base : SeLe4n.Slot)
+       (limit : Nat) : Option SeLe4n.Slot :=
+     match limit with
+     | 0 => none
+     | n + 1 =>
+         match cn.lookup base with
+         | none => some base
+         | some _ => cn.findFirstEmptySlot (SeLe4n.Slot.ofNat (base.toNat + 1)) n
+   ```
+
+##### Subtask M3-B2: Prove `findFirstEmptySlot` correctness theorems
+
+**Implementation**:
+1. In `Model/Object/Structures.lean`, after the definition, add:
+   ```lean
+   /-- If findFirstEmptySlot returns `some s`, then `cn.lookup s = none`. -/
+   theorem CNode.findFirstEmptySlot_spec
+       (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) (s : SeLe4n.Slot)
+       (hFind : cn.findFirstEmptySlot base limit = some s) :
+       cn.lookup s = none
+
+   /-- findFirstEmptySlot returns `none` iff all scanned slots are occupied. -/
+   theorem CNode.findFirstEmptySlot_none_iff
+       (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) :
+       cn.findFirstEmptySlot base limit = none ↔
+         ∀ i, i < limit → (cn.lookup (SeLe4n.Slot.ofNat (base.toNat + i))).isSome
+   ```
+   Proofs: structural induction on `limit`.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+---
+
+#### Task M3-C: Implement single-cap transfer operation (M-D01)
+
+**Problem**: No operation currently takes a capability from a sender's message
+and installs it into the receiver's CSpace with proper CDT tracking.
+
+##### Subtask M3-C1: Define `ipcTransferSingleCap`
+
+**Implementation**:
+1. In `Kernel/Capability/Operations.lean`, after the CDT operations section
+   (after `cspaceRevokeCdtStrict`), add a new section:
+   ```lean
+   -- ============================================================================
+   -- M-D01: IPC capability transfer operations
+   -- ============================================================================
+
+   /-- M-D01: Transfer a single capability from the sender's IPC message into
+   the receiver's CSpace.
+
+   Semantics (matching seL4's IPC cap unwrap):
+   1. Look up the receiver's root CNode via `receiverCspaceRoot`.
+   2. Scan for the first empty slot starting from `slotBase`.
+   3. If found, insert the capability (with sender's original rights).
+   4. Record a CDT derivation edge of type `.ipcTransfer` from the sender's
+      source slot to the newly occupied receiver slot.
+
+   The sender's capability is NOT removed from the sender's CSpace — IPC
+   transfer is a copy, not a move (matching seL4 semantics where the sender
+   retains its capability after sending).
+
+   Returns `CapTransferResult.installed ref` on success, `.noSlot` if the
+   receiver's CNode has no empty slots in the scan range. -/
+   def ipcTransferSingleCap
+       (cap : Capability)
+       (senderSlot : CSpaceAddr)
+       (receiverCspaceRoot : SeLe4n.ObjId)
+       (slotBase : SeLe4n.Slot)
+       (scanLimit : Nat) : Kernel CapTransferResult :=
+     fun st =>
+       match st.objects[receiverCspaceRoot]? with
+       | some (.cnode cn) =>
+           match cn.findFirstEmptySlot slotBase scanLimit with
+           | none => .ok (.noSlot, st)
+           | some emptySlot =>
+               let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
+               match cspaceInsertSlot dstAddr cap st with
+               | .error e => .error e
+               | .ok ((), st') =>
+                   -- Record CDT derivation edge: sender slot → receiver slot
+                   let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st' senderSlot
+                   let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dstAddr
+                   let cdt' := stDst.cdt.addEdge srcNode dstNode .ipcTransfer
+                   .ok (.installed { cnode := receiverCspaceRoot, slot := emptySlot },
+                        { stDst with cdt := cdt' })
+       | _ => .error .objectNotFound
+   ```
+
+##### Subtask M3-C2: Prove `ipcTransferSingleCap` preserves scheduler
+
+**Implementation**:
+1. In `Kernel/Capability/Operations.lean`, after the definition, add:
+   ```lean
+   theorem ipcTransferSingleCap_preserves_scheduler
+       (cap : Capability) (senderSlot : CSpaceAddr)
+       (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+       (scanLimit : Nat) (st st' : SystemState)
+       (result : CapTransferResult)
+       (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+                = .ok (result, st')) :
+       st'.scheduler = st.scheduler
+   ```
+   Proof: unfold `ipcTransferSingleCap`, case-split on CNode lookup and
+   `findFirstEmptySlot`. The `.noSlot` case is trivial (state unchanged). The
+   `.inserted` case chains through `cspaceInsertSlot_preserves_scheduler` and
+   `ensureCdtNodeForSlot`/`addEdge` (which don't touch scheduler).
+
+##### Subtask M3-C3: Prove `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
+
+**Implementation**:
+1. In `Kernel/Capability/Invariant/Preservation.lean`, after the existing
+   `cspaceMintWithCdt_preserves_capabilityInvariantBundle`, add:
+   ```lean
+   /-- M-D01: IPC single-cap transfer preserves the capability invariant bundle.
+
+   The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
+   the `.inserted` case, which chains:
+   1. `cspaceInsertSlot_preserves_capabilityInvariantBundle` — slot insertion
+   2. `ensureCdtNodeForSlot` — CDT field preservation
+   3. `addEdge` with `.ipcTransfer` — CDT edge addition
+
+   The `hCdtPost` hypothesis (CDT completeness + acyclicity of the post-state)
+   follows the same pattern as `cspaceCopy_preserves_capabilityInvariantBundle`
+   since IPC transfer is semantically a cross-CSpace copy. -/
+   theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
+       (st st' : SystemState) (cap : Capability) (senderSlot : CSpaceAddr)
+       (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (scanLimit : Nat)
+       (result : CapTransferResult)
+       (hInv : capabilityInvariantBundle st)
+       (hSlotCapacity : ∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
+         ∀ s, (cn.insert s cap).slotCountBounded)
+       (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
+       (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+                = .ok (result, st')) :
+       capabilityInvariantBundle st'
    ```
 
 **Verification**: `lake build` succeeds.
 
-**Files**: `SeLe4n/Model/Object/Types.lean`,
-`SeLe4n/Kernel/Capability/Operations.lean`
+**Files**: `SeLe4n/Kernel/Capability/Operations.lean`,
+`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 
-#### Task M3-B: Integrate capability transfer into IPC send path
+---
 
-**Problem**: `endpointSendDual` and `endpointCallDual` do not unwrap message
-capabilities into the receiver's CSpace.
+#### Task M3-D: Implement batch cap unwrap and grant-right gate (M-D01)
 
-**Implementation**:
-1. Define `endpointSendWithCaps` that extends the send path:
-   - After message delivery to the receiver TCB, iterate over `msg.caps`
-   - For each cap, call `ipcTransferCap` with the receiver's CSpace root
-   - Record transfer results in an extended return type
-2. Prove deterministic semantics (each step is explicit success/failure).
-3. Prove capability attenuation: transferred caps have rights ⊆ sender rights ∩ endpoint rights.
+**Problem**: During IPC rendezvous, all caps in `msg.caps` (up to 3) must be
+unwrapped sequentially into the receiver's CSpace. The endpoint's `Grant` right
+gates whether any transfer occurs.
 
-**Key theorem**:
-```lean
-theorem ipcTransferCap_attenuates
-    (senderCap : Capability) (rootId : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (epRights : AccessRightSet)
-    (st st' : SystemState) (result : CapTransferResult)
-    (hStep : ipcTransferCap senderCap rootId base epRights st = .ok (result, st')) :
-    match result with
-    | .inserted ref =>
-        ∃ cap, SystemState.lookupSlotCap st' ref = some cap ∧
-          (∀ r, r ∈ cap.rights → r ∈ senderCap.rights ∧ r ∈ epRights)
-    | _ => True
-```
-
-**Verification**: `lake build` succeeds. Run `test_smoke.sh`.
-
-**Files**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`,
-`SeLe4n/Kernel/Capability/Operations.lean`
-
-#### Task M3-C: Prove invariant preservation for capability transfer
+##### Subtask M3-D1: Define `ipcUnwrapCaps` batch operation
 
 **Implementation**:
-1. Prove `ipcTransferCap_preserves_capabilityInvariantBundle` — the transfer is
-   a `cspaceInsertSlot` (already proven) conditioned on finding an empty slot.
-2. Prove `endpointSendWithCaps_preserves_capabilityInvariantBundle` by composing
-   the per-cap transfer preservation over the cap list.
-3. Prove badge well-formedness preservation.
-4. Update `coreIpcInvariantBundle` preservation if the send path changes.
+1. In `Kernel/IPC/Operations/Endpoint.lean` (or a new file
+   `Kernel/IPC/Operations/CapTransfer.lean` if Endpoint.lean is too large),
+   add:
+   ```lean
+   /-- M-D01: Unwrap all extra capabilities from an IPC message into the
+   receiver's CSpace. This is the top-level cap-transfer entry point, called
+   during IPC rendezvous after message delivery.
 
-**Verification**: `lake build` succeeds. Run `test_full.sh`.
+   seL4 semantics:
+   - If the endpoint capability lacks `Grant` right, all caps are skipped
+     (returns array of `.grantDenied` results).
+   - Otherwise, each cap in `msg.caps` is transferred via
+     `ipcTransferSingleCap`, scanning consecutive slots starting from
+     `receiverSlotBase`. The scan window advances by 1 after each successful
+     insertion to avoid overwriting.
+   - Failures on individual caps (`.noSlot`) do NOT abort the remaining
+     transfers — each cap is independently processed.
+   - The sender retains all transferred capabilities (IPC transfer is copy). -/
+   def ipcUnwrapCaps
+       (msg : IpcMessage)
+       (senderCspaceRoot : SeLe4n.ObjId)
+       (receiverCspaceRoot : SeLe4n.ObjId)
+       (receiverSlotBase : SeLe4n.Slot)
+       (endpointGrantRight : Bool) : Kernel CapTransferSummary :=
+     fun st =>
+       if !endpointGrantRight then
+         -- No Grant right → skip all cap transfers
+         let results := msg.caps.map fun _ => CapTransferResult.grantDenied
+         .ok ({ results }, st)
+       else
+         -- Fold over msg.caps, threading state and advancing slot base
+         let initAcc : CapTransferSummary × SystemState × SeLe4n.Slot :=
+           ({ results := #[] }, st, receiverSlotBase)
+         let fold := msg.caps.foldl (fun acc cap =>
+           let (summary, stAcc, nextBase) := acc
+           match ipcTransferSingleCap cap
+               { cnode := senderCspaceRoot, slot := SeLe4n.Slot.ofNat 0 }
+               receiverCspaceRoot nextBase maxExtraCaps stAcc with
+           | .error _e =>
+               -- Transfer error → record noSlot, state unchanged, advance base
+               ({ results := summary.results.push .noSlot }, stAcc,
+                SeLe4n.Slot.ofNat (nextBase.toNat + 1))
+           | .ok (result, stNext) =>
+               let nextBase' := match result with
+                 | .inserted _ => SeLe4n.Slot.ofNat (nextBase.toNat + 1)
+                 | _ => nextBase
+               ({ results := summary.results.push result }, stNext, nextBase'))
+           initAcc
+         let (finalSummary, finalSt, _) := fold
+         .ok (finalSummary, finalSt)
+   ```
 
-**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
-`SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean`
+   **Design note on `senderSlot` parameter**: The `senderSlot` passed to
+   `ipcTransferSingleCap` is used solely for CDT edge recording (source of
+   the derivation). In a full implementation, each cap in `msg.caps` would
+   reference its original slot in the sender's CSpace. For the initial model,
+   we use a placeholder slot (`Slot.ofNat 0`) — the CDT edge still records
+   the transfer but without precise sender-side slot tracking. This is
+   acceptable because:
+   (a) The CDT is for revocation scoping, and the receiver-side slot (which
+       IS precisely tracked) is what revocation targets.
+   (b) Precise sender-side tracking requires extending `IpcMessage.caps` from
+       `Array Capability` to `Array (Capability × CSpaceAddr)`, which is a
+       larger change deferred to a future phase.
 
-#### Task M3-D: Add IPC capability transfer test coverage (M-T03)
+##### Subtask M3-D2: Prove `ipcUnwrapCaps` preserves non-CSpace fields
 
 **Implementation**:
-1. In `tests/OperationChainSuite.lean`, add a new chain that:
-   - Creates a sender with capabilities in its CSpace
-   - Creates a receiver with an endpoint capability
-   - Sender sends a message with extra caps
-   - Receiver's CSpace gains the transferred capabilities
-   - Verify rights attenuation (transferred rights ⊆ sender ∩ endpoint)
-   - Verify badge propagation through transfer
-2. Add negative test in `NegativeStateSuite.lean`:
-   - Transfer to full CNode (no empty slots) → `noSlot` result
-   - Transfer with insufficient endpoint rights → `attenuationFailed`
-3. Update `tests/fixtures/main_trace_smoke.expected` if trace output changes.
+1. Add field preservation theorems:
+   ```lean
+   theorem ipcUnwrapCaps_preserves_scheduler
+       (...) (hStep : ipcUnwrapCaps ... st = .ok (summary, st')) :
+       st'.scheduler = st.scheduler
 
-**Verification**: `test_smoke.sh` passes. Fixture matches.
+   theorem ipcUnwrapCaps_preserves_services
+       (...) (hStep : ipcUnwrapCaps ... st = .ok (summary, st')) :
+       st'.services = st.services
+   ```
+   Proofs: induction on `msg.caps.size` (bounded by `maxExtraCaps = 3`),
+   composing `ipcTransferSingleCap_preserves_scheduler` at each step.
+
+##### Subtask M3-D3: Prove `ipcUnwrapCaps_preserves_capabilityInvariantBundle`
+
+**Implementation**:
+1. In `Kernel/Capability/Invariant/Preservation.lean`, add:
+   ```lean
+   theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
+       (st st' : SystemState) (msg : IpcMessage)
+       (senderRoot receiverRoot : SeLe4n.ObjId)
+       (slotBase : SeLe4n.Slot) (grantRight : Bool)
+       (summary : CapTransferSummary)
+       (hInv : capabilityInvariantBundle st)
+       (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+                = .ok (summary, st')) :
+       capabilityInvariantBundle st'
+   ```
+   Proof strategy: case-split on `grantRight`.
+   - `false`: state unchanged, apply `hInv`.
+   - `true`: fold induction on `msg.caps`. Each step preserves the bundle
+     via `ipcTransferSingleCap_preserves_capabilityInvariantBundle`. The
+     `hCdtPost` hypothesis is discharged by composing
+     `ensureCdtNodeForSlot` freshness with
+     `addEdge_preserves_edgeWellFounded_fresh`.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (or new
+`Kernel/IPC/Operations/CapTransfer.lean`),
+`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+---
+
+#### Task M3-E: Integrate cap unwrap into IPC rendezvous paths (M-D01)
+
+**Problem**: The rendezvous paths in `endpointSendDual`, `endpointReceiveDual`,
+`endpointCall`, and `endpointReply` transfer the message into the receiver's
+TCB but do not unwrap `msg.caps` into the receiver's CSpace.
+
+**Architectural approach**: Rather than modifying the existing dual-queue
+operations (which have extensive preservation proofs), we define a wrapper
+operation that composes the existing IPC operation with `ipcUnwrapCaps` as a
+post-step. This preserves all existing proofs and theorem signatures.
+
+##### Subtask M3-E1: Define `endpointSendDualWithCaps` wrapper
+
+**Implementation**:
+1. In `Kernel/IPC/DualQueue/Transport.lean`, after `endpointSendDual`, add:
+   ```lean
+   /-- M-D01: Extended send with capability transfer. Composes `endpointSendDual`
+   with `ipcUnwrapCaps` as a post-step when immediate rendezvous occurs.
+
+   Semantics:
+   - If a receiver is waiting (immediate rendezvous): send the message via
+     `endpointSendDual`, then unwrap `msg.caps` into the receiver's CSpace.
+   - If no receiver is waiting (sender enqueues): caps stay in the message
+     stored in the sender's TCB. They will be unwrapped when a receiver
+     later dequeues the sender.
+   - The `endpointRights` parameter carries the endpoint capability's rights
+     from the sender's gate — used to check the `Grant` right gate.
+
+   Returns the cap transfer summary (empty if no immediate rendezvous or if
+   the endpoint lacks Grant right). -/
+   def endpointSendDualWithCaps
+       (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+       (msg : IpcMessage) (endpointRights : AccessRightSet)
+       (receiverCspaceRoot : SeLe4n.ObjId)
+       (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+     fun st =>
+       match endpointSendDual endpointId sender msg st with
+       | .error e => .error e
+       | .ok ((), st') =>
+           -- Check if immediate rendezvous occurred (receiver was waiting)
+           -- by detecting if the sender is still runnable (not blocked).
+           -- If sender was enqueued, caps stay in TCB for later unwrap.
+           match st'.objects[sender.toObjId]? with
+           | some (.tcb senderTcb) =>
+               match senderTcb.ipcState with
+               | .blockedOnSend _ =>
+                   -- Sender was enqueued — no immediate rendezvous, no cap unwrap
+                   .ok ({ results := #[] }, st')
+               | _ =>
+                   -- Immediate rendezvous occurred — unwrap caps
+                   let grantRight := endpointRights.mem .grant
+                   ipcUnwrapCaps msg sender.toObjId receiverCspaceRoot
+                     receiverSlotBase grantRight st'
+           | _ => .ok ({ results := #[] }, st')
+   ```
+
+##### Subtask M3-E2: Define `endpointReceiveDualWithCaps` wrapper
+
+**Implementation**:
+1. In `Kernel/IPC/DualQueue/Transport.lean`, after `endpointReceiveDual`, add:
+   ```lean
+   /-- M-D01: Extended receive with capability transfer. When a sender is
+   dequeued (immediate rendezvous on the receive side), unwrap `msg.caps`
+   from the sender's pending message into the receiver's CSpace.
+
+   When no sender is waiting (receiver enqueues), no cap transfer occurs —
+   the receiver will get caps when a sender later arrives via
+   `endpointSendDualWithCaps`. -/
+   def endpointReceiveDualWithCaps
+       (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+       (endpointRights : AccessRightSet)
+       (receiverCspaceRoot : SeLe4n.ObjId)
+       (receiverSlotBase : SeLe4n.Slot) : Kernel (SeLe4n.ThreadId × CapTransferSummary) :=
+     fun st =>
+       match endpointReceiveDual endpointId receiver st with
+       | .error e => .error e
+       | .ok (senderId, st') =>
+           -- Check if the receiver got a message (not blocked on receiveQ)
+           match st'.objects[receiver.toObjId]? with
+           | some (.tcb receiverTcb) =>
+               match receiverTcb.pendingMessage with
+               | some msg =>
+                   -- Sender was dequeued — unwrap caps from their message
+                   let grantRight := endpointRights.mem .grant
+                   match ipcUnwrapCaps msg senderId.toObjId receiverCspaceRoot
+                       receiverSlotBase grantRight st' with
+                   | .error e => .error e
+                   | .ok (summary, st'') => .ok ((senderId, summary), st'')
+               | none =>
+                   -- Receiver was enqueued (no sender available)
+                   .ok ((senderId, { results := #[] }), st')
+           | _ => .ok ((senderId, { results := #[] }), st')
+   ```
+
+##### Subtask M3-E3: Define `endpointCallWithCaps` wrapper
+
+**Implementation**:
+1. In `Kernel/IPC/DualQueue/Transport.lean`, after `endpointCall`, add an
+   analogous wrapper that composes `endpointCall` with `ipcUnwrapCaps` for
+   the immediate-rendezvous path. Same structure as M3-E1 but using
+   `endpointCall` as the base operation and returning
+   `Kernel CapTransferSummary`.
+
+##### Subtask M3-E4: Prove IPC invariant preservation for wrapper operations
+
+**Implementation**:
+1. In `Kernel/IPC/Invariant/EndpointPreservation.lean`, add preservation
+   theorems for each wrapper:
+   ```lean
+   theorem endpointSendDualWithCaps_preserves_ipcInvariant (...)
+   theorem endpointReceiveDualWithCaps_preserves_ipcInvariant (...)
+   theorem endpointCallWithCaps_preserves_ipcInvariant (...)
+   ```
+   Each proof composes the existing `endpointSendDual_preserves_ipcInvariant`
+   (or equivalent) with `ipcUnwrapCaps_preserves_capabilityInvariantBundle`.
+   IPC structural invariants (`dualQueueSystemInvariant`) are preserved because
+   `ipcUnwrapCaps` only modifies CNode objects and CDT state — it does not
+   touch endpoint queues, TCB queue links, or scheduler state.
+
+2. In `Kernel/IPC/Invariant/Structural.lean`, add:
+   ```lean
+   theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant (...)
+   theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant (...)
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/IPC/DualQueue/Transport.lean`,
+`SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+
+---
+
+#### Task M3-F: Wire cap transfer into API and syscall dispatch (M-D01)
+
+**Problem**: `dispatchWithCap` in API.lean (line 372) hardcodes `caps := #[]`
+for all IPC operations. The `SyscallDecodeResult` carries `msgInfo.extraCaps`
+which encodes how many extra capabilities the sender includes, but this
+information is currently ignored.
+
+##### Subtask M3-F1: Decode extra capability addresses from message registers
+
+**Implementation**:
+1. In `Kernel/Architecture/SyscallArgDecode.lean`, add:
+   ```lean
+   /-- M-D01: Decode extra capability addresses from message registers.
+
+   seL4 convention: extra cap addresses are packed into the message registers
+   immediately after the message body. The `msgInfo.extraCaps` field (0..3)
+   specifies how many extra cap addresses follow. Each extra cap address is
+   a single register value interpreted as a CPtr.
+
+   Returns an array of CPtrs (length ≤ 3). If a register index is out of
+   bounds, the corresponding cap address is silently dropped (seL4 behavior:
+   truncate to available registers). -/
+   def decodeExtraCapAddrs (decoded : SyscallDecodeResult) :
+       Array SeLe4n.CPtr :=
+     let startIdx := decoded.msgInfo.length
+     let count := min decoded.msgInfo.extraCaps maxExtraCaps
+     (Array.range count).filterMap fun i =>
+       decoded.msgRegs[startIdx + i]?.map SeLe4n.CPtr.ofNat
+   ```
+
+##### Subtask M3-F2: Add `resolveExtraCaps` helper to API.lean
+
+**Implementation**:
+1. In `Kernel/API.lean`, add:
+   ```lean
+   /-- M-D01: Resolve extra capability addresses from the sender's CSpace
+   into actual capabilities for IPC message transfer.
+
+   For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
+   sender's CSpace root, then look up the capability at the resolved slot.
+   Caps that fail to resolve are silently dropped (seL4 behavior).
+   Returns the resolved capabilities as an array. -/
+   def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
+       (capAddrs : Array SeLe4n.CPtr) (depth : Nat) :
+       Kernel (Array Capability) :=
+     fun st =>
+       let (caps, _) := capAddrs.foldl (fun (acc, stAcc) addr =>
+         match resolveCapAddress cspaceRoot addr depth stAcc with
+         | .error _ => (acc, stAcc)
+         | .ok ref =>
+             match SystemState.lookupSlotCap stAcc ref with
+             | none => (acc, stAcc)
+             | some cap => (acc.push cap, stAcc)) (#[], st)
+       .ok (caps, st)
+   ```
+
+##### Subtask M3-F3: Update `dispatchWithCap` to populate `msg.caps`
+
+**Implementation**:
+1. In `Kernel/API.lean`, update the `.send` and `.call` branches of
+   `dispatchWithCap` (lines 376–394) to resolve extra caps:
+   ```lean
+   -- BEFORE:
+   -- | .send =>
+   --   ...
+   --   endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge }
+
+   -- AFTER:
+   | .send =>
+     match cap.target with
+     | .object epId =>
+       fun st =>
+         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+         let extraCapAddrs := decodeExtraCapAddrs decoded
+         match resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st with
+         | .error e => .error e
+         | .ok (resolvedCaps, st') =>
+             endpointSendDualWithCaps epId tid
+               { registers := body, caps := resolvedCaps, badge := cap.badge }
+               cap.rights  -- endpoint rights for Grant check
+               gate.cspaceRoot  -- receiver CSpace root (placeholder — see note)
+               (SeLe4n.Slot.ofNat 0)  -- receiver slot base
+               st'
+     | _ => fun _ => .error .invalidCapability
+   ```
+
+   **Design note on receiver CSpace root**: At the send call site, the
+   receiver's identity is not yet known (the receiver may be waiting on the
+   endpoint or may arrive later). The wrapper operations handle this correctly:
+   if no immediate rendezvous occurs, caps stay in the message. When rendezvous
+   does occur, the receiver's `cspaceRoot` is read from the receiver's TCB
+   inside the wrapper. The `receiverCspaceRoot` parameter at the API level
+   is used only for the immediate-rendezvous path and should be populated from
+   the receiver's TCB. This requires a minor adjustment: have the wrapper
+   operations read the receiver's TCB `cspaceRoot` internally rather than
+   accepting it as a parameter.
+
+2. Apply the same pattern to the `.call` branch.
+
+**Verification**: `lake build` succeeds. `test_smoke.sh` passes.
+
+**Files**: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`,
+`SeLe4n/Kernel/API.lean`
+
+---
+
+#### Task M3-G: Add IPC capability transfer test coverage (M-T03)
+
+**Problem**: L-T03 identified the complete absence of IPC capability transfer
+testing. Now that the transfer operations exist, comprehensive test coverage
+is needed.
+
+##### Subtask M3-G1: Add positive transfer chain test
+
+**Implementation**:
+1. In `tests/OperationChainSuite.lean`, add `chain12IpcCapTransfer`:
+   - **Setup**: Create sender (tid=50) with CNode containing 3 capabilities
+     (read-only, read-write, full-rights). Create receiver (tid=51) with
+     empty CNode. Create endpoint (eid=60) with Grant right.
+   - **Action**: Sender calls `endpointSendDualWithCaps` with a message
+     carrying all 3 caps.
+   - **Verify**:
+     - Receiver's CNode now has 3 new capabilities in slots 0, 1, 2.
+     - Each transferred cap has the same rights as the sender's original.
+     - CDT has 3 new `.ipcTransfer` edges.
+     - `assertInvariants` passes on the final state.
+   - **Scenario ID**: `SCN-IPC-CAP-TRANSFER-BASIC`
+
+##### Subtask M3-G2: Add grant-right gate test
+
+**Implementation**:
+1. In `tests/OperationChainSuite.lean`, add `chain13IpcCapTransferNoGrant`:
+   - **Setup**: Same as M3-G1 but endpoint lacks Grant right (only Read+Write).
+   - **Action**: Sender sends message with caps.
+   - **Verify**:
+     - All transfer results are `.grantDenied`.
+     - Receiver's CNode is still empty.
+     - Message registers still transferred normally.
+   - **Scenario ID**: `SCN-IPC-CAP-TRANSFER-NO-GRANT`
+
+##### Subtask M3-G3: Add no-slot negative test
+
+**Implementation**:
+1. In `tests/NegativeStateSuite.lean`, add a test for CNode-full scenario:
+   - **Setup**: Receiver's CNode has all slots occupied.
+   - **Action**: Sender sends message with 1 cap.
+   - **Verify**: Transfer result is `.noSlot`.
+   - **Scenario ID**: `SCN-IPC-CAP-TRANSFER-FULL-CNODE`
+
+##### Subtask M3-G4: Add badge-and-cap combined transfer test
+
+**Implementation**:
+1. In `tests/OperationChainSuite.lean`, add `chain14IpcBadgeAndCapTransfer`:
+   - **Setup**: Sender's endpoint capability has badge 0xCAFE. Sender sends
+     a message with 1 register + 2 extra caps.
+   - **Action**: Send via the extended path.
+   - **Verify**:
+     - Receiver gets the message with badge 0xCAFE.
+     - Receiver's CNode gets 2 new capabilities.
+     - Both badge propagation and cap transfer work together.
+   - **Scenario ID**: `SCN-IPC-CAP-BADGE-COMBINED`
+
+##### Subtask M3-G5: Update scenario registry and fixtures
+
+**Implementation**:
+1. Add new scenario IDs to `tests/fixtures/scenario_registry.yaml`.
+2. Update `tests/fixtures/main_trace_smoke.expected` if MainTraceHarness
+   output changes (only if new scenarios are added to the harness).
+
+**Verification**: `test_smoke.sh` passes. All new tests pass.
 
 **Files**: `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean`,
-`SeLe4n/Testing/MainTraceHarness.lean`
+`tests/fixtures/scenario_registry.yaml`
+
+---
+
+#### M3 Dependency Graph and Execution Order
+
+```
+M3-A1 (CapTransferResult type)      ─── no deps (additive definition)
+M3-A2 (CapTransferSummary type)     ─── depends on M3-A1
+M3-A3 (DerivationOp.ipcTransfer)    ─── no deps (additive to Structures.lean)
+M3-B1 (findFirstEmptySlot def)      ─── no deps (CNode utility)
+M3-B2 (findFirstEmptySlot proofs)   ─── depends on M3-B1
+M3-C1 (ipcTransferSingleCap def)    ─── depends on M3-A1, M3-A3, M3-B1
+M3-C2 (single-cap scheduler pres.)  ─── depends on M3-C1
+M3-C3 (single-cap bundle pres.)     ─── depends on M3-C1
+M3-D1 (ipcUnwrapCaps def)           ─── depends on M3-A2, M3-C1
+M3-D2 (unwrap field preservation)   ─── depends on M3-D1, M3-C2
+M3-D3 (unwrap bundle preservation)  ─── depends on M3-D1, M3-C3
+M3-E1 (sendDualWithCaps wrapper)    ─── depends on M3-D1
+M3-E2 (receiveDualWithCaps wrapper) ─── depends on M3-D1
+M3-E3 (callWithCaps wrapper)        ─── depends on M3-D1
+M3-E4 (IPC invariant preservation)  ─── depends on M3-E1, M3-E2, M3-E3, M3-D2, M3-D3
+M3-F1 (decodeExtraCapAddrs)         ─── no deps (additive to SyscallArgDecode)
+M3-F2 (resolveExtraCaps helper)     ─── depends on M3-F1
+M3-F3 (dispatchWithCap wiring)      ─── depends on M3-E1, M3-E3, M3-F2
+M3-G1 (positive transfer test)      ─── depends on M3-E1
+M3-G2 (grant-right gate test)       ─── depends on M3-E1
+M3-G3 (no-slot negative test)       ─── depends on M3-C1
+M3-G4 (badge+cap combined test)     ─── depends on M3-E1
+M3-G5 (registry + fixtures)         ─── depends on M3-G1..G4
+```
+
+**Optimal execution order**:
+{M3-A1, M3-A3, M3-B1, M3-F1} (parallel, no deps) →
+{M3-A2, M3-B2} (parallel) →
+M3-C1 →
+{M3-C2, M3-C3} (parallel) →
+M3-D1 →
+{M3-D2, M3-D3} (parallel) →
+{M3-E1, M3-E2, M3-E3, M3-F2} (parallel) →
+{M3-E4, M3-F3, M3-G1, M3-G2, M3-G3, M3-G4} (parallel) →
+M3-G5.
+Total: 20 subtasks, 9 sequential steps.
+
+**Deliverables**: `CapTransferResult` + `CapTransferSummary` types,
+`DerivationOp.ipcTransfer` CDT variant, `CNode.findFirstEmptySlot` + 2
+correctness theorems, `ipcTransferSingleCap` + 2 preservation theorems,
+`ipcUnwrapCaps` + 3 preservation theorems, 3 wrapper operations
+(`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+`endpointCallWithCaps`) + 5 preservation theorems, `decodeExtraCapAddrs` +
+`resolveExtraCaps` helpers, updated `dispatchWithCap` wiring, 4 new test
+scenarios. ~15 new proved declarations; zero sorry/axiom.
 
 ---
 
 ### Phase 4: Test Coverage Expansion (WS-M4)
 
-**Target version**: 0.17.3
+**Target version**: 0.16.17
 **Files modified**: `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean`,
 `SeLe4n/Testing/MainTraceHarness.lean`
 
@@ -1092,7 +1726,7 @@ fixtures. No standalone tests cover edge cases.
 
 ### Phase 5: Streaming Revocation & Documentation (WS-M5)
 
-**Target version**: 0.17.4
+**Target version**: 0.16.18
 **Files modified**: `Operations.lean`, `Invariant/Preservation.lean`, all documentation
 
 #### Task M5-A: Streaming BFS for CDT revocation (M-P04)
@@ -1168,8 +1802,10 @@ O(max branching factor × depth) (BFS queue).
 |------|-----------|--------|------------|
 | M1-C1 (`addEdge_preserves_edgeWellFounded`) proof is harder than expected due to BFS fuel and path decomposition | Medium | Delays Phase 1 | Fall back to explicit `descendantsOf` induction; keep `hCdtPost` hypothesis pattern as escape hatch; M1-C2 cycle-check helper is independent |
 | M2-B (`parentMap`) breaks CDT construction sites across codebase | Low | Mechanical churn | Use `grep` to find all `CapDerivationTree` construction sites; update in single pass |
-| M3-A/B (IPC cap transfer) requires IPC subsystem changes that conflict with WS-L proofs | Medium | Cross-subsystem churn | Limit changes to additive new operations; do not modify existing `endpointSendDual` |
-| M3-C (transfer preservation) depends on `cspaceInsertSlot` preservation + slot-scanning termination | Low | Proof complexity | Slot scanning has bounded iteration (CNode radixWidth); termination is structural |
+| M3-C/D (IPC cap transfer + batch unwrap) requires cross-subsystem IPC integration | Medium | Cross-subsystem churn | Wrapper pattern (M3-E) composes new ops atop existing `endpointSendDual` without modifying its signature; all existing proofs remain valid |
+| M3-E4 (wrapper preservation proofs) depend on composing CSpace + IPC invariant chains | Medium | Proof complexity | Modular composition: each wrapper proof chains existing `endpointSendDual_preserves_*` with `ipcUnwrapCaps_preserves_*`; no novel proof obligations |
+| M3-F3 (`dispatchWithCap` wiring) requires receiver CSpace root at send time | Medium | Architectural mismatch | Wrapper operations read receiver TCB `cspaceRoot` internally during rendezvous; API layer passes it only for the immediate-handshake path |
+| M3-B1 (findFirstEmptySlot) termination depends on bounded `limit` parameter | Low | Proof complexity | Structural recursion on `limit` (bounded by `maxExtraCaps = 3`); termination is trivial |
 | M5-A (streaming BFS) termination proof requires CDT shrinking argument | Medium | Proof complexity | Use fuel = initial edge count; prove each step removes ≥1 edge |
 
 ---
@@ -1213,9 +1849,12 @@ M1-C (addEdge acyclicity) ─┤                  M2-A (fuse revoke)   ─┤─
 M1-D (error theorem)      ─┘                  M2-B (parentMap)     ─┘       │
                                                                               │
                                                M3-A (transfer types) ─┐       │
-                                               M3-B (send path)      ─┤── M3 ─┤
-                                               M3-C (preservation)   ─┤       │
-                                               M3-D (tests)          ─┘       │
+                                               M3-B (slot scanning)  ─┤       │
+                                               M3-C (single-cap op)  ─┤       │
+                                               M3-D (batch unwrap)   ─┤── M3 ─┤
+                                               M3-E (IPC wrappers)   ─┤       │
+                                               M3-F (API wiring)     ─┤       │
+                                               M3-G (tests)          ─┘       │
                                                                               │
                                                M4-A (resolve tests)  ─┐       │
                                                M4-B (revoke tests)   ─┘── M4 ─┤
@@ -1236,6 +1875,12 @@ depends on all prior phases for documentation completeness.
 M2-A4 → M2-B1 → {M2-B2, M2-B3, M2-B4, M2-B5, M2-B6} (parallel) → M2-B7 →
 M2-B8. Total: 14 subtasks, 8 sequential steps.
 
+**Phase 3 optimal execution order**: {M3-A1, M3-A3, M3-B1, M3-F1} (parallel) →
+{M3-A2, M3-B2} (parallel) → M3-C1 → {M3-C2, M3-C3} (parallel) → M3-D1 →
+{M3-D2, M3-D3} (parallel) → {M3-E1, M3-E2, M3-E3, M3-F2} (parallel) →
+{M3-E4, M3-F3, M3-G1, M3-G2, M3-G3, M3-G4} (parallel) → M3-G5.
+Total: 20 subtasks, 9 sequential steps.
+
 ---
 
 ## 9. Workstream Summary Table
@@ -1244,6 +1889,6 @@ M2-B8. Total: 14 subtasks, 8 sequential steps.
 |----|-------|----------|----------|
 | **WS-M1** | Proof strengthening (10 subtasks): guard-match extraction theorem, CDT mint completeness predicate + preservation + composition, addEdge acyclicity + cycle-check helper, error-swallowing consistency theorem, stale docstrings | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
 | **WS-M2** | Performance (14 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
-| **WS-M3** | IPC capability transfer: model, integrate, prove, test | MEDIUM | M-D01, M-T03 |
+| **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer` CDT variant, `findFirstEmptySlot` + correctness theorems, `ipcTransferSingleCap` + preservation, `ipcUnwrapCaps` batch + preservation, 3 IPC wrapper operations + 5 preservation theorems, `decodeExtraCapAddrs`/`resolveExtraCaps` helpers, `dispatchWithCap` wiring, 4 test scenarios | MEDIUM | M-D01, M-T03 |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM | M-T01, M-T02 |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW | M-P04 |

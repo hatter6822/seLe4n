@@ -28,7 +28,7 @@ capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 |----|-------|----------|
 | **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH — **COMPLETED** (v0.16.15) |
-| **WS-M3** | IPC capability transfer: model, integrate, prove, test (resolves L-T03) | MEDIUM |
+| **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer`, `findFirstEmptySlot`, `ipcTransferSingleCap`/`ipcUnwrapCaps`, IPC wrappers, API wiring, 4 test scenarios (resolves L-T03) | MEDIUM — **PLANNED** (v0.16.16) |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
 
