@@ -918,6 +918,10 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
   expect "chain15: root slot still present" rootCapOpt.isSome
 
+  -- Verify: root CDT node survives revocation
+  let rootNodeOpt := SystemState.lookupCdtNodeOfSlot stFinal rootSlot
+  expect "chain15: root CDT node still present" rootNodeOpt.isSome
+
   -- Verify: CDT nodes detached for all descendants
   for i in List.range 15 do
     let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[i]!
@@ -1000,9 +1004,29 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   expect s!"chain16: deletedSlots has 2 entries before failure (got {report.deletedSlots.length})"
     (report.deletedSlots.length = 2)
 
+  -- Verify: the specific slots deleted are c0 and c1 (the two before the failure)
+  let deletedSet := report.deletedSlots
+  expect "chain16: c0 slot in deletedSlots"
+    (deletedSet.any fun ds => ds == childSlots[0]!)
+  expect "chain16: c1 slot in deletedSlots"
+    (deletedSet.any fun ds => ds == childSlots[1]!)
+
   -- Verify: root slot still present
   let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
   expect "chain16: root slot still present" rootCapOpt.isSome
+
+  -- Verify: post-failure descendants (c3, c4) are untouched — traversal halted.
+  -- Their slots should still contain the capabilities minted earlier.
+  let c3CapOpt := SystemState.lookupSlotCap stFinal childSlots[3]!
+  expect "chain16: c3 slot preserved after halt" c3CapOpt.isSome
+  let c4CapOpt := SystemState.lookupSlotCap stFinal childSlots[4]!
+  expect "chain16: c4 slot preserved after halt" c4CapOpt.isSome
+
+  -- Verify: c3 and c4 CDT nodes also survive the halt
+  let c3NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[3]!
+  expect "chain16: c3 CDT node survives halt" c3NodeOpt.isSome
+  let c4NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[4]!
+  expect "chain16: c4 CDT node survives halt" c4NodeOpt.isSome
 
   -- Note: assertInvariants is intentionally NOT called here because we
   -- deliberately corrupted the state (replaced a CNode with an endpoint)
@@ -1145,7 +1169,7 @@ private def runOperationChainSuite : IO Unit := do
   chain15StrictRevokeDeepChain
   chain16StrictRevokePartialFail
   chain17StrictRevokeOrdering
-  IO.println "all WS-I3/WS-I4 operation-chain checks passed"
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4)"
 
 end SeLe4n.Testing
 

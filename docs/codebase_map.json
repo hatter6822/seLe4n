@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-4-testing-3cErG",
-      "commit_sha": "a6fb687188f584a92f5b7af88ecf679230fbbc04",
-      "tree_sha": "ad513a9f847bcb0128040f73ade82b9bcd589b5b",
-      "committed_at_utc": "2026-03-16T20:56:13+00:00"
+      "commit_sha": "87575978b1d8a1d343a261095716613f0bb72cb5",
+      "tree_sha": "81a3cb7765b10e8544b65d6af3c1d1207d58428e",
+      "committed_at_utc": "2026-03-16T21:52:47+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "269bc024ad6e4ce988dad5e5073467d6ee7a03232e07e12839cd2737e6d3bb17"
+    "source_digest": "949cbe0177b92ca67fb3b0d52203d1da4a322ce4c25762d4652935664f8e6661"
   },
   "summary": {
     "module_count": 75,
@@ -29,7 +29,7 @@
     "production_files": 71,
     "production_loc": 40533,
     "test_files": 4,
-    "test_loc": 4906,
+    "test_loc": 4930,
     "proved_theorem_lemma_decls": 1279,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -19076,7 +19076,7 @@
         {
           "kind": "def",
           "name": "chain16StrictRevokePartialFail",
-          "line": 932,
+          "line": 936,
           "called": [
             "expect",
             "expectOkState"
@@ -19085,7 +19085,7 @@
         {
           "kind": "def",
           "name": "chain17StrictRevokeOrdering",
-          "line": 1022,
+          "line": 1046,
           "called": [
             "assertInvariants",
             "expect",
@@ -19095,7 +19095,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1129,
+          "line": 1153,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -19120,7 +19120,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1152,
+          "line": 1176,
           "called": []
         }
       ]

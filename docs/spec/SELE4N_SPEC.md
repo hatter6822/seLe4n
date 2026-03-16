@@ -51,7 +51,7 @@ enforcement, and scheduling.
 | **Package version** | `0.16.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 40,533 across 71 Lean files |
-| **Test LoC** | 4,906 across 4 Lean test suites |
+| **Test LoC** | 4,930 across 4 Lean test suites |
 | **Proved declarations** | 1,279 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem audit |
