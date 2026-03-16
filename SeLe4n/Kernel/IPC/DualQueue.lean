@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.IPC.DualQueue.Core
 import SeLe4n.Kernel.IPC.DualQueue.Transport
+import SeLe4n.Kernel.IPC.DualQueue.WithCaps
 
 /-! # IPC Dual-Queue — Re-export Hub
 
@@ -16,4 +17,7 @@ Decomposed into:
   endpointQueueEnqueue, endpointQueueRemoveDual).
 - **Transport**: Transport lemmas proving scheduler/object/endpoint/notification
   backward preservation for all dual-queue primitives.
+- **WithCaps**: IPC cap transfer wrappers (M-D01/WS-M3) — compose existing
+  dual-queue operations with `ipcUnwrapCaps` for capability transfer during
+  rendezvous.
 -/

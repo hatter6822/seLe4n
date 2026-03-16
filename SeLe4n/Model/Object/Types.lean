@@ -195,6 +195,26 @@ theorem checkBounds_iff_bounded (msg : IpcMessage) :
 
 end IpcMessage
 
+/-- M-D01: Result of attempting to unwrap a single transferred capability
+into the receiver's CSpace during IPC rendezvous.
+
+seL4 semantics: each extra cap in the message is independently unwrapped.
+Failures on one cap do not abort the transfer of subsequent caps. -/
+inductive CapTransferResult where
+  /-- Successfully installed in the receiver's CSpace at the given CNode and slot. -/
+  | installed (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+  /-- No empty slot available in the receiver's CNode (receiver CSpace full). -/
+  | noSlot
+  /-- The endpoint capability lacks the Grant right — transfer silently skipped. -/
+  | grantDenied
+  deriving Repr, DecidableEq
+
+/-- M-D01: Aggregated results of unwrapping all extra capabilities in an
+IPC message. One entry per cap in the original `msg.caps` array. -/
+structure CapTransferSummary where
+  results : Array CapTransferResult := #[]
+  deriving Repr, DecidableEq
+
 /-- Per-thread IPC scheduler-visible status.
 
 WS-E3/H-09: Endpoint-local blocking states for deterministic handshake.

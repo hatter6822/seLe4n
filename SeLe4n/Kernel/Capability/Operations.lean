@@ -790,4 +790,84 @@ def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
             let (report, stFinal) := descendants.foldl step ({ deletedSlots := [], firstFailure := none }, stLocal)
             .ok ({ report with deletedSlots := report.deletedSlots.reverse }, stFinal)
 
+-- ============================================================================
+-- M-D01: IPC capability transfer operations
+-- ============================================================================
+
+/-- M-D01: Transfer a single capability from the sender's IPC message into
+the receiver's CSpace.
+
+Semantics (matching seL4's IPC cap unwrap):
+1. Look up the receiver's root CNode via `receiverCspaceRoot`.
+2. Scan for the first empty slot starting from `slotBase`.
+3. If found, insert the capability (with sender's original rights).
+4. Record a CDT derivation edge of type `.ipcTransfer` from the sender's
+   source slot to the newly occupied receiver slot.
+
+The sender's capability is NOT removed from the sender's CSpace — IPC
+transfer is a copy, not a move (matching seL4 semantics where the sender
+retains its capability after sending).
+
+Returns `CapTransferResult.installed cnode slot` on success, `.noSlot` if the
+receiver's CNode has no empty slots in the scan range. -/
+def ipcTransferSingleCap
+    (cap : Capability)
+    (senderSlot : CSpaceAddr)
+    (receiverCspaceRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) : Kernel CapTransferResult :=
+  fun st =>
+    match st.objects[receiverCspaceRoot]? with
+    | some (.cnode cn) =>
+        match cn.findFirstEmptySlot slotBase scanLimit with
+        | none => .ok (.noSlot, st)
+        | some emptySlot =>
+            let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
+            match cspaceInsertSlot dstAddr cap st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st' senderSlot
+                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dstAddr
+                let cdt' := stDst.cdt.addEdge srcNode dstNode .ipcTransfer
+                .ok (.installed receiverCspaceRoot emptySlot,
+                     { stDst with cdt := cdt' })
+    | _ => .error .objectNotFound
+
+private theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.ensureCdtNodeForSlot st ref).2.scheduler = st.scheduler := by
+  unfold SystemState.ensureCdtNodeForSlot
+  split <;> simp
+
+theorem ipcTransferSingleCap_preserves_scheduler
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.scheduler = st.scheduler := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hObj : st.objects[receiverRoot]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | cnode cn =>
+      simp [hObj] at hStep
+      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+      | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have h2 := ensureCdtNodeForSlot_scheduler_eq pair.2 senderSlot
+          have h3 := ensureCdtNodeForSlot_scheduler_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          simp_all
+
 end SeLe4n.Kernel

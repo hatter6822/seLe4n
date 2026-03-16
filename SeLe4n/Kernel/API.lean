@@ -358,6 +358,24 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .serviceStart    => .write
   | .serviceStop     => .write
 
+/-- M-D01: Resolve extra capability addresses from the sender's CSpace
+into actual capabilities for IPC message transfer.
+
+For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
+sender's CSpace root, then look up the capability at the resolved slot.
+Caps that fail to resolve are silently dropped (seL4 behavior).
+Returns the resolved capabilities as an array. -/
+private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) : Array Capability :=
+  capAddrs.foldl (fun acc addr =>
+    match resolveCapAddress cspaceRoot addr depth st with
+    | .error _ => acc
+    | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | none => acc
+        | some cap => acc.push cap) #[]
+
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
 resolution succeeds inside `syscallInvoke`.
@@ -370,14 +388,21 @@ WS-K-D: Lifecycle and VSpace stubs replaced with full dispatch. All 13
 syscalls now route to real kernel operations — zero `.illegalState` stubs
 remain. -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (cap : Capability) : Kernel Unit :=
+    (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match decoded.syscallId with
-  -- WS-K-E: IPC send — message body populated from decoded message registers.
+  -- WS-K-E/M-D01: IPC send — message body + extra caps from decoded message registers.
   | .send =>
     match cap.target with
     | .object epId =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge }
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
+            (SeLe4n.Slot.ofNat 0) st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -386,12 +411,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-E: IPC call — message body populated from decoded message registers.
+  -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
     match cap.target with
     | .object epId =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointCall epId tid { registers := body, caps := #[], badge := cap.badge }
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
+            (SeLe4n.Slot.ofNat 0) st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
@@ -510,7 +542,7 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        (syscallInvoke gate (dispatchWithCap decoded tid)) st
+        (syscallInvoke gate (dispatchWithCap decoded tid gate)) st
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -594,7 +626,10 @@ theorem dispatchSyscall_requires_right
       have hInvoke := syscallInvoke_requires_right
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        (dispatchWithCap decoded tid) st () st' hOk
+        (dispatchWithCap decoded tid
+          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
+        st () st' hOk
       obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
       exact ⟨cap, ref, hResolve, hSlot, hRight⟩
     · simp at hOk
@@ -666,13 +701,13 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 is invoked with the decoded source slot, destination slot, rights, and badge
 from message registers. -/
 theorem dispatchWithCap_cspaceMint_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceMintArgs)
     (hSyscall : decoded.syscallId = .cspaceMint)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       let badge : Option SeLe4n.Badge :=
@@ -683,13 +718,13 @@ theorem dispatchWithCap_cspaceMint_delegates
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
 is invoked with the decoded source and destination slots. -/
 theorem dispatchWithCap_cspaceCopy_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceCopyArgs)
     (hSyscall : decoded.syscallId = .cspaceCopy)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceCopyArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       cspaceCopy src dst := by
@@ -698,13 +733,13 @@ theorem dispatchWithCap_cspaceCopy_delegates
 /-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
 is invoked with the decoded source and destination slots. -/
 theorem dispatchWithCap_cspaceMove_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceMoveArgs)
     (hSyscall : decoded.syscallId = .cspaceMove)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMoveArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       cspaceMove src dst := by
@@ -713,13 +748,13 @@ theorem dispatchWithCap_cspaceMove_delegates
 /-- WS-K-C: When cspaceDelete dispatch succeeds, the kernel-level
 `cspaceDeleteSlot` is invoked with the decoded target slot. -/
 theorem dispatchWithCap_cspaceDelete_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs)
     (hSyscall : decoded.syscallId = .cspaceDelete)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
       cspaceDeleteSlot addr := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
@@ -731,7 +766,7 @@ theorem dispatchWithCap_cspaceDelete_delegates
 /-- WS-K-D: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirect`
 is invoked with the resolved cap, decoded target, and constructed object. -/
 theorem dispatchWithCap_lifecycleRetype_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
     (newObj : KernelObject)
@@ -739,20 +774,20 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
     (hType : objectOfTypeTag args.newType args.size = .ok newObj) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       lifecycleRetypeDirect cap args.targetObj newObj := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode, hType]
 
 /-- WS-K-D: When vspaceMap dispatch succeeds, `vspaceMapPageChecked` is
 invoked with the decoded ASID, vaddr, paddr, and permissions. -/
 theorem dispatchWithCap_vspaceMap_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
         (PagePermissions.ofNat args.perms) := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
@@ -760,13 +795,13 @@ theorem dispatchWithCap_vspaceMap_delegates
 /-- WS-K-D: When vspaceUnmap dispatch succeeds, `vspaceUnmapPage` is
 invoked with the decoded ASID and vaddr. -/
 theorem dispatchWithCap_vspaceUnmap_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
     (hSyscall : decoded.syscallId = .vspaceUnmap)
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       Architecture.vspaceUnmapPage args.asid args.vaddr := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
@@ -777,11 +812,11 @@ theorem dispatchWithCap_vspaceUnmap_delegates
 /-- WS-K-E: When serviceStart dispatch is invoked, the policy is sourced from
 `st.serviceConfig.allowStart` — not a hardcoded `(fun _ => true)` stub. -/
 theorem dispatchWithCap_serviceStart_uses_config
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .serviceStart)
     (hTarget : cap.target = .object objId) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       fun st => serviceStart (ServiceId.ofNat objId.toNat)
                   st.serviceConfig.allowStart st := by
   simp [dispatchWithCap, hSyscall, hTarget]
@@ -789,47 +824,61 @@ theorem dispatchWithCap_serviceStart_uses_config
 /-- WS-K-E: When serviceStop dispatch is invoked, the policy is sourced from
 `st.serviceConfig.allowStop` — not a hardcoded `(fun _ => true)` stub. -/
 theorem dispatchWithCap_serviceStop_uses_config
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .serviceStop)
     (hTarget : cap.target = .object objId) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       fun st => serviceStop (ServiceId.ofNat objId.toNat)
                   st.serviceConfig.allowStop st := by
   simp [dispatchWithCap, hSyscall, hTarget]
 
-/-- WS-K-E: When send dispatch is invoked, the IPC message body is populated
-from decoded message registers via `extractMessageRegisters`. -/
-theorem dispatchWithCap_send_populates_msg
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+/-- WS-K-E/M-D01: When send dispatch is invoked, the IPC message includes
+resolved extra capabilities and uses the WithCaps send path. -/
+theorem dispatchWithCap_send_uses_withCaps
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
-    dispatchWithCap decoded tid cap =
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointSendDual epId tid { registers := body, caps := #[], badge := cap.badge } := by
+    dispatchWithCap decoded tid gate cap =
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
+            (SeLe4n.Slot.ofNat 0) st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st') := by
   simp [dispatchWithCap, hSyscall, hTarget]
 
-/-- WS-K-E: When call dispatch is invoked, the IPC message body is populated
-from decoded message registers via `extractMessageRegisters`. -/
-theorem dispatchWithCap_call_populates_msg
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+/-- WS-K-E/M-D01: When call dispatch is invoked, the IPC message includes
+resolved extra capabilities and uses the WithCaps call path. -/
+theorem dispatchWithCap_call_uses_withCaps
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .call)
     (hTarget : cap.target = .object epId) :
-    dispatchWithCap decoded tid cap =
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointCall epId tid { registers := body, caps := #[], badge := cap.badge } := by
+    dispatchWithCap decoded tid gate cap =
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
+            (SeLe4n.Slot.ofNat 0) st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st') := by
   simp [dispatchWithCap, hSyscall, hTarget]
 
 /-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
 from decoded message registers via `extractMessageRegisters`. -/
 theorem dispatchWithCap_reply_populates_msg
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (targetTid : SeLe4n.ThreadId)
     (hSyscall : decoded.syscallId = .reply)
     (hTarget : cap.target = .replyCap targetTid) :
-    dispatchWithCap decoded tid cap =
+    dispatchWithCap decoded tid gate cap =
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
       endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
   simp [dispatchWithCap, hSyscall, hTarget]

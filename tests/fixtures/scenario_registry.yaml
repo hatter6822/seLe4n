@@ -743,3 +743,13 @@ scenarios:
     function: runParameterizedTopologyCheck
     subsystem: Testing
     description: "parameterized topology ok: 3 configurations (minimal, medium, large)"
+  SCN-IPC-CAP-TRANSFER-BASIC:
+    source: tests/OperationChainSuite.lean
+    function: chain12IpcCapTransfer
+    subsystem: IPC
+    description: "IPC cap transfer with Grant right: 2 caps installed in receiver CNode"
+  SCN-IPC-CAP-TRANSFER-NO-GRANT:
+    source: tests/OperationChainSuite.lean
+    function: chain13IpcCapTransferNoGrant
+    subsystem: IPC
+    description: "IPC cap transfer without Grant right: caps silently dropped"

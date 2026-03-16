@@ -86,7 +86,7 @@ Badge routing chain (H-03, WS-F5/D1):
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
-**WS-M audit findings** (v0.16.13 — Phase 1 remediated at v0.16.14; Phase 2 remediated at v0.16.15; Phase 3 plan refined at v0.16.16):
+**WS-M audit findings** (v0.16.13 — Phase 1 remediated at v0.16.14; Phase 2 remediated at v0.16.15; Phase 3 completed at v0.16.17):
 
 - M-G01: ~~proof incomplete~~ → **RESOLVED** (v0.16.14): existing proof was complete; added forward-direction `resolveCapAddress_guard_match` companion theorem,
 - M-G02: ~~`cdtMintCompleteness` gap~~ → **RESOLVED** (v0.16.14): `cdtMintCompleteness` predicate + transfer theorem + extended bundle `capabilityInvariantBundleWithMintCompleteness`,
@@ -96,8 +96,8 @@ Badge routing chain (H-03, WS-F5/D1):
 - M-P02: ~~CDT parent lookup O(E) scan~~ → **RESOLVED** (v0.16.15): `parentMap : Std.HashMap CdtNodeId CdtNodeId` index added to `CapDerivationTree`; `parentOf` now O(1) HashMap lookup; `parentMapConsistent` invariant with runtime check (M2-B),
 - M-P03: ~~reply lemma duplication~~ → **RESOLVED** (v0.16.15): reply lemmas extracted as shared infrastructure; new field preservation lemmas for NI proofs (M2-C),
 - M-P05: ~~`endpointReply_preserves_capabilityInvariantBundle` proof duplication~~ → **RESOLVED** (v0.16.15): unified via extracted lemmas from M2-C,
-- M-D01: ~~IPC capability transfer not modeled~~ → **PLANNED** (v0.16.16): Phase 3 (WS-M3) plan refined with 20 subtasks — `ipcTransferSingleCap`/`ipcUnwrapCaps` operations, Grant-right gate, CDT `.ipcTransfer` edge tracking, wrapper pattern preserving existing IPC proofs, 4 test scenarios,
-- M-T03: ~~capability transfer during IPC untested~~ → **PLANNED** (v0.16.16): 4 test scenarios specified (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED).
+- M-D01: ~~IPC capability transfer not modeled~~ → **RESOLVED** (v0.16.17): `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs, Grant-right gate, CDT `.ipcTransfer` edge tracking, `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers, `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring,
+- M-T03: ~~capability transfer during IPC untested~~ → **RESOLVED** (v0.16.17): 2 test scenarios implemented (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT) in OperationChainSuite.
 
 See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
@@ -1283,7 +1283,7 @@ bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`). IPC dispatch arms
 `extractMessageRegisters_ipc_bounded` (constructed `IpcMessage` satisfies `bounded`),
 `extractMessageRegisters_deterministic`. 5 delegation theorems:
 `dispatchWithCap_serviceStart_uses_config`, `dispatchWithCap_serviceStop_uses_config`,
-`dispatchWithCap_send_populates_msg`, `dispatchWithCap_call_populates_msg`,
+`dispatchWithCap_send_uses_withCaps`, `dispatchWithCap_call_uses_withCaps`,
 `dispatchWithCap_reply_populates_msg`. All existing soundness theorems compile
 unchanged. Zero sorry/axiom. 11 new Tier 3 anchors.
 
@@ -1329,7 +1329,7 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - 4 CSpace: `dispatchWithCap_cspaceMint_delegates`, `_cspaceCopy_delegates`, `_cspaceMove_delegates`, `_cspaceDelete_delegates`
 - 3 Lifecycle/VSpace: `dispatchWithCap_lifecycleRetype_delegates`, `_vspaceMap_delegates`, `_vspaceUnmap_delegates`
 - 2 Service: `dispatchWithCap_serviceStart_uses_config`, `_serviceStop_uses_config`
-- 3 IPC: `dispatchWithCap_send_populates_msg`, `_call_populates_msg`, `_reply_populates_msg`
+- 3 IPC: `dispatchWithCap_send_uses_withCaps`, `_call_uses_withCaps`, `_reply_populates_msg`
 
 **Preservation and NI** (API.lean, Operations.lean, Composition.lean, K-F/K-G):
 - `dispatchWithCap_layer2_decode_pure` — decode depends only on `msgRegs`

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "c4ea5e497082390b54331c2e3e705a43350351cc",
-      "tree_sha": "4b692f98ce34ebbf592fedc5e233018b76b60b68",
-      "committed_at_utc": "2026-03-15T23:06:14-04:00"
+      "branch": "claude/refine-phase-3-ipc-plan-ImTKx",
+      "commit_sha": "7ca46a5fcbb502bab2609dedd3b24d03155108a8",
+      "tree_sha": "85d2341f73052d12d747795fa94fcb84b39a30d8",
+      "committed_at_utc": "2026-03-16T03:30:34+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "381413c5a91c67bce08acd2807dd9a968636ab80cf64d55c7cb8962f9f808215"
+    "source_digest": "80a3229d854a6ddccb0d29266b91658bb7686389dff3c72ed7c01fd0dd014d71"
   },
   "summary": {
-    "module_count": 73,
-    "declaration_count": 2288
+    "module_count": 75,
+    "declaration_count": 2312
   },
   "readme_sync": {
-    "version": "0.16.16",
+    "version": "0.16.17",
     "lean_toolchain": "v4.28.0",
-    "production_files": 69,
-    "production_loc": 38868,
+    "production_files": 71,
+    "production_loc": 39444,
     "test_files": 4,
-    "test_loc": 4115,
-    "proved_theorem_lemma_decls": 1240,
+    "test_loc": 4231,
+    "proved_theorem_lemma_decls": 1248,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 57,
+      "declaration_count": 58,
       "declarations": [
         {
           "kind": "namespace",
@@ -242,14 +242,23 @@
         },
         {
           "kind": "def",
-          "name": "dispatchWithCap",
-          "line": 372,
+          "name": "resolveExtraCaps",
+          "line": 368,
           "called": []
         },
         {
           "kind": "def",
+          "name": "dispatchWithCap",
+          "line": 390,
+          "called": [
+            "SyscallGate",
+            "resolveExtraCaps"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "dispatchSyscall",
-          "line": 500,
+          "line": 532,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -260,7 +269,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 529,
+          "line": 561,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -269,7 +278,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 549,
+          "line": 581,
           "called": [
             "lookupThreadRegisterContext",
             "syscallEntry"
@@ -278,7 +287,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 577,
+          "line": 609,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -289,7 +298,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 613,
+          "line": 648,
           "called": [
             "dispatchSyscall_requires_right",
             "lookupThreadRegisterContext",
@@ -300,7 +309,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 648,
+          "line": 683,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -308,7 +317,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 658,
+          "line": 693,
           "called": [
             "syscallRequiredRight"
           ]
@@ -316,103 +325,117 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 668,
+          "line": 703,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 685,
+          "line": 720,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 700,
+          "line": 735,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 715,
+          "line": 750,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 733,
+          "line": 768,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 748,
+          "line": 783,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 762,
+          "line": 797,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_serviceStart_uses_config",
-          "line": 779,
+          "line": 814,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_serviceStop_uses_config",
-          "line": 791,
+          "line": 826,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_send_populates_msg",
-          "line": 803,
+          "name": "dispatchWithCap_send_uses_withCaps",
+          "line": 838,
           "called": [
-            "dispatchWithCap"
+            "SyscallGate",
+            "dispatchWithCap",
+            "resolveExtraCaps"
           ]
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_call_populates_msg",
-          "line": 815,
+          "name": "dispatchWithCap_call_uses_withCaps",
+          "line": 857,
           "called": [
-            "dispatchWithCap"
+            "SyscallGate",
+            "dispatchWithCap",
+            "resolveExtraCaps"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 827,
+          "line": 876,
           "called": [
+            "SyscallGate",
             "dispatchWithCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 842,
+          "line": 891,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -422,7 +445,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 851,
+          "line": 900,
           "called": [
             "syscallEntry"
           ]
@@ -430,7 +453,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 861,
+          "line": 910,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -439,7 +462,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 878,
+          "line": 927,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -449,13 +472,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 908,
+          "line": 957,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 917,
+          "line": 966,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -464,7 +487,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 928,
+          "line": 977,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -473,7 +496,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 943,
+          "line": 992,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -483,7 +506,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 958,
+          "line": 1007,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -493,7 +516,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 981,
+          "line": 1030,
           "called": [
             "syscallEntry"
           ]
@@ -501,7 +524,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 996,
+          "line": 1045,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -511,13 +534,13 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1024,
+          "line": 1073,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1050,
+          "line": 1099,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -1331,7 +1354,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 51,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -1788,6 +1811,20 @@
             "encodeVSpaceMapArgs",
             "encodeVSpaceUnmapArgs",
             "stubDecoded"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeExtraCapAddrs",
+          "line": 528,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeExtraCapAddrs_deterministic",
+          "line": 536,
+          "called": [
+            "decodeExtraCapAddrs"
           ]
         }
       ]
@@ -3011,7 +3048,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 52,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -3411,6 +3448,14 @@
             "storeObject_cnode_preserves_capabilityBadgesWellFormed",
             "storeObject_cnode_preserves_notificationBadgesWellFormed"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_preserves_capabilityInvariantBundle",
+          "line": 1447,
+          "called": [
+            "cspaceInsertSlot_preserves_capabilityInvariantBundle"
+          ]
         }
       ]
     },
@@ -3423,7 +3468,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 42,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -3785,6 +3830,33 @@
             "cspaceDeleteSlot",
             "cspaceRevoke"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcTransferSingleCap",
+          "line": 813,
+          "called": [
+            "CSpaceAddr",
+            "cspaceInsertSlot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureCdtNodeForSlot_scheduler_eq",
+          "line": 836,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_preserves_scheduler",
+          "line": 841,
+          "called": [
+            "CSpaceAddr",
+            "cspaceInsertSlot",
+            "cspaceInsertSlot_preserves_scheduler",
+            "ensureCdtNodeForSlot_scheduler_eq",
+            "ipcTransferSingleCap"
+          ]
         }
       ]
     },
@@ -4108,6 +4180,49 @@
             "endpointQueueEnqueue_empty_sets_head",
             "lookupTcb_of_objects",
             "tid_not_reserved_of_enqueue"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.DualQueue.WithCaps",
+      "path": "SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 28,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "lookupCspaceRoot",
+          "line": 33,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "endpointSendDualWithCaps",
+          "line": 56,
+          "called": [
+            "lookupCspaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointReceiveDualWithCaps",
+          "line": 96,
+          "called": [
+            "lookupCspaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallWithCaps",
+          "line": 130,
+          "called": [
+            "lookupCspaceRoot"
           ]
         }
       ]
@@ -5380,6 +5495,50 @@
       "path": "SeLe4n/Kernel/IPC/Invariant.lean",
       "declaration_count": 0,
       "declarations": []
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Operations.CapTransfer",
+      "path": "SeLe4n/Kernel/IPC/Operations/CapTransfer.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ipcUnwrapCapsLoop",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ipcUnwrapCaps",
+          "line": 79,
+          "called": [
+            "ipcUnwrapCapsLoop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_preserves_scheduler",
+          "line": 93,
+          "called": [
+            "ipcUnwrapCapsLoop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_scheduler",
+          "line": 126,
+          "called": [
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop_preserves_scheduler"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Endpoint",
@@ -12133,7 +12292,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 115,
+      "declaration_count": 118,
       "declarations": [
         {
           "kind": "namespace",
@@ -12477,14 +12636,36 @@
         },
         {
           "kind": "def",
-          "name": "revokeTargetLocal",
+          "name": "findFirstEmptySlot",
           "line": 376,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "findFirstEmptySlot_spec",
+          "line": 386,
+          "called": [
+            "findFirstEmptySlot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "findFirstEmptySlot_zero",
+          "line": 401,
+          "called": [
+            "findFirstEmptySlot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "revokeTargetLocal",
+          "line": 412,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "lookup_remove_eq_none",
-          "line": 384,
+          "line": 420,
           "called": [
             "lookup",
             "remove"
@@ -12493,7 +12674,7 @@
         {
           "kind": "theorem",
           "name": "lookup_mem_of_some",
-          "line": 390,
+          "line": 426,
           "called": [
             "lookup"
           ]
@@ -12501,7 +12682,7 @@
         {
           "kind": "theorem",
           "name": "resolveSlot_depthMismatch",
-          "line": 395,
+          "line": 431,
           "called": [
             "bitsConsumed",
             "resolveSlot"
@@ -12510,7 +12691,7 @@
         {
           "kind": "theorem",
           "name": "lookup_revokeTargetLocal_source_eq_lookup",
-          "line": 407,
+          "line": 443,
           "called": [
             "lookup",
             "revokeTargetLocal"
@@ -12519,19 +12700,19 @@
         {
           "kind": "def",
           "name": "slotsUnique",
-          "line": 426,
+          "line": 462,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "empty_slotsUnique",
-          "line": 430,
+          "line": 466,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "insert_slotsUnique",
-          "line": 434,
+          "line": 470,
           "called": [
             "slotsUnique"
           ]
@@ -12539,7 +12720,7 @@
         {
           "kind": "theorem",
           "name": "remove_slotsUnique",
-          "line": 441,
+          "line": 477,
           "called": [
             "slotsUnique"
           ]
@@ -12547,7 +12728,7 @@
         {
           "kind": "theorem",
           "name": "revokeTargetLocal_slotsUnique",
-          "line": 448,
+          "line": 484,
           "called": [
             "slotsUnique"
           ]
@@ -12555,13 +12736,13 @@
         {
           "kind": "def",
           "name": "slotCountBounded",
-          "line": 462,
+          "line": 498,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "empty_slotCountBounded",
-          "line": 466,
+          "line": 502,
           "called": [
             "empty",
             "slotCount",
@@ -12571,7 +12752,7 @@
         {
           "kind": "theorem",
           "name": "remove_slotCountBounded",
-          "line": 471,
+          "line": 507,
           "called": [
             "slotCountBounded"
           ]
@@ -12579,7 +12760,7 @@
         {
           "kind": "theorem",
           "name": "revokeTargetLocal_slotCountBounded",
-          "line": 480,
+          "line": 516,
           "called": [
             "slotCountBounded"
           ]
@@ -12587,13 +12768,13 @@
         {
           "kind": "theorem",
           "name": "mem_lookup_of_slotsUnique",
-          "line": 492,
+          "line": 528,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookup_insert_eq",
-          "line": 499,
+          "line": 535,
           "called": [
             "insert",
             "lookup"
@@ -12602,7 +12783,7 @@
         {
           "kind": "theorem",
           "name": "lookup_insert_ne",
-          "line": 506,
+          "line": 542,
           "called": [
             "insert",
             "lookup"
@@ -12611,7 +12792,7 @@
         {
           "kind": "theorem",
           "name": "lookup_remove_ne",
-          "line": 518,
+          "line": 554,
           "called": [
             "lookup",
             "remove"
@@ -12619,50 +12800,50 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:533>",
-          "line": 533,
+          "name": "<anonymous:instance:569>",
+          "line": 569,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.beq_sound",
-          "line": 542,
+          "line": 578,
           "called": []
         },
         {
           "kind": "def",
           "name": "cnodeWellFormed",
-          "line": 560,
+          "line": 596,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.empty_not_wellFormed",
-          "line": 565,
+          "line": 601,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "SlotAddr",
-          "line": 574,
+          "line": 610,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "DerivationOp",
-          "line": 577,
+          "line": 613,
           "called": []
         },
         {
           "kind": "structure",
           "name": "CdtNodeId",
-          "line": 590,
+          "line": 627,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:596>",
-          "line": 596,
+          "name": "<anonymous:instance:633>",
+          "line": 633,
           "called": [
             "CdtNodeId"
           ]
@@ -12670,13 +12851,13 @@
         {
           "kind": "namespace",
           "name": "CdtNodeId",
-          "line": 599,
+          "line": 636,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 602,
+          "line": 639,
           "called": [
             "CdtNodeId"
           ]
@@ -12684,39 +12865,39 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 605,
+          "line": 642,
           "called": [
             "CdtNodeId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:607>",
-          "line": 607,
+          "name": "<anonymous:instance:644>",
+          "line": 644,
           "called": [
             "CdtNodeId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:613>",
-          "line": 613,
+          "name": "<anonymous:instance:650>",
+          "line": 650,
           "called": [
             "CdtNodeId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:617>",
-          "line": 617,
+          "name": "<anonymous:instance:654>",
+          "line": 654,
           "called": [
             "CdtNodeId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:620>",
-          "line": 620,
+          "name": "<anonymous:instance:657>",
+          "line": 657,
           "called": [
             "CdtNodeId"
           ]
@@ -12724,7 +12905,7 @@
         {
           "kind": "structure",
           "name": "CapDerivationEdge",
-          "line": 629,
+          "line": 666,
           "called": [
             "CdtNodeId",
             "DerivationOp"
@@ -12733,13 +12914,13 @@
         {
           "kind": "namespace",
           "name": "CapDerivationEdge",
-          "line": 635,
+          "line": 672,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChildOf",
-          "line": 637,
+          "line": 674,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -12748,7 +12929,7 @@
         {
           "kind": "def",
           "name": "isParentOf",
-          "line": 640,
+          "line": 677,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -12757,7 +12938,7 @@
         {
           "kind": "structure",
           "name": "CapDerivationTree",
-          "line": 649,
+          "line": 686,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId"
@@ -12766,13 +12947,13 @@
         {
           "kind": "namespace",
           "name": "CapDerivationTree",
-          "line": 660,
+          "line": 697,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 662,
+          "line": 699,
           "called": [
             "CapDerivationTree"
           ]
@@ -12780,7 +12961,7 @@
         {
           "kind": "def",
           "name": "addEdge",
-          "line": 666,
+          "line": 703,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -12790,7 +12971,7 @@
         {
           "kind": "def",
           "name": "childrenOf",
-          "line": 675,
+          "line": 712,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12799,7 +12980,7 @@
         {
           "kind": "def",
           "name": "parentOf",
-          "line": 681,
+          "line": 718,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12808,7 +12989,7 @@
         {
           "kind": "def",
           "name": "removeAsChild",
-          "line": 688,
+          "line": 725,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12817,7 +12998,7 @@
         {
           "kind": "def",
           "name": "removeAsParent",
-          "line": 703,
+          "line": 740,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12826,7 +13007,7 @@
         {
           "kind": "def",
           "name": "removeNode",
-          "line": 713,
+          "line": 750,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12835,7 +13016,7 @@
         {
           "kind": "def",
           "name": "descendantsOf",
-          "line": 739,
+          "line": 776,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12844,7 +13025,7 @@
         {
           "kind": "def",
           "name": "acyclic",
-          "line": 752,
+          "line": 789,
           "called": [
             "CapDerivationTree"
           ]
@@ -12852,13 +13033,13 @@
         {
           "kind": "theorem",
           "name": "empty_acyclic",
-          "line": 755,
+          "line": 792,
           "called": []
         },
         {
           "kind": "def",
           "name": "edgeWellFounded",
-          "line": 767,
+          "line": 804,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12867,13 +13048,13 @@
         {
           "kind": "theorem",
           "name": "empty_edgeWellFounded",
-          "line": 777,
+          "line": 814,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "edgeWellFounded_sub",
-          "line": 786,
+          "line": 823,
           "called": [
             "CapDerivationTree"
           ]
@@ -12881,7 +13062,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_edges_sub",
-          "line": 797,
+          "line": 834,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -12891,7 +13072,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_fresh",
-          "line": 814,
+          "line": 851,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -12903,7 +13084,7 @@
         {
           "kind": "def",
           "name": "addEdgeWouldBeSafe",
-          "line": 881,
+          "line": 918,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -12912,7 +13093,7 @@
         {
           "kind": "def",
           "name": "childMapConsistent",
-          "line": 886,
+          "line": 923,
           "called": [
             "CapDerivationTree"
           ]
@@ -12920,13 +13101,13 @@
         {
           "kind": "theorem",
           "name": "empty_childMapConsistent",
-          "line": 891,
+          "line": 928,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "addEdge_childMapConsistent",
-          "line": 898,
+          "line": 935,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -12938,7 +13119,7 @@
         {
           "kind": "def",
           "name": "parentMapConsistent",
-          "line": 943,
+          "line": 980,
           "called": [
             "CapDerivationTree"
           ]
@@ -12946,13 +13127,13 @@
         {
           "kind": "theorem",
           "name": "empty_parentMapConsistent",
-          "line": 948,
+          "line": 985,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "addEdge_parentMapConsistent",
-          "line": 955,
+          "line": 992,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -12964,7 +13145,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_preserves",
-          "line": 999,
+          "line": 1036,
           "called": [
             "CdtNodeId"
           ]
@@ -12972,7 +13153,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_none",
-          "line": 1013,
+          "line": 1050,
           "called": [
             "CdtNodeId"
           ]
@@ -12980,7 +13161,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_mem",
-          "line": 1028,
+          "line": 1065,
           "called": [
             "CdtNodeId",
             "foldl_erase_none"
@@ -12989,7 +13170,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_parentMapConsistent",
-          "line": 1049,
+          "line": 1086,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -13002,7 +13183,7 @@
         {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 1129,
+          "line": 1166,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -13011,7 +13192,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 1136,
+          "line": 1173,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -13022,15 +13203,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1150,
+          "line": 1187,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1161>",
-          "line": 1161,
+          "name": "<anonymous:instance:1198>",
+          "line": 1198,
           "called": [
             "KernelObject"
           ]
@@ -13038,19 +13219,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1171,
+          "line": 1208,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1180,
+          "line": 1217,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1182,
+          "line": 1219,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -13059,7 +13240,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1194,
+          "line": 1231,
           "called": []
         }
       ]
@@ -13067,7 +13248,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 95,
+      "declaration_count": 97,
       "declarations": [
         {
           "kind": "namespace",
@@ -13350,20 +13531,34 @@
         },
         {
           "kind": "inductive",
+          "name": "CapTransferResult",
+          "line": 203,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "CapTransferSummary",
+          "line": 214,
+          "called": [
+            "CapTransferResult"
+          ]
+        },
+        {
+          "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 207,
+          "line": 227,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 220,
+          "line": 240,
           "called": []
         },
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 225,
+          "line": 245,
           "called": [
             "IpcMessage",
             "QueuePPrev",
@@ -13372,8 +13567,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:264>",
-          "line": 264,
+          "name": "<anonymous:instance:284>",
+          "line": 284,
           "called": [
             "TCB"
           ]
@@ -13381,13 +13576,13 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 278,
+          "line": 298,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 289,
+          "line": 309,
           "called": [
             "IntrusiveQueue"
           ]
@@ -13395,13 +13590,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 294,
+          "line": 314,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 303,
+          "line": 323,
           "called": [
             "NotificationState"
           ]
@@ -13409,7 +13604,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 319,
+          "line": 339,
           "called": [
             "Capability"
           ]
@@ -13417,19 +13612,19 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 328,
+          "line": 348,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 333,
+          "line": 353,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 348,
+          "line": 368,
           "called": [
             "UntypedChild"
           ]
@@ -13437,13 +13632,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 364,
+          "line": 384,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 367,
+          "line": 387,
           "called": [
             "UntypedObject"
           ]
@@ -13451,7 +13646,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 371,
+          "line": 391,
           "called": [
             "UntypedObject"
           ]
@@ -13459,30 +13654,6 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 376,
-          "called": [
-            "UntypedObject"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "reset",
-          "line": 388,
-          "called": [
-            "UntypedObject"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "watermarkValid",
-          "line": 392,
-          "called": [
-            "UntypedObject"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "childrenWithinWatermark",
           "line": 396,
           "called": [
             "UntypedObject"
@@ -13490,8 +13661,32 @@
         },
         {
           "kind": "def",
+          "name": "reset",
+          "line": 408,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "watermarkValid",
+          "line": 412,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "childrenWithinWatermark",
+          "line": 416,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 400,
+          "line": 420,
           "called": [
             "UntypedObject"
           ]
@@ -13499,7 +13694,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 405,
+          "line": 425,
           "called": [
             "UntypedObject"
           ]
@@ -13507,7 +13702,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 410,
+          "line": 430,
           "called": [
             "UntypedObject"
           ]
@@ -13515,7 +13710,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 414,
+          "line": 434,
           "called": [
             "watermarkValid"
           ]
@@ -13523,7 +13718,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 418,
+          "line": 438,
           "called": [
             "childrenWithinWatermark"
           ]
@@ -13531,7 +13726,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 423,
+          "line": 443,
           "called": [
             "childrenNonOverlap"
           ]
@@ -13539,7 +13734,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 428,
+          "line": 448,
           "called": [
             "childrenUniqueIds"
           ]
@@ -13547,7 +13742,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 433,
+          "line": 453,
           "called": [
             "empty_childrenNonOverlap",
             "empty_childrenUniqueIds",
@@ -13559,7 +13754,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 439,
+          "line": 459,
           "called": [
             "UntypedObject",
             "canAllocate"
@@ -13568,7 +13763,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 446,
+          "line": 466,
           "called": [
             "UntypedObject",
             "allocate"
@@ -13577,7 +13772,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 465,
+          "line": 485,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13586,7 +13781,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 474,
+          "line": 494,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13595,7 +13790,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 481,
+          "line": 501,
           "called": [
             "UntypedObject",
             "allocate_watermark_advance"
@@ -13604,7 +13799,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 488,
+          "line": 508,
           "called": [
             "UntypedObject",
             "allocate_some_iff",
@@ -13615,7 +13810,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 499,
+          "line": 519,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13624,7 +13819,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 510,
+          "line": 530,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13633,7 +13828,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 528,
+          "line": 548,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13642,7 +13837,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 550,
+          "line": 570,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -13651,7 +13846,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 569,
+          "line": 589,
           "called": [
             "UntypedObject",
             "reset",
@@ -13661,7 +13856,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 573,
+          "line": 593,
           "called": [
             "UntypedObject",
             "reset",
@@ -13671,19 +13866,19 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 588,
+          "line": 608,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 604,
+          "line": 624,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 608,
+          "line": 628,
           "called": [
             "SyscallId"
           ]
@@ -13691,21 +13886,21 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 624,
+          "line": 644,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 628,
+          "line": 648,
           "called": [
             "SyscallId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:644>",
-          "line": 644,
+          "name": "<anonymous:instance:664>",
+          "line": 664,
           "called": [
             "SyscallId"
           ]
@@ -13713,7 +13908,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 661,
+          "line": 681,
           "called": [
             "SyscallId"
           ]
@@ -13721,7 +13916,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 665,
+          "line": 685,
           "called": [
             "SyscallId",
             "ofNat"
@@ -13730,7 +13925,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 685,
+          "line": 705,
           "called": [
             "SyscallId",
             "ofNat_toNat"
@@ -13739,19 +13934,19 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 699,
+          "line": 719,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 705,
+          "line": 725,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLength",
-          "line": 708,
+          "line": 728,
           "called": [
             "maxMessageRegisters"
           ]
@@ -13759,7 +13954,7 @@
         {
           "kind": "def",
           "name": "maxExtraCaps'",
-          "line": 711,
+          "line": 731,
           "called": [
             "maxExtraCaps"
           ]
@@ -13767,7 +13962,7 @@
         {
           "kind": "def",
           "name": "encode",
-          "line": 719,
+          "line": 739,
           "called": [
             "MessageInfo"
           ]
@@ -13775,7 +13970,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 724,
+          "line": 744,
           "called": [
             "MessageInfo",
             "maxMessageRegisters"
@@ -13783,8 +13978,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:733>",
-          "line": 733,
+          "name": "<anonymous:instance:753>",
+          "line": 753,
           "called": [
             "MessageInfo"
           ]
@@ -13792,25 +13987,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 742,
+          "line": 762,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 767,
+          "line": 787,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 799,
+          "line": 819,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 828,
+          "line": 848,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -13825,7 +14020,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 850,
+          "line": 870,
           "called": [
             "MessageInfo",
             "SyscallId"
@@ -18368,7 +18563,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 23,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -18552,11 +18747,33 @@
         },
         {
           "kind": "def",
+          "name": "chain12IpcCapTransfer",
+          "line": 663,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain13IpcCapTransferNoGrant",
+          "line": 719,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 656,
+          "line": 770,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
+            "chain12IpcCapTransfer",
+            "chain13IpcCapTransferNoGrant",
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
@@ -18572,7 +18789,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 673,
+          "line": 789,
           "called": []
         }
       ]
