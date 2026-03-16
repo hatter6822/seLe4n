@@ -1150,6 +1150,84 @@ private def chain17StrictRevokeOrdering : IO Unit := do
 
   assertInvariants "chain17: branching revoke ordering invariants" stFinal
 
+/-- SCN-REVOKE-STREAMING-BFS (M5-A7): Streaming BFS revocation on a 5-node
+branching derivation tree. Verifies that `cspaceRevokeCdtStreaming` produces
+the same observable effects as `cspaceRevokeCdt`:
+  root → A → A1
+       → B → B1
+            → B2
+All 5 descendants deleted, root preserved, CDT nodes detached, invariants hold. -/
+private def chain18StreamingRevokeBFS : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨7600⟩
+  let cnodeA : SeLe4n.ObjId := ⟨7601⟩
+  let cnodeB : SeLe4n.ObjId := ⟨7602⟩
+  let cnodeA1 : SeLe4n.ObjId := ⟨7603⟩
+  let cnodeB1 : SeLe4n.ObjId := ⟨7604⟩
+  let cnodeB2 : SeLe4n.ObjId := ⟨7605⟩
+  let targetId : SeLe4n.ObjId := ⟨7700⟩
+
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
+  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := ⟨0⟩ }
+  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := ⟨0⟩ }
+  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := ⟨0⟩ }
+
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  for cid in [rootCNode, cnodeA, cnodeB, cnodeA1, cnodeB1, cnodeB2] do
+    builder := builder.withObject cid (.cnode {
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+      slots := if cid = rootCNode then
+        Std.HashMap.ofList [
+          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+        ]
+      else {}
+    })
+  let st0 := builder.build
+
+  -- Build branching tree:
+  -- root → A (mint)
+  let (_, st1) ← expectOkState "chain18: mint root→A"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
+  -- root → B (mint)
+  let (_, st2) ← expectOkState "chain18: mint root→B"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
+  -- A → A1 (mint)
+  let (_, st3) ← expectOkState "chain18: mint A→A1"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotA1 (AccessRightSet.ofList [.read, .write]) none st2)
+  -- B → B1 (mint)
+  let (_, st4) ← expectOkState "chain18: mint B→B1"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB1 (AccessRightSet.ofList [.read, .write]) none st3)
+  -- B → B2 (mint)
+  let (_, st5) ← expectOkState "chain18: mint B→B2"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB2 (AccessRightSet.ofList [.read]) none st4)
+
+  -- Verify tree was built: all 5 descendants have caps
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let capOpt := SystemState.lookupSlotCap st5 slot
+    expect s!"chain18: {label} has cap" capOpt.isSome
+
+  -- Execute streaming BFS revocation on root
+  let ((), stFinal) ← expectOkState "chain18: streaming BFS revoke branching tree"
+    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st5)
+
+  -- Verify: all 5 descendant slots are now empty
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let capOpt := SystemState.lookupSlotCap stFinal slot
+    expect s!"chain18: {label} slot empty after streaming revoke" capOpt.isNone
+
+  -- Verify: root slot still present
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain18: root slot still present after streaming revoke" rootCapOpt.isSome
+
+  -- Verify: CDT nodes detached for all descendants
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    expect s!"chain18: {label} CDT node detached after streaming revoke" nodeOpt.isNone
+
+  assertInvariants "chain18: streaming BFS revoke invariants" stFinal
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -1169,7 +1247,8 @@ private def runOperationChainSuite : IO Unit := do
   chain15StrictRevokeDeepChain
   chain16StrictRevokePartialFail
   chain17StrictRevokeOrdering
-  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4)"
+  chain18StreamingRevokeBFS
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5)"
 
 end SeLe4n.Testing
 

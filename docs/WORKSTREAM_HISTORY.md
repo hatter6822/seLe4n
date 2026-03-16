@@ -17,12 +17,12 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 
-WS-M is an **in-progress** workstream portfolio, created from a comprehensive
-end-to-end audit of the Capability subsystem (3,520 LoC, 5 files). The audit
-found zero `sorry`/`axiom`, zero critical vulnerabilities, but identified 5
-performance optimization opportunities, 4 proof strengthening opportunities, 3
-test coverage gaps, and 2 previously deferred items to resolve (including L-T03:
-capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
+WS-M is a **completed** workstream portfolio (v0.16.14–v0.16.19), created from a
+comprehensive end-to-end audit of the Capability subsystem (3,520 LoC, 5 files).
+The audit found zero `sorry`/`axiom`, zero critical vulnerabilities, but
+identified 5 performance optimization opportunities, 4 proof strengthening
+opportunities, 3 test coverage gaps, and 2 previously deferred items. All 5
+phases delivered. All findings resolved.
 
 | ID | Focus | Priority |
 |----|-------|----------|
@@ -30,7 +30,7 @@ capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH — **COMPLETED** (v0.16.15) |
 | **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer`, `findFirstEmptySlot`, `ipcTransferSingleCap`/`ipcUnwrapCaps`, IPC wrappers, API wiring, 2 test scenarios (resolves L-T03) | MEDIUM — **COMPLETED** (v0.16.17) |
 | **WS-M4** | Test coverage (8 subtasks): multi-level resolution edge cases (guard-only, 64-bit max depth, guard mismatch at intermediate level, partial bits, single-level leaf), strict revocation stress (15+ deep chain, partial failure, BFS ordering) | MEDIUM — **COMPLETED** (v0.16.18) |
-| **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
+| **WS-M5** | Streaming BFS revocation (13 subtasks): `streamingRevokeBFS` interleaved BFS loop, `cspaceRevokeCdtStreaming` top-level operation, 3 preservation theorems, `SCN-REVOKE-STREAMING-BFS` test, full documentation sync | LOW — **COMPLETED** (v0.16.19) |
 
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: M1 through M5).
@@ -102,6 +102,25 @@ and `firstFailure` context verification (SCN-REVOKE-STRICT-PARTIAL-FAIL), and
 branching tree BFS ordering verification with 5 descendants
 (SCN-REVOKE-STRICT-ORDER). 8 new test scenarios; zero sorry/axiom (test-only
 phase; no new proof declarations).
+
+**WS-M5** (v0.16.19): Streaming revocation & documentation — 13 atomic subtasks
+across 2 tasks, addressing M-P04 (streaming BFS optimization). M5-A:
+`streamingRevokeBFS` interleaved BFS loop that processes CDT descendants
+on-the-fly instead of materializing the full descendant list upfront, reducing
+peak memory from O(N) to O(max branching factor); `cspaceRevokeCdtStreaming`
+top-level operation composing `cspaceRevoke` with streaming BFS;
+`streamingRevokeBFS_step_preserves` single-step invariant preservation
+(same case analysis as `revokeCdtFoldBody_preserves`);
+`streamingRevokeBFS_preserves` full induction proof by fuel;
+`cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` top-level
+preservation composing local revoke with streaming BFS preservation;
+`SCN-REVOKE-STREAMING-BFS` test scenario exercising 5-node branching tree
+with all descendants deleted, root preserved, CDT nodes detached.
+M5-B: version bump to v0.16.19, workstream plan refinement into 13 granular
+subtasks, full documentation sync across WORKSTREAM_HISTORY, DEVELOPMENT,
+CLAIM_EVIDENCE_INDEX, SELE4N_SPEC, and 7 GitBook chapters; codebase map
+regeneration and README metrics sync. 3 new proved declarations; 1 new test
+scenario. Zero sorry/axiom. Closes M-P04. **WS-M portfolio fully completed.**
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 
@@ -290,6 +309,7 @@ platform stubs with hardware-validated contracts:
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-M** | v0.16.14–v0.16.19 | Capability subsystem audit & remediation — 5 phases, 55+ subtasks, all 14 audit findings resolved. M1: proof strengthening (guard-match, mint completeness, addEdge acyclicity, error-swallowing consistency). M2: performance optimization (fused revoke, CDT parentMap, shared reply lemma). M3: IPC capability transfer (20 subtasks, resolves L-T03). M4: test coverage expansion (8 edge-case tests). M5: streaming BFS revocation + documentation sync. Zero sorry/axiom. | M1–M5 |
 | **WS-M2** | v0.16.15 | Capability subsystem performance optimization. M2-A: fused `revokeAndClearRefsState` — single-pass O(m) fold replacing two O(m) passes (revoke children + clear parent references). M2-B: CDT `parentMap` index in `CSpaceState` — O(1) `parentOf` lookup; `removeNode`/`removeAsChild`/`removeAsParent` maintain the index with targeted updates. M2-C: shared reply lemma extraction — factored `endpointReply` preservation proof body consumed by both direct-reply and reply-recv paths. Field preservation lemmas for non-interference proofs added for new `parentMap` field. Runtime `parentMapConsistent` check added and verified. Zero sorry/axiom. | M2 |
 | **WS-L** | v0.16.9–v0.16.13 | IPC subsystem audit & remediation — comprehensive end-to-end audit of IPC subsystem (9,195 LoC, 12 files). L1: eliminated 4 redundant TCB lookups on IPC hot paths. L2: HashMap.fold migration (4 sites). L3: 22 new theorems + `ipcStateQueueConsistent` invariant. L4: 16 test scenario IDs, 4 coverage gaps filled. L5: IF readers' guide, version bump, full doc sync. 12/13 findings resolved, 1 deferred (L-T03). All WS-I5 deferred items closed. Zero sorry/axiom. | L1–L5 |
 | **WS-K-H** | v0.16.8 | Documentation sync and workstream closeout: updated `WORKSTREAM_HISTORY.md` with WS-K portfolio completion (K-A through K-H, v0.16.0–v0.16.8); updated `SELE4N_SPEC.md` current state snapshot with v0.16.8 version, updated metrics (37,139 production LoC, 4,037 test LoC, 1,198 proved declarations), and WS-K portfolio complete status; updated `DEVELOPMENT.md` active workstream to show WS-K complete, next priority as RPi5 hardware binding; updated `CLAIM_EVIDENCE_INDEX.md` WS-K claim row with comprehensive K-A through K-H deliverables and evidence commands; updated GitBook chapters: `03-architecture-and-module-map.md` (added `SyscallArgDecode.lean` module entry with 7 structures, 7 decode functions, 7 encode functions, 14 theorems), `04-project-design-deep-dive.md` (added section 1.7 documenting two-layer syscall argument decode architecture), `05-specification-and-roadmap.md` (version and roadmap update, WS-K complete, RPi5 next), `12-proof-and-invariant-map.md` (added WS-K proof surface: layer-2 round-trip proofs, delegation theorems, NI coverage extension to 34 constructors); regenerated `docs/codebase_map.json`; synced `README.md` metrics from `readme_sync`; bumped `lakefile.toml` version to 0.16.8; refined WS-K-H workstream plan from 9 flat tasks into 13 granular subtasks (K-H.1 through K-H.13) with dependency ordering, per-file change specifications, and explicit acceptance criteria; updated completion evidence checklist from 5 to 13 K-H items. Zero sorry/axiom. Closes WS-K Phase H. WS-K portfolio fully complete. | K-H |

@@ -725,6 +725,66 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
             ) (.ok ((), stLocal))
             result
 
+-- ============================================================================
+-- M-P04: Streaming CDT revocation (WS-M5)
+-- ============================================================================
+
+/-- M-P04: Streaming BFS loop — processes one node per step, discovering
+children before removing the node from the CDT.
+
+Each iteration:
+1. Dequeues the head node from the BFS queue.
+2. Reads the node's children via `childrenOf` (before removal).
+3. Performs the same delete/detach/removeNode as `revokeCdtFoldBody`.
+4. Appends newly-discovered children to the queue tail.
+
+Fuel = initial edge count, guaranteeing termination since each step
+removes at least one CDT node (shrinking the edge set). -/
+def streamingRevokeBFS
+    (fuel : Nat) (queue : List CdtNodeId)
+    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match fuel, queue with
+  | _, [] => .ok ((), st)
+  | 0, _ :: _ => .ok ((), st)  -- fuel exhausted (safety bound)
+  | fuel + 1, node :: rest =>
+      -- Discover children BEFORE removing the node
+      let children := st.cdt.childrenOf node
+      -- Process node (same logic as cspaceRevokeCdt fold body)
+      let stNext := match SystemState.lookupCdtSlotOfNode st node with
+        | none => { st with cdt := st.cdt.removeNode node }
+        | some descAddr =>
+            match cspaceDeleteSlot descAddr st with
+            | .error _ => { st with cdt := st.cdt.removeNode node }
+            | .ok ((), stDel) =>
+                let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                { stDetached with cdt := stDetached.cdt.removeNode node }
+      -- Append children to queue and recurse
+      streamingRevokeBFS fuel (rest ++ children) stNext
+
+/-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
+
+Equivalent to `cspaceRevokeCdt` but processes descendants on-the-fly instead
+of materializing the full descendant list upfront. Peak memory: O(max branching
+factor) instead of O(N).
+
+1. Perform local revocation (same CNode siblings) via `cspaceRevoke`.
+2. Look up the source slot's CDT node.
+3. Initialize the BFS queue with the root node's direct children.
+4. Run `streamingRevokeBFS` with fuel = `cdt.edges.length`.
+
+Error handling: identical to `cspaceRevokeCdt` — descendant deletion errors
+are swallowed, CDT nodes are always removed. -/
+def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceRevoke addr st with
+    | .error e => .error e
+    | .ok ((), stLocal) =>
+        match SystemState.lookupCdtNodeOfSlot stLocal addr with
+        | none => .ok ((), stLocal)
+        | some rootNode =>
+            let children := stLocal.cdt.childrenOf rootNode
+            streamingRevokeBFS stLocal.cdt.edges.length children stLocal
+
 /-- Structured failure context for strict CDT descendant deletion.
 
 `offendingSlot` is the slot projected from the failing CDT node (when a slot

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "49e67900654e0291d98eee27e8aef7df46fe5757",
-      "tree_sha": "aef881527193f8f96ffe3d7c62d9d761ea2a47dd",
-      "committed_at_utc": "2026-03-16T18:05:09-04:00"
+      "branch": "claude/optimize-phase-5-docs-M2RuO",
+      "commit_sha": "738ab9bce511286641977e3c554f1557c57d9ca7",
+      "tree_sha": "fcc977f5e9ca2d0974d1fe381326c41d7243a646",
+      "committed_at_utc": "2026-03-16T22:05:18+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "82928e6564f49b0e17036e29be08d2777a8db1b46ea8e2d069b44c338402ba32"
+    "source_digest": "f00eb11afa03626f574d4352e80fe9f396c587fe4bf62f14a45bc65a9f9810b9"
   },
   "summary": {
     "module_count": 75,
-    "declaration_count": 2350
+    "declaration_count": 2356
   },
   "readme_sync": {
-    "version": "0.16.18",
+    "version": "0.16.19",
     "lean_toolchain": "v4.28.0",
     "production_files": 71,
-    "production_loc": 40533,
+    "production_loc": 40685,
     "test_files": 4,
-    "test_loc": 5024,
-    "proved_theorem_lemma_decls": 1279,
+    "test_loc": 5103,
+    "proved_theorem_lemma_decls": 1282,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3048,7 +3048,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 54,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -3199,14 +3199,40 @@
         },
         {
           "kind": "theorem",
+          "name": "streamingRevokeBFS_step_preserves",
+          "line": 815,
+          "called": [
+            "capabilityInvariantBundle_of_cdt_update",
+            "cspaceDeleteSlot_preserves_capabilityInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "streamingRevokeBFS_preserves",
+          "line": 860,
+          "called": [
+            "streamingRevokeBFS_step_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle",
+          "line": 882,
+          "called": [
+            "cspaceRevoke_preserves_capabilityInvariantBundle",
+            "streamingRevokeBFS_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "capabilityInvariantBundle_of_storeTcbAndEnsureRunnable",
-          "line": 817,
+          "line": 909,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_capabilityInvariantBundle",
-          "line": 860,
+          "line": 952,
           "called": [
             "capabilityInvariantBundle_of_storeTcbAndEnsureRunnable"
           ]
@@ -3214,13 +3240,13 @@
         {
           "kind": "def",
           "name": "coreIpcInvariantBundle",
-          "line": 926,
+          "line": 1018,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_ipcInvariant",
-          "line": 931,
+          "line": 1023,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3228,7 +3254,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_dualQueueSystemInvariant",
-          "line": 936,
+          "line": 1028,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3236,7 +3262,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_allPendingMessagesBounded",
-          "line": 941,
+          "line": 1033,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3244,7 +3270,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_badgeWellFormed",
-          "line": 946,
+          "line": 1038,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3252,43 +3278,43 @@
         {
           "kind": "def",
           "name": "ipcSchedulerRunnableReadyComponent",
-          "line": 951,
+          "line": 1043,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedSendComponent",
-          "line": 955,
+          "line": 1047,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReceiveComponent",
-          "line": 959,
+          "line": 1051,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedCallComponent",
-          "line": 963,
+          "line": 1055,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReplyComponent",
-          "line": 967,
+          "line": 1059,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedNotificationComponent",
-          "line": 971,
+          "line": 1063,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerCoherenceComponent",
-          "line": 975,
+          "line": 1067,
           "called": [
             "ipcSchedulerBlockedCallComponent",
             "ipcSchedulerBlockedNotificationComponent",
@@ -3301,7 +3327,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
-          "line": 983,
+          "line": 1075,
           "called": [
             "ipcSchedulerCoherenceComponent"
           ]
@@ -3309,7 +3335,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerCouplingInvariantBundle",
-          "line": 993,
+          "line": 1085,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent"
@@ -3318,7 +3344,7 @@
         {
           "kind": "def",
           "name": "lifecycleCompositionInvariantBundle",
-          "line": 999,
+          "line": 1091,
           "called": [
             "ipcSchedulerCouplingInvariantBundle"
           ]
@@ -3326,25 +3352,25 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
-          "line": 1002,
+          "line": 1094,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
-          "line": 1021,
+          "line": 1113,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_ipcInvariant",
-          "line": 1077,
+          "line": 1169,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
-          "line": 1103,
+          "line": 1195,
           "called": [
             "coreIpcInvariantBundle",
             "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
@@ -3355,7 +3381,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1129,
+          "line": 1221,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent",
@@ -3366,7 +3392,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
-          "line": 1160,
+          "line": 1252,
           "called": [
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
             "cspaceRevoke_preserves_capabilityInvariantBundle",
@@ -3376,7 +3402,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 1181,
+          "line": 1273,
           "called": [
             "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle"
           ]
@@ -3384,7 +3410,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1212,
+          "line": 1304,
           "called": [
             "lifecycleCompositionInvariantBundle"
           ]
@@ -3392,13 +3418,13 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeTcbIpcState",
-          "line": 1225,
+          "line": 1317,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_blocking_path",
-          "line": 1244,
+          "line": 1336,
           "called": [
             "cspaceSlotUnique_of_storeTcbIpcState"
           ]
@@ -3406,7 +3432,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_handshake_path",
-          "line": 1257,
+          "line": 1349,
           "called": [
             "cspaceSlotUnique_of_storeTcbIpcState"
           ]
@@ -3414,25 +3440,25 @@
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_notificationBadgesWellFormed",
-          "line": 1275,
+          "line": 1367,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_capabilityBadgesWellFormed",
-          "line": 1285,
+          "line": 1377,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "badgeWellFormed_of_objects_eq",
-          "line": 1300,
+          "line": 1392,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_badgeWellFormed",
-          "line": 1311,
+          "line": 1403,
           "called": [
             "badgeWellFormed_of_objects_eq",
             "storeObject_cnode_preserves_capabilityBadgesWellFormed",
@@ -3442,7 +3468,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_preserves_badgeWellFormed",
-          "line": 1371,
+          "line": 1463,
           "called": [
             "badgeWellFormed_of_objects_eq",
             "storeObject_cnode_preserves_capabilityBadgesWellFormed",
@@ -3452,7 +3478,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_capabilityInvariantBundle",
-          "line": 1447,
+          "line": 1539,
           "called": [
             "cspaceInsertSlot_preserves_capabilityInvariantBundle"
           ]
@@ -3460,7 +3486,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
-          "line": 1521,
+          "line": 1613,
           "called": []
         }
       ]
@@ -3474,7 +3500,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 53,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -3809,9 +3835,27 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "streamingRevokeBFS",
+          "line": 743,
+          "called": [
+            "cspaceDeleteSlot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceRevokeCdtStreaming",
+          "line": 777,
+          "called": [
+            "CSpaceAddr",
+            "cspaceRevoke",
+            "streamingRevokeBFS"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 733,
+          "line": 793,
           "called": [
             "CSpaceAddr"
           ]
@@ -3819,7 +3863,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 743,
+          "line": 803,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -3828,7 +3872,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 758,
+          "line": 818,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure",
@@ -3840,7 +3884,7 @@
         {
           "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 813,
+          "line": 873,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -3849,19 +3893,19 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 836,
+          "line": 896,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 841,
+          "line": 901,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 846,
+          "line": 906,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -3873,7 +3917,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 879,
+          "line": 939,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -3884,7 +3928,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 913,
+          "line": 973,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -3896,7 +3940,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 949,
+          "line": 1009,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -3906,7 +3950,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 970,
+          "line": 1030,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -3916,7 +3960,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 1040,
+          "line": 1100,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -3926,7 +3970,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 1060,
+          "line": 1120,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -3936,7 +3980,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 1081,
+          "line": 1141,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -18845,7 +18889,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 30,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -19094,8 +19138,18 @@
         },
         {
           "kind": "def",
+          "name": "chain18StreamingRevokeBFS",
+          "line": 1160,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1153,
+          "line": 1231,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -19105,6 +19159,7 @@
             "chain15StrictRevokeDeepChain",
             "chain16StrictRevokePartialFail",
             "chain17StrictRevokeOrdering",
+            "chain18StreamingRevokeBFS",
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
@@ -19120,7 +19175,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1176,
+          "line": 1255,
           "called": []
         }
       ]

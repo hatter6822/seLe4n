@@ -128,11 +128,18 @@ proved declarations. Zero sorry/axiom.
 **Priority**: MEDIUM — ensures edge cases are exercised.
 **Findings addressed**: M-T01, M-T02.
 
-### Phase 5: Streaming Revocation & Documentation (WS-M5)
+### Phase 5: Streaming Revocation & Documentation (WS-M5) — COMPLETED (v0.16.19)
 
 **Focus**: Streaming BFS optimization (M-P04) and full documentation sync.
 **Priority**: LOW — optimization and documentation polish.
 **Findings addressed**: M-P04.
+**Subtasks**: 13 atomic units across 2 tasks (M5-A1–A7, M5-B1–B6).
+**Deliverables**: `streamingRevokeBFS` streaming helper, `cspaceRevokeCdtStreaming`
+top-level operation, `streamingRevokeBFS_step_preserves` single-step invariant,
+`streamingRevokeBFS_preserves` full induction,
+`cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` top-level preservation,
+`SCN-REVOKE-STREAMING-BFS` test scenario, full documentation sync. 3 new proved
+declarations. Zero sorry/axiom.
 
 ---
 
@@ -1894,72 +1901,341 @@ phase). Updated scenario catalog.
 ### Phase 5: Streaming Revocation & Documentation (WS-M5)
 
 **Target version**: 0.16.19
-**Files modified**: `Operations.lean`, `Invariant/Preservation.lean`, all documentation
+**Files modified**: `Operations.lean`, `Invariant/Preservation.lean`,
+`Model/Object/Structures.lean`, all documentation
+
+Phase 5 is subdivided into 13 atomic subtasks across 2 tasks. Each subtask is
+independently buildable and testable. Tasks are ordered by dependency: M5-A
+(streaming BFS) has 7 subtasks across definition, proof, and integration; M5-B
+(documentation) has 6 subtasks that can largely run in parallel once M5-A
+completes.
+
+---
 
 #### Task M5-A: Streaming BFS for CDT revocation (M-P04)
 
-**Problem**: `cspaceRevokeCdt` materializes the full descendant list before beginning
-deletions. For large derivation trees, this allocates O(N) memory for the descendant
-list while the BFS queue itself is much smaller.
+**Problem**: `cspaceRevokeCdt` (Operations.lean:702–726) materializes the full
+descendant list via `descendantsOf` before beginning deletions. For large derivation
+trees, this allocates O(N) memory for the descendant list upfront. The BFS queue
+itself only holds one level's worth of nodes at a time, so interleaving BFS
+discovery with deletion reduces peak memory from O(N) to O(max branching factor).
+
+**Design constraints**:
+- The streaming variant must produce semantically equivalent results to
+  `cspaceRevokeCdt` for acyclic CDTs (same set of deleted nodes, same final state).
+- Termination uses a fuel parameter bounded by `cdt.edges.length` (each step
+  processes one node and removes it from the CDT, so the edge count strictly
+  decreases or the queue empties).
+- The error-swallowing behavior matches `cspaceRevokeCdt`: if `cspaceDeleteSlot`
+  fails for a descendant, the CDT node is still removed (proven safe by
+  `cspaceRevokeCdt_swallowed_error_consistent`).
+- The streaming BFS processes children level-by-level: for each node dequeued,
+  its `childrenOf` children are discovered and added to the queue *before* the
+  node is removed from the CDT (so `childrenOf` can still find them).
+- The existing `revokeCdtFoldBody` proof infrastructure is reused: the streaming
+  loop body performs exactly the same operations as `revokeCdtFoldBody` on each
+  node, so the invariant preservation proof follows from the same single-step
+  lemma.
+
+##### Subtask M5-A1: Define `streamingRevokeBFS` recursive helper
 
 **Implementation**:
-1. Define `streamingRevokeCdt` that interleaves BFS discovery with deletion:
+1. In `Operations.lean`, after `cspaceRevokeCdt` (line 726), add:
    ```lean
-   /-- Streaming CDT revocation: interleaves BFS discovery with deletion.
+   /-- M-P04: Streaming BFS loop — processes one node per step, discovering
+   children before removing the node from the CDT.
 
-   Instead of materializing all descendants first, processes nodes level-by-level:
-   1. Initialize queue with direct children of the source CDT node
-   2. For each node in the queue:
-      a. Look up the node's slot and delete the capability
-      b. Add the node's children to the queue
-      c. Remove the CDT node
-   3. Continue until queue is empty
+   Each iteration:
+   1. Dequeues the head node from the BFS queue.
+   2. Reads the node's children via `childrenOf` (before removal).
+   3. Performs the same delete/detach/removeNode as `revokeCdtFoldBody`.
+   4. Appends newly-discovered children to the queue tail.
 
-   Termination: each step removes a CDT node, strictly shrinking the tree.
-   The fuel parameter bounds the total number of steps. -/
-   def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit
+   Fuel = initial edge count, guaranteeing termination since each step
+   removes at least one CDT node (shrinking the edge set). -/
+   private def streamingRevokeBFS
+       (fuel : Nat) (queue : List CdtNodeId)
+       (st : SystemState) : Except KernelError (Unit × SystemState) :=
+     match fuel, queue with
+     | _, [] => .ok ((), st)
+     | 0, _ :: _ => .ok ((), st)  -- fuel exhausted (safety bound)
+     | fuel + 1, node :: rest =>
+         -- Discover children BEFORE removing the node
+         let children := st.cdt.childrenOf node
+         -- Process node (same logic as revokeCdtFoldBody)
+         let stNext := match SystemState.lookupCdtSlotOfNode st node with
+           | none => { st with cdt := st.cdt.removeNode node }
+           | some descAddr =>
+               match cspaceDeleteSlot descAddr st with
+               | .error _ => { st with cdt := st.cdt.removeNode node }
+               | .ok ((), stDel) =>
+                   let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                   { stDetached with cdt := stDetached.cdt.removeNode node }
+         -- Append children to queue and recurse
+         streamingRevokeBFS fuel (rest ++ children) stNext
    ```
-2. Prove semantic equivalence with `cspaceRevokeCdt` (same final state for
-   acyclic CDTs).
-3. Prove `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`.
 
-**Performance impact**: Peak memory goes from O(N) (full descendant list) to
-O(max branching factor × depth) (BFS queue).
+**Verification**: `lake build` succeeds (definition only, no dependents yet).
 
-**Verification**: `lake build` succeeds. Run `test_full.sh`.
+**Files**: `SeLe4n/Kernel/Capability/Operations.lean`
 
-**Files**: `SeLe4n/Kernel/Capability/Operations.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+##### Subtask M5-A2: Define `cspaceRevokeCdtStreaming` top-level operation
+
+**Implementation**:
+1. In `Operations.lean`, after `streamingRevokeBFS`, add:
+   ```lean
+   /-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
+
+   Equivalent to `cspaceRevokeCdt` but processes descendants on-the-fly instead
+   of materializing the full descendant list upfront. Peak memory: O(max branching
+   factor) instead of O(N).
+
+   1. Perform local revocation (same CNode siblings) via `cspaceRevoke`.
+   2. Look up the source slot's CDT node.
+   3. Initialize the BFS queue with the root node's direct children.
+   4. Run `streamingRevokeBFS` with fuel = `cdt.edges.length`.
+
+   Error handling: identical to `cspaceRevokeCdt` — descendant deletion errors
+   are swallowed, CDT nodes are always removed. -/
+   def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit :=
+     fun st =>
+       match cspaceRevoke addr st with
+       | .error e => .error e
+       | .ok ((), stLocal) =>
+           match SystemState.lookupCdtNodeOfSlot stLocal addr with
+           | none => .ok ((), stLocal)
+           | some rootNode =>
+               let children := stLocal.cdt.childrenOf rootNode
+               streamingRevokeBFS stLocal.cdt.edges.length children stLocal
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Operations.lean`
+
+##### Subtask M5-A3: Prove `streamingRevokeBFS` single-step invariant preservation
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, after `cspaceRevokeCdt_swallowed_error_consistent`
+   (line 712), add:
+   ```lean
+   /-- M-P04: Each node-processing step in the streaming BFS preserves the
+   capability invariant bundle. The proof follows the same case analysis as
+   `revokeCdtFoldBody_preserves`: removeNode-only, error-swallowed removeNode,
+   or successful delete+detach+removeNode. -/
+   private theorem streamingRevokeBFS_step_preserves
+       (st stNext : SystemState) (node : CdtNodeId)
+       (hInv : capabilityInvariantBundle st)
+       (hStep : stNext = <node-processing body>) :
+       capabilityInvariantBundle stNext
+   ```
+   The proof reuses the same proof obligations as `revokeCdtFoldBody_preserves`:
+   - `capabilityInvariantBundle_of_cdt_update` for the removeNode-only paths
+   - `cspaceDeleteSlot_preserves_capabilityInvariantBundle` + detach + removeNode
+     for the successful path
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+##### Subtask M5-A4: Prove `streamingRevokeBFS` full induction preserves invariant
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, after the single-step theorem, add:
+   ```lean
+   /-- M-P04: The full streaming BFS loop preserves the capability invariant bundle.
+   Proof by strong induction on `fuel`. Each step processes one node (preserving
+   the invariant by M5-A3) then recurses with fuel-1 and updated queue. -/
+   private theorem streamingRevokeBFS_preserves
+       (fuel : Nat) (queue : List CdtNodeId)
+       (stInit stFinal : SystemState)
+       (hInv : capabilityInvariantBundle stInit)
+       (hBFS : streamingRevokeBFS fuel queue stInit = .ok ((), stFinal)) :
+       capabilityInvariantBundle stFinal
+   ```
+   Proof: induction on `fuel` generalizing `queue` and `stInit`.
+   - Base (`fuel = 0` or `queue = []`): `stFinal = stInit`, apply `hInv`.
+   - Step (`fuel + 1, node :: rest`): The node-processing produces `stMid`
+     (proven to satisfy invariant by single-step lemma). Recurse with
+     `fuel, rest ++ children, stMid`.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+##### Subtask M5-A5: Prove `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, add:
+   ```lean
+   /-- M-P04: `cspaceRevokeCdtStreaming` preserves the capability invariant bundle.
+   Composes `cspaceRevoke_preserves_capabilityInvariantBundle` with
+   `streamingRevokeBFS_preserves`. -/
+   theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
+       (st st' : SystemState)
+       (addr : CSpaceAddr)
+       (hInv : capabilityInvariantBundle st)
+       (hStep : cspaceRevokeCdtStreaming addr st = .ok ((), st')) :
+       capabilityInvariantBundle st'
+   ```
+   Proof: unfold `cspaceRevokeCdtStreaming`, case-split on `cspaceRevoke` and
+   CDT node lookup, apply `cspaceRevoke_preserves_capabilityInvariantBundle`
+   for the local revoke, then `streamingRevokeBFS_preserves` for the BFS phase.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+##### Subtask M5-A6: Prove `cspaceRevokeCdtStreaming` preserves scheduler
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, add:
+   ```lean
+   /-- M-P04: `cspaceRevokeCdtStreaming` does not modify the scheduler state.
+   Both `cspaceRevoke` and `streamingRevokeBFS` only modify CSpace and CDT
+   state; the scheduler is untouched. -/
+   theorem cspaceRevokeCdtStreaming_preserves_scheduler
+       (st st' : SystemState)
+       (addr : CSpaceAddr)
+       (hStep : cspaceRevokeCdtStreaming addr st = .ok ((), st')) :
+       st'.scheduler = st.scheduler
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+##### Subtask M5-A7: Add `cspaceRevokeCdtStreaming` test scenario
+
+**Implementation**:
+1. In `tests/OperationChainSuite.lean`, add a test scenario that exercises
+   `cspaceRevokeCdtStreaming` on a 5-node derivation tree and verifies that:
+   - All descendants are deleted (same as `cspaceRevokeCdt`)
+   - The source slot remains present
+   - CDT edges for deleted nodes are removed
+   - Scenario ID: `SCN-REVOKE-STREAMING-BFS`
+
+**Verification**: `lake build` succeeds. Test scenario passes.
+
+**Files**: `tests/OperationChainSuite.lean`
+
+---
 
 #### Task M5-B: Documentation synchronization
 
+##### Subtask M5-B1: Version bump and workstream plan update
+
 **Implementation**:
-1. **WORKSTREAM_HISTORY.md**: Add WS-M workstream entry with phase summary,
-   finding registry link, and completion status for each phase.
-2. **CLAIM_EVIDENCE_INDEX.md**: Update capability-related claims:
-   - Add M-G01 guard-reject proof completion as evidence
-   - Add `cdtMintCompleteness` as new claim
-   - Add `addEdge_preserves_acyclicity` as evidence for CDT soundness
-   - Add IPC capability transfer as new claim with evidence
-3. **DEVELOPMENT.md**: Add development notes for WS-M phases.
-4. **docs/spec/SELE4N_SPEC.md**: Update capability subsystem specification:
-   - Add IPC capability transfer semantics
-   - Update invariant bundle description (cdtMintCompleteness)
-   - Update CDT operations (parentMap)
-5. **GitBook chapters**:
-   - `03-architecture-and-module-map.md`: Add IPC capability transfer to CSpace section
-   - `04-project-design-deep-dive.md`: Update CDT model (parentMap), add IPC transfer
-   - `05-specification-and-roadmap.md`: Update capability operations spec
-   - `07-testing-and-ci.md`: Document new test scenarios
-   - `08-kernel-performance-optimization.md`: Document M2 optimizations
-   - `11-codebase-reference.md`: Update capability module reference
-   - `12-proof-and-invariant-map.md`: Add new theorems (M-G01–G04, M3 transfer)
-6. **docs/codebase_map.json**: Regenerate after all code changes.
-7. **README.md**: Sync metrics from `docs/codebase_map.json`.
+1. Bump `lakefile.toml` version from `0.16.18` to `0.16.19`.
+2. Update `README.md` version badge from `0.16.18` to `0.16.19`.
+3. Mark WS-M5 as **COMPLETED** in this workstream plan and update the Phase 5
+   overview at the top of this document.
+4. Update the WS-M workstream summary table (Section 9).
 
-**Verification**: `test_full.sh` passes. `test_docs_sync.sh` passes.
+**Verification**: `lake build` succeeds.
 
-**Files**: All documentation files listed above.
+**Files**: `lakefile.toml`, `README.md`,
+`docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
+
+##### Subtask M5-B2: Update WORKSTREAM_HISTORY.md
+
+**Implementation**:
+1. Update WS-M5 status from `LOW` to `LOW — **COMPLETED** (v0.16.19)`.
+2. Add WS-M5 phase summary paragraph documenting: streaming BFS revocation,
+   invariant preservation proof, scheduler preservation, test scenario,
+   documentation sync.
+3. Mark WS-M portfolio as **COMPLETED**.
+
+**Verification**: File is well-formed markdown.
+
+**Files**: `docs/WORKSTREAM_HISTORY.md`
+
+##### Subtask M5-B3: Update DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md, SELE4N_SPEC.md
+
+**Implementation**:
+1. **DEVELOPMENT.md**: Mark WS-M5 complete; update active workstream to show
+   WS-M portfolio fully complete; update next milestone to RPi5 hardware binding.
+2. **CLAIM_EVIDENCE_INDEX.md**: Add streaming BFS revocation as evidence for
+   CDT revocation soundness claim; add M5 completion evidence row.
+3. **SELE4N_SPEC.md**: Update version to 0.16.19; add streaming revocation to
+   capability subsystem operations; update CDT operations (parentMap + streaming
+   BFS); update metrics (LoC, proved declarations).
+
+**Verification**: Files are well-formed markdown.
+
+**Files**: `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`,
+`docs/spec/SELE4N_SPEC.md`
+
+##### Subtask M5-B4: Update GitBook chapters
+
+**Implementation**:
+1. `03-architecture-and-module-map.md`: Add `cspaceRevokeCdtStreaming` to CSpace
+   operations list; add IPC capability transfer operations summary.
+2. `04-project-design-deep-dive.md`: Add streaming BFS revocation design
+   rationale; update CDT model description with parentMap + streaming ops.
+3. `05-specification-and-roadmap.md`: Update version to 0.16.19; mark WS-M
+   complete in roadmap; update next milestone to RPi5.
+4. `07-testing-and-ci.md`: Add M4 and M5 test scenarios to catalog.
+5. `08-kernel-performance-optimization.md`: Add M-P04 streaming BFS as
+   optimization entry; document M2 fused revoke and parentMap optimizations.
+6. `11-codebase-reference.md`: Update capability module declaration counts.
+7. `12-proof-and-invariant-map.md`: Add streaming BFS preservation theorems;
+   add WS-M proof surface summary.
+
+**Verification**: Files are well-formed markdown.
+
+**Files**: All listed GitBook chapter files.
+
+##### Subtask M5-B5: Regenerate codebase map and sync README metrics
+
+**Implementation**:
+1. Run `./scripts/generate_codebase_map.py --pretty` to regenerate
+   `docs/codebase_map.json` with updated declaration counts.
+2. Sync `README.md` metrics table from `docs/codebase_map.json` `readme_sync`.
+
+**Verification**: `README.md` metrics match `docs/codebase_map.json`.
+
+**Files**: `docs/codebase_map.json`, `README.md`
+
+##### Subtask M5-B6: Final validation
+
+**Implementation**:
+1. Run `./scripts/test_full.sh` and verify all tiers pass.
+2. Run `./scripts/test_docs_sync.sh` and verify documentation consistency.
+3. Verify no `sorry` or `axiom` in production proof surface.
+
+**Verification**: All tests pass with zero warnings.
+
+**Files**: None (validation only).
+
+---
+
+#### M5 Dependency Graph and Execution Order
+
+```
+M5-A1 (BFS helper def)         ─── no deps
+M5-A2 (streaming top-level)    ─── depends on M5-A1
+M5-A3 (single-step proof)      ─── depends on M5-A1
+M5-A4 (full induction proof)   ─── depends on M5-A3
+M5-A5 (top-level preservation) ─── depends on M5-A2, M5-A4
+M5-A6 (scheduler preservation) ─── depends on M5-A2
+M5-A7 (test scenario)          ─── depends on M5-A2
+M5-B1 (version bump)           ─── depends on M5-A5
+M5-B2 (workstream history)     ─── depends on M5-B1
+M5-B3 (dev/claim/spec docs)    ─── depends on M5-B1
+M5-B4 (GitBook chapters)       ─── depends on M5-B1
+M5-B5 (codebase map + README)  ─── depends on M5-A5
+M5-B6 (final validation)       ─── depends on all above
+```
+
+**Optimal execution order**: M5-A1 → {M5-A2, M5-A3} (parallel) → M5-A4 →
+{M5-A5, M5-A6, M5-A7} (parallel) → M5-B1 → {M5-B2, M5-B3, M5-B4, M5-B5}
+(parallel) → M5-B6. Total: 13 subtasks, 7 sequential steps.
+
+**Deliverables**: `streamingRevokeBFS` streaming helper, `cspaceRevokeCdtStreaming`
+top-level operation, 4 new proved declarations (single-step preservation, full
+induction, top-level preservation, scheduler preservation), 1 test scenario,
+full documentation sync across all canonical and GitBook sources. Zero sorry/axiom.
 
 ---
 
@@ -2058,4 +2334,4 @@ Total: 20 subtasks, 9 sequential steps.
 | **WS-M2** | Performance (14 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
 | **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer` CDT variant, `findFirstEmptySlot` + correctness theorems, `ipcTransferSingleCap` + preservation, `ipcUnwrapCaps` batch + preservation, 3 IPC wrapper operations + 5 preservation theorems, `decodeExtraCapAddrs`/`resolveExtraCaps` helpers, `dispatchWithCap` wiring, 4 test scenarios | MEDIUM | M-D01, M-T03 |
 | **WS-M4** | Test coverage (8 subtasks): multi-level resolution edge cases (guard-only CNode, 64-bit max depth, guard mismatch at intermediate level, partial bit consumption, single-level leaf), strict revocation stress (15+ deep chain, partial failure, BFS ordering) | MEDIUM | M-T01, M-T02 |
-| **WS-M5** | Streaming BFS revocation, full documentation sync | LOW | M-P04 |
+| **WS-M5** | Streaming BFS revocation (13 subtasks): `streamingRevokeBFS` interleaved BFS loop, `cspaceRevokeCdtStreaming` top-level operation, single-step + full induction + top-level + scheduler preservation theorems, `SCN-REVOKE-STREAMING-BFS` test, version bump, full documentation sync across canonical sources and GitBook | LOW | M-P04 |

@@ -804,6 +804,98 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                   (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node)))
 
 -- ============================================================================
+-- M-P04: Streaming CDT revocation preservation (WS-M5)
+-- ============================================================================
+
+/-- M-P04: Each node-processing step in the streaming BFS preserves the
+capability invariant bundle. The three cases (no slot mapping, delete error,
+successful delete) mirror `revokeCdtFoldBody_preserves` exactly:
+- `removeNode`-only paths use `capabilityInvariantBundle_of_cdt_update`
+- Successful delete uses `cspaceDeleteSlot_preserves` + detach + removeNode -/
+private theorem streamingRevokeBFS_step_preserves
+    (st : SystemState) (node : CdtNodeId)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle
+      (match SystemState.lookupCdtSlotOfNode st node with
+       | none => { st with cdt := st.cdt.removeNode node }
+       | some descAddr =>
+           match cspaceDeleteSlot descAddr st with
+           | .error _ => { st with cdt := st.cdt.removeNode node }
+           | .ok ((), stDel) =>
+               let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+               { stDetached with cdt := stDetached.cdt.removeNode node }) := by
+  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
+  | none =>
+    simp
+    exact capabilityInvariantBundle_of_cdt_update st _ hInv
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
+  | some descAddr =>
+    simp
+    cases hDel : cspaceDeleteSlot descAddr st with
+    | error _ =>
+      simp
+      exact capabilityInvariantBundle_of_cdt_update st _ hInv
+        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
+    | ok pair =>
+      obtain ⟨_, stDel⟩ := pair
+      simp
+      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle st stDel descAddr hInv hDel
+      have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
+      rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
+      have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
+        ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
+         cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
+         cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
+         cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
+         cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
+         cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
+      exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
+        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
+          (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
+
+/-- M-P04: The full streaming BFS loop preserves the capability invariant bundle.
+Proof by induction on `fuel`. Each step processes one node (preserving
+the invariant by `streamingRevokeBFS_step_preserves`) then recurses with
+fuel-1 and the updated queue + state. -/
+private theorem streamingRevokeBFS_preserves
+    (fuel : Nat) (queue : List CdtNodeId)
+    (stInit stFinal : SystemState)
+    (hInv : capabilityInvariantBundle stInit)
+    (hBFS : streamingRevokeBFS fuel queue stInit = .ok ((), stFinal)) :
+    capabilityInvariantBundle stFinal := by
+  induction fuel generalizing queue stInit stFinal with
+  | zero =>
+    unfold streamingRevokeBFS at hBFS
+    cases queue with
+    | nil => simp at hBFS; cases hBFS; exact hInv
+    | cons _ _ => simp at hBFS; cases hBFS; exact hInv
+  | succ n ih =>
+    unfold streamingRevokeBFS at hBFS
+    cases queue with
+    | nil => simp at hBFS; cases hBFS; exact hInv
+    | cons node rest =>
+      exact ih _ _ _ (streamingRevokeBFS_step_preserves stInit node hInv) hBFS
+
+/-- M-P04: `cspaceRevokeCdtStreaming` preserves the capability invariant bundle.
+Composes `cspaceRevoke_preserves_capabilityInvariantBundle` with
+`streamingRevokeBFS_preserves`. -/
+theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : cspaceRevokeCdtStreaming addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold cspaceRevokeCdtStreaming at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i stLocal hRevoke
+    have hLocalInv := cspaceRevoke_preserves_capabilityInvariantBundle st stLocal addr hInv hRevoke
+    split at hStep
+    · simp at hStep; cases hStep; exact hLocalInv
+    · rename_i rootNode hLookup
+      exact streamingRevokeBFS_preserves _ _ stLocal st' hLocalInv hStep
+
+-- ============================================================================
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 
