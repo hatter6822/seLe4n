@@ -86,6 +86,17 @@ Badge routing chain (H-03, WS-F5/D1):
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
+**WS-M audit findings** (v0.16.13 — planned remediation):
+
+- M-G01: `resolveCapAddress_guard_reject` proof incomplete (goal `≠ 0` not closed for `bitsRemaining - guardWidth - radixWidth`),
+- M-G02: `cdtMintCompleteness` gap — `cspaceMintWithCdt` calls `addEdge` but no preservation theorem proves `cdtCompleteness` through the combined path,
+- M-G03: CDT acyclicity hypotheses deferred as `h_acyclic` in fold induction (not derived from pre-state),
+- M-G04: `cspaceRevokeCdtStrict_error_no_state_change` unnamed error-swallowing pattern,
+- M-P01: `cspaceRevokeCdt` double-pass revoke fold (slot collection then fold) — fuse into single HashMap.fold,
+- M-P05: `endpointReply_preserves_capabilityInvariantBundle` duplicates `endpointReplyRecv` proof structure.
+
+See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+
 CDT structural invariants (WS-G8):
 
 - `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,
