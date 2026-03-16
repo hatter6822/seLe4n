@@ -3,11 +3,12 @@
 - Completed Phase 4 (WS-M4) of the capability subsystem workstream: test
   coverage expansion for `resolveCapAddress` edge cases and `cspaceRevokeCdtStrict`
   stress scenarios
-- M4-A: 5 `resolveCapAddress` edge case tests in `NegativeStateSuite.lean`:
+- M4-A: 6 `resolveCapAddress` edge case tests in `NegativeStateSuite.lean`:
   - M4-A1: Guard-only CNode (zero radixWidth, non-zero guardWidth) resolves
     to slot 0; wrong guard correctly rejected (SCN-RESOLVE-GUARD-ONLY)
   - M4-A2: 64-bit resolution across 8 CNodes (8 bits per hop) succeeds
-    end-to-end (SCN-RESOLVE-MAX-DEPTH)
+    end-to-end; 65-bit overflow returns `.invalidCapability` due to bit-shift
+    misalignment (SCN-RESOLVE-MAX-DEPTH)
   - M4-A3: Guard mismatch at intermediate level in 3-level CNode chain
     returns `.invalidCapability` (SCN-RESOLVE-GUARD-MISMATCH-MID)
   - M4-A4: Partial bit consumption (bitsRemaining < guardWidth + radixWidth)
@@ -20,13 +21,14 @@
     (SCN-REVOKE-STRICT-DEEP)
   - M4-B2: Partial failure mid-traversal — corrupted CNode triggers
     `.objectNotFound`, `firstFailure` populated with correct context,
+    `deletedSlots.length = 2` (exactly the nodes before the failure point),
     traversal halts at failure point (SCN-REVOKE-STRICT-PARTIAL-FAIL)
-  - M4-B3: Branching tree (root→A→A1, root→B→B1→B2) BFS ordering — all 5
-    descendants deleted, deletedSlots from expected set
-    (SCN-REVOKE-STRICT-ORDER)
+  - M4-B3: Branching tree (root→A→A1, root→B→B1→B2) — all 5 descendants
+    deleted, set-membership verified, parent-before-child ordering verified
+    for each sub-chain (SCN-REVOKE-STRICT-ORDER)
 - Refined WS-M4 workstream plan with detailed subtask specifications,
   dependency graph, and execution order
-- 8 new test scenarios; zero sorry/axiom; zero warnings
+- 9 new test scenarios; zero sorry/axiom; zero warnings
 - All test tiers pass (test_full.sh Tier 0-3)
 - Bumped `lakefile.toml` version to 0.16.18
 

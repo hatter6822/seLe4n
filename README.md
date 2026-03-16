@@ -60,7 +60,7 @@ architectural improvements compared to other microkernels:
 | **Version** | `0.16.18` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 40,533 across 71 files |
-| **Test Lean LoC** | 4,880 across 4 test suites |
+| **Test Lean LoC** | 4,906 across 4 test suites |
 | **Proved declarations** | 1,279 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem end-to-end audit |

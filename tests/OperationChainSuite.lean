@@ -993,11 +993,12 @@ private def chain16StrictRevokePartialFail : IO Unit := do
       throw <| IO.userError "chain16: expected firstFailure to be some"
 
   -- Verify: deletedSlots contains slots deleted BEFORE the failure.
-  -- BFS order from root traverses children in order from descendantsOf.
-  -- With a linear chain, BFS = DFS = [c0, c1, c2, c3, c4].
-  -- c0 and c1 should be deleted before hitting c2 (the failure point).
-  expect s!"chain16: deletedSlots has entries before failure (got {report.deletedSlots.length})"
-    (report.deletedSlots.length ≥ 1)
+  -- BFS traversal on a linear chain root→c0→c1→c2→c3→c4 processes in
+  -- order [c0, c1, c2, c3, c4]. c0 and c1 are successfully deleted before
+  -- reaching c2 (the corrupted node where deletion fails). After failure,
+  -- traversal halts → exactly 2 slots deleted.
+  expect s!"chain16: deletedSlots has 2 entries before failure (got {report.deletedSlots.length})"
+    (report.deletedSlots.length = 2)
 
   -- Verify: root slot still present
   let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
@@ -1009,12 +1010,15 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   -- lifecycle objectType consistency check. This is expected behavior.
 
 /-- SCN-REVOKE-STRICT-ORDER (M4-B3): Branching derivation tree verifies
-BFS traversal order of `deletedSlots`. Tree shape:
+`deletedSlots` set completeness after revocation. Tree shape:
   root → A → A1
        → B → B1
             → B2
-Total 4 descendants. Verifies deletedSlots.length = 4 and ordering
-matches BFS traversal. -/
+Total 5 descendants. Verifies deletedSlots.length = 5, all entries come
+from the expected descendant set, root is preserved, and CDT nodes are
+detached. Note: `descendantsOf` traverses children via HashMap-backed
+`childrenOf`, so sibling ordering (A vs B) is non-deterministic; we
+verify set membership rather than exact BFS ordering. -/
 private def chain17StrictRevokeOrdering : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7400⟩
   let cnodeA : SeLe4n.ObjId := ⟨7401⟩
@@ -1096,6 +1100,29 @@ private def chain17StrictRevokeOrdering : IO Unit := do
   let expectedSlotSet : List SeLe4n.Kernel.CSpaceAddr := [slotA, slotB, slotA1, slotB1, slotB2]
   let allInSet := report.deletedSlots.all fun ds => ds ∈ expectedSlotSet
   expect "chain17: all deletedSlots are from expected set" allInSet
+
+  -- Verify partial BFS ordering: within each sub-chain, parent precedes child.
+  -- (Sibling ordering between A and B branches is non-deterministic due to
+  -- HashMap iteration order in childrenOf, so we only verify parent-before-child.)
+  let indexOf (s : SeLe4n.Kernel.CSpaceAddr) (xs : List SeLe4n.Kernel.CSpaceAddr) : Option Nat :=
+    let rec go (l : List SeLe4n.Kernel.CSpaceAddr) (i : Nat) : Option Nat :=
+      match l with
+      | [] => none
+      | h :: t => if h == s then some i else go t (i + 1)
+    go xs 0
+  let ds := report.deletedSlots
+  -- A appears before A1
+  match indexOf slotA ds, indexOf slotA1 ds with
+  | some ia, some ia1 => expect "chain17: A before A1 in deletedSlots" (ia < ia1)
+  | _, _ => throw <| IO.userError "chain17: A or A1 not found in deletedSlots"
+  -- B appears before B1
+  match indexOf slotB ds, indexOf slotB1 ds with
+  | some ib, some ib1 => expect "chain17: B before B1 in deletedSlots" (ib < ib1)
+  | _, _ => throw <| IO.userError "chain17: B or B1 not found in deletedSlots"
+  -- B appears before B2
+  match indexOf slotB ds, indexOf slotB2 ds with
+  | some ib, some ib2 => expect "chain17: B before B2 in deletedSlots" (ib < ib2)
+  | _, _ => throw <| IO.userError "chain17: B or B2 not found in deletedSlots"
 
   assertInvariants "chain17: branching revoke ordering invariants" stFinal
 

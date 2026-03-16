@@ -2569,18 +2569,17 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error e =>
       throw <| IO.userError s!"M4-A2: expected success for 64-bit resolution, got {reprStr e}"
 
-  -- 65 bits should fail: more bits than chain can consume
-  -- After consuming 64 bits through all 8 levels, bitsRemaining would hit 0 issues
-  -- Actually, with 65 bits the first CNode sees 65 bits, consumes 8, passes 57 to next, etc.
-  -- At level 7: bits = 65 - 56 = 9. CNode consumes 8, remaining = 1.
-  -- remaining > 0, so it tries to recurse into slot's cap target.
-  -- Slot 1 points to maxDepthLeafTarget which is an endpoint, not a CNode → objectNotFound
-  -- Actually: the cap.target is .object maxDepthLeafTarget, and the match checks
-  -- st.objects[childId]? for a cnode → it's an endpoint → .objectNotFound
-  -- Wait, let me re-read the code: after recursion, if it's not a cnode → objectNotFound
-  -- But let me think about the slot index extraction with 65 bits...
-  -- Hmm, the test would be more complex. Let me skip the 65-bit edge case for now.
-  -- The 64-bit positive test is the important one.
+  -- 65 bits: shiftedAddr = addr >>> 57 at level 0, which shifts the address
+  -- one bit further than the 64-bit case, yielding slot index 0 instead of 1.
+  -- Since slot 0 is empty in our CNodes → invalidCapability.
+  let result65 := SeLe4n.Kernel.resolveCapAddress maxDepthIds[0]! addr64 65 stMaxDepth
+  match result65 with
+  | .error .invalidCapability =>
+      IO.println "M4-A2 check passed [65-bit overflow returns invalidCapability (empty slot)]"
+  | .error e =>
+      throw <| IO.userError s!"M4-A2 overflow: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "M4-A2 overflow: expected error for 65 bits, got success"
 
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
 
