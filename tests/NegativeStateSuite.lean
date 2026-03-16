@@ -2581,6 +2581,100 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "M4-A2 overflow: expected error for 65 bits, got success"
 
+  -- M4-A6: Empty slot at intermediate (non-leaf) level.
+  -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
+  -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
+  -- unconditionally. So we need 3 levels where the middle level has an empty slot
+  -- and there are still bits remaining for recursion.
+  --
+  -- lvl0 (gw=0, rw=4, 4 bits) → slot 3 → lvl1 (gw=0, rw=4, empty, 4 bits)
+  -- Total bitsRemaining = 10. At lvl1: bits=6, consumed=4, remaining=2 > 0
+  -- → tries to recurse → slot lookup → empty → invalidCapability
+  let emptyMidRoot : SeLe4n.ObjId := ⟨6040⟩
+  let emptyMidChild : SeLe4n.ObjId := ⟨6041⟩
+  let stEmptyMid :=
+    (BootstrapBuilder.empty
+      |>.withObject emptyMidRoot (.cnode {
+          depth := 10
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨3⟩, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject emptyMidChild (.cnode {
+          depth := 6
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := {}  -- all slots empty
+        })
+      |>.build)
+
+  -- addr=0xC0 (10 bits): lvl0 shift=(10-4)=6, 0xC0>>>6=3, slot 3 → lvl1.
+  -- At lvl1: bits=6, shift=(6-4)=2, 0xC0>>>2=48, slot=48%16=0. Remaining=2>0.
+  -- Slot 0 is empty → invalidCapability (intermediate recursion path, line 106).
+  let resultEmptyMid := SeLe4n.Kernel.resolveCapAddress emptyMidRoot ⟨0xC0⟩ 10 stEmptyMid
+  match resultEmptyMid with
+  | .error .invalidCapability =>
+      IO.println "M4-A6 check passed [empty slot at intermediate level returns invalidCapability]"
+  | .error e =>
+      throw <| IO.userError s!"M4-A6: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "M4-A6: expected error for empty intermediate slot, got success"
+
+  -- M4-A7: Non-CNode target at intermediate level — slot holds cap targeting endpoint
+  -- 2-level chain: lvl0 slot 1 → endpoint (not a CNode) → objectNotFound on recursion
+  let nonCnodeMidRoot : SeLe4n.ObjId := ⟨6050⟩
+  let nonCnodeMidEp : SeLe4n.ObjId := ⟨6051⟩
+  let stNonCnodeMid :=
+    (BootstrapBuilder.empty
+      |>.withObject nonCnodeMidRoot (.cnode {
+          depth := 8
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨1⟩, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject nonCnodeMidEp (.endpoint {})
+      |>.build)
+
+  -- addr=0x15 (8 bits): lvl0 slot = 1 → cap targets endpoint, recurse with 4 bits
+  -- endpoint is not a CNode → objectNotFound
+  let resultNonCnode := SeLe4n.Kernel.resolveCapAddress nonCnodeMidRoot ⟨0x15⟩ 8 stNonCnodeMid
+  match resultNonCnode with
+  | .error .objectNotFound =>
+      IO.println "M4-A7 check passed [non-CNode target at intermediate level returns objectNotFound]"
+  | .error e =>
+      throw <| IO.userError s!"M4-A7: expected objectNotFound, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "M4-A7: expected error for non-CNode mid target, got success"
+
+  -- M4-A8: cspaceLookupMultiLevel wrapper integration — verify full pipeline
+  -- Reuse the single-level leaf state (stLeaf): leafRoot slot 5 → leafTarget endpoint
+  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot ⟨5⟩ 4 stLeaf
+  match resultWrapper with
+  | .ok (cap, _) =>
+      if cap.target = .object leafTarget then
+        IO.println "M4-A8 check passed [cspaceLookupMultiLevel returns correct capability]"
+      else
+        throw <| IO.userError s!"M4-A8: unexpected cap target {reprStr cap.target}"
+  | .error e =>
+      throw <| IO.userError s!"M4-A8: expected success, got {reprStr e}"
+
+  -- Wrapper negative: nonexistent slot → invalidCapability
+  let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot ⟨15⟩ 4 stLeaf
+  match resultWrapperBad with
+  | .error .invalidCapability =>
+      IO.println "M4-A8 check passed [cspaceLookupMultiLevel empty slot returns invalidCapability]"
+  | .error e =>
+      throw <| IO.userError s!"M4-A8 neg: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "M4-A8 neg: expected error for empty slot wrapper, got success"
+
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
 
 end SeLe4n.Testing
