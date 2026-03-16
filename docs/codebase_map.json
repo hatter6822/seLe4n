@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/refine-phase-1-workstream-yWbiX",
-      "commit_sha": "df461fb5fc49c6282455e53a3fe5bea3447b0fe6",
-      "tree_sha": "b6d0f96db6eb45ff0547b012125d7a55e232dde9",
-      "committed_at_utc": "2026-03-16T01:33:30+00:00"
+      "branch": "main",
+      "commit_sha": "5adce7a0e20d767ff010a7f7f5d4ea6df0ade9c0",
+      "tree_sha": "22cdfa18883e4e248d9a869d8d4f6c54038d6616",
+      "committed_at_utc": "2026-03-15T21:46:45-04:00"
     }
   },
   "source_sync": {
