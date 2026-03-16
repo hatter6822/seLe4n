@@ -1,3 +1,33 @@
+## [0.16.15] — Capability Performance Optimization (WS-M2)
+
+- Completed Phase 2 (WS-M2) of the capability subsystem workstream: performance
+  optimization across CSpace revoke, CDT parent lookup, and proof infrastructure
+- M2-A: Fused `revokeAndClearRefsState` single-pass revoke — eliminates
+  intermediate `revokedRefs` list allocation and second O(m) traversal through
+  `clearCapabilityRefsState`, cutting revoke hot path from two O(m) passes to one
+- M2-A2: Added comprehensive field preservation lemmas for
+  `revokeAndClearRefsState` — objects, scheduler, machine, services, irqHandlers,
+  objectIndex, objectIndexSet, CDT fields — using `Std.HashMap.fold_eq_foldl_toList`
+  bridge with list induction
+- M2-B1: Added `parentMap : Std.HashMap CdtNodeId CdtNodeId` field to
+  `CapDerivationTree` — child-indexed parent map symmetric to existing `childMap`
+- M2-B2/B3: Rewrote `parentOf` to use `parentMap[node]?` (O(E) → O(1)),
+  updated `addEdge` to maintain `parentMap` alongside `childMap` and `edges`
+- M2-B4/B5: Updated `removeAsChild`, `removeAsParent`, `removeNode` for
+  targeted `parentMap` erasure — `removeNode` childMap update goes from O(E)
+  full rebuild to O(children.length) targeted splice
+- M2-B6/B7: Defined `parentMapConsistent` invariant with proofs for `empty`,
+  `addEdge`, and `removeNode` (requires `childMapConsistent` co-hypothesis)
+- M2-C: Extracted `capabilityInvariantBundle_of_storeTcbAndEnsureRunnable`
+  private theorem — shared reply-preservation proof body eliminating duplication
+  across authorized and unrestricted dispatch branches
+- Updated non-interference proofs (Helpers.lean, Operations.lean) to use
+  `revokeAndClearRefsState_preserves_*` and `revokeAndClearRefsState_preserves_projectState`
+- Added `cdtParentMapConsistentCheck` runtime invariant check in test harness
+- 12 new proved declarations; zero sorry/axiom; all proofs machine-checked
+- All test tiers pass (test_full.sh); 150/150 trace fixtures matched
+- Bumped `lakefile.toml` version to 0.16.15
+
 ## [0.16.14] — Capability Proof Strengthening (WS-M1)
 
 - Completed Phase 1 (WS-M1) of the capability subsystem workstream: proof

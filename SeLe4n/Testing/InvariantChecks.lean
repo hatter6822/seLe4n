@@ -280,6 +280,22 @@ private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool
     (s!"cdt edges→childMap: parent={reprStr e.parent} child={reprStr e.child}", ok)
   forwardChecks ++ backwardChecks
 
+/-- M-P02: Runtime check for CDT `parentMapConsistent` — verifies that the
+`parentMap` HashMap mirrors the child→parent edges in the `edges` list. -/
+private def cdtParentMapConsistentCheck (st : SystemState) : List (String × Bool) :=
+  let cdt := st.cdt
+  -- Forward: every parentMap entry has a corresponding edge
+  let forwardChecks := cdt.parentMap.fold (fun acc child parent =>
+    let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
+    (s!"cdt parentMap→edges: child={reprStr child} parent={reprStr parent}", ok) :: acc) []
+  -- Backward: every edge has a corresponding parentMap entry
+  let backwardChecks := cdt.edges.map fun e =>
+    let ok := match cdt.parentMap[e.child]? with
+      | some parent => parent == e.parent
+      | none => false
+    (s!"cdt edges→parentMap: child={reprStr e.child} parent={reprStr e.parent}", ok)
+  forwardChecks ++ backwardChecks
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -318,6 +334,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
     ++ cdtChildMapConsistentCheck st
+    ++ cdtParentMapConsistentCheck st
     ++ blockedOnSendNotRunnableChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st
     ++ uniqueWaitersCheck objectIds st

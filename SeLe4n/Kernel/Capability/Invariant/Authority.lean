@@ -59,13 +59,6 @@ theorem cspaceRevoke_local_target_reduction
       | vspaceRoot root => simp [hObj] at hStep
       | untyped _ => simp [hObj] at hStep
       | cnode cn =>
-
-                    -- WS-G5: revokedRefs via HashMap.fold — single O(m) pass.
-          let revokedRefs : List SlotRef :=
-            cn.slots.fold (fun acc s c =>
-              if s != addr.slot && c.target == parent.target then
-                { cnode := addr.cnode, slot := s } :: acc
-              else acc) []
           let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
             { st with
@@ -83,42 +76,48 @@ theorem cspaceRevoke_local_target_reduction
                         fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                 }
             }
-          have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
-            simpa [revokedRefs, storedState, storeObject, hObj] using hStep
-          have hObjEq : st'.objects = storedState.objects :=
-            clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
-          have hLookupStored :
-              SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
-            have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
-              { cnode := addr.cnode, slot := slot } hObjEq
-            simpa [hEq] using hLookup
-          -- WS-G5: With HashMap-backed slots, CNode.lookup delegates to getElem?.
-          -- Extract that the filtered HashMap lookup succeeds at `slot`.
-          have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
-            simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-              CNode.lookup] at hLookupStored
-            exact hLookupStored
-          -- revokeTargetLocal filters with: fun s c => s == addr.slot || !(c.target == parent.target)
-          have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) := by
-            rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-            exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [hFilterLookup])
-          -- By mem_filter, the filter predicate holds for the stored key and value.
-          have ⟨hMemOrig, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilter
-          -- Normalize: getKey slot ≈ slot, and the stored value cn.slots[slot] = cap
-          have hKeyEq : cn.slots.getKey slot hMemOrig = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrig)
-          have hValEq : cn.slots[slot] = cap := by
-            have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots _ _ _ slot hMemFilter
-            have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilter
-            rw [h1] at h2
-            rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-            rw [hFilterLookup] at h2
-            exact (Option.some.inj h2).symm
-          rw [hKeyEq, hValEq] at hPredTrue
-          -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
-          by_cases hSlot : slot = addr.slot
-          · exact hSlot
-          · exfalso
-            simp [hSlot, hTarget] at hPredTrue
+          -- M-P01: After fused revoke, extract objects equality via storeObject + revokeAndClearRefsState
+          cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
+          | error e => simp [hObj, hStore] at hStep
+          | ok pair =>
+            obtain ⟨_, stMid⟩ := pair
+            simp [hObj, hStore] at hStep
+            -- M-P01: Objects are preserved through revokeAndClearRefsState (only lifecycle changes)
+            have hObjEq : st'.objects = storedState.objects := by
+              have hFused := revokeAndClearRefsState_preserves_objects cn addr.slot parent.target addr.cnode stMid
+              unfold storeObject at hStore; cases hStore; simp_all [storedState, revokedObj]
+            have hLookupStored :
+                SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
+              have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
+                { cnode := addr.cnode, slot := slot } hObjEq
+              simpa [hEq] using hLookup
+            -- WS-G5: With HashMap-backed slots, CNode.lookup delegates to getElem?.
+            -- Extract that the filtered HashMap lookup succeeds at `slot`.
+            have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
+              simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                CNode.lookup] at hLookupStored
+              exact hLookupStored
+            -- revokeTargetLocal filters with: fun s c => s == addr.slot || !(c.target == parent.target)
+            have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) := by
+              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
+              exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [hFilterLookup])
+            -- By mem_filter, the filter predicate holds for the stored key and value.
+            have ⟨hMemOrig, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilter
+            -- Normalize: getKey slot ≈ slot, and the stored value cn.slots[slot] = cap
+            have hKeyEq : cn.slots.getKey slot hMemOrig = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrig)
+            have hValEq : cn.slots[slot] = cap := by
+              have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots _ _ _ slot hMemFilter
+              have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilter
+              rw [h1] at h2
+              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
+              rw [hFilterLookup] at h2
+              exact (Option.some.inj h2).symm
+            rw [hKeyEq, hValEq] at hPredTrue
+            -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
+            by_cases hSlot : slot = addr.slot
+            · exact hSlot
+            · exfalso
+              simp [hSlot, hTarget] at hPredTrue
 
 theorem cspaceLookupSlot_preserves_state
     (st st' : SystemState)
@@ -216,13 +215,6 @@ theorem cspaceRevoke_preserves_source
           | vspaceRoot root => simp [hLookup, hObj] at hStep
           | untyped _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
-
-              -- WS-G5: revokedRefs via HashMap.fold — single O(m) pass.
-              let revokedRefs : List SlotRef :=
-                cn.slots.fold (fun acc s c =>
-                  if s != addr.slot && c.target == parent.target then
-                    { cnode := addr.cnode, slot := s } :: acc
-                  else acc) []
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
@@ -240,20 +232,26 @@ theorem cspaceRevoke_preserves_source
                             fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                     }
                 }
-              have hStepClear : clearCapabilityRefs revokedRefs storedState = .ok ((), st') := by
-                simpa [revokedRefs, storedState, storeObject, hLookup, hObj] using hStep
-              have hObjEq : st'.objects = storedState.objects :=
-                clearCapabilityRefs_preserves_objects storedState st' revokedRefs hStepClear
-              have hCap : SystemState.lookupSlotCap st addr = some parent :=
-                (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
-              have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
-                simpa [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                  Std.HashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
-              have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
-                have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
-                simpa [hEq] using hCapStored
-              refine ⟨parent, ?_⟩
-              exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
+              -- M-P01: After fused revoke, extract objects equality
+              cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
+              | error e => simp [hLookup, hObj, hStore] at hStep
+              | ok pair =>
+                obtain ⟨_, stMid⟩ := pair
+                simp [hLookup, hObj, hStore] at hStep
+                -- M-P01: Objects are preserved through revokeAndClearRefsState (only lifecycle changes)
+                have hObjEq : st'.objects = storedState.objects := by
+                  have hFused := revokeAndClearRefsState_preserves_objects cn addr.slot parent.target addr.cnode stMid
+                  unfold storeObject at hStore; cases hStore; simp_all [storedState, revokedObj]
+                have hCap : SystemState.lookupSlotCap st addr = some parent :=
+                  (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
+                have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
+                  simpa [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                    Std.HashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+                have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
+                  have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
+                  simpa [hEq] using hCapStored
+                refine ⟨parent, ?_⟩
+                exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
 
 private theorem mintDerivedCap_attenuates
     (parent child : Capability)

@@ -189,6 +189,26 @@ theorem clearCapabilityRefsState_preserves_projectState
   · simp [projectDomainScheduleIndex, clearCapabilityRefsState_preserves_scheduler]
   · simp [projectMachineRegs, clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_machine]
 
+/-- M-P01: revokeAndClearRefsState preserves the observer projection. -/
+theorem revokeAndClearRefsState_preserves_projectState
+    (ctx : LabelingContext) (observer : IfObserver)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
+    projectState ctx observer (revokeAndClearRefsState cn sourceSlot target cnodeId st) =
+      projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects]
+  · simp [projectRunnable, revokeAndClearRefsState_preserves_scheduler]
+  · simp [projectCurrent, revokeAndClearRefsState_preserves_scheduler]
+  · funext sid; simp [projectServiceStatus, revokeAndClearRefsState_lookupService]
+  · simp [projectActiveDomain, revokeAndClearRefsState_preserves_scheduler]
+  · funext irq; simp [projectIrqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
+  · simp [projectObjectIndex, revokeAndClearRefsState_preserves_objectIndex]
+  · simp [projectDomainTimeRemaining, revokeAndClearRefsState_preserves_scheduler]
+  · simp [projectDomainSchedule, revokeAndClearRefsState_preserves_scheduler]
+  · simp [projectDomainScheduleIndex, revokeAndClearRefsState_preserves_scheduler]
+  · simp [projectMachineRegs, revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_machine]
+
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
 -- ============================================================================
@@ -609,33 +629,33 @@ theorem cspaceRevoke_preserves_lowEquivalent
                   have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
                     congrFun hObjLow oid
                   simp [projectObjects, hObs] at hBase ⊢
-                  rw [clearCapabilityRefsState_preserves_objects, clearCapabilityRefsState_preserves_objects]
+                  rw [revokeAndClearRefsState_preserves_objects, revokeAndClearRefsState_preserves_objects]
                   simp [HashMap_getElem?_insert, Ne.symm hNe]
                   exact hBase
                 · simp [projectObjects, hObs]
               · simp only [projectRunnable]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 simpa [projectRunnable] using hRunLow
               · simp only [projectCurrent]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 simpa [projectCurrent] using hCurLow
               · funext sid
-                simp only [projectServiceStatus, clearCapabilityRefsState_lookupService]
+                simp only [projectServiceStatus, revokeAndClearRefsState_lookupService]
                 have hBase := congrArg ObservableState.services hLow
                 have hSidBase := congrFun hBase sid
                 simpa [projectServiceStatus] using hSidBase
               · -- activeDomain
                 simp only [projectActiveDomain]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.activeDomain hLow
               · -- irqHandlers
                 funext irq
                 simp only [projectIrqHandlers]
-                rw [clearCapabilityRefsState_preserves_irqHandlers, clearCapabilityRefsState_preserves_irqHandlers]
+                rw [revokeAndClearRefsState_preserves_irqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
                 exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
               · -- objectIndex
                 simp only [projectObjectIndex]
-                rw [clearCapabilityRefsState_preserves_objectIndex, clearCapabilityRefsState_preserves_objectIndex]
+                rw [revokeAndClearRefsState_preserves_objectIndex, revokeAndClearRefsState_preserves_objectIndex]
                 have hIdx := congrArg ObservableState.objectIndex hLow
                 -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
                 -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
@@ -646,20 +666,20 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
               · -- domainTimeRemaining
                 simp only [projectDomainTimeRemaining]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainTimeRemaining hLow
               · -- domainSchedule
                 simp only [projectDomainSchedule]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainSchedule hLow
               · -- domainScheduleIndex
                 simp only [projectDomainScheduleIndex]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainScheduleIndex hLow
               · -- machineRegs
                 simp only [projectMachineRegs]
-                rw [clearCapabilityRefsState_preserves_scheduler, clearCapabilityRefsState_preserves_scheduler,
-                    clearCapabilityRefsState_preserves_machine, clearCapabilityRefsState_preserves_machine]
+                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler,
+                    revokeAndClearRefsState_preserves_machine, revokeAndClearRefsState_preserves_machine]
                 exact congrArg ObservableState.machineRegs hLow
 
 -- ============================================================================

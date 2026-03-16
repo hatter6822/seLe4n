@@ -86,14 +86,16 @@ Badge routing chain (H-03, WS-F5/D1):
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
-**WS-M audit findings** (v0.16.13 — Phase 1 remediated at v0.16.14):
+**WS-M audit findings** (v0.16.13 — Phase 1 remediated at v0.16.14; Phase 2 remediated at v0.16.15):
 
 - M-G01: ~~proof incomplete~~ → **RESOLVED** (v0.16.14): existing proof was complete; added forward-direction `resolveCapAddress_guard_match` companion theorem,
 - M-G02: ~~`cdtMintCompleteness` gap~~ → **RESOLVED** (v0.16.14): `cdtMintCompleteness` predicate + transfer theorem + extended bundle `capabilityInvariantBundleWithMintCompleteness`,
 - M-G03: ~~CDT acyclicity hypotheses deferred~~ → **PARTIALLY RESOLVED** (v0.16.14): `addEdge_preserves_edgeWellFounded_fresh` proves acyclicity for fresh nodes; general `descendantsOf`-based theorem deferred to Phase 2,
 - M-G04: ~~unnamed error-swallowing pattern~~ → **RESOLVED** (v0.16.14): `cspaceRevokeCdt_swallowed_error_consistent` explicitly named theorem + docstring update,
-- M-P01: `cspaceRevokeCdt` double-pass revoke fold — planned for Phase 2 (WS-M2),
-- M-P05: `endpointReply_preserves_capabilityInvariantBundle` proof duplication — planned for Phase 2 (WS-M2).
+- M-P01: ~~`cspaceRevokeCdt` double-pass revoke fold~~ → **RESOLVED** (v0.16.15): `revokeAndClearRefsState` fuses revoke and clear-refs into a single-pass fold (M2-A),
+- M-P02: ~~CDT parent lookup O(E) scan~~ → **RESOLVED** (v0.16.15): `parentMap : Std.HashMap CdtNodeId CdtNodeId` index added to `CapDerivationTree`; `parentOf` now O(1) HashMap lookup; `parentMapConsistent` invariant with runtime check (M2-B),
+- M-P03: ~~reply lemma duplication~~ → **RESOLVED** (v0.16.15): reply lemmas extracted as shared infrastructure; new field preservation lemmas for NI proofs (M2-C),
+- M-P05: ~~`endpointReply_preserves_capabilityInvariantBundle` proof duplication~~ → **RESOLVED** (v0.16.15): unified via extracted lemmas from M2-C.
 
 See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 

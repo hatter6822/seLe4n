@@ -652,11 +652,14 @@ structure CapDerivationTree where
   Runtime index maintained in parallel with `edges`; `edges` remains the
   proof anchor. -/
   childMap : Std.HashMap CdtNodeId (List CdtNodeId) := {}
+  /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
+  Maps each child node to its unique parent. Symmetric to `childMap`. -/
+  parentMap : Std.HashMap CdtNodeId CdtNodeId := {}
   deriving Repr
 
 namespace CapDerivationTree
 
-def empty : CapDerivationTree := { edges := [], childMap := {} }
+def empty : CapDerivationTree := { edges := [], childMap := {}, parentMap := {} }
 
 /-- Add a derivation edge from parent to child.
 WS-G8: Maintains `childMap` index alongside `edges`. -/
@@ -664,7 +667,8 @@ def addEdge (cdt : CapDerivationTree) (parent child : CdtNodeId)
     (op : DerivationOp) : CapDerivationTree :=
   let currentChildren := cdt.childMap.get? parent |>.getD []
   { edges := { parent, child, op } :: cdt.edges,
-    childMap := cdt.childMap.insert parent (child :: currentChildren) }
+    childMap := cdt.childMap.insert parent (child :: currentChildren),
+    parentMap := cdt.parentMap.insert child parent }
 
 /-- Find all direct children of a given node.
 WS-G8/F-P14: O(1) lookup via `childMap` instead of O(E) edge scan. -/
@@ -672,37 +676,60 @@ def childrenOf (cdt : CapDerivationTree) (node : CdtNodeId)
     : List CdtNodeId :=
   cdt.childMap.get? node |>.getD []
 
-/-- Find the parent of a given node, if any. -/
+/-- Find the parent of a given node, if any.
+M-P02: O(1) lookup via `parentMap` instead of O(E) edge scan. -/
 def parentOf (cdt : CapDerivationTree) (node : CdtNodeId)
     : Option CdtNodeId :=
-  (cdt.edges.find? (fun e => e.isChildOf node)).map CapDerivationEdge.parent
+  cdt.parentMap[node]?
 
 /-- Remove all edges referencing a given node as child (detach from parent).
-WS-G8: Maintains `childMap` by removing `node` from all parent child lists. -/
+M-P03: Uses targeted `parentMap.erase` + `childMap` splice instead of
+full edge-list filter + childMap rebuild. -/
 def removeAsChild (cdt : CapDerivationTree) (node : CdtNodeId)
     : CapDerivationTree :=
+  let parentNode? := cdt.parentMap[node]?
+  let childMap' := match parentNode? with
+    | some p =>
+      let siblings := (cdt.childMap.get? p).getD []
+      let filtered := siblings.filter (· != node)
+      if filtered.isEmpty then cdt.childMap.erase p else cdt.childMap.insert p filtered
+    | none => cdt.childMap
   { edges := cdt.edges.filter (fun e => ¬e.isChildOf node),
-    childMap := cdt.childMap.fold (init := {}) fun m parent children =>
-      let filtered := children.filter (· != node)
-      if filtered.isEmpty then m else m.insert parent filtered }
+    childMap := childMap',
+    parentMap := cdt.parentMap.erase node }
 
 /-- Remove all edges referencing a given node as parent (detach all children).
-WS-G8: Erases the parent's `childMap` entry. -/
+M-P03: Erases the parent's `childMap` entry and all children's `parentMap` entries. -/
 def removeAsParent (cdt : CapDerivationTree) (node : CdtNodeId)
     : CapDerivationTree :=
+  let children := (cdt.childMap.get? node).getD []
+  let parentMap' := children.foldl (fun m c => m.erase c) cdt.parentMap
   { edges := cdt.edges.filter (fun e => ¬e.isParentOf node),
-    childMap := cdt.childMap.erase node }
+    childMap := cdt.childMap.erase node,
+    parentMap := parentMap' }
 
 /-- Remove all edges where the given node appears as parent or child.
-WS-G8: Erases parent entry and removes from all child lists. -/
+M-P03: Targeted `parentMap`/`childMap` updates instead of full rebuild. -/
 def removeNode (cdt : CapDerivationTree) (node : CdtNodeId)
     : CapDerivationTree :=
-  let edgesFiltered := cdt.edges.filter (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node)
-  let mapWithoutParent := cdt.childMap.erase node
-  let mapFinal := mapWithoutParent.fold (init := {}) fun m parent children =>
-    let filtered := children.filter (· != node)
-    if filtered.isEmpty then m else m.insert parent filtered
-  { edges := edgesFiltered, childMap := mapFinal }
+  -- Phase 1: Remove as parent (erase children's parentMap entries + own childMap entry)
+  let children := (cdt.childMap.get? node).getD []
+  let parentMapWithoutChildren := children.foldl (fun m c => m.erase c) cdt.parentMap
+  -- Phase 2: Remove as child (erase own parentMap entry + splice parent's childMap)
+  let parentMapFinal := parentMapWithoutChildren.erase node
+  let parentNode? := cdt.parentMap[node]?
+  let childMapWithoutSelf := cdt.childMap.erase node
+  let childMapFinal := match parentNode? with
+    | some p =>
+      let siblings := (childMapWithoutSelf.get? p).getD []
+      let filtered := siblings.filter (· != node)
+      if filtered.isEmpty then childMapWithoutSelf.erase p
+      else childMapWithoutSelf.insert p filtered
+    | none => childMapWithoutSelf
+  -- Phase 3: Filter edges (proof anchor)
+  let edgesFiltered := cdt.edges.filter
+    (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node)
+  { edges := edgesFiltered, childMap := childMapFinal, parentMap := parentMapFinal }
 
 /-- Collect all descendants of a slot via bounded BFS traversal.
 Uses fuel = edges.length to ensure termination and completeness
@@ -910,6 +937,193 @@ theorem addEdge_childMapConsistent (cdt : CapDerivationTree)
         exact List.mem_cons_of_mem _ (hPeq ▸ (hCon p child).mpr ⟨e, hTail, hPeq ▸ hep, hec⟩)
       · -- p == parent is false
         exact (hCon parent child).mpr ⟨e, hTail, hep, hec⟩
+
+/-- M-P02: Consistency invariant — `parentMap` mirrors the child→parent
+relationship in `edges`. Each child has at most one parent (forest property). -/
+def parentMapConsistent (cdt : CapDerivationTree) : Prop :=
+  ∀ child parent,
+    cdt.parentMap[child]? = some parent ↔
+      ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child
+
+theorem empty_parentMapConsistent : CapDerivationTree.empty.parentMapConsistent := by
+  intro child parent
+  simp only [CapDerivationTree.empty]
+  constructor
+  · intro h; rw [HashMap_getElem?_empty] at h; cases h
+  · rintro ⟨_, hMem, _⟩; cases hMem
+
+theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
+    (p c : CdtNodeId) (op : DerivationOp)
+    (hCon : cdt.parentMapConsistent)
+    (hFresh : cdt.parentMap[c]? = none) :
+    (cdt.addEdge p c op).parentMapConsistent := by
+  intro child parent
+  constructor
+  · -- Forward: parentMap entry → edge exists
+    intro hIn
+    simp only [addEdge] at hIn
+    rw [HashMap_getElem?_insert] at hIn
+    split at hIn
+    · -- c == child is true
+      rename_i heq
+      have hCeq : c = child := eq_of_beq heq
+      cases hIn
+      exact ⟨⟨p, c, op⟩, .head _, rfl, hCeq⟩
+    · -- c == child is false
+      have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
+      exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
+  · -- Backward: edge exists → parentMap entry
+    rintro ⟨e, heMem, hep, hec⟩
+    simp only [addEdge]
+    rw [HashMap_getElem?_insert]
+    rcases List.mem_cons.mp heMem with heq | hTail
+    · -- e is the new edge
+      subst heq
+      simp only at hep hec
+      subst hep; subst hec
+      simp only [beq_self_eq_true, ↓reduceIte]
+    · -- e is from existing edges
+      split
+      · -- c == child is true
+        rename_i heq
+        have hCeq : c = child := eq_of_beq heq
+        subst hCeq
+        -- child = c, but hFresh says parentMap[c]? = none
+        -- yet we have an old edge with e.child = c, so hCon would give parentMap[c]? = some e.parent
+        have := (hCon c e.parent).mpr ⟨e, hTail, rfl, hec⟩
+        rw [hFresh] at this; cases this
+      · -- c == child is false
+        exact (hCon child parent).mpr ⟨e, hTail, hep, hec⟩
+
+/-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list. -/
+private theorem foldl_erase_preserves
+    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hNotAny : ∀ c ∈ xs, (c == k) = false) :
+    (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
+  induction xs generalizing m with
+  | nil => rfl
+  | cons x rest ih =>
+    simp only [List.foldl_cons]
+    have hxk : (x == k) = false := hNotAny x (.head _)
+    have hRest : ∀ c ∈ rest, (c == k) = false :=
+      fun c hc => hNotAny c (.tail _ hc)
+    rw [ih _ hRest, HashMap_getElem?_erase, if_neg (by simp [hxk])]
+
+/-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none. -/
+private theorem foldl_erase_none
+    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hNone : m[k]? = none) :
+    (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
+  induction xs generalizing m with
+  | nil => exact hNone
+  | cons x rest ih =>
+    simp only [List.foldl_cons]
+    apply ih
+    rw [HashMap_getElem?_erase]
+    split
+    · rfl
+    · exact hNone
+
+/-- M-P02: Helper — `foldl erase` erases entries for keys in the list. -/
+private theorem foldl_erase_mem
+    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hMem : ∃ c ∈ xs, (c == k) = true) :
+    (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
+  induction xs generalizing m with
+  | nil => obtain ⟨_, hMem, _⟩ := hMem; cases hMem
+  | cons x rest ih =>
+    simp only [List.foldl_cons]
+    obtain ⟨c, hcMem, hck⟩ := hMem
+    rcases List.mem_cons.mp hcMem with rfl | hTail
+    · -- c = x, so x == k is true
+      apply foldl_erase_none
+      rw [HashMap_getElem?_erase]; simp [hck]
+    · exact ih _ ⟨c, hTail, hck⟩
+
+/-- M-P02: `removeNode` preserves `parentMapConsistent`.
+
+The proof shows that after removing all edges mentioning `node`:
+- Children of `node` have their `parentMap` entries erased (matching edge removal)
+- `node` itself has its `parentMap` entry erased (matching edge removal)
+- All other entries are unchanged (matching surviving edges) -/
+theorem removeNode_parentMapConsistent
+    (cdt : CapDerivationTree) (node : CdtNodeId)
+    (hCon : cdt.parentMapConsistent)
+    (hChildCon : cdt.childMapConsistent) :
+    (cdt.removeNode node).parentMapConsistent := by
+  intro child parent
+  simp only [removeNode]
+  constructor
+  · -- Forward: parentMapFinal[child]? = some parent → surviving edge exists
+    intro hIn
+    rw [HashMap_getElem?_erase] at hIn
+    split at hIn
+    · cases hIn
+    · -- child ≠ node (as BEq)
+      rename_i hNeNode
+      have hNotChild : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
+        intro c hc
+        cases h : (c == child)
+        · rfl
+        · exfalso
+          have hNone := foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩
+          rw [hNone] at hIn; exact absurd hIn (by simp)
+      rw [foldl_erase_preserves _ _ _ hNotChild] at hIn
+      have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
+      refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
+      simp only [decide_eq_true_eq]
+      constructor
+      · -- ¬e.isParentOf node = true
+        intro hParent
+        have hChildInMap : child ∈ (cdt.childMap.get? node).getD [] := by
+          apply (hChildCon node child).mpr
+          simp only [CapDerivationEdge.isParentOf] at hParent
+          exact ⟨e, heMem, eq_of_beq hParent, hec⟩
+        have := hNotChild child hChildInMap
+        simp at this
+      · -- ¬e.isChildOf node = true
+        intro hChild
+        simp only [CapDerivationEdge.isChildOf] at hChild
+        have hChildEqNode : e.child = node := of_decide_eq_true hChild
+        have : child = node := hec.symm.trans hChildEqNode
+        subst this
+        simp at hNeNode
+  · -- Backward: surviving edge → parentMapFinal[child]? = some parent
+    rintro ⟨e, heMem, hep, hec⟩
+    have ⟨heMemOrig, hFilter⟩ := List.mem_filter.mp heMem
+    simp only [decide_eq_true_eq] at hFilter
+    have ⟨hNotParent, hNotChild⟩ := hFilter
+    rw [HashMap_getElem?_erase]
+    -- child ≠ node
+    have hNeNode : (node == child) = false := by
+      cases h : (node == child)
+      · rfl
+      · exfalso
+        have hNodeEqChild : node = child := eq_of_beq h
+        simp only [CapDerivationEdge.isChildOf] at hNotChild
+        exact hNotChild (decide_eq_true (by rw [hec, hNodeEqChild]))
+    simp [hNeNode]
+    -- Bridge .get? vs [_]? notation
+    show (List.foldl (fun m c => m.erase c) cdt.parentMap
+      ((cdt.childMap.get? node).getD []))[child]? = some parent
+    -- child not in children list
+    have hNotInChildren : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
+      intro c hc
+      cases h : (c == child)
+      · rfl
+      · exfalso
+        have hCeq : c = child := eq_of_beq h
+        -- Use c = child to substitute
+        rw [hCeq] at hc
+        have ⟨e', he'Mem, he'p, he'c⟩ := (hChildCon node child).mp hc
+        have hParentFromOld := (hCon child node).mpr ⟨e', he'Mem, he'p, he'c⟩
+        have hParentFromEdge := (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
+        rw [hParentFromOld] at hParentFromEdge
+        cases hParentFromEdge
+        simp only [CapDerivationEdge.isParentOf] at hNotParent
+        exact hNotParent (decide_eq_true hep)
+    rw [foldl_erase_preserves _ _ _ hNotInChildren]
+    exact (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
 
 /-- Slot-address view of a CDT edge (projection through slot backpointers). -/
 structure ObservedDerivationEdge where

@@ -104,11 +104,17 @@ M1-C2, M1-D1, M1-D2) — each independently buildable and testable.
 theorem + extended bundle, `addEdge_preserves_edgeWellFounded_fresh` + `addEdgeWouldBeSafe`,
 `cspaceRevokeCdt_swallowed_error_consistent`, docstring updates. 7 new proved declarations.
 
-### Phase 2: Performance Optimization (WS-M2)
+### Phase 2: Performance Optimization (WS-M2) — COMPLETED (v0.16.15)
 
 **Focus**: Eliminate redundant traversals on CSpace hot paths.
 **Priority**: HIGH — directly impacts capability operation throughput.
 **Findings addressed**: M-P01, M-P02, M-P03, M-P05.
+**Subtasks**: 12 atomic units across 3 tasks (M2-A1–A4, M2-B1–B8, M2-C1–C2).
+**Results**: Fused `revokeAndClearRefsState` single-pass revoke, CDT `parentMap`
+O(1) parent lookup, targeted `removeNode`/`removeAsChild`/`removeAsParent`, shared
+reply lemma extraction, field preservation lemmas for NI proofs,
+`parentMapConsistent` invariant + proofs, runtime consistency check. 12+ new
+proved declarations. Zero sorry/axiom.
 
 ### Phase 3: IPC Capability Transfer (WS-M3)
 
@@ -435,133 +441,466 @@ independently referenceable theorem.
 
 ---
 
-### Phase 2: Performance Optimization (WS-M2)
+### Phase 2: Performance Optimization (WS-M2) — COMPLETED (v0.16.15)
 
-**Target version**: 0.17.1
-**Files modified**: `Operations.lean`, `Model/Object/Structures.lean`,
-`Invariant/Preservation.lean`, `Invariant/Defs.lean`
+**Target version**: 0.16.15
+**Files modified**: `Model/State.lean`, `Operations.lean`, `Model/Object/Structures.lean`,
+`Invariant/Preservation.lean`, `Invariant/Defs.lean`, `Invariant/Authority.lean`
+
+Phase 2 is subdivided into 12 atomic subtasks across 3 tasks. Each subtask is
+independently buildable and testable. Tasks are ordered by dependency: M2-C
+(reply lemma extraction) is self-contained with no cross-task deps and ships
+first; M2-A (fused revoke) modifies Operations.lean + State.lean; M2-B
+(parentMap) has the widest blast radius due to structure change propagation.
+
+---
 
 #### Task M2-A: Fuse revoke fold with capability ref clearing (M-P01)
 
-**Problem**: `cspaceRevoke` (Operations.lean:489–505) constructs a `revokedRefs` list
-by folding over the CNode's HashMap, then passes this list to `clearCapabilityRefs`
-which iterates over it again. This is two O(m) passes where m is the number of revoked
-slots.
+**Problem**: `cspaceRevoke` (Operations.lean:539–556) constructs a `revokedRefs` list
+by folding over the CNode's `HashMap` (O(m)), then passes this list to
+`clearCapabilityRefs` which iterates over it again (O(m)). This is two O(m) passes
+where m is the number of revoked slots. On a CNode with many same-target siblings,
+this doubles the work on the revoke hot path.
+
+**Root cause analysis**: The two-pass pattern exists because `clearCapabilityRefsState`
+(State.lean:260–269) is a recursive function that processes a pre-built `List SlotRef`,
+while the revoked-refs collection is a `HashMap.fold`. Fusing these requires a single
+`HashMap.fold` that performs both the match check AND the ref erasure in each iteration.
+
+**Design decision**: Keep the existing `clearCapabilityRefsState` and `clearCapabilityRefs`
+unchanged (they are used by other operations and have 15+ existing preservation theorems).
+Instead, introduce a fused helper alongside the existing functions, with an equivalence
+theorem bridging the two representations. This avoids cross-subsystem churn.
+
+##### Subtask M2-A1: Define `revokeAndClearRefsState` fused helper
 
 **Implementation**:
-1. Define a fused `revokeAndClearRefs` helper that combines the fold with ref clearing:
+1. In `Model/State.lean`, after `clearCapabilityRefs` (line 273), add:
    ```lean
-   /-- Fused revoke: filter CNode slots and clear capability refs in a single pass. -/
-   private def revokeAndClearRefsState
+   /-- M-P01: Fused revoke — filter CNode slots matching the revoke target and clear
+   their capability refs in a single HashMap.fold pass, eliminating the intermediate
+   `revokedRefs` list allocation and the second O(m) traversal through
+   `clearCapabilityRefsState`. -/
+   def revokeAndClearRefsState
        (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
        (cnodeId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
      cn.slots.fold (fun stAcc s c =>
        if s != sourceSlot && c.target == target then
          { stAcc with lifecycle := { stAcc.lifecycle with
-             capabilityRefs := stAcc.lifecycle.capabilityRefs.erase { cnode := cnodeId, slot := s } } }
+             capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
+               { cnode := cnodeId, slot := s } } }
        else stAcc) st
    ```
-2. Prove semantic equivalence:
+
+**Verification**: `lake build` succeeds (definition only, no dependents yet).
+
+**Files**: `SeLe4n/Model/State.lean`
+
+##### Subtask M2-A2: Prove `revokeAndClearRefsState` preserves non-lifecycle fields
+
+**Implementation**:
+1. In `Model/State.lean`, after the fused helper, add field-preservation theorems
+   matching the existing `clearCapabilityRefsState_preserves_*` family:
    ```lean
-   theorem revokeAndClearRefsState_eq_clearCapabilityRefsState
+   theorem revokeAndClearRefsState_preserves_objects
        (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
        (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-       revokeAndClearRefsState cn sourceSlot target cnodeId st =
-       clearCapabilityRefsState (revokedRefsList cn sourceSlot target cnodeId) st
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects
+
+   theorem revokeAndClearRefsState_preserves_scheduler
+       (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+       (cnodeId : SeLe4n.ObjId) (st : SystemState) :
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler
+
+   theorem revokeAndClearRefsState_cdt_eq
+       (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+       (cnodeId : SeLe4n.ObjId) (st : SystemState) :
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdt = st.cdt ∧
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtNodeSlot = st.cdtNodeSlot ∧
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
+       (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects
    ```
-3. Update `cspaceRevoke` to use the fused path.
-4. Re-prove `cspaceRevoke_preserves_capabilityInvariantBundle` using the equivalence
-   theorem — the proof should be mechanical (rewrite with the equivalence, then
-   apply the existing proof).
+   Proof strategy: induction on `HashMap.fold` — each step only modifies
+   `lifecycle.capabilityRefs`, leaving all other fields unchanged.
 
-**Performance impact**: Eliminates one O(m) pass on every revoke operation.
+**Verification**: `lake build` succeeds.
 
-**Verification**: `lake build` succeeds. Run `test_full.sh`. Verify fixture stability.
+**Files**: `SeLe4n/Model/State.lean`
 
-**Files**: `SeLe4n/Kernel/Capability/Operations.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
+##### Subtask M2-A3: Update `cspaceRevoke` to use fused single-pass path
+
+**Implementation**:
+1. In `Operations.lean`, replace the two-pass pattern in `cspaceRevoke` (lines 547–555):
+   ```lean
+   -- BEFORE (two passes):
+   -- let revokedRefs := cn.slots.fold (fun acc s c => ...) []
+   -- match storeObject ... with
+   -- | .ok (_, st'') => clearCapabilityRefs revokedRefs st''
+
+   -- AFTER (single pass):
+   -- match storeObject ... with
+   -- | .ok (_, st'') =>
+   --     .ok ((), revokeAndClearRefsState cn addr.slot parent.target addr.cnode st'')
+   ```
+   The `revokedRefs` list construction is eliminated entirely. The fused helper
+   performs the equivalent work inside its fold body.
+
+**Verification**: `lake build` succeeds. Existing tests pass (semantically equivalent).
+
+**Files**: `SeLe4n/Kernel/Capability/Operations.lean`
+
+##### Subtask M2-A4: Update `cspaceRevoke` preservation proof for fused path
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, update `cspaceRevoke_preserves_capabilityInvariantBundle`
+   (lines 226–307). The proof structure changes because `clearCapabilityRefs` is replaced
+   by `revokeAndClearRefsState`. The key proof obligations remain identical:
+   - CNode uniqueness: through `storeObject` + fused helper (objects unchanged)
+   - Bounded/completeness/acyclicity: through CDT field preservation of fused helper
+   Replace references to `clearCapabilityRefs_preserves_objects` with
+   `revokeAndClearRefsState_preserves_objects`, and `clearCapabilityRefs_cdt_eq`
+   with `revokeAndClearRefsState_cdt_eq`.
+
+2. In `Invariant/Authority.lean`, update the two `cspaceRevoke` authority lemmas
+   (lines 86–89, 243–246) that reference `clearCapabilityRefs_preserves_objects`.
+   Replace with `revokeAndClearRefsState_preserves_objects`.
+
+**Verification**: `lake build` succeeds. `test_full.sh` passes.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
 `SeLe4n/Kernel/Capability/Invariant/Authority.lean`
+
+**Performance impact**: Eliminates one O(m) pass and one `List SlotRef` allocation
+on every `cspaceRevoke` call. The revoke hot path does a single `HashMap.fold`
+instead of fold + recursive list traversal.
+
+---
 
 #### Task M2-B: Add CDT `parentMap` index (M-P02, M-P03)
 
-**Problem**: `CapDerivationTree.parentOf` scans the full edge list (`O(E)`) to find a
-node's parent. `removeAsChild` and `removeAsParent` also scan the full edge list and
-rebuild `childMap`. With `childMap` already providing O(1) child lookup, a symmetric
-`parentMap` would complete the picture.
+**Problem**: `CapDerivationTree.parentOf` (Structures.lean:676–678) uses `List.find?`
+to scan the full edge list (`O(E)`) for a node's parent. `removeAsChild`
+(Structures.lean:682–687) filters the entire edge list AND rebuilds `childMap`
+from scratch via `HashMap.fold`. `removeAsParent` (Structures.lean:691–694) also
+filters the full edge list. With `childMap` already providing O(1) child lookup
+(WS-G8/F-P14), a symmetric `parentMap : Std.HashMap CdtNodeId CdtNodeId` would
+complete the O(1) picture for both directions.
+
+**Design constraints**:
+- CDT is a forest (each child has at most one parent), so `parentMap` maps
+  `child → parent` (not `child → List parent` like childMap's inverse).
+- The `edges` list remains the proof anchor. Both `childMap` and `parentMap` are
+  runtime indices with consistency invariants linking them to `edges`.
+- `CapDerivationTree` has exactly one construction site (`.empty`) and is modified
+  only through `addEdge`, `removeAsChild`, `removeAsParent`, and `removeNode`.
+  The `{ st with cdt := cdt' }` pattern in Preservation.lean constructs CDTs
+  indirectly via these operations.
+
+##### Subtask M2-B1: Add `parentMap` field to `CapDerivationTree`
 
 **Implementation**:
-1. Extend `CapDerivationTree` in `Structures.lean`:
+1. In `Structures.lean`, extend the structure (line 649–655):
    ```lean
    structure CapDerivationTree where
      edges : List CapDerivationEdge := []
+     /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup. -/
      childMap : Std.HashMap CdtNodeId (List CdtNodeId) := {}
+     /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
+     Maps each child node to its unique parent. Symmetric to `childMap`. -/
      parentMap : Std.HashMap CdtNodeId CdtNodeId := {}
      deriving Repr
    ```
-2. Update `addEdge` to maintain `parentMap`:
+2. Update `empty` (line 659):
    ```lean
-   def addEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp) :
-       CapDerivationTree :=
+   def empty : CapDerivationTree := { edges := [], childMap := {}, parentMap := {} }
+   ```
+
+**Breaking change note**: Adding a field with a default value (`{}`) means existing
+`CapDerivationTree` construction via named fields will compile without changes
+(Lean 4 uses the default for omitted fields). However, any pattern match or
+structure literal that explicitly lists fields will need updating.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B2: Update `addEdge` to maintain `parentMap`
+
+**Implementation**:
+1. In `Structures.lean`, update `addEdge` (lines 663–667):
+   ```lean
+   def addEdge (cdt : CapDerivationTree) (parent child : CdtNodeId)
+       (op : DerivationOp) : CapDerivationTree :=
+     let currentChildren := cdt.childMap.get? parent |>.getD []
      { edges := { parent, child, op } :: cdt.edges,
-       childMap := cdt.childMap.alter parent (fun cs => some (child :: (cs.getD []))),
+       childMap := cdt.childMap.insert parent (child :: currentChildren),
        parentMap := cdt.parentMap.insert child parent }
    ```
-3. Rewrite `parentOf` to use `parentMap`:
+   Cost: one additional `HashMap.insert` — O(1) amortized.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B3: Rewrite `parentOf` to use `parentMap` (O(E) → O(1))
+
+**Implementation**:
+1. In `Structures.lean`, replace `parentOf` (lines 676–678):
    ```lean
-   def parentOf (cdt : CapDerivationTree) (node : CdtNodeId) : Option CdtNodeId :=
+   /-- Find the parent of a given node, if any.
+   M-P02: O(1) lookup via `parentMap` instead of O(E) edge scan. -/
+   def parentOf (cdt : CapDerivationTree) (node : CdtNodeId)
+       : Option CdtNodeId :=
      cdt.parentMap[node]?
    ```
-4. Update `removeAsChild`, `removeAsParent`, `removeNode` to maintain `parentMap`
-   using targeted erasure/updates rather than full-list rebuilds.
-5. Define `parentMapConsistent` invariant (symmetric to `childMapConsistent`):
+
+**Performance impact**: `parentOf` goes from O(E) linear scan to O(1) hash lookup.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B4: Update `removeAsChild` for targeted `parentMap` erasure
+
+**Implementation**:
+1. In `Structures.lean`, replace `removeAsChild` (lines 682–687):
    ```lean
-   def parentMapConsistent (cdt : CapDerivationTree) : Prop :=
-     ∀ (child parent : CdtNodeId),
-       cdt.parentMap[child]? = some parent ↔
-       ∃ edge ∈ cdt.edges, edge.parent = parent ∧ edge.child = child
+   /-- Remove all edges referencing a given node as child (detach from parent).
+   M-P03: Uses targeted `parentMap.erase` + `childMap` splice instead of
+   full edge-list filter + childMap rebuild. -/
+   def removeAsChild (cdt : CapDerivationTree) (node : CdtNodeId)
+       : CapDerivationTree :=
+     let parentNode? := cdt.parentMap[node]?
+     let childMap' := match parentNode? with
+       | some p =>
+         let siblings := (cdt.childMap.get? p).getD []
+         let filtered := siblings.filter (· != node)
+         if filtered.isEmpty then cdt.childMap.erase p else cdt.childMap.insert p filtered
+       | none => cdt.childMap
+     { edges := cdt.edges.filter (fun e => ¬e.isChildOf node),
+       childMap := childMap',
+       parentMap := cdt.parentMap.erase node }
    ```
-6. Prove `addEdge_parentMapConsistent`, `removeNode_parentMapConsistent`.
+   The `edges` list is still filtered (proof anchor), but `childMap` update is
+   now a targeted splice of the parent's child list instead of a full rebuild.
+   `parentMap` update is a single `erase`.
 
-**Performance impact**: `parentOf` goes from O(E) to O(1). `removeAsChild`/
-`removeAsParent` go from O(E) filter + rebuild to O(1) erasure.
+**Verification**: `lake build` succeeds.
 
-**Breaking change**: `CapDerivationTree` gains a new field. All construction sites
-(`.empty`, `{ edges := ..., childMap := ... }`) need to add `parentMap`. This is
-mechanical but affects `Operations.lean`, `Structures.lean`, and test fixtures.
+**Files**: `SeLe4n/Model/Object/Structures.lean`
 
-**Verification**: `lake build` succeeds. Run `test_full.sh`. Verify CDT-related
-test scenarios pass.
+##### Subtask M2-B5: Update `removeAsParent` and `removeNode` for `parentMap`
 
-**Files**: `SeLe4n/Model/Object/Structures.lean`,
-`SeLe4n/Kernel/Capability/Operations.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Defs.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+**Implementation**:
+1. In `Structures.lean`, update `removeAsParent` (lines 691–694):
+   ```lean
+   def removeAsParent (cdt : CapDerivationTree) (node : CdtNodeId)
+       : CapDerivationTree :=
+     let children := (cdt.childMap.get? node).getD []
+     let parentMap' := children.foldl (fun m c => m.erase c) cdt.parentMap
+     { edges := cdt.edges.filter (fun e => ¬e.isParentOf node),
+       childMap := cdt.childMap.erase node,
+       parentMap := parentMap' }
+   ```
+   Each child of the removed parent has its `parentMap` entry erased.
+
+2. Update `removeNode` (lines 698–705):
+   ```lean
+   def removeNode (cdt : CapDerivationTree) (node : CdtNodeId)
+       : CapDerivationTree :=
+     -- Phase 1: Remove as parent (erase children's parentMap entries + own childMap entry)
+     let children := (cdt.childMap.get? node).getD []
+     let parentMapWithoutChildren := children.foldl (fun m c => m.erase c) cdt.parentMap
+     -- Phase 2: Remove as child (erase own parentMap entry + splice parent's childMap)
+     let parentMapFinal := parentMapWithoutChildren.erase node
+     let parentNode? := cdt.parentMap[node]?
+     let childMapWithoutSelf := cdt.childMap.erase node
+     let childMapFinal := match parentNode? with
+       | some p =>
+         let siblings := (childMapWithoutSelf.get? p).getD []
+         let filtered := siblings.filter (· != node)
+         if filtered.isEmpty then childMapWithoutSelf.erase p
+         else childMapWithoutSelf.insert p filtered
+       | none => childMapWithoutSelf
+     -- Phase 3: Filter edges (proof anchor)
+     let edgesFiltered := cdt.edges.filter
+       (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node)
+     { edges := edgesFiltered, childMap := childMapFinal, parentMap := parentMapFinal }
+   ```
+
+**Performance impact**: `removeNode` childMap update goes from O(E) full rebuild
+to O(children.length) targeted splice. `parentMap` updates are O(children.length)
+erasures.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B6: Define `parentMapConsistent` invariant and prove for `empty`
+
+**Implementation**:
+1. In `Structures.lean`, after `childMapConsistent` (line 862), add:
+   ```lean
+   /-- M-P02: Consistency invariant — `parentMap` mirrors the child→parent
+   relationship in `edges`. Each child has at most one parent (forest property). -/
+   def parentMapConsistent (cdt : CapDerivationTree) : Prop :=
+     ∀ child parent,
+       cdt.parentMap[child]? = some parent ↔
+         ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child
+
+   theorem empty_parentMapConsistent : CapDerivationTree.empty.parentMapConsistent := by
+     intro child parent
+     simp only [CapDerivationTree.empty]
+     constructor
+     · intro h; rw [HashMap_get?_empty] at h; cases h
+     · rintro ⟨_, hMem, _⟩; cases hMem
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B7: Prove `parentMapConsistent` preservation for `addEdge` and `removeNode`
+
+**Implementation**:
+1. Prove `addEdge_parentMapConsistent`:
+   ```lean
+   theorem addEdge_parentMapConsistent
+       (cdt : CapDerivationTree) (p c : CdtNodeId) (op : DerivationOp)
+       (hCons : cdt.parentMapConsistent)
+       (hFresh : cdt.parentMap[c]? = none) :
+       (cdt.addEdge p c op).parentMapConsistent
+   ```
+   Proof: case split on whether `child' = c` (the new child). If yes, the
+   `HashMap.insert` gives `some p`, matching the new edge. If no, the insert
+   doesn't affect `child'`'s entry, and the old edges + old `parentMap` agree
+   by `hCons`. The `hFresh` hypothesis ensures no duplicate parent assignment.
+
+2. Prove `removeNode_parentMapConsistent`:
+   ```lean
+   theorem removeNode_parentMapConsistent
+       (cdt : CapDerivationTree) (node : CdtNodeId)
+       (hCons : cdt.parentMapConsistent) :
+       (cdt.removeNode node).parentMapConsistent
+   ```
+   Proof: the filtered edges exclude `node` as parent or child. The parentMap
+   erases `node` and all children of `node`. By `hCons`, every remaining
+   parentMap entry corresponds to a surviving edge.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+##### Subtask M2-B8: Update `edgeWellFounded` proofs for new `parentMap` field
+
+**Implementation**:
+1. `edgeWellFounded_sub` (line 759–767): No change needed — it only references
+   `cdt.edges` and `cdt'.edges`, not `childMap` or `parentMap`.
+2. `addEdge_preserves_edgeWellFounded_fresh` (lines 787–849): Update the
+   `simp only [addEdge]` step to account for the new `parentMap` field in the
+   `addEdge` unfolding. The proof logic is unchanged — it only reasons about
+   edge membership, not map contents.
+3. `removeNode_edges_sub` (lines 770–774): No change needed — operates on edges only.
+
+**Verification**: `lake build` succeeds. `test_full.sh` passes.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+---
 
 #### Task M2-C: Extract shared reply-preservation lemma (M-P05)
 
 **Problem**: `endpointReply_preserves_capabilityInvariantBundle` (Preservation.lean:
-780–864) duplicates the CNode-backward-preservation proof across both reply-target
-branches. The shared `suffices` body at line 812 partially addresses this, but the
-two branches before it still have redundant `revert`/`cases` patterns.
+807–888) factors the shared proof body via `suffices` (line 836), but the two
+dispatch branches (authorized at lines 839–848, unrestricted at lines 851–859)
+still duplicate the `revert`/`cases`/`simp`/`exact this` pattern. Additionally,
+the CNode backward-preservation proof (lines 862–876) and the full invariant
+reconstruction (lines 877–888) are valuable infrastructure that other reply-like
+operations (e.g., M3 IPC transfer reply path) will need.
+
+**Design decision**: Extract the `suffices` body into a named private theorem.
+This makes it independently referenceable for M3 (IPC capability transfer) and
+reduces the main reply theorem to a thin dispatch wrapper. The two branch
+patterns remain in the main theorem (they are short after extraction) but now
+just call the extracted lemma instead of inlining the full proof.
+
+##### Subtask M2-C1: Extract `capabilityInvariantBundle_of_storeTcbAndEnsureRunnable`
 
 **Implementation**:
-1. Extract:
+1. In `Invariant/Preservation.lean`, before `endpointReply_preserves_capabilityInvariantBundle`
+   (line 807), add:
    ```lean
+   /-- M-P05: Shared reply-path infrastructure — if `storeTcbIpcStateAndMessage`
+   succeeds and CNodes are backward-preserved (TCB store doesn't modify CNode
+   objects), then `ensureRunnable` on the result preserves the capability bundle.
+
+   Extracted from `endpointReply_preserves_capabilityInvariantBundle` to eliminate
+   ~40 lines of duplicated proof across the authorized/unrestricted reply branches.
+   Also provides reusable infrastructure for M3 (IPC capability transfer). -/
    private theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
        (st st' : SystemState) (target : SeLe4n.ThreadId)
        (ipc : ThreadIpcState) (msg : Option IpcMessage)
        (hInv : capabilityInvariantBundle st)
        (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st')
-       (hCnodeBackward : ∀ cid cn, st'.objects[cid]? = some (.cnode cn) →
-         st.objects[cid]? = some (.cnode cn)) :
+       (hLookup : lookupTcb st target = some tcb) :
        capabilityInvariantBundle (ensureRunnable st' target)
    ```
-2. Rewrite `endpointReply_preserves_capabilityInvariantBundle` to call this lemma
-   in both branches, eliminating ~40 lines of duplicated proof.
+   Proof: the body is exactly the current `suffices` proof (lines 861–888),
+   with `hCnodeBackward` derived from `hLookup` + `storeTcbIpcStateAndMessage`
+   preservation lemmas.
 
-**Verification**: `lake build` succeeds. Run `test_smoke.sh`.
+**Verification**: `lake build` succeeds.
+
+##### Subtask M2-C2: Rewrite `endpointReply_preserves_capabilityInvariantBundle`
+
+**Implementation**:
+1. Replace the `suffices` block and shared proof body (lines 836–888) with:
+   ```lean
+   suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
+       capabilityInvariantBundle (ensureRunnable st1 target) by
+     <dispatch to both branches unchanged>
+   intro st1 hTcb
+   exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
+     st st1 target .ready (some msg) ⟨hUnique, _, hBounded, hComp, hAcyclic, hDepthPre⟩
+     hTcb hLookup
+   ```
+   This eliminates the inline CNode backward proof and invariant reconstruction,
+   replacing ~27 lines with a single `exact` call.
+
+**Verification**: `lake build` succeeds. `test_smoke.sh` passes.
 
 **Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+---
+
+#### M2 Dependency Graph and Execution Order
+
+```
+M2-C1 (extract reply lemma)  ─── no deps (self-contained)
+M2-C2 (rewrite reply thm)    ─── depends on M2-C1
+M2-A1 (fused helper def)     ─── no deps (State.lean only)
+M2-A2 (fused preservation)   ─── depends on M2-A1
+M2-A3 (update cspaceRevoke)  ─── depends on M2-A1
+M2-A4 (update proofs)        ─── depends on M2-A2, M2-A3
+M2-B1 (parentMap field)      ─── no deps (Structures.lean only)
+M2-B2 (update addEdge)       ─── depends on M2-B1
+M2-B3 (rewrite parentOf)     ─── depends on M2-B1
+M2-B4 (update removeAsChild) ─── depends on M2-B1
+M2-B5 (update removeAsParent/removeNode) ─── depends on M2-B1
+M2-B6 (parentMapConsistent)  ─── depends on M2-B1
+M2-B7 (consistency proofs)   ─── depends on M2-B2, M2-B5, M2-B6
+M2-B8 (edgeWellFounded fixup)─── depends on M2-B2
+```
+
+**Optimal execution order**: M2-C1 → M2-C2 → M2-A1 → M2-A2 → M2-A3 → M2-A4 →
+M2-B1 → {M2-B2, M2-B3, M2-B4, M2-B5, M2-B6} (parallel) → M2-B7 → M2-B8.
+Total: 12 subtasks, 8 sequential steps.
+
+**Deliverables**: `revokeAndClearRefsState` fused helper + 4 preservation theorems,
+`capabilityInvariantBundle_of_storeTcbAndEnsureRunnable` extracted lemma,
+`parentMap` field + O(1) `parentOf` + `parentMapConsistent` invariant + 3
+consistency theorems. ~6 new proved declarations; zero sorry/axiom.
 
 ---
 
@@ -869,9 +1208,9 @@ M1-D2 (revokeCdt docs)   ─── depends on M1-D1
                                 ────────────────────────
 M1-E (docstring)          ─┐
 M1-A (guard strengthen)   ─┤
-M1-B (mint completeness)  ─┤── M1 complete ── M2-A (fuse revoke)   ─┐
-M1-C (addEdge acyclicity) ─┤                  M2-B (parentMap)      ─┤── M2 complete
-M1-D (error theorem)      ─┘                  M2-C (reply lemma)    ─┘       │
+M1-B (mint completeness)  ─┤── M1 complete ── M2-C (reply lemma)   ─┐
+M1-C (addEdge acyclicity) ─┤                  M2-A (fuse revoke)   ─┤── M2 complete
+M1-D (error theorem)      ─┘                  M2-B (parentMap)     ─┘       │
                                                                               │
                                                M3-A (transfer types) ─┐       │
                                                M3-B (send path)      ─┤── M3 ─┤
@@ -893,6 +1232,10 @@ depends on all prior phases for documentation completeness.
 **Phase 1 optimal execution order**: M1-E → M1-A1 → M1-A2 → M1-B1 → {M1-B2, M1-B3}
 (parallel) → M1-C1 → M1-C2 → M1-D1 → M1-D2. Total: 10 subtasks, 8 sequential steps.
 
+**Phase 2 optimal execution order**: M2-C1 → M2-C2 → M2-A1 → M2-A2 → M2-A3 →
+M2-A4 → M2-B1 → {M2-B2, M2-B3, M2-B4, M2-B5, M2-B6} (parallel) → M2-B7 →
+M2-B8. Total: 12 subtasks, 8 sequential steps.
+
 ---
 
 ## 9. Workstream Summary Table
@@ -900,7 +1243,7 @@ depends on all prior phases for documentation completeness.
 | ID | Focus | Priority | Findings |
 |----|-------|----------|----------|
 | **WS-M1** | Proof strengthening (10 subtasks): guard-match extraction theorem, CDT mint completeness predicate + preservation + composition, addEdge acyclicity + cycle-check helper, error-swallowing consistency theorem, stale docstrings | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
-| **WS-M2** | Performance: fused revoke fold, CDT parentMap index, shared reply lemma | HIGH | M-P01, M-P02, M-P03, M-P05 |
+| **WS-M2** | Performance (12 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test | MEDIUM | M-D01, M-T03 |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM | M-T01, M-T02 |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW | M-P04 |
