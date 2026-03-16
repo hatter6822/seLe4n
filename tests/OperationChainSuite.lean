@@ -670,6 +670,7 @@ private def chain12IpcCapTransfer : IO Unit := do
 
   let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
   let cap2 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  let cap3 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }
   let grantRights := AccessRightSet.ofList [.read, .write, .grant]
 
   -- Setup: receiver waiting on endpoint, sender has caps in CNode
@@ -681,7 +682,8 @@ private def chain12IpcCapTransfer : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := Std.HashMap.ofList [
             (⟨0⟩, cap1),
-            (⟨1⟩, cap2)
+            (⟨1⟩, cap2),
+            (⟨2⟩, cap3)
           ]
         })
       |>.withObject receiverCNode (.cnode {
@@ -698,19 +700,19 @@ private def chain12IpcCapTransfer : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
-  let msg : IpcMessage := { registers := #[42], caps := #[cap1, cap2], badge := none }
+  let msg : IpcMessage := { registers := #[42], caps := #[cap1, cap2, cap3], badge := none }
   let (summary, st2) ← expectOkState "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
-  -- Verify: transfer summary
-  expect "chain12: summary has 2 results" (summary.results.size = 2)
+  -- Verify: transfer summary — 3 caps transferred
+  expect "chain12: summary has 3 results" (summary.results.size = 3)
 
-  -- Verify: receiver's CNode has new caps
+  -- Verify: receiver's CNode has 3 new caps in slots 0, 1, 2
   let recvCnodeCheck := match st2.objects[receiverCNode]? with
     | some (.cnode cn) =>
-        (cn.lookup ⟨0⟩).isSome && (cn.lookup ⟨1⟩).isSome
+        (cn.lookup ⟨0⟩).isSome && (cn.lookup ⟨1⟩).isSome && (cn.lookup ⟨2⟩).isSome
     | _ => false
-  expect "chain12: receiver CNode has 2 caps" recvCnodeCheck
+  expect "chain12: receiver CNode has 3 caps" recvCnodeCheck
 
   assertInvariants "chain12: IPC cap transfer basic" st2
 

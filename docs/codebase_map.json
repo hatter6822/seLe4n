@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-phase-3-ipc-plan-ImTKx",
-      "commit_sha": "56500f73bd3aac06108fd33210100036dd9e4d07",
-      "tree_sha": "942802c0576e2fcd6964ed559cf3164dc5dcc43a",
-      "committed_at_utc": "2026-03-16T04:19:15+00:00"
+      "commit_sha": "fcaf579a32e4d96b52f432dc81ff1a2cbe2ab776",
+      "tree_sha": "767c689fab80d6dbcae681623658fd2cb3c1e2c1",
+      "committed_at_utc": "2026-03-16T06:06:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1d4b603b84e6ace51d69a89a7e6b1e278b7849a80fe7de1f344287dda48b8b2a"
+    "source_digest": "5888fb28c6f7599e44506fd3c51bb38ed8816146b1885d94cb912df253702387"
   },
   "summary": {
     "module_count": 75,
-    "declaration_count": 2333
+    "declaration_count": 2345
   },
   "readme_sync": {
     "version": "0.16.17",
     "lean_toolchain": "v4.28.0",
     "production_files": 71,
-    "production_loc": 40076,
+    "production_loc": 40533,
     "test_files": 4,
-    "test_loc": 4365,
-    "proved_theorem_lemma_decls": 1267,
+    "test_loc": 4367,
+    "proved_theorem_lemma_decls": 1279,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3474,7 +3474,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 50,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -3907,6 +3907,36 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
           "line": 970,
+          "called": [
+            "CSpaceAddr",
+            "cspaceInsertSlot",
+            "ipcTransferSingleCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_preserves_ep_objects",
+          "line": 1040,
+          "called": [
+            "CSpaceAddr",
+            "ipcTransferSingleCap",
+            "ipcTransferSingleCap_preserves_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_preserves_tcb_objects",
+          "line": 1060,
+          "called": [
+            "CSpaceAddr",
+            "ipcTransferSingleCap",
+            "ipcTransferSingleCap_preserves_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
+          "line": 1081,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -5010,7 +5040,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 74,
+      "declaration_count": 77,
       "declarations": [
         {
           "kind": "namespace",
@@ -5574,6 +5604,30 @@
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
+          "line": 2767,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualWithCaps_preserves_dualQueueSystemInvariant",
+          "line": 2839,
+          "called": [
+            "endpointSendDual_preserves_dualQueueSystemInvariant",
+            "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant",
+          "line": 2907,
+          "called": [
+            "endpointReceiveDual_preserves_dualQueueSystemInvariant",
+            "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
+          ]
         }
       ]
     },
@@ -5586,7 +5640,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.CapTransfer",
       "path": "SeLe4n/Kernel/IPC/Operations/CapTransfer.lean",
-      "declaration_count": 13,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -5686,8 +5740,59 @@
         },
         {
           "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_preserves_ep_objects",
+          "line": 319,
+          "called": [
+            "ipcUnwrapCapsLoop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_ep_objects",
+          "line": 355,
+          "called": [
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop_preserves_ep_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_preserves_tcb_objects",
+          "line": 369,
+          "called": [
+            "ipcUnwrapCapsLoop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_tcb_objects",
+          "line": 405,
+          "called": [
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop_preserves_tcb_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_preserves_cnode_at_root",
+          "line": 422,
+          "called": [
+            "ipcUnwrapCapsLoop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_cnode_at_root",
+          "line": 459,
+          "called": [
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop_preserves_cnode_at_root"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ipcUnwrapCaps_receiverRoot_not_ntfn",
-          "line": 322,
+          "line": 476,
           "called": [
             "ipcUnwrapCaps",
             "ipcUnwrapCapsLoop_receiverRoot_not_ntfn"
@@ -18927,7 +19032,7 @@
         {
           "kind": "def",
           "name": "chain13IpcCapTransferNoGrant",
-          "line": 719,
+          "line": 721,
           "called": [
             "assertInvariants",
             "expect",
@@ -18937,7 +19042,7 @@
         {
           "kind": "def",
           "name": "chain14IpcBadgeAndCapTransfer",
-          "line": 773,
+          "line": 775,
           "called": [
             "assertInvariants",
             "expect",
@@ -18947,7 +19052,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 847,
+          "line": 849,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -18969,7 +19074,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 867,
+          "line": 869,
           "called": []
         }
       ]

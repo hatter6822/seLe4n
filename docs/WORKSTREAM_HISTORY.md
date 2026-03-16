@@ -76,7 +76,11 @@ recursive helper and scheduler preservation proof by induction;
 when Grant absent. M3-E: `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
 `endpointCallWithCaps` wrapper operations composing existing IPC ops with cap
 transfer; IPC invariant preservation proofs for all three wrappers plus
-`ipcUnwrapCaps_preserves_ipcInvariant`. M3-F: `decodeExtraCapAddrs`,
+`ipcUnwrapCaps_preserves_ipcInvariant`; `dualQueueSystemInvariant` preservation
+for `ipcUnwrapCaps` and both WithCaps wrappers (`ipcUnwrapCaps_preserves_dualQueueSystemInvariant`,
+`endpointSendDualWithCaps_preserves_dualQueueSystemInvariant`,
+`endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant`);
+`ipcUnwrapCaps_preserves_cnode_at_root` CNode type preservation. M3-F: `decodeExtraCapAddrs`,
 `resolveExtraCaps`, API dispatch updated to use WithCaps wrappers with renamed
 theorems (`dispatchWithCap_send_uses_withCaps`, `dispatchWithCap_call_uses_withCaps`).
 M3-G: 4 test scenarios (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT,

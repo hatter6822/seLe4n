@@ -96,7 +96,7 @@ Badge routing chain (H-03, WS-F5/D1):
 - M-P02: ~~CDT parent lookup O(E) scan~~ → **RESOLVED** (v0.16.15): `parentMap : Std.HashMap CdtNodeId CdtNodeId` index added to `CapDerivationTree`; `parentOf` now O(1) HashMap lookup; `parentMapConsistent` invariant with runtime check (M2-B),
 - M-P03: ~~reply lemma duplication~~ → **RESOLVED** (v0.16.15): reply lemmas extracted as shared infrastructure; new field preservation lemmas for NI proofs (M2-C),
 - M-P05: ~~`endpointReply_preserves_capabilityInvariantBundle` proof duplication~~ → **RESOLVED** (v0.16.15): unified via extracted lemmas from M2-C,
-- M-D01: ~~IPC capability transfer not modeled~~ → **RESOLVED** (v0.16.17): `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs, Grant-right gate, CDT `.ipcTransfer` edge tracking, `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers with IPC invariant preservation, `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`, `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring,
+- M-D01: ~~IPC capability transfer not modeled~~ → **RESOLVED** (v0.16.17): `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs, Grant-right gate, CDT `.ipcTransfer` edge tracking, `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers with IPC invariant + `dualQueueSystemInvariant` preservation, `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`, `ipcUnwrapCaps_preserves_dualQueueSystemInvariant`, `ipcUnwrapCaps_preserves_cnode_at_root`, `ipcTransferSingleCap_receiverRoot_stays_cnode`, `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring,
 - M-T03: ~~capability transfer during IPC untested~~ → **RESOLVED** (v0.16.17): 4 test scenarios implemented (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED) in OperationChainSuite and NegativeStateSuite.
 
 See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
@@ -143,7 +143,10 @@ Composite preservation (all 6 compound IPC operations):
 - `endpointCall_preserves_dualQueueSystemInvariant`,
 - `endpointReply_preserves_dualQueueSystemInvariant`,
 - ~~`endpointAwaitReceive_preserves_dualQueueSystemInvariant`~~ (removed in WS-H12a),
-- `endpointReplyRecv_preserves_dualQueueSystemInvariant`.
+- `endpointReplyRecv_preserves_dualQueueSystemInvariant`,
+- `ipcUnwrapCaps_preserves_dualQueueSystemInvariant` (M3-E4: CNode precondition, composes per-step ep/tcb preservation),
+- `endpointSendDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes send + ipcUnwrapCaps),
+- `endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes receive + ipcUnwrapCaps).
 
 Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQueueLinks_append_tail_preserves_linkInteg`, `storeTcbQueueLinks_endpoint_backward`.
 
