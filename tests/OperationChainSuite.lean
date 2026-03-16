@@ -653,6 +653,228 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
 
   assertInvariants "chain11-register-decode-ipc-transfer" stFinal
 
+-- ============================================================================
+-- WS-M4/M-T02: Strict revocation stress tests
+-- ============================================================================
+
+-- Monadic fold helper for IO (List.foldlM not available in Lean 4.28.0)
+private def ioFoldl {α β : Type} (f : α → β → IO α) (init : α) : List β → IO α
+  | [] => pure init
+  | x :: xs => do let acc ← f init x; ioFoldl f acc xs
+
+private def chain12StrictRevocationDeepChain : IO Unit := do
+  IO.println "\n--- WS-M4-B: cspaceRevokeCdtStrict stress tests ---"
+
+  -- M4-B1 (SCN-REVOKE-STRICT-DEEP): Deep chain with 15 descendants
+  -- Build a linear derivation chain: root → d1 → d2 → ... → d15
+  let rootCn : SeLe4n.ObjId := ⟨3000⟩
+  let targetId : SeLe4n.ObjId := ⟨3001⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCn, slot := ⟨0⟩ }
+
+  -- Create 15 descendant CNodes (IDs 3010..3024)
+  let descCount := 15
+  let descCnodes : List SeLe4n.ObjId := (List.range descCount).map fun i => ⟨3010 + i⟩
+  let descSlots : List SeLe4n.Kernel.CSpaceAddr :=
+    descCnodes.map fun cn => { cnode := cn, slot := ⟨0⟩ }
+
+  -- Build state with root CNode and all descendant CNodes
+  let builder0 := BootstrapBuilder.empty
+    |>.withObject targetId (.endpoint {})
+    |>.withObject rootCn (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := Std.HashMap.ofList [
+          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+        ] })
+  let builder1 := descCnodes.foldl (fun b cn =>
+    b.withObject cn (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })) builder0
+  let st0 := builder1.build
+
+  -- Mint chain: root → d0 → d1 → ... → d14
+  let mintPairs := descSlots.zipIdx
+  let (stMinted, _) ← ioFoldl (fun (stAcc, prevSlotAcc) (dstSlot, i) => do
+    let (_, stNext) ← expectOkState s!"M4-B1: mint descendant {i}"
+      (SeLe4n.Kernel.cspaceMintWithCdt prevSlotAcc dstSlot (AccessRightSet.ofList [.read]) none stAcc)
+    pure (stNext, dstSlot)
+  ) (st0, rootSlot) mintPairs
+
+  -- Verify all descendants have caps before revoke
+  let descSlotsIdx := descSlots.zipIdx
+  descSlotsIdx.forM fun (dstSlot, i) =>
+    expect s!"M4-B1: descendant {i} has cap before revoke"
+      (SystemState.lookupSlotCap stMinted dstSlot).isSome
+
+  -- Revoke from root
+  let (report, stRevoked) ← expectOkState "M4-B1 SCN-REVOKE-STRICT-DEEP: revoke deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot stMinted)
+
+  -- Verify all descendants deleted
+  expect "M4-B1: all 15 descendants deleted"
+    (report.deletedSlots.length = descCount)
+  expect "M4-B1: no failure in deep chain"
+    report.firstFailure.isNone
+
+  descSlotsIdx.forM fun (dstSlot, i) => do
+    expect s!"M4-B1: descendant {i} slot cleared after revoke"
+      (SystemState.lookupSlotCap stRevoked dstSlot = none)
+    expect s!"M4-B1: descendant {i} CDT node detached"
+      (SystemState.lookupCdtNodeOfSlot stRevoked dstSlot = none)
+
+  assertInvariants "M4-B1 deep chain revocation" stRevoked
+  IO.println "operation-chain check passed [M4-B1 SCN-REVOKE-STRICT-DEEP: 15-descendant chain fully revoked]"
+
+private def chain13StrictRevocationPartialFailure : IO Unit := do
+  -- M4-B2 (SCN-REVOKE-STRICT-PARTIAL-FAIL): Partial failure mid-traversal
+  -- Chain: root → child_ok1 → child_ok2 → child_bad (CNode deleted from objects)
+  -- Expected: firstFailure populated with child_bad context, deletedSlots has ok1 + ok2
+  let rootCn : SeLe4n.ObjId := ⟨3100⟩
+  let targetId : SeLe4n.ObjId := ⟨3101⟩
+  let okCn1 : SeLe4n.ObjId := ⟨3102⟩
+  let okCn2 : SeLe4n.ObjId := ⟨3103⟩
+  let badCn : SeLe4n.ObjId := ⟨3104⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCn, slot := ⟨0⟩ }
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject targetId (.endpoint {})
+      |>.withObject rootCn (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ] })
+      |>.withObject okCn1 (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject okCn2 (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject badCn (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.build)
+
+  -- Mint: root → ok1 → ok2 → bad
+  let okSlot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := okCn1, slot := ⟨0⟩ }
+  let okSlot2 : SeLe4n.Kernel.CSpaceAddr := { cnode := okCn2, slot := ⟨0⟩ }
+  let badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := badCn, slot := ⟨0⟩ }
+  let (_, st1) ← expectOkState "M4-B2: mint root→ok1"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot okSlot1 (AccessRightSet.ofList [.read]) none st0)
+  let (_, st2) ← expectOkState "M4-B2: mint ok1→ok2"
+    (SeLe4n.Kernel.cspaceMintWithCdt okSlot1 okSlot2 (AccessRightSet.ofList [.read]) none st1)
+  let (_, st3) ← expectOkState "M4-B2: mint ok2→bad"
+    (SeLe4n.Kernel.cspaceMintWithCdt okSlot2 badSlot (AccessRightSet.ofList [.read]) none st2)
+
+  -- Sabotage: remove badCn from objects so cspaceDeleteSlot will fail with objectNotFound
+  let stSabotaged : SystemState := { st3 with objects := st3.objects.erase badCn }
+
+  -- Revoke from root — should partially succeed
+  let (report, stPartial) ← expectOkState "M4-B2 SCN-REVOKE-STRICT-PARTIAL-FAIL: revoke with sabotaged descendant"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot stSabotaged)
+
+  -- ok1 and ok2 should be deleted before failure
+  expect "M4-B2: deletedSlots contains 2 successful deletions"
+    (report.deletedSlots.length = 2)
+
+  -- firstFailure should reference the bad node
+  match report.firstFailure with
+  | some failure =>
+      expect "M4-B2: failure error is objectNotFound"
+        (failure.error = .objectNotFound)
+      expect "M4-B2: failure slot references badCn"
+        (failure.offendingSlot = some badSlot)
+      IO.println "operation-chain check passed [M4-B2 SCN-REVOKE-STRICT-PARTIAL-FAIL: partial failure captured]"
+  | none =>
+      throw <| IO.userError "M4-B2: expected firstFailure to be populated"
+
+  -- ok1 and ok2 should be detached
+  expect "M4-B2: ok1 CDT node detached"
+    (SystemState.lookupCdtNodeOfSlot stPartial okSlot1 = none)
+  expect "M4-B2: ok2 CDT node detached"
+    (SystemState.lookupCdtNodeOfSlot stPartial okSlot2 = none)
+  assertInvariants "M4-B2 partial failure" stPartial
+
+private def chain14StrictRevocationBfsOrdering : IO Unit := do
+  -- M4-B3 (SCN-REVOKE-STRICT-ORDER): Verify deletedSlots is in BFS traversal order
+  -- Build a fan-out tree:  root → [A, B]
+  --                         A → [C]
+  --                         B → [D]
+  -- BFS from root: A, B (children of root), then C (child of A), then D (child of B)
+  -- deletedSlots should be [slotA, slotB, slotC, slotD]
+  let rootCn : SeLe4n.ObjId := ⟨3200⟩
+  let targetId : SeLe4n.ObjId := ⟨3201⟩
+  let cnA : SeLe4n.ObjId := ⟨3202⟩
+  let cnB : SeLe4n.ObjId := ⟨3203⟩
+  let cnC : SeLe4n.ObjId := ⟨3204⟩
+  let cnD : SeLe4n.ObjId := ⟨3205⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCn, slot := ⟨0⟩ }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := ⟨0⟩ }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnB, slot := ⟨0⟩ }
+  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnC, slot := ⟨0⟩ }
+  let slotD : SeLe4n.Kernel.CSpaceAddr := { cnode := cnD, slot := ⟨0⟩ }
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject targetId (.endpoint {})
+      |>.withObject rootCn (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ] })
+      |>.withObject cnA (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject cnB (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject cnC (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject cnD (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.build)
+
+  -- Mint: root → A, root → B (fan-out from root)
+  let (_, st1) ← expectOkState "M4-B3: mint root→A"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .grant]) none st0)
+  let (_, st2) ← expectOkState "M4-B3: mint root→B"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .grant]) none st1)
+  -- Mint: A → C, B → D
+  let (_, st3) ← expectOkState "M4-B3: mint A→C"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotC (AccessRightSet.ofList [.read]) none st2)
+  let (_, st4) ← expectOkState "M4-B3: mint B→D"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotD (AccessRightSet.ofList [.read]) none st3)
+
+  let (report, stRevoked) ← expectOkState "M4-B3 SCN-REVOKE-STRICT-ORDER: revoke fan-out tree"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st4)
+
+  expect "M4-B3: all 4 descendants deleted"
+    (report.deletedSlots.length = 4)
+  expect "M4-B3: no failure"
+    report.firstFailure.isNone
+
+  -- Verify BFS ordering: descendants of root come first (A, B), then their children (C, D)
+  -- Note: BFS order depends on childrenOf which uses childMap (HashMap). The exact order
+  -- of A vs B depends on insertion order in the childMap. Since addEdge prepends to the
+  -- childMap list, B (added second) appears before A in childrenOf.
+  -- BFS queue processing: [root] → children of root → [B, A] → children of B, then A
+  -- → [A, D] → children of A → [D, C] → [C]
+  -- So BFS order is: B, A, D, C → deletedSlots = [slotB, slotA, slotD, slotC]
+
+  -- Rather than hardcoding exact order (which depends on HashMap internals),
+  -- verify structural BFS property: children appear after their parents
+  let slotList := report.deletedSlots
+  -- Position finder: returns index of first occurrence or slotList.length (sentinel)
+  let posOf (target : SeLe4n.Kernel.CSpaceAddr) : Nat :=
+    slotList.zipIdx.foldl (fun acc (s, i) => if s == target && acc == slotList.length then i else acc) slotList.length
+  let idxA := posOf slotA
+  let idxB := posOf slotB
+  let idxC := posOf slotC
+  let idxD := posOf slotD
+
+  -- All four must be present
+  expect "M4-B3: slotA in deletedSlots" (idxA < slotList.length)
+  expect "M4-B3: slotB in deletedSlots" (idxB < slotList.length)
+  expect "M4-B3: slotC in deletedSlots" (idxC < slotList.length)
+  expect "M4-B3: slotD in deletedSlots" (idxD < slotList.length)
+
+  -- BFS property: parent before child
+  expect "M4-B3: slotA before slotC (parent before child)" (idxA < idxC)
+  expect "M4-B3: slotB before slotD (parent before child)" (idxB < idxD)
+
+  -- All slots cleared
+  [slotA, slotB, slotC, slotD].forM fun s => do
+    expect s!"M4-B3: {reprStr s} cleared" (SystemState.lookupSlotCap stRevoked s = none)
+    expect s!"M4-B3: {reprStr s} CDT detached" (SystemState.lookupCdtNodeOfSlot stRevoked s = none)
+
+  assertInvariants "M4-B3 BFS ordering" stRevoked
+  IO.println "operation-chain check passed [M4-B3 SCN-REVOKE-STRICT-ORDER: BFS parent-before-child verified]"
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -666,6 +888,9 @@ private def runOperationChainSuite : IO Unit := do
   schedulerStressChecks
   chain10RegisterDecodeMultiSyscall
   chain11RegisterDecodeIpcTransfer
+  chain12StrictRevocationDeepChain
+  chain13StrictRevocationPartialFailure
+  chain14StrictRevocationBfsOrdering
   IO.println "all WS-I3/WS-I4 operation-chain checks passed"
 
 end SeLe4n.Testing

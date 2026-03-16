@@ -86,12 +86,14 @@ Badge routing chain (H-03, WS-F5/D1):
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
-**WS-M audit findings** (v0.16.13 — Phase 1 remediated at v0.16.14):
+**WS-M audit findings** (v0.16.13 — Phases 1 and 4 remediated at v0.16.14–v0.16.15):
 
 - M-G01: ~~proof incomplete~~ → **RESOLVED** (v0.16.14): existing proof was complete; added forward-direction `resolveCapAddress_guard_match` companion theorem,
 - M-G02: ~~`cdtMintCompleteness` gap~~ → **RESOLVED** (v0.16.14): `cdtMintCompleteness` predicate + transfer theorem + extended bundle `capabilityInvariantBundleWithMintCompleteness`,
 - M-G03: ~~CDT acyclicity hypotheses deferred~~ → **PARTIALLY RESOLVED** (v0.16.14): `addEdge_preserves_edgeWellFounded_fresh` proves acyclicity for fresh nodes; general `descendantsOf`-based theorem deferred to Phase 2,
 - M-G04: ~~unnamed error-swallowing pattern~~ → **RESOLVED** (v0.16.14): `cspaceRevokeCdt_swallowed_error_consistent` explicitly named theorem + docstring update,
+- M-T01: ~~`resolveCapAddress` test coverage gap~~ → **RESOLVED** (v0.16.15): 11 edge case tests — guard-only CNode, 64-bit 8-level resolution, intermediate guard mismatch, partial/zero bits, single-level leaf,
+- M-T02: ~~`cspaceRevokeCdtStrict` test coverage gap~~ → **RESOLVED** (v0.16.15): 3 stress test chains — 15-descendant deep chain, partial failure with context, BFS parent-before-child ordering,
 - M-P01: `cspaceRevokeCdt` double-pass revoke fold — planned for Phase 2 (WS-M2),
 - M-P05: `endpointReply_preserves_capabilityInvariantBundle` proof duplication — planned for Phase 2 (WS-M2).
 

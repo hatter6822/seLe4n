@@ -2273,6 +2273,232 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   IO.println "all WS-L4-C blocked thread IPC rejection tests passed"
 
+-- ============================================================================
+-- WS-M4/M-T01: Multi-level resolveCapAddress edge case tests
+-- ============================================================================
+
+private def runWSM4ResolutionChecks : IO Unit := do
+  IO.println "\n--- WS-M4-A: resolveCapAddress multi-level edge cases ---"
+
+  -- M4-A1: Zero radixWidth with non-zero guardWidth (SCN-RESOLVE-GUARD-ONLY)
+  -- Guard-only CNode: guardWidth=4, radixWidth=0 → consumed=4, slotIndex always 0
+  let guardOnlyCnodeId : SeLe4n.ObjId := ⟨500⟩
+  let guardOnlyTargetId : SeLe4n.ObjId := ⟨501⟩
+  -- guardValue = 0xA (10), placed in high 4 bits of a 4-bit address
+  -- addr = 0xA (guardValue = 10), bitsRemaining = 4
+  -- shiftedAddr = 0xA >>> (4 - 4) = 0xA
+  -- slotIndex = 0xA % (2^0) = 0xA % 1 = 0
+  -- guardExtracted = (0xA / 1) % (2^4) = 10 % 16 = 10 ✓
+  let guardOnlyState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject guardOnlyCnodeId (.cnode {
+          depth := 4
+          guardWidth := 4
+          guardValue := 10
+          radixWidth := 0
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object guardOnlyTargetId, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject guardOnlyTargetId (.endpoint {})
+      |>.build)
+
+  -- Correct guard: should resolve to slot 0
+  let guardOnlyResult := SeLe4n.Kernel.resolveCapAddress guardOnlyCnodeId ⟨10⟩ 4 guardOnlyState
+  match guardOnlyResult with
+  | .ok ref =>
+      if ref.cnode = guardOnlyCnodeId ∧ ref.slot = ⟨0⟩ then
+        IO.println "negative check passed [M4-A1 SCN-RESOLVE-GUARD-ONLY: guard-only CNode resolves to slot 0]"
+      else
+        throw <| IO.userError s!"M4-A1: expected slot 0 in cnode {reprStr guardOnlyCnodeId}, got {reprStr ref}"
+  | .error err =>
+      throw <| IO.userError s!"M4-A1: expected success, got {reprStr err}"
+
+  -- Wrong guard: should fail
+  expectError "M4-A1 SCN-RESOLVE-GUARD-ONLY: wrong guard rejected"
+    (SeLe4n.Kernel.resolveCapAddress guardOnlyCnodeId ⟨11⟩ 4 guardOnlyState)
+    .invalidCapability
+
+  -- M4-A2: Maximum depth (64 bits) via multi-hop chain (SCN-RESOLVE-MAX-DEPTH)
+  -- Create 8 CNodes each consuming 8 bits (guardWidth=0, radixWidth=8) = 64 bits total
+  -- addr bits (MSB→LSB): [level0:8][level1:8]...[level7:8]
+  -- Each level's slotIndex = corresponding 8-bit chunk
+  let level0Id : SeLe4n.ObjId := ⟨510⟩
+  let level1Id : SeLe4n.ObjId := ⟨511⟩
+  let level2Id : SeLe4n.ObjId := ⟨512⟩
+  let level3Id : SeLe4n.ObjId := ⟨513⟩
+  let level4Id : SeLe4n.ObjId := ⟨514⟩
+  let level5Id : SeLe4n.ObjId := ⟨515⟩
+  let level6Id : SeLe4n.ObjId := ⟨516⟩
+  let level7Id : SeLe4n.ObjId := ⟨517⟩
+  let leafTargetId : SeLe4n.ObjId := ⟨518⟩
+  -- Each CNode: guardWidth=0, radixWidth=8, consumed=8 per level
+  -- We'll use a simple address: 0x0102030405060708
+  -- level0 slot = (addr >>> 56) % 256 = 0x01 = 1
+  -- level1 slot = (addr >>> 48) % 256 = 0x02 = 2
+  -- ... level7 slot = (addr >>> 0) % 256 = 0x08 = 8
+  let mkLevel8 (slotIdx : Nat) (childId : SeLe4n.ObjId) : KernelObject :=
+    .cnode { depth := 64, guardWidth := 0, guardValue := 0, radixWidth := 8,
+             slots := Std.HashMap.ofList [
+               (⟨slotIdx⟩, { target := .object childId, rights := AccessRightSet.ofList [.read], badge := none })
+             ] }
+  let maxDepthState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject level0Id (mkLevel8 1 level1Id)
+      |>.withObject level1Id (mkLevel8 2 level2Id)
+      |>.withObject level2Id (mkLevel8 3 level3Id)
+      |>.withObject level3Id (mkLevel8 4 level4Id)
+      |>.withObject level4Id (mkLevel8 5 level5Id)
+      |>.withObject level5Id (mkLevel8 6 level6Id)
+      |>.withObject level6Id (mkLevel8 7 level7Id)
+      |>.withObject level7Id (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+                                        slots := Std.HashMap.ofList [
+                                          (⟨8⟩, { target := .object leafTargetId, rights := AccessRightSet.ofList [.read], badge := none })
+                                        ] })
+      |>.withObject leafTargetId (.endpoint {})
+      |>.build)
+
+  -- addr = 0x0102030405060708 = 72623859790382856
+  let maxDepthAddr : SeLe4n.CPtr := ⟨72623859790382856⟩
+  let maxDepthResult := SeLe4n.Kernel.resolveCapAddress level0Id maxDepthAddr 64 maxDepthState
+  match maxDepthResult with
+  | .ok ref =>
+      if ref.cnode = level7Id ∧ ref.slot = ⟨8⟩ then
+        IO.println "negative check passed [M4-A2 SCN-RESOLVE-MAX-DEPTH: 64-bit 8-level resolution succeeds]"
+      else
+        throw <| IO.userError s!"M4-A2: expected slot 8 in cnode {reprStr level7Id}, got {reprStr ref}"
+  | .error err =>
+      throw <| IO.userError s!"M4-A2: expected success, got {reprStr err}"
+
+  -- M4-A3: Guard mismatch at intermediate level (SCN-RESOLVE-GUARD-MISMATCH-MID)
+  -- 3-level chain: level0 (guard=0, radix=4) → level1 (guard=0xB, guardWidth=4, radix=4) → level2
+  -- addr bits: [level0 guard:0 + radix:4][level1 guard:4 + radix:4][level2 radix:4] = 12 bits
+  -- level1 expects guardValue=11 (0xB), we'll supply wrong guard (0xA)
+  let midGuardCn0 : SeLe4n.ObjId := ⟨520⟩
+  let midGuardCn1 : SeLe4n.ObjId := ⟨521⟩
+  let midGuardCn2 : SeLe4n.ObjId := ⟨522⟩
+  let midGuardTarget : SeLe4n.ObjId := ⟨523⟩
+  -- level0: guardWidth=0, radixWidth=4, consumed=4
+  -- level1: guardWidth=4, radixWidth=4, consumed=8
+  -- Total bits = 4 + 8 = 12
+  -- addr for success: level0 slot must point to level1
+  -- level0: shiftedAddr = addr >>> (12 - 4) = addr >>> 8
+  --   slotIndex = (addr >>> 8) % 16 → need slot for level1
+  -- level1: shiftedAddr = addr >>> (8 - 8) = addr >>> 0 = addr
+  --   slotIndex = addr % 16
+  --   guardExtracted = (addr / 16) % 16 → must equal 11
+  -- For wrong guard (10 instead of 11):
+  --   addr where level0 slot=0, level1 guard=10, level1 slot=0
+  --   addr >>> 8 = slot0_level0 → slot = 0 % 16 = 0
+  --   addr & 0xFF: guardExtracted = (addr / 16) % 16 = 10 → mismatch!
+  --   addr = 0x0A0 = 160 (level1 guard=10, slot=0)
+  --   Full addr: level0 portion (0 in top 4 bits) + level1 portion (0xA0 in next 8 bits)
+  --   = 0 * 256 + 160 = 160
+  let midGuardState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject midGuardCn0 (.cnode {
+          depth := 12, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object midGuardCn1, rights := AccessRightSet.ofList [.read], badge := none })
+          ] })
+      |>.withObject midGuardCn1 (.cnode {
+          depth := 8, guardWidth := 4, guardValue := 11, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object midGuardTarget, rights := AccessRightSet.ofList [.read], badge := none })
+          ] })
+      |>.withObject midGuardCn2 (.cnode { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject midGuardTarget (.endpoint {})
+      |>.build)
+
+  -- Wrong guard at level1: guard=10, expected=11
+  expectError "M4-A3 SCN-RESOLVE-GUARD-MISMATCH-MID: wrong guard at intermediate level"
+    (SeLe4n.Kernel.resolveCapAddress midGuardCn0 ⟨160⟩ 12 midGuardState)
+    .invalidCapability
+
+  -- Correct guard (11 = 0xB): addr = 0x0B0 = 176
+  let midGuardCorrectResult := SeLe4n.Kernel.resolveCapAddress midGuardCn0 ⟨176⟩ 12 midGuardState
+  match midGuardCorrectResult with
+  | .ok ref =>
+      if ref.cnode = midGuardCn1 ∧ ref.slot = ⟨0⟩ then
+        IO.println "negative check passed [M4-A3 SCN-RESOLVE-GUARD-MISMATCH-MID: correct guard succeeds]"
+      else
+        throw <| IO.userError s!"M4-A3: expected slot 0 in cnode {reprStr midGuardCn1}, got {reprStr ref}"
+  | .error err =>
+      throw <| IO.userError s!"M4-A3 correct guard: expected success, got {reprStr err}"
+
+  -- M4-A4: Partial bit consumption — insufficient bits for next level (SCN-RESOLVE-PARTIAL-BITS)
+  -- CNode with guardWidth=2, radixWidth=4 (consumed=6), but bitsRemaining=5
+  let partialCnodeId : SeLe4n.ObjId := ⟨530⟩
+  let partialState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject partialCnodeId (.cnode {
+          depth := 5, guardWidth := 2, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object partialCnodeId, rights := AccessRightSet.ofList [.read], badge := none })
+          ] })
+      |>.build)
+
+  expectError "M4-A4 SCN-RESOLVE-PARTIAL-BITS: insufficient bits for guardWidth+radixWidth"
+    (SeLe4n.Kernel.resolveCapAddress partialCnodeId ⟨0⟩ 5 partialState)
+    .illegalState
+
+  -- Also test bitsRemaining=0
+  expectError "M4-A4 SCN-RESOLVE-PARTIAL-BITS: zero bits remaining"
+    (SeLe4n.Kernel.resolveCapAddress partialCnodeId ⟨0⟩ 0 partialState)
+    .illegalState
+
+  -- M4-A5: Single-level resolution — all bits consumed in one hop (SCN-RESOLVE-SINGLE-LEVEL)
+  -- CNode: guardWidth=2, radixWidth=6, consumed=8, bitsRemaining=8
+  -- addr = guard:2bits ++ slot:6bits
+  -- guard = 3 (binary 11), slot = 42 (binary 101010)
+  -- shiftedAddr = addr >>> (8 - 8) = addr
+  -- slotIndex = addr % 64 = 42
+  -- guardExtracted = (addr / 64) % 4 = 3
+  -- addr = 3 * 64 + 42 = 234
+  let singleCnodeId : SeLe4n.ObjId := ⟨540⟩
+  let singleTargetId : SeLe4n.ObjId := ⟨541⟩
+  let singleState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject singleCnodeId (.cnode {
+          depth := 8, guardWidth := 2, guardValue := 3, radixWidth := 6,
+          slots := Std.HashMap.ofList [
+            (⟨42⟩, { target := .object singleTargetId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ] })
+      |>.withObject singleTargetId (.endpoint {})
+      |>.build)
+
+  let singleResult := SeLe4n.Kernel.resolveCapAddress singleCnodeId ⟨234⟩ 8 singleState
+  match singleResult with
+  | .ok ref =>
+      if ref.cnode = singleCnodeId ∧ ref.slot = ⟨42⟩ then
+        IO.println "negative check passed [M4-A5 SCN-RESOLVE-SINGLE-LEVEL: single-hop resolution correct]"
+      else
+        throw <| IO.userError s!"M4-A5: expected slot 42 in cnode {reprStr singleCnodeId}, got {reprStr ref}"
+  | .error err =>
+      throw <| IO.userError s!"M4-A5: expected success, got {reprStr err}"
+
+  -- M4-A5 supplementary: resolveCapAddress returns a SlotRef even for empty slots
+  -- at leaf level (bitsRemaining - consumed = 0), because it resolves addresses, not
+  -- slot contents. Slot emptiness is checked by the caller (cspaceLookupSlot).
+  -- addr=235: guard = (235/64)%4 = 3 ✓, slot = 235%64 = 43 (empty but valid ref)
+  let singleEmptyResult := SeLe4n.Kernel.resolveCapAddress singleCnodeId ⟨235⟩ 8 singleState
+  match singleEmptyResult with
+  | .ok ref =>
+      if ref.cnode = singleCnodeId ∧ ref.slot = ⟨43⟩ then
+        IO.println "negative check passed [M4-A5 SCN-RESOLVE-SINGLE-LEVEL: empty slot returns valid SlotRef]"
+      else
+        throw <| IO.userError s!"M4-A5 empty: expected slot 43, got {reprStr ref}"
+  | .error err =>
+      throw <| IO.userError s!"M4-A5 empty: expected success (leaf returns SlotRef), got {reprStr err}"
+
+  -- M4-A5 real negative: wrong guard at single level → error
+  -- addr=170: guard = (170/64)%4 = 2 ≠ 3 → invalidCapability
+  expectError "M4-A5 SCN-RESOLVE-SINGLE-LEVEL: wrong guard rejected"
+    (SeLe4n.Kernel.resolveCapAddress singleCnodeId ⟨170⟩ 8 singleState)
+    .invalidCapability
+
+  IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2288,3 +2514,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks
+  SeLe4n.Testing.runWSM4ResolutionChecks

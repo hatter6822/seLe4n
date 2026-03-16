@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.16.14-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.16.15-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -59,8 +59,8 @@ architectural improvements compared to other microkernels:
 |-----------|-------|
 | **Version** | `0.16.14` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 38,556 across 69 files |
-| **Test Lean LoC** | 4,115 across 4 test suites |
+| **Production Lean LoC** | 38,572 across 69 files |
+| **Test Lean LoC** | 4,567 across 4 test suites |
 | **Proved declarations** | 1,231 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit |

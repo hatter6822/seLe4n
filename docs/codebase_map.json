@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/refine-phase-1-workstream-yWbiX",
-      "commit_sha": "df461fb5fc49c6282455e53a3fe5bea3447b0fe6",
-      "tree_sha": "b6d0f96db6eb45ff0547b012125d7a55e232dde9",
-      "committed_at_utc": "2026-03-16T01:33:30+00:00"
+      "commit_sha": "eb38abbd7956137afa15eee43343a4a8002981ba",
+      "tree_sha": "22cdfa18883e4e248d9a869d8d4f6c54038d6616",
+      "committed_at_utc": "2026-03-16T01:45:56+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d34c99091293d74c7cb4d6ff17522cee066dcdbe521f648b7de79823f0dc4e29"
+    "source_digest": "e00b999e5b2e3338ff2281b701eb771887fc798740e0aabf61d07b14ca9c6c68"
   },
   "summary": {
     "module_count": 73,
-    "declaration_count": 2278
+    "declaration_count": 2283
   },
   "readme_sync": {
-    "version": "0.16.14",
+    "version": "0.16.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 69,
     "production_loc": 38572,
     "test_files": 4,
-    "test_loc": 4115,
+    "test_loc": 4567,
     "proved_theorem_lemma_decls": 1231,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -17932,7 +17932,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 41,
+      "declaration_count": 42,
       "declarations": [
         {
           "kind": "namespace",
@@ -18272,8 +18272,16 @@
         },
         {
           "kind": "def",
+          "name": "runWSM4ResolutionChecks",
+          "line": 2280,
+          "called": [
+            "expectError"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 2278,
+          "line": 2504,
           "called": []
         }
       ]
@@ -18281,7 +18289,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 23,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -18465,11 +18473,51 @@
         },
         {
           "kind": "def",
+          "name": "ioFoldl",
+          "line": 661,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "chain12StrictRevocationDeepChain",
+          "line": 665,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState",
+            "ioFoldl"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain13StrictRevocationPartialFailure",
+          "line": 725,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain14StrictRevocationBfsOrdering",
+          "line": 789,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 656,
+          "line": 878,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
+            "chain12StrictRevocationDeepChain",
+            "chain13StrictRevocationPartialFailure",
+            "chain14StrictRevocationBfsOrdering",
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
@@ -18485,7 +18533,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 673,
+          "line": 898,
           "called": []
         }
       ]

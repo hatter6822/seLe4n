@@ -23,13 +23,14 @@ found zero `sorry`/`axiom`, zero critical vulnerabilities, but identified 5
 performance optimization opportunities, 4 proof strengthening opportunities, 3
 test coverage gaps, and 2 previously deferred items to resolve (including L-T03:
 capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
+Phase 4 (WS-M4) completed at v0.16.15.
 
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test (resolves L-T03) | MEDIUM |
-| **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
+| **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM — **COMPLETED** (v0.16.15) |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
 
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
@@ -49,6 +50,20 @@ M1-D1: `cspaceRevokeCdt_swallowed_error_consistent` — invariant preservation,
 object stability, and edge-set monotonicity through error-swallowing path.
 M1-D2: enriched `cspaceRevokeCdt` docstring with error-handling rationale.
 7 new proved declarations; zero sorry/axiom.
+
+**WS-M4** (v0.16.15): Test coverage expansion — addresses M-T01 and M-T02 findings.
+M4-A: 11 `resolveCapAddress` edge case tests in `NegativeStateSuite.lean` covering
+zero-radixWidth guard-only CNodes (SCN-RESOLVE-GUARD-ONLY), 64-bit 8-level
+resolution (SCN-RESOLVE-MAX-DEPTH), guard mismatch at intermediate levels
+(SCN-RESOLVE-GUARD-MISMATCH-MID), insufficient/zero bits remaining
+(SCN-RESOLVE-PARTIAL-BITS), and single-level leaf resolution with empty slot and
+wrong guard cases (SCN-RESOLVE-SINGLE-LEVEL).
+M4-B: 3 `cspaceRevokeCdtStrict` stress test chains in `OperationChainSuite.lean`:
+15-descendant deep chain full revocation (SCN-REVOKE-STRICT-DEEP), partial failure
+with sabotaged CNode and `firstFailure` context verification
+(SCN-REVOKE-STRICT-PARTIAL-FAIL), and fan-out tree BFS parent-before-child
+ordering verification (SCN-REVOKE-STRICT-ORDER).
+Test LoC: 4,567 across 4 files; zero sorry/axiom.
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 

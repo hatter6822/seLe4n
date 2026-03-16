@@ -116,7 +116,7 @@ theorem + extended bundle, `addEdge_preserves_edgeWellFounded_fresh` + `addEdgeW
 **Priority**: MEDIUM — resolves the last deferred item from WS-L.
 **Findings addressed**: M-D01, M-T03.
 
-### Phase 4: Test Coverage Expansion (WS-M4)
+### Phase 4: Test Coverage Expansion (WS-M4) — COMPLETED (v0.16.15)
 
 **Focus**: Fill test coverage gaps for multi-level resolution and strict revocation.
 **Priority**: MEDIUM — ensures edge cases are exercised.
@@ -694,35 +694,35 @@ theorem ipcTransferCap_attenuates
 
 ---
 
-### Phase 4: Test Coverage Expansion (WS-M4)
+### Phase 4: Test Coverage Expansion (WS-M4) — COMPLETED (v0.16.15)
 
-**Target version**: 0.17.3
-**Files modified**: `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean`,
-`SeLe4n/Testing/MainTraceHarness.lean`
+**Target version**: 0.16.15
+**Files modified**: `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean`
 
 #### Task M4-A: Multi-level resolution edge case tests (M-T01)
 
 **Problem**: `resolveCapAddress` is tested only implicitly via 12-level scenario
 fixtures. No standalone tests cover edge cases.
 
-**Implementation**:
-1. Add to `NegativeStateSuite.lean`:
-   - **M4-A1**: Zero `radixWidth` with non-zero `guardWidth` — verify guard-only
-     CNodes resolve correctly (slot index always 0).
-   - **M4-A2**: Maximum depth (64 bits) — create a CNode chain consuming exactly
-     64 bits across multiple hops, verify resolution succeeds.
-   - **M4-A3**: Guard mismatch at intermediate level — create a 3-level chain where
-     the middle CNode has a wrong guard, verify `.error .invalidCapability`.
-   - **M4-A4**: Partial bit consumption — `bitsRemaining` is not a multiple of
-     `guardWidth + radixWidth`, verify `.error .illegalState` when bits run out
-     mid-level.
-   - **M4-A5**: Single-level resolution (bits consumed in one hop) — verify leaf
-     case returns correct `SlotRef`.
-2. Add scenario IDs: `SCN-RESOLVE-GUARD-ONLY`, `SCN-RESOLVE-MAX-DEPTH`,
+**Implementation** (completed v0.16.15):
+1. Added to `NegativeStateSuite.lean` — 11 total checks in `runWSM4ResolutionChecks`:
+   - **M4-A1**: Zero `radixWidth` (guardWidth=4, radixWidth=0): guard-only CNode
+     resolves to slot 0 with correct guard; wrong guard rejected.
+   - **M4-A2**: Maximum depth (64 bits): 8-level chain of radixWidth=8 CNodes
+     consuming exactly 64 bits via addr `0x0102030405060708`.
+   - **M4-A3**: Guard mismatch at intermediate level: 2-level chain where level-1
+     expects guardValue=11, addr supplies guard=10 → `.error .invalidCapability`;
+     addr with guard=11 succeeds.
+   - **M4-A4**: Partial bit consumption: CNode with consumed=6 but bitsRemaining=5
+     → `.error .illegalState`; also tests bitsRemaining=0.
+   - **M4-A5**: Single-level resolution (guardWidth=2, radixWidth=6, bitsRemaining=8):
+     verifies correct SlotRef, confirms empty slots still resolve (leaf returns
+     SlotRef without checking slot contents), wrong guard rejected.
+2. Scenario IDs: `SCN-RESOLVE-GUARD-ONLY`, `SCN-RESOLVE-MAX-DEPTH`,
    `SCN-RESOLVE-GUARD-MISMATCH-MID`, `SCN-RESOLVE-PARTIAL-BITS`,
    `SCN-RESOLVE-SINGLE-LEVEL`.
 
-**Verification**: `test_smoke.sh` passes.
+**Verification**: `test_full.sh` passes.
 
 **Files**: `tests/NegativeStateSuite.lean`
 
@@ -730,22 +730,22 @@ fixtures. No standalone tests cover edge cases.
 
 **Problem**: `cspaceRevokeCdtStrict` is exercised only with 3-level derivation chains.
 
-**Implementation**:
-1. Add to `OperationChainSuite.lean`:
-   - **M4-B1**: Strict revocation with 15+ descendants in a deep chain — verify
-     all descendants are deleted and `deletedSlots` list is complete.
-   - **M4-B2**: Strict revocation with partial failure — set up a state where
-     one descendant's CNode has been deleted (object not found), verify
-     `firstFailure` is populated with the correct `offendingNode`, `offendingSlot`,
-     and `error`, and that `deletedSlots` contains only the successfully deleted
-     slots before the failure.
-   - **M4-B3**: `deletedSlots` ordering — verify the returned list is in
-     BFS traversal order (reversed by the fold, then re-reversed by the final
-     `.reverse` call at line 738).
-2. Add scenario IDs: `SCN-REVOKE-STRICT-DEEP`, `SCN-REVOKE-STRICT-PARTIAL-FAIL`,
+**Implementation** (completed v0.16.15):
+1. Added to `OperationChainSuite.lean` — 3 new chain tests (chain12, chain13, chain14):
+   - **M4-B1** (`chain12StrictRevocationDeepChain`): 15-descendant linear mint chain
+     fully revoked. Verifies all 15 `deletedSlots`, zero `firstFailure`, all slots
+     cleared, all CDT nodes detached.
+   - **M4-B2** (`chain13StrictRevocationPartialFailure`): 3-descendant chain with
+     sabotaged CNode (erased from objects). Verifies `firstFailure.error = .objectNotFound`,
+     `firstFailure.offendingSlot` matches sabotaged slot, `deletedSlots` has exactly 2
+     successful entries. Ok descendants CDT-detached.
+   - **M4-B3** (`chain14StrictRevocationBfsOrdering`): Fan-out tree (root→[A,B],
+     A→C, B→D). Verifies BFS parent-before-child structural property: slotA before
+     slotC, slotB before slotD. All 4 slots present, cleared, CDT-detached.
+2. Scenario IDs: `SCN-REVOKE-STRICT-DEEP`, `SCN-REVOKE-STRICT-PARTIAL-FAIL`,
    `SCN-REVOKE-STRICT-ORDER`.
 
-**Verification**: `test_smoke.sh` passes.
+**Verification**: `test_full.sh` passes.
 
 **Files**: `tests/OperationChainSuite.lean`
 

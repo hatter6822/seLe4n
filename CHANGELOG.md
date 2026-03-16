@@ -1,3 +1,25 @@
+## [0.16.15] — Capability Test Coverage Expansion (WS-M4)
+
+- Completed Phase 4 (WS-M4) of the capability subsystem workstream: test coverage
+  expansion for multi-level CSpace resolution and strict CDT revocation
+- M4-A: Added 11 `resolveCapAddress` edge case tests in `NegativeStateSuite.lean`:
+  - M4-A1 (SCN-RESOLVE-GUARD-ONLY): zero radixWidth with non-zero guardWidth
+  - M4-A2 (SCN-RESOLVE-MAX-DEPTH): 64-bit 8-level multi-hop resolution
+  - M4-A3 (SCN-RESOLVE-GUARD-MISMATCH-MID): guard mismatch at intermediate level
+  - M4-A4 (SCN-RESOLVE-PARTIAL-BITS): insufficient bits and zero bits remaining
+  - M4-A5 (SCN-RESOLVE-SINGLE-LEVEL): single-hop leaf resolution, empty slot, wrong guard
+- M4-B: Added 3 `cspaceRevokeCdtStrict` stress test chains in `OperationChainSuite.lean`:
+  - M4-B1 (SCN-REVOKE-STRICT-DEEP): 15-descendant linear chain, full revocation
+  - M4-B2 (SCN-REVOKE-STRICT-PARTIAL-FAIL): partial failure with sabotaged CNode,
+    verifies `firstFailure` context and `deletedSlots` partial list
+  - M4-B3 (SCN-REVOKE-STRICT-ORDER): fan-out tree BFS ordering verification,
+    confirms parent-before-child invariant in `deletedSlots`
+- Addresses audit findings M-T01 (multi-level resolution coverage) and M-T02 (strict
+  revocation coverage)
+- Test LoC: 4,567 across 4 files; production LoC: 38,572 across 69 files
+- All test tiers pass (test_full.sh); zero warnings; zero sorry/axiom
+- Bumped `lakefile.toml` version to 0.16.15
+
 ## [0.16.14] — Capability Proof Strengthening (WS-M1)
 
 - Completed Phase 1 (WS-M1) of the capability subsystem workstream: proof

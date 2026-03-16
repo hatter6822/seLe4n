@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.16.14.
+Lean 4.28.0 toolchain, Lake build system, version 0.16.15.
 
 ## Build and run
 
@@ -378,14 +378,14 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-M (Capability subsystem audit & remediation) — Phase 1 (WS-M1) **COMPLETED** (v0.16.14). Phases M2–M5 remaining. See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-M (Capability subsystem audit & remediation) — Phase 1 (WS-M1) **COMPLETED** (v0.16.14), Phase 4 (WS-M4) **COMPLETED** (v0.16.15). Phases M2, M3, M5 remaining. See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-L (IPC subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). See `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` — Capability subsystem audit
 - **All prior workstreams completed**: WS-B through WS-L (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: WS-M2–M5, then Raspberry Pi 5 hardware binding
+- **Next milestone**: WS-M2, M3, M5, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
