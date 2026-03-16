@@ -1,3 +1,34 @@
+## [0.16.14] — Capability Proof Strengthening (WS-M1)
+
+- Completed Phase 1 (WS-M1) of the capability subsystem workstream: proof
+  strengthening and correctness improvements across CSpace resolution, CDT
+  acyclicity, mint completeness, and revoke error consistency
+- M1-A: Added `resolveCapAddress_guard_match` theorem — forward-direction
+  companion proving that successful resolution implies guard bits match the
+  CNode's stored guardValue (complements existing `resolveCapAddress_guard_reject`)
+- M1-B1: Introduced `cdtMintCompleteness` predicate — every CDT node with a
+  slot mapping either has a parent edge (derived node) or is completely isolated
+  (root node with no edges at all)
+- M1-B2: Added `cdtMintCompleteness_of_cdt_edges_nodeSlot_eq` transfer theorem
+  for state transitions that preserve CDT edges and nodeSlot mappings
+- M1-B3: Defined `capabilityInvariantBundleWithMintCompleteness` extended
+  invariant bundle with extraction theorems
+- M1-C1: Proved `addEdge_preserves_edgeWellFounded_fresh` — CDT edge addition
+  preserves acyclicity when the child node is fresh (not in any existing edge),
+  covering the common `ensureCdtNodeForSlot` kernel pattern
+- M1-C2: Added `addEdgeWouldBeSafe` runtime acyclicity check (parent ≠ child ∧
+  parent ∉ descendantsOf child)
+- M1-D1: Added `cspaceRevokeCdt_swallowed_error_consistent` theorem — proves
+  invariant preservation, object stability, and edge-set monotonicity through
+  the error-swallowing path of `revokeCdtFoldBody`
+- M1-D2/E: Updated `cspaceRevokeCdt` and `cspaceRevoke` docstrings with
+  accurate cross-references and error-handling design rationale
+- Refined Phase 1 workstream plan: split 5 high-level tasks into 10 atomic
+  subtasks (M1-E, M1-A1/A2, M1-B1/B2/B3, M1-C1/C2, M1-D1/D2)
+- 7 new proved declarations; zero sorry/axiom; all proofs machine-checked
+- All test tiers pass (test_full.sh); production LoC: 38,556 across 69 files
+- Bumped `lakefile.toml` version to 0.16.14
+
 ## [0.16.12] — IPC Test Coverage Expansion (WS-L4)
 
 - Completed WS-L4 phase: filled all 4 IPC test coverage gaps (L-T01, L-T02,

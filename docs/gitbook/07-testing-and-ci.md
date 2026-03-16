@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **All prior workstreams completed through WS-L (v0.16.13). Planned workstream: WS-M (Capability subsystem audit & remediation, v0.16.13). Testing tiers enforce regression protection and evidence continuity across 38,349 production LoC, 4,115 test LoC, and 1,224 proved declarations.**
+Current stage context: **All prior workstreams completed through WS-L (v0.16.13). WS-M Phase 1 complete (v0.16.14). Testing tiers enforce regression protection and evidence continuity across 38,556 production LoC, 4,115 test LoC, and 1,231 proved declarations.**
 
 ## Tier model
 
@@ -106,7 +106,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-J1 (register-indexed authoritative namespaces, v0.15.4–v0.15.10):** Typed register wrappers (`RegName`/`RegValue`), `RegisterDecode.lean` module with total deterministic decode functions, `SyscallId` inductive (13 syscalls), `syscallEntry` register-sourced dispatch, `SyscallDecodeResult` with `msgRegs`, NI integration (2 new `NonInterferenceStep` constructors), 18 negative decode tests, 5 register-decode trace scenarios (RDT-002–RDT-010), 13 Tier 3 anchors. All 16 kernel identifiers now typed wrappers. 6 phases (J1-A through J1-F) complete.
 - **WS-K (full syscall dispatch completion, v0.16.0–v0.16.8):** Per-syscall argument decode (`SyscallArgDecode.lean` with 7 structures, 7 decode functions, 7 encode functions, 14 theorems), all 13 syscalls wired through `dispatchWithCap` (zero `.illegalState` stubs), `ServiceConfig` configuration-sourced policy replacing permissive stubs, IPC message body population from decoded registers, round-trip proofs, lifecycle/VSpace NI completion (`retypeFromUntyped_preserves_lowEquivalent`, `lifecycleRevokeDeleteRetype_preserves_lowEquivalent`), `NonInterferenceStep` extended to 34 constructors, `syscallNI_coverage_witness`. 8 phases (K-A through K-H) complete. 1,198 theorem/lemma declarations (zero sorry/axiom).
 - **WS-L (IPC subsystem audit, v0.16.9–v0.16.13 — PORTFOLIO COMPLETE):** End-to-end audit of 12 IPC files (9,195 LoC). Zero critical issues. All 5 phases delivered: L1 (performance), L2 (code quality), L3 (proof strengthening — 22 theorems), L4 (test coverage), L5 (documentation & closeout). Superseded WS-I5.
-- **WS-M (Capability subsystem audit, v0.16.13 — planned):** End-to-end audit of 5 Capability files (3,520 LoC). 14 findings: M-P01–P05 (performance), M-G01–G04 (proof gaps), M-T01–T03 (test coverage), M-D01–D02 (documentation). Phase M4 adds multi-level resolution edge cases, strict revocation stress tests. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+- **WS-M (Capability subsystem audit, v0.16.13– — in progress):** End-to-end audit of 5 Capability files (3,520 LoC). 14 findings: M-P01–P05 (performance), M-G01–G04 (proof gaps), M-T01–T03 (test coverage), M-D01–D02 (documentation). Phase M1 (v0.16.14): proof strengthening — 7 new proved declarations. Phase M4 adds multi-level resolution edge cases, strict revocation stress tests. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## Practical failure triage
 

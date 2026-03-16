@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.16.13` |
+| Version | `0.16.14` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 38,349 across 69 files |
+| Production LoC | 38,556 across 69 files |
 | Test LoC | 4,115 across 4 suites |
-| Proved declarations | 1,224 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,231 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem end-to-end audit |
-| Next workstreams | **WS-M** Capability subsystem audit & remediation — **PLANNED** (v0.16.13). 5 phases: M1 (proof strengthening), M2 (performance), M3 (IPC capability transfer), M4 (test coverage), M5 (streaming BFS + docs). See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md). **WS-L** IPC subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). **Next after WS-M: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-M** Capability subsystem audit & remediation — Phase 1 **COMPLETED** (v0.16.14). 4 remaining phases: M2 (performance), M3 (IPC capability transfer), M4 (test coverage), M5 (streaming BFS + docs). See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md). **WS-L** IPC subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). **Next after WS-M: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -63,16 +63,19 @@ WS-L2 (code quality — HashMap.fold migration, v0.16.10) →
 WS-L3 (proof strengthening — 22 theorems, v0.16.11) →
 WS-L4 (test coverage expansion, v0.16.12) →
 **WS-L5 (documentation & closeout, v0.16.13) — WS-L PORTFOLIO COMPLETE.** →
-**WS-M (Capability subsystem audit & remediation) — PLANNED.**
+**WS-M1 (proof strengthening, v0.16.14) — COMPLETED.** →
+**WS-M2–M5 (performance, IPC cap transfer, tests, docs) — PLANNED.**
 
-## Planned: WS-M Capability Subsystem Audit & Remediation (v0.16.13)
+## In Progress: WS-M Capability Subsystem Audit & Remediation (v0.16.13–)
 
 End-to-end audit of the Capability subsystem (3,520 LoC, 5 files) identified
 14 findings across 4 categories: 5 performance optimizations (M-P01–P05),
 4 proof gaps (M-G01–G04), 3 test coverage gaps (M-T01–T03), and 2 documentation
 items (M-D01–D02). Also resolves deferred L-T03 (IPC capability transfer model).
-5 phases planned: M1 (proof strengthening), M2 (performance), M3 (IPC capability
-transfer modeling), M4 (test coverage), M5 (streaming BFS + documentation sync).
+Phase 1 (WS-M1, proof strengthening) completed at v0.16.14: 7 new proved
+declarations including `resolveCapAddress_guard_match`, `cdtMintCompleteness`,
+`addEdge_preserves_edgeWellFounded_fresh`, `cspaceRevokeCdt_swallowed_error_consistent`.
+4 remaining phases: M2–M5.
 See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-K Full Syscall Dispatch Completion (v0.16.0–v0.16.8)

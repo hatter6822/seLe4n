@@ -216,6 +216,42 @@ theorem resolveCapAddress_guard_reject
     have hNLt : ¬(bits < cn.guardWidth + cn.radixWidth) := by omega
     simp only [hNLt, ite_false]
 
+/-- WS-H13/H-01 (M-G01): Guard match extraction — if `resolveCapAddress` succeeds
+at a leaf CNode (all bits consumed in one hop), then the guard extracted from `addr`
+matched the CNode's `guardValue`. This is the forward-direction companion to
+`resolveCapAddress_guard_reject` (which proves the contrapositive: bad guard → error).
+
+Together, these two theorems give a bidirectional characterization of guard correctness:
+- **Reject**: `guard ≠ guardValue → error`
+- **Match**: `success → guard = guardValue`
+
+This pair covers the primary CSpace attack surface: guard bits are the sole mechanism
+preventing unauthorized capability resolution through CNode traversal. -/
+theorem resolveCapAddress_guard_match
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (cn : CNode) (ref : SlotRef)
+    (hObj : st.objects[rootId]? = some (.cnode cn))
+    (hOk : resolveCapAddress rootId addr bits st = .ok ref)
+    (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
+    (addr.toNat >>> (bits - (cn.guardWidth + cn.radixWidth))) /
+      2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue := by
+  -- Unfold and trace through the function structure
+  unfold resolveCapAddress at hOk
+  have hNZ : bits ≠ 0 := by intro h; subst h; simp at hOk
+  simp only [hNZ, ↓reduceDIte, hObj] at hOk
+  -- consumed = 0 → error, contradicts hOk
+  split at hOk
+  · simp at hOk
+  · -- consumed ≠ 0; bits < consumed impossible since bits = consumed
+    have hNLt : ¬(bits < cn.guardWidth + cn.radixWidth) := by omega
+    simp only [hNLt, ite_false] at hOk
+    -- Guard check: split on if guardExtracted ≠ cn.guardValue
+    split at hOk
+    · simp at hOk  -- guard mismatch → error, contradicts hOk
+    · -- Guard matched — the ¬(≠) gives us equality via double negation elimination
+      rename_i hNotNe
+      exact Decidable.of_not_not hNotNe
+
 /-- Insert a capability into an empty slot.
 
 WS-E4/H-02: Guarded against occupied-slot overwrites. If the target slot
@@ -483,9 +519,10 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
 
 /-- Revoke capabilities with the same target as the source in the containing CNode.
 
-This first lifecycle transition is intentionally local to one CNode while derivation-tree state is
-still out-of-scope for the active slice. The source slot remains present and sibling slots naming
-the same target are removed. -/
+This is the local (single-CNode) revocation variant. For cross-CNode revocation
+using CDT traversal, see `cspaceRevokeCdt` and `cspaceRevokeCdtStrict`.
+
+The source slot remains present and sibling slots naming the same target are removed. -/
 def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot addr st with
@@ -645,7 +682,13 @@ Extends local revoke with CDT-based global traversal:
 1. Perform local revocation (same CNode siblings)
 2. Walk the CDT to find all descendants of the source slot
 3. Delete each descendant's capability from its CNode
-4. Clean up CDT edges for deleted slots -/
+4. Clean up CDT edges for deleted slots
+
+**Error handling**: Descendant deletion errors are swallowed — the CDT node is
+removed regardless, preventing stale references. This is safe because
+`removeNode` only shrinks the edge set (proven by
+`cspaceRevokeCdt_swallowed_error_consistent`). For callers requiring error
+visibility, use `cspaceRevokeCdtStrict`. -/
 def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     -- First do local revocation

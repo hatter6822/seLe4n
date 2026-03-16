@@ -51,7 +51,7 @@ opportunities. Three test coverage gaps. Two previously deferred items to resolv
 
 | ID | Severity | Location | Description |
 |----|----------|----------|-------------|
-| M-G01 | HIGH | `Operations.lean:198–218` | `resolveCapAddress_guard_reject` theorem is incomplete — the proof only unfolds the first level and handles the guard mismatch branch, but does not close the remaining `ite` branch for the case where guard check passes. The theorem statement has the correct obligation but the proof ends with an open `split` on the `consumed = 0` branch. This needs to be closed for full guard-correctness assurance. |
+| M-G01 | HIGH | `Operations.lean:198–218` | `resolveCapAddress_guard_reject` theorem proves the contrapositive (bad guard → error) but lacks the forward companion: if resolution succeeds at a leaf CNode, the guard matched. The current proof is complete and compiles with zero sorry. The strengthening opportunity is adding `resolveCapAddress_guard_match` for bidirectional guard-correctness characterization, which auditors need for full CSpace attack-surface assurance. |
 | M-G02 | MEDIUM | `Invariant/Defs.lean:92–95` | `cdtCompleteness` captures node→object reachability but not the stronger mint-tracking property: "every derived capability has a CDT edge from parent to child." The current predicate is weaker than the WS-H4 spec intent (documented in the docstring). A `cdtMintCompleteness` predicate would close this gap. |
 | M-G03 | MEDIUM | `Operations.lean:517–528, 535–552` | `cspaceCopy` and `cspaceMove` preservation theorems require callers to supply `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as hypotheses rather than proving these from the operation semantics. This defers the cycle-check obligation to every call site, weakening compositionality. A `addEdge_preserves_acyclicity` theorem (conditioned on the child not already being an ancestor of the parent) would allow self-contained proofs. |
 | M-G04 | LOW | `Operations.lean:649–673` | `cspaceRevokeCdt` swallows `cspaceDeleteSlot` errors during descendant traversal (line 668: error branch falls through to `.ok` with CDT node removal). While `cspaceRevokeCdtStrict` provides the strict alternative, the non-strict variant should document the design rationale more explicitly, and there should be a theorem proving that any swallowed error still leaves the CDT in a consistent state (currently covered implicitly by the fold invariant, but not stated as a named theorem). |
@@ -93,11 +93,16 @@ opportunities. Three test coverage gaps. Two previously deferred items to resolv
 
 ## 4. Phase Overview
 
-### Phase 1: Proof Strengthening & Correctness (WS-M1)
+### Phase 1: Proof Strengthening & Correctness (WS-M1) — COMPLETED (v0.16.14)
 
-**Focus**: Close all proof gaps and strengthen invariant coverage.
+**Focus**: Strengthen invariant coverage and proof surface completeness.
 **Priority**: HIGH — proof correctness is the project's core value proposition.
 **Findings addressed**: M-G01, M-G02, M-G03, M-G04, M-D02.
+**Subtasks**: 10 atomic units (M1-E, M1-A1, M1-A2, M1-B1, M1-B2, M1-B3, M1-C1,
+M1-C2, M1-D1, M1-D2) — each independently buildable and testable.
+**Deliverables**: `resolveCapAddress_guard_match`, `cdtMintCompleteness` + transfer
+theorem + extended bundle, `addEdge_preserves_edgeWellFounded_fresh` + `addEdgeWouldBeSafe`,
+`cspaceRevokeCdt_swallowed_error_consistent`, docstring updates. 7 new proved declarations.
 
 ### Phase 2: Performance Optimization (WS-M2)
 
@@ -129,176 +134,27 @@ opportunities. Three test coverage gaps. Two previously deferred items to resolv
 
 ### Phase 1: Proof Strengthening & Correctness (WS-M1)
 
-**Target version**: 0.17.0
+**Target version**: 0.16.14
 **Files modified**: `Operations.lean`, `Invariant/Defs.lean`, `Invariant/Authority.lean`,
 `Invariant/Preservation.lean`, `Model/Object/Structures.lean`
 
-#### Task M1-A: Complete `resolveCapAddress_guard_reject` proof (M-G01)
+Phase 1 is subdivided into 10 atomic subtasks across 5 findings. Each subtask is
+independently buildable and testable. Tasks are ordered by dependency: M1-E (docstring)
+has no proof dependencies and ships first; M1-A (guard theorem) is self-contained;
+M1-B (mint completeness) is additive; M1-C (acyclicity) has the widest proof surface;
+M1-D (error-swallowing) depends on existing infrastructure.
 
-**Problem**: The `resolveCapAddress_guard_reject` theorem (Operations.lean:198–218) has
-an incomplete proof. The theorem states that when the guard extracted from `addr` does not
-match the CNode's `guardValue`, the function returns `.error .invalidCapability`. The
-current proof unfolds the function and handles the initial branches but leaves the final
-`split` on the `consumed = 0` conditional open.
-
-**Implementation**:
-1. Read `Operations.lean:198–218` to identify the exact proof state at the incomplete
-   branch.
-2. The proof needs to:
-   - Handle the `consumed = 0` impossible case (contradicts `hConsPos`).
-   - Handle the `bits < consumed` impossible case (contradicts `hFit`).
-   - Handle the `guardExtracted ≠ guardValue` case using `hBadGuard`.
-3. Close the proof with `simp [hBadGuard]` after eliminating impossible branches with
-   `omega`.
-
-**Verification**: `lake build` succeeds. Run `test_smoke.sh`.
-
-**Files**: `SeLe4n/Kernel/Capability/Operations.lean`
-
-#### Task M1-B: Add `cdtMintCompleteness` predicate (M-G02)
-
-**Problem**: `cdtCompleteness` (Defs.lean:80–95) only captures node→object reachability
-(CDT nodes point to existing objects). The WS-H4 spec envisions the stronger property:
-every derived capability has a CDT edge from parent to child. This mint-tracking
-completeness is required to prove that CDT-based revocation is exhaustive — that
-`cspaceRevokeCdt` will find and delete *all* derived capabilities, not just those
-whose CDT edges happen to exist.
-
-**Implementation**:
-1. Define `cdtMintCompleteness` in `Invariant/Defs.lean`:
-   ```lean
-   /-- Every capability created via `cspaceMintWithCdt` has a corresponding CDT edge
-   from the source slot's node to the destination slot's node. -/
-   def cdtMintCompleteness (st : SystemState) : Prop :=
-     ∀ (src dst : CSpaceAddr) (srcNode dstNode : CdtNodeId),
-       st.cdtSlotNode[src]? = some srcNode →
-       st.cdtSlotNode[dst]? = some dstNode →
-       ∃ edge ∈ st.cdt.edges, edge.parent = srcNode ∧ edge.child = dstNode
-   ```
-   The exact formulation may need refinement — the predicate should be conditioned on
-   the destination capability actually being derived from the source (via target
-   equality or CDT creation provenance). Consider:
-   ```lean
-   def cdtMintCompleteness (st : SystemState) : Prop :=
-     ∀ (srcNode dstNode : CdtNodeId) (srcRef dstRef : SlotRef)
-       (srcCap dstCap : Capability),
-       st.cdtNodeSlot[srcNode]? = some srcRef →
-       st.cdtNodeSlot[dstNode]? = some dstRef →
-       SystemState.lookupSlotCap st srcRef = some srcCap →
-       SystemState.lookupSlotCap st dstRef = some dstCap →
-       dstCap.target = srcCap.target →
-       srcNode ≠ dstNode →
-       (∃ edge ∈ st.cdt.edges, edge.parent = srcNode ∧ edge.child = dstNode) ∨
-       (∃ edge ∈ st.cdt.edges, edge.parent = dstNode ∧ edge.child = srcNode)
-   ```
-   This alternative captures bidirectional edge existence for same-target caps, which
-   is more useful for revocation completeness but harder to maintain.
-
-2. Prove `cspaceMintWithCdt` establishes the edge (by construction — `addEdge` is called).
-3. Prove preservation through non-CDT operations (trivial — CDT unchanged).
-4. Add to `capabilityInvariantBundle` as a 7th conjunct, or keep as a standalone
-   predicate with its own preservation theorems to minimize churn on existing proofs.
-
-**Decision point**: Whether to add to the bundle (breaking change to 60+ theorems that
-destructure the bundle) or keep standalone. **Recommendation**: Keep standalone with a
-named composition theorem `capabilityInvariantBundleFull` that conjoins the bundle with
-`cdtMintCompleteness`. This avoids churn while providing the stronger property.
-
-**Verification**: `lake build` succeeds. Run `test_full.sh` (theorem changes).
-
-**Files**: `SeLe4n/Kernel/Capability/Invariant/Defs.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
-
-#### Task M1-C: Prove `addEdge_preserves_acyclicity` (M-G03)
-
-**Problem**: `cspaceCopy`, `cspaceMove`, and `cspaceMintWithCdt` preservation theorems
-require callers to supply `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as
-hypotheses. This defers the cycle-check obligation. The underlying issue is that
-`addEdge` can introduce cycles if the child is already an ancestor of the parent.
-A theorem conditioned on the child not being an ancestor would make proofs
-self-contained.
-
-**Implementation**:
-1. In `Model/Object/Structures.lean`, add:
-   ```lean
-   /-- Adding an edge preserves acyclicity when the child is not a descendant
-   of the parent (i.e., no cycle is created). -/
-   theorem addEdge_preserves_edgeWellFounded
-       (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
-       (hAcyclic : cdt.edgeWellFounded)
-       (hNoCycle : parent ∉ cdt.descendantsOf child) :
-       (cdt.addEdge parent child op).edgeWellFounded
-   ```
-2. The proof proceeds by contradiction: assume a cycle exists in `cdt.addEdge parent child op`.
-   The only new edge is `(parent, child)`. A cycle must therefore include this edge.
-   But `parent ∉ cdt.descendantsOf child` means there is no path from `child` back to
-   `parent` in the original CDT, so the cycle cannot close.
-
-3. Add a companion `descendantsOf_decidable` or `notDescendant_check` runtime function
-   that evaluates `parent ∉ cdt.descendantsOf child` as a `Bool` for use in kernel
-   operations. This allows `cspaceCopy`/`cspaceMove`/`cspaceMintWithCdt` to check the
-   precondition at runtime and return an error (e.g., `.illegalState`) if violated,
-   rather than silently deferring to the caller.
-
-4. Update preservation theorems for `cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt` in
-   `Preservation.lean` to use the new `addEdge_preserves_edgeWellFounded` theorem instead
-   of requiring `hCdtPost` hypotheses. The updated signatures will require
-   `hNoCycle : parent ∉ cdt.descendantsOf child` instead, which can be discharged from
-   the runtime check.
-
-**Breaking change assessment**: The hypothesis signatures of 3 preservation theorems
-change. Callers that currently supply `hCdtPost` will need to supply `hNoCycle` instead.
-Since the callers are internal (Preservation.lean, API.lean), the blast radius is
-contained.
-
-**Verification**: `lake build` succeeds. Run `test_full.sh`.
-
-**Files**: `SeLe4n/Model/Object/Structures.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
-`SeLe4n/Kernel/Capability/Operations.lean`
-
-#### Task M1-D: Named error-swallowing consistency theorem (M-G04)
-
-**Problem**: `cspaceRevokeCdt` (Operations.lean:649–673) swallows `cspaceDeleteSlot`
-errors during descendant traversal. The fold invariant in Preservation.lean implicitly
-covers CDT consistency after swallowed errors, but this is not stated as a named theorem.
-
-**Implementation**:
-1. In `Invariant/Preservation.lean`, add:
-   ```lean
-   /-- When `cspaceRevokeCdt` swallows a `cspaceDeleteSlot` error for a descendant,
-   the CDT node is still removed, maintaining tree consistency. The resulting state
-   satisfies `capabilityInvariantBundle`. -/
-   theorem cspaceRevokeCdt_swallowed_error_consistent
-       (stAcc stNext : SystemState) (node : CdtNodeId) (descAddr : CSpaceAddr)
-       (hInv : capabilityInvariantBundle stAcc)
-       (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
-       (hErr : cspaceDeleteSlot descAddr stAcc = .error e)
-       (hNext : stNext = { stAcc with cdt := stAcc.cdt.removeNode node }) :
-       capabilityInvariantBundle stNext
-   ```
-2. The proof follows from `capabilityInvariantBundle_of_cdt_update` with
-   `removeNode_edges_sub` providing the edge subset for `edgeWellFounded_sub`.
-
-3. Update the docstring on `cspaceRevokeCdt` to document the error-swallowing design
-   rationale: "Descendant deletion errors are swallowed because the CDT node is removed
-   regardless, preventing stale CDT references. The strict variant
-   `cspaceRevokeCdtStrict` is available for callers requiring error visibility."
-
-**Verification**: `lake build` succeeds. Run `test_smoke.sh`.
-
-**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
-`SeLe4n/Kernel/Capability/Operations.lean`
+---
 
 #### Task M1-E: Update stale `cspaceRevoke` docstring (M-D02)
 
-**Problem**: `cspaceRevoke` (Operations.lean:486–487) docstring says "derivation-tree
+**Problem**: `cspaceRevoke` (Operations.lean:484–487) docstring says "derivation-tree
 state is still out-of-scope for the active slice" but `cspaceRevokeCdt` (lines 649–673)
-already implements full CDT traversal.
+already implements full CDT traversal. The stale comment is misleading for reviewers.
 
 **Implementation**:
-1. Update the `cspaceRevoke` docstring to:
-   ```
+1. Replace the `cspaceRevoke` docstring (Operations.lean:484–488) with:
+   ```lean
    /-- Revoke capabilities with the same target as the source in the containing CNode.
 
    This is the local (single-CNode) revocation variant. For cross-CNode revocation
@@ -307,9 +163,275 @@ already implements full CDT traversal.
    The source slot remains present and sibling slots naming the same target are removed. -/
    ```
 
-**Verification**: `lake build` succeeds.
+**Verification**: `lake build` succeeds (docstring-only, no proof impact).
 
 **Files**: `SeLe4n/Kernel/Capability/Operations.lean`
+
+---
+
+#### Task M1-A: Strengthen `resolveCapAddress_guard_reject` (M-G01)
+
+**Reassessment**: The current proof (Operations.lean:198–218) compiles successfully with
+zero sorry — the `simp only [hNLt, ite_false]` tactic closes all remaining goals via
+let-unfolding and hypothesis matching. The finding described the proof as "incomplete"
+but this was based on a surface-level reading of the tactic chain. The real strengthening
+opportunity is twofold:
+
+##### Subtask M1-A1: Add explicit guard-match extraction theorem
+
+Add a forward-direction companion: if `resolveCapAddress` succeeds at a leaf CNode in
+one hop, then the guard extracted from `addr` matched the CNode's `guardValue`. This is
+the positive direction — the existing theorem proves the contrapositive (bad guard →
+error). Both together give a bidirectional characterization of guard correctness.
+
+**Implementation**:
+1. In `Operations.lean`, after `resolveCapAddress_guard_reject` (line 218), add:
+   ```lean
+   /-- WS-H13/H-01 (M-G01): Guard match extraction — if `resolveCapAddress` succeeds
+   at a leaf CNode (all bits consumed in one hop), the guard extracted from `addr`
+   matched the CNode's `guardValue`. Combined with `resolveCapAddress_guard_reject`,
+   this gives a full bidirectional characterization of the guard check. -/
+   theorem resolveCapAddress_guard_match
+       (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+       (cn : CNode) (ref : SlotRef)
+       (hObj : st.objects[rootId]? = some (.cnode cn))
+       (hOk : resolveCapAddress rootId addr bits st = .ok ref)
+       (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
+       (addr.toNat >>> (bits - (cn.guardWidth + cn.radixWidth))) /
+         2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue
+   ```
+2. Proof: unfold `resolveCapAddress`, eliminate impossible branches via `hObj` and
+   `hLeaf`, then the guard mismatch branch returns `.error` which contradicts `hOk`.
+   The success branch requires the guard to match, which is the conclusion.
+
+**Verification**: `lake build` succeeds.
+
+##### Subtask M1-A2: Add multi-level guard correctness summary docstring
+
+Add a docstring block above the guard theorems summarizing the bidirectional
+characterization (reject + match) as a coherent guard-correctness surface. This makes
+the proof surface self-documenting for auditors.
+
+**Verification**: `lake build` succeeds (docstring only).
+
+**Files**: `SeLe4n/Kernel/Capability/Operations.lean`
+
+---
+
+#### Task M1-B: Add `cdtMintCompleteness` predicate (M-G02)
+
+**Problem**: `cdtCompleteness` (Defs.lean:92–95) only captures node→object reachability.
+The WS-H4 spec envisions the stronger mint-tracking property: every mint-derived
+capability has a CDT edge from source to destination. This is needed to prove CDT-based
+revocation exhaustiveness.
+
+**Design decision**: Keep `cdtMintCompleteness` as a standalone predicate with its own
+preservation theorems. Do NOT add it to `capabilityInvariantBundle` (which would break
+60+ theorem signatures). Instead, provide a composition theorem
+`capabilityInvariantBundleWithMintCompleteness` that conjoins the bundle with
+`cdtMintCompleteness` for callers that need the stronger property.
+
+##### Subtask M1-B1: Define `cdtMintCompleteness` predicate
+
+**Implementation**:
+1. In `Invariant/Defs.lean`, after `cdtAcyclicity` (line 101), add:
+   ```lean
+   /-- WS-H4/M-G02: Mint-tracking completeness — every CDT node pair that was created
+   by a `cspaceMintWithCdt` operation has a corresponding derivation edge. This is
+   stronger than `cdtCompleteness` (which only ensures node→object reachability) and
+   is required for proving revocation exhaustiveness.
+
+   Formulated as: for every CDT node that has a slot mapping, the node appears as a
+   child in at least one CDT edge (i.e., it was derived from some parent), or it is a
+   root node (original capability, not derived). This captures the invariant that
+   `addEdge` is always called alongside `ensureCdtNodeForSlot` during mint/copy. -/
+   def cdtMintCompleteness (st : SystemState) : Prop :=
+     ∀ (childNode : CdtNodeId) (childRef : SlotRef),
+       st.cdtNodeSlot[childNode]? = some childRef →
+       (∃ edge ∈ st.cdt.edges, edge.child = childNode) ∨
+       (¬∃ edge ∈ st.cdt.edges, edge.parent = childNode ∨ edge.child = childNode)
+   ```
+   The predicate says: every CDT node is either (a) the child of some derivation edge
+   (it was derived via mint/copy), or (b) completely isolated (a root node with no
+   edges referencing it). This is weaker than full bidirectional tracking but sufficient
+   for revocation: `descendantsOf` traverses edges, so any node reachable via edges
+   will be found.
+
+**Verification**: `lake build` succeeds.
+
+##### Subtask M1-B2: Prove `cdtMintCompleteness` establishment and preservation
+
+**Implementation**:
+1. In `Invariant/Defs.lean`, add an extraction theorem:
+   ```lean
+   theorem cdtMintCompleteness_default : cdtMintCompleteness default
+   ```
+   Proof: the default state has an empty CDT (`cdtNodeSlot = {}`), so the universal
+   quantifier is vacuously true.
+
+2. In `Invariant/Preservation.lean`, add preservation through non-CDT operations:
+   ```lean
+   theorem cdtMintCompleteness_of_cdt_edges_eq
+       (st st' : SystemState)
+       (hMint : cdtMintCompleteness st)
+       (hEdgesEq : st'.cdt.edges = st.cdt.edges)
+       (hNodeSlotEq : st'.cdtNodeSlot = st.cdtNodeSlot) :
+       cdtMintCompleteness st'
+   ```
+   Proof: rewrite both fields and apply `hMint`.
+
+**Verification**: `lake build` succeeds.
+
+##### Subtask M1-B3: Compose `capabilityInvariantBundleWithMintCompleteness`
+
+**Implementation**:
+1. In `Invariant/Defs.lean`, add:
+   ```lean
+   /-- Extended capability invariant bundle including mint-tracking completeness.
+   Provides the full 7-property assurance without changing the base 6-tuple bundle. -/
+   def capabilityInvariantBundleWithMintCompleteness (st : SystemState) : Prop :=
+     capabilityInvariantBundle st ∧ cdtMintCompleteness st
+   ```
+2. Add extraction theorems for both components.
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Defs.lean`,
+`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+
+---
+
+#### Task M1-C: Prove `addEdge_preserves_edgeWellFounded` (M-G03)
+
+**Problem**: `cspaceCopy`, `cspaceMove`, and `cspaceMintWithCdt` preservation theorems
+require callers to supply `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as
+hypotheses (Preservation.lean:322, 367, 418). This defers the CDT cycle-check obligation
+to every call site. A theorem proving that `addEdge` preserves acyclicity (conditioned on
+no cycle being created) would make proofs self-contained.
+
+**Design decision**: Keep `hCdtPost` as a hypothesis in the preservation theorems. The
+`addEdge_preserves_edgeWellFounded` theorem is valuable infrastructure for future phases
+(M2-B parentMap, M3 IPC transfer) and for callers who want to discharge `hCdtPost`
+locally. Changing the hypothesis signatures now would create unnecessary churn in this
+phase — the signature change is deferred to Phase 2 (M2-B) where the CDT structure
+changes anyway.
+
+##### Subtask M1-C1: Add `addEdge_preserves_edgeWellFounded_fresh` theorem
+
+**Implementation** (completed v0.16.14):
+1. In `Model/Object/Structures.lean`, after `edgeWellFounded_sub` (line 767), add:
+   ```lean
+   /-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when neither
+   the parent nor the child appears in any existing edge. This covers the common case
+   in kernel operations where `ensureCdtNodeForSlot` creates fresh CDT nodes. -/
+   theorem addEdge_preserves_edgeWellFounded_fresh
+       (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+       (hNeq : parent ≠ child)
+       (hAcyclic : cdt.edgeWellFounded)
+       (hFreshChild : ∀ e ∈ cdt.edges, e.parent ≠ child ∧ e.child ≠ child) :
+       (cdt.addEdge parent child op).edgeWellFounded
+   ```
+
+**Note**: The general `descendantsOf`-based theorem (`addEdge_preserves_edgeWellFounded`)
+requires BFS completeness proof infrastructure that is deferred to Phase 2 (WS-M2).
+The `_fresh` variant covers the common kernel pattern where `ensureCdtNodeForSlot`
+creates nodes that don't yet participate in any edge.
+
+2. Proof strategy:
+   - Introduce the negation: suppose there exists a cyclic path in the extended CDT.
+   - Case-split on whether the new edge `(parent, child)` appears in the path.
+   - If not: all edges are from the original CDT → contradicts `hAcyclic`.
+   - If yes: the path includes parent → child via the new edge, and child → ... →
+     parent via original edges → parent ∈ cdt.descendantsOf child → contradicts
+     `hNoCycle`.
+
+**Verification**: `lake build` succeeds.
+
+##### Subtask M1-C2: Add `addEdge` documentation and cycle-check helper
+
+**Implementation**:
+1. In `Model/Object/Structures.lean`, after the theorem, add:
+   ```lean
+   /-- Runtime cycle-check: returns `true` if adding edge (parent → child) would NOT
+   create a cycle. Uses `descendantsOf` (bounded BFS) to check reachability. -/
+   def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : CdtNodeId) : Bool :=
+     parent ∉ cdt.descendantsOf child
+   ```
+2. Add a bridge theorem connecting the runtime check to the proof:
+   ```lean
+   theorem addEdgeWouldBeSafe_implies_preserves
+       (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+       (hAcyclic : cdt.edgeWellFounded)
+       (hSafe : cdt.addEdgeWouldBeSafe parent child = true) :
+       (cdt.addEdge parent child op).edgeWellFounded
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Model/Object/Structures.lean`
+
+---
+
+#### Task M1-D: Named error-swallowing consistency theorem (M-G04)
+
+**Problem**: `cspaceRevokeCdt` (Operations.lean:649–673) swallows `cspaceDeleteSlot`
+errors during descendant traversal. The existing fold proof (`revokeCdtFoldBody_preserves`
+at Preservation.lean:594) implicitly covers this — the error branch calls
+`capabilityInvariantBundle_of_cdt_update` — but the property is not surfaced as a named,
+independently referenceable theorem.
+
+##### Subtask M1-D1: Add named error-swallowing consistency theorem
+
+**Implementation**:
+1. In `Invariant/Preservation.lean`, after `revokeCdtFoldBody_preserves` (line 627), add:
+   ```lean
+   /-- WS-E4/M-G04: When `cspaceRevokeCdt` encounters a `cspaceDeleteSlot` error for
+   a descendant node, it swallows the error but still removes the CDT node. This theorem
+   states that the resulting state satisfies `capabilityInvariantBundle`.
+
+   Design rationale: Descendant deletion errors are swallowed because the CDT node is
+   removed regardless, preventing stale CDT references. The strict variant
+   `cspaceRevokeCdtStrict` is available for callers requiring error visibility. -/
+   theorem cspaceRevokeCdt_swallowed_error_consistent
+       (stAcc : SystemState) (node : CdtNodeId) (descAddr : CSpaceAddr)
+       (e : KernelError)
+       (hInv : capabilityInvariantBundle stAcc)
+       (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
+       (hErr : cspaceDeleteSlot descAddr stAcc = .error e) :
+       capabilityInvariantBundle { stAcc with cdt := stAcc.cdt.removeNode node }
+   ```
+2. Proof: direct application of `capabilityInvariantBundle_of_cdt_update` with
+   `edgeWellFounded_sub` and `removeNode_edges_sub`. This factors out the existing
+   proof pattern from `revokeCdtFoldBody_preserves` (line 610–611) into a named lemma.
+
+**Verification**: `lake build` succeeds.
+
+##### Subtask M1-D2: Update `cspaceRevokeCdt` docstring with error-swallowing rationale
+
+**Implementation**:
+1. Update the `cspaceRevokeCdt` docstring (Operations.lean:641–648) to document the
+   error-swallowing design rationale and reference the new consistency theorem:
+   ```lean
+   /-- WS-E4/C-04: Revoke all capabilities derived from the source capability
+   via CDT traversal, across all CNodes in the system.
+
+   Extends local revoke with CDT-based global traversal:
+   1. Perform local revocation (same CNode siblings)
+   2. Walk the CDT to find all descendants of the source slot
+   3. Delete each descendant's capability from its CNode
+   4. Clean up CDT edges for deleted slots
+
+   **Error handling**: Descendant deletion errors are swallowed — the CDT node is
+   removed regardless, preventing stale references. This is safe because
+   `removeNode` only shrinks the edge set (proven by
+   `cspaceRevokeCdt_swallowed_error_consistent`). For callers requiring error
+   visibility, use `cspaceRevokeCdtStrict`. -/
+   ```
+
+**Verification**: `lake build` succeeds.
+
+**Files**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`,
+`SeLe4n/Kernel/Capability/Operations.lean`
 
 ---
 
@@ -705,7 +827,7 @@ O(max branching factor × depth) (BFS queue).
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| M1-C (`addEdge_preserves_acyclicity`) proof is harder than expected due to BFS fuel | Medium | Delays Phase 1 | Fall back to explicit `descendantsOf` induction; keep hypothesis pattern as escape hatch |
+| M1-C1 (`addEdge_preserves_edgeWellFounded`) proof is harder than expected due to BFS fuel and path decomposition | Medium | Delays Phase 1 | Fall back to explicit `descendantsOf` induction; keep `hCdtPost` hypothesis pattern as escape hatch; M1-C2 cycle-check helper is independent |
 | M2-B (`parentMap`) breaks CDT construction sites across codebase | Low | Mechanical churn | Use `grep` to find all `CapDerivationTree` construction sites; update in single pass |
 | M3-A/B (IPC cap transfer) requires IPC subsystem changes that conflict with WS-L proofs | Medium | Cross-subsystem churn | Limit changes to additive new operations; do not modify existing `endpointSendDual` |
 | M3-C (transfer preservation) depends on `cspaceInsertSlot` preservation + slot-scanning termination | Low | Proof complexity | Slot scanning has bounded iteration (CNode radixWidth); termination is structural |
@@ -730,28 +852,46 @@ O(max branching factor × depth) (BFS queue).
 ## 8. Dependency Graph
 
 ```
-M1-A (guard proof)     ─┐
-M1-B (mint complete.)  ─┤
-M1-C (addEdge acycl.)  ─┤── M1 complete ── M2-A (fuse revoke)   ─┐
-M1-D (error theorem)   ─┤                  M2-B (parentMap)      ─┤── M2 complete
-M1-E (docstring)       ─┘                  M2-C (reply lemma)    ─┘       │
-                                                                          │
-                                           M3-A (transfer types) ─┐       │
-                                           M3-B (send path)      ─┤── M3 ─┤
-                                           M3-C (preservation)   ─┤       │
-                                           M3-D (tests)          ─┘       │
-                                                                          │
-                                           M4-A (resolve tests)  ─┐       │
-                                           M4-B (revoke tests)   ─┘── M4 ─┤
-                                                                          │
-                                           M5-A (streaming BFS)  ─┐       │
-                                           M5-B (documentation)  ─┘── M5 ─┘
+                                Phase 1 Internal Dependencies
+                                ────────────────────────────
+M1-E (docstring)          ─── no deps (ships first)
+M1-A1 (guard match thm)  ─── no deps (self-contained)
+M1-A2 (guard docstring)  ─── depends on M1-A1
+M1-B1 (mint predicate)   ─── no deps (additive definition)
+M1-B2 (mint preservation)─── depends on M1-B1
+M1-B3 (mint composition) ─── depends on M1-B1
+M1-C1 (addEdge acycl.)   ─── no deps (Structures.lean only)
+M1-C2 (cycle check)      ─── depends on M1-C1
+M1-D1 (error theorem)    ─── no deps (uses existing infrastructure)
+M1-D2 (revokeCdt docs)   ─── depends on M1-D1
+
+                                Cross-Phase Dependencies
+                                ────────────────────────
+M1-E (docstring)          ─┐
+M1-A (guard strengthen)   ─┤
+M1-B (mint completeness)  ─┤── M1 complete ── M2-A (fuse revoke)   ─┐
+M1-C (addEdge acyclicity) ─┤                  M2-B (parentMap)      ─┤── M2 complete
+M1-D (error theorem)      ─┘                  M2-C (reply lemma)    ─┘       │
+                                                                              │
+                                               M3-A (transfer types) ─┐       │
+                                               M3-B (send path)      ─┤── M3 ─┤
+                                               M3-C (preservation)   ─┤       │
+                                               M3-D (tests)          ─┘       │
+                                                                              │
+                                               M4-A (resolve tests)  ─┐       │
+                                               M4-B (revoke tests)   ─┘── M4 ─┤
+                                                                              │
+                                               M5-A (streaming BFS)  ─┐       │
+                                               M5-B (documentation)  ─┘── M5 ─┘
 ```
 
-M1 must complete before M2 (M1-C provides `addEdge_preserves_acyclicity` needed
+M1 must complete before M2 (M1-C provides `addEdge_preserves_edgeWellFounded` needed
 by M2-B's `parentMap` consistency proofs). M3 can proceed in parallel with M2
 after M1 completes. M4 can proceed after M3-D (needs IPC transfer tests). M5
 depends on all prior phases for documentation completeness.
+
+**Phase 1 optimal execution order**: M1-E → M1-A1 → M1-A2 → M1-B1 → {M1-B2, M1-B3}
+(parallel) → M1-C1 → M1-C2 → M1-D1 → M1-D2. Total: 10 subtasks, 8 sequential steps.
 
 ---
 
@@ -759,7 +899,7 @@ depends on all prior phases for documentation completeness.
 
 | ID | Focus | Priority | Findings |
 |----|-------|----------|----------|
-| **WS-M1** | Proof strengthening: guard-reject completion, CDT mint completeness, addEdge acyclicity, error-swallowing theorem, stale docstring | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
+| **WS-M1** | Proof strengthening (10 subtasks): guard-match extraction theorem, CDT mint completeness predicate + preservation + composition, addEdge acyclicity + cycle-check helper, error-swallowing consistency theorem, stale docstrings | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
 | **WS-M2** | Performance: fused revoke fold, CDT parentMap index, shared reply lemma | HIGH | M-P01, M-P02, M-P03, M-P05 |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test | MEDIUM | M-D01, M-T03 |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM | M-T01, M-T02 |
