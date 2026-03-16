@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.IPC.Operations.SchedulerLemmas
+import SeLe4n.Kernel.IPC.Operations.CapTransfer
 
 /-! # IPC Operations — Re-export Hub
 
@@ -19,4 +20,6 @@ Decomposed into:
 - **SchedulerLemmas**: Scheduler preservation lemmas for removeRunnable and
   ensureRunnable, plus supporting lemmas for storeTcbIpcStateAndMessage and
   storeTcbPendingMessage.
+- **CapTransfer**: IPC capability transfer operations (M-D01/WS-M3) —
+  `ipcUnwrapCaps` batch operation with Grant-right gate.
 -/

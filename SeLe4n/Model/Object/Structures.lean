@@ -366,6 +366,67 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
 def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
   { node with slots := node.slots.erase slot }
 
+/-- M-D01: Find the first empty slot in a CNode starting from `base`,
+scanning up to `limit` consecutive slot indices. Returns `none` if all
+scanned slots are occupied.
+
+The iteration is bounded by `limit` (typically `maxExtraCaps = 3`) rather
+than `2^radixWidth`, because we only need slots for the (at most 3) extra
+caps in the message. Termination is structural on `limit`. -/
+def findFirstEmptySlot (cn : CNode) (base : SeLe4n.Slot)
+    (limit : Nat) : Option SeLe4n.Slot :=
+  match limit with
+  | 0 => none
+  | n + 1 =>
+      match cn.lookup base with
+      | none => some base
+      | some _ => cn.findFirstEmptySlot (SeLe4n.Slot.ofNat (base.toNat + 1)) n
+
+/-- If findFirstEmptySlot returns `some s`, then `cn.lookup s = none`. -/
+theorem findFirstEmptySlot_spec
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) (s : SeLe4n.Slot)
+    (hFind : cn.findFirstEmptySlot base limit = some s) :
+    cn.lookup s = none := by
+  induction limit generalizing base with
+  | zero => simp [findFirstEmptySlot] at hFind
+  | succ n ih =>
+    simp only [findFirstEmptySlot] at hFind
+    split at hFind
+    · -- cn.lookup base = none
+      cases hFind; assumption
+    · -- cn.lookup base = some _
+      exact ih _ hFind
+
+/-- findFirstEmptySlot with limit 0 always returns none. -/
+theorem findFirstEmptySlot_zero (cn : CNode) (base : SeLe4n.Slot) :
+    cn.findFirstEmptySlot base 0 = none := by
+  simp [findFirstEmptySlot]
+
+/-- If findFirstEmptySlot returns `none`, all scanned slots are occupied. -/
+theorem findFirstEmptySlot_none_iff
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) :
+    cn.findFirstEmptySlot base limit = none →
+    ∀ i, i < limit →
+      (cn.lookup (SeLe4n.Slot.ofNat (base.toNat + i))).isSome := by
+  induction limit generalizing base with
+  | zero => intro _ i hi; exact absurd hi (Nat.not_lt_zero _)
+  | succ n ih =>
+    simp only [findFirstEmptySlot]
+    split
+    · intro h; exact absurd h (by simp)
+    · rename_i cap hLookup
+      intro hRec i hi
+      cases i with
+      | zero =>
+        simp only [Nat.add_zero, SeLe4n.Slot.ofNat_toNat]
+        rw [hLookup]; rfl
+      | succ j =>
+        have hj : j < n := Nat.lt_of_succ_lt_succ hi
+        have := ih (SeLe4n.Slot.ofNat (base.toNat + 1)) hRec j hj
+        simp only [SeLe4n.Slot.toNat_ofNat] at this
+        have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
+        rw [hEq] at this; exact this
+
 /-- Local revoke helper for the current modeled slice.
 
 This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that
@@ -577,6 +638,7 @@ abbrev SlotAddr := SeLe4n.ObjId × SeLe4n.Slot
 inductive DerivationOp where
   | mint
   | copy
+  | ipcTransfer
   deriving Repr, DecidableEq
 
 /-- Stable CDT node identifier.

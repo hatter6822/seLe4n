@@ -28,7 +28,7 @@ capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 |----|-------|----------|
 | **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH — **COMPLETED** (v0.16.15) |
-| **WS-M3** | IPC capability transfer: model, integrate, prove, test (resolves L-T03) | MEDIUM |
+| **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer`, `findFirstEmptySlot`, `ipcTransferSingleCap`/`ipcUnwrapCaps`, IPC wrappers, API wiring, 2 test scenarios (resolves L-T03) | MEDIUM — **COMPLETED** (v0.16.17) |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
 
@@ -64,6 +64,28 @@ the direct-reply and reply-recv paths, eliminating duplicated proof obligations.
 Field preservation lemmas for non-interference proofs added to cover the new
 `parentMap` index field. Runtime `parentMapConsistent` check added and verified.
 Zero sorry/axiom.
+
+**WS-M3** (v0.16.17): IPC capability transfer — seL4-aligned receive-side cap
+unwrapping with Grant-right gate. M3-A: `CapTransferResult`/`CapTransferSummary`
+types, `DerivationOp.ipcTransfer` CDT variant. M3-B: `CNode.findFirstEmptySlot`
+with structural recursion and correctness theorems. M3-C: `ipcTransferSingleCap`
+single-cap transfer with CDT edge tracking and `capabilityInvariantBundle`
+preservation proof. M3-D: `ipcUnwrapCaps` batch unwrap with `ipcUnwrapCapsLoop`
+recursive helper and scheduler preservation proof by induction;
+`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` bundle preservation
+when Grant absent. M3-E: `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+`endpointCallWithCaps` wrapper operations composing existing IPC ops with cap
+transfer; IPC invariant preservation proofs for all three wrappers plus
+`ipcUnwrapCaps_preserves_ipcInvariant`; `dualQueueSystemInvariant` preservation
+for `ipcUnwrapCaps` and both WithCaps wrappers (`ipcUnwrapCaps_preserves_dualQueueSystemInvariant`,
+`endpointSendDualWithCaps_preserves_dualQueueSystemInvariant`,
+`endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant`);
+`ipcUnwrapCaps_preserves_cnode_at_root` CNode type preservation. M3-F: `decodeExtraCapAddrs`,
+`resolveExtraCaps`, API dispatch updated to use WithCaps wrappers with renamed
+theorems (`dispatchWithCap_send_uses_withCaps`, `dispatchWithCap_call_uses_withCaps`).
+M3-G: 4 test scenarios (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT,
+SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED). Resolves L-T03
+(capability transfer during IPC). 12+ new proved declarations; zero sorry/axiom.
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 

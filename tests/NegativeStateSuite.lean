@@ -2273,6 +2273,61 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   IO.println "all WS-L4-C blocked thread IPC rejection tests passed"
 
+/-- SCN-IPC-CAP-TRANSFER-FULL-CNODE (M3-G3): When the receiver's CNode is
+full (all scanned slots occupied), ipcTransferSingleCap returns .noSlot
+and the state is unchanged. -/
+def runWSM3CapTransferNegativeChecks : IO Unit := do
+  IO.println "\n=== WS-M3-G3: IPC cap transfer full CNode negative test ==="
+
+  let receiverRoot : SeLe4n.ObjId := ⟨5000⟩
+  let senderRoot : SeLe4n.ObjId := ⟨5001⟩
+  let targetObj : SeLe4n.ObjId := ⟨5010⟩
+
+  let cap : Capability := {
+    target := .object targetObj,
+    rights := AccessRightSet.ofList [.read],
+    badge := none
+  }
+
+  -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
+  let fullCNode : CNode := {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap), (⟨3⟩, cap)
+    ]
+  }
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject receiverRoot (.cnode fullCNode)
+      |>.withObject senderRoot (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [(⟨0⟩, cap)]
+        })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.build)
+
+  -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot
+  let senderSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := senderRoot, slot := ⟨0⟩ }
+  let result := SeLe4n.Kernel.ipcTransferSingleCap cap senderSlot receiverRoot ⟨0⟩ 4 st0
+  match result with
+  | .ok (transferResult, st') =>
+    let isNoSlot := match transferResult with
+      | .noSlot => true
+      | _ => false
+    if !isNoSlot then
+      throw <| IO.userError "M3-G3: expected .noSlot for full CNode, got different result"
+    IO.println "M3-G3 check passed [full CNode returns .noSlot]"
+    -- State should be unchanged
+    let unchanged := st'.objects == st0.objects
+    if !unchanged then
+      throw <| IO.userError "M3-G3: state should be unchanged after .noSlot"
+    IO.println "M3-G3 check passed [state unchanged after .noSlot]"
+  | .error e =>
+    throw <| IO.userError s!"M3-G3: ipcTransferSingleCap returned error: {reprStr e}"
+
+  IO.println "all WS-M3-G3 cap transfer negative tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2288,3 +2343,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks
+  SeLe4n.Testing.runWSM3CapTransferNegativeChecks

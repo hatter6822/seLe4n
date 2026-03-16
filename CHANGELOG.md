@@ -1,3 +1,70 @@
+## [0.16.17] — WS-M3 IPC Capability Transfer Implementation
+
+- Completed Phase 3 (WS-M3) of the capability subsystem workstream: IPC
+  capability transfer with seL4-aligned receive-side cap unwrapping
+- M3-A: Added `CapTransferResult` inductive (`installed`/`noSlot`/`grantDenied`),
+  `CapTransferSummary` structure, `DerivationOp.ipcTransfer` CDT variant
+- M3-B: Implemented `CNode.findFirstEmptySlot` with structural recursion on
+  `limit` parameter; `findFirstEmptySlot_spec` and `findFirstEmptySlot_zero`
+  correctness theorems
+- M3-C: Implemented `ipcTransferSingleCap` — single-cap transfer with CDT edge
+  tracking via `.ipcTransfer` derivation op; `ipcTransferSingleCap_preserves_scheduler`
+  and `ipcTransferSingleCap_preserves_capabilityInvariantBundle` preservation proofs
+- M3-D: Implemented `ipcUnwrapCaps` batch cap unwrap with `ipcUnwrapCapsLoop`
+  recursive helper (fuel-based structural recursion); Grant-right gate drops
+  all caps when endpoint lacks Grant right; `ipcUnwrapCaps_preserves_scheduler`
+  preservation proof by induction on fuel;
+  `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` proves bundle
+  preservation when Grant right is absent (state unchanged)
+- M3-E: Added `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+  `endpointCallWithCaps` wrapper operations composing existing IPC ops with
+  cap transfer during rendezvous; `lookupCspaceRoot` helper reads receiver's
+  CSpace root from TCB; `ipcUnwrapCaps_preserves_ipcInvariant`,
+  `endpointSendDualWithCaps_preserves_ipcInvariant`,
+  `endpointReceiveDualWithCaps_preserves_ipcInvariant`,
+  `endpointCallWithCaps_preserves_ipcInvariant` preservation theorems
+- M3-F: Added `decodeExtraCapAddrs` with determinism theorem; `resolveExtraCaps`
+  pure fold over CPtr array; updated `dispatchWithCap` to use WithCaps wrappers
+  for send/call paths; renamed theorems (`dispatchWithCap_send_uses_withCaps`,
+  `dispatchWithCap_call_uses_withCaps`)
+- M3-G: Added 4 test scenarios: SCN-IPC-CAP-TRANSFER-BASIC,
+  SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE,
+  SCN-IPC-CAP-BADGE-COMBINED; `chain12`–`chain14` in OperationChainSuite +
+  `runWSM3CapTransferNegativeChecks` in NegativeStateSuite
+- New files: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`,
+  `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`
+- Resolves L-T03 (capability transfer during IPC — last WS-L deferred item)
+- 12+ new proved declarations; zero sorry/axiom; zero warnings
+- All test tiers pass (test_full.sh Tier 0-3)
+- Bumped `lakefile.toml` version to 0.16.17
+
+## [0.16.16] — WS-M3 IPC Capability Transfer Plan Refinement
+
+- Refined and expanded Phase 3 (WS-M3) workstream plan for IPC capability
+  transfer from 4 coarse tasks to 7 tasks with 20 atomic subtasks
+- Corrected architectural alignment: cap unwrapping happens on the receive side
+  (seL4 semantics), not the send side as originally planned
+- Added `CapTransferResult`/`CapTransferSummary` type specifications with
+  seL4-accurate `grantDenied` variant (replacing incorrect `attenuationFailed`)
+- Added `DerivationOp.ipcTransfer` CDT variant for tracking IPC-transferred caps
+- Designed `CNode.findFirstEmptySlot` with bounded iteration (structural
+  recursion on `limit`) and correctness theorem specifications
+- Specified `ipcTransferSingleCap` operation with CDT edge tracking and
+  `ipcUnwrapCaps` batch operation with Grant-right gate
+- Designed wrapper pattern (`endpointSendDualWithCaps`,
+  `endpointReceiveDualWithCaps`, `endpointCallWithCaps`) preserving all existing
+  IPC operation signatures and proofs
+- Added `decodeExtraCapAddrs` and `resolveExtraCaps` specifications for wiring
+  extra cap addresses from `SyscallDecodeResult.msgInfo.extraCaps` through
+  `dispatchWithCap`
+- Specified 4 test scenarios: positive transfer, grant-right gate, no-slot
+  negative, badge+cap combined (SCN-IPC-CAP-TRANSFER-*)
+- Full dependency graph with 9 sequential steps and parallelism opportunities
+- Corrected Phase 4/5 target versions (0.16.17/0.16.18, consistent with patch
+  version scheme)
+- All tests pass (test_full.sh Tier 0-3); zero sorry/axiom; zero warnings
+- Bumped `lakefile.toml` version to 0.16.16
+
 ## [0.16.15] — Capability Performance Optimization (WS-M2)
 
 - Completed Phase 2 (WS-M2) of the capability subsystem workstream: performance

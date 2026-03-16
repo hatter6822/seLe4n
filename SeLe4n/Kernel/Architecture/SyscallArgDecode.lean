@@ -511,4 +511,29 @@ theorem decode_layer2_roundtrip_all :
    decodeVSpaceMapArgs_roundtrip,
    decodeVSpaceUnmapArgs_roundtrip⟩
 
+-- ============================================================================
+-- IPC extra capability address decode (M-D01)
+-- ============================================================================
+
+/-- M-D01: Decode extra capability addresses from message registers.
+
+seL4 convention: extra cap addresses are packed into the message registers
+immediately after the message body. The `msgInfo.extraCaps` field (0..3)
+specifies how many extra cap addresses follow. Each extra cap address is
+a single register value interpreted as a CPtr.
+
+Returns an array of CPtrs (length ≤ 3). If a register index is out of
+bounds, the corresponding cap address is silently dropped (seL4 behavior:
+truncate to available registers). -/
+def decodeExtraCapAddrs (decoded : SyscallDecodeResult) :
+    Array SeLe4n.CPtr :=
+  let startIdx := decoded.msgInfo.length
+  let count := min decoded.msgInfo.extraCaps maxExtraCaps
+  (Array.range count).filterMap fun i =>
+    decoded.msgRegs[startIdx + i]?.map fun rv => ⟨rv.val⟩
+
+/-- Determinism: `decodeExtraCapAddrs` is pure. -/
+theorem decodeExtraCapAddrs_deterministic (decoded : SyscallDecodeResult) :
+    decodeExtraCapAddrs decoded = decodeExtraCapAddrs decoded := rfl
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

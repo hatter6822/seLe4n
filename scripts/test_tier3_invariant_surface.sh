@@ -882,8 +882,8 @@ run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_deterministic' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStart_uses_config' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStop_uses_config' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_populates_msg' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_populates_msg' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_withCaps' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
 
 # WS-K-F1: Per-syscall encode functions (layer 2).
@@ -1000,8 +1000,8 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_deterministic
 #check @SeLe4n.Kernel.dispatchWithCap_serviceStart_uses_config
 #check @SeLe4n.Kernel.dispatchWithCap_serviceStop_uses_config
-#check @SeLe4n.Kernel.dispatchWithCap_send_populates_msg
-#check @SeLe4n.Kernel.dispatchWithCap_call_populates_msg
+#check @SeLe4n.Kernel.dispatchWithCap_send_uses_withCaps
+#check @SeLe4n.Kernel.dispatchWithCap_call_uses_withCaps
 #check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg
 -- WS-K-F1: Per-syscall encode functions
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs
