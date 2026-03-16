@@ -1843,16 +1843,18 @@ root → A → A1
      → B → B1
           → B2
 ```
-This creates 4 descendants with a known BFS traversal order: the BFS from
-root visits children in the order returned by `descendantsOf` (which uses
-`childrenOf` → `childMap` lookup). With the `addEdge`-based CDT construction,
-edges are prepended, so children are visited in reverse insertion order.
+This creates 5 descendants (A, B, A1, B1, B2). `descendantsOf` uses BFS via
+`childrenOf` → `childMap` lookup, but sibling ordering is non-deterministic
+(HashMap iteration order). Parent-before-child ordering within each sub-chain
+is deterministic and verifiable.
 
 **Action**: Call `cspaceRevokeCdtStrict` on the root slot.
 
 **Verify**:
-- All 4 descendants deleted (`deletedSlots.length = 4`).
-- The ordering of `deletedSlots` matches the BFS traversal order.
+- All 5 descendants deleted (`deletedSlots.length = 5`).
+- All deleted slots are from the expected descendant set.
+- Parent-before-child ordering holds within each sub-chain (A before A1,
+  B before B1, B before B2).
 - `firstFailure` is `none`.
 - Invariants hold on the final state.
 
@@ -1891,7 +1893,7 @@ phase). Updated scenario catalog.
 
 ### Phase 5: Streaming Revocation & Documentation (WS-M5)
 
-**Target version**: 0.16.18
+**Target version**: 0.16.19
 **Files modified**: `Operations.lean`, `Invariant/Preservation.lean`, all documentation
 
 #### Task M5-A: Streaming BFS for CDT revocation (M-P04)
