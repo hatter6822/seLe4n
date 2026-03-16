@@ -17,16 +17,16 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 
-WS-M is a **planned** workstream portfolio, created from a comprehensive end-to-end
-audit of the Capability subsystem (3,520 LoC, 5 files). The audit found zero
-`sorry`/`axiom`, zero critical vulnerabilities, but identified 5 performance
-optimization opportunities, 4 proof strengthening opportunities, 3 test coverage
-gaps, and 2 previously deferred items to resolve (including L-T03: capability
-transfer during IPC).
+WS-M is an **in-progress** workstream portfolio, created from a comprehensive
+end-to-end audit of the Capability subsystem (3,520 LoC, 5 files). The audit
+found zero `sorry`/`axiom`, zero critical vulnerabilities, but identified 5
+performance optimization opportunities, 4 proof strengthening opportunities, 3
+test coverage gaps, and 2 previously deferred items to resolve (including L-T03:
+capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-M1** | Proof strengthening: guard-reject completion, CDT mint completeness, `addEdge_preserves_acyclicity`, error-swallowing theorem, stale docstring | HIGH |
+| **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test (resolves L-T03) | MEDIUM |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
@@ -34,6 +34,21 @@ transfer during IPC).
 
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: M1 through M5).
+
+**WS-M1** (v0.16.14): Proof strengthening & correctness — 10 atomic subtasks.
+M1-E: updated `cspaceRevoke` docstring (removed stale scope disclaimer).
+M1-A: added `resolveCapAddress_guard_match` forward-direction theorem proving
+successful resolution implies guard bits match stored guardValue.
+M1-B1: introduced `cdtMintCompleteness` predicate (derived nodes have parent
+edges, root nodes are edge-isolated). M1-B2: transfer theorem for state
+transitions preserving CDT edges and nodeSlot. M1-B3: extended invariant bundle
+`capabilityInvariantBundleWithMintCompleteness` with extraction theorems.
+M1-C1: proved `addEdge_preserves_edgeWellFounded_fresh` — CDT acyclicity
+preserved for fresh child nodes. M1-C2: `addEdgeWouldBeSafe` runtime check.
+M1-D1: `cspaceRevokeCdt_swallowed_error_consistent` — invariant preservation,
+object stability, and edge-set monotonicity through error-swallowing path.
+M1-D2: enriched `cspaceRevokeCdt` docstring with error-handling rationale.
+7 new proved declarations; zero sorry/axiom.
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 

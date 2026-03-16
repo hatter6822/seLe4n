@@ -100,6 +100,30 @@ edge-well-founded formulation for clean subset-preservation proofs. -/
 def cdtAcyclicity (st : SystemState) : Prop :=
   st.cdt.edgeWellFounded
 
+/-- WS-H4/M-G02: Mint-tracking completeness — every CDT node that has a slot mapping
+is either (a) the child of some derivation edge (it was derived via mint/copy), or
+(b) isolated (a root node with no edges referencing it at all).
+
+This is stronger than `cdtCompleteness` (which only ensures node→object reachability)
+and captures the invariant that `addEdge` is always called alongside
+`ensureCdtNodeForSlot` during mint/copy operations. Required for proving that
+CDT-based revocation via `cspaceRevokeCdt` is exhaustive.
+
+Kept as a standalone predicate (not in `capabilityInvariantBundle`) to avoid churn
+on the 60+ theorems that destructure the 6-tuple bundle. Use
+`capabilityInvariantBundleWithMintCompleteness` for the full 7-property assurance. -/
+def cdtMintCompleteness (st : SystemState) : Prop :=
+  ∀ (childNode : CdtNodeId) (childRef : SlotRef),
+    st.cdtNodeSlot[childNode]? = some childRef →
+    (∃ edge ∈ st.cdt.edges, edge.child = childNode) ∨
+    (¬∃ edge ∈ st.cdt.edges, edge.parent = childNode ∨ edge.child = childNode)
+
+/-- WS-H4/M-G02: The default system state has empty CDT node mappings,
+so `cdtMintCompleteness` holds vacuously. -/
+theorem cdtMintCompleteness_default : cdtMintCompleteness default := by
+  intro childNode childRef hLookup
+  simp [default] at hLookup
+
 /-- WS-H13/H-01: CSpace depth consistency — every CNode has bounded depth and
 well-formed bit allocation.
 
@@ -149,6 +173,24 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st
 
+/-- WS-H4/M-G02: Extended capability invariant bundle including mint-tracking
+completeness. Provides the full 7-property assurance without changing the base
+6-tuple bundle. -/
+def capabilityInvariantBundleWithMintCompleteness (st : SystemState) : Prop :=
+  capabilityInvariantBundle st ∧ cdtMintCompleteness st
+
+/-- Extract the base bundle from the extended bundle. -/
+theorem capabilityInvariantBundle_of_withMintCompleteness
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithMintCompleteness st) :
+    capabilityInvariantBundle st := h.1
+
+/-- Extract mint completeness from the extended bundle. -/
+theorem cdtMintCompleteness_of_withMintCompleteness
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithMintCompleteness st) :
+    cdtMintCompleteness st := h.2
+
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
 monotonicity so composition proofs can depend on a single named assumption.
 
@@ -184,6 +226,26 @@ theorem cdtAcyclicity_of_capabilityInvariantBundle
 theorem cspaceDepthConsistent_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
     cspaceDepthConsistent st := hInv.2.2.2.2.2
+
+-- ============================================================================
+-- WS-H4/M-G02: Transfer theorems for cdtMintCompleteness
+-- ============================================================================
+
+/-- WS-H4/M-G02: Transfer cdtMintCompleteness when CDT edges and node-slot
+mappings are unchanged (non-CDT operations). -/
+theorem cdtMintCompleteness_of_cdt_edges_nodeSlot_eq
+    (st st' : SystemState)
+    (hMint : cdtMintCompleteness st)
+    (hEdgesEq : st'.cdt.edges = st.cdt.edges)
+    (hNodeSlotEq : st'.cdtNodeSlot = st.cdtNodeSlot) :
+    cdtMintCompleteness st' := by
+  intro childNode childRef hLookup
+  rw [hNodeSlotEq] at hLookup
+  rcases hMint childNode childRef hLookup with h | h
+  · left; rcases h with ⟨edge, hMem, hChild⟩
+    exact ⟨edge, hEdgesEq ▸ hMem, hChild⟩
+  · right; intro ⟨edge, hMem, hPC⟩
+    exact h ⟨edge, hEdgesEq ▸ hMem, hPC⟩
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions

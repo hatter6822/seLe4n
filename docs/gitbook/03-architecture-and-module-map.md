@@ -129,7 +129,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency.
   - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
   - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
-- **WS-M audit** (v0.16.13): end-to-end audit identified 14 findings across Operations (740 LoC), Defs (741 LoC), Authority (634 LoC), and Preservation (1,383 LoC). See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+- **WS-M audit** (v0.16.13): end-to-end audit identified 14 findings across Operations (740 LoC), Defs (741 LoC), Authority (634 LoC), and Preservation (1,383 LoC). Phase 1 (WS-M1, v0.16.14): proof strengthening — `resolveCapAddress_guard_match`, `cdtMintCompleteness`, `addEdge_preserves_edgeWellFounded_fresh`, `cspaceRevokeCdt_swallowed_error_consistent`. See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ### IPC subsystem
 

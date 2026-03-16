@@ -53,11 +53,11 @@ L3 (proof strengthening), L4 (test coverage), L5 (documentation & closeout).
 CSpace IPC integration not yet modeled). All 4 WS-I5 deferred items resolved.
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **WS-M** portfolio (Capability subsystem audit & remediation) is **planned**
-— 5 phases spanning proof strengthening, performance optimization, IPC capability
-transfer modeling, test coverage expansion, and documentation sync. Resolves
-L-T03 (capability transfer during IPC). See
-[`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+The **WS-M** portfolio (Capability subsystem audit & remediation) is **in progress**
+— Phase 1 (WS-M1, proof strengthening) completed at v0.16.14. 4 remaining phases
+span performance optimization, IPC capability transfer modeling, test coverage
+expansion, and documentation sync. Resolves L-T03 (capability transfer during IPC).
+See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing

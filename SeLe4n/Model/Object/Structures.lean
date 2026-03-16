@@ -773,6 +773,87 @@ theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : CdtNodeId) :
   simp [removeNode] at hMem
   exact hMem.1
 
+/-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when the child
+node does not appear in any existing edge (as either parent or child). The parent
+node MAY already participate in edges. This covers the common case in kernel
+operations where `ensureCdtNodeForSlot` creates a fresh CDT node for the
+destination slot.
+
+For nodes that already participate in derivation edges, callers should supply
+`hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` directly (the hypothesis
+pattern used by `cspaceCopy_preserves_capabilityInvariantBundle` et al.).
+The general `descendantsOf`-based theorem requires a BFS completeness proof
+that is deferred to Phase 2 (WS-M2) when the CDT structure is refactored. -/
+theorem addEdge_preserves_edgeWellFounded_fresh
+    (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+    (hNeq : parent ≠ child)
+    (hAcyclic : cdt.edgeWellFounded)
+    (hFreshChild : ∀ e ∈ cdt.edges, e.parent ≠ child ∧ e.child ≠ child) :
+    (cdt.addEdge parent child op).edgeWellFounded := by
+  intro node ⟨path, hLen, hHead, hLast, hEdges⟩
+  -- Strategy: project the cycle onto old edges. If every edge in the cycle is
+  -- old, hAcyclic gives contradiction. For the new edge (parent → child),
+  -- child has no outgoing edge (fresh), so the cycle cannot continue past it.
+  -- We show contradiction when the new edge appears, then fall through to the
+  -- old-edge case to build the projected cycle for hAcyclic.
+  apply hAcyclic node
+  refine ⟨path, hLen, hHead, hLast, fun i hi => ?_⟩
+  have ⟨e, heMem, hep, hec⟩ := hEdges i hi
+  simp only [addEdge] at heMem
+  rcases List.mem_cons.mp heMem with heq | hOld
+  · -- e is the new edge: path[i] = parent, path[i+1] = child
+    exfalso
+    have hCi1 : path[i + 1] = child := by rw [← hec]; exact congrArg CapDerivationEdge.child heq
+    -- Find the edge following child. Either i+2 < path.length (interior)
+    -- or i+1 is the last index (cycle wraps to path[0]).
+    by_cases hNext : i + 1 + 1 < path.length
+    · -- Interior case: edge from path[i+1] = child to path[i+2]
+      have ⟨e2, he2Mem, he2p, _⟩ := hEdges (i + 1) hNext
+      simp only [addEdge] at he2Mem
+      rcases List.mem_cons.mp he2Mem with heq2 | hOld2
+      · -- New edge again: parent = path[i+1] = child, but parent ≠ child
+        have : path[i + 1] = parent := by rw [← he2p]; exact congrArg CapDerivationEdge.parent heq2
+        rw [hCi1] at this; exact hNeq this.symm
+      · -- Old edge with parent = child: contradicts hFreshChild
+        have := (hFreshChild e2 hOld2).1
+        rw [he2p, hCi1] at this; exact this rfl
+    · -- Wrap-around case: i+1 = path.length - 1, so child is the last element.
+      -- Since getLast? = head? = some node, child = node, and path[0] = child.
+      -- Edge 0 starts from child, but child has no edges → contradiction.
+      have hJLast : i + 1 = path.length - 1 := by omega
+      -- Extract: path[path.length - 1] = node from getLast?
+      have hLastIdx : path[path.length - 1] = node := by
+        rw [List.getLast?_eq_getElem?] at hLast
+        exact (List.getElem?_eq_some_iff.mp hLast).2
+      -- child = node: path[i+1] = child, and i+1 = path.length-1, getLast? = some node
+      have hChildIsNode : child = node := by
+        rw [← hCi1, List.getElem_eq_iff (by omega), show i + 1 = path.length - 1 from hJLast,
+            ← List.getLast?_eq_getElem?]
+        exact hLast
+      -- Extract: path[0] = node from head?
+      have hFirstIdx : path[0] = node := by
+        cases path with
+        | nil => simp at hLen
+        | cons a rest => simp [List.head?] at hHead; exact hHead
+      have hChildIsFirst : path[0] = child := hFirstIdx.trans hChildIsNode.symm
+      -- Edge 0: from path[0] = child to path[1]
+      have hFirstEdge : 0 + 1 < path.length := by omega
+      have ⟨e0, he0Mem, he0p, _⟩ := hEdges 0 hFirstEdge
+      simp only [addEdge] at he0Mem
+      rcases List.mem_cons.mp he0Mem with heq0 | hOld0
+      · -- New edge: e0.parent = parent = path[0] = child → parent = child contradiction
+        have h1 : e0.parent = parent := by simp [heq0]
+        exact absurd (h1.symm.trans he0p |>.trans hChildIsFirst) hNeq
+      · -- Old edge from child: contradicts hFreshChild
+        exact absurd (he0p.trans hChildIsFirst) (hFreshChild e0 hOld0).1
+  · exact ⟨e, hOld, hep, hec⟩
+
+/-- WS-H4/M-G03: Runtime cycle-check — returns `true` if adding edge
+(parent → child) would NOT create a cycle. Checks that parent ≠ child and
+parent is not reachable from child via existing edges. -/
+def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : CdtNodeId) : Bool :=
+  parent != child && parent ∉ cdt.descendantsOf child
+
 /-- WS-G8: Consistency invariant — `childMap` mirrors the parent→child
 relationship in `edges`. -/
 def childMapConsistent (cdt : CapDerivationTree) : Prop :=

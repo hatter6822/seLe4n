@@ -681,6 +681,30 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
           (.ok ((), stLocal)) = .ok ((), st') at hStep
       exact revokeCdtFold_preserves _ stLocal st' hLocalInv hStep
 
+/-- WS-M1/M-G04: Error-swallowing consistency theorem. When `revokeCdtFoldBody`
+encounters a `cspaceDeleteSlot` error, it drops the error and performs only a
+CDT `removeNode`. This theorem proves that invariant preservation holds through
+the swallowed-error path specifically — the resulting state satisfies
+`capabilityInvariantBundle` because `removeNode` only shrinks the edge set
+(via `edgeWellFounded_sub`), leaving all other CSpace state untouched. -/
+theorem cspaceRevokeCdt_swallowed_error_consistent
+    (stAcc stNext : SystemState) (node : CdtNodeId)
+    (descAddr : CSpaceAddr) (err : KernelError)
+    (hInv : capabilityInvariantBundle stAcc)
+    (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
+    (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err)
+    (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
+    capabilityInvariantBundle stNext ∧
+    stNext.objects = stAcc.objects ∧
+    stNext.cdt.edges ⊆ stAcc.cdt.edges := by
+  unfold revokeCdtFoldBody at hStep
+  simp [hSlot, hDelErr] at hStep; cases hStep
+  exact ⟨capabilityInvariantBundle_of_cdt_update stAcc _ hInv
+    (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1
+      (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)),
+   rfl,
+   CapDerivationTree.removeNode_edges_sub stAcc.cdt node⟩
+
 /-- WS-F4/F-06: cspaceRevokeCdtStrict preserves capabilityInvariantBundle.
 The strict variant composes cspaceRevoke + a fold that only does cspaceDeleteSlot
 and CDT operations, same as the non-strict variant. -/
