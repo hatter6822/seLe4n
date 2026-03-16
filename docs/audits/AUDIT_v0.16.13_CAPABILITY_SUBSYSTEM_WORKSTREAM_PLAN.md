@@ -349,22 +349,22 @@ creates nodes that don't yet participate in any edge.
 
 ##### Subtask M1-C2: Add `addEdge` documentation and cycle-check helper
 
-**Implementation**:
+**Implementation** (completed v0.16.14):
 1. In `Model/Object/Structures.lean`, after the theorem, add:
    ```lean
    /-- Runtime cycle-check: returns `true` if adding edge (parent → child) would NOT
-   create a cycle. Uses `descendantsOf` (bounded BFS) to check reachability. -/
+   create a cycle. Checks parent ≠ child AND parent ∉ descendantsOf child. -/
    def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : CdtNodeId) : Bool :=
-     parent ∉ cdt.descendantsOf child
+     parent != child && parent ∉ cdt.descendantsOf child
    ```
-2. Add a bridge theorem connecting the runtime check to the proof:
-   ```lean
-   theorem addEdgeWouldBeSafe_implies_preserves
-       (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
-       (hAcyclic : cdt.edgeWellFounded)
-       (hSafe : cdt.addEdgeWouldBeSafe parent child = true) :
-       (cdt.addEdge parent child op).edgeWellFounded
-   ```
+   Note: `parent != child` was added because `descendantsOf` uses BFS starting from
+   child's neighbors, so it does not include child itself — a self-loop (parent = child)
+   would not be caught by the reachability check alone.
+
+2. **Bridge theorem deferred**: The `addEdgeWouldBeSafe_implies_preserves` bridge theorem
+   requires the general `addEdge_preserves_edgeWellFounded` theorem (not the `_fresh`
+   variant), which needs BFS completeness infrastructure deferred to Phase 2 (WS-M2).
+   The bridge will be delivered alongside the general acyclicity theorem in M2-B.
 
 **Verification**: `lake build` succeeds.
 
@@ -382,27 +382,27 @@ independently referenceable theorem.
 
 ##### Subtask M1-D1: Add named error-swallowing consistency theorem
 
-**Implementation**:
-1. In `Invariant/Preservation.lean`, after `revokeCdtFoldBody_preserves` (line 627), add:
+**Implementation** (completed v0.16.14 — stronger than originally planned):
+1. In `Invariant/Preservation.lean`, after `cspaceRevokeCdt_preserves_capabilityInvariantBundle`,
+   add a theorem that proves three properties through the error-swallowing path:
    ```lean
-   /-- WS-E4/M-G04: When `cspaceRevokeCdt` encounters a `cspaceDeleteSlot` error for
-   a descendant node, it swallows the error but still removes the CDT node. This theorem
-   states that the resulting state satisfies `capabilityInvariantBundle`.
-
-   Design rationale: Descendant deletion errors are swallowed because the CDT node is
-   removed regardless, preventing stale CDT references. The strict variant
-   `cspaceRevokeCdtStrict` is available for callers requiring error visibility. -/
    theorem cspaceRevokeCdt_swallowed_error_consistent
-       (stAcc : SystemState) (node : CdtNodeId) (descAddr : CSpaceAddr)
-       (e : KernelError)
+       (stAcc stNext : SystemState) (node : CdtNodeId)
+       (descAddr : CSpaceAddr) (err : KernelError)
        (hInv : capabilityInvariantBundle stAcc)
        (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
-       (hErr : cspaceDeleteSlot descAddr stAcc = .error e) :
-       capabilityInvariantBundle { stAcc with cdt := stAcc.cdt.removeNode node }
+       (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err)
+       (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
+       capabilityInvariantBundle stNext ∧
+       stNext.objects = stAcc.objects ∧
+       stNext.cdt.edges ⊆ stAcc.cdt.edges
    ```
-2. Proof: direct application of `capabilityInvariantBundle_of_cdt_update` with
-   `edgeWellFounded_sub` and `removeNode_edges_sub`. This factors out the existing
-   proof pattern from `revokeCdtFoldBody_preserves` (line 610–611) into a named lemma.
+   The implementation strengthens the original plan by: (a) binding through
+   `revokeCdtFoldBody` directly rather than constructing the state with `{ stAcc with ... }`,
+   (b) proving object stability (`stNext.objects = stAcc.objects`), and (c) proving
+   edge-set monotonicity (`stNext.cdt.edges ⊆ stAcc.cdt.edges`).
+2. Proof: unfold `revokeCdtFoldBody`, simplify with `hSlot`/`hDelErr`, then apply
+   `capabilityInvariantBundle_of_cdt_update` + `edgeWellFounded_sub` + `removeNode_edges_sub`.
 
 **Verification**: `lake build` succeeds.
 

@@ -681,7 +681,7 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
           (.ok ((), stLocal)) = .ok ((), st') at hStep
       exact revokeCdtFold_preserves _ stLocal st' hLocalInv hStep
 
-/-- WS-M1/M-R02: Error-swallowing consistency theorem. When `revokeCdtFoldBody`
+/-- WS-M1/M-G04: Error-swallowing consistency theorem. When `revokeCdtFoldBody`
 encounters a `cspaceDeleteSlot` error, it drops the error and performs only a
 CDT `removeNode`. This theorem proves that invariant preservation holds through
 the swallowed-error path specifically — the resulting state satisfies
@@ -689,6 +689,7 @@ the swallowed-error path specifically — the resulting state satisfies
 (via `edgeWellFounded_sub`), leaving all other CSpace state untouched. -/
 theorem cspaceRevokeCdt_swallowed_error_consistent
     (stAcc stNext : SystemState) (node : CdtNodeId)
+    (descAddr : CSpaceAddr) (err : KernelError)
     (hInv : capabilityInvariantBundle stAcc)
     (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
     (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err)

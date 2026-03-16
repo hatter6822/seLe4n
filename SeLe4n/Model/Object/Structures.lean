@@ -773,9 +773,11 @@ theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : CdtNodeId) :
   simp [removeNode] at hMem
   exact hMem.1
 
-/-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when neither
-the parent nor the child appears in any existing edge. This covers the common case
-in kernel operations where `ensureCdtNodeForSlot` creates fresh CDT nodes.
+/-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when the child
+node does not appear in any existing edge (as either parent or child). The parent
+node MAY already participate in edges. This covers the common case in kernel
+operations where `ensureCdtNodeForSlot` creates a fresh CDT node for the
+destination slot.
 
 For nodes that already participate in derivation edges, callers should supply
 `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` directly (the hypothesis

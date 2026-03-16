@@ -187,6 +187,19 @@ theorem resolveCapAddress_result_valid_cnode
                 · simp at hOk  -- empty slot: error
       next => simp at hOk  -- not a CNode: error
 
+-- ============================================================================
+-- WS-H13/H-01 (M-G01): Guard correctness — bidirectional characterization
+--
+-- The CSpace guard check is the primary attack surface for unauthorized
+-- capability resolution. These two theorems give a complete characterization:
+--
+--   resolveCapAddress_guard_reject : guard ≠ guardValue → error
+--   resolveCapAddress_guard_match  : success → guard = guardValue
+--
+-- Together they prove that the guard check is both sound (wrong guards are
+-- always rejected) and complete (success implies correct guard).
+-- ============================================================================
+
 /-- WS-H13/H-01 (deliverable 10b): Guard correctness — if `resolveCapAddress`
 succeeds at a leaf CNode (all bits consumed in one hop), then the guard extracted
 from `addr` matched the CNode's `guardValue`. This is the primary CSpace attack
