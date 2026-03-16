@@ -156,6 +156,8 @@ seL4's CDT uses mutable doubly-linked lists. seLe4n replaces this with a node-st
 
 This eliminates dangling-pointer hazards and makes revocation semantics cleaner: `cspaceRevokeCdtStrict` reports the first descendant deletion failure with offending slot context.
 
+**Streaming BFS revocation (WS-M5, v0.16.19–v0.17.0):** `cspaceRevokeCdtStreaming` performs level-by-level BFS revocation via `streamingRevokeBFS`, processing one CDT node at a time without materializing the full `descendantsOf` set. The per-node transition is factored into `processRevokeNode`, shared by both the materialized fold (`cspaceRevokeCdt`) and the streaming BFS path. Preservation is proved via `processRevokeNode_preserves_capabilityInvariantBundle` (shared per-node proof) and `streamingRevokeBFS_preserves` (fuel induction), culminating in `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`.
+
 ## 5. Information flow: N-domain configurable flow policy
 
 seL4 uses a binary high/low partition. seLe4n generalizes to a parameterized N-domain framework with two complementary systems:

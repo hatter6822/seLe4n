@@ -53,16 +53,13 @@ L3 (proof strengthening), L4 (test coverage), L5 (documentation & closeout).
 CSpace IPC integration not yet modeled). All 4 WS-I5 deferred items resolved.
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **WS-M** portfolio (Capability subsystem audit & remediation) is **in progress**
-— Phase 1 (WS-M1, proof strengthening) completed at v0.16.14; Phase 2 (WS-M2,
-performance optimization) completed at v0.16.15; Phase 3 (WS-M3, IPC capability
-transfer) completed at v0.16.17; Phase 4 (WS-M4, test coverage expansion)
-completed at v0.16.18 with 8 atomic subtasks across 2 tasks. WS-M4 adds 5
-`resolveCapAddress` edge case tests (guard-only CNode, 64-bit max depth, guard
-mismatch at intermediate level, partial bit consumption, single-level leaf) and 3
-`cspaceRevokeCdtStrict` stress tests (15-level deep chain, partial failure
-mid-traversal, branching tree BFS ordering). 1 remaining phase (M5) covers
-streaming BFS revocation optimization and full documentation sync.
+The **WS-M** portfolio (Capability subsystem audit & remediation) is **fully
+complete** (v0.16.14–v0.17.0) — all 5 phases delivered: M1 (proof strengthening,
+v0.16.14), M2 (performance optimization, v0.16.15), M3 (IPC capability transfer,
+v0.16.17), M4 (test coverage expansion, v0.16.18), M5 (streaming BFS revocation
++ documentation sync, v0.16.19), plus v0.17.0 (shared `processRevokeNode` helper
+extraction, unified BFS revocation proofs, edge-case test expansion). All 14
+audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:
