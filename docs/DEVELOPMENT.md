@@ -56,11 +56,13 @@ See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_
 The **WS-M** portfolio (Capability subsystem audit & remediation) is **in progress**
 — Phase 1 (WS-M1, proof strengthening) completed at v0.16.14; Phase 2 (WS-M2,
 performance optimization) completed at v0.16.15; Phase 3 (WS-M3, IPC capability
-transfer) completed at v0.16.17 with 20 atomic subtasks across 7 tasks. WS-M3
-implements seL4 IPC cap unwrapping (receive-side, Grant-right gated), adds CDT
-`.ipcTransfer` edge tracking, and introduces wrapper operations preserving all
-existing IPC proofs. Resolves L-T03 (capability transfer during IPC). 2 remaining
-phases (M4–M5) span test coverage expansion and streaming BFS optimization.
+transfer) completed at v0.16.17; Phase 4 (WS-M4, test coverage expansion)
+completed at v0.16.18 with 8 atomic subtasks across 2 tasks. WS-M4 adds 5
+`resolveCapAddress` edge case tests (guard-only CNode, 64-bit max depth, guard
+mismatch at intermediate level, partial bit consumption, single-level leaf) and 3
+`cspaceRevokeCdtStrict` stress tests (15-level deep chain, partial failure
+mid-traversal, branching tree BFS ordering). 1 remaining phase (M5) covers
+streaming BFS revocation optimization and full documentation sync.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:

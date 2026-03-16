@@ -29,7 +29,7 @@ capability transfer during IPC). Phase 1 (WS-M1) completed at v0.16.14.
 | **WS-M1** | Proof strengthening: guard-match theorem, CDT mint completeness, `addEdge_preserves_edgeWellFounded_fresh`, error-swallowing consistency, docstring updates | HIGH — **COMPLETED** (v0.16.14) |
 | **WS-M2** | Performance: fused revoke fold, CDT `parentMap` index, shared reply lemma | HIGH — **COMPLETED** (v0.16.15) |
 | **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer`, `findFirstEmptySlot`, `ipcTransferSingleCap`/`ipcUnwrapCaps`, IPC wrappers, API wiring, 2 test scenarios (resolves L-T03) | MEDIUM — **COMPLETED** (v0.16.17) |
-| **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM |
+| **WS-M4** | Test coverage (8 subtasks): multi-level resolution edge cases (guard-only, 64-bit max depth, guard mismatch at intermediate level, partial bits, single-level leaf), strict revocation stress (15+ deep chain, partial failure, BFS ordering) | MEDIUM — **COMPLETED** (v0.16.18) |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW |
 
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
@@ -86,6 +86,22 @@ theorems (`dispatchWithCap_send_uses_withCaps`, `dispatchWithCap_call_uses_withC
 M3-G: 4 test scenarios (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT,
 SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED). Resolves L-T03
 (capability transfer during IPC). 12+ new proved declarations; zero sorry/axiom.
+
+**WS-M4** (v0.16.18): Test coverage expansion — 8 atomic subtasks across 2 tasks,
+addressing M-T01 (multi-level resolution) and M-T02 (strict revocation).
+M4-A: 5 `resolveCapAddress` edge case tests in NegativeStateSuite — guard-only
+CNode with zero radixWidth (SCN-RESOLVE-GUARD-ONLY), 64-bit resolution across 8
+CNodes (SCN-RESOLVE-MAX-DEPTH), guard mismatch at intermediate level in a 3-level
+chain (SCN-RESOLVE-GUARD-MISMATCH-MID), partial bit consumption where
+bitsRemaining < guardWidth + radixWidth (SCN-RESOLVE-PARTIAL-BITS), and
+single-level leaf resolution (SCN-RESOLVE-SINGLE-LEVEL). M4-B: 3
+`cspaceRevokeCdtStrict` stress tests in OperationChainSuite — 15-level deep
+derivation chain with full deletion verification (SCN-REVOKE-STRICT-DEEP),
+partial failure mid-traversal with corrupted CNode triggering `.objectNotFound`
+and `firstFailure` context verification (SCN-REVOKE-STRICT-PARTIAL-FAIL), and
+branching tree BFS ordering verification with 5 descendants
+(SCN-REVOKE-STRICT-ORDER). 8 new test scenarios; zero sorry/axiom (test-only
+phase; no new proof declarations).
 
 ### WS-L workstream (IPC subsystem audit & remediation)
 

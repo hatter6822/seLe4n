@@ -1667,60 +1667,225 @@ scenarios. ~15 new proved declarations; zero sorry/axiom.
 
 ---
 
-### Phase 4: Test Coverage Expansion (WS-M4)
+### Phase 4: Test Coverage Expansion (WS-M4) — COMPLETED (v0.16.18)
 
-**Target version**: 0.16.17
+**Target version**: 0.16.18
 **Files modified**: `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean`,
-`SeLe4n/Testing/MainTraceHarness.lean`
+`tests/scenarios/scenario_catalog.json`
+
+Phase 4 is subdivided into 8 atomic subtasks across 2 tasks. Each subtask is
+independently buildable and testable. Task M4-A adds standalone unit tests for
+`resolveCapAddress` edge cases that were previously only covered implicitly.
+Task M4-B adds stress tests for `cspaceRevokeCdtStrict` with deeper derivation
+chains and failure scenarios.
+
+---
 
 #### Task M4-A: Multi-level resolution edge case tests (M-T01)
 
 **Problem**: `resolveCapAddress` is tested only implicitly via 12-level scenario
-fixtures. No standalone tests cover edge cases.
+fixtures (SCN-CSPACE-DEEP-RADIX). No standalone tests cover edge cases: zero
+`radixWidth` with non-zero `guardWidth`, maximum bit depth, guard mismatch at
+intermediate levels, partial bit consumption, or single-level leaf resolution.
 
-**Implementation**:
-1. Add to `NegativeStateSuite.lean`:
-   - **M4-A1**: Zero `radixWidth` with non-zero `guardWidth` — verify guard-only
-     CNodes resolve correctly (slot index always 0).
-   - **M4-A2**: Maximum depth (64 bits) — create a CNode chain consuming exactly
-     64 bits across multiple hops, verify resolution succeeds.
-   - **M4-A3**: Guard mismatch at intermediate level — create a 3-level chain where
-     the middle CNode has a wrong guard, verify `.error .invalidCapability`.
-   - **M4-A4**: Partial bit consumption — `bitsRemaining` is not a multiple of
-     `guardWidth + radixWidth`, verify `.error .illegalState` when bits run out
-     mid-level.
-   - **M4-A5**: Single-level resolution (bits consumed in one hop) — verify leaf
-     case returns correct `SlotRef`.
-2. Add scenario IDs: `SCN-RESOLVE-GUARD-ONLY`, `SCN-RESOLVE-MAX-DEPTH`,
-   `SCN-RESOLVE-GUARD-MISMATCH-MID`, `SCN-RESOLVE-PARTIAL-BITS`,
-   `SCN-RESOLVE-SINGLE-LEVEL`.
+**Design decision**: All resolution edge case tests are added to
+`NegativeStateSuite.lean` in a new `runWSM4ResolveEdgeCaseChecks` section,
+following the existing section pattern. Each test constructs a minimal state
+with targeted CNode configurations and calls `resolveCapAddress` directly
+(not through the kernel monad wrapper), enabling precise error path verification.
 
-**Verification**: `test_smoke.sh` passes.
+##### Subtask M4-A1: Guard-only CNode resolution (zero radixWidth)
+
+**Scenario ID**: `SCN-RESOLVE-GUARD-ONLY`
+
+**Setup**: Create a CNode with `guardWidth := 4`, `radixWidth := 0`,
+`guardValue := 0xA`. The slot at index 0 holds a capability (since with
+`radixWidth = 0`, the slot index is always `addr % 2^0 = addr % 1 = 0`).
+
+**Action**: Call `resolveCapAddress rootId addr 4 st` where addr encodes
+guard value `0xA` in the top 4 bits.
+
+**Verify**:
+- Resolution succeeds with `.ok { cnode := rootId, slot := ⟨0⟩ }`.
+- The slot index is always 0 regardless of the address value (only the
+  guard matters).
+
+**Implementation**: In `NegativeStateSuite.lean`, add test that constructs
+the CNode, verifies success, then tests with wrong guard value (0xB instead
+of 0xA) and verifies `.error .invalidCapability`.
+
+##### Subtask M4-A2: Maximum depth resolution (64 bits)
+
+**Scenario ID**: `SCN-RESOLVE-MAX-DEPTH`
+
+**Setup**: Create a chain of 8 CNodes, each consuming 8 bits
+(`guardWidth := 0`, `radixWidth := 8`). Total = 64 bits. Each CNode at
+level `i` has a slot pointing to the next CNode at level `i+1`. The last
+CNode (level 7) is the leaf.
+
+**Action**: Call `resolveCapAddress rootId addr 64 st` where addr encodes
+the slot indices for each level.
+
+**Verify**:
+- Resolution succeeds through all 8 levels.
+- The returned `SlotRef` points to the correct leaf CNode and slot.
+
+**Implementation**: Build state with 8 CNodes, verify successful 64-bit
+resolution. Also verify that calling with `bitsRemaining := 65` returns
+`.error .illegalState` (more bits than the chain can consume).
+
+##### Subtask M4-A3: Guard mismatch at intermediate level
+
+**Scenario ID**: `SCN-RESOLVE-GUARD-MISMATCH-MID`
+
+**Setup**: Create a 3-level CNode chain:
+- Level 0: `guardWidth := 2`, `guardValue := 3`, `radixWidth := 2` (consumes 4 bits)
+- Level 1: `guardWidth := 2`, `guardValue := 1`, `radixWidth := 2` (consumes 4 bits)
+- Level 2: `guardWidth := 0`, `radixWidth := 4` (leaf, consumes 4 bits)
+
+**Action**: Call `resolveCapAddress rootId addr 12 st` where addr has correct
+guard at level 0 but wrong guard at level 1 (guard bits = 2, expected 1).
+
+**Verify**: Returns `.error .invalidCapability` (guard mismatch at level 1).
+Also verify that with correct guards at all levels, resolution succeeds.
+
+##### Subtask M4-A4: Partial bit consumption (bits exhausted mid-level)
+
+**Scenario ID**: `SCN-RESOLVE-PARTIAL-BITS`
+
+**Setup**: Create a CNode with `guardWidth := 2`, `radixWidth := 4`
+(consumes 6 bits per hop).
+
+**Action**: Call `resolveCapAddress rootId addr 4 st` — only 4 bits
+available but the CNode needs 6 bits (guardWidth + radixWidth = 6 > 4).
+
+**Verify**: Returns `.error .illegalState` because `bitsRemaining < consumed`.
+Also test with `bitsRemaining := 0` → `.error .illegalState` (zero bits).
+
+##### Subtask M4-A5: Single-level leaf resolution
+
+**Scenario ID**: `SCN-RESOLVE-SINGLE-LEVEL`
+
+**Setup**: Create a CNode with `guardWidth := 0`, `radixWidth := 4`
+(consumes exactly 4 bits). Slot 5 holds a capability.
+
+**Action**: Call `resolveCapAddress rootId (CPtr.ofNat 5) 4 st`.
+
+**Verify**:
+- Returns `.ok { cnode := rootId, slot := ⟨5⟩ }`.
+- `bitsRemaining - consumed = 0`, so the leaf branch is taken.
+- The correct slot (5) is extracted from the address bits.
+
+**Verification**: `lake build` + `test_smoke.sh` passes after all M4-A subtasks.
 
 **Files**: `tests/NegativeStateSuite.lean`
 
+---
+
 #### Task M4-B: Strict revocation stress tests (M-T02)
 
-**Problem**: `cspaceRevokeCdtStrict` is exercised only with 3-level derivation chains.
+**Problem**: `cspaceRevokeCdtStrict` is exercised only with a 3-level derivation
+chain in chain9. No tests cover: (a) deep chains with >10 descendants,
+(b) partial failure mid-traversal, (c) `deletedSlots` ordering guarantees.
 
-**Implementation**:
-1. Add to `OperationChainSuite.lean`:
-   - **M4-B1**: Strict revocation with 15+ descendants in a deep chain — verify
-     all descendants are deleted and `deletedSlots` list is complete.
-   - **M4-B2**: Strict revocation with partial failure — set up a state where
-     one descendant's CNode has been deleted (object not found), verify
-     `firstFailure` is populated with the correct `offendingNode`, `offendingSlot`,
-     and `error`, and that `deletedSlots` contains only the successfully deleted
-     slots before the failure.
-   - **M4-B3**: `deletedSlots` ordering — verify the returned list is in
-     BFS traversal order (reversed by the fold, then re-reversed by the final
-     `.reverse` call at line 738).
-2. Add scenario IDs: `SCN-REVOKE-STRICT-DEEP`, `SCN-REVOKE-STRICT-PARTIAL-FAIL`,
-   `SCN-REVOKE-STRICT-ORDER`.
+**Design decision**: All strict revocation stress tests are added to
+`OperationChainSuite.lean` as new chain functions, following the existing
+chain pattern. Each test constructs its own isolated state with unique ObjIds
+to avoid cross-test interference.
 
-**Verification**: `test_smoke.sh` passes.
+##### Subtask M4-B1: Deep chain strict revocation (15+ descendants)
+
+**Scenario ID**: `SCN-REVOKE-STRICT-DEEP`
+
+**Setup**: Create a root CNode with a capability, then use `cspaceMintWithCdt`
+to build a linear derivation chain of depth 15:
+root → child1 → child2 → ... → child15. Each level is a separate CNode
+with one minted capability derived from the previous level.
+
+**Action**: Call `cspaceRevokeCdtStrict` on the root slot.
+
+**Verify**:
+- Operation succeeds (no `.error`).
+- `firstFailure` is `none` (all deletions succeeded).
+- `deletedSlots.length = 15` (all descendants deleted).
+- All descendant slots are empty after revocation
+  (`lookupSlotCap` returns `none` for each).
+- Root slot still exists (revocation only affects descendants).
+- Invariants hold on the final state.
+
+##### Subtask M4-B2: Partial failure mid-traversal
+
+**Scenario ID**: `SCN-REVOKE-STRICT-PARTIAL-FAIL`
+
+**Setup**: Create a 5-level derivation chain (root → c1 → c2 → c3 → c4 → c5).
+After building the chain, delete the CNode object backing c3's slot
+(replace it with a non-CNode object, causing `cspaceDeleteSlot` to fail
+with `.objectNotFound` when revocation reaches c3).
+
+**Action**: Call `cspaceRevokeCdtStrict` on the root slot.
+
+**Verify**:
+- Operation succeeds (returns `.ok`, not `.error`).
+- `firstFailure` is `some` with:
+  - `offendingSlot` = `some c3Addr` (the slot that couldn't be deleted).
+  - `error` = `.objectNotFound`.
+- `deletedSlots` contains only the slots deleted *before* c3 in BFS order.
+- Slots after c3 in BFS order are NOT deleted (traversal halts at failure).
+- Invariants hold on the final state.
+
+##### Subtask M4-B3: `deletedSlots` ordering verification
+
+**Scenario ID**: `SCN-REVOKE-STRICT-ORDER`
+
+**Setup**: Create a branching derivation tree (not just a linear chain):
+```
+root → A → A1
+     → B → B1
+          → B2
+```
+This creates 4 descendants with a known BFS traversal order: the BFS from
+root visits children in the order returned by `descendantsOf` (which uses
+`childrenOf` → `childMap` lookup). With the `addEdge`-based CDT construction,
+edges are prepended, so children are visited in reverse insertion order.
+
+**Action**: Call `cspaceRevokeCdtStrict` on the root slot.
+
+**Verify**:
+- All 4 descendants deleted (`deletedSlots.length = 4`).
+- The ordering of `deletedSlots` matches the BFS traversal order.
+- `firstFailure` is `none`.
+- Invariants hold on the final state.
+
+**Verification**: `lake build` + `test_smoke.sh` passes after all M4-B subtasks.
 
 **Files**: `tests/OperationChainSuite.lean`
+
+---
+
+#### M4 Dependency Graph and Execution Order
+
+```
+M4-A1 (guard-only CNode)     ─── no deps (standalone)
+M4-A2 (max depth 64-bit)     ─── no deps (standalone)
+M4-A3 (guard mismatch mid)   ─── no deps (standalone)
+M4-A4 (partial bits)          ─── no deps (standalone)
+M4-A5 (single-level leaf)    ─── no deps (standalone)
+M4-B1 (deep chain 15+)       ─── no deps (standalone)
+M4-B2 (partial failure)      ─── no deps (standalone)
+M4-B3 (ordering)             ─── no deps (standalone)
+```
+
+All subtasks are independent and can be implemented in any order.
+
+**Optimal execution order**: {M4-A1..A5} (parallel) → {M4-B1..B3} (parallel).
+Total: 8 subtasks, 2 sequential steps.
+
+**Deliverables**: 5 resolution edge case tests (`SCN-RESOLVE-GUARD-ONLY`,
+`SCN-RESOLVE-MAX-DEPTH`, `SCN-RESOLVE-GUARD-MISMATCH-MID`,
+`SCN-RESOLVE-PARTIAL-BITS`, `SCN-RESOLVE-SINGLE-LEVEL`), 3 strict revocation
+stress tests (`SCN-REVOKE-STRICT-DEEP`, `SCN-REVOKE-STRICT-PARTIAL-FAIL`,
+`SCN-REVOKE-STRICT-ORDER`). 8 new test scenarios; zero sorry/axiom (test-only
+phase). Updated scenario catalog.
 
 ---
 
@@ -1890,5 +2055,5 @@ Total: 20 subtasks, 9 sequential steps.
 | **WS-M1** | Proof strengthening (10 subtasks): guard-match extraction theorem, CDT mint completeness predicate + preservation + composition, addEdge acyclicity + cycle-check helper, error-swallowing consistency theorem, stale docstrings | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
 | **WS-M2** | Performance (14 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
 | **WS-M3** | IPC capability transfer (20 subtasks): `CapTransferResult`/`CapTransferSummary` types, `DerivationOp.ipcTransfer` CDT variant, `findFirstEmptySlot` + correctness theorems, `ipcTransferSingleCap` + preservation, `ipcUnwrapCaps` batch + preservation, 3 IPC wrapper operations + 5 preservation theorems, `decodeExtraCapAddrs`/`resolveExtraCaps` helpers, `dispatchWithCap` wiring, 4 test scenarios | MEDIUM | M-D01, M-T03 |
-| **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM | M-T01, M-T02 |
+| **WS-M4** | Test coverage (8 subtasks): multi-level resolution edge cases (guard-only CNode, 64-bit max depth, guard mismatch at intermediate level, partial bit consumption, single-level leaf), strict revocation stress (15+ deep chain, partial failure, BFS ordering) | MEDIUM | M-T01, M-T02 |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW | M-P04 |
