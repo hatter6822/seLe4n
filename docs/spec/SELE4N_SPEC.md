@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.17` (`lakefile.toml`) |
+| **Package version** | `0.16.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 39,444 across 71 Lean files |
-| **Test LoC** | 4,231 across 4 Lean test suites |
-| **Proved declarations** | 1,248 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 40,533 across 71 Lean files |
+| **Test LoC** | 5,024 across 4 Lean test suites |
+| **Proved declarations** | 1,279 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem audit |
-| **Next workstreams** | **WS-M** Capability subsystem audit & remediation — Phase 1 (WS-M1) **COMPLETED** (v0.16.14), Phase 2 (WS-M2) **COMPLETED** (v0.16.15), Phase 3 (WS-M3) **COMPLETED** (v0.16.17): IPC capability transfer — 20 subtasks implementing `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations, IPC wrapper integration with invariant preservation proofs, API wiring, 4 test scenarios. Resolves L-T03 (last WS-L deferred item). **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: M4–M5, then Raspberry Pi 5 hardware binding** |
+| **Next workstreams** | **WS-M** Capability subsystem audit & remediation — Phase 1 (WS-M1) **COMPLETED** (v0.16.14), Phase 2 (WS-M2) **COMPLETED** (v0.16.15), Phase 3 (WS-M3) **COMPLETED** (v0.16.17), Phase 4 (WS-M4) **COMPLETED** (v0.16.18): Test coverage expansion — 8 scenarios covering `resolveCapAddress` edge cases (guard-only CNodes, 64-bit max-depth, guard mismatch, partial bit consumption, single-level leaf) and `cspaceRevokeCdtStrict` validation (15-level deep chain, partial failure with first-failure context, BFS ordering on branching trees). **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: M5, then Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

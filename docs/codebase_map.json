@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "3793b83c4b3e90da883602e99e05afd1534cc4c3",
-      "tree_sha": "a7d6f9ca0366113dae2b8ca71c656bd5d2998184",
-      "committed_at_utc": "2026-03-16T02:46:01-04:00"
+      "branch": "claude/optimize-phase-4-testing-3cErG",
+      "commit_sha": "c7d5ec05c1f676961ac7fb95c4e56433c9671864",
+      "tree_sha": "e02290fa016c9b5a73e38d5a2475a3cd0b9b823e",
+      "committed_at_utc": "2026-03-16T21:59:00+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5888fb28c6f7599e44506fd3c51bb38ed8816146b1885d94cb912df253702387"
+    "source_digest": "82928e6564f49b0e17036e29be08d2777a8db1b46ea8e2d069b44c338402ba32"
   },
   "summary": {
     "module_count": 75,
-    "declaration_count": 2345
+    "declaration_count": 2350
   },
   "readme_sync": {
-    "version": "0.16.17",
+    "version": "0.16.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 71,
     "production_loc": 40533,
     "test_files": 4,
-    "test_loc": 4367,
+    "test_loc": 5024,
     "proved_theorem_lemma_decls": 1279,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -18482,7 +18482,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 42,
+      "declaration_count": 43,
       "declarations": [
         {
           "kind": "namespace",
@@ -18828,8 +18828,16 @@
         },
         {
           "kind": "def",
+          "name": "runWSM4ResolveEdgeCaseChecks",
+          "line": 2343,
+          "called": [
+            "cnodeId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 2333,
+          "line": 2682,
           "called": []
         }
       ]
@@ -18837,7 +18845,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 26,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -18846,45 +18854,51 @@
           "called": []
         },
         {
-          "kind": "def",
-          "name": "expect",
+          "kind": "instance",
+          "name": "<anonymous:instance:19>",
           "line": 19,
           "called": []
         },
         {
           "kind": "def",
+          "name": "expect",
+          "line": 22,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "expectOkState",
-          "line": 25,
+          "line": 28,
           "called": []
         },
         {
           "kind": "def",
           "name": "runKernelState",
-          "line": 35,
+          "line": 38,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectError",
-          "line": 44,
+          "line": 47,
           "called": []
         },
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 56,
+          "line": 59,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertInvariants",
-          "line": 58,
+          "line": 61,
           "called": []
         },
         {
           "kind": "def",
           "name": "chain1RetypeMintRevoke",
-          "line": 61,
+          "line": 64,
           "called": [
             "assertInvariants",
             "expectOkState"
@@ -18893,7 +18907,7 @@
         {
           "kind": "def",
           "name": "chain2SendSendReceiveFifo",
-          "line": 91,
+          "line": 94,
           "called": [
             "assertInvariants",
             "expect",
@@ -18903,7 +18917,7 @@
         {
           "kind": "def",
           "name": "chain3MapLookupUnmapLookup",
-          "line": 112,
+          "line": 115,
           "called": [
             "assertInvariants",
             "expect",
@@ -18914,7 +18928,7 @@
         {
           "kind": "def",
           "name": "chain4ServiceStartDependentStop",
-          "line": 131,
+          "line": 134,
           "called": [
             "allowAll",
             "expect",
@@ -18925,7 +18939,7 @@
         {
           "kind": "def",
           "name": "chain5CopyMoveDelete",
-          "line": 157,
+          "line": 160,
           "called": [
             "assertInvariants",
             "expectOkState"
@@ -18934,7 +18948,7 @@
         {
           "kind": "def",
           "name": "chain6NotificationBadgeAccumulation",
-          "line": 183,
+          "line": 186,
           "called": [
             "assertInvariants",
             "expect",
@@ -18944,7 +18958,7 @@
         {
           "kind": "def",
           "name": "chain7VSpaceMultiAsidSharedPage",
-          "line": 210,
+          "line": 213,
           "called": [
             "assertInvariants",
             "expect",
@@ -18955,7 +18969,7 @@
         {
           "kind": "def",
           "name": "chain8IpcInterleavedSendOrdering",
-          "line": 259,
+          "line": 262,
           "called": [
             "assertInvariants",
             "expect",
@@ -18965,7 +18979,7 @@
         {
           "kind": "def",
           "name": "chain9LifecycleCascadingRevokeAndAttenuation",
-          "line": 306,
+          "line": 309,
           "called": [
             "assertInvariants",
             "expect",
@@ -18976,13 +18990,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 373,
+          "line": 376,
           "called": []
         },
         {
           "kind": "def",
           "name": "scheduleNTimes",
-          "line": 406,
+          "line": 409,
           "called": [
             "assertInvariants",
             "runKernelState"
@@ -18991,7 +19005,7 @@
         {
           "kind": "def",
           "name": "schedulerStressChecks",
-          "line": 416,
+          "line": 419,
           "called": [
             "assertInvariants",
             "buildParameterizedTopology",
@@ -19004,7 +19018,7 @@
         {
           "kind": "def",
           "name": "chain10RegisterDecodeMultiSyscall",
-          "line": 505,
+          "line": 508,
           "called": [
             "assertInvariants",
             "expect"
@@ -19013,7 +19027,7 @@
         {
           "kind": "def",
           "name": "chain11RegisterDecodeIpcTransfer",
-          "line": 595,
+          "line": 598,
           "called": [
             "assertInvariants",
             "expect"
@@ -19022,7 +19036,7 @@
         {
           "kind": "def",
           "name": "chain12IpcCapTransfer",
-          "line": 663,
+          "line": 666,
           "called": [
             "assertInvariants",
             "expect",
@@ -19032,7 +19046,7 @@
         {
           "kind": "def",
           "name": "chain13IpcCapTransferNoGrant",
-          "line": 721,
+          "line": 724,
           "called": [
             "assertInvariants",
             "expect",
@@ -19042,7 +19056,36 @@
         {
           "kind": "def",
           "name": "chain14IpcBadgeAndCapTransfer",
-          "line": 775,
+          "line": 778,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain15StrictRevokeDeepChain",
+          "line": 859,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain16StrictRevokePartialFail",
+          "line": 936,
+          "called": [
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain17StrictRevokeOrdering",
+          "line": 1046,
           "called": [
             "assertInvariants",
             "expect",
@@ -19052,13 +19095,16 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 849,
+          "line": 1153,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
             "chain12IpcCapTransfer",
             "chain13IpcCapTransferNoGrant",
             "chain14IpcBadgeAndCapTransfer",
+            "chain15StrictRevokeDeepChain",
+            "chain16StrictRevokePartialFail",
+            "chain17StrictRevokeOrdering",
             "chain1RetypeMintRevoke",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
@@ -19074,7 +19120,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 869,
+          "line": 1176,
           "called": []
         }
       ]

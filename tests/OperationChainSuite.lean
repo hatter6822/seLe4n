@@ -16,6 +16,9 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
+instance : Inhabited SeLe4n.Kernel.CSpaceAddr where
+  default := { cnode := ⟨0⟩, slot := ⟨0⟩ }
+
 private def expect (label : String) (cond : Bool) : IO Unit := do
   if cond then
     IO.println s!"operation-chain check passed [{label}]"
@@ -846,6 +849,307 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
 
   assertInvariants "chain14: IPC badge + cap transfer combined" st2
 
+-- ============================================================================
+-- WS-M4-B: Strict revocation stress tests (M-T02)
+-- ============================================================================
+
+/-- SCN-REVOKE-STRICT-DEEP (M4-B1): Strict revocation with 15-level deep
+derivation chain — verify all descendants are deleted and `deletedSlots`
+list is complete. Root slot remains present after revocation. -/
+private def chain15StrictRevokeDeepChain : IO Unit := do
+  -- Create 16 CNodes: root + 15 levels
+  let rootCNode : SeLe4n.ObjId := ⟨7000⟩
+  let targetId : SeLe4n.ObjId := ⟨7100⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+
+  -- Build initial state with all 16 CNodes (root + 15 children)
+  let childIds : List SeLe4n.ObjId := (List.range 15).map fun i => ⟨7001 + i⟩
+  let childSlots : List SeLe4n.Kernel.CSpaceAddr :=
+    childIds.map fun cid => { cnode := cid, slot := ⟨0⟩ }
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  builder := builder.withObject rootCNode (.cnode {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+    ]
+  })
+  for cid in childIds do
+    builder := builder.withObject cid (.cnode {
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {}
+    })
+  let st0 := builder.build
+
+  -- Build 15-level chain: root → child0 → child1 → ... → child14
+  let mut st := st0
+  let allSlots := rootSlot :: childSlots
+  for i in List.range 15 do
+    let srcSlot := allSlots[i]!
+    let dstSlot := allSlots[i + 1]!
+    let rights := if i < 7 then AccessRightSet.ofList [.read, .write, .grant]
+                  else AccessRightSet.ofList [.read, .write]
+    let (_, st') ← expectOkState s!"chain15: mint level {i}→{i+1}"
+      (SeLe4n.Kernel.cspaceMintWithCdt srcSlot dstSlot rights none st)
+    st := st'
+
+  -- Verify chain was built correctly
+  for i in List.range 15 do
+    let capOpt := SystemState.lookupSlotCap st childSlots[i]!
+    expect s!"chain15: child{i} has cap" capOpt.isSome
+
+  -- Execute strict revocation on root
+  let (report, stFinal) ← expectOkState "chain15: strict revoke deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st)
+
+  -- Verify: no failure
+  expect "chain15: no failure in deep revoke"
+    report.firstFailure.isNone
+
+  -- Verify: all 15 descendants deleted
+  expect s!"chain15: deletedSlots has 15 entries (got {report.deletedSlots.length})"
+    (report.deletedSlots.length = 15)
+
+  -- Verify: all descendant slots are now empty
+  for i in List.range 15 do
+    let capOpt := SystemState.lookupSlotCap stFinal childSlots[i]!
+    expect s!"chain15: child{i} slot empty after revoke" capOpt.isNone
+
+  -- Verify: root slot still present
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain15: root slot still present" rootCapOpt.isSome
+
+  -- Verify: root CDT node survives revocation
+  let rootNodeOpt := SystemState.lookupCdtNodeOfSlot stFinal rootSlot
+  expect "chain15: root CDT node still present" rootNodeOpt.isSome
+
+  -- Verify: CDT nodes detached for all descendants
+  for i in List.range 15 do
+    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[i]!
+    expect s!"chain15: child{i} CDT node detached" nodeOpt.isNone
+
+  assertInvariants "chain15: deep chain strict revoke invariants" stFinal
+
+/-- SCN-REVOKE-STRICT-PARTIAL-FAIL (M4-B2): Strict revocation with partial
+failure — one descendant's CNode is replaced with a non-CNode object, causing
+`cspaceDeleteSlot` to fail with `.objectNotFound`. Verifies `firstFailure`
+is populated and traversal halts. -/
+private def chain16StrictRevokePartialFail : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨7200⟩
+  let targetId : SeLe4n.ObjId := ⟨7300⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+
+  -- 5 child CNodes
+  let childIds : List SeLe4n.ObjId := (List.range 5).map fun i => ⟨7201 + i⟩
+  let childSlots : List SeLe4n.Kernel.CSpaceAddr :=
+    childIds.map fun cid => { cnode := cid, slot := ⟨0⟩ }
+
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  builder := builder.withObject rootCNode (.cnode {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+    ]
+  })
+  for cid in childIds do
+    builder := builder.withObject cid (.cnode {
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {}
+    })
+  let st0 := builder.build
+
+  -- Build 5-level chain: root → c0 → c1 → c2 → c3 → c4
+  let mut st := st0
+  let allSlots := rootSlot :: childSlots
+  for i in List.range 5 do
+    let srcSlot := allSlots[i]!
+    let dstSlot := allSlots[i + 1]!
+    let (_, st') ← expectOkState s!"chain16: mint level {i}→{i+1}"
+      (SeLe4n.Kernel.cspaceMintWithCdt srcSlot dstSlot (AccessRightSet.ofList [.read, .write, .grant]) none st)
+    st := st'
+
+  -- Corrupt: replace child2's CNode object with an endpoint (non-CNode)
+  -- This will cause cspaceDeleteSlot for child2 to fail with objectNotFound
+  -- because it expects a CNode at that ObjId but finds an endpoint instead.
+  -- Also update lifecycle objectType metadata to stay consistent.
+  let corruptedCNodeId := childIds[2]!
+  let stCorrupted := { st with
+    objects := st.objects.insert corruptedCNodeId (.endpoint {}),
+    lifecycle := { st.lifecycle with
+      objectTypes := st.lifecycle.objectTypes.insert corruptedCNodeId .endpoint }
+  }
+
+  -- Execute strict revocation
+  let (report, stFinal) ← expectOkState "chain16: strict revoke partial fail"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot stCorrupted)
+
+  -- Verify: firstFailure is present
+  expect "chain16: firstFailure is some" report.firstFailure.isSome
+
+  -- Verify: firstFailure has correct error
+  match report.firstFailure with
+  | some failure =>
+      expect "chain16: failure error is objectNotFound"
+        (failure.error = .objectNotFound)
+      -- The offending slot should be child2's slot
+      expect "chain16: offendingSlot matches child2"
+        (failure.offendingSlot = some childSlots[2]!)
+  | none =>
+      throw <| IO.userError "chain16: expected firstFailure to be some"
+
+  -- Verify: deletedSlots contains slots deleted BEFORE the failure.
+  -- BFS traversal on a linear chain root→c0→c1→c2→c3→c4 processes in
+  -- order [c0, c1, c2, c3, c4]. c0 and c1 are successfully deleted before
+  -- reaching c2 (the corrupted node where deletion fails). After failure,
+  -- traversal halts → exactly 2 slots deleted.
+  expect s!"chain16: deletedSlots has 2 entries before failure (got {report.deletedSlots.length})"
+    (report.deletedSlots.length = 2)
+
+  -- Verify: the specific slots deleted are c0 and c1 (the two before the failure)
+  let deletedSet := report.deletedSlots
+  expect "chain16: c0 slot in deletedSlots"
+    (deletedSet.any fun ds => ds == childSlots[0]!)
+  expect "chain16: c1 slot in deletedSlots"
+    (deletedSet.any fun ds => ds == childSlots[1]!)
+
+  -- Verify: root slot still present
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain16: root slot still present" rootCapOpt.isSome
+
+  -- Verify: post-failure descendants (c3, c4) are untouched — traversal halted.
+  -- Their slots should still contain the capabilities minted earlier.
+  let c3CapOpt := SystemState.lookupSlotCap stFinal childSlots[3]!
+  expect "chain16: c3 slot preserved after halt" c3CapOpt.isSome
+  let c4CapOpt := SystemState.lookupSlotCap stFinal childSlots[4]!
+  expect "chain16: c4 slot preserved after halt" c4CapOpt.isSome
+
+  -- Verify: c3 and c4 CDT nodes also survive the halt
+  let c3NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[3]!
+  expect "chain16: c3 CDT node survives halt" c3NodeOpt.isSome
+  let c4NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[4]!
+  expect "chain16: c4 CDT node survives halt" c4NodeOpt.isSome
+
+  -- Note: assertInvariants is intentionally NOT called here because we
+  -- deliberately corrupted the state (replaced a CNode with an endpoint)
+  -- to trigger the partial failure. The corrupted object would fail the
+  -- lifecycle objectType consistency check. This is expected behavior.
+
+/-- SCN-REVOKE-STRICT-ORDER (M4-B3): Branching derivation tree verifies
+`deletedSlots` set completeness after revocation. Tree shape:
+  root → A → A1
+       → B → B1
+            → B2
+Total 5 descendants. Verifies deletedSlots.length = 5, all entries come
+from the expected descendant set, root is preserved, and CDT nodes are
+detached. Note: `descendantsOf` traverses children via HashMap-backed
+`childrenOf`, so sibling ordering (A vs B) is non-deterministic; we
+verify set membership rather than exact BFS ordering. -/
+private def chain17StrictRevokeOrdering : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨7400⟩
+  let cnodeA : SeLe4n.ObjId := ⟨7401⟩
+  let cnodeB : SeLe4n.ObjId := ⟨7402⟩
+  let cnodeA1 : SeLe4n.ObjId := ⟨7403⟩
+  let cnodeB1 : SeLe4n.ObjId := ⟨7404⟩
+  let cnodeB2 : SeLe4n.ObjId := ⟨7405⟩
+  let targetId : SeLe4n.ObjId := ⟨7500⟩
+
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
+  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := ⟨0⟩ }
+  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := ⟨0⟩ }
+  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := ⟨0⟩ }
+
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  for cid in [rootCNode, cnodeA, cnodeB, cnodeA1, cnodeB1, cnodeB2] do
+    builder := builder.withObject cid (.cnode {
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+      slots := if cid = rootCNode then
+        Std.HashMap.ofList [
+          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+        ]
+      else {}
+    })
+  let st0 := builder.build
+
+  -- Build branching tree:
+  -- root → A (mint)
+  let (_, st1) ← expectOkState "chain17: mint root→A"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
+  -- root → B (mint)
+  let (_, st2) ← expectOkState "chain17: mint root→B"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
+  -- A → A1 (mint)
+  let (_, st3) ← expectOkState "chain17: mint A→A1"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotA1 (AccessRightSet.ofList [.read, .write]) none st2)
+  -- B → B1 (mint)
+  let (_, st4) ← expectOkState "chain17: mint B→B1"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB1 (AccessRightSet.ofList [.read, .write]) none st3)
+  -- B → B2 (mint)
+  let (_, st5) ← expectOkState "chain17: mint B→B2"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB2 (AccessRightSet.ofList [.read]) none st4)
+
+  -- Verify tree was built: all 5 descendants have caps (A, B, A1, B1, B2)
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let capOpt := SystemState.lookupSlotCap st5 slot
+    expect s!"chain17: {label} has cap" capOpt.isSome
+
+  -- Execute strict revocation on root
+  let (report, stFinal) ← expectOkState "chain17: strict revoke branching tree"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st5)
+
+  -- Verify: no failure
+  expect "chain17: no failure in branching revoke"
+    report.firstFailure.isNone
+
+  -- Verify: all 5 descendants deleted (A, B, A1, B1, B2)
+  expect s!"chain17: deletedSlots has 5 entries (got {report.deletedSlots.length})"
+    (report.deletedSlots.length = 5)
+
+  -- Verify: all descendant slots are now empty
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let capOpt := SystemState.lookupSlotCap stFinal slot
+    expect s!"chain17: {label} slot empty after revoke" capOpt.isNone
+
+  -- Verify: root slot still present
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain17: root slot still present" rootCapOpt.isSome
+
+  -- Verify: CDT nodes detached
+  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
+    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    expect s!"chain17: {label} CDT node detached" nodeOpt.isNone
+
+  -- Verify: deletedSlots are all from the expected set of descendant slots
+  let expectedSlotSet : List SeLe4n.Kernel.CSpaceAddr := [slotA, slotB, slotA1, slotB1, slotB2]
+  let allInSet := report.deletedSlots.all fun ds => ds ∈ expectedSlotSet
+  expect "chain17: all deletedSlots are from expected set" allInSet
+
+  -- Verify partial BFS ordering: within each sub-chain, parent precedes child.
+  -- (Sibling ordering between A and B branches is non-deterministic due to
+  -- HashMap iteration order in childrenOf, so we only verify parent-before-child.)
+  let indexOf (s : SeLe4n.Kernel.CSpaceAddr) (xs : List SeLe4n.Kernel.CSpaceAddr) : Option Nat :=
+    let rec go (l : List SeLe4n.Kernel.CSpaceAddr) (i : Nat) : Option Nat :=
+      match l with
+      | [] => none
+      | h :: t => if h == s then some i else go t (i + 1)
+    go xs 0
+  let ds := report.deletedSlots
+  -- A appears before A1
+  match indexOf slotA ds, indexOf slotA1 ds with
+  | some ia, some ia1 => expect "chain17: A before A1 in deletedSlots" (ia < ia1)
+  | _, _ => throw <| IO.userError "chain17: A or A1 not found in deletedSlots"
+  -- B appears before B1
+  match indexOf slotB ds, indexOf slotB1 ds with
+  | some ib, some ib1 => expect "chain17: B before B1 in deletedSlots" (ib < ib1)
+  | _, _ => throw <| IO.userError "chain17: B or B1 not found in deletedSlots"
+  -- B appears before B2
+  match indexOf slotB ds, indexOf slotB2 ds with
+  | some ib, some ib2 => expect "chain17: B before B2 in deletedSlots" (ib < ib2)
+  | _, _ => throw <| IO.userError "chain17: B or B2 not found in deletedSlots"
+
+  assertInvariants "chain17: branching revoke ordering invariants" stFinal
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -862,7 +1166,10 @@ private def runOperationChainSuite : IO Unit := do
   chain12IpcCapTransfer
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
-  IO.println "all WS-I3/WS-I4 operation-chain checks passed"
+  chain15StrictRevokeDeepChain
+  chain16StrictRevokePartialFail
+  chain17StrictRevokeOrdering
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4)"
 
 end SeLe4n.Testing
 
