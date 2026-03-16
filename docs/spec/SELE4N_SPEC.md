@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,282 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,283 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.16.19` (`lakefile.toml`) |
+| **Package version** | `0.17.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 40,685 across 71 Lean files |
-| **Test LoC** | 5,103 across 4 Lean test suites |
-| **Proved declarations** | 1,282 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 40,664 across 71 Lean files |
+| **Test LoC** | 5,256 across 4 Lean test suites |
+| **Proved declarations** | 1,283 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem audit |
-| **Next workstreams** | **WS-M** Capability subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.14–v0.16.19). All 5 phases delivered: M1 (proof strengthening), M2 (performance optimization), M3 (IPC cap transfer), M4 (test coverage), M5 (streaming BFS revocation + doc sync). All 14 findings resolved. **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
+| **Next workstreams** | **WS-M** Capability subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). All 5 phases delivered: M1 (proof strengthening), M2 (performance optimization), M3 (IPC cap transfer), M4 (test coverage), M5 (streaming BFS revocation + doc sync). All 14 findings resolved. **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

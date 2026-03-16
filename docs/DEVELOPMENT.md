@@ -54,10 +54,12 @@ CSpace IPC integration not yet modeled). All 4 WS-I5 deferred items resolved.
 See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **WS-M** portfolio (Capability subsystem audit & remediation) is **fully
-complete** (v0.16.14–v0.16.19) — all 5 phases delivered: M1 (proof strengthening,
+complete** (v0.16.14–v0.17.0) — all 5 phases delivered: M1 (proof strengthening,
 v0.16.14), M2 (performance optimization, v0.16.15), M3 (IPC capability transfer,
 v0.16.17), M4 (test coverage expansion, v0.16.18), M5 (streaming BFS revocation
-+ documentation sync, v0.16.19). All 14 audit findings resolved. Zero sorry/axiom.
++ documentation sync, v0.16.19), plus v0.17.0 (shared `processRevokeNode` helper
+extraction, unified BFS revocation proofs, edge-case test expansion). All 14
+audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:

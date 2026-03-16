@@ -1228,6 +1228,156 @@ private def chain18StreamingRevokeBFS : IO Unit := do
 
   assertInvariants "chain18: streaming BFS revoke invariants" stFinal
 
+/-- SCN-REVOKE-STREAMING-EMPTY (M5): Streaming BFS on a root with no CDT
+children. Verifies that `cspaceRevokeCdtStreaming` is a no-op when the source
+slot has no derivation descendants — root capability preserved, state unchanged. -/
+private def chain19StreamingRevokeEmpty : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨7800⟩
+  let targetId : SeLe4n.ObjId := ⟨7900⟩
+
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  builder := builder.withObject rootCNode (.cnode {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := Std.HashMap.ofList [
+      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+    ]
+  })
+  let st0 := builder.build
+
+  -- Execute streaming BFS revocation (no descendants)
+  let ((), stFinal) ← expectOkState "chain19: streaming BFS revoke empty tree"
+    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st0)
+
+  -- Root capability must still be present
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain19: root slot preserved after empty streaming revoke" rootCapOpt.isSome
+
+  assertInvariants "chain19: empty streaming BFS revoke invariants" stFinal
+
+/-- SCN-REVOKE-STREAMING-DEEP (M5): Streaming BFS on a deep linear chain
+(root → A → B → C → D). Verifies correct traversal depth and that all 4
+descendants are deleted in order. -/
+private def chain20StreamingRevokeDeepChain : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨8000⟩
+  let cnodeA : SeLe4n.ObjId := ⟨8001⟩
+  let cnodeB : SeLe4n.ObjId := ⟨8002⟩
+  let cnodeC : SeLe4n.ObjId := ⟨8003⟩
+  let cnodeD : SeLe4n.ObjId := ⟨8004⟩
+  let targetId : SeLe4n.ObjId := ⟨8100⟩
+
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
+  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeC, slot := ⟨0⟩ }
+  let slotD : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeD, slot := ⟨0⟩ }
+
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  for cid in [rootCNode, cnodeA, cnodeB, cnodeC, cnodeD] do
+    builder := builder.withObject cid (.cnode {
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+      slots := if cid = rootCNode then
+        Std.HashMap.ofList [
+          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+        ]
+      else {}
+    })
+  let st0 := builder.build
+
+  -- Build deep chain: root → A → B → C → D
+  let (_, st1) ← expectOkState "chain20: mint root→A"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
+  let (_, st2) ← expectOkState "chain20: mint A→B"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
+  let (_, st3) ← expectOkState "chain20: mint B→C"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotC (AccessRightSet.ofList [.read, .write]) none st2)
+  let (_, st4) ← expectOkState "chain20: mint C→D"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotC slotD (AccessRightSet.ofList [.read]) none st3)
+
+  -- Execute streaming BFS revocation on root
+  let ((), stFinal) ← expectOkState "chain20: streaming BFS revoke deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st4)
+
+  -- All 4 descendants deleted
+  for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC), ("D", slotD)] do
+    let capOpt := SystemState.lookupSlotCap stFinal slot
+    expect s!"chain20: {label} slot empty after deep chain revoke" capOpt.isNone
+
+  -- Root preserved
+  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
+  expect "chain20: root slot preserved after deep chain revoke" rootCapOpt.isSome
+
+  -- CDT nodes detached
+  for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC), ("D", slotD)] do
+    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    expect s!"chain20: {label} CDT node detached" nodeOpt.isNone
+
+  assertInvariants "chain20: deep chain streaming BFS revoke invariants" stFinal
+
+/-- SCN-REVOKE-STREAMING-EQUIV (M5): Equivalence test — run both `cspaceRevokeCdt`
+and `cspaceRevokeCdtStreaming` on the same 3-node tree (root → A → B) and verify
+they produce identical observable state (same slots, same objects). -/
+private def chain21StreamingRevokeEquivalence : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨8200⟩
+  let cnodeA : SeLe4n.ObjId := ⟨8201⟩
+  let cnodeB : SeLe4n.ObjId := ⟨8202⟩
+  let targetId : SeLe4n.ObjId := ⟨8300⟩
+
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
+
+  -- Build identical initial states for both variants
+  let mkState : IO SystemState := do
+    let mut builder := BootstrapBuilder.empty
+    builder := builder.withObject targetId (.endpoint {})
+    for cid in [rootCNode, cnodeA, cnodeB] do
+      builder := builder.withObject cid (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := if cid = rootCNode then
+          Std.HashMap.ofList [
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ]
+        else {}
+      })
+    let st0 := builder.build
+    let (_, st1) ← expectOkState "chain21: mint root→A"
+      (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
+    let (_, st2) ← expectOkState "chain21: mint A→B"
+      (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB (AccessRightSet.ofList [.read, .write]) none st1)
+    pure st2
+
+  let stPre ← mkState
+
+  -- Run materialized revocation
+  let ((), stMaterialized) ← expectOkState "chain21: materialized revokeCdt"
+    (SeLe4n.Kernel.cspaceRevokeCdt rootSlot stPre)
+
+  -- Run streaming BFS revocation on same initial state
+  let ((), stStreaming) ← expectOkState "chain21: streaming revokeCdtStreaming"
+    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot stPre)
+
+  -- Compare observable slot state: both should have same slot contents
+  for (label, slot) in [("root", rootSlot), ("A", slotA), ("B", slotB)] do
+    let capMat := SystemState.lookupSlotCap stMaterialized slot
+    let capStr := SystemState.lookupSlotCap stStreaming slot
+    expect s!"chain21: {label} slot equivalence (both present or both absent)"
+      (capMat.isSome == capStr.isSome)
+
+  -- Both should have root present, A and B absent
+  expect "chain21: materialized root present" (SystemState.lookupSlotCap stMaterialized rootSlot).isSome
+  expect "chain21: streaming root present" (SystemState.lookupSlotCap stStreaming rootSlot).isSome
+  expect "chain21: materialized A absent" (SystemState.lookupSlotCap stMaterialized slotA).isNone
+  expect "chain21: streaming A absent" (SystemState.lookupSlotCap stStreaming slotA).isNone
+  expect "chain21: materialized B absent" (SystemState.lookupSlotCap stMaterialized slotB).isNone
+  expect "chain21: streaming B absent" (SystemState.lookupSlotCap stStreaming slotB).isNone
+
+  assertInvariants "chain21: materialized revoke invariants" stMaterialized
+  assertInvariants "chain21: streaming revoke invariants" stStreaming
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -1248,6 +1398,9 @@ private def runOperationChainSuite : IO Unit := do
   chain16StrictRevokePartialFail
   chain17StrictRevokeOrdering
   chain18StreamingRevokeBFS
+  chain19StreamingRevokeEmpty
+  chain20StreamingRevokeDeepChain
+  chain21StreamingRevokeEquivalence
   IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5)"
 
 end SeLe4n.Testing

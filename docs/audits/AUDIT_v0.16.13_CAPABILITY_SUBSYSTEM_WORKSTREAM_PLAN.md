@@ -128,18 +128,20 @@ proved declarations. Zero sorry/axiom.
 **Priority**: MEDIUM — ensures edge cases are exercised.
 **Findings addressed**: M-T01, M-T02.
 
-### Phase 5: Streaming Revocation & Documentation (WS-M5) — COMPLETED (v0.16.19)
+### Phase 5: Streaming Revocation & Documentation (WS-M5) — COMPLETED (v0.16.19, optimized v0.17.0)
 
 **Focus**: Streaming BFS optimization (M-P04) and full documentation sync.
 **Priority**: LOW — optimization and documentation polish.
 **Findings addressed**: M-P04.
 **Subtasks**: 13 atomic units across 2 tasks (M5-A1–A7, M5-B1–B6).
-**Deliverables**: `streamingRevokeBFS` streaming helper, `cspaceRevokeCdtStreaming`
-top-level operation, `streamingRevokeBFS_step_preserves` single-step invariant,
+**Deliverables**: `processRevokeNode` shared per-node step (DRY refactor, v0.17.0),
+`streamingRevokeBFS` streaming helper, `cspaceRevokeCdtStreaming` top-level operation,
+`processRevokeNode_preserves_capabilityInvariantBundle` shared proof (v0.17.0),
 `streamingRevokeBFS_preserves` full induction,
 `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` top-level preservation,
-`SCN-REVOKE-STREAMING-BFS` test scenario, full documentation sync. 3 new proved
-declarations. Zero sorry/axiom.
+4 test scenarios (`SCN-REVOKE-STREAMING-BFS`, `SCN-REVOKE-STREAMING-EMPTY`,
+`SCN-REVOKE-STREAMING-DEEP`, `SCN-REVOKE-STREAMING-EQUIV`), full documentation sync.
+4 new proved declarations. Zero sorry/axiom.
 
 ---
 

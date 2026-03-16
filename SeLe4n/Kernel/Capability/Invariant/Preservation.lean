@@ -580,45 +580,38 @@ private theorem capabilityInvariantBundle_of_cdt_update
     hBnd, hComp, hAcyclic',
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq⟩
 
-/-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node. -/
-private def revokeCdtFoldBody
-    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
-    Except KernelError (Unit × SystemState) :=
-  match acc with
-  | .error e => .error e
-  | .ok ((), stAcc) =>
-      match SystemState.lookupCdtSlotOfNode stAcc node with
-      | none => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
-      | some descAddr =>
-          match cspaceDeleteSlot descAddr stAcc with
-          | .error _ => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
-          | .ok ((), stDel) =>
-              let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-              .ok ((), { stDetached with cdt := stDetached.cdt.removeNode node })
+/-- M-P04/M5: `processRevokeNode` preserves the full capability invariant bundle.
 
-/-- Single fold step preserves capabilityInvariantBundle. -/
-private theorem revokeCdtFoldBody_preserves
-    (stAcc stNext : SystemState) (node : CdtNodeId)
-    (hInv : capabilityInvariantBundle stAcc)
-    (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
-    capabilityInvariantBundle stNext := by
-  unfold revokeCdtFoldBody at hStep
-  cases hSlot : SystemState.lookupCdtSlotOfNode stAcc node with
+Three cases handled:
+- **No slot mapping** (`lookupCdtSlotOfNode = none`): just `removeNode` — CDT-only
+  update preserves all object-level invariants.
+- **Delete error**: same as above (error swallowed, node removed).
+- **Successful delete**: chains `cspaceDeleteSlot_preserves` → `detachSlotFromCdt`
+  invariant reconstruction → `removeNode` CDT update.
+
+This is the single proof obligation for per-node revocation, shared by both the
+materialized fold (`cspaceRevokeCdt`) and streaming BFS (`streamingRevokeBFS`). -/
+theorem processRevokeNode_preserves_capabilityInvariantBundle
+    (st : SystemState) (node : CdtNodeId)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (processRevokeNode st node) := by
+  unfold processRevokeNode
+  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
   | none =>
-    simp [hSlot] at hStep; cases hStep
-    exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+    simp
+    exact capabilityInvariantBundle_of_cdt_update st _ hInv
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
   | some descAddr =>
-    simp [hSlot] at hStep
-    cases hDel : cspaceDeleteSlot descAddr stAcc with
+    simp
+    cases hDel : cspaceDeleteSlot descAddr st with
     | error _ =>
-      simp [hDel] at hStep; cases hStep
-      exact capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node))
+      simp
+      exact capabilityInvariantBundle_of_cdt_update st _ hInv
+        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
-      simp [hDel] at hStep; cases hStep
-      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel descAddr hInv hDel
+      simp
+      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle st stDel descAddr hInv hDel
       have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
       rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
       have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
@@ -631,6 +624,26 @@ private theorem revokeCdtFoldBody_preserves
       exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
         (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
           (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
+
+/-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node.
+Delegates to `processRevokeNode` for the actual state transformation. -/
+private def revokeCdtFoldBody
+    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
+    Except KernelError (Unit × SystemState) :=
+  match acc with
+  | .error e => .error e
+  | .ok ((), stAcc) => .ok ((), processRevokeNode stAcc node)
+
+/-- Single fold step preserves capabilityInvariantBundle.
+Delegates to `processRevokeNode_preserves_capabilityInvariantBundle`. -/
+private theorem revokeCdtFoldBody_preserves
+    (stAcc stNext : SystemState) (node : CdtNodeId)
+    (hInv : capabilityInvariantBundle stAcc)
+    (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
+    capabilityInvariantBundle stNext := by
+  unfold revokeCdtFoldBody at hStep
+  simp at hStep; cases hStep
+  exact processRevokeNode_preserves_capabilityInvariantBundle stAcc node hInv
 
 /-- Error propagation: revokeCdtFoldBody propagates errors unchanged. -/
 private theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
@@ -704,6 +717,7 @@ theorem cspaceRevokeCdt_swallowed_error_consistent
     stNext.objects = stAcc.objects ∧
     stNext.cdt.edges ⊆ stAcc.cdt.edges := by
   unfold revokeCdtFoldBody at hStep
+  unfold processRevokeNode at hStep
   simp [hSlot, hDelErr] at hStep; cases hStep
   exact ⟨capabilityInvariantBundle_of_cdt_update stAcc _ hInv
     (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1
@@ -808,50 +822,13 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
 -- ============================================================================
 
 /-- M-P04: Each node-processing step in the streaming BFS preserves the
-capability invariant bundle. The three cases (no slot mapping, delete error,
-successful delete) mirror `revokeCdtFoldBody_preserves` exactly:
-- `removeNode`-only paths use `capabilityInvariantBundle_of_cdt_update`
-- Successful delete uses `cspaceDeleteSlot_preserves` + detach + removeNode -/
+capability invariant bundle. Direct delegation to
+`processRevokeNode_preserves_capabilityInvariantBundle`. -/
 private theorem streamingRevokeBFS_step_preserves
     (st : SystemState) (node : CdtNodeId)
     (hInv : capabilityInvariantBundle st) :
-    capabilityInvariantBundle
-      (match SystemState.lookupCdtSlotOfNode st node with
-       | none => { st with cdt := st.cdt.removeNode node }
-       | some descAddr =>
-           match cspaceDeleteSlot descAddr st with
-           | .error _ => { st with cdt := st.cdt.removeNode node }
-           | .ok ((), stDel) =>
-               let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-               { stDetached with cdt := stDetached.cdt.removeNode node }) := by
-  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
-  | none =>
-    simp
-    exact capabilityInvariantBundle_of_cdt_update st _ hInv
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
-  | some descAddr =>
-    simp
-    cases hDel : cspaceDeleteSlot descAddr st with
-    | error _ =>
-      simp
-      exact capabilityInvariantBundle_of_cdt_update st _ hInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
-    | ok pair =>
-      obtain ⟨_, stDel⟩ := pair
-      simp
-      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle st stDel descAddr hInv hDel
-      have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-      rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del⟩
-      have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
-        ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
-         cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
-         cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
-         cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2,
-         cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
-         cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj⟩
-      exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
-          (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
+    capabilityInvariantBundle (processRevokeNode st node) :=
+  processRevokeNode_preserves_capabilityInvariantBundle st node hInv
 
 /-- M-P04: The full streaming BFS loop preserves the capability invariant bundle.
 Proof by induction on `fuel`. Each step processes one node (preserving

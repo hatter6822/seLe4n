@@ -89,7 +89,7 @@ Badge routing chain (H-03, WS-F5/D1):
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
-**WS-M audit findings** (v0.16.13 — Phase 1 at v0.16.14; Phase 2 at v0.16.15; Phase 3 at v0.16.17; Phase 4 at v0.16.18; Phase 5 at v0.16.19 — **PORTFOLIO COMPLETE**):
+**WS-M audit findings** (v0.16.13 — Phase 1 at v0.16.14; Phase 2 at v0.16.15; Phase 3 at v0.16.17; Phase 4 at v0.16.18; Phase 5 at v0.16.19–v0.17.0 — **PORTFOLIO COMPLETE**):
 
 - M-G01: ~~proof incomplete~~ → **RESOLVED** (v0.16.14): existing proof was complete; added forward-direction `resolveCapAddress_guard_match` companion theorem,
 - M-G02: ~~`cdtMintCompleteness` gap~~ → **RESOLVED** (v0.16.14): `cdtMintCompleteness` predicate + transfer theorem + extended bundle `capabilityInvariantBundleWithMintCompleteness`,
@@ -101,7 +101,7 @@ Badge routing chain (H-03, WS-F5/D1):
 - M-P05: ~~`endpointReply_preserves_capabilityInvariantBundle` proof duplication~~ → **RESOLVED** (v0.16.15): unified via extracted lemmas from M2-C,
 - M-D01: ~~IPC capability transfer not modeled~~ → **RESOLVED** (v0.16.17): `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs, Grant-right gate, CDT `.ipcTransfer` edge tracking, `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers with IPC invariant + `dualQueueSystemInvariant` preservation, `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`, `ipcUnwrapCaps_preserves_dualQueueSystemInvariant`, `ipcUnwrapCaps_preserves_cnode_at_root`, `ipcTransferSingleCap_receiverRoot_stays_cnode`, `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring,
 - M-T03: ~~capability transfer during IPC untested~~ → **RESOLVED** (v0.16.17): 4 test scenarios implemented (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED) in OperationChainSuite and NegativeStateSuite.
-- M-P04: ~~`descendantsOf` materializes full set upfront~~ → **RESOLVED** (v0.16.19): `streamingRevokeBFS` level-by-level BFS traversal; `cspaceRevokeCdtStreaming` avoids full materialization. `streamingRevokeBFS_step_preserves`, `streamingRevokeBFS_preserves`, `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` preservation theorems proved.
+- M-P04: ~~`descendantsOf` materializes full set upfront~~ → **RESOLVED** (v0.16.19–v0.17.0): `processRevokeNode` shared per-node step (DRY), `streamingRevokeBFS` BFS loop, `cspaceRevokeCdtStreaming` top-level operation. `processRevokeNode_preserves_capabilityInvariantBundle` shared proof, `streamingRevokeBFS_preserves` induction, `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` composition. 4 test scenarios.
 
 All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 

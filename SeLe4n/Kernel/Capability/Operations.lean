@@ -682,6 +682,27 @@ def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
         .ok ((), { stDst with cdt := cdt' })
 
 -- ============================================================================
+-- M-P04/M5: Shared per-node revocation step
+-- ============================================================================
+
+/-- M-P04/M5: Process a single CDT descendant node during revocation.
+
+Shared transition used by both `cspaceRevokeCdt` (materialized fold) and
+`streamingRevokeBFS` (streaming BFS). Given a CDT node:
+1. If no slot mapping exists, just remove the CDT node.
+2. If delete fails, remove the CDT node (swallow error).
+3. If delete succeeds, detach the slot→node mapping and remove the CDT node. -/
+def processRevokeNode (st : SystemState) (node : CdtNodeId) : SystemState :=
+  match SystemState.lookupCdtSlotOfNode st node with
+  | none => { st with cdt := st.cdt.removeNode node }
+  | some descAddr =>
+      match cspaceDeleteSlot descAddr st with
+      | .error _ => { st with cdt := st.cdt.removeNode node }
+      | .ok ((), stDel) =>
+          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+          { stDetached with cdt := stDetached.cdt.removeNode node }
+
+-- ============================================================================
 -- WS-E4/C-04: Cross-CNode CDT revocation
 -- ============================================================================
 
@@ -713,15 +734,7 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
             let result := descendants.foldl (fun acc node =>
               match acc with
               | .error e => .error e
-              | .ok ((), stAcc) =>
-                  match SystemState.lookupCdtSlotOfNode stAcc node with
-                  | none => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
-                  | some descAddr =>
-                      match cspaceDeleteSlot descAddr stAcc with
-                      | .error _ => .ok ((), { stAcc with cdt := stAcc.cdt.removeNode node })
-                      | .ok ((), stDel) =>
-                          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-                          .ok ((), { stDetached with cdt := stDetached.cdt.removeNode node })
+              | .ok ((), stAcc) => .ok ((), processRevokeNode stAcc node)
             ) (.ok ((), stLocal))
             result
 
@@ -735,7 +748,7 @@ children before removing the node from the CDT.
 Each iteration:
 1. Dequeues the head node from the BFS queue.
 2. Reads the node's children via `childrenOf` (before removal).
-3. Performs the same delete/detach/removeNode as `revokeCdtFoldBody`.
+3. Delegates to `processRevokeNode` for the actual delete/detach/removeNode.
 4. Appends newly-discovered children to the queue tail.
 
 Fuel = initial edge count, guaranteeing termination since each step
@@ -747,19 +760,8 @@ def streamingRevokeBFS
   | _, [] => .ok ((), st)
   | 0, _ :: _ => .ok ((), st)  -- fuel exhausted (safety bound)
   | fuel + 1, node :: rest =>
-      -- Discover children BEFORE removing the node
       let children := st.cdt.childrenOf node
-      -- Process node (same logic as cspaceRevokeCdt fold body)
-      let stNext := match SystemState.lookupCdtSlotOfNode st node with
-        | none => { st with cdt := st.cdt.removeNode node }
-        | some descAddr =>
-            match cspaceDeleteSlot descAddr st with
-            | .error _ => { st with cdt := st.cdt.removeNode node }
-            | .ok ((), stDel) =>
-                let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-                { stDetached with cdt := stDetached.cdt.removeNode node }
-      -- Append children to queue and recurse
-      streamingRevokeBFS fuel (rest ++ children) stNext
+      streamingRevokeBFS fuel (rest ++ children) (processRevokeNode st node)
 
 /-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
 
