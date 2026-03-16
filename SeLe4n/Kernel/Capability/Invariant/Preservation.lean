@@ -1495,4 +1495,40 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
                 hCdtPost.1, hCdtPost.2,
                 cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal⟩
 
+-- ============================================================================
+-- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle
+--
+-- The grantRight = false case is trivial (state unchanged) — proved below as
+-- `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
+--
+-- The grantRight = true case requires per-step induction on the internal
+-- ipcUnwrapCapsLoop, threading two preconditions through each iteration:
+--   (a) hSlotCapacity: the receiver CNode can accommodate each insert
+--   (b) hCdtPost: cdtCompleteness ∧ cdtAcyclicity hold in each intermediate state
+-- These match the existing `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
+-- signature. The per-step theorem is fully proved above; the loop composition
+-- requires exposing the private ipcUnwrapCapsLoop and threading CDT postconditions
+-- through a fuel-indexed induction — planned for M3-D3b (WS-M4/M5).
+--
+-- Security note: the grantRight = false path is the security-critical one
+-- (enforces the Grant-right gate). When Grant is absent, the bundle is trivially
+-- preserved because no state mutation occurs.
+-- ============================================================================
+
+/-- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle when the endpoint
+lacks Grant right (grantRight = false). In this case, all caps are silently
+dropped and the state is unchanged, so the invariant trivially holds. -/
+theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
+    (st st' : SystemState) (msg : IpcMessage)
+    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot)
+    (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase false st
+             = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  simp [ipcUnwrapCaps] at hStep
+  obtain ⟨_, rfl⟩ := hStep
+  exact hInv
+
 end SeLe4n.Kernel

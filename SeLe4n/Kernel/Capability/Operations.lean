@@ -838,6 +838,11 @@ private theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : Slot
   unfold SystemState.ensureCdtNodeForSlot
   split <;> simp
 
+private theorem ensureCdtNodeForSlot_services_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.ensureCdtNodeForSlot st ref).2.services = st.services := by
+  unfold SystemState.ensureCdtNodeForSlot
+  split <;> simp
+
 theorem ipcTransferSingleCap_preserves_scheduler
     (cap : Capability) (senderSlot : CSpaceAddr)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
@@ -869,5 +874,163 @@ theorem ipcTransferSingleCap_preserves_scheduler
             (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
+
+/-- ipcTransferSingleCap preserves objects at keys other than the receiver root CNode. -/
+theorem ipcTransferSingleCap_preserves_objects_ne
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId)
+    (hNe : oid ≠ receiverRoot)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = st.objects[oid]? := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hObj : st.objects[receiverRoot]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | cnode cn =>
+      simp [hObj] at hStep
+      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+      | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap oid hNe
+            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
+          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          simp_all
+
+theorem ipcTransferSingleCap_preserves_services
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.services = st.services := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hObj : st.objects[receiverRoot]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | cnode cn =>
+      simp [hObj] at hStep
+      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+      | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have h1 := cspaceInsertSlot_preserves_services st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have h2 := ensureCdtNodeForSlot_services_eq pair.2 senderSlot
+          have h3 := ensureCdtNodeForSlot_services_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          simp_all
+
+/-- M3-E4 helper: ipcTransferSingleCap preserves all notification objects.
+When `oid = receiverRoot` and the object is a notification, the function
+returns `.error .objectNotFound` (expects a CNode), contradicting `.ok`.
+When `oid ≠ receiverRoot`, use `ipcTransferSingleCap_preserves_objects_ne`. -/
+theorem ipcTransferSingleCap_preserves_ntfn_objects
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNtfn : st.objects[oid]? = some (.notification ntfn))
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = some (.notification ntfn) := by
+  by_cases hNe : oid = receiverRoot
+  · subst hNe
+    simp only [ipcTransferSingleCap] at hStep
+    simp [hNtfn] at hStep
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+      scanLimit st st' result oid hNe hStep]
+    exact hNtfn
+
+/-- M3-E4 helper: receiverRoot is never a notification after ipcTransferSingleCap.
+The only success path requires receiverRoot to be a CNode in st. On the noSlot
+path state is unchanged (still a CNode); on the installed path cspaceInsertSlot
+stores an updated CNode back. -/
+theorem ipcTransferSingleCap_receiverRoot_not_ntfn
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hObj : st.objects[receiverRoot]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | cnode cn =>
+      simp [hObj] at hStep
+      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      | none =>
+        simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
+        intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
+      | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
+          -- After cspaceInsertSlot: pair.2.objects[receiverRoot]? = some (.cnode cn')
+          -- After ensureCdtNodeForSlot (×2): objects preserved
+          -- After { ... with cdt := cdt' }: objects preserved
+          -- So final objects[receiverRoot]? = pair.2.objects[receiverRoot]?
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
+          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          -- Need: pair.2.objects[receiverRoot]? = some (.cnode _)
+          -- cspaceInsertSlot stores via storeObject receiverRoot (.cnode cn')
+          -- then storeCapabilityRef which only modifies lifecycle
+          intro ntfn h
+          -- h is about the final state after ensureCdtNodeForSlot and with-cdt
+          -- Simplify: final objects = pair.2.objects (ensureCdtNodeForSlot preserves objects)
+          simp only [hObjSrc, hObjDst] at h
+          -- Now h : pair.2.objects[receiverRoot]? = some (.notification ntfn)
+          -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject
+          -- then storeCapabilityRef only modifies lifecycle
+          -- So pair.2.objects[receiverRoot]? should be some (.cnode cn')
+          -- Let's unfold cspaceInsertSlot at hIns to extract storeObject
+          unfold cspaceInsertSlot at hIns
+          simp [hObj] at hIns
+          cases hLookup : cn.lookup emptySlot with
+          | some _ => simp [hLookup] at hIns
+          | none =>
+            simp [hLookup] at hIns
+            cases hStore : storeObject receiverRoot (.cnode (cn.insert emptySlot cap)) st with
+            | error e => simp [hStore] at hIns
+            | ok storePair =>
+              simp [hStore] at hIns
+              have hStoreObj := storeObject_objects_eq st storePair.2 receiverRoot
+                (.cnode (cn.insert emptySlot cap)) hStore
+              -- storeCapabilityRef only modifies lifecycle, not objects
+              unfold storeCapabilityRef at hIns
+              cases hIns
+              -- pair.2.objects = storePair.2.objects (storeCapabilityRef doesn't change objects)
+              simp at h
+              rw [hStoreObj] at h
+              exact absurd h (by simp)
 
 end SeLe4n.Kernel

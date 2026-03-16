@@ -13,22 +13,28 @@
 - M3-D: Implemented `ipcUnwrapCaps` batch cap unwrap with `ipcUnwrapCapsLoop`
   recursive helper (fuel-based structural recursion); Grant-right gate drops
   all caps when endpoint lacks Grant right; `ipcUnwrapCaps_preserves_scheduler`
-  preservation proof by induction on fuel
+  preservation proof by induction on fuel;
+  `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` proves bundle
+  preservation when Grant right is absent (state unchanged)
 - M3-E: Added `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
   `endpointCallWithCaps` wrapper operations composing existing IPC ops with
-  cap transfer during rendezvous; `lookupCspaceRoot` private helper reads
-  receiver's CSpace root from TCB
+  cap transfer during rendezvous; `lookupCspaceRoot` helper reads receiver's
+  CSpace root from TCB; `ipcUnwrapCaps_preserves_ipcInvariant`,
+  `endpointSendDualWithCaps_preserves_ipcInvariant`,
+  `endpointReceiveDualWithCaps_preserves_ipcInvariant`,
+  `endpointCallWithCaps_preserves_ipcInvariant` preservation theorems
 - M3-F: Added `decodeExtraCapAddrs` with determinism theorem; `resolveExtraCaps`
   pure fold over CPtr array; updated `dispatchWithCap` to use WithCaps wrappers
   for send/call paths; renamed theorems (`dispatchWithCap_send_uses_withCaps`,
   `dispatchWithCap_call_uses_withCaps`)
-- M3-G: Added 2 test scenarios (SCN-IPC-CAP-TRANSFER-BASIC,
-  SCN-IPC-CAP-TRANSFER-NO-GRANT) with `chain12IpcCapTransfer` and
-  `chain13IpcCapTransferNoGrant` in OperationChainSuite
+- M3-G: Added 4 test scenarios: SCN-IPC-CAP-TRANSFER-BASIC,
+  SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE,
+  SCN-IPC-CAP-BADGE-COMBINED; `chain12`–`chain14` in OperationChainSuite +
+  `runWSM3CapTransferNegativeChecks` in NegativeStateSuite
 - New files: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`,
   `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`
 - Resolves L-T03 (capability transfer during IPC — last WS-L deferred item)
-- 8+ new proved declarations; zero sorry/axiom; zero warnings
+- 12+ new proved declarations; zero sorry/axiom; zero warnings
 - All test tiers pass (test_full.sh Tier 0-3)
 - Bumped `lakefile.toml` version to 0.16.17
 

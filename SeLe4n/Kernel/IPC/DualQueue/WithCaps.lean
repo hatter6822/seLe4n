@@ -30,7 +30,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- M-D01: Helper to read a thread's CSpace root ObjId from its TCB. -/
-private def lookupCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
+def lookupCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
     : Option SeLe4n.ObjId :=
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) => some tcb.cspaceRoot

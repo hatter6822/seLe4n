@@ -753,3 +753,13 @@ scenarios:
     function: chain13IpcCapTransferNoGrant
     subsystem: IPC
     description: "IPC cap transfer without Grant right: caps silently dropped"
+  SCN-IPC-CAP-TRANSFER-FULL-CNODE:
+    source: tests/NegativeStateSuite.lean
+    function: runWSM3CapTransferNegativeChecks
+    subsystem: Capability
+    description: "IPC cap transfer with full CNode: returns .noSlot, state unchanged"
+  SCN-IPC-CAP-BADGE-COMBINED:
+    source: tests/OperationChainSuite.lean
+    function: chain14IpcBadgeAndCapTransfer
+    subsystem: IPC
+    description: "IPC badge propagation and cap transfer combined: badge 0xCAFE + 2 caps"

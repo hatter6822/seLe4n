@@ -89,8 +89,9 @@ Phase 3 (WS-M3, IPC capability transfer) completed at v0.16.17:
 - Wrapper pattern preserves all existing IPC operation signatures and proofs
 - `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs
 - `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers
-- `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring, 2 test scenarios
-- Resolves L-T03 (capability transfer during IPC); 8+ new proved declarations
+- IPC invariant preservation proofs for all wrappers; `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`
+- `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring, 4 test scenarios (basic, no-grant, full-CNode, badge+cap combined)
+- Resolves L-T03 (capability transfer during IPC); 12+ new proved declarations
 2 remaining phases after M3: M4–M5.
 See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 

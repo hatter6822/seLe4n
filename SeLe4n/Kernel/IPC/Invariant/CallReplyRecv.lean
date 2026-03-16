@@ -922,3 +922,52 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
           · exact hBlockNotif tid tcb' nid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
           · exact absurd hEq hNeTid
 
+-- ============================================================================
+-- M3-E4: endpointCallWithCaps preservation
+-- ============================================================================
+
+/-- M3-E4: endpointCallWithCaps preserves ipcInvariant. Same structure as
+endpointSendDualWithCaps: every branch either returns the post-call state
+(preserved by endpointCall) or passes through ipcUnwrapCaps (precondition-free
+preservation). -/
+theorem endpointCallWithCaps_preserves_ipcInvariant
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariant st)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    ipcInvariant st' := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hInvMid := endpointCall_preserves_ipcInvariant st stMid endpointId caller msg hInv hCall
+    simp [hCall] at hStep
+    cases hEp : st.objects[endpointId]? with
+    | none =>
+      simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some obj =>
+      cases obj with
+      | endpoint ep =>
+        simp [hEp] at hStep
+        cases hHead : ep.receiveQ.head with
+        | none =>
+          simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        | some receiverId =>
+          simp [hHead] at hStep
+          by_cases hEmpty : msg.caps = #[]
+          · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+          · simp [hEmpty] at hStep
+            cases hLookup : lookupCspaceRoot stMid receiverId with
+            | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+            | some recvRoot =>
+              simp [hLookup] at hStep
+              exact ipcUnwrapCaps_preserves_ipcInvariant msg callerCspaceRoot recvRoot
+                receiverSlotBase _ stMid st' summary hInvMid hStep
+      | _ =>
+        simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+

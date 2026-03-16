@@ -1307,3 +1307,166 @@ theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates
     (fun anyTid tcb' h => endpointQueueRemoveDual_tcb_ipcState_backward st st' endpointId isSendQ tid anyTid tcb' hStep h)
     hContract
 
+-- ============================================================================
+-- M3-E4: ipcUnwrapCaps + WithCaps wrapper preservation theorems
+--
+-- Key structural property: ipcUnwrapCaps only modifies CNode objects (via
+-- cspaceInsertSlot) and CDT fields (via ensureCdtNodeForSlot/addEdge). It
+-- does NOT touch endpoint objects, notification objects, TCB queue links,
+-- or scheduler state. Therefore all IPC invariants that depend only on
+-- these untouched components are trivially preserved.
+-- ============================================================================
+
+/-- M3-E4: ipcUnwrapCaps preserves ipcInvariant. For oid ≠ receiverRoot,
+notifications are unchanged by `preserves_objects_ne`. For oid = receiverRoot,
+case-split on what was at receiverRoot in st: if it was a notification, it's
+preserved by `preserves_ntfn_objects`; otherwise, `receiverRoot_not_ntfn`
+shows no notification can appear. No precondition needed. -/
+theorem ipcUnwrapCaps_preserves_ipcInvariant
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariant st)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    ipcInvariant st' := by
+  intro oid ntfn hObj
+  by_cases hNe : oid = receiverRoot
+  · -- oid = receiverRoot: rewrite without subst to keep receiverRoot in scope
+    rw [hNe] at hObj
+    cases hR : st.objects[receiverRoot]? with
+    | none =>
+      have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
+        simp [hR]
+      exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg senderRoot receiverRoot
+        slotBase grantRight st st' summary hNotNtfn hStep ntfn)
+    | some obj =>
+      cases obj with
+      | notification ntfn' =>
+        have hPreserved := ipcUnwrapCaps_preserves_ntfn_objects msg senderRoot receiverRoot
+          slotBase grantRight st st' summary receiverRoot ntfn' hR hStep
+        have hEq : KernelObject.notification ntfn' = KernelObject.notification ntfn :=
+          Option.some.inj (hPreserved.symm.trans hObj)
+        cases hEq; exact hInv receiverRoot ntfn hR
+      | cnode _ | tcb _ | endpoint _ | vspaceRoot _ | untyped _ =>
+        have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
+          simp [hR]
+        exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg senderRoot receiverRoot
+          slotBase grantRight st st' summary hNotNtfn hStep ntfn)
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase
+      grantRight st st' summary oid hNe hStep] at hObj
+    exact hInv oid ntfn hObj
+
+/-- M3-E4: endpointSendDualWithCaps preserves ipcInvariant. Every branch
+either returns the post-send state (preserved by endpointSendDual) or
+passes through ipcUnwrapCaps (preserved by ipcUnwrapCaps_preserves_ipcInvariant,
+which requires no precondition). -/
+theorem endpointSendDualWithCaps_preserves_ipcInvariant
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariant st)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    ipcInvariant st' := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hInvMid := endpointSendDual_preserves_ipcInvariant st stMid endpointId sender msg hInv hSend
+    simp [hSend] at hStep
+    -- Case split on st.objects[endpointId]? to determine hasReceiver
+    cases hEp : st.objects[endpointId]? with
+    | none =>
+      -- hasReceiver = false → if-then branch taken
+      simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some obj =>
+      cases obj with
+      | endpoint ep =>
+        simp [hEp] at hStep
+        cases hHead : ep.receiveQ.head with
+        | none =>
+          -- hasReceiver = false → if-then branch
+          simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        | some receiverId =>
+          simp [hHead] at hStep
+          -- hasReceiver = true, condition reduces to msg.caps.isEmpty
+          by_cases hEmpty : msg.caps = #[]
+          · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+          · simp [hEmpty] at hStep
+            cases hLookup : lookupCspaceRoot stMid receiverId with
+            | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+            | some recvRoot =>
+              simp [hLookup] at hStep
+              exact ipcUnwrapCaps_preserves_ipcInvariant msg senderCspaceRoot recvRoot
+                receiverSlotBase _ stMid st' summary hInvMid hStep
+      | _ =>
+        -- Not an endpoint → hasReceiver = false
+        simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+
+/-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/
+theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId)
+    (summary : CapTransferSummary)
+    (hInv : ipcInvariant st)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    ipcInvariant st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hInvMid := endpointReceiveDual_preserves_ipcInvariant st stMid endpointId
+      receiver sid hInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.objects[receiver.toObjId]? with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+    | some obj =>
+      cases obj with
+      | tcb receiverTcb =>
+        simp [hTcb] at hStep
+        cases hMsg : receiverTcb.pendingMessage with
+        | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+        | some msg =>
+          simp [hMsg] at hStep
+          -- After simp, the if condition may be on msg.caps.isEmpty or msg.caps = #[]
+          split at hStep
+          · -- if-then: caps empty, state unchanged
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+          · -- if-else: caps non-empty, ipcUnwrapCaps runs
+            -- Case split on lookupCspaceRoot to determine senderRoot value
+            cases hLookup : lookupCspaceRoot stMid sid with
+            | none =>
+              -- senderRoot = sid.toObjId
+              simp only [hLookup] at hStep
+              cases hUnwrap : ipcUnwrapCaps msg sid.toObjId receiverCspaceRoot
+                  receiverSlotBase (endpointRights.mem .grant) stMid with
+              | error e => simp [hUnwrap] at hStep
+              | ok pair =>
+                rcases pair with ⟨s, stFinal⟩
+                simp [hUnwrap] at hStep
+                obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+                exact ipcUnwrapCaps_preserves_ipcInvariant msg sid.toObjId receiverCspaceRoot
+                  receiverSlotBase _ stMid stFinal s hInvMid hUnwrap
+            | some senderRoot =>
+              -- senderRoot = senderRoot
+              simp only [hLookup] at hStep
+              cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                  receiverSlotBase (endpointRights.mem .grant) stMid with
+              | error e => simp [hUnwrap] at hStep
+              | ok pair =>
+                rcases pair with ⟨s, stFinal⟩
+                simp [hUnwrap] at hStep
+                obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+                exact ipcUnwrapCaps_preserves_ipcInvariant msg senderRoot receiverCspaceRoot
+                  receiverSlotBase _ stMid stFinal s hInvMid hUnwrap
+      | _ => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+

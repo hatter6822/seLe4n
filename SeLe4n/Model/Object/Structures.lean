@@ -402,6 +402,31 @@ theorem findFirstEmptySlot_zero (cn : CNode) (base : SeLe4n.Slot) :
     cn.findFirstEmptySlot base 0 = none := by
   simp [findFirstEmptySlot]
 
+/-- If findFirstEmptySlot returns `none`, all scanned slots are occupied. -/
+theorem findFirstEmptySlot_none_iff
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) :
+    cn.findFirstEmptySlot base limit = none →
+    ∀ i, i < limit →
+      (cn.lookup (SeLe4n.Slot.ofNat (base.toNat + i))).isSome := by
+  induction limit generalizing base with
+  | zero => intro _ i hi; exact absurd hi (Nat.not_lt_zero _)
+  | succ n ih =>
+    simp only [findFirstEmptySlot]
+    split
+    · intro h; exact absurd h (by simp)
+    · rename_i cap hLookup
+      intro hRec i hi
+      cases i with
+      | zero =>
+        simp only [Nat.add_zero, SeLe4n.Slot.ofNat_toNat]
+        rw [hLookup]; rfl
+      | succ j =>
+        have hj : j < n := Nat.lt_of_succ_lt_succ hi
+        have := ih (SeLe4n.Slot.ofNat (base.toNat + 1)) hRec j hj
+        simp only [SeLe4n.Slot.toNat_ofNat] at this
+        have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
+        rw [hEq] at this; exact this
+
 /-- Local revoke helper for the current modeled slice.
 
 This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that

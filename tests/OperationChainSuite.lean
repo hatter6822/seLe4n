@@ -767,6 +767,83 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
 
   assertInvariants "chain13: IPC cap transfer no grant" st2
 
+/-- SCN-IPC-CAP-BADGE-COMBINED: Badge propagation and cap transfer work together.
+Sender's endpoint cap has badge 0xCAFE. Sender sends 1 register + 2 extra caps.
+Verifies receiver gets both the badge and the transferred capabilities. -/
+private def chain14IpcBadgeAndCapTransfer : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3400⟩
+  let sender : SeLe4n.ThreadId := ⟨3410⟩
+  let receiver : SeLe4n.ThreadId := ⟨3411⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3420⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3421⟩
+  let targetObj1 : SeLe4n.ObjId := ⟨3430⟩
+  let targetObj2 : SeLe4n.ObjId := ⟨3431⟩
+
+  let cap1 : Capability := { target := .object targetObj1, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap2 : Capability := { target := .object targetObj2, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  let grantRights := AccessRightSet.ofList [.read, .write, .grant]
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject targetObj1 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, cap1),
+            (⟨1⟩, cap2)
+          ]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := {}
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.build)
+
+  -- Step 1: Receiver blocks on endpoint
+  let (_, st1) ← expectOkState "chain14: receiver blocks on endpoint"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
+
+  -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
+  let badgeVal : SeLe4n.Badge := ⟨0xCAFE⟩
+  let msg : IpcMessage := { registers := #[77], caps := #[cap1, cap2], badge := some badgeVal }
+  let (summary, st2) ← expectOkState "chain14: send with badge + caps"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
+
+  -- Verify: transfer summary has 2 results (both caps transferred)
+  expect "chain14: summary has 2 results" (summary.results.size = 2)
+
+  -- Verify: receiver's TCB has pending message with badge 0xCAFE
+  let badgeCheck := match st2.objects[receiver.toObjId]? with
+    | some (.tcb tcb) =>
+        match tcb.pendingMessage with
+        | some recvMsg => recvMsg.badge == some badgeVal
+        | none => false
+    | _ => false
+  expect "chain14: receiver got badge 0xCAFE" badgeCheck
+
+  -- Verify: receiver's CNode has 2 new capabilities
+  let recvCnodeCheck := match st2.objects[receiverCNode]? with
+    | some (.cnode cn) =>
+        (cn.lookup ⟨0⟩).isSome && (cn.lookup ⟨1⟩).isSome
+    | _ => false
+  expect "chain14: receiver CNode has 2 caps" recvCnodeCheck
+
+  -- Verify: register payload also came through
+  let regCheck := match st2.objects[receiver.toObjId]? with
+    | some (.tcb tcb) =>
+        match tcb.pendingMessage with
+        | some recvMsg => recvMsg.registers == #[77]
+        | none => false
+    | _ => false
+  expect "chain14: receiver got register payload" regCheck
+
+  assertInvariants "chain14: IPC badge + cap transfer combined" st2
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -782,6 +859,7 @@ private def runOperationChainSuite : IO Unit := do
   chain11RegisterDecodeIpcTransfer
   chain12IpcCapTransfer
   chain13IpcCapTransferNoGrant
+  chain14IpcBadgeAndCapTransfer
   IO.println "all WS-I3/WS-I4 operation-chain checks passed"
 
 end SeLe4n.Testing
