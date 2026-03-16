@@ -109,7 +109,7 @@ theorem + extended bundle, `addEdge_preserves_edgeWellFounded_fresh` + `addEdgeW
 **Focus**: Eliminate redundant traversals on CSpace hot paths.
 **Priority**: HIGH — directly impacts capability operation throughput.
 **Findings addressed**: M-P01, M-P02, M-P03, M-P05.
-**Subtasks**: 12 atomic units across 3 tasks (M2-A1–A4, M2-B1–B8, M2-C1–C2).
+**Subtasks**: 14 atomic units across 3 tasks (M2-A1–A4, M2-B1–B8, M2-C1–C2).
 **Results**: Fused `revokeAndClearRefsState` single-pass revoke, CDT `parentMap`
 O(1) parent lookup, targeted `removeNode`/`removeAsChild`/`removeAsParent`, shared
 reply lemma extraction, field preservation lemmas for NI proofs,
@@ -447,7 +447,7 @@ independently referenceable theorem.
 **Files modified**: `Model/State.lean`, `Operations.lean`, `Model/Object/Structures.lean`,
 `Invariant/Preservation.lean`, `Invariant/Defs.lean`, `Invariant/Authority.lean`
 
-Phase 2 is subdivided into 12 atomic subtasks across 3 tasks. Each subtask is
+Phase 2 is subdivided into 14 atomic subtasks across 3 tasks. Each subtask is
 independently buildable and testable. Tasks are ordered by dependency: M2-C
 (reply lemma extraction) is self-contained with no cross-task deps and ships
 first; M2-A (fused revoke) modifies Operations.lean + State.lean; M2-B
@@ -895,7 +895,7 @@ M2-B8 (edgeWellFounded fixup)─── depends on M2-B2
 
 **Optimal execution order**: M2-C1 → M2-C2 → M2-A1 → M2-A2 → M2-A3 → M2-A4 →
 M2-B1 → {M2-B2, M2-B3, M2-B4, M2-B5, M2-B6} (parallel) → M2-B7 → M2-B8.
-Total: 12 subtasks, 8 sequential steps.
+Total: 14 subtasks, 8 sequential steps.
 
 **Deliverables**: `revokeAndClearRefsState` fused helper + 4 preservation theorems,
 `capabilityInvariantBundle_of_storeTcbAndEnsureRunnable` extracted lemma,
@@ -1234,7 +1234,7 @@ depends on all prior phases for documentation completeness.
 
 **Phase 2 optimal execution order**: M2-C1 → M2-C2 → M2-A1 → M2-A2 → M2-A3 →
 M2-A4 → M2-B1 → {M2-B2, M2-B3, M2-B4, M2-B5, M2-B6} (parallel) → M2-B7 →
-M2-B8. Total: 12 subtasks, 8 sequential steps.
+M2-B8. Total: 14 subtasks, 8 sequential steps.
 
 ---
 
@@ -1243,7 +1243,7 @@ M2-B8. Total: 12 subtasks, 8 sequential steps.
 | ID | Focus | Priority | Findings |
 |----|-------|----------|----------|
 | **WS-M1** | Proof strengthening (10 subtasks): guard-match extraction theorem, CDT mint completeness predicate + preservation + composition, addEdge acyclicity + cycle-check helper, error-swallowing consistency theorem, stale docstrings | HIGH | M-G01, M-G02, M-G03, M-G04, M-D02 |
-| **WS-M2** | Performance (12 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
+| **WS-M2** | Performance (14 subtasks): fused single-pass revoke fold, CDT `parentMap` O(1) parent lookup + targeted removal, shared reply-preservation lemma extraction | HIGH | M-P01, M-P02, M-P03, M-P05 |
 | **WS-M3** | IPC capability transfer: model, integrate, prove, test | MEDIUM | M-D01, M-T03 |
 | **WS-M4** | Test coverage: multi-level resolution edge cases, strict revocation stress | MEDIUM | M-T01, M-T02 |
 | **WS-M5** | Streaming BFS revocation, full documentation sync | LOW | M-P04 |
