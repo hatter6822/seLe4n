@@ -765,28 +765,20 @@ the fix guarantees the leaf slot is occupied on success).
 
 ---
 
-#### Task N2-C: Update `resolveCapAddress_guard_match` theorem
+#### Task N2-C: Verify `resolveCapAddress_guard_match` theorem
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:243–266`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:316–339`
 
 The guard match theorem constrains to the leaf case (`hLeaf : bits = consumed`).
 After the fix, the leaf path has an additional `cn.lookup` match before
-producing `.ok`. The proof must handle this new case split.
+producing `.ok`. However, the proof's goal is `guardExtracted = cn.guardValue`,
+which is resolved by `Decidable.of_not_not hNotNe` at the guard check level —
+*before* the leaf/recursive split is reached. The proof does **not** need to
+process the `cn.lookup` match because the goal is already discharged.
 
-**Proof update** (after the existing `split at hOk` for `bitsRemaining - consumed = 0`):
-```lean
-· -- bitsRemaining - consumed = 0 (leaf)
-  -- NEW: split on cn.lookup result
-  split at hOk
-  · -- Slot occupied → success, extract guard equality as before
-    ...
-  · -- Slot empty → error, contradicts hOk
-    simp at hOk
-```
-
-The `hLeaf` hypothesis ensures `bitsRemaining - consumed = 0`, so only the leaf
-branch is reachable. The guard extraction logic is unchanged once we handle the
-new `cn.lookup` split.
+**Expected outcome**: No proof changes needed. The existing one-line conclusion
+`exact Decidable.of_not_not hNotNe` remains valid because the guard equality
+goal is orthogonal to the leaf occupancy check. Verified via `lake build`.
 
 ---
 
@@ -866,12 +858,14 @@ Add `runWSN2OccupancyChecks` function with the following test cases:
 2. **N2-T2: Leaf occupied slot → success** (regression guard):
    Reuse M4-A5 pattern with occupied slot. Assert `.ok` with correct SlotRef.
 
-3. **N2-T3: Intermediate empty slot → error** (regression guard):
-   Reuse M4-A6 pattern. Assert `.error .invalidCapability`. Unchanged behavior.
+3. **N2-T3: Multi-level with empty leaf → error** (composition test):
+   2-level CNode chain (root → child) where the leaf slot at the child is empty.
+   Validates the leaf-level occupancy fix through multi-level resolution.
+   Assert `resolveCapAddress` returns `.error .invalidCapability`.
 
-4. **N2-T4: Multi-level with empty leaf → error** (composition test):
-   3-level CNode chain where leaf slot is empty. Assert
-   `resolveCapAddress` returns `.error .invalidCapability`.
+4. **N2-T4: Multi-level with occupied leaf → success** (regression guard):
+   Same 2-level CNode chain but with the leaf slot populated at the child.
+   Assert `.ok` with correct SlotRef pointing to the child CNode.
 
 5. **N2-T5: `cspaceLookupMultiLevel` with empty leaf → error** (integration):
    Same state as N2-T1 but through `cspaceLookupMultiLevel` wrapper.
