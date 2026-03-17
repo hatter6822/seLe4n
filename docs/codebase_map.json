@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-hashmap-migration-GR6B4",
-      "commit_sha": "0b0a8c75f1fdcc0dd95cbde92b1bd20dff4d0621",
-      "tree_sha": "167219b282e7e876cf742911b255a3841b6b3f85",
-      "committed_at_utc": "2026-03-17T14:06:11+00:00"
+      "commit_sha": "a646a3604f68b218f67063d4a3bb593b642779bb",
+      "tree_sha": "075f6f6ce8a43eb8d41b31870f77ebc86d99e174",
+      "committed_at_utc": "2026-03-17T15:02:58+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e745334c677e11afb652cd0e6ec7e5101e9b8906891ca613a9abd098ae0381ad"
+    "source_digest": "84433555577f4d16adf68698b2c4b465f03641d8aa05faf401890cab78a1228b"
   },
   "summary": {
     "module_count": 76,
-    "declaration_count": 2434
+    "declaration_count": 2435
   },
   "readme_sync": {
     "version": "0.17.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 72,
-    "production_loc": 41254,
+    "production_loc": 41257,
     "test_files": 4,
     "test_loc": 5413,
     "proved_theorem_lemma_decls": 1314,
@@ -37,7 +37,7 @@
     {
       "module": "SeLe4n.Data.RobinHoodHashMap",
       "path": "SeLe4n/Data/RobinHoodHashMap.lean",
-      "declaration_count": 66,
+      "declaration_count": 67,
       "declarations": [
         {
           "kind": "namespace",
@@ -517,8 +517,8 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "fold",
+          "kind": "instance",
+          "name": "<anonymous:instance:404>",
           "line": 404,
           "called": [
             "RobinHoodHashSet"
@@ -526,8 +526,16 @@
         },
         {
           "kind": "def",
+          "name": "fold",
+          "line": 407,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "ofList",
-          "line": 409,
+          "line": 412,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -535,7 +543,7 @@
         {
           "kind": "theorem",
           "name": "contains_empty",
-          "line": 416,
+          "line": 419,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -544,7 +552,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert_self",
-          "line": 421,
+          "line": 424,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -553,7 +561,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert",
-          "line": 426,
+          "line": 429,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -562,7 +570,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert_iff",
-          "line": 432,
+          "line": 435,
           "called": [
             "RobinHoodHashSet",
             "contains",
@@ -572,7 +580,7 @@
         {
           "kind": "theorem",
           "name": "not_contains_insert",
-          "line": 448,
+          "line": 451,
           "called": [
             "RobinHoodHashSet",
             "contains",
@@ -582,7 +590,7 @@
         {
           "kind": "theorem",
           "name": "contains_erase",
-          "line": 467,
+          "line": 470,
           "called": [
             "RobinHoodHashSet",
             "contains"

@@ -337,7 +337,7 @@ theorem filter_filter_getElem? [EquivBEq α] [LawfulHashable α]
 -- ============================================================================
 
 /-- Create a Robin Hood HashMap from a list of key-value pairs. -/
-def ofList [LawfulBEq α] (l : List (α × β)) : RobinHoodHashMap α β :=
+def ofList (l : List (α × β)) : RobinHoodHashMap α β :=
   ⟨Std.HashMap.ofList l⟩
 
 /-- The size of `filter` is at most the original size. -/
@@ -348,20 +348,20 @@ theorem size_filter_le_size [EquivBEq α] [LawfulHashable α]
   exact Std.HashMap.size_filter_le_size
 
 /-- HashMap `contains` on empty. -/
-theorem contains_empty' (k : α) :
+@[simp] theorem contains_empty' (k : α) :
     (∅ : RobinHoodHashMap α β).contains k = false := by
   show (∅ : Std.HashMap α β).contains k = false
   exact Std.HashMap.contains_empty
 
 /-- HashMap `contains` after insert. -/
-theorem contains_insert [LawfulBEq α] (m : RobinHoodHashMap α β)
+@[simp] theorem contains_insert [LawfulBEq α] (m : RobinHoodHashMap α β)
     (k a : α) (v : β) :
     (m.insert k v).contains a = (k == a || m.contains a) := by
   show (m.inner.insert k v).contains a = (k == a || m.inner.contains a)
   simp [Std.HashMap.contains_insert]
 
 /-- HashMap `contains` after erase. -/
-theorem contains_erase [LawfulBEq α] (m : RobinHoodHashMap α β)
+@[simp] theorem contains_erase [LawfulBEq α] (m : RobinHoodHashMap α β)
     (k a : α) :
     (m.erase k).contains a = (!(k == a) && m.contains a) := by
   show (m.inner.erase k).contains a = (!(k == a) && m.inner.contains a)
@@ -401,12 +401,15 @@ def erase (s : RobinHoodHashSet α) (a : α) : RobinHoodHashSet α :=
 def toList (s : RobinHoodHashSet α) : List α :=
   s.inner.toList.map Prod.fst
 
+instance [Repr α] : Repr (RobinHoodHashSet α) :=
+  ⟨fun s n => reprPrec s.toList n⟩
+
 def fold {γ : Type _} (s : RobinHoodHashSet α)
     (f : γ → α → γ) (init : γ) : γ :=
   s.inner.fold (fun acc k _ => f acc k) init
 
 /-- Create a Robin Hood HashSet from a list of elements. -/
-def ofList [LawfulBEq α] (l : List α) : RobinHoodHashSet α :=
+def ofList (l : List α) : RobinHoodHashSet α :=
   l.foldl (fun s a => s.insert a) ∅
 
 -- ============================================================================
