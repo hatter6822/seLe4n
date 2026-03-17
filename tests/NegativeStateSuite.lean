@@ -2582,10 +2582,11 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError "M4-A2 overflow: expected error for 65 bits, got success"
 
   -- M4-A6: Empty slot at intermediate (non-leaf) level.
-  -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
-  -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
-  -- unconditionally. So we need 3 levels where the middle level has an empty slot
-  -- and there are still bits remaining for recursion.
+  -- WS-N2: resolveCapAddress now checks slot occupancy at ALL levels, including
+  -- leaf. This test validates the intermediate (non-leaf) path which was already
+  -- correct before WS-N2. The intermediate path has bits remaining after
+  -- consuming the current CNode, so it tries to recurse — the empty slot
+  -- lookup fails with invalidCapability.
   --
   -- lvl0 (gw=0, rw=4, 4 bits) → slot 3 → lvl1 (gw=0, rw=4, empty, 4 bits)
   -- Total bitsRemaining = 10. At lvl1: bits=6, consumed=4, remaining=2 > 0
@@ -2677,6 +2678,161 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
 
+-- ============================================================================
+-- WS-N2: resolveCapAddress leaf-level occupancy tests (N-C01, N-P02)
+-- ============================================================================
+
+/-- WS-N2 (N-C01): Leaf-level occupancy check tests.
+
+Validates that `resolveCapAddress` now checks slot occupancy at the leaf level
+(bitsRemaining - consumed = 0), consistent with the intermediate path which
+has always checked occupancy. This is the core behavioral change of WS-N2. -/
+def runWSN2OccupancyChecks : IO Unit := do
+  IO.println "\n=== WS-N2: resolveCapAddress leaf-level occupancy tests ==="
+
+  -- N2-T1: Leaf empty slot → error (the core behavioral change)
+  -- CNode with radixWidth=4, no slots populated.
+  -- addr=5 → slot 5, consumed=4 bits, bitsRemaining - consumed = 0 → leaf path
+  -- Slot 5 is empty → should return .error .invalidCapability
+  let emptyLeafRoot : SeLe4n.ObjId := ⟨7001⟩
+  let stEmptyLeaf :=
+    (BootstrapBuilder.empty
+      |>.withObject emptyLeafRoot (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := {}  -- all slots empty
+        })
+      |>.build)
+
+  let resultEmptyLeaf := SeLe4n.Kernel.resolveCapAddress emptyLeafRoot ⟨5⟩ 4 stEmptyLeaf
+  match resultEmptyLeaf with
+  | .error .invalidCapability =>
+      IO.println "N2-T1 check passed [leaf empty slot returns invalidCapability]"
+  | .error e =>
+      throw <| IO.userError s!"N2-T1: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "N2-T1: expected error for empty leaf slot, got success"
+
+  -- N2-T2: Leaf occupied slot → success (regression guard)
+  -- Same structure but with slot 5 populated. Should succeed as before WS-N2.
+  let occupiedLeafRoot : SeLe4n.ObjId := ⟨7002⟩
+  let occupiedLeafTarget : SeLe4n.ObjId := ⟨7003⟩
+  let stOccupiedLeaf :=
+    (BootstrapBuilder.empty
+      |>.withObject occupiedLeafRoot (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨5⟩, { target := .object occupiedLeafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ]
+        })
+      |>.withObject occupiedLeafTarget (.endpoint {})
+      |>.build)
+
+  let resultOccupiedLeaf := SeLe4n.Kernel.resolveCapAddress occupiedLeafRoot ⟨5⟩ 4 stOccupiedLeaf
+  match resultOccupiedLeaf with
+  | .ok ref =>
+      if ref.cnode = occupiedLeafRoot ∧ ref.slot = ⟨5⟩ then
+        IO.println "N2-T2 check passed [leaf occupied slot resolves to correct SlotRef]"
+      else
+        throw <| IO.userError s!"N2-T2: expected slot 5, got {reprStr ref}"
+  | .error e =>
+      throw <| IO.userError s!"N2-T2: expected success, got {reprStr e}"
+
+  -- N2-T3: Intermediate empty slot → error (regression guard, unchanged behavior)
+  -- 2-level chain: root slot 3 → child (all empty), bitsRemaining=8 → 4 bits remain
+  -- At child: bits=4, consumed=4, remaining=0 → leaf. Slot 0 is empty → error.
+  -- (Before WS-N2 this would succeed at resolveCapAddress and fail later at lookup;
+  -- after WS-N2 it fails directly at resolveCapAddress.)
+  let interRoot : SeLe4n.ObjId := ⟨7004⟩
+  let interChild : SeLe4n.ObjId := ⟨7005⟩
+  let stInter :=
+    (BootstrapBuilder.empty
+      |>.withObject interRoot (.cnode {
+          depth := 8
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨3⟩, { target := .object interChild, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject interChild (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := {}  -- all slots empty at leaf level
+        })
+      |>.build)
+
+  -- addr=0x30 (8 bits): root shift=(8-4)=4, 0x30>>>4=3, slot 3 → child.
+  -- At child: bits=4, shift=(4-4)=0, 0x30>>>0=48, slot=48%16=0. Remaining=0 → leaf.
+  -- Slot 0 is empty → invalidCapability (now caught at leaf level by WS-N2).
+  let resultInter := SeLe4n.Kernel.resolveCapAddress interRoot ⟨0x30⟩ 8 stInter
+  match resultInter with
+  | .error .invalidCapability =>
+      IO.println "N2-T3 check passed [multi-level with empty leaf slot returns invalidCapability]"
+  | .error e =>
+      throw <| IO.userError s!"N2-T3: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "N2-T3: expected error for multi-level empty leaf, got success"
+
+  -- N2-T4: Multi-level with occupied leaf → success (regression guard)
+  -- Same 2-level chain but with slot 0 populated at child.
+  let interTarget : SeLe4n.ObjId := ⟨7006⟩
+  let stInterOccupied :=
+    (BootstrapBuilder.empty
+      |>.withObject interRoot (.cnode {
+          depth := 8
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨3⟩, { target := .object interChild, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject interChild (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := Std.HashMap.ofList [
+            (⟨0⟩, { target := .object interTarget, rights := AccessRightSet.ofList [.read], badge := none })
+          ]
+        })
+      |>.withObject interTarget (.endpoint {})
+      |>.build)
+
+  let resultInterOccupied := SeLe4n.Kernel.resolveCapAddress interRoot ⟨0x30⟩ 8 stInterOccupied
+  match resultInterOccupied with
+  | .ok ref =>
+      if ref.cnode = interChild ∧ ref.slot = ⟨0⟩ then
+        IO.println "N2-T4 check passed [multi-level with occupied leaf resolves correctly]"
+      else
+        throw <| IO.userError s!"N2-T4: expected interChild slot 0, got {reprStr ref}"
+  | .error e =>
+      throw <| IO.userError s!"N2-T4: expected success, got {reprStr e}"
+
+  -- N2-T5: cspaceLookupMultiLevel with empty leaf → error (integration test)
+  -- Uses the single-level empty leaf state from N2-T1.
+  -- Before WS-N2: resolveCapAddress succeeded → cspaceLookupSlot failed.
+  -- After WS-N2: resolveCapAddress fails directly. Same observable error.
+  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel emptyLeafRoot ⟨5⟩ 4 stEmptyLeaf
+  match resultWrapper with
+  | .error .invalidCapability =>
+      IO.println "N2-T5 check passed [cspaceLookupMultiLevel empty leaf returns invalidCapability]"
+  | .error e =>
+      throw <| IO.userError s!"N2-T5: expected invalidCapability, got {reprStr e}"
+  | .ok _ =>
+      throw <| IO.userError "N2-T5: expected error for empty leaf via wrapper, got success"
+
+  IO.println "all WS-N2 leaf-level occupancy tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2694,3 +2850,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSL4BlockedThreadChecks
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
+  SeLe4n.Testing.runWSN2OccupancyChecks

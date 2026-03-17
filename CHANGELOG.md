@@ -1,3 +1,23 @@
+## [0.17.2] — WS-N2 resolveCapAddress Leaf-Level Occupancy Fix
+
+- Completed Phase 2 (WS-N2) of the IPC & Capability cross-audit workstream:
+  `resolveCapAddress` leaf-level occupancy enforcement (N-C01, N-P02)
+- N2-A: Added `cn.lookup slot` check at leaf level (`bitsRemaining - consumed = 0`),
+  making occupancy checking symmetric across all CSpace resolution levels.
+  Eliminates one redundant HashMap lookup per empty-slot resolution (N-P02).
+- N2-B: Updated `resolveCapAddress_result_valid_cnode` proof; added strengthened
+  `resolveCapAddress_result_valid_cnode_and_slot` theorem proving both CNode
+  validity and slot occupancy on successful resolution
+- N2-E: Added public-facing `resolveCapAddress_success_implies_occupied`
+  characterization theorem documenting the strengthened contract
+- N2-F: 5 new test scenarios in `NegativeStateSuite.lean` covering leaf empty/
+  occupied slots, multi-level paths, and `cspaceLookupMultiLevel` integration
+- N2-G: Updated M4-A6 test comment documenting WS-N2 semantic change
+- Optimized WS-N2 section in workstream plan with precise scope analysis,
+  identifying that Invariant/Preservation.lean requires no changes
+- Zero sorry/axiom; zero warnings; all test tiers pass (test_full.sh Tier 0-3)
+- Bumped `lakefile.toml` version to 0.17.2
+
 ## [0.16.18] — WS-M4 Test Coverage Expansion
 
 - Completed Phase 4 (WS-M4) of the capability subsystem workstream: test

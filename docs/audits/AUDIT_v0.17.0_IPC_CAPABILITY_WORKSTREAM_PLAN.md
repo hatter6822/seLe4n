@@ -653,16 +653,34 @@ Existing code unchanged (no migration yet).
 
 **Target version**: 0.17.2
 **Files modified**: `SeLe4n/Kernel/Capability/Operations.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Defs.lean`,
-`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+`SeLe4n/Kernel/API.lean` (no code changes — verify theorems still hold),
+`tests/NegativeStateSuite.lean` (new WS-N2 tests)
+**Files NOT modified**: `Invariant/Defs.lean`, `Invariant/Preservation.lean`
+(verified: zero references to `resolveCapAddress` in these files — they compose
+via higher-level operations that already handle `.error .invalidCapability`)
 **Findings addressed**: N-C01, N-P02
-**Subtasks**: 5 atomic units (N2-A through N2-E)
+**Subtasks**: 7 atomic units (N2-A through N2-G)
+
+**Scope analysis**: The `resolveCapAddress` function (Operations.lean:76–108) is
+a pure `Except`-returning function, not a `Kernel` monad operation. It does not
+modify state. All references that unfold its definition are:
+- `resolveCapAddress_result_valid_cnode` (Operations.lean:152) — MUST update
+- `resolveCapAddress_guard_reject` (Operations.lean:211) — MUST update
+- `resolveCapAddress_guard_match` (Operations.lean:243) — MUST update
+- `syscallLookupCap` (API.lean:165) — composition, no unfold of resolveCapAddress
+- `resolveExtraCaps` (API.lean:368) — composition, no unfold
+- `cspaceLookupMultiLevel` (Operations.lean:121) — composition, no unfold
+
+API-level theorems (`syscallLookupCap_implies_capability_held`, etc.) compose
+`resolveCapAddress` opaquely via `split at hOk` on the match result. Since the
+fix only adds an error path (which is already handled by the `.error e` branch),
+these theorems require **no proof changes** — verified by `lake build`.
 
 ---
 
 #### Task N2-A: Add leaf-level occupancy check to `resolveCapAddress`
 
-**File**: `Operations.lean:94–95`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:94–95`
 
 **Current code** (leaf path):
 ```lean
@@ -675,93 +693,116 @@ if bitsRemaining - consumed = 0 then
 if bitsRemaining - consumed = 0 then
   match cn.lookup slot with
   | some _ => .ok { cnode := rootId, slot := slot }
-  | none => .error .invalidCapability     -- leaf occupancy check
+  | none => .error .invalidCapability     -- WS-N2: leaf occupancy check
 ```
 
 This makes the leaf path consistent with the intermediate path (lines 97–106),
 which already checks `cn.lookup slot`. The function now checks occupancy at
 **every level** of CSpace resolution.
 
-**Impact on callers**:
+**Impact on callers** (3 total, all in `SeLe4n/Kernel/`):
 
-| Caller | Current Behavior | New Behavior |
-|--------|-----------------|--------------|
-| `syscallLookupCap` (API.lean:165) | Resolve ok → lookupSlotCap → may fail | Resolve fails early on empty leaf |
-| `resolveExtraCaps` (API.lean:368) | Resolve ok → lookupSlotCap → may drop | Resolve fails early on empty leaf |
-| `cspaceLookupMultiLevel` (Ops:121) | Resolve ok → cspaceLookupSlot → may fail | Resolve fails early on empty leaf |
+| Caller | Location | Current Behavior | New Behavior |
+|--------|----------|-----------------|--------------|
+| `syscallLookupCap` | API.lean:165 | Resolve ok → lookupSlotCap → may fail | Resolve fails early on empty leaf |
+| `resolveExtraCaps` | API.lean:368 | Resolve ok → lookupSlotCap → may drop | Resolve fails early on empty leaf |
+| `cspaceLookupMultiLevel` | Operations.lean:121 | Resolve ok → cspaceLookupSlot → may fail | Resolve fails early on empty leaf |
 
-All callers already handle `.error .invalidCapability`, so no caller changes
-needed. Callers are now **simplified**: after a successful resolve, the slot
-is guaranteed to be occupied.
+All callers already handle `.error .invalidCapability`, so **zero caller code
+changes** needed. The fix moves error detection earlier (one fewer HashMap
+lookup per empty-slot resolution — finding N-P02).
 
 **Termination**: Unchanged — the termination proof uses `bitsRemaining` descent,
-which is unaffected by the occupancy check.
+which is unaffected by the occupancy check. The `termination_by bitsRemaining`
+annotation remains valid.
+
+**Verification**: `lake build` after this task alone will fail due to proof
+breakage in subsequent theorems. Proceed immediately to N2-B.
 
 ---
 
 #### Task N2-B: Update `resolveCapAddress_result_valid_cnode` theorem
 
-**File**: `Operations.lean:152–188`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:152–188`
 
 The existing theorem proves that successful resolution returns a valid CNode.
-After the fix, it can be strengthened to also prove the slot is occupied:
+After the fix, the leaf case in the proof encounters an additional `match cn.lookup`
+that must be split. The proof update is mechanical:
+
+**Leaf case change** (line 178): The old proof had:
+```lean
+· -- Leaf case: all bits consumed, ref.cnode = rootId
+  simp at hOk; cases hOk; exact ⟨cn, hObj⟩
+```
+
+The new proof must split on the `cn.lookup` match first:
+```lean
+· -- Leaf case: all bits consumed
+  split at hOk
+  · -- Slot occupied → success
+    simp at hOk; cases hOk; exact ⟨cn, hObj⟩
+  · -- Slot empty → error, contradiction with hOk
+    simp at hOk
+```
+
+The recursive case (lines 179–187) is unchanged because it already handles
+`cn.lookup slot` via split.
+
+After updating this theorem, add the **strengthened variant**:
 
 ```lean
 theorem resolveCapAddress_result_valid_cnode_and_slot
-    (rootId : ObjId) (addr : CPtr) (bits : Nat) (st : SystemState)
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
     (ref : SlotRef)
     (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
     ∃ cn : CNode, st.objects[ref.cnode]? = some (.cnode cn) ∧
-    ∃ cap : Capability, cn.lookup ref.slot = some cap := by
-  ...
+    ∃ cap : Capability, cn.lookup ref.slot = some cap
 ```
 
-The proof follows the same strong induction pattern as the current theorem,
-with an additional `cn.lookup` extraction at both the leaf and recursive cases.
-
-The original `resolveCapAddress_result_valid_cnode` is retained for backward
-compatibility (its conclusion is a weaker consequence of the strengthened
-version).
+**Proof pattern**: Same strong induction as `resolveCapAddress_result_valid_cnode`,
+but at the leaf case, extract the `some cap` from the match (now available since
+the fix guarantees the leaf slot is occupied on success).
 
 ---
 
-#### Task N2-C: Update `resolveCapAddress_guard_match` theorem
+#### Task N2-C: Verify `resolveCapAddress_guard_match` theorem
 
-**File**: `Operations.lean:243–266`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:316–339`
 
-The guard match theorem's proof unfolds `resolveCapAddress` and traces through
-the leaf path. After the fix, the leaf path has an additional `cn.lookup`
-match. The proof must be updated to split on this new case — the error branch
-is eliminated by the `hOk` hypothesis, and the success branch proceeds as
-before.
+The guard match theorem constrains to the leaf case (`hLeaf : bits = consumed`).
+After the fix, the leaf path has an additional `cn.lookup` match before
+producing `.ok`. However, the proof's goal is `guardExtracted = cn.guardValue`,
+which is resolved by `Decidable.of_not_not hNotNe` at the guard check level —
+*before* the leaf/recursive split is reached. The proof does **not** need to
+process the `cn.lookup` match because the goal is already discharged.
 
-This is a mechanical proof update: one additional `split at hOk` + `simp at hOk`
-for the empty-slot error case.
+**Expected outcome**: No proof changes needed. The existing one-line conclusion
+`exact Decidable.of_not_not hNotNe` remains valid because the guard equality
+goal is orthogonal to the leaf occupancy check. Verified via `lake build`.
 
 ---
 
-#### Task N2-D: Update invariant preservation theorems
+#### Task N2-D: Update `resolveCapAddress_guard_reject` theorem
 
-**File**: `Invariant/Preservation.lean`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:211–231`
 
-Any preservation theorem that unfolds `resolveCapAddress` and traces through
-the leaf path needs updating. Grep for `resolveCapAddress` in preservation files:
+The guard reject theorem proves that a bad guard yields `.error .invalidCapability`.
+After the fix, the proof still needs to reach the guard check before the leaf
+occupancy check. Since guard checking happens *before* the `bitsRemaining - consumed`
+split, and the conclusion is about the error case (not the success case), this
+theorem's proof structure may not need changes — but must be verified.
 
-- `resolveCapAddress_result_valid_cnode` (already addressed in N2-B)
-- Any theorem composing `resolveCapAddressK` or `cspaceLookupMultiLevel`
-
-Since `cspaceLookupMultiLevel` composes `resolveCapAddress` + `cspaceLookupSlot`,
-and the new behavior only adds an additional error path (empty slot → error)
-that was already handled by `cspaceLookupSlot`, most composition theorems
-remain unchanged. The key change: `cspaceLookupSlot` after a successful resolve
-now always succeeds (slot guaranteed occupied), which **simplifies** several
-proofs.
+**Expected outcome**: The proof unfolds `resolveCapAddress` and reaches the guard
+check. The guard mismatch (`hBadGuard`) causes the function to return
+`.error .invalidCapability` *before* reaching the leaf/recursive split. If the
+proof structure already terminates at the guard check, no changes needed.
+Verify via `lake build`.
 
 ---
 
 #### Task N2-E: Update docstring and add characterization theorem
 
-**File**: `Operations.lean:64–75`
+**File**: `SeLe4n/Kernel/Capability/Operations.lean:64–75`
 
 Update the `resolveCapAddress` docstring to document the leaf-level occupancy
 check:
@@ -769,31 +810,93 @@ check:
 ```lean
 /-- WS-N2/N-C01: Multi-level CSpace capability address resolution.
 
-...
+Walks the CNode graph starting at `rootId`, consuming `guardWidth + radixWidth`
+bits per hop from the capability address `addr`. Each CNode level:
+1. Extracts guard bits and verifies they match `guardValue`.
+2. Extracts radix bits to compute the slot index.
+3. If bits remain, looks up the slot and recurses into the child CNode.
 4. If all bits are consumed, looks up the slot and returns the resolved slot
    reference if the slot is occupied. Returns `.error .invalidCapability`
    if the leaf slot is empty.
-...
 
-Slot occupancy is checked at EVERY level:
-- Intermediate: `cn.lookup slot` for child CNode traversal (line 97)
-- Leaf: `cn.lookup slot` for final slot validation (new in WS-N2) -/
+Slot occupancy is checked at EVERY level of CSpace resolution:
+- Intermediate: `cn.lookup slot` for child CNode traversal
+- Leaf: `cn.lookup slot` for final slot validation (WS-N2/N-C01)
+
+Termination is guaranteed by strict descent of `bitsRemaining`: each hop
+consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
+invariant / `hProgress`). -/
 ```
 
-Add a theorem characterizing the strengthened behavior:
+Add a **characterization theorem** as a clean public-facing API:
 
 ```lean
+/-- WS-N2/N-C01: Successful resolution guarantees the slot is occupied. -/
 theorem resolveCapAddress_success_implies_occupied
-    (rootId : ObjId) (addr : CPtr) (bits : Nat) (st : SystemState)
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
     (ref : SlotRef)
     (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
     ∃ cn cap, st.objects[ref.cnode]? = some (.cnode cn) ∧
               cn.lookup ref.slot = some cap := by
-  exact resolveCapAddress_result_valid_cnode_and_slot rootId addr bits st ref hOk
+  obtain ⟨cn, hCn, cap, hCap⟩ := resolveCapAddress_result_valid_cnode_and_slot
+    rootId addr bits st ref hOk
+  exact ⟨cn, cap, hCn, hCap⟩
 ```
 
-**Verification**: `lake build` succeeds. `test_smoke.sh` passes. All existing
-tests remain green (callers already handled the error case).
+---
+
+#### Task N2-F: Add WS-N2 tests to NegativeStateSuite
+
+**File**: `tests/NegativeStateSuite.lean`
+
+Add `runWSN2OccupancyChecks` function with the following test cases:
+
+1. **N2-T1: Leaf empty slot → error** (the core behavioral change):
+   Create CNode with no slot at resolved index. Call `resolveCapAddress`.
+   Assert `.error .invalidCapability`.
+
+2. **N2-T2: Leaf occupied slot → success** (regression guard):
+   Reuse M4-A5 pattern with occupied slot. Assert `.ok` with correct SlotRef.
+
+3. **N2-T3: Multi-level with empty leaf → error** (composition test):
+   2-level CNode chain (root → child) where the leaf slot at the child is empty.
+   Validates the leaf-level occupancy fix through multi-level resolution.
+   Assert `resolveCapAddress` returns `.error .invalidCapability`.
+
+4. **N2-T4: Multi-level with occupied leaf → success** (regression guard):
+   Same 2-level CNode chain but with the leaf slot populated at the child.
+   Assert `.ok` with correct SlotRef pointing to the child CNode.
+
+5. **N2-T5: `cspaceLookupMultiLevel` with empty leaf → error** (integration):
+   Same state as N2-T1 but through `cspaceLookupMultiLevel` wrapper.
+   Assert error returned (same error as before, but now detected earlier
+   in the call chain).
+
+Register `runWSN2OccupancyChecks` in the `main` function.
+
+**Update existing test**: M4-A8 negative test (line 2669) calls
+`cspaceLookupMultiLevel` on slot 15 which is empty. Before N2-A, this
+returned `invalidCapability` from `cspaceLookupSlot` *after* resolution.
+After N2-A, it returns `invalidCapability` from `resolveCapAddress` *during*
+resolution. The observable error is identical — test still passes.
+
+---
+
+#### Task N2-G: Update test comment at M4-A6
+
+**File**: `tests/NegativeStateSuite.lean:2584–2588`
+
+Update the comment that documents the old leaf-level behavior:
+
+```
+-- WS-N2: resolveCapAddress now checks slot occupancy at ALL levels, including
+-- leaf. This test validates the intermediate (non-leaf) path which was already
+-- correct before WS-N2.
+```
+
+**Verification**: `lake build` succeeds. `test_smoke.sh` passes. Zero
+`sorry`/`axiom` in production files. Test fixture unchanged (trace harness
+does not exercise empty-leaf resolution path).
 
 ---
 

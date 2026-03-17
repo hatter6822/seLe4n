@@ -950,6 +950,8 @@ Resolution theorems:
 - `resolveCapAddress_deterministic` — trivial (functional equality)
 - `resolveCapAddress_zero_bits` — zero remaining bits → `.error .illegalState`
 - `resolveCapAddress_result_valid_cnode` — success implies valid CNode exists at returned reference. Proved via `Nat.strongRecOn` (well-founded induction on `bits`) with nested `split at hOk` through all branches.
+- `resolveCapAddress_result_valid_cnode_and_slot` — (WS-N2/N-C01) strengthened variant: success implies valid CNode exists AND slot is occupied. Enabled by the leaf-level occupancy check added in WS-N2. Same `Nat.strongRecOn` proof structure with additional `cn.lookup` extraction at both leaf and recursive cases.
+- `resolveCapAddress_success_implies_occupied` — (WS-N2/N-C01) public-facing characterization theorem: successful resolution guarantees both CNode validity and slot occupancy. Delegates to `resolveCapAddress_result_valid_cnode_and_slot`.
 
 CSpace depth invariant:
 

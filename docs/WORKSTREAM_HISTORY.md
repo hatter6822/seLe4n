@@ -21,12 +21,12 @@ WS-N is an **in-progress** workstream portfolio (v0.17.1–v0.17.5), created fro
 comprehensive cross-subsystem audit of the IPC and Capability subsystems (15,000+
 LoC, 20+ files). The audit found zero critical vulnerabilities but identified
 performance optimization opportunities via Robin Hood hashing, a `resolveCapAddress`
-leaf-level asymmetry, and test coverage gaps. Phase 1 completed; phases 2–5 pending.
+leaf-level asymmetry, and test coverage gaps. Phases 1–2 completed; phases 3–5 pending.
 
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-N1** | Robin Hood HashMap foundation: core data structure, bridge lemmas (14 HashMap + 6 HashSet), `KernelHashMap`/`KernelHashSet` type aliases, Prelude integration | HIGH — **COMPLETED** (v0.17.1) |
-| **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + strengthened theorems | HIGH — pending |
+| **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + strengthened theorems | HIGH — **COMPLETED** (v0.17.2) |
 | **WS-N3** | HashMap/HashSet migration across entire codebase (76 + 25 call sites) | MEDIUM — pending |
 | **WS-N4** | Test coverage, determinism validation, zero-gap audit | MEDIUM — pending |
 | **WS-N5** | Documentation sync, GitBook, codebase map | LOW — pending |
@@ -53,6 +53,23 @@ with 6 bridge lemmas (`contains_empty`, `contains_insert_self`,
 `not_contains_insert`, `contains_erase`). N1-I: `KernelHashMap`/`KernelHashSet`
 type aliases in Prelude with namespace re-exports. Zero proof gaps or unproven
 assumptions.
+
+**WS-N2** (v0.17.2): `resolveCapAddress` leaf-level occupancy fix (N-C01, N-P02).
+N2-A: Added `cn.lookup slot` check at leaf level (`bitsRemaining - consumed = 0`),
+making occupancy checking symmetric across all CSpace resolution levels. N2-B:
+Updated `resolveCapAddress_result_valid_cnode` proof for new leaf-level match;
+added strengthened `resolveCapAddress_result_valid_cnode_and_slot` theorem proving
+both CNode validity AND slot occupancy on success. N2-C: Verified
+`resolveCapAddress_guard_match` proof unchanged (guard check precedes occupancy
+check). N2-D: Verified `resolveCapAddress_guard_reject` proof unchanged (guard
+mismatch returns error before reaching leaf/recursive split). N2-E: Updated
+docstring; added public-facing `resolveCapAddress_success_implies_occupied`
+characterization theorem. N2-F: 5 new test scenarios in `NegativeStateSuite.lean`
+(N2-T1: leaf empty slot error, N2-T2: leaf occupied slot success, N2-T3:
+multi-level empty leaf error, N2-T4: multi-level occupied leaf success, N2-T5:
+`cspaceLookupMultiLevel` empty leaf integration). N2-G: Updated M4-A6 test
+comment documenting WS-N2 semantic change. Zero sorry/axiom. Zero warnings.
+All test tiers pass.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 
