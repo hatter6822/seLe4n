@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-hashmap-migration-GR6B4",
-      "commit_sha": "cc9fcb9a4cace9d38486393a738bf12ca1c8dbfa",
-      "tree_sha": "51b12851c1c0c9ab3d2a1c10e878d077e2607f48",
-      "committed_at_utc": "2026-03-17T15:22:07+00:00"
+      "branch": "main",
+      "commit_sha": "53ab211d9f365165c6fb1fc6bebf52bc085fbc41",
+      "tree_sha": "77eaf4606751ce79de6094b45f418387429f19a4",
+      "committed_at_utc": "2026-03-17T16:47:48-04:00"
     }
   },
   "source_sync": {
