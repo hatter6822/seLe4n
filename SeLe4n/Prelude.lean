@@ -671,94 +671,123 @@ instance : LawfulBEq PAddr where
   rfl := beq_self_eq_true _
 
 -- ============================================================================
--- WS-G2: HashMap/HashSet bridge lemmas for proof ergonomics
+-- WS-N1: KernelHashMap / KernelHashSet type aliases
+-- (moved before bridge lemmas for WS-N3 migration)
 -- ============================================================================
 
-/-- WS-G2: Bridge lemma for `HashMap.get?` after `insert`. Maps to the underlying
-    `DHashMap.Const.get?_insert` for types with `EquivBEq` and `LawfulHashable`. -/
+/-- WS-N1: Type alias for the kernel's primary hash map implementation.
+Phase 1 wraps `Std.HashMap` with machine-checked bridge lemmas.
+Phase 3 (WS-N3) migrates all usage to this type. -/
+abbrev KernelHashMap (α : Type) (β : Type) [BEq α] [Hashable α] :=
+  SeLe4n.Data.RobinHoodHashMap α β
+
+/-- WS-N1: Type alias for the kernel's primary hash set implementation. -/
+abbrev KernelHashSet (α : Type) [BEq α] [Hashable α] :=
+  SeLe4n.Data.RobinHoodHashSet α
+
+-- Re-export bridge lemmas under KernelHashMap namespace for ergonomic use
+namespace KernelHashMap
+  export SeLe4n.Data.RobinHoodHashMap (
+    get?_empty get?_emptyCollection
+    get?_insert_self get?_insert_ne get?_insert
+    get?_erase_self get?_erase_ne get?_erase
+    getElem?_insert getElem?_empty getElem?_erase
+    getElem?_eq_get? get?_eq_getElem?
+    fold_eq_foldl_toList size_erase_le size_filter_le_size
+    mem_iff_isSome_getElem? getKey getKey_beq
+    filter_preserves_key filter_filter_getElem?
+    ofList contains_empty' contains_insert contains_erase
+  )
+end KernelHashMap
+
+namespace KernelHashSet
+  export SeLe4n.Data.RobinHoodHashSet (
+    contains_empty contains_insert_self contains_insert
+    contains_insert_iff not_contains_insert contains_erase
+    ofList
+  )
+end KernelHashSet
+
+-- ============================================================================
+-- WS-N3: HashMap/HashSet bridge lemmas (redirected to KernelHashMap/KernelHashSet)
+-- ============================================================================
+
+/-- WS-N3: Bridge lemma for `KernelHashMap.get?` after `insert`. -/
 theorem HashMap_get?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} {v : β} :
-    (m.insert k v).get? a = if k == a then some v else m.get? a :=
-  Std.DHashMap.Const.get?_insert
+    {m : KernelHashMap α β} {k a : α} {v : β} :
+    (m.insert k v).get? a = if k == a then some v else m.get? a := by
+  show (m.inner.insert k v).get? a = if k == a then some v else m.inner.get? a
+  exact Std.DHashMap.Const.get?_insert
 
-/-- WS-G2: Bridge lemma for `HashMap.get?` on empty. -/
+/-- WS-N3: Bridge lemma for `KernelHashMap.get?` on empty. -/
 theorem HashMap_get?_empty {α β : Type} [BEq α] [Hashable α]
-    {a : α} : (∅ : Std.HashMap α β).get? a = none :=
-  Std.DHashMap.Const.get?_empty
+    {a : α} : (∅ : KernelHashMap α β).get? a = none := by
+  show (∅ : Std.HashMap α β).get? a = none
+  exact Std.DHashMap.Const.get?_empty
 
-/-- WS-G2: Bridge lemma for `HashMap.get?` after `erase`. -/
+/-- WS-N3: Bridge lemma for `KernelHashMap.get?` after `erase`. -/
 theorem HashMap_get?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} :
-    (m.erase k).get? a = if k == a then none else m.get? a :=
-  Std.DHashMap.Const.get?_erase
+    {m : KernelHashMap α β} {k a : α} :
+    (m.erase k).get? a = if k == a then none else m.get? a := by
+  show (m.inner.erase k).get? a = if k == a then none else m.inner.get? a
+  exact Std.DHashMap.Const.get?_erase
 
-/-- WS-G2: Bridge lemma for `HashMap[k]?` after `insert` (getElem? notation).
-    Matches goals where `simp` has normalized `.get?` to `[k]?`. -/
+/-- WS-N3: Bridge lemma for `KernelHashMap[k]?` after `insert` (getElem? notation). -/
 theorem HashMap_getElem?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} {v : β} :
-    (m.insert k v)[a]? = if k == a then some v else m[a]? :=
-  Std.HashMap.getElem?_insert
+    {m : KernelHashMap α β} {k a : α} {v : β} :
+    (m.insert k v)[a]? = if k == a then some v else m[a]? := by
+  show (m.inner.insert k v)[a]? = if k == a then some v else m.inner[a]?
+  exact Std.HashMap.getElem?_insert
 
-/-- WS-G2: Bridge lemma for `HashMap[k]?` on empty (getElem? notation). -/
+/-- WS-N3: Bridge lemma for `KernelHashMap[k]?` on empty (getElem? notation). -/
 theorem HashMap_getElem?_empty {α β : Type} [BEq α] [Hashable α]
-    {a : α} : (∅ : Std.HashMap α β)[a]? = none :=
-  Std.HashMap.getElem?_empty
+    {a : α} : (∅ : KernelHashMap α β)[a]? = none := by
+  show (∅ : Std.HashMap α β)[a]? = none
+  exact Std.HashMap.getElem?_empty
 
-/-- WS-G2: Bridge lemma for `HashMap[k]?` after `erase` (getElem? notation). -/
+/-- WS-N3: Bridge lemma for `KernelHashMap[k]?` after `erase` (getElem? notation). -/
 theorem HashMap_getElem?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} :
-    (m.erase k)[a]? = if k == a then none else m[a]? :=
-  Std.HashMap.getElem?_erase
+    {m : KernelHashMap α β} {k a : α} :
+    (m.erase k)[a]? = if k == a then none else m[a]? := by
+  show (m.inner.erase k)[a]? = if k == a then none else m.inner[a]?
+  exact Std.HashMap.getElem?_erase
 
-/-- WS-G2: Equate `HashMap[k]?` (getElem?) and `.get?` — use explicitly, not
-    as `@[simp]` (conflicts with `Std.HashMap.get?_eq_getElem?`). -/
+/-- WS-N3: Equate `KernelHashMap[k]?` (getElem?) and `.get?`. -/
 theorem HashMap_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
-    (m : Std.HashMap α β) (k : α) : m[k]? = m.get? k := rfl
+    (m : KernelHashMap α β) (k : α) : m[k]? = m.get? k := rfl
 
-/-- WS-G2: Equate `.get?` and `HashMap[k]?` — use explicitly in rewrites. -/
+/-- WS-N3: Equate `.get?` and `KernelHashMap[k]?`. -/
 theorem HashMap_get?_eq_getElem? {α β : Type} [BEq α] [Hashable α]
-    (m : Std.HashMap α β) (k : α) : m.get? k = m[k]? := rfl
+    (m : KernelHashMap α β) (k : α) : m.get? k = m[k]? := rfl
 
-/-- WS-G5: Bridge lemma for `HashMap.filter` key preservation.
-When the filter predicate `f` is guaranteed to return `true` for key `k`
-(and any BEq-equivalent key), `filter` does not remove `k`'s entry.
-
-This bridges over the dependent `Option.pfilter` that `Std.HashMap.getElem?_filter`
-produces, which is difficult to work with directly due to the membership proof
-in `getKey`. -/
+/-- WS-N3: Bridge lemma for `KernelHashMap.filter` key preservation. -/
 theorem HashMap_filter_preserves_key
     {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    (m : Std.HashMap α β) (f : α → β → Bool) (k : α)
+    (m : KernelHashMap α β) (f : α → β → Bool) (k : α)
     (hTrue : ∀ (k' : α) (v : β), (k' == k) = true → f k' v = true) :
     (m.filter f)[k]? = m[k]? := by
+  show (m.inner.filter f)[k]? = m.inner[k]?
   simp only [Std.HashMap.getElem?_filter]
   suffices h : ∀ (o : Option β) (p : (a : β) → o = some a → Bool),
       (∀ a (h : o = some a), p a h = true) → o.pfilter p = o by
     apply h
     intro a ha
-    have hMem : k ∈ m := Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [ha])
+    have hMem : k ∈ m.inner := Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [ha])
     exact hTrue _ _ (Std.HashMap.getKey_beq hMem)
   intro o p hp
   cases o with
   | none => rfl
   | some v => simp [hp]
 
-/-- WS-G5: Lookup-level filter idempotency for HashMap.
-For a predicate that ignores the key (depends only on the value),
-double-filtering is lookup-equivalent to single-filtering.
-
-This avoids the need for structural `HashMap.filter_filter` (which is
-unavailable in Lean 4.28.0's Std library due to `AssocList.filter`
-internal bucket-ordering differences). -/
+/-- WS-N3: Lookup-level filter idempotency for KernelHashMap. -/
 theorem HashMap_filter_filter_getElem?
     {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    (m : Std.HashMap α β) (f : α → β → Bool) (k : α) :
+    (m : KernelHashMap α β) (f : α → β → Bool) (k : α) :
     ((m.filter f).filter f)[k]? = (m.filter f)[k]? := by
-  by_cases hMem : k ∈ m.filter f
-  · -- k is in m.filter f; the value there already satisfies f,
-    -- so the second filter preserves the same entry.
-    have ⟨_, hF⟩ := Std.HashMap.mem_filter.mp hMem
-    have hMemFF : k ∈ (m.filter f).filter f := by
+  show ((m.inner.filter f).filter f)[k]? = (m.inner.filter f)[k]?
+  by_cases hMem : k ∈ m.inner.filter f
+  · have ⟨_, hF⟩ := Std.HashMap.mem_filter.mp hMem
+    have hMemFF : k ∈ (m.inner.filter f).filter f := by
       rw [Std.HashMap.mem_filter]
       refine ⟨hMem, ?_⟩
       rw [Std.HashMap.getKey_filter]
@@ -766,26 +795,25 @@ theorem HashMap_filter_filter_getElem?
       exact hF
     have h1 := Std.HashMap.getElem?_eq_some_getElem hMemFF
     have h2 := Std.HashMap.getElem?_eq_some_getElem hMem
-    have h3 : ((m.filter f).filter f)[k] = (m.filter f)[k] :=
+    have h3 : ((m.inner.filter f).filter f)[k] = (m.inner.filter f)[k] :=
       Std.HashMap.getElem_filter
     rw [h1, h2, h3]
-  · -- k ∉ m.filter f ⇒ k ∉ (m.filter f).filter f ⇒ both sides are none
-    have hNotMemFF : k ∉ (m.filter f).filter f :=
+  · have hNotMemFF : k ∉ (m.inner.filter f).filter f :=
       fun h => hMem (Std.HashMap.mem_of_mem_filter h)
     rw [Std.HashMap.getElem?_eq_none hNotMemFF,
         Std.HashMap.getElem?_eq_none hMem]
 
-/-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/
+/-- WS-N3: Bridge lemma for `KernelHashSet.contains` on empty. -/
 theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
-    {a : α} : (∅ : Std.HashSet α).contains a = false :=
-  Std.DHashMap.contains_empty
+    {a : α} : (∅ : KernelHashSet α).contains a = false :=
+  show (∅ : Std.HashMap α Unit).contains a = false from Std.HashMap.contains_empty
 
-/-- WS-G8: Bridge lemma — `HashSet.contains` after `insert` characterization.
-`Std.HashSet.contains_insert` gives `(s.insert a).contains b = (a == b || s.contains b)`. -/
+/-- WS-N3: Bridge lemma — `KernelHashSet.contains` after `insert` characterization. -/
 theorem HashSet_contains_insert_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (s : Std.HashSet α) (a b : α) :
+    (s : KernelHashSet α) (a b : α) :
     (s.insert a).contains b = true ↔ b = a ∨ s.contains b = true := by
-  rw [Std.HashSet.contains_insert]
+  rw [show (s.insert a).contains b = (a == b || s.contains b) from
+    SeLe4n.Data.RobinHoodHashSet.contains_insert s a b]
   simp only [Bool.or_eq_true]
   constructor
   · rintro (h | h)
@@ -795,11 +823,12 @@ theorem HashSet_contains_insert_iff {α : Type} [BEq α] [Hashable α] [LawfulBE
     · left; simp
     · right; exact h
 
-/-- WS-G8: Bridge lemma — negative `HashSet.contains` after `insert`. -/
+/-- WS-N3: Bridge lemma — negative `KernelHashSet.contains` after `insert`. -/
 theorem HashSet_not_contains_insert {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (s : Std.HashSet α) (a b : α) :
+    (s : KernelHashSet α) (a b : α) :
     (s.insert a).contains b = false ↔ b ≠ a ∧ s.contains b = false := by
-  rw [Std.HashSet.contains_insert]
+  rw [show (s.insert a).contains b = (a == b || s.contains b) from
+    SeLe4n.Data.RobinHoodHashSet.contains_insert s a b]
   simp only [Bool.or_eq_false_iff]
   constructor
   · rintro ⟨hab, hc⟩
@@ -810,11 +839,13 @@ theorem HashSet_not_contains_insert {α : Type} [BEq α] [Hashable α] [LawfulBE
     · rfl
     · exact absurd ((eq_of_beq h).symm) hne
 
-/-- WS-G8: `HashSet.insert` self-membership. -/
+/-- WS-N3: `KernelHashSet.insert` self-membership. -/
 theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (s : Std.HashSet α) (a : α) :
+    (s : KernelHashSet α) (a : α) :
     (s.insert a).contains a = true := by
-  rw [Std.HashSet.contains_insert]; simp
+  rw [show (s.insert a).contains a = (a == a || s.contains a) from
+    SeLe4n.Data.RobinHoodHashSet.contains_insert s a a]
+  simp
 
 -- ============================================================================
 -- WS-G9: List.foldl HashSet bridge lemmas for observable-set precomputation
@@ -823,33 +854,34 @@ theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulB
 /-- WS-G9: If `s.contains a = true`, then after folding any list with conditional
 inserts, `a` remains in the set. Monotonicity of HashSet.insert under foldl. -/
 theorem List.foldl_preserves_contains {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (p : α → Bool) (xs : List α) (s : KernelHashSet α) {a : α}
     (hContains : s.contains a = true) :
     (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a = true := by
   induction xs generalizing s with
   | nil => exact hContains
   | cons x xs ih =>
-    simp only [List.foldl_cons]
+    change (List.foldl _ (if p x then s.insert x else s) xs).contains a = true
     split
-    · exact ih (s.insert x) (by rw [Std.HashSet.contains_insert]; simp [hContains])
+    · exact ih (s.insert x) (by
+        rw [SeLe4n.Data.RobinHoodHashSet.contains_insert]; simp [hContains])
     · exact ih s hContains
 
 /-- WS-G9: If `a` is not in the list `xs`, then folding conditional inserts does
 not change whether `a` is in the set. -/
 theorem List.foldl_not_contains_when_absent {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (p : α → Bool) (xs : List α) (s : KernelHashSet α) {a : α}
     (hNotIn : a ∉ xs) :
     (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
       s.contains a := by
   induction xs generalizing s with
   | nil => rfl
   | cons x xs ih =>
-    simp only [List.foldl_cons]
+    change (List.foldl _ (if p x then s.insert x else s) xs).contains a = s.contains a
     have hNe : a ≠ x := fun h => hNotIn (h ▸ List.Mem.head xs)
     have hNotInXs : a ∉ xs := fun h => hNotIn (List.Mem.tail x h)
     split
     · rw [ih (s.insert x) hNotInXs]
-      rw [Std.HashSet.contains_insert]
+      rw [SeLe4n.Data.RobinHoodHashSet.contains_insert]
       simp [Ne.symm hNe]
     · exact ih s hNotInXs
 
@@ -857,27 +889,20 @@ theorem List.foldl_not_contains_when_absent {α : Type} [BEq α] [Hashable α] [
 preserves `a`'s containment status. Whether `a` is in the list or not, `p a = false`
 prevents any insertion of `a`, so the final `contains a` equals `s.contains a`. -/
 theorem List.foldl_preserves_when_pred_false {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
+    (p : α → Bool) (xs : List α) (s : KernelHashSet α) {a : α}
     (hPa : p a = false) :
     (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
       s.contains a := by
   induction xs generalizing s with
   | nil => rfl
   | cons x xs ih =>
-    simp only [List.foldl_cons]
+    change (List.foldl _ (if p x then s.insert x else s) xs).contains a = s.contains a
     by_cases hEq : x = a
-    · -- x = a: since p a = false, the if-branch doesn't insert, leaving s unchanged
-      subst hEq
-      split
-      · rename_i hContra; rw [hPa] at hContra; exact absurd hContra (by decide)
-      · exact ih s
-    · -- x ≠ a: whether or not x is inserted, a's membership is unchanged
-      split
-      · -- p x = true: x is inserted; a ≠ x so a remains unchanged
-        rw [ih (s.insert x), Std.HashSet.contains_insert]
+    · subst hEq; rw [hPa]; exact ih s
+    · split
+      · rw [ih (s.insert x), SeLe4n.Data.RobinHoodHashSet.contains_insert]
         simp [beq_false_of_ne hEq]
-      · -- p x = false: nothing inserted
-        exact ih s
+      · exact ih s
 
 -- ============================================================================
 -- H-06/WS-E3: Sentinel identity theorems
@@ -1093,40 +1118,5 @@ theorem CPtr.sentinel_not_valid : ¬ CPtr.sentinel.valid := by
 /-- WS-H14f: The sentinel ObjId is not valid. -/
 theorem ObjId.sentinel_not_valid : ¬ ObjId.sentinel.valid := by
   simp [ObjId.valid, ObjId.sentinel]
-
--- ============================================================================
--- WS-N1: KernelHashMap / KernelHashSet type aliases
--- ============================================================================
-
-/-- WS-N1: Type alias for the kernel's primary hash map implementation.
-Phase 1 wraps `Std.HashMap` with machine-checked bridge lemmas.
-Phase 3 (WS-N3) will migrate to Robin Hood open-addressing. -/
-abbrev KernelHashMap (α : Type) (β : Type) [BEq α] [Hashable α] :=
-  SeLe4n.Data.RobinHoodHashMap α β
-
-/-- WS-N1: Type alias for the kernel's primary hash set implementation. -/
-abbrev KernelHashSet (α : Type) [BEq α] [Hashable α] :=
-  SeLe4n.Data.RobinHoodHashSet α
-
--- Re-export bridge lemmas under KernelHashMap namespace for ergonomic use
-namespace KernelHashMap
-  export SeLe4n.Data.RobinHoodHashMap (
-    get?_empty get?_emptyCollection
-    get?_insert_self get?_insert_ne get?_insert
-    get?_erase_self get?_erase_ne get?_erase
-    getElem?_insert getElem?_empty getElem?_erase
-    getElem?_eq_get? get?_eq_getElem?
-    fold_eq_foldl_toList size_erase_le
-    mem_iff_isSome_getElem? getKey getKey_beq
-    filter_preserves_key filter_filter_getElem?
-  )
-end KernelHashMap
-
-namespace KernelHashSet
-  export SeLe4n.Data.RobinHoodHashSet (
-    contains_empty contains_insert_self contains_insert
-    contains_insert_iff not_contains_insert contains_erase
-  )
-end KernelHashSet
 
 end SeLe4n

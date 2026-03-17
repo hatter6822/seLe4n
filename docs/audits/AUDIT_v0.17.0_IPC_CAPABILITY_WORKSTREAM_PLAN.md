@@ -900,140 +900,132 @@ does not exercise empty-leaf resolution path).
 
 ---
 
-### Phase 3: HashMap/HashSet Migration (WS-N3)
+### Phase 3: HashMap/HashSet Migration (WS-N3) — COMPLETED
 
-**Target version**: 0.17.3
-**Files modified**: 11 source files (76 `Std.HashMap` + 25 `Std.HashSet` call sites)
+**Completed version**: 0.17.3
+**Files modified**: 20 source + 6 test files
 **Findings addressed**: N-P01 (completion), N-P03, N-D01, N-D02
-**Subtasks**: 7 atomic units (N3-A through N3-G)
+**Subtasks**: 7 atomic units (N3-A through N3-G) — all completed
+**Status**: All 148 build jobs pass. Zero `sorry`/`axiom`. `test_full.sh` passes.
 
-Phase 3 replaces all `Std.HashMap`/`Std.HashSet` usage with the Robin Hood
-implementations from Phase 1. The migration is mechanical: type swaps + bridge
-lemma name updates.
+Phase 3 replaced all `Std.HashMap`/`Std.HashSet` usage across the kernel and
+test surface with `KernelHashMap`/`KernelHashSet` (aliases for
+`RobinHoodHashMap`/`RobinHoodHashSet`). The migration required both mechanical
+type swaps and non-trivial proof repairs where `simp` could no longer
+automatically unfold through the `RobinHoodHashMap` wrapper to reach
+`Std.HashMap` lemmas.
 
----
+**Key implementation decisions**:
 
-#### Task N3-A: Migrate `Model/State.lean` (10 `Std.HashMap` call sites)
+1. **Bridge lemma strategy**: Proofs that previously used `simp` to auto-resolve
+   `Std.HashMap` operations (e.g., `simp [lookup]` closing
+   `getElem?_insert`/`getElem?_erase` goals) were updated to explicitly supply
+   `RobinHoodHashMap` bridge lemmas: `SeLe4n.Data.RobinHoodHashMap.getElem?_insert`,
+   `getElem?_erase`, `getElem?_empty`.
 
-The `SystemState` structure holds 8 HashMap fields and 1 HashSet field.
+2. **`fold` argument order fix**: The original `RobinHoodHashMap.fold` had
+   `(m) (init) (f)` parameter order, but `Std.HashMap.fold` uses `(f) (init)`
+   (function-first). This was corrected to `(m) (f) (init)` to match method-syntax
+   conventions used throughout the kernel (e.g., `byPrio.fold (fun ...) none`).
 
-**Type changes**:
-```lean
--- Before:
-objects : Std.HashMap ObjId KernelObject
--- After:
-objects : KernelHashMap ObjId KernelObject
-```
+3. **Inner-map proof delegation**: Complex proofs in `Capability/Invariant/`
+   that use `Std.HashMap.mem_filter`, `getElem_filter`, and `getKey_beq`
+   continue to operate on `.inner` (the underlying `Std.HashMap`) via
+   `show`/type-coercion bridges. This preserves access to the full `Std.HashMap`
+   proof library for filter-related reasoning while keeping external signatures
+   on `KernelHashMap`.
 
-Apply to all 8 HashMap fields: `objects`, `objectTypes`, `capabilityRefs`,
-`services`, `irqHandlers`, `asidTable`, `cdtSlotNode`, `cdtNodeSlot`.
+4. **`BEq` instance**: Added `BEq (RobinHoodHashMap α β)` delegating to
+   `BEq (Std.HashMap α β)` for test comparisons (e.g., `st'.objects == st0.objects`).
 
-Apply to HashSet field: `objectIndexSet : KernelHashSet ObjId`.
-
-**Proof updates**: 6 `revokeAndClearRefsState` preservation theorems use
-`Std.HashMap.fold_eq_foldl_toList`. Replace with
-`RobinHoodHashMap.fold_eq_foldl_toList`. The proofs are structurally identical —
-both rewrite `fold` into `List.foldl` over `toList`, then induct on the list.
-
-2 `storeObject` lemmas use `Std.HashMap.getElem?_insert`. Replace with
-`RobinHoodHashMap.getElem?_insert`.
-
----
-
-#### Task N3-B: Migrate `Model/Object/Types.lean` and `Structures.lean`
-
-**Types.lean**: `CNode.slots : Std.HashMap Slot Capability` →
-`CNode.slots : KernelHashMap Slot Capability`
-
-**Structures.lean (6 call sites)**:
-- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` →
-  `KernelHashMap`
-- `CNode.mk'` constructor parameter: `Std.HashMap` → `KernelHashMap`
-- `CNode.slotCountBounded_remove` uses `Std.HashMap.size_erase_le` → use
-  `RobinHoodHashMap.size_erase_le`
-- `CNode.slotCountBounded_revokeTargetLocal` uses
-  `Std.HashMap.size_filter_le_size` → use `RobinHoodHashMap.size_filter_le`
-- `CNode.revokeTargetLocal_source_preserved` uses
-  `Std.HashMap.mem_iff_isSome_getElem?` → use Robin Hood equivalent
-- `CNode.BEq` and `VSpaceRoot.BEq` use `.fold` — unchanged API
-
-**CDT fields**: `CapDerivationTree.childMap`, `.parentMap` → `KernelHashMap`
+5. **Prelude bridge lemma redirection**: The `HashMap_*`/`HashSet_*` bridge
+   lemmas in `Prelude.lean` were redirected from `{m : Std.HashMap α β}` to
+   `{m : KernelHashMap α β}` using `by show ... exact Std...` tactic patterns,
+   maintaining API stability for all downstream consumers.
 
 ---
 
-#### Task N3-C: Migrate `Kernel/Scheduler/RunQueue.lean` (5 `Std.HashMap` + 13 `Std.HashSet`)
+#### Task N3-A: Migrate `Model/State.lean` — COMPLETED
 
-The `RunQueue` structure uses:
-- `byPriority : Std.HashMap Priority (List ThreadId)` → `KernelHashMap`
-- `membership : Std.HashSet ThreadId` → `KernelHashSet`
-- `threadPriority : Std.HashMap ThreadId Priority` → `KernelHashMap`
-
-**Proof updates (13 HashSet call sites)**: All RunQueue proofs use
-`Std.HashSet.contains_insert`, `Std.HashSet.contains_erase`, etc. Replace with
-`RobinHoodHashSet.contains_insert`, etc.
-
-**RunQueue bridge lemmas**: `mem_insert`, `mem_remove`, `mem_rotateHead`,
-`mem_rotateToBack`, `not_mem_remove_self`, `not_mem_toList_of_not_mem`,
-`mem_toList_iff_mem`. These use `Std.HashSet` API internally — update to
-`KernelHashSet` API.
-
-**`recomputeMaxPriority`**: Uses `byPrio.fold` — fold API unchanged.
+Migrated 8 `Std.HashMap` fields + 1 `Std.HashSet` field in `SystemState`.
+Updated 8 `fold_eq_foldl_toList` references, 2 `getElem?_insert` references,
+and 1 `storeServiceState_lookup_eq` proof to use `RobinHoodHashMap` bridge
+lemmas. The `objectIndexLive` preservation theorem required explicit
+`getElem?_insert` to resolve `(insert st.objects id obj)[id]? ≠ none`.
 
 ---
 
-#### Task N3-D: Migrate `Kernel/Capability/Invariant/` (12 call sites)
+#### Task N3-B: Migrate `Model/Object/Types.lean` and `Structures.lean` — COMPLETED
 
-**Invariant/Defs.lean (6 sites)**: Uses `HashMap_getElem?_erase` (2),
-`Std.HashMap.getElem?_erase` (1), `Std.HashMap.mem_iff_isSome_getElem?` (1),
-`Std.HashMap.mem_of_mem_filter` (1), `Std.HashMap.getElem_filter` (1).
-
-**Invariant/Authority.lean (6 sites)**: Uses `Std.HashMap.mem_iff_isSome_getElem?`,
-`Std.HashMap.mem_filter`, `Std.HashMap.getKey_beq`, `Std.HashMap.getElem_filter`,
-`Std.HashMap.getElem?_insert`.
-
-Replace all with `KernelHashMap_*` / `RobinHoodHashMap.*` equivalents.
-
----
-
-#### Task N3-E: Migrate `Kernel/Scheduler/Operations/Preservation.lean` (~30 call sites)
-
-This is the largest single file for migration. All 30+ uses are
-`HashMap_getElem?_insert` in scheduler preservation proofs. Replace with
-`KernelHashMap_getElem?_insert`. The proofs are structurally identical —
-only the lemma name changes.
+- `CNode.slots`, `VSpaceRoot.mappings`, CDT fields → `KernelHashMap`
+- 8 proof repairs in `Structures.lean`:
+  - `lookup_unmapPage_eq_none`, `lookup_mapPage_eq`: added `getElem?_erase`/`getElem?_insert`
+  - `lookup_eq_none_iff`: rewrote via `show` on `.inner` with `Std.HashMap` lemmas
+  - `lookup_remove_eq_none`, `lookup_insert_eq`: added `getElem?_erase`/`getElem?_insert`
+  - `lookup_mem_of_some`: rewrote using `(mem_iff_isSome_getElem? _ _).mpr`
+  - `empty_slotCountBounded`: explicit `RobinHoodHashMap.size` unfolding
+  - `mem_lookup_of_slotsUnique`: fixed variable name + `.inner` delegation
+- Added `Repr (RobinHoodHashMap α β)` instance for `CNode` deriving
 
 ---
 
-#### Task N3-F: Migrate remaining files
+#### Task N3-C: Migrate `Kernel/Scheduler/RunQueue.lean` — COMPLETED
 
-- `Kernel/Lifecycle/Operations.lean` (3 sites): `Std.HashMap.fold_eq_foldl_toList`
-- `Kernel/InformationFlow/Projection.lean` (3 sites): `HashMap_filter_filter_getElem?`,
-  `Std.HashSet` projection
-- `Kernel/InformationFlow/Invariant/Helpers.lean` (1 site)
-- `Kernel/InformationFlow/Invariant/Operations.lean` (5 sites)
-- `Kernel/Architecture/VSpaceInvariant.lean` (5 sites)
-- `Kernel/Architecture/Invariant.lean` (2 sites)
-- `Kernel/Service/Invariant/Acyclicity.lean` (2 HashSet sites)
-- `Testing/StateBuilder.lean` (7 sites)
-- `Testing/MainTraceHarness.lean` (10 sites)
+Migrated 3 struct fields (`byPriority`, `membership`, `threadPriority`).
+Updated 19 bridge lemma references from `Std.HashSet.*` to
+`RobinHoodHashSet.*`. Fixed `not_mem_empty` proof to use
+`RobinHoodHashSet.contains_empty`. The `fold` argument order fix (N3-A
+prerequisite) resolved the `recomputeMaxPriority` build failure.
 
 ---
 
-#### Task N3-G: Remove `Std.HashMap`/`Std.HashSet` bridge lemmas from Prelude
+#### Task N3-D: Migrate `Kernel/Capability/Invariant/` — COMPLETED
 
-After all migration is complete, the `HashMap_*` bridge lemmas in
-`Prelude.lean:676–816` can be:
-1. **Redirected**: Changed from delegating to `Std.DHashMap.*` to delegating to
-   `RobinHoodHashMap.*` — making them aliases for the new implementation.
-2. **Or retained as-is**: If `Std.HashMap` is still imported elsewhere, keep
-   both sets of lemmas during a transition period.
+- `Invariant/Defs.lean`: Fixed `cdtMintCompleteness_default` with
+  `getElem?_empty`. Rewrote `revokeTargetLocal_slots_sub` filter membership
+  proof using `(mem_iff_isSome_getElem? _ _).mpr`.
+- `Invariant/Authority.lean`: Added `getElem?_insert` to 3 simp calls for
+  `cspaceDeleteSlot`/`cspaceInsertSlot` proofs. Fixed filter-value extraction
+  proof via inner-map coercion instead of `rw [CNode.revokeTargetLocal]`.
 
-Recommended: Option 1 (redirect). This eliminates the `Std.HashMap` dependency
-from the proof surface entirely.
+---
 
-**Verification**: Full `lake build` succeeds. `test_smoke.sh` passes.
-`test_full.sh` passes. No `Std.HashMap` or `Std.HashSet` references remain
-in `SeLe4n/` source files (only in imports if any).
+#### Task N3-E: Migrate `Kernel/Scheduler/Operations/Preservation.lean` — COMPLETED
+
+Updated `timerTick_preserves_schedulerInvariantBundle` and
+`timerTick_preserves_kernelInvariant` with explicit `getElem?_insert` bridge
+lemma calls. The time-slice-not-expired case required `getElem?_insert` for
+both `currentThreadValid` and `currentThreadInActiveDomain` proofs.
+
+---
+
+#### Task N3-F: Migrate remaining kernel + test files — COMPLETED
+
+- `Kernel/Lifecycle/Operations.lean`: 3 `fold_eq_foldl_toList` references
+- `Kernel/Architecture/VSpaceInvariant.lean`: 1 `getElem?_erase` fix
+- `Kernel/Architecture/Invariant.lean`: 1 `getElem?_empty` fix
+- `Kernel/IPC/Invariant/Defs.lean`: 1 `getElem?_insert` fix for `storeObject_objects_eq`
+- `Kernel/Scheduler/Invariant.lean`: 1 `getElem?_empty` fix for `runQueueThreadPriorityConsistent_default`
+- Test files: All `Std.HashMap.ofList` → `RobinHoodHashMap.ofList`, all
+  `Std.HashSet.ofList` → `RobinHoodHashSet.ofList`, all empty-map constructors
+  updated to `KernelHashMap`/`KernelHashSet`
+
+---
+
+#### Task N3-G: Prelude bridge lemma redirection — COMPLETED
+
+The `HashMap_*`/`HashSet_*` bridge lemmas in `Prelude.lean` were redirected
+from `{m : Std.HashMap α β}` to `{m : KernelHashMap α β}`, making them
+type-compatible with all migrated call sites. The redirection uses
+`by show ... exact Std...` tactic proofs that expose the inner `Std.HashMap`
+for proof delegation while presenting `KernelHashMap` signatures externally.
+
+New bridge lemma re-exports added: `ofList`, `contains_empty'`,
+`contains_insert`, `contains_erase`, `size_filter_le_size`.
+
+**Verification**: `lake build` passes (148 jobs, 0 warnings). `test_smoke.sh`
+passes. `test_full.sh` passes. No `sorry` or `axiom` in production proof
+surface.
 
 ---
 

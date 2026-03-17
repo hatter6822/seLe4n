@@ -81,6 +81,12 @@ instance : EmptyCollection (RobinHoodHashMap α β) :=
 instance : Inhabited (RobinHoodHashMap α β) :=
   ⟨RobinHoodHashMap.mk'⟩
 
+instance [Repr α] [Repr β] : Repr (RobinHoodHashMap α β) :=
+  ⟨fun m n => reprPrec m.inner.toList n⟩
+
+instance [BEq (Std.HashMap α β)] : BEq (RobinHoodHashMap α β) :=
+  ⟨fun a b => a.inner == b.inner⟩
+
 namespace RobinHoodHashMap
 
 -- ============================================================================
@@ -121,9 +127,9 @@ def erase (m : RobinHoodHashMap α β) (k : α) : RobinHoodHashMap α β :=
 -- ============================================================================
 
 /-- Fold over all key-value pairs in iteration order. -/
-def fold {γ : Type _} (m : RobinHoodHashMap α β) (init : γ)
-    (f : γ → α → β → γ) : γ :=
-  m.inner.fold (init := init) f
+def fold {γ : Type _} (m : RobinHoodHashMap α β)
+    (f : γ → α → β → γ) (init : γ) : γ :=
+  m.inner.fold f init
 
 /-- Extract all key-value pairs as a list. -/
 def toList (m : RobinHoodHashMap α β) : List (α × β) :=
@@ -255,8 +261,8 @@ theorem get?_eq_getElem? (m : RobinHoodHashMap α β) (k : α) :
 
 /-- `fold` is equivalent to `List.foldl` on `toList`. -/
 theorem fold_eq_foldl_toList {γ : Type _} (m : RobinHoodHashMap α β)
-    (init : γ) (f : γ → α → β → γ) :
-    m.fold init f = m.toList.foldl (fun acc (p : α × β) => f acc p.1 p.2) init := by
+    (f : γ → α → β → γ) (init : γ) :
+    m.fold f init = m.toList.foldl (fun acc (p : α × β) => f acc p.1 p.2) init := by
   simp only [fold, toList]
   exact Std.HashMap.fold_eq_foldl_toList
 
@@ -327,6 +333,41 @@ theorem filter_filter_getElem? [EquivBEq α] [LawfulHashable α]
         Std.HashMap.getElem?_eq_none hMem]
 
 -- ============================================================================
+-- N3-A: Additional bridge lemmas for codebase-wide migration
+-- ============================================================================
+
+/-- Create a Robin Hood HashMap from a list of key-value pairs. -/
+def ofList (l : List (α × β)) : RobinHoodHashMap α β :=
+  ⟨Std.HashMap.ofList l⟩
+
+/-- The size of `filter` is at most the original size. -/
+theorem size_filter_le_size [EquivBEq α] [LawfulHashable α]
+    (m : RobinHoodHashMap α β) (f : α → β → Bool) :
+    (m.filter f).size ≤ m.size := by
+  simp only [size, filter]
+  exact Std.HashMap.size_filter_le_size
+
+/-- HashMap `contains` on empty. -/
+@[simp] theorem contains_empty' (k : α) :
+    (∅ : RobinHoodHashMap α β).contains k = false := by
+  show (∅ : Std.HashMap α β).contains k = false
+  exact Std.HashMap.contains_empty
+
+/-- HashMap `contains` after insert. -/
+@[simp] theorem contains_insert [LawfulBEq α] (m : RobinHoodHashMap α β)
+    (k a : α) (v : β) :
+    (m.insert k v).contains a = (k == a || m.contains a) := by
+  show (m.inner.insert k v).contains a = (k == a || m.inner.contains a)
+  simp [Std.HashMap.contains_insert]
+
+/-- HashMap `contains` after erase. -/
+@[simp] theorem contains_erase [LawfulBEq α] (m : RobinHoodHashMap α β)
+    (k a : α) :
+    (m.erase k).contains a = (!(k == a) && m.contains a) := by
+  show (m.inner.erase k).contains a = (!(k == a) && m.inner.contains a)
+  simp [Std.HashMap.contains_erase]
+
+-- ============================================================================
 -- N1-H: HashSet — thin wrapper
 -- ============================================================================
 
@@ -360,9 +401,16 @@ def erase (s : RobinHoodHashSet α) (a : α) : RobinHoodHashSet α :=
 def toList (s : RobinHoodHashSet α) : List α :=
   s.inner.toList.map Prod.fst
 
-def fold {γ : Type _} (s : RobinHoodHashSet α) (init : γ)
-    (f : γ → α → γ) : γ :=
-  s.inner.fold init fun acc k _ => f acc k
+instance [Repr α] : Repr (RobinHoodHashSet α) :=
+  ⟨fun s n => reprPrec s.toList n⟩
+
+def fold {γ : Type _} (s : RobinHoodHashSet α)
+    (f : γ → α → γ) (init : γ) : γ :=
+  s.inner.fold (fun acc k _ => f acc k) init
+
+/-- Create a Robin Hood HashSet from a list of elements. -/
+def ofList (l : List α) : RobinHoodHashSet α :=
+  l.foldl (fun s a => s.insert a) ∅
 
 -- ============================================================================
 -- HashSet bridge lemmas (6)

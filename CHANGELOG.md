@@ -1,3 +1,28 @@
+## [0.17.3] — WS-N3 HashMap/HashSet Migration + Audit Fixes
+
+- Completed Phase 3 (WS-N3) of the IPC & Capability cross-audit workstream:
+  full codebase migration from `Std.HashMap`/`Std.HashSet` to
+  `KernelHashMap`/`KernelHashSet` across 20 source + 6 test files
+- N3-A: Fixed `fold` argument order to `(m)(f)(init)` matching `Std.HashMap.fold`
+  convention used throughout the kernel
+- N3-B: Bridge lemma redirection in `Prelude.lean` routing through
+  `RobinHoodHashMap`/`RobinHoodHashSet` bridge lemmas
+- N3-C/D/E: Proof repairs in `Structures.lean`, `Authority.lean`, and
+  `Preservation.lean` for updated HashMap API and capability invariant
+  preservation under new types
+- N3-F: Added `BEq` instance for `RobinHoodHashMap` enabling equality
+  comparison in test harness and kernel logic
+- N3-G: Full migration of all remaining `Std.HashMap`/`Std.HashSet` call sites
+- **Audit fixes** (post-implementation review):
+  - Removed unnecessarily restrictive `[LawfulBEq α]` constraint from
+    `RobinHoodHashMap.ofList` and `RobinHoodHashSet.ofList`
+  - Added missing `Repr` instance for `RobinHoodHashSet`
+  - Added `@[simp]` annotations to `contains_empty'`, `contains_insert`, and
+    `contains_erase` bridge lemmas for automated reasoning
+- Zero sorry/axiom; zero warnings; all test tiers pass (test_full.sh Tier 0-3)
+- Bumped `lakefile.toml` version to 0.17.3
+- Regenerated `docs/codebase_map.json`
+
 ## [0.17.2] — WS-N2 resolveCapAddress Leaf-Level Occupancy Fix
 
 - Completed Phase 2 (WS-N2) of the IPC & Capability cross-audit workstream:

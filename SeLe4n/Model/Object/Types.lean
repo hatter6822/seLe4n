@@ -334,14 +334,14 @@ A large `guardWidth` compresses an unbranched path prefix into a single
 guard comparison, avoiding chains of intermediate CNodes (Patricia-trie
 optimisation matching seL4's real CSpace implementation).
 
-`slots` is backed by `Std.HashMap Slot Capability` for O(1) amortized
+`slots` is backed by `KernelHashMap Slot Capability` for O(1) amortized
 lookup, insert, and delete. HashMap key uniqueness is structural. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf
   guardWidth : Nat          -- width of guard field in bits
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
-  slots      : Std.HashMap SeLe4n.Slot Capability
+  slots      : KernelHashMap SeLe4n.Slot Capability
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/

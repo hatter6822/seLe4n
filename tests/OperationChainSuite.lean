@@ -74,7 +74,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 1
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
@@ -171,7 +171,7 @@ private def chain5CopyMoveDelete : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 2
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -322,7 +322,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
@@ -391,7 +391,7 @@ private def buildParameterizedTopology
     (List.range threadCount).map fun i =>
       (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject :=
-    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := Std.HashMap.ofList cnodeSlots }
+    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Data.RobinHoodHashMap.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
@@ -545,7 +545,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
           (⟨1⟩, { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
         ]
@@ -617,7 +617,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object epId,
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := some badgeVal })
@@ -683,7 +683,7 @@ private def chain12IpcCapTransfer : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, cap1),
             (⟨1⟩, cap2),
             (⟨2⟩, cap3)
@@ -739,7 +739,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [(⟨0⟩, cap1)]
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [(⟨0⟩, cap1)]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
@@ -795,7 +795,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
       |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, cap1),
             (⟨1⟩, cap2)
           ]
@@ -870,7 +870,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
@@ -947,7 +947,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
@@ -1065,7 +1065,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else {}
@@ -1179,7 +1179,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else {}
@@ -1241,7 +1241,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
@@ -1280,7 +1280,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else {}
@@ -1338,7 +1338,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
       builder := builder.withObject cid (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := if cid = rootCNode then
-          Std.HashMap.ofList [
+          SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         else {}

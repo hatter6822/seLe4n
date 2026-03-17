@@ -1519,7 +1519,8 @@ objects outside the observer's clearance are filtered out by projection.
 machine-checked bridge lemmas. Phase 1 (WS-N1) uses a refinement-model
 approach: the structure wraps `Std.HashMap` internally, delegating proofs to
 `Std.DHashMap.Const.*`. The API surface and bridge lemma signatures are fixed;
-Phase 3 (WS-N3) will swap the internal representation to flat open-addressing
+Phase 3 (WS-N3, v0.17.3) migrated the entire codebase to `KernelHashMap`/`KernelHashSet`.
+A future phase will swap the internal representation to flat open-addressing
 without breaking downstream proofs.
 
 **HashMap bridge lemmas (14 required, all proved)**:
@@ -1539,6 +1540,10 @@ without breaking downstream proofs.
 - `getKey_beq` — stored key is `BEq`-equivalent to lookup key
 - `filter_preserves_key` — filter with true predicate preserves key entry
 - `filter_filter_getElem?` — double-filter is lookup-equivalent to single-filter
+- `size_filter_le_size` — filter does not increase size
+- `contains_empty'` — `@[simp]` empty map contains nothing (HashMap variant)
+- `contains_insert` — `@[simp]` combined insert containment (HashMap variant)
+- `contains_erase` — `@[simp]` combined erase containment (HashMap variant)
 
 **HashSet bridge lemmas (6)**:
 

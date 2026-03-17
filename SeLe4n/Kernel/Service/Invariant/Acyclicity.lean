@@ -182,8 +182,8 @@ private theorem serviceEdge_iff_lookupDeps {st : SystemState} {a b : ServiceId} 
 -- ---- M2B: Graph traversal closure invariant (WS-G8: HashSet-based) ----
 
 /-- Traversal closure: every visited node's successors are either visited or in the frontier.
-WS-G8: Visited set is `Std.HashSet ServiceId` for O(1) membership. -/
-private def bfsClosed (st : SystemState) (fr : List ServiceId) (vis : Std.HashSet ServiceId) : Prop :=
+WS-G8: Visited set is `KernelHashSet ServiceId` for O(1) membership. -/
+private def bfsClosed (st : SystemState) (fr : List ServiceId) (vis : KernelHashSet ServiceId) : Prop :=
   ∀ v : ServiceId, vis.contains v = true → ∀ dep : ServiceId, serviceEdge st v dep → vis.contains dep = true ∨ dep ∈ fr
 
 /-- CB2: Initial closure (empty visited set). -/
@@ -193,7 +193,7 @@ private theorem bfsClosed_init (st : SystemState) (fr : List ServiceId) :
 
 /-- CB3: Skip preserves closure. -/
 private theorem bfsClosed_skip {st : SystemState} {nd : ServiceId}
-    {rest : List ServiceId} {vis : Std.HashSet ServiceId}
+    {rest : List ServiceId} {vis : KernelHashSet ServiceId}
     (hCl : bfsClosed st (nd :: rest) vis) (hVis : vis.contains nd = true) :
     bfsClosed st rest vis := by
   intro v hv dep he
@@ -206,7 +206,7 @@ private theorem bfsClosed_skip {st : SystemState} {nd : ServiceId}
 /-- CB4: Expansion preserves closure.
 WS-G8: Frontier is now DFS-ordered (deps ++ rest) and visited uses HashSet.insert. -/
 private theorem bfsClosed_expand {st : SystemState} {nd : ServiceId}
-    {rest : List ServiceId} {vis : Std.HashSet ServiceId}
+    {rest : List ServiceId} {vis : KernelHashSet ServiceId}
     (hCl : bfsClosed st (nd :: rest) vis) (_hNV : vis.contains nd = false) :
     bfsClosed st ((lookupDeps st nd).filter (fun d => !(vis.contains d)) ++ rest) (vis.insert nd) := by
   intro v hv dep he
@@ -231,7 +231,7 @@ private theorem bfsClosed_expand {st : SystemState} {nd : ServiceId}
     some frontier node also reaches the target.
 WS-G8: Visited set is HashSet. -/
 private theorem bfs_boundary_lemma {st : SystemState} {tgt : ServiceId}
-    {fr : List ServiceId} {vis : Std.HashSet ServiceId} {v : ServiceId}
+    {fr : List ServiceId} {vis : KernelHashSet ServiceId} {v : ServiceId}
     (hR : serviceReachable st v tgt) :
     vis.contains v = true → vis.contains tgt = false → bfsClosed st fr vis →
     ∃ f ∈ fr, serviceReachable st f tgt := by
@@ -302,9 +302,9 @@ private theorem filter_strict {α : Type} [DecidableEq α]
         · rw [if_neg hp1x]; exact ih'
 
 /-- Adding nd to visited strictly decreases the unvisited-universe count.
-WS-G8: Updated for `Std.HashSet` visited set. -/
+WS-G8: Updated for `KernelHashSet` visited set. -/
 private theorem filter_vis_decrease (ns : List ServiceId) (nd : ServiceId)
-    (vis : Std.HashSet ServiceId) (hMem : nd ∈ ns) (hNV : vis.contains nd = false) (hNod : ns.Nodup) :
+    (vis : KernelHashSet ServiceId) (hMem : nd ∈ ns) (hNV : vis.contains nd = false) (hNod : ns.Nodup) :
     (ns.filter (fun x => !((vis.insert nd).contains x))).length <
     (ns.filter (fun x => !(vis.contains x))).length :=
   filter_strict (fun x => !(vis.contains x)) (fun x => !((vis.insert nd).contains x)) ns
@@ -326,19 +326,19 @@ private theorem step_of_reachable_ne {st : SystemState} {a b : ServiceId}
 -- WS-G8: Updated for HashSet visited set and DFS frontier ordering.
 
 private theorem go_tgt_eq {st : SystemState} {tgt : ServiceId}
-    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat} :
+    {rest : List ServiceId} {vis : KernelHashSet ServiceId} {f : Nat} :
     serviceHasPathTo.go st tgt (tgt :: rest) vis (f + 1) = true := by
   simp [serviceHasPathTo.go]
 
 private theorem go_skip_eq {st : SystemState} {tgt nd : ServiceId}
-    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat}
+    {rest : List ServiceId} {vis : KernelHashSet ServiceId} {f : Nat}
     (hNeq : nd ≠ tgt) (hVis : vis.contains nd = true) :
     serviceHasPathTo.go st tgt (nd :: rest) vis (f + 1) =
     serviceHasPathTo.go st tgt rest vis (f + 1) := by
   simp [serviceHasPathTo.go, hNeq, hVis]
 
 private theorem go_expand_eq {st : SystemState} {tgt nd : ServiceId}
-    {rest : List ServiceId} {vis : Std.HashSet ServiceId} {f : Nat}
+    {rest : List ServiceId} {vis : KernelHashSet ServiceId} {f : Nat}
     (hNeq : nd ≠ tgt) (hNV : vis.contains nd = false) :
     serviceHasPathTo.go st tgt (nd :: rest) vis (f + 1) =
     serviceHasPathTo.go st tgt
@@ -353,10 +353,10 @@ private theorem go_expand_eq {st : SystemState} {tgt nd : ServiceId}
 set_option maxHeartbeats 800000 in
 /-- Core completeness: if the frontier contains a node that can reach the target,
     and we have enough fuel, the traversal returns true.
-WS-G8: Visited set is `Std.HashSet ServiceId`. Frontier is DFS-ordered. -/
+WS-G8: Visited set is `KernelHashSet ServiceId`. Frontier is DFS-ordered. -/
 private theorem go_complete
     (st : SystemState) (tgt : ServiceId)
-    (fr : List ServiceId) (vis : Std.HashSet ServiceId) (fuel : Nat)
+    (fr : List ServiceId) (vis : KernelHashSet ServiceId) (fuel : Nat)
     (ns : List ServiceId)
     (hU : bfsUniverse st ns) (hTV : vis.contains tgt = false) (hCl : bfsClosed st fr vis)
     (hR : ∃ w ∈ fr, serviceReachable st w tgt)
@@ -396,7 +396,7 @@ private theorem go_complete
           have hFuelDec := filter_vis_decrease ns nd vis hNdNs hVisBool hU.1
           apply ih_fuel fuel' (by omega)
           · -- tgt ∉ vis.insert nd
-            rw [Std.HashSet.contains_insert]
+            rw [SeLe4n.Data.RobinHoodHashSet.contains_insert]
             simp only [Bool.or_eq_false_iff]
             exact ⟨by cases h : (nd == tgt) <;> simp_all, hTV⟩
           · exact bfsClosed_expand hCl hVisBool
@@ -410,7 +410,7 @@ private theorem go_complete
                 have hMidNewVis : (vis.insert nd).contains mid = true :=
                   (HashSet_contains_insert_iff vis nd mid).mpr (Or.inr hMidVis)
                 have hTgtNewVis : (vis.insert nd).contains tgt = false := by
-                  rw [Std.HashSet.contains_insert]
+                  rw [SeLe4n.Data.RobinHoodHashSet.contains_insert]
                   simp only [Bool.or_eq_false_iff]
                   exact ⟨by cases h : (nd == tgt) <;> simp_all, hTV⟩
                 exact bfs_boundary_lemma htail hMidNewVis hTgtNewVis hClE
@@ -451,7 +451,7 @@ loop-invariant argument (M2/TPI-D07-BRIDGE): the traversal maintains a closure
 invariant on the visited set, and a decreasing measure on the unvisited universe
 nodes ensures termination with the correct result.
 
-WS-G8: Visited set is `Std.HashSet ServiceId` (O(1) membership). Traversal
+WS-G8: Visited set is `KernelHashSet ServiceId` (O(1) membership). Traversal
 order is DFS (prepend) instead of BFS (append). Cycle detection correctness is
 order-independent.
 
@@ -475,7 +475,7 @@ theorem bfs_complete_for_nontrivialPath
     · exact absurd h List.not_mem_nil
   · -- fuel: ns.filter (fun x => !(({} : HashSet).contains x)).length ≤ serviceBfsFuel st
     -- Since empty.contains is always false, filter keeps all elements
-    have hFiltId : ns.filter (fun x => !(({} : Std.HashSet ServiceId).contains x)) = ns := by
+    have hFiltId : ns.filter (fun x => !(({} : KernelHashSet ServiceId).contains x)) = ns := by
       rw [List.filter_eq_self]
       intro x _
       simp only [HashSet_contains_empty, Bool.not_false]
