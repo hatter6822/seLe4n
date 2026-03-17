@@ -548,20 +548,72 @@ below corresponds to a `Prelude.lean` lemma that delegates to `Std.DHashMap.*`.
 | 4 | `not_contains_insert` | `(s.insert a).contains b = false ↔ b ≠ a ∧ s.contains b = false` |
 | 5 | `contains_erase` | `(s.erase a).contains b = (¬(a == b) && s.contains b)` |
 
-**Proof strategy for `getElem?_insert`** (the hardest lemma): This requires
-proving that after inserting `(k, v)`, looking up any key `a` returns:
-- `some v` if `k == a` (the just-inserted value)
-- `m[a]?` otherwise (unchanged for all other keys)
+**Proof strategy — Specification-layer approach (optimized)**:
 
-For the `k == a` case: the inserted entry is findable by its probe chain.
-For the `k ≠ a` case: Robin Hood displacement may move other entries but
-preserves their findability — each displaced entry's new PSL correctly reflects
-its new position, so the lookup algorithm still finds it.
+The hardest proofs (`get?_insert`, `get?_erase`) are intractable by direct
+induction on the Robin Hood algorithm because displacement creates non-local
+effects (moving entries forward changes PSL values throughout the chain).
 
-This proof proceeds by strong induction on the probe distance and case analysis
-on whether Robin Hood displacement occurred. The key insight is that displacement
-only moves entries **forward** in the probe chain, and their PSL is updated to
-reflect the new distance, so the lookup early-termination condition still works.
+**The specification-layer technique** uses `toList` (the association-list
+representation) as a *mental stepping stone* that relates the Robin Hood map
+to a simple list-of-pairs model. The proof proceeds in three layers:
+
+1. **Specification functions**: Define `toAssocList` that extracts the logical
+   `List (α × β)` contents from the bucket array. This is the "ground truth"
+   for what keys the map contains.
+
+2. **Operational correctness against spec**: Prove that each operation
+   (`insertCore`, `erase`, `get?`) is correct with respect to `toAssocList`:
+   - `toAssocList_insertCore`: After `insertCore k v`, the assoc list contains
+     `(k, v)` and all previous entries (with `k` updated if present).
+   - `toAssocList_erase`: After `erase k`, the assoc list is the previous list
+     with `k` removed.
+   - `get?_eq_assocList_lookup`: `get? k` returns the same result as
+     `List.lookup k (toAssocList m)`.
+
+3. **Bridge lemmas as corollaries**: The hard bridge lemmas follow from simple
+   list reasoning:
+   - `get?_insert_self`: `List.lookup k ((k,v) :: rest) = some v` ✓
+   - `get?_insert_ne`: `List.lookup a ((k,v) :: rest) = List.lookup a rest`
+     when `k ≠ a` ✓
+   - `get?_erase_self`: `List.lookup k (rest.filter (·.1 ≠ k)) = none` ✓
+   - `get?_erase_ne`: `List.lookup a (rest.filter (·.1 ≠ k)) = List.lookup a rest`
+     when `k ≠ a` ✓
+
+**Why this works**: The specification layer decouples *algorithmic correctness*
+(Robin Hood displacement preserves the logical contents) from *bridge lemma
+reasoning* (simple list operations). The hard part — proving that Robin Hood
+displacement preserves the logical key-value set — is isolated into the
+`toAssocList_insertCore` lemma, which can use strong induction on fuel with
+careful case analysis on displacement vs. no-displacement.
+
+**Practical simplification for WS-N1**: Rather than proving the full
+`toAssocList_insertCore` characterization (which requires tracking the exact
+contents after displacement chains), we use a **direct behavioral proof**:
+
+- For `get?_insert_self`: Trace the `get?` lookup through `insertCore`,
+  showing that `get?` finds `k` at the exact position where `insertCore`
+  placed it (either in an empty slot or overwriting an existing `k`).
+  The proof proceeds by synchronized induction on fuel for both `insertCore.go`
+  and `get?.go`, maintaining the invariant that both start at `bucketIdx k`
+  and follow the same probe sequence.
+
+- For `get?_insert_ne`: Show that `insertCore` for key `k` does not affect
+  the lookup path for key `a ≠ k`. Case analysis: (1) if `a`'s probe path
+  doesn't overlap with `k`'s insertion path, the buckets are unchanged;
+  (2) if `a` was displaced by Robin Hood, its new PSL correctly reflects
+  its new position, so `get?.go` still finds it.
+
+- For `get?_erase_self`/`get?_erase_ne`: `erase` clears the bucket and runs
+  `backwardShift`. For `self`: the cleared bucket returns `none` on lookup.
+  For `ne`: backward-shift only moves entries that were displaced past the
+  erased position; their PSL decrements match their new positions, preserving
+  lookup correctness.
+
+**Risk mitigation**: If the direct behavioral proofs prove too complex within
+the fuel-based framework, fall back to the full specification-layer approach
+by proving `get?_eq_assocList_lookup` first, then deriving all bridge lemmas
+from list-level reasoning. This is more work but guaranteed to succeed.
 
 ---
 
