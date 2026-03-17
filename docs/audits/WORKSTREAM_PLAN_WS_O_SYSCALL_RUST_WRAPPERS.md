@@ -1,4 +1,4 @@
-# WS-N Workstream Plan — Syscall Rust Wrappers (v0.17.0)
+# WS-O Workstream Plan — Syscall Rust Wrappers (v0.17.0)
 
 **Created**: 2026-03-17
 **Baseline version**: 0.17.0
@@ -155,14 +155,14 @@ sele4n-sys          (safe high-level wrappers)
 
 | Phase | ID | Focus | Priority | Target Version | Estimated Subtasks |
 |-------|----|-------|----------|----------------|--------------------|
-| 1 | **WS-N1** | Foundation: Cargo workspace, core types crate, error types, access rights | HIGH | v0.17.1 | 12 |
-| 2 | **WS-N2** | Register ABI: MessageInfo bitfield, syscall encoding, `svc` trap, raw invoke | HIGH | v0.17.2 | 14 |
-| 3 | **WS-N3** | Argument structures: per-syscall typed args, encode functions, validation | HIGH | v0.17.3 | 10 |
-| 4 | **WS-N4** | IPC wrappers: send, receive, call, reply, notification signal/wait | MEDIUM | v0.17.4 | 12 |
-| 5 | **WS-N5** | CSpace wrappers: mint, copy, move, delete with rights enforcement | MEDIUM | v0.17.5 | 10 |
-| 6 | **WS-N6** | Lifecycle & VSpace wrappers: retype, map, unmap, service start/stop | MEDIUM | v0.17.6 | 10 |
-| 7 | **WS-N7** | Type-safe capability handles: phantom types, builder patterns, ergonomics | LOW | v0.17.7 | 11 |
-| 8 | **WS-N8** | Conformance testing, CI integration, documentation | LOW | v0.17.8 | 10 |
+| 1 | **WS-O1** | Foundation: Cargo workspace, core types crate, error types, access rights | HIGH | v0.17.1 | 12 |
+| 2 | **WS-O2** | Register ABI: MessageInfo bitfield, syscall encoding, `svc` trap, raw invoke | HIGH | v0.17.2 | 14 |
+| 3 | **WS-O3** | Argument structures: per-syscall typed args, encode functions, validation | HIGH | v0.17.3 | 10 |
+| 4 | **WS-O4** | IPC wrappers: send, receive, call, reply, notification signal/wait | MEDIUM | v0.17.4 | 12 |
+| 5 | **WS-O5** | CSpace wrappers: mint, copy, move, delete with rights enforcement | MEDIUM | v0.17.5 | 10 |
+| 6 | **WS-O6** | Lifecycle & VSpace wrappers: retype, map, unmap, service start/stop | MEDIUM | v0.17.6 | 10 |
+| 7 | **WS-O7** | Type-safe capability handles: phantom types, builder patterns, ergonomics | LOW | v0.17.7 | 11 |
+| 8 | **WS-O8** | Conformance testing, CI integration, documentation | LOW | v0.17.8 | 10 |
 
 **Total**: 8 phases, ~89 atomic subtasks.
 
@@ -170,7 +170,7 @@ sele4n-sys          (safe high-level wrappers)
 
 ## 5. Detailed Phase Plans
 
-### Phase 1: Foundation — Core Types Crate (WS-N1)
+### Phase 1: Foundation — Core Types Crate (WS-O1)
 
 **Focus**: Establish the Rust workspace and define all core types that mirror
 the Lean typed identifiers in `Prelude.lean`, `Model/Object/Types.lean`, and
@@ -185,24 +185,24 @@ the Lean typed identifiers in `Prelude.lean`, `Model/Object/Types.lean`, and
 **Lean files referenced** (read-only): `SeLe4n/Prelude.lean`,
 `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Model/State.lean`
 
-#### N1-A: Cargo Workspace Scaffold (3 subtasks)
+#### O1-A: Cargo Workspace Scaffold (3 subtasks)
 
-**N1-A1**: Create `rust/Cargo.toml` workspace manifest with three members:
+**O1-A1**: Create `rust/Cargo.toml` workspace manifest with three members:
 `sele4n-types`, `sele4n-abi`, `sele4n-sys`. Set `resolver = "2"`, shared
 `[profile]` for size optimization (`opt-level = "z"`, `lto = true` for release).
 Target: `aarch64-unknown-none` (bare-metal ARM64).
 
-**N1-A2**: Create `rust/sele4n-types/Cargo.toml` with `#![no_std]` default,
+**O1-A2**: Create `rust/sele4n-types/Cargo.toml` with `#![no_std]` default,
 optional `std` feature for testing. No dependencies beyond `core`. Set
 `version = "0.1.0"`, `edition = "2021"`.
 
-**N1-A3**: Create `rust/sele4n-types/src/lib.rs` with `#![no_std]`,
+**O1-A3**: Create `rust/sele4n-types/src/lib.rs` with `#![no_std]`,
 `#![deny(unsafe_code)]` (this crate has zero unsafe), module declarations.
 Add `#![cfg_attr(not(feature = "std"), no_std)]` for conditional std support.
 
-#### N1-B: Typed Identifiers (3 subtasks)
+#### O1-B: Typed Identifiers (3 subtasks)
 
-**N1-B1**: Define newtype wrappers in `rust/sele4n-types/src/identifiers.rs`
+**O1-B1**: Define newtype wrappers in `rust/sele4n-types/src/identifiers.rs`
 for all 14 Lean typed identifiers:
 
 ```rust
@@ -226,17 +226,17 @@ Each newtype gets:
 - `const SENTINEL: Self` where applicable (ObjId(0), CPtr(0), ServiceId(0))
 - Doc comments referencing the exact Lean source location
 
-**N1-B2**: Implement `ThreadId::to_obj_id(&self) -> ObjId` preserving the
+**O1-B2**: Implement `ThreadId::to_obj_id(&self) -> ObjId` preserving the
 Lean injection property (`ThreadId.toObjId_injective`). Document that distinct
 `ThreadId` values map to distinct `ObjId` values.
 
-**N1-B3**: Implement `Badge::bor(self, other: Badge) -> Badge` matching the
+**O1-B3**: Implement `Badge::bor(self, other: Badge) -> Badge` matching the
 Lean `Badge.bor` accumulation semantics used in notification signaling
 (WS-F5/D1c). This is bitwise OR on the inner `u64`.
 
-#### N1-C: Error Types (2 subtasks)
+#### O1-C: Error Types (2 subtasks)
 
-**N1-C1**: Define `KernelError` enum in `rust/sele4n-types/src/error.rs`
+**O1-C1**: Define `KernelError` enum in `rust/sele4n-types/src/error.rs`
 with exact 1:1 variant mapping from `Model/State.lean:15–50`:
 
 ```rust
@@ -264,13 +264,13 @@ pub enum KernelError {
 Include `#[repr(u32)]` for stable ABI encoding in return registers. Add
 `Display` impl for human-readable error messages.
 
-**N1-C2**: Define `pub type KernelResult<T> = Result<T, KernelError>` as the
+**O1-C2**: Define `pub type KernelResult<T> = Result<T, KernelError>` as the
 standard return type for all syscall wrappers. This mirrors
 `Except KernelError α` in the Lean model.
 
-#### N1-D: Access Rights & Syscall IDs (4 subtasks)
+#### O1-D: Access Rights & Syscall IDs (4 subtasks)
 
-**N1-D1**: Define `AccessRight` enum in `rust/sele4n-types/src/rights.rs`:
+**O1-D1**: Define `AccessRight` enum in `rust/sele4n-types/src/rights.rs`:
 
 ```rust
 /// Lean: `inductive AccessRight` (Model/Object/Types.lean)
@@ -284,7 +284,7 @@ pub enum AccessRight {
 }
 ```
 
-**N1-D2**: Define `AccessRights` bitmask struct matching `AccessRightSet`:
+**O1-D2**: Define `AccessRights` bitmask struct matching `AccessRightSet`:
 
 ```rust
 /// Lean: `structure AccessRightSet where bits : Nat` (Model/Object/Types.lean)
@@ -310,7 +310,7 @@ impl AccessRights {
 
 Bit positions must match the Lean `AccessRightSet.singleton` encoding exactly.
 
-**N1-D3**: Define `SyscallId` enum in `rust/sele4n-types/src/syscall.rs`:
+**O1-D3**: Define `SyscallId` enum in `rust/sele4n-types/src/syscall.rs`:
 
 ```rust
 /// Lean: `inductive SyscallId` (RegisterDecode.lean)
@@ -336,7 +336,7 @@ pub enum SyscallId {
 Include `TryFrom<u64>` returning `Err(KernelError::InvalidSyscallNumber)` for
 values outside 0–12, matching `decodeSyscallId` error behavior.
 
-**N1-D4**: Define the `syscall_required_right` mapping function:
+**O1-D4**: Define the `syscall_required_right` mapping function:
 
 ```rust
 /// Lean: `syscallRequiredRight` (API.lean:155)
@@ -353,7 +353,7 @@ pub const fn syscall_required_right(id: SyscallId) -> AccessRight {
 }
 ```
 
-#### N1 Verification
+#### O1 Verification
 
 - `cargo build --target aarch64-unknown-none` compiles with zero warnings
 - `cargo test --features std` passes on host (x86_64)
@@ -362,7 +362,7 @@ pub const fn syscall_required_right(id: SyscallId) -> AccessRight {
 
 ---
 
-### Phase 2: Register ABI — Encoding & Trap (WS-N2)
+### Phase 2: Register ABI — Encoding & Trap (WS-O2)
 
 **Focus**: Implement the register-level syscall encoding/decoding layer and the
 raw `svc` trap instruction. This is the only phase that introduces `unsafe` code.
@@ -375,19 +375,19 @@ Lean-verified kernel.
 `rust/sele4n-abi/src/decode.rs`, `rust/sele4n-abi/src/trap.rs`
 **Lean files referenced** (read-only): `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
 
-#### N2-A: Crate Scaffold (2 subtasks)
+#### O2-A: Crate Scaffold (2 subtasks)
 
-**N2-A1**: Create `rust/sele4n-abi/Cargo.toml` with dependency on `sele4n-types`.
+**O2-A1**: Create `rust/sele4n-abi/Cargo.toml` with dependency on `sele4n-types`.
 `#![no_std]`, `#![forbid(unsafe_code)]` at crate level with a targeted
 `#![allow(unsafe_code)]` only in `trap.rs`. Optional `std` feature for testing.
 
-**N2-A2**: Create `rust/sele4n-abi/src/lib.rs` with module declarations and
+**O2-A2**: Create `rust/sele4n-abi/src/lib.rs` with module declarations and
 re-exports. Public API surface: `MessageInfo`, `SyscallRequest`, `SyscallResponse`,
 `encode_syscall`, `decode_response`, `raw_syscall` (the only unsafe fn).
 
-#### N2-B: MessageInfo Bitfield (3 subtasks)
+#### O2-B: MessageInfo Bitfield (3 subtasks)
 
-**N2-B1**: Implement `MessageInfo` encoding in `rust/sele4n-abi/src/message_info.rs`:
+**O2-B1**: Implement `MessageInfo` encoding in `rust/sele4n-abi/src/message_info.rs`:
 
 ```rust
 /// Lean: `structure MessageInfo` (Model/Object/Types.lean)
@@ -404,11 +404,11 @@ Constructor validates bounds: `length ≤ 120`, `extra_caps ≤ 3` (matching
 `decodeMsgInfo` validation in `RegisterDecode.lean:95–102`). Returns
 `Err(KernelError::InvalidMessageInfo)` on violation.
 
-**N2-B2**: Implement `MessageInfo::encode(&self) -> u64` producing the bitfield
+**O2-B2**: Implement `MessageInfo::encode(&self) -> u64` producing the bitfield
 word that goes into register x1. Must match the Lean `encodeMsgInfo` function
 exactly (bits 0–6: length, bits 7–8: extra_caps, bits 9+: label).
 
-**N2-B3**: Implement `MessageInfo::decode(raw: u64) -> KernelResult<Self>` for
+**O2-B3**: Implement `MessageInfo::decode(raw: u64) -> KernelResult<Self>` for
 parsing the kernel's response. Must match `decodeMsgInfo` semantics: extract
 length (bits 0–6), validate ≤ 120; extract extra_caps (bits 7–8), validate ≤ 3;
 extract label (bits 9+).
@@ -416,9 +416,9 @@ extract label (bits 9+).
 Add property test: `∀ mi, MessageInfo::decode(mi.encode()) == Ok(mi)` — this is
 the Rust equivalent of `decodeMsgInfo_roundtrip`.
 
-#### N2-C: Syscall Request/Response Encoding (4 subtasks)
+#### O2-C: Syscall Request/Response Encoding (4 subtasks)
 
-**N2-C1**: Define `SyscallRequest` structure:
+**O2-C1**: Define `SyscallRequest` structure:
 
 ```rust
 /// Mirrors `SyscallDecodeResult` (RegisterDecode.lean) but in encode direction.
@@ -430,11 +430,11 @@ pub struct SyscallRequest {
 }
 ```
 
-**N2-C2**: Implement `encode_syscall(req: &SyscallRequest) -> [u64; 7]` that
+**O2-C2**: Implement `encode_syscall(req: &SyscallRequest) -> [u64; 7]` that
 packs the request into the register array `[x0, x1, x2, x3, x4, x5, x8]`.
 This is the inverse of `decodeSyscallArgs`.
 
-**N2-C3**: Define `SyscallResponse` structure for parsing kernel return values:
+**O2-C3**: Define `SyscallResponse` structure for parsing kernel return values:
 
 ```rust
 pub struct SyscallResponse {
@@ -445,12 +445,12 @@ pub struct SyscallResponse {
 }
 ```
 
-**N2-C4**: Implement `decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse>`
+**O2-C4**: Implement `decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse>`
 for parsing the kernel's register state after `svc` returns.
 
-#### N2-D: SVC Trap (3 subtasks)
+#### O2-D: SVC Trap (3 subtasks)
 
-**N2-D1**: Implement `raw_syscall` in `rust/sele4n-abi/src/trap.rs`:
+**O2-D1**: Implement `raw_syscall` in `rust/sele4n-abi/src/trap.rs`:
 
 ```rust
 /// # Safety
@@ -474,7 +474,7 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 }
 ```
 
-**N2-D2**: Implement safe wrapper `invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse>`:
+**O2-D2**: Implement safe wrapper `invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse>`:
 
 ```rust
 /// Safe syscall invocation. Encodes request, traps to kernel, decodes response.
@@ -490,24 +490,24 @@ pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
 This is the single point where `unsafe` is used, and it is wrapped in a safe
 public API. All callers above this layer are fully safe Rust.
 
-**N2-D3**: Add `#[cfg(not(target_arch = "aarch64"))]` mock implementation for
+**O2-D3**: Add `#[cfg(not(target_arch = "aarch64"))]` mock implementation for
 host-side testing that returns configurable responses. This enables the full
 test suite to run on x86_64 development machines.
 
-#### N2-E: Round-Trip Property Tests (2 subtasks)
+#### O2-E: Round-Trip Property Tests (2 subtasks)
 
-**N2-E1**: Property tests for `MessageInfo`:
+**O2-E1**: Property tests for `MessageInfo`:
 - `encode_decode_roundtrip`: `∀ mi (valid), decode(encode(mi)) == Ok(mi)`
 - `decode_rejects_oversized_length`: length > 120 → error
 - `decode_rejects_oversized_extra_caps`: extra_caps > 3 → error
 - These mirror `decodeMsgInfo_roundtrip` from `RegisterDecode.lean:170`.
 
-**N2-E2**: Property tests for `SyscallRequest` encoding:
+**O2-E2**: Property tests for `SyscallRequest` encoding:
 - `encode_matches_lean_layout`: verify register positions match `SyscallRegisterLayout`
 - `syscall_id_roundtrip`: `∀ id, TryFrom::try_from(id as u64) == Ok(id)`
 - These mirror `decodeSyscallArgs_deterministic` from `RegisterDecode.lean:258`.
 
-#### N2 Verification
+#### O2 Verification
 
 - `cargo build --target aarch64-unknown-none` compiles (svc inline asm accepted)
 - `cargo test --features std` passes all property tests on host
@@ -517,7 +517,7 @@ test suite to run on x86_64 development machines.
 
 ---
 
-### Phase 3: Per-Syscall Argument Structures (WS-N3)
+### Phase 3: Per-Syscall Argument Structures (WS-O3)
 
 **Focus**: Define typed argument structures for each syscall and their encoding
 into message registers, mirroring `SyscallArgDecode.lean`.
@@ -529,9 +529,9 @@ into message registers, mirroring `SyscallArgDecode.lean`.
 `rust/sele4n-abi/src/args/vspace.rs`
 **Lean files referenced** (read-only): `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
 
-#### N3-A: CSpace Argument Structures (4 subtasks)
+#### O3-A: CSpace Argument Structures (4 subtasks)
 
-**N3-A1**: Define `CSpaceMintArgs` matching `SyscallArgDecode.lean:30–46`:
+**O3-A1**: Define `CSpaceMintArgs` matching `SyscallArgDecode.lean:30–46`:
 
 ```rust
 /// Lean: `structure CSpaceMintArgs` (SyscallArgDecode.lean:30)
@@ -548,14 +548,14 @@ Implement `encode(&self) -> [u64; 4]` producing the message register array.
 Implement `decode(regs: &[u64]) -> KernelResult<Self>` matching
 `decodeCSpaceMintArgs` (requires `regs.len() >= 4`).
 
-**N3-A2**: Define `CSpaceCopyArgs` (2 registers: src_slot, dst_slot),
+**O3-A2**: Define `CSpaceCopyArgs` (2 registers: src_slot, dst_slot),
 `CSpaceMoveArgs` (2 registers: src_slot, dst_slot), and `CSpaceDeleteArgs`
 (1 register: target_slot). Each gets `encode`/`decode` pair.
 
 Source: `decodeCSpaceCopyArgs` (line 61), `decodeCSpaceMoveArgs` (line 80),
 `decodeCSpaceDeleteArgs` (line 99).
 
-**N3-A3**: Define the `ExtraCapAddrs` type for IPC capability transfer:
+**O3-A3**: Define the `ExtraCapAddrs` type for IPC capability transfer:
 
 ```rust
 /// Lean: `decodeExtraCapAddrs` (SyscallArgDecode.lean:220)
@@ -570,15 +570,15 @@ Implement `encode` that writes capability addresses into the message register
 positions after the message body, matching `decodeExtraCapAddrs` semantics.
 Out-of-bounds indices are silently dropped per seL4 convention.
 
-**N3-A4**: Round-trip tests for all CSpace argument types:
+**O3-A4**: Round-trip tests for all CSpace argument types:
 - `mint_args_roundtrip`: `∀ args, decode(encode(args)) == Ok(args)`
 - `copy_args_roundtrip`, `move_args_roundtrip`, `delete_args_roundtrip`
 - Error-exclusivity tests: `decode` fails iff insufficient registers
   (matching `decodeCSpaceMintArgs_error_iff` etc.)
 
-#### N3-B: Lifecycle & VSpace Argument Structures (3 subtasks)
+#### O3-B: Lifecycle & VSpace Argument Structures (3 subtasks)
 
-**N3-B1**: Define `LifecycleRetypeArgs` matching `SyscallArgDecode.lean:118–133`:
+**O3-B1**: Define `LifecycleRetypeArgs` matching `SyscallArgDecode.lean:118–133`:
 
 ```rust
 /// Lean: `structure LifecycleRetypeArgs` (SyscallArgDecode.lean:118)
@@ -606,7 +606,7 @@ pub enum TypeTag {
 
 `TryFrom<u64>` returns `Err(KernelError::InvalidTypeTag)` for values > 5.
 
-**N3-B2**: Define `VSpaceMapArgs` (4 registers: asid, vaddr, paddr, perms)
+**O3-B2**: Define `VSpaceMapArgs` (4 registers: asid, vaddr, paddr, perms)
 and `VSpaceUnmapArgs` (2 registers: asid, vaddr):
 
 ```rust
@@ -638,21 +638,21 @@ impl PagePerms {
 }
 ```
 
-**N3-B3**: Round-trip and validation tests:
+**O3-B3**: Round-trip and validation tests:
 - `retype_args_roundtrip`, `vspace_map_args_roundtrip`, `vspace_unmap_args_roundtrip`
 - `retype_rejects_invalid_type_tag`: tags > 5 → `InvalidTypeTag`
 - `vspace_map_rejects_wx`: `WRITE | EXECUTE` combination → `AddressOutOfBounds`
   (W^X enforcement at encoding layer as defense-in-depth; kernel also checks)
 
-#### N3-C: Argument Encoding Integration (3 subtasks)
+#### O3-C: Argument Encoding Integration (3 subtasks)
 
-**N3-C1**: Implement `SyscallRequest::for_cspace_mint(cap: CPtr, args: CSpaceMintArgs) -> Self`
+**O3-C1**: Implement `SyscallRequest::for_cspace_mint(cap: CPtr, args: CSpaceMintArgs) -> Self`
 and equivalent constructors for all 13 syscall types. Each constructor:
 - Sets the correct `SyscallId`
 - Encodes arguments into the `msg_regs` array
 - Constructs the appropriate `MessageInfo` (length based on arg count)
 
-**N3-C2**: Implement `SyscallRequest::msg_reg_count(id: SyscallId) -> u8` returning
+**O3-C2**: Implement `SyscallRequest::msg_reg_count(id: SyscallId) -> u8` returning
 the expected message register count for each syscall (matching the `requireMsgReg`
 validation in `SyscallArgDecode.lean`):
 
@@ -667,10 +667,10 @@ validation in `SyscallArgDecode.lean`):
 | VSpaceUnmap | 2 |
 | ServiceStart, ServiceStop | 0 |
 
-**N3-C3**: Integration test: construct every syscall type, encode to registers,
+**O3-C3**: Integration test: construct every syscall type, encode to registers,
 verify register count and positions match the Lean `SyscallRegisterLayout`.
 
-#### N3 Verification
+#### O3 Verification
 
 - All argument types compile on `aarch64-unknown-none`
 - Round-trip property tests pass for all 7 argument structures
@@ -680,7 +680,7 @@ verify register count and positions match the Lean `SyscallRegisterLayout`.
 
 ---
 
-### Phase 4: IPC Syscall Wrappers (WS-N4)
+### Phase 4: IPC Syscall Wrappers (WS-O4)
 
 **Focus**: Build safe, high-level wrappers for IPC operations (send, receive,
 call, reply, notification signal/wait) in the `sele4n-sys` crate.
@@ -693,12 +693,12 @@ call, reply, notification signal/wait) in the `sele4n-sys` crate.
 **Lean files referenced** (read-only): `SeLe4n/Kernel/API.lean` (lines 390–524),
 `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`
 
-#### N4-A: Crate Scaffold & IPC Message Builder (3 subtasks)
+#### O4-A: Crate Scaffold & IPC Message Builder (3 subtasks)
 
-**N4-A1**: Create `rust/sele4n-sys/Cargo.toml` depending on `sele4n-types` and
+**O4-A1**: Create `rust/sele4n-sys/Cargo.toml` depending on `sele4n-types` and
 `sele4n-abi`. `#![no_std]`, `#![deny(unsafe_code)]` (this crate is fully safe).
 
-**N4-A2**: Implement `IpcMessage` builder in `rust/sele4n-sys/src/ipc/message.rs`:
+**O4-A2**: Implement `IpcMessage` builder in `rust/sele4n-sys/src/ipc/message.rs`:
 
 ```rust
 /// Safe IPC message builder with compile-time and runtime bounds checking.
@@ -729,15 +729,15 @@ impl IpcMessage {
 These match the bounds checks in `endpointSendDualChecked`
 (`Enforcement/Wrappers.lean:29–31`).
 
-**N4-A3**: Implement `IpcMessage::to_syscall_request` and
+**O4-A3**: Implement `IpcMessage::to_syscall_request` and
 `IpcMessage::from_syscall_response` for converting between the high-level
 message type and the low-level register encoding. Message registers are
 packed into msg_regs[0..3] for inline transfer; longer messages use the
 IPC buffer (address obtained from `ThreadId` context).
 
-#### N4-B: Endpoint Wrappers (5 subtasks)
+#### O4-B: Endpoint Wrappers (5 subtasks)
 
-**N4-B1**: Implement `endpoint_send`:
+**O4-B1**: Implement `endpoint_send`:
 
 ```rust
 /// Send a message to an endpoint. Blocks if no receiver is waiting.
@@ -751,7 +751,7 @@ pub fn endpoint_send(ep: CPtr, msg: &IpcMessage) -> KernelResult<()> {
 }
 ```
 
-**N4-B2**: Implement `endpoint_receive`:
+**O4-B2**: Implement `endpoint_receive`:
 
 ```rust
 /// Receive a message from an endpoint. Blocks if no sender is waiting.
@@ -766,7 +766,7 @@ pub fn endpoint_receive(ep: CPtr) -> KernelResult<(IpcMessage, Option<Badge>)> {
 }
 ```
 
-**N4-B3**: Implement `endpoint_call`:
+**O4-B3**: Implement `endpoint_call`:
 
 ```rust
 /// Combined send-then-receive (RPC pattern). Creates one-shot reply cap.
@@ -781,7 +781,7 @@ pub fn endpoint_call(ep: CPtr, msg: &IpcMessage) -> KernelResult<(IpcMessage, Op
 }
 ```
 
-**N4-B4**: Implement `endpoint_reply`:
+**O4-B4**: Implement `endpoint_reply`:
 
 ```rust
 /// Reply to a caller (consumes one-shot reply cap).
@@ -794,7 +794,7 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<()> {
 }
 ```
 
-**N4-B5**: Implement `endpoint_reply_receive` (combined reply+receive for
+**O4-B5**: Implement `endpoint_reply_receive` (combined reply+receive for
 server loops — maps to `ReplyRecv` in seL4):
 
 ```rust
@@ -813,9 +813,9 @@ pub fn endpoint_reply_receive(
 }
 ```
 
-#### N4-C: Notification Wrappers (2 subtasks)
+#### O4-C: Notification Wrappers (2 subtasks)
 
-**N4-C1**: Implement `notification_signal`:
+**O4-C1**: Implement `notification_signal`:
 
 ```rust
 /// Signal a notification object (bitwise-OR badge accumulation).
@@ -828,7 +828,7 @@ pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<()> {
 }
 ```
 
-**N4-C2**: Implement `notification_wait`:
+**O4-C2**: Implement `notification_wait`:
 
 ```rust
 /// Wait for a notification. Returns accumulated badge on wakeup.
@@ -840,19 +840,19 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
 }
 ```
 
-#### N4-D: Tests (2 subtasks)
+#### O4-D: Tests (2 subtasks)
 
-**N4-D1**: Unit tests for `IpcMessage` builder:
+**O4-D1**: Unit tests for `IpcMessage` builder:
 - Bounds enforcement: 121st register push → `IpcMessageTooLarge`
 - Bounds enforcement: 4th cap push → `IpcMessageTooManyCaps`
 - Round-trip: build message → encode → decode → compare
 
-**N4-D2**: Integration tests for endpoint wrappers (using mock trap):
+**O4-D2**: Integration tests for endpoint wrappers (using mock trap):
 - Send/receive rendezvous (mock kernel delivers message)
 - Call/reply round-trip (mock kernel echoes message)
 - Notification signal/wait badge accumulation
 
-#### N4 Verification
+#### O4 Verification
 
 - All IPC wrappers compile on `aarch64-unknown-none`
 - Zero `unsafe` in `sele4n-sys` crate
@@ -861,7 +861,7 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
 
 ---
 
-### Phase 5: CSpace Syscall Wrappers (WS-N5)
+### Phase 5: CSpace Syscall Wrappers (WS-O5)
 
 **Focus**: Build safe wrappers for CSpace (capability space) operations:
 mint, copy, move, delete.
@@ -872,9 +872,9 @@ mint, copy, move, delete.
 **Lean files referenced** (read-only): `SeLe4n/Kernel/API.lean` (lines 292–312),
 `SeLe4n/Kernel/Capability/Operations.lean`
 
-#### N5-A: CSpace Address Types (2 subtasks)
+#### O5-A: CSpace Address Types (2 subtasks)
 
-**N5-A1**: Define `CSpaceAddr` for identifying a slot within a CNode:
+**O5-A1**: Define `CSpaceAddr` for identifying a slot within a CNode:
 
 ```rust
 /// A fully-resolved CSpace address: CNode object + slot index.
@@ -885,7 +885,7 @@ pub struct CSpaceAddr {
 }
 ```
 
-**N5-A2**: Define `CSpacePath` for multi-level resolution addresses:
+**O5-A2**: Define `CSpacePath` for multi-level resolution addresses:
 
 ```rust
 /// Multi-level CSpace path for deep CNode hierarchies.
@@ -897,9 +897,9 @@ pub struct CSpacePath {
 }
 ```
 
-#### N5-B: CSpace Operation Wrappers (4 subtasks)
+#### O5-B: CSpace Operation Wrappers (4 subtasks)
 
-**N5-B1**: Implement `cspace_mint`:
+**O5-B1**: Implement `cspace_mint`:
 
 ```rust
 /// Mint a new capability with reduced rights and/or badge.
@@ -922,7 +922,7 @@ pub fn cspace_mint(
 }
 ```
 
-**N5-B2**: Implement `cspace_copy`:
+**O5-B2**: Implement `cspace_copy`:
 
 ```rust
 /// Copy a capability to a new slot (same rights, no badge change).
@@ -940,7 +940,7 @@ pub fn cspace_copy(
 }
 ```
 
-**N5-B3**: Implement `cspace_move`:
+**O5-B3**: Implement `cspace_move`:
 
 ```rust
 /// Move a capability from one slot to another (source slot becomes empty).
@@ -958,7 +958,7 @@ pub fn cspace_move(
 }
 ```
 
-**N5-B4**: Implement `cspace_delete`:
+**O5-B4**: Implement `cspace_delete`:
 
 ```rust
 /// Delete a capability from a slot.
@@ -972,32 +972,32 @@ pub fn cspace_delete(authority: CPtr, target_slot: Slot) -> KernelResult<()> {
 }
 ```
 
-#### N5-C: Compile-Time Rights Documentation (2 subtasks)
+#### O5-C: Compile-Time Rights Documentation (2 subtasks)
 
-**N5-C1**: Add comprehensive doc comments to each wrapper documenting:
+**O5-C1**: Add comprehensive doc comments to each wrapper documenting:
 - The required access right (from `syscallRequiredRight`)
 - What kernel error is returned if the right is absent (`IllegalAuthority`)
 - The capability derivation semantics (for mint: rights ⊆ parent rights)
 - Cross-reference to the Lean source (file:line)
 
-**N5-C2**: Add `#[must_use]` attributes and `Result` return types to enforce
+**O5-C2**: Add `#[must_use]` attributes and `Result` return types to enforce
 that callers handle potential errors. Document each `KernelError` variant that
 can be returned by each operation.
 
-#### N5-D: Tests (2 subtasks)
+#### O5-D: Tests (2 subtasks)
 
-**N5-D1**: Unit tests for argument encoding:
+**O5-D1**: Unit tests for argument encoding:
 - `CSpaceMintArgs` with various rights combinations
 - `CSpaceCopyArgs`/`CSpaceMoveArgs` slot encoding
 - `CSpaceDeleteArgs` single-register encoding
 
-**N5-D2**: Integration tests (mock trap):
+**O5-D2**: Integration tests (mock trap):
 - Mint with reduced rights succeeds
 - Mint with rights ⊄ source rights → `IllegalAuthority`
 - Delete of empty slot → `InvalidCapability`
 - Move then access old slot → `InvalidCapability`
 
-#### N5 Verification
+#### O5 Verification
 
 - All CSpace wrappers compile on `aarch64-unknown-none`
 - Argument encoding matches Lean `decodeCSpace*Args` expectations
@@ -1006,7 +1006,7 @@ can be returned by each operation.
 
 ---
 
-### Phase 6: Lifecycle, VSpace & Service Wrappers (WS-N6)
+### Phase 6: Lifecycle, VSpace & Service Wrappers (WS-O6)
 
 **Focus**: Complete the syscall wrapper surface with lifecycle (retype),
 VSpace (map/unmap), and service (start/stop) operations.
@@ -1019,9 +1019,9 @@ VSpace (map/unmap), and service (start/stop) operations.
 `SeLe4n/Kernel/Lifecycle/Operations.lean`,
 `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
 
-#### N6-A: Lifecycle Retype Wrapper (3 subtasks)
+#### O6-A: Lifecycle Retype Wrapper (3 subtasks)
 
-**N6-A1**: Implement `lifecycle_retype`:
+**O6-A1**: Implement `lifecycle_retype`:
 
 ```rust
 /// Retype an untyped memory object into a specific kernel object type.
@@ -1053,7 +1053,7 @@ pub fn lifecycle_retype(
 }
 ```
 
-**N6-A2**: Define convenience constructors for common retype patterns:
+**O6-A2**: Define convenience constructors for common retype patterns:
 
 ```rust
 /// Retype untyped memory into a new TCB.
@@ -1069,14 +1069,14 @@ pub fn retype_cnode(authority: CPtr, target: ObjId, radix_bits: u64) -> KernelRe
 // ... retype_endpoint, retype_notification, retype_vspace_root, retype_untyped
 ```
 
-**N6-A3**: Tests for lifecycle wrapper:
+**O6-A3**: Tests for lifecycle wrapper:
 - Valid retype of each TypeTag succeeds (mock)
 - Invalid TypeTag (6+) → `InvalidTypeTag` at encode time (never reaches kernel)
 - Missing Retype right → `IllegalAuthority`
 
-#### N6-B: VSpace Wrappers (4 subtasks)
+#### O6-B: VSpace Wrappers (4 subtasks)
 
-**N6-B1**: Implement `vspace_map`:
+**O6-B1**: Implement `vspace_map`:
 
 ```rust
 /// Map a physical page into a virtual address space.
@@ -1110,7 +1110,7 @@ pub fn vspace_map(
 }
 ```
 
-**N6-B2**: Implement `vspace_unmap`:
+**O6-B2**: Implement `vspace_unmap`:
 
 ```rust
 /// Unmap a virtual page from an address space.
@@ -1128,7 +1128,7 @@ pub fn vspace_unmap(
 }
 ```
 
-**N6-B3**: Define `PagePerms` builder with W^X enforcement:
+**O6-B3**: Define `PagePerms` builder with W^X enforcement:
 
 ```rust
 impl PagePerms {
@@ -1148,15 +1148,15 @@ impl PagePerms {
 
 No `read_write_execute()` constructor exists — W^X is enforced by API design.
 
-**N6-B4**: Tests:
+**O6-B4**: Tests:
 - Map with W^X-safe perms succeeds
 - Map with WRITE+EXECUTE → `AddressOutOfBounds` (client-side pre-check)
 - Unmap of mapped page succeeds
 - Map of already-mapped vaddr → appropriate kernel error
 
-#### N6-C: Service Wrappers (3 subtasks)
+#### O6-C: Service Wrappers (3 subtasks)
 
-**N6-C1**: Implement `service_start` and `service_stop`:
+**O6-C1**: Implement `service_start` and `service_stop`:
 
 ```rust
 /// Start a service (gated by serviceConfig.allowStart policy).
@@ -1178,15 +1178,15 @@ pub fn service_stop(authority: CPtr) -> KernelResult<()> {
 }
 ```
 
-**N6-C2**: Document that service start/stop are policy-gated: the kernel's
+**O6-C2**: Document that service start/stop are policy-gated: the kernel's
 `ServiceConfig` determines whether each operation is permitted. These wrappers
 have no client-side policy checks — all enforcement is kernel-side.
 
-**N6-C3**: Tests:
+**O6-C3**: Tests:
 - Service start/stop with permitted policy → success
 - Service start with denied policy → kernel error
 
-#### N6 Verification
+#### O6 Verification
 
 - Full 13-syscall coverage achieved (all `SyscallId` variants have wrappers)
 - W^X enforcement present in both `PagePerms` API design and `vspace_map` pre-check
@@ -1195,7 +1195,7 @@ have no client-side policy checks — all enforcement is kernel-side.
 
 ---
 
-### Phase 7: Type-Safe Capability Handles (WS-N7)
+### Phase 7: Type-Safe Capability Handles (WS-O7)
 
 **Focus**: Add phantom-typed capability handles that encode object type and
 access rights at the Rust type level, enabling compile-time verification of
@@ -1209,9 +1209,9 @@ correctness (runtime checks still present).
 **Lean files referenced** (read-only): `SeLe4n/Model/Object/Types.lean` (Capability,
 CapTarget, AccessRight)
 
-#### N7-A: Marker Types & Sealed Traits (3 subtasks)
+#### O7-A: Marker Types & Sealed Traits (3 subtasks)
 
-**N7-A1**: Define marker types for kernel object kinds:
+**O7-A1**: Define marker types for kernel object kinds:
 
 ```rust
 /// Marker types for kernel object kinds (zero-sized, no runtime cost).
@@ -1225,7 +1225,7 @@ pub mod obj {
 }
 ```
 
-**N7-A2**: Define marker types for access right combinations:
+**O7-A2**: Define marker types for access right combinations:
 
 ```rust
 /// Sealed trait for compile-time access right verification.
@@ -1256,7 +1256,7 @@ pub struct Full;
 impl Rights for Full { const RIGHTS: AccessRights = AccessRights::ALL; }
 ```
 
-**N7-A3**: Use a sealed trait pattern to prevent external implementations:
+**O7-A3**: Use a sealed trait pattern to prevent external implementations:
 
 ```rust
 mod private {
@@ -1269,9 +1269,9 @@ mod private {
 }
 ```
 
-#### N7-B: Cap<Obj, Rights> Handle (4 subtasks)
+#### O7-B: Cap<Obj, Rights> Handle (4 subtasks)
 
-**N7-B1**: Define the phantom-typed capability handle:
+**O7-B1**: Define the phantom-typed capability handle:
 
 ```rust
 /// A capability handle with compile-time object type and rights verification.
@@ -1301,7 +1301,7 @@ impl<Obj, Rts: Rights> Cap<Obj, Rts> {
 }
 ```
 
-**N7-B2**: Implement typed endpoint operations:
+**O7-B2**: Implement typed endpoint operations:
 
 ```rust
 impl<Rts: Rights> Cap<obj::Endpoint, Rts> {
@@ -1331,7 +1331,7 @@ impl<Rts: Rights> Cap<obj::Endpoint, Rts> {
 Where `HasWrite` and `HasRead` are sealed marker traits implemented only for
 right combinations that include the required right.
 
-**N7-B3**: Implement typed CSpace operations:
+**O7-B3**: Implement typed CSpace operations:
 
 ```rust
 impl<Rts: Rights> Cap<obj::CNode, Rts> {
@@ -1352,7 +1352,7 @@ impl<Rts: Rights> Cap<obj::CNode, Rts> {
 }
 ```
 
-**N7-B4**: Implement rights downgrading (matching Lean `mintDerivedCap`):
+**O7-B4**: Implement rights downgrading (matching Lean `mintDerivedCap`):
 
 ```rust
 impl<Obj, Rts: Rights> Cap<Obj, Rts> {
@@ -1366,9 +1366,9 @@ impl<Obj, Rts: Rights> Cap<Obj, Rts> {
 }
 ```
 
-#### N7-C: Ergonomic Helpers (4 subtasks)
+#### O7-C: Ergonomic Helpers (4 subtasks)
 
-**N7-C1**: Implement a capability table builder for initialization:
+**O7-C1**: Implement a capability table builder for initialization:
 
 ```rust
 /// Helper for building an initial CSpace layout during process setup.
@@ -1386,7 +1386,7 @@ impl CSpaceBuilder {
 }
 ```
 
-**N7-C2**: Implement `Display` and `Debug` for `Cap` that shows the object type
+**O7-C2**: Implement `Display` and `Debug` for `Cap` that shows the object type
 and rights without exposing the raw CPtr (security-conscious formatting):
 
 ```rust
@@ -1397,17 +1397,17 @@ impl<Obj: ObjName, Rts: Rights> core::fmt::Debug for Cap<Obj, Rts> {
 }
 ```
 
-**N7-C3**: Implement `From<Cap<Obj, Full>>` conversions for common downgrade
+**O7-C3**: Implement `From<Cap<Obj, Full>>` conversions for common downgrade
 patterns (Full → W, Full → R, Full → G) so users can pass full-rights
 capabilities to functions expecting reduced rights.
 
-**N7-C4**: Comprehensive tests:
+**O7-C4**: Comprehensive tests:
 - Compile-time right verification: `Cap<Endpoint, R>::send()` should fail to compile
 - Downgrading from Full to W succeeds
 - CSpaceBuilder allocates sequential slots
 - Display format shows type and rights
 
-#### N7 Verification
+#### O7 Verification
 
 - All phantom type operations are zero-cost (verify via `size_of::<Cap<_, _>>() == 8`)
 - Compile-fail tests for wrong-rights usage (use `trybuild` crate)
@@ -1416,7 +1416,7 @@ capabilities to functions expecting reduced rights.
 
 ---
 
-### Phase 8: Conformance Testing & Documentation (WS-N8)
+### Phase 8: Conformance Testing & Documentation (WS-O8)
 
 **Focus**: Cross-validate Rust encoding against Lean decoding, integrate with
 the existing test tier system, and complete documentation.
@@ -1428,9 +1428,9 @@ the existing test tier system, and complete documentation.
 **Lean files modified**: `SeLe4n/Testing/MainTraceHarness.lean` (extension),
 `tests/fixtures/main_trace_smoke.expected` (extension)
 
-#### N8-A: Lean Cross-Validation Harness (3 subtasks)
+#### O8-A: Lean Cross-Validation Harness (3 subtasks)
 
-**N8-A1**: Extend `MainTraceHarness.lean` with a new trace function that outputs
+**O8-A1**: Extend `MainTraceHarness.lean` with a new trace function that outputs
 encoding test vectors: for each syscall type, print the register values that
 the Lean decoder expects for a canonical set of inputs. Format:
 
@@ -1440,9 +1440,9 @@ the Lean decoder expects for a canonical set of inputs. Format:
 ...
 ```
 
-**N8-A2**: Add corresponding fixture entries to `main_trace_smoke.expected`.
+**O8-A2**: Add corresponding fixture entries to `main_trace_smoke.expected`.
 
-**N8-A3**: Create a Rust test (`rust/tests/conformance.rs`) that:
+**O8-A3**: Create a Rust test (`rust/tests/conformance.rs`) that:
 1. Reads the Lean trace output (from fixture or piped from `lake exe sele4n`)
 2. For each test vector, encodes the same inputs using Rust functions
 3. Asserts register-by-register equality between Lean and Rust encodings
@@ -1450,45 +1450,45 @@ the Lean decoder expects for a canonical set of inputs. Format:
 This provides machine-verified ABI compatibility: if the Lean model changes
 its register layout, the conformance tests will fail.
 
-#### N8-B: CI Integration (3 subtasks)
+#### O8-B: CI Integration (3 subtasks)
 
-**N8-B1**: Create `scripts/test_rust.sh` that:
+**O8-B1**: Create `scripts/test_rust.sh` that:
 - Installs Rust toolchain if not present (`rustup target add aarch64-unknown-none`)
 - Runs `cargo build --target aarch64-unknown-none` (compile check)
 - Runs `cargo test --features std` (unit + property tests)
 - Runs `cargo test --test conformance --features std` (cross-validation)
 
-**N8-B2**: Integrate `test_rust.sh` into the existing test tier system:
+**O8-B2**: Integrate `test_rust.sh` into the existing test tier system:
 - Add to `test_smoke.sh` as a Tier 2 check (after Lean trace, before negative state)
 - Add to `test_full.sh` as well
 - The Rust tests should not block Tier 0/1 (hygiene/build) which remain Lean-only
 
-**N8-B3**: Update `scripts/test_lib.sh` with Rust-specific color output
+**O8-B3**: Update `scripts/test_lib.sh` with Rust-specific color output
 (e.g., `RUST` category) and Cargo availability check.
 
-#### N8-C: Documentation (4 subtasks)
+#### O8-C: Documentation (4 subtasks)
 
-**N8-C1**: Create GitBook chapter `docs/gitbook/15-rust-syscall-wrappers.md` covering:
+**O8-C1**: Create GitBook chapter `docs/gitbook/15-rust-syscall-wrappers.md` covering:
 - Architectural overview (Lean semantics → Rust wrappers)
 - Crate structure and dependency graph
 - Usage examples for each syscall family (IPC, CSpace, Lifecycle, VSpace)
 - Phantom-typed capability handles tutorial
 - Cross-validation methodology
 
-**N8-C2**: Update `docs/spec/SELE4N_SPEC.md` with Rust wrapper section:
+**O8-C2**: Update `docs/spec/SELE4N_SPEC.md` with Rust wrapper section:
 - List all 13 syscall wrappers with Lean ↔ Rust signature correspondence
 - Document the ABI contract (register layout, encoding, error codes)
 - Reference the conformance test suite
 
-**N8-C3**: Update `docs/DEVELOPMENT.md` with:
+**O8-C3**: Update `docs/DEVELOPMENT.md` with:
 - Rust build instructions (`cargo build --target aarch64-unknown-none`)
 - How to run Rust tests
 - How to add new syscall wrappers (workflow guide)
 
-**N8-C4**: Update `README.md` metrics to include Rust LoC count and crate
+**O8-C4**: Update `README.md` metrics to include Rust LoC count and crate
 information. Update `docs/codebase_map.json` with Rust source files.
 
-#### N8 Verification
+#### O8 Verification
 
 - `test_smoke.sh` passes with Rust integration
 - Cross-validation test produces register-by-register match for all 13 syscalls
@@ -1522,7 +1522,7 @@ encoding is cross-validated against the Lean decoding via conformance tests**.
 
 The register layout is defined by `SyscallRegisterLayout` in `RegisterDecode.lean`.
 If the Lean model changes this layout (e.g., adding new registers or reordering),
-the Rust encoding must be updated in lockstep. The conformance test suite (N8-A)
+the Rust encoding must be updated in lockstep. The conformance test suite (O8-A)
 catches any drift automatically.
 
 **Versioning strategy**: The `sele4n-abi` crate version tracks the Lean model
@@ -1551,14 +1551,14 @@ TCB (Trusted Computing Base) for the userspace syscall interface.
 
 ### 6.5 Relationship to H3 Hardware Binding
 
-WS-N builds the **userspace** half of the syscall interface. The H3 workstream
+WS-O builds the **userspace** half of the syscall interface. The H3 workstream
 will build the **kernel-side** half:
 
 ```
 ┌─────────────────────────────────────────────┐
 │  User Space (EL0)                           │
 │  ┌─────────────┐   ┌──────────────┐        │
-│  │ sele4n-sys  │──▶│ sele4n-abi   │        │  ← WS-N (this workstream)
+│  │ sele4n-sys  │──▶│ sele4n-abi   │        │  ← WS-O (this workstream)
 │  │ (safe API)  │   │ (encode+svc) │        │
 │  └─────────────┘   └──────┬───────┘        │
 │                           │ svc #0          │
@@ -1608,7 +1608,7 @@ The syscall wrappers are inherently thread-safe because:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Lean ABI changes break Rust encoding | LOW | HIGH | Conformance test suite (N8-A) catches drift automatically |
+| Lean ABI changes break Rust encoding | LOW | HIGH | Conformance test suite (O8-A) catches drift automatically |
 | `svc` inline assembly incorrect on specific ARM64 variants | LOW | HIGH | Test on RPi5 hardware; review AAPCS64 calling convention |
 | Phantom type system too restrictive for some use cases | MEDIUM | LOW | Provide `Cap::from_raw` escape hatch for advanced users |
 | no_std constraint prevents useful testing patterns | LOW | MEDIUM | `std` feature gate for host-side testing; mock trap for CI |
@@ -1620,33 +1620,33 @@ The syscall wrappers are inherently thread-safe because:
 ## 8. Dependency Graph & Ordering
 
 ```
-N1 (types) ──────────────────────────────────────────────┐
+O1 (types) ──────────────────────────────────────────────┐
   │                                                       │
   ▼                                                       │
-N2 (ABI) ──────────────────────────────────┐              │
+O2 (ABI) ──────────────────────────────────┐              │
   │                                         │              │
   ▼                                         │              │
-N3 (args) ─────────────┐                   │              │
+O3 (args) ─────────────┐                   │              │
   │                     │                   │              │
   ▼                     ▼                   ▼              ▼
-N4 (IPC)    N5 (CSpace)    N6 (Lifecycle)   N7 (Phantom)
+O4 (IPC)    O5 (CSpace)    O6 (Lifecycle)   O7 (Phantom)
   │              │              │              │
   └──────────────┴──────────────┴──────────────┘
                         │
                         ▼
-                   N8 (Testing + Docs)
+                   O8 (Testing + Docs)
 ```
 
-- **N1 → N2 → N3**: strictly sequential (each builds on the prior)
-- **N4, N5, N6**: parallelizable (independent syscall families, all depend on N3)
-- **N7**: depends on N4+N5+N6 (wraps their types in phantom handles)
-- **N8**: depends on all prior phases (integration testing)
+- **O1 → O2 → O3**: strictly sequential (each builds on the prior)
+- **O4, O5, O6**: parallelizable (independent syscall families, all depend on O3)
+- **O7**: depends on O4+O5+O6 (wraps their types in phantom handles)
+- **O8**: depends on all prior phases (integration testing)
 
 ---
 
 ## 9. Success Criteria
 
-The WS-N workstream is complete when:
+The WS-O workstream is complete when:
 
 1. All 13 seLe4n syscalls have safe Rust wrappers in `sele4n-sys`
 2. `cargo build --target aarch64-unknown-none` compiles all three crates
