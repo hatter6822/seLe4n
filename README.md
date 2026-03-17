@@ -204,6 +204,7 @@ SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorem
   Invariant/Operations.lean      Per-operation NI proofs
   Invariant/Composition.lean     Trace composition, 33-constructor NonInterferenceStep
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
+SeLe4n/Data/RobinHoodHashMap.lean Robin Hood HashMap/HashSet with inline PSL
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
 SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)

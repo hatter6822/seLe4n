@@ -62,7 +62,17 @@ extraction, unified BFS revocation proofs, edge-case test expansion). All 14
 audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:
+The **WS-N** portfolio (IPC & Capability cross-audit: Robin Hood hashing,
+determinism & correctness) is **in progress** (v0.17.0+). Phase 1 (WS-N1)
+creates the Robin Hood HashMap foundation in `SeLe4n/Data/RobinHoodHashMap.lean`
+— a cache-friendly, open-addressing hash table with backward-shift deletion,
+backed by Lean 4's `Array` for flat C memory layout and FBIP in-place mutation.
+All definitions compile; 23 TPI-D12 sorry placeholders pending proof resolution
+across 14 subtasks. 5 phases planned: N1 (HashMap foundation), N2
+(`resolveCapAddress` fix), N3 (migration), N4 (test coverage), N5 (documentation).
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+
+The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.

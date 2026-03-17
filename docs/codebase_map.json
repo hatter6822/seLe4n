@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "5394750fb97f44bbbfe227aa2c715e3799f36a2b",
-      "tree_sha": "5afa91d1e9ce7bf3204f968d40e9c42ce3f3271a",
-      "committed_at_utc": "2026-03-16T20:38:42-04:00"
+      "branch": "claude/enhance-robin-hood-hashmap-j03dH",
+      "commit_sha": "5c55fc0ace9c415e3ae373fe6d1867feb517e35c",
+      "tree_sha": "75f60dfdd80720abb0e7c2cab892514c847f36cd",
+      "committed_at_utc": "2026-03-17T00:38:50+00:00"
     }
   },
   "source_sync": {
@@ -17,23 +17,524 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "eb98179699ef7e8194d1235f86fd9119e2b599f4bcca234aaeed64a9b18adc38"
+    "source_digest": "59c12d733de0c4c3ef6b2afb7ce9b58bd195a0dbf18c970f638311f198e31374"
   },
   "summary": {
-    "module_count": 75,
-    "declaration_count": 2361
+    "module_count": 76,
+    "declaration_count": 2420
   },
   "readme_sync": {
     "version": "0.17.0",
     "lean_toolchain": "v4.28.0",
-    "production_files": 71,
-    "production_loc": 40664,
+    "production_files": 72,
+    "production_loc": 41127,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1283,
+    "proved_theorem_lemma_decls": 1302,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
+    {
+      "module": "SeLe4n.Data.RobinHoodHashMap",
+      "path": "SeLe4n/Data/RobinHoodHashMap.lean",
+      "declaration_count": 59,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Data",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "Entry",
+          "line": 42,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "RobinHoodHashMap",
+          "line": 53,
+          "called": [
+            "Entry",
+            "size"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "RobinHoodHashMap",
+          "line": 60,
+          "called": []
+        },
+        {
+          "kind": "variable",
+          "name": "<anonymous:variable:62>",
+          "line": 62,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "defaultCapacity",
+          "line": 64,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 67,
+          "called": [
+            "RobinHoodHashMap",
+            "defaultCapacity",
+            "size"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:75>",
+          "line": 75,
+          "called": [
+            "RobinHoodHashMap",
+            "empty"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:76>",
+          "line": 76,
+          "called": [
+            "RobinHoodHashMap",
+            "empty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "idealIndex",
+          "line": 79,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nextIdx",
+          "line": 83,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "prevIdx",
+          "line": 87,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "get",
+          "line": 95,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 109,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insertCore",
+          "line": 116,
+          "called": [
+            "RobinHoodHashMap",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "resize",
+          "line": 145,
+          "called": [
+            "RobinHoodHashMap",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insert",
+          "line": 159,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "findIndex",
+          "line": 168,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "backwardShift",
+          "line": 183,
+          "called": [
+            "RobinHoodHashMap",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "erase",
+          "line": 206,
+          "called": [
+            "RobinHoodHashMap",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fold",
+          "line": 222,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "toList",
+          "line": 229,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "filter",
+          "line": 234,
+          "called": [
+            "RobinHoodHashMap",
+            "empty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pslCorrect",
+          "line": 244,
+          "called": [
+            "Entry",
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noDuplicateKeys",
+          "line": 250,
+          "called": [
+            "Entry",
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "robinHoodOrdering",
+          "line": 257,
+          "called": [
+            "Entry",
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noSpuriousGaps",
+          "line": 265,
+          "called": [
+            "Entry",
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "WellFormed",
+          "line": 273,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_wellFormed",
+          "line": 284,
+          "called": [
+            "WellFormed",
+            "empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertCore_contains_self",
+          "line": 302,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertCore_preserves_other",
+          "line": 309,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_preserves_get",
+          "line": 316,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertCore_wellFormed",
+          "line": 322,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_wellFormed",
+          "line": 329,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_removes_self",
+          "line": 335,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_preserves_other",
+          "line": 341,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_wellFormed",
+          "line": 348,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get",
+          "line": 358,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get",
+          "line": 365,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get",
+          "line": 370,
+          "called": [
+            "RobinHoodHashMap",
+            "WellFormed",
+            "erase_preserves_other"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fold_eq_foldl_toList",
+          "line": 378,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "size_erase_le",
+          "line": 384,
+          "called": [
+            "RobinHoodHashMap",
+            "size"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "RobinHoodHashSet",
+          "line": 395,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "RobinHoodHashSet",
+          "line": 398,
+          "called": []
+        },
+        {
+          "kind": "variable",
+          "name": "<anonymous:variable:400>",
+          "line": 400,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:402>",
+          "line": 402,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:403>",
+          "line": 403,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 405,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insert",
+          "line": 408,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 411,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "erase",
+          "line": 414,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "size",
+          "line": 417,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "toList",
+          "line": 419,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fold",
+          "line": 422,
+          "called": [
+            "RobinHoodHashSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_empty",
+          "line": 429,
+          "called": [
+            "RobinHoodHashSet",
+            "contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_insert_iff",
+          "line": 434,
+          "called": [
+            "RobinHoodHashSet",
+            "contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "not_contains_insert",
+          "line": 441,
+          "called": [
+            "RobinHoodHashSet",
+            "contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_insert_self",
+          "line": 448,
+          "called": [
+            "RobinHoodHashSet",
+            "contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contains_erase",
+          "line": 455,
+          "called": [
+            "RobinHoodHashSet",
+            "contains"
+          ]
+        }
+      ]
+    },
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",

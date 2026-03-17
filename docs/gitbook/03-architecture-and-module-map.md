@@ -279,6 +279,26 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     `composedNonInterference_trace`; `declassifyStore_NI`;
     `InformationFlowConfigInvariant` bundle.
 
+### Data structures
+
+- `SeLe4n/Data/RobinHoodHashMap.lean`
+  - `RobinHoodHashMap` — open-addressing hash table with Robin Hood displacement,
+    inline PSL (probe sequence length) in each `Entry`, backward-shift deletion,
+    and automatic 2× resizing at 75% load factor. Capacity invariant: ≥ 4 slots.
+  - `RobinHoodHashSet` — thin wrapper over `RobinHoodHashMap α Unit` for set operations.
+  - `WellFormed` 4-component predicate: `pslCorrect` (PSL matches displacement from
+    ideal slot), `noDuplicateKeys` (no key collisions), `robinHoodOrdering`
+    (displacement monotonicity within probe chains), `noSpuriousGaps` (no empty
+    slots interrupt active probe chains).
+  - Decomposition lemmas: `insertCore_contains_self`, `insertCore_preserves_other`,
+    `resize_preserves_get?`, `erase_removes_self`, `erase_preserves_other`.
+  - Bridge lemmas (TPI-D12 deferred): `get?_insert`, `get?_erase`,
+    `fold_eq_foldl_toList`, `size_erase_le`, `get?_empty_simp`.
+  - HashSet bridge lemmas (TPI-D12 deferred): `contains_empty`, `contains_insert_iff`,
+    `not_contains_insert`, `contains_insert_self`, `contains_erase`.
+  - Target: production replacement for `Std.HashMap` with verified Robin Hood
+    hashing properties (WS-N1).
+
 ### Testing modules
 
 - `SeLe4n/Testing/StateBuilder.lean`

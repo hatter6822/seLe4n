@@ -15,6 +15,25 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-N workstream (IPC & Capability cross-audit: Robin Hood hashing, determinism & correctness)
+
+WS-N is an **in-progress** workstream portfolio (v0.17.0+), created from a
+comprehensive cross-subsystem audit of the IPC and Capability subsystems
+(15,000+ LoC, 20+ files). The audit found zero sorry/axiom, zero critical
+vulnerabilities, but identified performance optimization opportunities via
+Robin Hood hashing (13 HashMap + 3 HashSet instances), a `resolveCapAddress`
+leaf-level occupancy asymmetry, and test coverage gaps.
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-N1** | Robin Hood HashMap: core data structure + bridge lemmas (14 subtasks, 23 TPI-D12 sorry placeholders) | HIGH — **IN PROGRESS** |
+| **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + theorems | HIGH — planned |
+| **WS-N3** | HashMap/HashSet migration across entire codebase (76+ call sites) | MEDIUM — planned |
+| **WS-N4** | Test coverage, determinism validation, sorry resolution | MEDIUM — planned |
+| **WS-N5** | Documentation sync, GitBook, codebase map | LOW — planned |
+
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+
 ### WS-M workstream (Capability subsystem audit & remediation)
 
 WS-M is a **completed** workstream portfolio (v0.16.14–v0.17.0), created from a

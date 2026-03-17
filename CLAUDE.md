@@ -39,6 +39,7 @@ theorems, invariants, or documentation anchors.
 
 ```
 SeLe4n/Prelude.lean              Typed identifiers, monad foundations
+SeLe4n/Data/RobinHoodHashMap.lean Robin Hood HashMap + HashSet (WS-N1)
 SeLe4n/Machine.lean              Machine state primitives
 SeLe4n/Model/Object.lean         Kernel objects (re-export hub)
   Object/Types.lean              Core data types, TCB, Endpoint, Notification
@@ -378,14 +379,14 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-M (Capability subsystem audit & remediation) — Phase 4 (WS-M4) **COMPLETED** (v0.16.18). Phase M5 remaining. See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
-- **Most recently completed portfolio**: WS-L (IPC subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). See `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (IPC & Capability cross-audit: Robin Hood hashing, determinism & correctness) — Phase 1 (WS-N1) IN PROGRESS. See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audit**: `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` — Capability subsystem audit
-- **All prior workstreams completed**: WS-B through WS-L (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: M5, then Raspberry Pi 5 hardware binding
+- **Latest audit**: `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` — IPC & Capability cross-audit
+- **All prior workstreams completed**: WS-B through WS-M (see `docs/WORKSTREAM_HISTORY.md`)
+- **Next milestone**: WS-N1 (Robin Hood HashMap foundation), then N2-N5, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

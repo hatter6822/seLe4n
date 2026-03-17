@@ -1509,3 +1509,70 @@ objects outside the observer's clearance are filtered out by projection.
 - `InformationFlow/Invariant/Helpers.lean` — shared frame lemmas
 - `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
 - `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4
+
+## 33. Robin Hood HashMap invariants (WS-N1)
+
+**WellFormed predicate** (`Data/RobinHoodHashMap.lean`):
+
+The `WellFormed` invariant for `RobinHoodHashMap` is a 4-component conjunction:
+
+1. `pslCorrect` — each occupied bucket's stored PSL equals the actual displacement
+   from the key's ideal slot (`hash(key) % capacity`).
+2. `noDuplicateKeys` — no two occupied buckets hold the same key.
+3. `robinHoodOrdering` — within any contiguous run of occupied buckets, PSL values
+   are non-decreasing, ensuring the Robin Hood displacement property.
+4. `noSpuriousGaps` — no empty bucket (`none`) appears in the middle of an active
+   probe chain; probe chains are always contiguous.
+
+**Layered proof architecture:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Layer 4: Bridge lemmas (N1-L, N1-N)                │
+│   get?_insert, get?_erase, fold_eq_foldl_toList    │
+│   contains_insert_iff, contains_erase              │
+├─────────────────────────────────────────────────────┤
+│ Layer 3: Decomposition lemmas (N1-I, N1-J, N1-K)  │
+│   insertCore_contains_self/preserves_other         │
+│   resize_preserves_get?, erase_removes/preserves   │
+├─────────────────────────────────────────────────────┤
+│ Layer 2: WellFormed preservation (N1-G, N1-H)      │
+│   insertCore/erase preserve all 4 WellFormed       │
+│   components                                        │
+├─────────────────────────────────────────────────────┤
+│ Layer 1: WellFormed definitions (N1-A..F)          │
+│   pslCorrect, noDuplicateKeys, robinHoodOrdering,  │
+│   noSpuriousGaps — all compiled, zero sorry         │
+└─────────────────────────────────────────────────────┘
+```
+
+**Decomposition lemmas** (Layer 3):
+
+- `insertCore_contains_self` — after insertion, `get?` returns the inserted value.
+- `insertCore_preserves_other` — insertion does not disturb lookups for other keys.
+- `resize_preserves_get?` — resizing preserves all key-value associations.
+- `erase_removes_self` — after erasure, `get?` returns `none` for the erased key.
+- `erase_preserves_other` — erasure does not disturb lookups for other keys.
+
+**Bridge lemmas** (Layer 4):
+
+- `get?_insert` — composed from `insertCore_contains_self` + `insertCore_preserves_other` + `resize_preserves_get?`.
+- `get?_erase` — composed from `erase_removes_self` + `erase_preserves_other`.
+- `get?_empty_simp` — empty map returns `none`.
+- `fold_eq_foldl_toList` — fold over buckets equals foldl over key-value list.
+- `size_erase_le` — erasure does not increase size.
+
+**HashSet bridge lemmas:**
+
+- `contains_empty` — empty set contains nothing.
+- `contains_insert_iff` — membership after insert iff key matches or was already present.
+- `contains_insert_self` — insert guarantees containment.
+- `not_contains_insert` — non-matching keys remain absent if previously absent.
+- `contains_erase` — erasure removes containment.
+
+**Status:** All definitions and operation implementations compile (Layer 1 complete).
+Layers 2–4 carry TPI-D12 sorry placeholders (23 total) with a dependency-tracked
+resolution plan. See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+for the N1-G through N1-N task breakdown.
+
+**Source file:** `SeLe4n/Data/RobinHoodHashMap.lean`
