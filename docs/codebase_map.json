@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-optimize-planning-utzSe",
-      "commit_sha": "5c55fc0ace9c415e3ae373fe6d1867feb517e35c",
-      "tree_sha": "75f60dfdd80720abb0e7c2cab892514c847f36cd",
-      "committed_at_utc": "2026-03-17T00:38:50+00:00"
+      "commit_sha": "3a0a452be73cb622116cd5a8969c5e6b8f3336ed",
+      "tree_sha": "2740ed7de0d87a4ae0638a570bdfd28d3f33fb17",
+      "committed_at_utc": "2026-03-17T03:56:41+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8fc925493a02cac65fe8dca6991716aee0126b79432d608c470404d66d21be71"
+    "source_digest": "f0b4abe4813b7a238d3b1e04f6e43fe4be176a9ddc3224268fe67bdd798bb025"
   },
   "summary": {
     "module_count": 76,
-    "declaration_count": 2418
+    "declaration_count": 2423
   },
   "readme_sync": {
     "version": "0.17.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 72,
-    "production_loc": 41068,
+    "production_loc": 41130,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1304,
+    "proved_theorem_lemma_decls": 1308,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Data.RobinHoodHashMap",
       "path": "SeLe4n/Data/RobinHoodHashMap.lean",
-      "declaration_count": 53,
+      "declaration_count": 58,
       "declarations": [
         {
           "kind": "namespace",
@@ -323,9 +323,54 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "mem_iff_isSome_getElem",
+          "line": 270,
+          "called": [
+            "RobinHoodHashMap",
+            "contains"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getKey",
+          "line": 276,
+          "called": [
+            "RobinHoodHashMap",
+            "contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getKey_beq",
+          "line": 281,
+          "called": [
+            "RobinHoodHashMap",
+            "contains",
+            "getKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_preserves_key",
+          "line": 288,
+          "called": [
+            "RobinHoodHashMap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_filter_getElem",
+          "line": 307,
+          "called": [
+            "RobinHoodHashMap",
+            "filter"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "RobinHoodHashSet",
-          "line": 276,
+          "line": 336,
           "called": [
             "RobinHoodHashMap"
           ]
@@ -333,19 +378,19 @@
         {
           "kind": "namespace",
           "name": "RobinHoodHashSet",
-          "line": 279,
+          "line": 339,
           "called": []
         },
         {
           "kind": "variable",
-          "name": "<anonymous:variable:281>",
-          "line": 281,
+          "name": "<anonymous:variable:341>",
+          "line": 341,
           "called": []
         },
         {
           "kind": "def",
           "name": "mk'",
-          "line": 283,
+          "line": 343,
           "called": [
             "RobinHoodHashMap.mk'",
             "RobinHoodHashSet",
@@ -354,8 +399,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:286>",
-          "line": 286,
+          "name": "<anonymous:instance:346>",
+          "line": 346,
           "called": [
             "RobinHoodHashSet",
             "mk'"
@@ -363,8 +408,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:287>",
-          "line": 287,
+          "name": "<anonymous:instance:347>",
+          "line": 347,
           "called": [
             "RobinHoodHashSet",
             "mk'"
@@ -373,7 +418,7 @@
         {
           "kind": "def",
           "name": "insert",
-          "line": 289,
+          "line": 349,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -381,7 +426,7 @@
         {
           "kind": "def",
           "name": "contains",
-          "line": 292,
+          "line": 352,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -389,7 +434,7 @@
         {
           "kind": "def",
           "name": "erase",
-          "line": 295,
+          "line": 355,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -397,7 +442,7 @@
         {
           "kind": "def",
           "name": "size",
-          "line": 298,
+          "line": 358,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -405,7 +450,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 300,
+          "line": 360,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -413,7 +458,7 @@
         {
           "kind": "def",
           "name": "fold",
-          "line": 303,
+          "line": 363,
           "called": [
             "RobinHoodHashSet"
           ]
@@ -421,7 +466,7 @@
         {
           "kind": "theorem",
           "name": "contains_empty",
-          "line": 311,
+          "line": 371,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -430,7 +475,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert_self",
-          "line": 316,
+          "line": 376,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -439,7 +484,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert",
-          "line": 321,
+          "line": 381,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -448,7 +493,7 @@
         {
           "kind": "theorem",
           "name": "contains_insert_iff",
-          "line": 327,
+          "line": 387,
           "called": [
             "RobinHoodHashSet",
             "contains",
@@ -458,7 +503,7 @@
         {
           "kind": "theorem",
           "name": "not_contains_insert",
-          "line": 343,
+          "line": 403,
           "called": [
             "RobinHoodHashSet",
             "contains",
@@ -468,7 +513,7 @@
         {
           "kind": "theorem",
           "name": "contains_erase",
-          "line": 362,
+          "line": 422,
           "called": [
             "RobinHoodHashSet",
             "contains"
@@ -18090,7 +18135,7 @@
         {
           "kind": "namespace",
           "name": "KernelHashSet",
-          "line": 1123,
+          "line": 1125,
           "called": []
         }
       ]

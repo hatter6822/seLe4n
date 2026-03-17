@@ -1520,7 +1520,7 @@ approach: the structure wraps `Std.HashMap` internally, delegating proofs to
 Phase 3 (WS-N3) will swap the internal representation to flat open-addressing
 without breaking downstream proofs.
 
-**HashMap bridge lemmas (14)**:
+**HashMap bridge lemmas (14 required, all proved)**:
 
 - `get?_insert` — combined insert lookup (if/then/else on `k == a`)
 - `get?_insert_self` — insert-then-lookup returns `some v`
@@ -1533,8 +1533,12 @@ without breaking downstream proofs.
 - `getElem?_eq_get?` / `get?_eq_getElem?` — bidirectional equivalence
 - `fold_eq_foldl_toList` — fold equals `List.foldl` on `toList`
 - `size_erase_le` — erase does not increase size
+- `mem_iff_isSome_getElem?` — membership equivalent to `getElem?` returning `some`
+- `getKey_beq` — stored key is `BEq`-equivalent to lookup key
+- `filter_preserves_key` — filter with true predicate preserves key entry
+- `filter_filter_getElem?` — double-filter is lookup-equivalent to single-filter
 
-**HashSet bridge lemmas (5)**:
+**HashSet bridge lemmas (6)**:
 
 - `contains_empty` — empty set contains nothing
 - `contains_insert_self` — insert-then-contains returns true

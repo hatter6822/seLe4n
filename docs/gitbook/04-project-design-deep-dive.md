@@ -134,7 +134,7 @@ HashMap key uniqueness is structural (guaranteed by the data structure), so prop
 
 `SeLe4n/Data/RobinHoodHashMap.lean` introduces `RobinHoodHashMap` and
 `RobinHoodHashSet` as drop-in replacements for `Std.HashMap`/`Std.HashSet`
-with 14 HashMap and 5 HashSet machine-checked bridge lemmas. The
+with 14 HashMap and 6 HashSet machine-checked bridge lemmas. The
 implementation uses a **refinement-model** approach: Phase 1 wraps
 `Std.HashMap` internally, delegating all proofs to `Std.DHashMap.Const.*`.
 Phase 3 (WS-N3) will swap the internal representation to a flat `Array`-based

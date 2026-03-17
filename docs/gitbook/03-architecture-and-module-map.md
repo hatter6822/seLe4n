@@ -48,7 +48,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `KernelHashMap`/`KernelHashSet` type aliases re-exporting `RobinHoodHashMap`/`RobinHoodHashSet` (WS-N1).
 - `SeLe4n/Data/RobinHoodHashMap.lean`
   - `RobinHoodHashMap` and `RobinHoodHashSet` — drop-in replacements for `Std.HashMap`/`Std.HashSet`
-    with machine-checked bridge lemmas (14 HashMap + 5 HashSet, zero proof gaps),
+    with machine-checked bridge lemmas (14 HashMap + 6 HashSet, zero proof gaps),
   - refinement-model architecture: wraps `Std.HashMap` internally, delegating proofs to
     `Std.DHashMap.Const.*`; internal representation upgradeable to flat open-addressing (WS-N3)
     without breaking downstream proofs,

@@ -64,8 +64,12 @@ See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.1
 
 The **WS-N** portfolio (IPC & Capability cross-audit: Robin Hood hashing &
 correctness) is **in progress** (v0.17.1–). Phase 1 (WS-N1) is **completed**
-(v0.17.1): Robin Hood HashMap foundation with 14 HashMap + 5 HashSet bridge
-lemmas, `KernelHashMap`/`KernelHashSet` type aliases, and full Prelude
+(v0.17.1): Robin Hood HashMap foundation with all 14 required HashMap bridge
+lemmas (`get?_insert`, `get?_empty`, `get?_erase`, `getElem?_insert`,
+`getElem?_empty`, `getElem?_erase`, `getElem?_eq_get?`, `get?_eq_getElem?`,
+`fold_eq_foldl_toList`, `filter_preserves_key`, `filter_filter_getElem?`,
+`size_erase_le`, `mem_iff_isSome_getElem?`, `getKey_beq`) plus 6 HashSet
+bridge lemmas, `KernelHashMap`/`KernelHashSet` type aliases, and full Prelude
 integration. Zero proof gaps. Phases N2–N5 pending (resolveCapAddress fix,
 codebase migration, test coverage, documentation sync).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).

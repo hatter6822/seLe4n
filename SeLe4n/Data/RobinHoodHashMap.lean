@@ -44,7 +44,7 @@ is never broken during the migration.
 `filter_preserves_key`, `filter_filter_getElem?`, `size_erase_le`,
 `mem_iff_isSome_getElem?`, `getKey_beq`.
 
-**HashSet (5)**: `contains_empty`, `contains_insert`,
+**HashSet (6)**: `contains_empty`, `contains_insert_self`, `contains_insert`,
 `contains_insert_iff`, `not_contains_insert`, `contains_erase`.
 -/
 
@@ -265,6 +265,66 @@ theorem size_erase_le [LawfulBEq α] (m : RobinHoodHashMap α β) (k : α) :
     (m.erase k).size ≤ m.size := by
   simp only [size, erase]
   exact Std.HashMap.size_erase_le
+
+/-- Membership is equivalent to `getElem?` returning `some`. -/
+theorem mem_iff_isSome_getElem? [LawfulBEq α] (m : RobinHoodHashMap α β) (k : α) :
+    m.contains k = true ↔ (m[k]?).isSome = true := by
+  simp only [contains]
+  exact Std.HashMap.mem_iff_isSome_getElem?
+
+/-- Retrieve the stored key matching `k` by `BEq`. -/
+@[inline] def getKey (m : RobinHoodHashMap α β) (k : α)
+    (h : m.contains k = true) : α :=
+  m.inner.getKey k (by simp only [contains] at h; exact h)
+
+/-- The stored key is `BEq`-equivalent to the lookup key. -/
+theorem getKey_beq [LawfulBEq α] (m : RobinHoodHashMap α β) (k : α)
+    (h : m.contains k = true) :
+    (m.getKey k h == k) = true := by
+  simp only [getKey]
+  exact Std.HashMap.getKey_beq (by simp only [contains] at h; exact h)
+
+/-- Filtering with a predicate that holds for `k` preserves `k`'s entry. -/
+theorem filter_preserves_key [EquivBEq α] [LawfulHashable α]
+    (m : RobinHoodHashMap α β) (f : α → β → Bool) (k : α)
+    (hTrue : ∀ (k' : α) (v : β), (k' == k) = true → f k' v = true) :
+    (m.filter f)[k]? = m[k]? := by
+  -- Delegate to Std.HashMap proof via the inner map
+  show (m.inner.filter f)[k]? = m.inner[k]?
+  simp only [Std.HashMap.getElem?_filter]
+  suffices h : ∀ (o : Option β) (p : (a : β) → o = some a → Bool),
+      (∀ a (h : o = some a), p a h = true) → o.pfilter p = o by
+    apply h
+    intro a ha
+    have hMem : k ∈ m.inner := Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [ha])
+    exact hTrue _ _ (Std.HashMap.getKey_beq hMem)
+  intro o p hp
+  cases o with
+  | none => rfl
+  | some v => simp [hp]
+
+/-- Double-filtering is lookup-equivalent to single-filtering. -/
+theorem filter_filter_getElem? [EquivBEq α] [LawfulHashable α]
+    (m : RobinHoodHashMap α β) (f : α → β → Bool) (k : α) :
+    ((m.filter f).filter f)[k]? = (m.filter f)[k]? := by
+  show ((m.inner.filter f).filter f)[k]? = (m.inner.filter f)[k]?
+  by_cases hMem : k ∈ m.inner.filter f
+  · have ⟨_, hF⟩ := Std.HashMap.mem_filter.mp hMem
+    have hMemFF : k ∈ (m.inner.filter f).filter f := by
+      rw [Std.HashMap.mem_filter]
+      refine ⟨hMem, ?_⟩
+      rw [Std.HashMap.getKey_filter]
+      rw [Std.HashMap.getElem_filter]
+      exact hF
+    have h1 := Std.HashMap.getElem?_eq_some_getElem hMemFF
+    have h2 := Std.HashMap.getElem?_eq_some_getElem hMem
+    have h3 : ((m.inner.filter f).filter f)[k] = (m.inner.filter f)[k] :=
+      Std.HashMap.getElem_filter
+    rw [h1, h2, h3]
+  · have hNotMemFF : k ∉ (m.inner.filter f).filter f :=
+      fun h => hMem (Std.HashMap.mem_of_mem_filter h)
+    rw [Std.HashMap.getElem?_eq_none hNotMemFF,
+        Std.HashMap.getElem?_eq_none hMem]
 
 -- ============================================================================
 -- N1-H: HashSet — thin wrapper

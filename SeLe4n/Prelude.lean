@@ -1117,6 +1117,8 @@ namespace KernelHashMap
     getElem?_insert getElem?_empty getElem?_erase
     getElem?_eq_get? get?_eq_getElem?
     fold_eq_foldl_toList size_erase_le
+    mem_iff_isSome_getElem? getKey getKey_beq
+    filter_preserves_key filter_filter_getElem?
   )
 end KernelHashMap
 

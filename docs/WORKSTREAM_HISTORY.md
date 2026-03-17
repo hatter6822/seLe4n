@@ -45,8 +45,11 @@ lemmas proved via `Std.DHashMap.Const` delegation (`get?_insert_self`,
 `get?_insert_ne`, `get?_insert`, `get?_erase_self`, `get?_erase_ne`,
 `get?_erase`, `get?_empty`, `get?_emptyCollection`, `getElem?_insert`,
 `getElem?_empty`, `getElem?_erase`, `getElem?_eq_get?`, `get?_eq_getElem?`,
-`fold_eq_foldl_toList`, `size_erase_le`). N1-H: `RobinHoodHashSet` thin wrapper
-with 5 bridge lemmas (`contains_empty`, `contains_insert`, `contains_insert_iff`,
+`fold_eq_foldl_toList`, `size_erase_le`, `mem_iff_isSome_getElem?`,
+`getKey_beq`, `filter_preserves_key`, `filter_filter_getElem?`).
+N1-H: `RobinHoodHashSet` thin wrapper
+with 6 bridge lemmas (`contains_empty`, `contains_insert_self`,
+`contains_insert`, `contains_insert_iff`,
 `not_contains_insert`, `contains_erase`). N1-I: `KernelHashMap`/`KernelHashSet`
 type aliases in Prelude with namespace re-exports. Zero proof gaps or unproven
 assumptions.
