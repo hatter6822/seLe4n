@@ -25,7 +25,7 @@ leaf-level asymmetry, and test coverage gaps. Phase 1 completed; phases 2–5 pe
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-N1** | Robin Hood HashMap foundation: core data structure, bridge lemmas (14 HashMap + 5 HashSet), `KernelHashMap`/`KernelHashSet` type aliases, Prelude integration | HIGH — **COMPLETED** (v0.17.1) |
+| **WS-N1** | Robin Hood HashMap foundation: core data structure, bridge lemmas (14 HashMap + 6 HashSet), `KernelHashMap`/`KernelHashSet` type aliases, Prelude integration | HIGH — **COMPLETED** (v0.17.1) |
 | **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + strengthened theorems | HIGH — pending |
 | **WS-N3** | HashMap/HashSet migration across entire codebase (76 + 25 call sites) | MEDIUM — pending |
 | **WS-N4** | Test coverage, determinism validation, zero-gap audit | MEDIUM — pending |

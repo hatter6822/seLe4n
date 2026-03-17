@@ -19,7 +19,7 @@ lemmas (zero proof gaps or unproven assumptions).
 The implementation uses a **refinement-model** approach:
 
 - **Phase 1 (this file)**: The `RobinHoodHashMap` structure wraps `Std.HashMap`
-  internally, providing all 14 HashMap and 5 HashSet bridge lemmas with
+  internally, providing all 14 HashMap and 6 HashSet bridge lemmas with
   complete machine-checked proofs. This establishes the correctness contract
   that the rest of the kernel proof surface depends on.
 
@@ -365,7 +365,7 @@ def fold {γ : Type _} (s : RobinHoodHashSet α) (init : γ)
   s.inner.fold init fun acc k _ => f acc k
 
 -- ============================================================================
--- HashSet bridge lemmas (5 required)
+-- HashSet bridge lemmas (6)
 -- ============================================================================
 
 theorem contains_empty (a : α) :
