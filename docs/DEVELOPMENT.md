@@ -65,8 +65,13 @@ See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.1
 The **active workstream** is **WS-N** (Robin Hood hashing verified
 implementation) — a formally verified Robin Hood hash table to close the trust
 gap between seLe4n's machine-checked proofs and the unverified `Std.HashMap`
-library type. 5 phases (N1–N5, 122 subtasks): core types + operations, invariant
-proofs, kernel API bridge, CNode.slots integration, tests + documentation.
+library type. 5 phases (N1–N5, 122 subtasks). **WS-N1** (v0.17.1) —
+core types + operations — **COMPLETED**: `RHEntry`, `RHTable` (single-
+representation `Array (Option (RHEntry α β))`), fuel-bounded `insertLoop`/
+`getLoop`/`findLoop`/`backshiftLoop`, `insert`/`get?`/`erase`/`fold`/`resize`,
+`empty_wf` proof, 7 preservation theorems, `Membership` instance. 343 new lines,
+zero sorry/axiom. Remaining: N2 (invariant proofs), N3 (kernel API bridge),
+N4 (CNode.slots integration), N5 (tests + documentation).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:
