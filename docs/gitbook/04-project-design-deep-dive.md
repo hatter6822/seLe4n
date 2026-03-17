@@ -130,22 +130,6 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 
 HashMap key uniqueness is structural (guaranteed by the data structure), so properties like `slotsUnique` become trivially true. This eliminated entire classes of proof obligations during the WS-G migration.
 
-### Robin Hood HashMap foundation (WS-N1)
-
-`SeLe4n/Data/RobinHoodHashMap.lean` introduces `RobinHoodHashMap` and
-`RobinHoodHashSet` as drop-in replacements for `Std.HashMap`/`Std.HashSet`
-with 14 HashMap and 6 HashSet machine-checked bridge lemmas. The
-implementation uses a **refinement-model** approach: Phase 1 wraps
-`Std.HashMap` internally, delegating all proofs to `Std.DHashMap.Const.*`.
-Phase 3 (WS-N3, v0.17.3) migrated the entire codebase from `Std.HashMap`/`Std.HashSet`
-to `KernelHashMap`/`KernelHashSet`, including bridge lemma redirection, fold argument
-order alignment, and proof repairs across 20 source + 6 test files. A future phase
-will swap the internal representation to a flat `Array`-based Robin Hood open-addressing
-layout optimized for ARM64 cache locality, without changing bridge lemma signatures
-or breaking any downstream proofs.
-`KernelHashMap`/`KernelHashSet` type aliases in `SeLe4n/Prelude.lean`
-re-export all bridge lemma names for kernel-wide use.
-
 ## 3. IPC design: intrusive dual-queue
 
 seLe4n's IPC uses an intrusive dual-queue modeled after Linux's `hlist` pattern. Each endpoint maintains separate send and receive queues, and each TCB carries its own queue linkage:

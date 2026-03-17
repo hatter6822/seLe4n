@@ -548,72 +548,20 @@ below corresponds to a `Prelude.lean` lemma that delegates to `Std.DHashMap.*`.
 | 4 | `not_contains_insert` | `(s.insert a).contains b = false ↔ b ≠ a ∧ s.contains b = false` |
 | 5 | `contains_erase` | `(s.erase a).contains b = (¬(a == b) && s.contains b)` |
 
-**Proof strategy — Specification-layer approach (optimized)**:
+**Proof strategy for `getElem?_insert`** (the hardest lemma): This requires
+proving that after inserting `(k, v)`, looking up any key `a` returns:
+- `some v` if `k == a` (the just-inserted value)
+- `m[a]?` otherwise (unchanged for all other keys)
 
-The hardest proofs (`get?_insert`, `get?_erase`) are intractable by direct
-induction on the Robin Hood algorithm because displacement creates non-local
-effects (moving entries forward changes PSL values throughout the chain).
+For the `k == a` case: the inserted entry is findable by its probe chain.
+For the `k ≠ a` case: Robin Hood displacement may move other entries but
+preserves their findability — each displaced entry's new PSL correctly reflects
+its new position, so the lookup algorithm still finds it.
 
-**The specification-layer technique** uses `toList` (the association-list
-representation) as a *mental stepping stone* that relates the Robin Hood map
-to a simple list-of-pairs model. The proof proceeds in three layers:
-
-1. **Specification functions**: Define `toAssocList` that extracts the logical
-   `List (α × β)` contents from the bucket array. This is the "ground truth"
-   for what keys the map contains.
-
-2. **Operational correctness against spec**: Prove that each operation
-   (`insertCore`, `erase`, `get?`) is correct with respect to `toAssocList`:
-   - `toAssocList_insertCore`: After `insertCore k v`, the assoc list contains
-     `(k, v)` and all previous entries (with `k` updated if present).
-   - `toAssocList_erase`: After `erase k`, the assoc list is the previous list
-     with `k` removed.
-   - `get?_eq_assocList_lookup`: `get? k` returns the same result as
-     `List.lookup k (toAssocList m)`.
-
-3. **Bridge lemmas as corollaries**: The hard bridge lemmas follow from simple
-   list reasoning:
-   - `get?_insert_self`: `List.lookup k ((k,v) :: rest) = some v` ✓
-   - `get?_insert_ne`: `List.lookup a ((k,v) :: rest) = List.lookup a rest`
-     when `k ≠ a` ✓
-   - `get?_erase_self`: `List.lookup k (rest.filter (·.1 ≠ k)) = none` ✓
-   - `get?_erase_ne`: `List.lookup a (rest.filter (·.1 ≠ k)) = List.lookup a rest`
-     when `k ≠ a` ✓
-
-**Why this works**: The specification layer decouples *algorithmic correctness*
-(Robin Hood displacement preserves the logical contents) from *bridge lemma
-reasoning* (simple list operations). The hard part — proving that Robin Hood
-displacement preserves the logical key-value set — is isolated into the
-`toAssocList_insertCore` lemma, which can use strong induction on fuel with
-careful case analysis on displacement vs. no-displacement.
-
-**Practical simplification for WS-N1**: Rather than proving the full
-`toAssocList_insertCore` characterization (which requires tracking the exact
-contents after displacement chains), we use a **direct behavioral proof**:
-
-- For `get?_insert_self`: Trace the `get?` lookup through `insertCore`,
-  showing that `get?` finds `k` at the exact position where `insertCore`
-  placed it (either in an empty slot or overwriting an existing `k`).
-  The proof proceeds by synchronized induction on fuel for both `insertCore.go`
-  and `get?.go`, maintaining the invariant that both start at `bucketIdx k`
-  and follow the same probe sequence.
-
-- For `get?_insert_ne`: Show that `insertCore` for key `k` does not affect
-  the lookup path for key `a ≠ k`. Case analysis: (1) if `a`'s probe path
-  doesn't overlap with `k`'s insertion path, the buckets are unchanged;
-  (2) if `a` was displaced by Robin Hood, its new PSL correctly reflects
-  its new position, so `get?.go` still finds it.
-
-- For `get?_erase_self`/`get?_erase_ne`: `erase` clears the bucket and runs
-  `backwardShift`. For `self`: the cleared bucket returns `none` on lookup.
-  For `ne`: backward-shift only moves entries that were displaced past the
-  erased position; their PSL decrements match their new positions, preserving
-  lookup correctness.
-
-**Risk mitigation**: If the direct behavioral proofs prove too complex within
-the fuel-based framework, fall back to the full specification-layer approach
-by proving `get?_eq_assocList_lookup` first, then deriving all bridge lemmas
-from list-level reasoning. This is more work but guaranteed to succeed.
+This proof proceeds by strong induction on the probe distance and case analysis
+on whether Robin Hood displacement occurred. The key insight is that displacement
+only moves entries **forward** in the probe chain, and their PSL is updated to
+reflect the new distance, so the lookup early-termination condition still works.
 
 ---
 
@@ -653,34 +601,16 @@ Existing code unchanged (no migration yet).
 
 **Target version**: 0.17.2
 **Files modified**: `SeLe4n/Kernel/Capability/Operations.lean`,
-`SeLe4n/Kernel/API.lean` (no code changes — verify theorems still hold),
-`tests/NegativeStateSuite.lean` (new WS-N2 tests)
-**Files NOT modified**: `Invariant/Defs.lean`, `Invariant/Preservation.lean`
-(verified: zero references to `resolveCapAddress` in these files — they compose
-via higher-level operations that already handle `.error .invalidCapability`)
+`SeLe4n/Kernel/Capability/Invariant/Defs.lean`,
+`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 **Findings addressed**: N-C01, N-P02
-**Subtasks**: 7 atomic units (N2-A through N2-G)
-
-**Scope analysis**: The `resolveCapAddress` function (Operations.lean:76–108) is
-a pure `Except`-returning function, not a `Kernel` monad operation. It does not
-modify state. All references that unfold its definition are:
-- `resolveCapAddress_result_valid_cnode` (Operations.lean:152) — MUST update
-- `resolveCapAddress_guard_reject` (Operations.lean:211) — MUST update
-- `resolveCapAddress_guard_match` (Operations.lean:243) — MUST update
-- `syscallLookupCap` (API.lean:165) — composition, no unfold of resolveCapAddress
-- `resolveExtraCaps` (API.lean:368) — composition, no unfold
-- `cspaceLookupMultiLevel` (Operations.lean:121) — composition, no unfold
-
-API-level theorems (`syscallLookupCap_implies_capability_held`, etc.) compose
-`resolveCapAddress` opaquely via `split at hOk` on the match result. Since the
-fix only adds an error path (which is already handled by the `.error e` branch),
-these theorems require **no proof changes** — verified by `lake build`.
+**Subtasks**: 5 atomic units (N2-A through N2-E)
 
 ---
 
 #### Task N2-A: Add leaf-level occupancy check to `resolveCapAddress`
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:94–95`
+**File**: `Operations.lean:94–95`
 
 **Current code** (leaf path):
 ```lean
@@ -693,116 +623,93 @@ if bitsRemaining - consumed = 0 then
 if bitsRemaining - consumed = 0 then
   match cn.lookup slot with
   | some _ => .ok { cnode := rootId, slot := slot }
-  | none => .error .invalidCapability     -- WS-N2: leaf occupancy check
+  | none => .error .invalidCapability     -- leaf occupancy check
 ```
 
 This makes the leaf path consistent with the intermediate path (lines 97–106),
 which already checks `cn.lookup slot`. The function now checks occupancy at
 **every level** of CSpace resolution.
 
-**Impact on callers** (3 total, all in `SeLe4n/Kernel/`):
+**Impact on callers**:
 
-| Caller | Location | Current Behavior | New Behavior |
-|--------|----------|-----------------|--------------|
-| `syscallLookupCap` | API.lean:165 | Resolve ok → lookupSlotCap → may fail | Resolve fails early on empty leaf |
-| `resolveExtraCaps` | API.lean:368 | Resolve ok → lookupSlotCap → may drop | Resolve fails early on empty leaf |
-| `cspaceLookupMultiLevel` | Operations.lean:121 | Resolve ok → cspaceLookupSlot → may fail | Resolve fails early on empty leaf |
+| Caller | Current Behavior | New Behavior |
+|--------|-----------------|--------------|
+| `syscallLookupCap` (API.lean:165) | Resolve ok → lookupSlotCap → may fail | Resolve fails early on empty leaf |
+| `resolveExtraCaps` (API.lean:368) | Resolve ok → lookupSlotCap → may drop | Resolve fails early on empty leaf |
+| `cspaceLookupMultiLevel` (Ops:121) | Resolve ok → cspaceLookupSlot → may fail | Resolve fails early on empty leaf |
 
-All callers already handle `.error .invalidCapability`, so **zero caller code
-changes** needed. The fix moves error detection earlier (one fewer HashMap
-lookup per empty-slot resolution — finding N-P02).
+All callers already handle `.error .invalidCapability`, so no caller changes
+needed. Callers are now **simplified**: after a successful resolve, the slot
+is guaranteed to be occupied.
 
 **Termination**: Unchanged — the termination proof uses `bitsRemaining` descent,
-which is unaffected by the occupancy check. The `termination_by bitsRemaining`
-annotation remains valid.
-
-**Verification**: `lake build` after this task alone will fail due to proof
-breakage in subsequent theorems. Proceed immediately to N2-B.
+which is unaffected by the occupancy check.
 
 ---
 
 #### Task N2-B: Update `resolveCapAddress_result_valid_cnode` theorem
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:152–188`
+**File**: `Operations.lean:152–188`
 
 The existing theorem proves that successful resolution returns a valid CNode.
-After the fix, the leaf case in the proof encounters an additional `match cn.lookup`
-that must be split. The proof update is mechanical:
-
-**Leaf case change** (line 178): The old proof had:
-```lean
-· -- Leaf case: all bits consumed, ref.cnode = rootId
-  simp at hOk; cases hOk; exact ⟨cn, hObj⟩
-```
-
-The new proof must split on the `cn.lookup` match first:
-```lean
-· -- Leaf case: all bits consumed
-  split at hOk
-  · -- Slot occupied → success
-    simp at hOk; cases hOk; exact ⟨cn, hObj⟩
-  · -- Slot empty → error, contradiction with hOk
-    simp at hOk
-```
-
-The recursive case (lines 179–187) is unchanged because it already handles
-`cn.lookup slot` via split.
-
-After updating this theorem, add the **strengthened variant**:
+After the fix, it can be strengthened to also prove the slot is occupied:
 
 ```lean
 theorem resolveCapAddress_result_valid_cnode_and_slot
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (rootId : ObjId) (addr : CPtr) (bits : Nat) (st : SystemState)
     (ref : SlotRef)
     (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
     ∃ cn : CNode, st.objects[ref.cnode]? = some (.cnode cn) ∧
-    ∃ cap : Capability, cn.lookup ref.slot = some cap
+    ∃ cap : Capability, cn.lookup ref.slot = some cap := by
+  ...
 ```
 
-**Proof pattern**: Same strong induction as `resolveCapAddress_result_valid_cnode`,
-but at the leaf case, extract the `some cap` from the match (now available since
-the fix guarantees the leaf slot is occupied on success).
+The proof follows the same strong induction pattern as the current theorem,
+with an additional `cn.lookup` extraction at both the leaf and recursive cases.
+
+The original `resolveCapAddress_result_valid_cnode` is retained for backward
+compatibility (its conclusion is a weaker consequence of the strengthened
+version).
 
 ---
 
-#### Task N2-C: Verify `resolveCapAddress_guard_match` theorem
+#### Task N2-C: Update `resolveCapAddress_guard_match` theorem
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:316–339`
+**File**: `Operations.lean:243–266`
 
-The guard match theorem constrains to the leaf case (`hLeaf : bits = consumed`).
-After the fix, the leaf path has an additional `cn.lookup` match before
-producing `.ok`. However, the proof's goal is `guardExtracted = cn.guardValue`,
-which is resolved by `Decidable.of_not_not hNotNe` at the guard check level —
-*before* the leaf/recursive split is reached. The proof does **not** need to
-process the `cn.lookup` match because the goal is already discharged.
+The guard match theorem's proof unfolds `resolveCapAddress` and traces through
+the leaf path. After the fix, the leaf path has an additional `cn.lookup`
+match. The proof must be updated to split on this new case — the error branch
+is eliminated by the `hOk` hypothesis, and the success branch proceeds as
+before.
 
-**Expected outcome**: No proof changes needed. The existing one-line conclusion
-`exact Decidable.of_not_not hNotNe` remains valid because the guard equality
-goal is orthogonal to the leaf occupancy check. Verified via `lake build`.
+This is a mechanical proof update: one additional `split at hOk` + `simp at hOk`
+for the empty-slot error case.
 
 ---
 
-#### Task N2-D: Update `resolveCapAddress_guard_reject` theorem
+#### Task N2-D: Update invariant preservation theorems
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:211–231`
+**File**: `Invariant/Preservation.lean`
 
-The guard reject theorem proves that a bad guard yields `.error .invalidCapability`.
-After the fix, the proof still needs to reach the guard check before the leaf
-occupancy check. Since guard checking happens *before* the `bitsRemaining - consumed`
-split, and the conclusion is about the error case (not the success case), this
-theorem's proof structure may not need changes — but must be verified.
+Any preservation theorem that unfolds `resolveCapAddress` and traces through
+the leaf path needs updating. Grep for `resolveCapAddress` in preservation files:
 
-**Expected outcome**: The proof unfolds `resolveCapAddress` and reaches the guard
-check. The guard mismatch (`hBadGuard`) causes the function to return
-`.error .invalidCapability` *before* reaching the leaf/recursive split. If the
-proof structure already terminates at the guard check, no changes needed.
-Verify via `lake build`.
+- `resolveCapAddress_result_valid_cnode` (already addressed in N2-B)
+- Any theorem composing `resolveCapAddressK` or `cspaceLookupMultiLevel`
+
+Since `cspaceLookupMultiLevel` composes `resolveCapAddress` + `cspaceLookupSlot`,
+and the new behavior only adds an additional error path (empty slot → error)
+that was already handled by `cspaceLookupSlot`, most composition theorems
+remain unchanged. The key change: `cspaceLookupSlot` after a successful resolve
+now always succeeds (slot guaranteed occupied), which **simplifies** several
+proofs.
 
 ---
 
 #### Task N2-E: Update docstring and add characterization theorem
 
-**File**: `SeLe4n/Kernel/Capability/Operations.lean:64–75`
+**File**: `Operations.lean:64–75`
 
 Update the `resolveCapAddress` docstring to document the leaf-level occupancy
 check:
@@ -810,222 +717,168 @@ check:
 ```lean
 /-- WS-N2/N-C01: Multi-level CSpace capability address resolution.
 
-Walks the CNode graph starting at `rootId`, consuming `guardWidth + radixWidth`
-bits per hop from the capability address `addr`. Each CNode level:
-1. Extracts guard bits and verifies they match `guardValue`.
-2. Extracts radix bits to compute the slot index.
-3. If bits remain, looks up the slot and recurses into the child CNode.
+...
 4. If all bits are consumed, looks up the slot and returns the resolved slot
    reference if the slot is occupied. Returns `.error .invalidCapability`
    if the leaf slot is empty.
+...
 
-Slot occupancy is checked at EVERY level of CSpace resolution:
-- Intermediate: `cn.lookup slot` for child CNode traversal
-- Leaf: `cn.lookup slot` for final slot validation (WS-N2/N-C01)
-
-Termination is guaranteed by strict descent of `bitsRemaining`: each hop
-consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
-invariant / `hProgress`). -/
+Slot occupancy is checked at EVERY level:
+- Intermediate: `cn.lookup slot` for child CNode traversal (line 97)
+- Leaf: `cn.lookup slot` for final slot validation (new in WS-N2) -/
 ```
 
-Add a **characterization theorem** as a clean public-facing API:
+Add a theorem characterizing the strengthened behavior:
 
 ```lean
-/-- WS-N2/N-C01: Successful resolution guarantees the slot is occupied. -/
 theorem resolveCapAddress_success_implies_occupied
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (rootId : ObjId) (addr : CPtr) (bits : Nat) (st : SystemState)
     (ref : SlotRef)
     (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
     ∃ cn cap, st.objects[ref.cnode]? = some (.cnode cn) ∧
               cn.lookup ref.slot = some cap := by
-  obtain ⟨cn, hCn, cap, hCap⟩ := resolveCapAddress_result_valid_cnode_and_slot
-    rootId addr bits st ref hOk
-  exact ⟨cn, cap, hCn, hCap⟩
+  exact resolveCapAddress_result_valid_cnode_and_slot rootId addr bits st ref hOk
 ```
+
+**Verification**: `lake build` succeeds. `test_smoke.sh` passes. All existing
+tests remain green (callers already handled the error case).
 
 ---
 
-#### Task N2-F: Add WS-N2 tests to NegativeStateSuite
+### Phase 3: HashMap/HashSet Migration (WS-N3)
 
-**File**: `tests/NegativeStateSuite.lean`
-
-Add `runWSN2OccupancyChecks` function with the following test cases:
-
-1. **N2-T1: Leaf empty slot → error** (the core behavioral change):
-   Create CNode with no slot at resolved index. Call `resolveCapAddress`.
-   Assert `.error .invalidCapability`.
-
-2. **N2-T2: Leaf occupied slot → success** (regression guard):
-   Reuse M4-A5 pattern with occupied slot. Assert `.ok` with correct SlotRef.
-
-3. **N2-T3: Multi-level with empty leaf → error** (composition test):
-   2-level CNode chain (root → child) where the leaf slot at the child is empty.
-   Validates the leaf-level occupancy fix through multi-level resolution.
-   Assert `resolveCapAddress` returns `.error .invalidCapability`.
-
-4. **N2-T4: Multi-level with occupied leaf → success** (regression guard):
-   Same 2-level CNode chain but with the leaf slot populated at the child.
-   Assert `.ok` with correct SlotRef pointing to the child CNode.
-
-5. **N2-T5: `cspaceLookupMultiLevel` with empty leaf → error** (integration):
-   Same state as N2-T1 but through `cspaceLookupMultiLevel` wrapper.
-   Assert error returned (same error as before, but now detected earlier
-   in the call chain).
-
-Register `runWSN2OccupancyChecks` in the `main` function.
-
-**Update existing test**: M4-A8 negative test (line 2669) calls
-`cspaceLookupMultiLevel` on slot 15 which is empty. Before N2-A, this
-returned `invalidCapability` from `cspaceLookupSlot` *after* resolution.
-After N2-A, it returns `invalidCapability` from `resolveCapAddress` *during*
-resolution. The observable error is identical — test still passes.
-
----
-
-#### Task N2-G: Update test comment at M4-A6
-
-**File**: `tests/NegativeStateSuite.lean:2584–2588`
-
-Update the comment that documents the old leaf-level behavior:
-
-```
--- WS-N2: resolveCapAddress now checks slot occupancy at ALL levels, including
--- leaf. This test validates the intermediate (non-leaf) path which was already
--- correct before WS-N2.
-```
-
-**Verification**: `lake build` succeeds. `test_smoke.sh` passes. Zero
-`sorry`/`axiom` in production files. Test fixture unchanged (trace harness
-does not exercise empty-leaf resolution path).
-
----
-
-### Phase 3: HashMap/HashSet Migration (WS-N3) — COMPLETED
-
-**Completed version**: 0.17.3
-**Files modified**: 20 source + 6 test files
+**Target version**: 0.17.3
+**Files modified**: 11 source files (76 `Std.HashMap` + 25 `Std.HashSet` call sites)
 **Findings addressed**: N-P01 (completion), N-P03, N-D01, N-D02
-**Subtasks**: 7 atomic units (N3-A through N3-G) — all completed
-**Status**: All 148 build jobs pass. Zero `sorry`/`axiom`. `test_full.sh` passes.
+**Subtasks**: 7 atomic units (N3-A through N3-G)
 
-Phase 3 replaced all `Std.HashMap`/`Std.HashSet` usage across the kernel and
-test surface with `KernelHashMap`/`KernelHashSet` (aliases for
-`RobinHoodHashMap`/`RobinHoodHashSet`). The migration required both mechanical
-type swaps and non-trivial proof repairs where `simp` could no longer
-automatically unfold through the `RobinHoodHashMap` wrapper to reach
-`Std.HashMap` lemmas.
-
-**Key implementation decisions**:
-
-1. **Bridge lemma strategy**: Proofs that previously used `simp` to auto-resolve
-   `Std.HashMap` operations (e.g., `simp [lookup]` closing
-   `getElem?_insert`/`getElem?_erase` goals) were updated to explicitly supply
-   `RobinHoodHashMap` bridge lemmas: `SeLe4n.Data.RobinHoodHashMap.getElem?_insert`,
-   `getElem?_erase`, `getElem?_empty`.
-
-2. **`fold` argument order fix**: The original `RobinHoodHashMap.fold` had
-   `(m) (init) (f)` parameter order, but `Std.HashMap.fold` uses `(f) (init)`
-   (function-first). This was corrected to `(m) (f) (init)` to match method-syntax
-   conventions used throughout the kernel (e.g., `byPrio.fold (fun ...) none`).
-
-3. **Inner-map proof delegation**: Complex proofs in `Capability/Invariant/`
-   that use `Std.HashMap.mem_filter`, `getElem_filter`, and `getKey_beq`
-   continue to operate on `.inner` (the underlying `Std.HashMap`) via
-   `show`/type-coercion bridges. This preserves access to the full `Std.HashMap`
-   proof library for filter-related reasoning while keeping external signatures
-   on `KernelHashMap`.
-
-4. **`BEq` instance**: Added `BEq (RobinHoodHashMap α β)` delegating to
-   `BEq (Std.HashMap α β)` for test comparisons (e.g., `st'.objects == st0.objects`).
-
-5. **Prelude bridge lemma redirection**: The `HashMap_*`/`HashSet_*` bridge
-   lemmas in `Prelude.lean` were redirected from `{m : Std.HashMap α β}` to
-   `{m : KernelHashMap α β}` using `by show ... exact Std...` tactic patterns,
-   maintaining API stability for all downstream consumers.
+Phase 3 replaces all `Std.HashMap`/`Std.HashSet` usage with the Robin Hood
+implementations from Phase 1. The migration is mechanical: type swaps + bridge
+lemma name updates.
 
 ---
 
-#### Task N3-A: Migrate `Model/State.lean` — COMPLETED
+#### Task N3-A: Migrate `Model/State.lean` (10 `Std.HashMap` call sites)
 
-Migrated 8 `Std.HashMap` fields + 1 `Std.HashSet` field in `SystemState`.
-Updated 8 `fold_eq_foldl_toList` references, 2 `getElem?_insert` references,
-and 1 `storeServiceState_lookup_eq` proof to use `RobinHoodHashMap` bridge
-lemmas. The `objectIndexLive` preservation theorem required explicit
-`getElem?_insert` to resolve `(insert st.objects id obj)[id]? ≠ none`.
+The `SystemState` structure holds 8 HashMap fields and 1 HashSet field.
 
----
+**Type changes**:
+```lean
+-- Before:
+objects : Std.HashMap ObjId KernelObject
+-- After:
+objects : KernelHashMap ObjId KernelObject
+```
 
-#### Task N3-B: Migrate `Model/Object/Types.lean` and `Structures.lean` — COMPLETED
+Apply to all 8 HashMap fields: `objects`, `objectTypes`, `capabilityRefs`,
+`services`, `irqHandlers`, `asidTable`, `cdtSlotNode`, `cdtNodeSlot`.
 
-- `CNode.slots`, `VSpaceRoot.mappings`, CDT fields → `KernelHashMap`
-- 8 proof repairs in `Structures.lean`:
-  - `lookup_unmapPage_eq_none`, `lookup_mapPage_eq`: added `getElem?_erase`/`getElem?_insert`
-  - `lookup_eq_none_iff`: rewrote via `show` on `.inner` with `Std.HashMap` lemmas
-  - `lookup_remove_eq_none`, `lookup_insert_eq`: added `getElem?_erase`/`getElem?_insert`
-  - `lookup_mem_of_some`: rewrote using `(mem_iff_isSome_getElem? _ _).mpr`
-  - `empty_slotCountBounded`: explicit `RobinHoodHashMap.size` unfolding
-  - `mem_lookup_of_slotsUnique`: fixed variable name + `.inner` delegation
-- Added `Repr (RobinHoodHashMap α β)` instance for `CNode` deriving
+Apply to HashSet field: `objectIndexSet : KernelHashSet ObjId`.
 
----
+**Proof updates**: 6 `revokeAndClearRefsState` preservation theorems use
+`Std.HashMap.fold_eq_foldl_toList`. Replace with
+`RobinHoodHashMap.fold_eq_foldl_toList`. The proofs are structurally identical —
+both rewrite `fold` into `List.foldl` over `toList`, then induct on the list.
 
-#### Task N3-C: Migrate `Kernel/Scheduler/RunQueue.lean` — COMPLETED
-
-Migrated 3 struct fields (`byPriority`, `membership`, `threadPriority`).
-Updated 19 bridge lemma references from `Std.HashSet.*` to
-`RobinHoodHashSet.*`. Fixed `not_mem_empty` proof to use
-`RobinHoodHashSet.contains_empty`. The `fold` argument order fix (N3-A
-prerequisite) resolved the `recomputeMaxPriority` build failure.
+2 `storeObject` lemmas use `Std.HashMap.getElem?_insert`. Replace with
+`RobinHoodHashMap.getElem?_insert`.
 
 ---
 
-#### Task N3-D: Migrate `Kernel/Capability/Invariant/` — COMPLETED
+#### Task N3-B: Migrate `Model/Object/Types.lean` and `Structures.lean`
 
-- `Invariant/Defs.lean`: Fixed `cdtMintCompleteness_default` with
-  `getElem?_empty`. Rewrote `revokeTargetLocal_slots_sub` filter membership
-  proof using `(mem_iff_isSome_getElem? _ _).mpr`.
-- `Invariant/Authority.lean`: Added `getElem?_insert` to 3 simp calls for
-  `cspaceDeleteSlot`/`cspaceInsertSlot` proofs. Fixed filter-value extraction
-  proof via inner-map coercion instead of `rw [CNode.revokeTargetLocal]`.
+**Types.lean**: `CNode.slots : Std.HashMap Slot Capability` →
+`CNode.slots : KernelHashMap Slot Capability`
 
----
+**Structures.lean (6 call sites)**:
+- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` →
+  `KernelHashMap`
+- `CNode.mk'` constructor parameter: `Std.HashMap` → `KernelHashMap`
+- `CNode.slotCountBounded_remove` uses `Std.HashMap.size_erase_le` → use
+  `RobinHoodHashMap.size_erase_le`
+- `CNode.slotCountBounded_revokeTargetLocal` uses
+  `Std.HashMap.size_filter_le_size` → use `RobinHoodHashMap.size_filter_le`
+- `CNode.revokeTargetLocal_source_preserved` uses
+  `Std.HashMap.mem_iff_isSome_getElem?` → use Robin Hood equivalent
+- `CNode.BEq` and `VSpaceRoot.BEq` use `.fold` — unchanged API
 
-#### Task N3-E: Migrate `Kernel/Scheduler/Operations/Preservation.lean` — COMPLETED
-
-Updated `timerTick_preserves_schedulerInvariantBundle` and
-`timerTick_preserves_kernelInvariant` with explicit `getElem?_insert` bridge
-lemma calls. The time-slice-not-expired case required `getElem?_insert` for
-both `currentThreadValid` and `currentThreadInActiveDomain` proofs.
-
----
-
-#### Task N3-F: Migrate remaining kernel + test files — COMPLETED
-
-- `Kernel/Lifecycle/Operations.lean`: 3 `fold_eq_foldl_toList` references
-- `Kernel/Architecture/VSpaceInvariant.lean`: 1 `getElem?_erase` fix
-- `Kernel/Architecture/Invariant.lean`: 1 `getElem?_empty` fix
-- `Kernel/IPC/Invariant/Defs.lean`: 1 `getElem?_insert` fix for `storeObject_objects_eq`
-- `Kernel/Scheduler/Invariant.lean`: 1 `getElem?_empty` fix for `runQueueThreadPriorityConsistent_default`
-- Test files: All `Std.HashMap.ofList` → `RobinHoodHashMap.ofList`, all
-  `Std.HashSet.ofList` → `RobinHoodHashSet.ofList`, all empty-map constructors
-  updated to `KernelHashMap`/`KernelHashSet`
+**CDT fields**: `CapDerivationTree.childMap`, `.parentMap` → `KernelHashMap`
 
 ---
 
-#### Task N3-G: Prelude bridge lemma redirection — COMPLETED
+#### Task N3-C: Migrate `Kernel/Scheduler/RunQueue.lean` (5 `Std.HashMap` + 13 `Std.HashSet`)
 
-The `HashMap_*`/`HashSet_*` bridge lemmas in `Prelude.lean` were redirected
-from `{m : Std.HashMap α β}` to `{m : KernelHashMap α β}`, making them
-type-compatible with all migrated call sites. The redirection uses
-`by show ... exact Std...` tactic proofs that expose the inner `Std.HashMap`
-for proof delegation while presenting `KernelHashMap` signatures externally.
+The `RunQueue` structure uses:
+- `byPriority : Std.HashMap Priority (List ThreadId)` → `KernelHashMap`
+- `membership : Std.HashSet ThreadId` → `KernelHashSet`
+- `threadPriority : Std.HashMap ThreadId Priority` → `KernelHashMap`
 
-New bridge lemma re-exports added: `ofList`, `contains_empty'`,
-`contains_insert`, `contains_erase`, `size_filter_le_size`.
+**Proof updates (13 HashSet call sites)**: All RunQueue proofs use
+`Std.HashSet.contains_insert`, `Std.HashSet.contains_erase`, etc. Replace with
+`RobinHoodHashSet.contains_insert`, etc.
 
-**Verification**: `lake build` passes (148 jobs, 0 warnings). `test_smoke.sh`
-passes. `test_full.sh` passes. No `sorry` or `axiom` in production proof
-surface.
+**RunQueue bridge lemmas**: `mem_insert`, `mem_remove`, `mem_rotateHead`,
+`mem_rotateToBack`, `not_mem_remove_self`, `not_mem_toList_of_not_mem`,
+`mem_toList_iff_mem`. These use `Std.HashSet` API internally — update to
+`KernelHashSet` API.
+
+**`recomputeMaxPriority`**: Uses `byPrio.fold` — fold API unchanged.
+
+---
+
+#### Task N3-D: Migrate `Kernel/Capability/Invariant/` (12 call sites)
+
+**Invariant/Defs.lean (6 sites)**: Uses `HashMap_getElem?_erase` (2),
+`Std.HashMap.getElem?_erase` (1), `Std.HashMap.mem_iff_isSome_getElem?` (1),
+`Std.HashMap.mem_of_mem_filter` (1), `Std.HashMap.getElem_filter` (1).
+
+**Invariant/Authority.lean (6 sites)**: Uses `Std.HashMap.mem_iff_isSome_getElem?`,
+`Std.HashMap.mem_filter`, `Std.HashMap.getKey_beq`, `Std.HashMap.getElem_filter`,
+`Std.HashMap.getElem?_insert`.
+
+Replace all with `KernelHashMap_*` / `RobinHoodHashMap.*` equivalents.
+
+---
+
+#### Task N3-E: Migrate `Kernel/Scheduler/Operations/Preservation.lean` (~30 call sites)
+
+This is the largest single file for migration. All 30+ uses are
+`HashMap_getElem?_insert` in scheduler preservation proofs. Replace with
+`KernelHashMap_getElem?_insert`. The proofs are structurally identical —
+only the lemma name changes.
+
+---
+
+#### Task N3-F: Migrate remaining files
+
+- `Kernel/Lifecycle/Operations.lean` (3 sites): `Std.HashMap.fold_eq_foldl_toList`
+- `Kernel/InformationFlow/Projection.lean` (3 sites): `HashMap_filter_filter_getElem?`,
+  `Std.HashSet` projection
+- `Kernel/InformationFlow/Invariant/Helpers.lean` (1 site)
+- `Kernel/InformationFlow/Invariant/Operations.lean` (5 sites)
+- `Kernel/Architecture/VSpaceInvariant.lean` (5 sites)
+- `Kernel/Architecture/Invariant.lean` (2 sites)
+- `Kernel/Service/Invariant/Acyclicity.lean` (2 HashSet sites)
+- `Testing/StateBuilder.lean` (7 sites)
+- `Testing/MainTraceHarness.lean` (10 sites)
+
+---
+
+#### Task N3-G: Remove `Std.HashMap`/`Std.HashSet` bridge lemmas from Prelude
+
+After all migration is complete, the `HashMap_*` bridge lemmas in
+`Prelude.lean:676–816` can be:
+1. **Redirected**: Changed from delegating to `Std.DHashMap.*` to delegating to
+   `RobinHoodHashMap.*` — making them aliases for the new implementation.
+2. **Or retained as-is**: If `Std.HashMap` is still imported elsewhere, keep
+   both sets of lemmas during a transition period.
+
+Recommended: Option 1 (redirect). This eliminates the `Std.HashMap` dependency
+from the proof surface entirely.
+
+**Verification**: Full `lake build` succeeds. `test_smoke.sh` passes.
+`test_full.sh` passes. No `Std.HashMap` or `Std.HashSet` references remain
+in `SeLe4n/` source files (only in imports if any).
 
 ---
 

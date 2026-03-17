@@ -61,20 +61,14 @@ def cspaceLookupPath (addr : CSpacePathAddr) : Kernel Capability :=
 -- WS-H13/H-01: Multi-level CSpace resolution with compressed-path CNodes
 -- ============================================================================
 
-/-- WS-N2/N-C01: Multi-level CSpace capability address resolution.
+/-- WS-H13/H-01: Multi-level CSpace capability address resolution.
 
 Walks the CNode graph starting at `rootId`, consuming `guardWidth + radixWidth`
 bits per hop from the capability address `addr`. Each CNode level:
 1. Extracts guard bits and verifies they match `guardValue`.
 2. Extracts radix bits to compute the slot index.
 3. If bits remain, looks up the slot and recurses into the child CNode.
-4. If all bits are consumed, looks up the slot and returns the resolved slot
-   reference if the slot is occupied. Returns `.error .invalidCapability`
-   if the leaf slot is empty.
-
-Slot occupancy is checked at EVERY level of CSpace resolution:
-- Intermediate: `cn.lookup slot` for child CNode traversal
-- Leaf: `cn.lookup slot` for final slot validation (WS-N2/N-C01)
+4. If all bits are consumed, returns the resolved slot reference.
 
 Termination is guaranteed by strict descent of `bitsRemaining`: each hop
 consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
@@ -98,13 +92,7 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
         else
           let slot := SeLe4n.Slot.ofNat slotIndex
           if bitsRemaining - consumed = 0 then
-            -- WS-N2/N-C01: Leaf-level occupancy check — symmetric with
-            -- the intermediate path (line 97). Eliminates asymmetry where
-            -- the leaf returned a SlotRef unconditionally while the
-            -- recursive path checked cn.lookup.
-            match cn.lookup slot with
-            | some _ => .ok { cnode := rootId, slot := slot }
-            | none => .error .invalidCapability
+            .ok { cnode := rootId, slot := slot }   -- leaf: all bits consumed
           else
             match cn.lookup slot with
             | some cap =>
@@ -186,11 +174,8 @@ theorem resolveCapAddress_result_valid_cnode
           · split at hOk
             · simp at hOk  -- guard mismatch: error
             · split at hOk
-              · -- Leaf case: all bits consumed
-                -- WS-N2: split on cn.lookup (new occupancy check)
-                split at hOk
-                · simp at hOk; cases hOk; exact ⟨cn, hObj⟩
-                · simp at hOk  -- empty slot → error, contradiction
+              · -- Leaf case: all bits consumed, ref.cnode = rootId
+                simp at hOk; cases hOk; exact ⟨cn, hObj⟩
               · -- Recursive case: bits remaining, look up slot
                 split at hOk
                 · next cap _ =>
@@ -201,64 +186,6 @@ theorem resolveCapAddress_result_valid_cnode
                   · simp at hOk  -- non-object target: error
                 · simp at hOk  -- empty slot: error
       next => simp at hOk  -- not a CNode: error
-
-/-- WS-N2/N-C01: Strengthened resolution validity — if `resolveCapAddress`
-succeeds, the returned slot reference points to a valid CNode **and** the
-slot is occupied by a capability. This is the key theorem enabled by the
-leaf-level occupancy check. -/
-theorem resolveCapAddress_result_valid_cnode_and_slot
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
-    (ref : SlotRef)
-    (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
-    ∃ cn : CNode, st.objects[ref.cnode]? = some (.cnode cn) ∧
-    ∃ cap : Capability, cn.lookup ref.slot = some cap := by
-  induction bits using Nat.strongRecOn generalizing rootId with
-  | _ bits ih =>
-    unfold resolveCapAddress at hOk
-    split at hOk
-    · simp at hOk
-    · split at hOk
-      next cn hObj =>
-        simp only at hOk
-        split at hOk
-        · simp at hOk
-        · split at hOk
-          · simp at hOk
-          · split at hOk
-            · simp at hOk
-            · split at hOk
-              · -- Leaf case: split on cn.lookup
-                split at hOk
-                · next cap hCap =>
-                  simp at hOk; cases hOk
-                  exact ⟨cn, hObj, cap, hCap⟩
-                · simp at hOk
-              · -- Recursive case
-                split at hOk
-                · next cap _ =>
-                  split at hOk
-                  · next childId _ =>
-                    have hLt : bits - (cn.guardWidth + cn.radixWidth) < bits := by omega
-                    exact ih _ hLt childId hOk
-                  · simp at hOk
-                · simp at hOk
-      next => simp at hOk
-
-/-- WS-N2/N-C01: Successful resolution guarantees the slot is occupied.
-
-Public-facing characterization theorem: after `resolveCapAddress` succeeds,
-both the CNode exists in the object store and the resolved slot contains a
-capability. This is the primary API guarantee enabled by the leaf-level
-occupancy check. -/
-theorem resolveCapAddress_success_implies_occupied
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
-    (ref : SlotRef)
-    (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
-    ∃ cn cap, st.objects[ref.cnode]? = some (.cnode cn) ∧
-              cn.lookup ref.slot = some cap := by
-  obtain ⟨cn, hCn, cap, hCap⟩ := resolveCapAddress_result_valid_cnode_and_slot
-    rootId addr bits st ref hOk
-  exact ⟨cn, cap, hCn, hCap⟩
 
 -- ============================================================================
 -- WS-H13/H-01 (M-G01): Guard correctness — bidirectional characterization

@@ -89,7 +89,7 @@ theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
   simp only [detachCNodeSlots]
-  rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
     (l.foldl (fun a b =>
       SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).objects
@@ -108,7 +108,7 @@ theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   simp only [detachCNodeSlots]
-  rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
     (l.foldl (fun a b =>
       SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).lifecycle
@@ -179,7 +179,7 @@ private theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
   simp only [detachCNodeSlots]
-  rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
     (l.foldl (fun a b =>
       SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).scheduler

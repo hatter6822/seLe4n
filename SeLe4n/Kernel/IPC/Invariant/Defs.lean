@@ -21,8 +21,7 @@ theorem storeObject_objects_eq
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objects[id]? = some obj := by
-  unfold storeObject at hStore; cases hStore
-  simp [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
+  unfold storeObject at hStore; cases hStore; simp
 
 theorem storeObject_objects_ne
     (st st' : SystemState) (id oid : SeLe4n.ObjId) (obj : KernelObject)

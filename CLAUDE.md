@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.17.3.
+Lean 4.28.0 toolchain, Lake build system, version 0.17.0.
 
 ## Build and run
 
@@ -38,9 +38,8 @@ theorems, invariants, or documentation anchors.
 ## Source layout
 
 ```
-SeLe4n/Prelude.lean              Typed identifiers, monad foundations, KernelHashMap/KernelHashSet aliases
+SeLe4n/Prelude.lean              Typed identifiers, monad foundations
 SeLe4n/Machine.lean              Machine state primitives
-SeLe4n/Data/RobinHoodHashMap.lean Robin Hood HashMap/HashSet with bridge lemmas (WS-N1)
 SeLe4n/Model/Object.lean         Kernel objects (re-export hub)
   Object/Types.lean              Core data types, TCB, Endpoint, Notification
   Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
@@ -379,14 +378,14 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-N (IPC & Capability cross-audit: Robin Hood hashing & correctness) — Phases 1–3 (WS-N1/N2/N3) **COMPLETED** (v0.17.1–v0.17.3). Phases N4–N5 remaining. See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (IPC & Capability cross-audit) — Phases N1–N3 **REVERTED** (Robin Hood hashing approach removed). Phases N1–N5 to be re-planned. See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` — IPC & Capability cross-audit
 - **All prior workstreams completed**: WS-B through WS-M (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: WS-N4–N5, then Raspberry Pi 5 hardware binding
+- **Next milestone**: WS-N re-planning, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
