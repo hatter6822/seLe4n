@@ -15,6 +15,45 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-N workstream (IPC & Capability cross-audit: Robin Hood hashing & correctness)
+
+WS-N is an **in-progress** workstream portfolio (v0.17.1–v0.17.5), created from a
+comprehensive cross-subsystem audit of the IPC and Capability subsystems (15,000+
+LoC, 20+ files). The audit found zero critical vulnerabilities but identified
+performance optimization opportunities via Robin Hood hashing, a `resolveCapAddress`
+leaf-level asymmetry, and test coverage gaps. Phase 1 completed; phases 2–5 pending.
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-N1** | Robin Hood HashMap foundation: core data structure, bridge lemmas (14 HashMap + 6 HashSet), `KernelHashMap`/`KernelHashSet` type aliases, Prelude integration | HIGH — **COMPLETED** (v0.17.1) |
+| **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + strengthened theorems | HIGH — pending |
+| **WS-N3** | HashMap/HashSet migration across entire codebase (76 + 25 call sites) | MEDIUM — pending |
+| **WS-N4** | Test coverage, determinism validation, zero-gap audit | MEDIUM — pending |
+| **WS-N5** | Documentation sync, GitBook, codebase map | LOW — pending |
+
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
+for the full workstream plan (5 phases: N1 through N5).
+
+**WS-N1** (v0.17.1): Robin Hood HashMap foundation — machine-checked bridge lemma
+scaffolding. N1-A: `RobinHoodHashMap` structure wrapping `Std.HashMap` with
+refinement-model architecture for zero-gap proofs. N1-B: constructors and
+instances (`EmptyCollection`, `Inhabited`). N1-C: core operations (`get?`,
+`contains`, `size`) delegating to model. N1-D: `insert` with model update.
+N1-E: `erase` with model update. N1-F: `fold`, `toList`, `filter`, `toAssocList`,
+`isEmpty`. N1-F2: `Membership` and `GetElem?` instances. N1-G: 14 HashMap bridge
+lemmas proved via `Std.DHashMap.Const` delegation (`get?_insert_self`,
+`get?_insert_ne`, `get?_insert`, `get?_erase_self`, `get?_erase_ne`,
+`get?_erase`, `get?_empty`, `get?_emptyCollection`, `getElem?_insert`,
+`getElem?_empty`, `getElem?_erase`, `getElem?_eq_get?`, `get?_eq_getElem?`,
+`fold_eq_foldl_toList`, `size_erase_le`, `mem_iff_isSome_getElem?`,
+`getKey_beq`, `filter_preserves_key`, `filter_filter_getElem?`).
+N1-H: `RobinHoodHashSet` thin wrapper
+with 6 bridge lemmas (`contains_empty`, `contains_insert_self`,
+`contains_insert`, `contains_insert_iff`,
+`not_contains_insert`, `contains_erase`). N1-I: `KernelHashMap`/`KernelHashSet`
+type aliases in Prelude with namespace re-exports. Zero proof gaps or unproven
+assumptions.
+
 ### WS-M workstream (Capability subsystem audit & remediation)
 
 WS-M is a **completed** workstream portfolio (v0.16.14–v0.17.0), created from a

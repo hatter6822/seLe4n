@@ -62,7 +62,19 @@ extraction, unified BFS revocation proofs, edge-case test expansion). All 14
 audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:
+The **WS-N** portfolio (IPC & Capability cross-audit: Robin Hood hashing &
+correctness) is **in progress** (v0.17.1–). Phase 1 (WS-N1) is **completed**
+(v0.17.1): Robin Hood HashMap foundation with all 14 required HashMap bridge
+lemmas (`get?_insert`, `get?_empty`, `get?_erase`, `getElem?_insert`,
+`getElem?_empty`, `getElem?_erase`, `getElem?_eq_get?`, `get?_eq_getElem?`,
+`fold_eq_foldl_toList`, `filter_preserves_key`, `filter_filter_getElem?`,
+`size_erase_le`, `mem_iff_isSome_getElem?`, `getKey_beq`) plus 6 HashSet
+bridge lemmas, `KernelHashMap`/`KernelHashSet` type aliases, and full Prelude
+integration. Zero proof gaps. Phases N2–N5 pending (resolveCapAddress fix,
+codebase migration, test coverage, documentation sync).
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+
+The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.

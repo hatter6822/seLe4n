@@ -1509,3 +1509,42 @@ objects outside the observer's clearance are filtered out by projection.
 - `InformationFlow/Invariant/Helpers.lean` — shared frame lemmas
 - `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
 - `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4
+
+## 32. WS-N1 Robin Hood HashMap bridge lemmas (v0.17.1)
+
+`SeLe4n/Data/RobinHoodHashMap.lean` provides `RobinHoodHashMap` and
+`RobinHoodHashSet` as drop-in replacements for `Std.HashMap`/`Std.HashSet` with
+machine-checked bridge lemmas. Phase 1 (WS-N1) uses a refinement-model
+approach: the structure wraps `Std.HashMap` internally, delegating proofs to
+`Std.DHashMap.Const.*`. The API surface and bridge lemma signatures are fixed;
+Phase 3 (WS-N3) will swap the internal representation to flat open-addressing
+without breaking downstream proofs.
+
+**HashMap bridge lemmas (14 required, all proved)**:
+
+- `get?_insert` — combined insert lookup (if/then/else on `k == a`)
+- `get?_insert_self` — insert-then-lookup returns `some v`
+- `get?_insert_ne` — insert with different key preserves lookup
+- `get?_empty` / `get?_emptyCollection` — empty map returns `none`
+- `get?_erase` — combined erase lookup
+- `get?_erase_self` — erase-then-lookup returns `none`
+- `get?_erase_ne` — erase with different key preserves lookup
+- `getElem?_insert` / `getElem?_empty` / `getElem?_erase` — subscript variants
+- `getElem?_eq_get?` / `get?_eq_getElem?` — bidirectional equivalence
+- `fold_eq_foldl_toList` — fold equals `List.foldl` on `toList`
+- `size_erase_le` — erase does not increase size
+- `mem_iff_isSome_getElem?` — membership equivalent to `getElem?` returning `some`
+- `getKey_beq` — stored key is `BEq`-equivalent to lookup key
+- `filter_preserves_key` — filter with true predicate preserves key entry
+- `filter_filter_getElem?` — double-filter is lookup-equivalent to single-filter
+
+**HashSet bridge lemmas (6)**:
+
+- `contains_empty` — empty set contains nothing
+- `contains_insert_self` — insert-then-contains returns true
+- `contains_insert` — combined insert containment (`a == b || s.contains b`)
+- `contains_insert_iff` / `not_contains_insert` — iff variants
+- `contains_erase` — erase containment (`!(a == b) && s.contains b`)
+
+**Prelude integration**: `KernelHashMap`/`KernelHashSet` type aliases in
+`SeLe4n/Prelude.lean` re-export all bridge lemma names for kernel-wide use.

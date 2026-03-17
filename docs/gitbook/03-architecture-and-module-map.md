@@ -44,7 +44,15 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - identifier roundtrip lemmas (`toNat_ofNat`, `ofNat_toNat`) and injectivity proofs (WS-H14d),
   - sentinel predicate completion: `valid`, `valid_iff_not_reserved`, `sentinel_not_valid` (WS-H14f),
   - `OfNat` instances removed for type-safety enforcement (WS-H14e),
-  - `Std.Data.HashMap` and `Std.Data.HashSet` imports.
+  - `Std.Data.HashMap` and `Std.Data.HashSet` imports,
+  - `KernelHashMap`/`KernelHashSet` type aliases re-exporting `RobinHoodHashMap`/`RobinHoodHashSet` (WS-N1).
+- `SeLe4n/Data/RobinHoodHashMap.lean`
+  - `RobinHoodHashMap` and `RobinHoodHashSet` — drop-in replacements for `Std.HashMap`/`Std.HashSet`
+    with machine-checked bridge lemmas (14 HashMap + 6 HashSet, zero proof gaps),
+  - refinement-model architecture: wraps `Std.HashMap` internally, delegating proofs to
+    `Std.DHashMap.Const.*`; internal representation upgradeable to flat open-addressing (WS-N3)
+    without breaking downstream proofs,
+  - `GetElem?` and `Membership` instances for subscript notation (`m[k]?`, `k ∈ m`).
 - `SeLe4n/Machine.lean`
   - machine registers (`RegName`, `RegValue` — typed wrapper structures with
     `DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`,

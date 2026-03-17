@@ -8,6 +8,7 @@
 
 import Std.Data.HashMap
 import Std.Data.HashSet
+import SeLe4n.Data.RobinHoodHashMap
 
 namespace SeLe4n
 
@@ -1092,5 +1093,40 @@ theorem CPtr.sentinel_not_valid : ¬ CPtr.sentinel.valid := by
 /-- WS-H14f: The sentinel ObjId is not valid. -/
 theorem ObjId.sentinel_not_valid : ¬ ObjId.sentinel.valid := by
   simp [ObjId.valid, ObjId.sentinel]
+
+-- ============================================================================
+-- WS-N1: KernelHashMap / KernelHashSet type aliases
+-- ============================================================================
+
+/-- WS-N1: Type alias for the kernel's primary hash map implementation.
+Phase 1 wraps `Std.HashMap` with machine-checked bridge lemmas.
+Phase 3 (WS-N3) will migrate to Robin Hood open-addressing. -/
+abbrev KernelHashMap (α : Type) (β : Type) [BEq α] [Hashable α] :=
+  SeLe4n.Data.RobinHoodHashMap α β
+
+/-- WS-N1: Type alias for the kernel's primary hash set implementation. -/
+abbrev KernelHashSet (α : Type) [BEq α] [Hashable α] :=
+  SeLe4n.Data.RobinHoodHashSet α
+
+-- Re-export bridge lemmas under KernelHashMap namespace for ergonomic use
+namespace KernelHashMap
+  export SeLe4n.Data.RobinHoodHashMap (
+    get?_empty get?_emptyCollection
+    get?_insert_self get?_insert_ne get?_insert
+    get?_erase_self get?_erase_ne get?_erase
+    getElem?_insert getElem?_empty getElem?_erase
+    getElem?_eq_get? get?_eq_getElem?
+    fold_eq_foldl_toList size_erase_le
+    mem_iff_isSome_getElem? getKey getKey_beq
+    filter_preserves_key filter_filter_getElem?
+  )
+end KernelHashMap
+
+namespace KernelHashSet
+  export SeLe4n.Data.RobinHoodHashSet (
+    contains_empty contains_insert_self contains_insert
+    contains_insert_iff not_contains_insert contains_erase
+  )
+end KernelHashSet
 
 end SeLe4n
