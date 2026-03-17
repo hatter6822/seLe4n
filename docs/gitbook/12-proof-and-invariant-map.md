@@ -105,6 +105,28 @@ Badge routing chain (H-03, WS-F5/D1):
 
 All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
+**WS-N planned proof surface** (v0.17.0+, **ACTIVE** — Robin Hood hashing verified implementation):
+
+The WS-N workstream will introduce a formally verified Robin Hood hash table
+with the following invariant bundle and preservation theorems:
+
+- **Invariant bundle** (`RHTable.invariant`): conjunction of `wf` (structural
+  consistency), `distCorrect` (probe distance accuracy), `noDupKeys` (key
+  uniqueness), `robinHoodOrdered` (non-decreasing cluster distances).
+- **Preservation theorems** (planned): `insert_preserves_wf`, `insert_preserves_distCorrect`,
+  `insert_preserves_noDupKeys`, `insert_preserves_robinHoodOrdered`;
+  `erase_preserves_wf`, `erase_preserves_distCorrect`, `erase_preserves_noDupKeys`,
+  `erase_preserves_robinHoodOrdered`; `resize_preserves_*` (all four).
+- **Functional correctness** (planned): `get_after_insert_eq`, `get_after_insert_ne`,
+  `get_after_erase_eq`, `get_after_erase_ne`.
+- **Bridge lemmas** (planned): 12 lemmas mirroring `Std.HashMap` proof patterns
+  used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
+  `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
+- **Critical path**: `insert_preserves_robinHoodOrdered` (N2-D3) — the Robin
+  Hood swap proof is the most complex theorem in the workstream.
+- See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
+  for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
+
 CDT structural invariants (WS-G8):
 
 - `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,

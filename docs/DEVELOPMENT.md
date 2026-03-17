@@ -62,7 +62,14 @@ extraction, unified BFS revocation proofs, edge-case test expansion). All 14
 audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **next major milestone** after WS-M is **Raspberry Pi 5 hardware binding**:
+The **active workstream** is **WS-N** (Robin Hood hashing verified
+implementation) — a formally verified Robin Hood hash table to close the trust
+gap between seLe4n's machine-checked proofs and the unverified `Std.HashMap`
+library type. 5 phases (N1–N5, 122 subtasks): core types + operations, invariant
+proofs, kernel API bridge, CNode.slots integration, tests + documentation.
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+
+The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.

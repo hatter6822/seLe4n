@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 5,256 across 4 suites |
 | Proved declarations | 1,283 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem end-to-end audit |
-| Next workstreams | **WS-M** Capability subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). All 5 phases (M1–M5) delivered. See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md). **WS-L** IPC subsystem audit & remediation — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). **Next: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **After WS-N: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -67,7 +67,18 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M2 (performance optimization, v0.16.15) — COMPLETED.** →
 **WS-M3 (IPC cap transfer, v0.16.17) — COMPLETED.** →
 **WS-M4 (test coverage expansion, v0.16.18) — COMPLETED.** →
-**WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.**
+**WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
+**WS-N (Robin Hood hashing verified implementation, v0.17.0+) — ACTIVE. 5 phases (N1–N5), 122 subtasks.**
+
+## Active: WS-N Robin Hood Hashing Verified Implementation (v0.17.0+)
+
+Formally verified Robin Hood hash table to close the trust gap between seLe4n's
+machine-checked proof surface and the unverified `Std.HashMap` library type used
+across 14 production source files. Single-representation architecture with
+fuel-bounded recursion, bounds-checked array access, and per-cluster modular-
+arithmetic ordering. Phase N1 (core types + operations), N2 (invariant proofs),
+N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs).
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-M Capability Subsystem Audit & Remediation (v0.16.13–v0.17.0, PORTFOLIO COMPLETE)
 

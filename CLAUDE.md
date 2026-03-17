@@ -378,14 +378,14 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-N (IPC & Capability cross-audit) — Phases N1–N3 **REVERTED** (Robin Hood hashing approach removed). Phases N1–N5 to be re-planned. See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **RE-PLANNED** (v0.17.0+). Phases N1–N3 of prior attempt reverted (PRs #453–#455). Comprehensive 5-phase re-plan with 122 subtasks: N1 (core types + operations), N2 (invariant proofs), N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audit**: `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` — IPC & Capability cross-audit
+- **Latest audit**: `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` — Robin Hood hashing workstream plan
 - **All prior workstreams completed**: WS-B through WS-M (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: WS-N re-planning, then Raspberry Pi 5 hardware binding
+- **Next milestone**: WS-N implementation, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
