@@ -220,11 +220,38 @@ all determinism guarantees.
 **Files modified**: `SeLe4n/Prelude.lean` (type aliases + bridge lemma re-exports),
 `lakefile.toml` (version bump)
 **Findings addressed**: N-P01, N-C02, N-C03, N-D01
-**Subtasks**: 8 atomic units (N1-A through N1-H)
+**Subtasks**: 10 atomic units (N1-A through N1-J)
 
 This phase creates the complete Robin Hood HashMap and HashSet implementations
 with all bridge lemmas needed by the existing proof surface. No migration yet —
 Phase 1 establishes the foundation; Phase 3 migrates.
+
+**Key design refinements from original plan**:
+
+1. **Fuel-based termination for insert**: The original plan used
+   `termination_by m.capacity - dist` for `insertCore`. This is unsound:
+   Robin Hood displacement resets `dist` to `oldPsl + 1 ≤ dist`, so the measure
+   is non-strictly decreasing. Changed to fuel-bounded (`fuel := capacity`)
+   which is sound and matches the erase strategy.
+
+2. **Unified bucket representation**: Instead of separate `Array (Option (α × β))`
+   and `Array UInt8` PSL arrays (requiring two structural invariants), use a
+   single `Array (Option (α × β × Nat))` where each bucket stores its PSL
+   inline. This halves the structural invariants and simplifies all proofs while
+   maintaining the same cache-friendly flat `Array` layout. The PSL is stored as
+   `Nat` (not `UInt8`) to avoid `UInt8.toNat` coercion noise in proofs.
+
+3. **Specification-based bridge proofs**: Bridge lemmas are proved via a
+   specification function `toAssocList` that extracts the logical key→value
+   mapping. Operations are proved correct against this specification, and bridge
+   lemmas follow as corollaries.
+
+4. **`contains` and `Membership` instance**: Added as N1-F2, required by
+   existing `HashSet.contains` usage patterns (76+ call sites).
+
+5. **Subtask granularity**: N1-D (insert) split into N1-D (insertCore) and
+   N1-D2 (resize + public insert). N1-F split into N1-F (fold/toList/filter)
+   and N1-F2 (contains/Membership/size). Total: 10 subtasks.
 
 ---
 
@@ -237,21 +264,20 @@ Define `RobinHoodHashMap` as an open-addressing hash table using Lean 4's
 
 ```lean
 structure RobinHoodHashMap (α : Type) (β : Type) [BEq α] [Hashable α] where
-  buckets  : Array (Option (α × β))   -- flat bucket array; none = empty
-  psl      : Array UInt8              -- probe sequence length per bucket
-  size     : Nat                      -- number of occupied entries
-  capacity : Nat                      -- bucket count (= buckets.size = psl.size)
-  hBuckets : buckets.size = capacity  -- structural invariant
-  hPsl     : psl.size = capacity      -- structural invariant
+  buckets  : Array (Option (α × β × Nat))  -- flat bucket array; none = empty, Nat = PSL
+  size     : Nat                            -- number of occupied entries
+  capacity : Nat                            -- bucket count (= buckets.size)
+  hCapacity : buckets.size = capacity       -- structural invariant
 ```
 
 **Design decisions**:
 
-1. **Separate PSL array** (`Array UInt8`): Keeping PSL in a parallel array
-   rather than inlining it in the bucket tuple enables scanning PSL values
-   without loading key/value data — critical for Robin Hood displacement
-   decisions and early-termination during lookup. On ARM64, `UInt8` arrays
-   pack 64 PSL values per cache line, enabling SIMD-friendly scanning.
+1. **Unified bucket representation** (`Array (Option (α × β × Nat))`): PSL is
+   stored inline with key-value pairs in a single `Array`. This eliminates the
+   need for a separate PSL array and halves structural invariants (one `hCapacity`
+   instead of `hBuckets` + `hPsl`). Each bucket is either `none` (empty) or
+   `some (key, value, psl)`. The PSL is `Nat` (not `UInt8`) to avoid coercion
+   noise in proofs — Lean compiles small `Nat` values efficiently.
 
 2. **`Array`-backed, not `List`-backed**: Lean 4's `Array` compiles to a flat
    C heap allocation. In-place mutation via FBIP when the reference is unique
@@ -263,12 +289,13 @@ structure RobinHoodHashMap (α : Type) (β : Type) [BEq α] [Hashable α] where
    `hash % capacity` → `hash &&& (capacity - 1)` bitwise masking. This
    is a standard Robin Hood optimization.
 
-4. **`UInt8` PSL**: Maximum PSL of 255. For a load factor of 7/8, the
-   expected maximum PSL is ~O(log n). With n ≤ 65536 (largest expected map),
-   max PSL ≈ 16. `UInt8` is more than sufficient and packs efficiently.
+4. **Nat PSL**: Expected maximum PSL is ~O(log n). With n ≤ 65536 (largest
+   expected map), max PSL ≈ 16. Using `Nat` over `UInt8` avoids
+   `UInt8.toNat` conversions in proofs while Lean's compiler optimizes small
+   `Nat` values to unboxed integers.
 
 5. **No well-formedness proof in structure**: Unlike `Std.HashMap` which bundles
-   `WF`, we use structural size invariants (`hBuckets`, `hPsl`) only. The Robin
+   `WF`, we use a single structural size invariant (`hCapacity`) only. The Robin
    Hood displacement invariant is maintained operationally and proved externally
    via bridge lemmas. This avoids proof overhead in hot-path operations.
 
@@ -277,35 +304,38 @@ dependencies yet.
 
 ---
 
-#### Task N1-B: Core operations — `empty`, `idealIndex`, `nextIndex`
+#### Task N1-B: Core operations — `empty`, `bucketIndex`, helpers
 
 **File**: `SeLe4n/Data/RobinHoodHashMap.lean`
 
 ```lean
 def defaultCapacity : Nat := 16
 
+def nextPowerOfTwo (n : Nat) : Nat :=
+  if n ≤ 1 then 1
+  else Nat.nextPowerOfTwo n  -- Lean's built-in
+
 def empty (cap : Nat := defaultCapacity) : RobinHoodHashMap α β :=
   let c := nextPowerOfTwo (max cap 4)
-  { buckets  := Array.mkArray c none
-    psl      := Array.mkArray c 0
-    size     := 0
-    capacity := c
-    hBuckets := Array.size_mkArray c none
-    hPsl     := Array.size_mkArray c 0 }
+  { buckets   := Array.mkArray c none
+    size      := 0
+    capacity  := c
+    hCapacity := Array.size_mkArray c none }
 
-@[inline] def idealIndex (m : RobinHoodHashMap α β) (k : α) : Fin m.capacity :=
-  ⟨(hash k).toNat &&& (m.capacity - 1), by omega⟩
+@[inline] def bucketIndex (m : RobinHoodHashMap α β) (k : α)
+    (hCap : m.capacity > 0 := by omega) : Nat :=
+  (hash k).toUInt64.toNat % m.capacity
 
-@[inline] def nextIndex (m : RobinHoodHashMap α β) (i : Fin m.capacity) : Fin m.capacity :=
-  ⟨(i.val + 1) &&& (m.capacity - 1), by omega⟩
+@[inline] def wrapIndex (m : RobinHoodHashMap α β) (i : Nat) : Nat :=
+  i % m.capacity
 ```
 
-The `Fin m.capacity` return type on index operations provides compile-time
-bounds safety — no runtime bounds checks needed. The bitwise mask `&&& (cap - 1)`
-is a single ARM64 `AND` instruction.
+Index operations use modular arithmetic (`% capacity`). For power-of-two
+capacities, the compiler can lower `%` to a bitwise `AND` — a single ARM64
+instruction. `wrapIndex` wraps probe positions circularly.
 
-**Helper**: `nextPowerOfTwo` rounds up to the nearest power of 2. This is a
-standard bit-manipulation function (`n - 1 |> setBits |> + 1`).
+**Helper**: `nextPowerOfTwo` uses Lean's built-in `Nat.nextPowerOfTwo` which
+rounds up via bit manipulation.
 
 ---
 
@@ -314,21 +344,21 @@ standard bit-manipulation function (`n - 1 |> setBits |> + 1`).
 **File**: `SeLe4n/Data/RobinHoodHashMap.lean`
 
 ```lean
-def get? (m : RobinHoodHashMap α β) (k : α) : Option β :=
-  if m.capacity = 0 then none
-  else go m k (m.idealIndex k) 0
+def get? [BEq α] [Hashable α] (m : RobinHoodHashMap α β) (k : α) : Option β :=
+  if h : m.capacity = 0 then none
+  else loop (m.bucketIndex k) 0 m.capacity
 where
-  go (m : RobinHoodHashMap α β) (k : α) (idx : Fin m.capacity)
-      (dist : Nat) : Option β :=
-    if h : dist ≥ m.capacity then none
+  loop (idx dist fuel : Nat) : Option β :=
+    if fuel = 0 then none
     else
-      match m.buckets[idx] with
-      | none => none
-      | some (k', v) =>
+      match m.buckets[idx % m.capacity]? with
+      | none => none  -- empty bucket = key absent
+      | some none => none  -- should not occur at valid idx
+      | some (some (k', v, psl)) =>
         if k' == k then some v
-        else if m.psl[idx]!.toNat < dist then none  -- Robin Hood early termination
-        else go m k (m.nextIndex idx) (dist + 1)
-  termination_by m.capacity - dist
+        else if psl < dist then none  -- Robin Hood early termination
+        else loop ((idx + 1) % m.capacity) (dist + 1) (fuel - 1)
+  termination_by fuel
 ```
 
 **Robin Hood early termination**: The key performance insight. During lookup,
@@ -338,50 +368,50 @@ because Robin Hood displacement ensures that entries with longer probe
 distances are never "behind" entries with shorter distances. This bounds
 worst-case lookup to O(max PSL) which is O(log n) expected.
 
-**Termination**: Proved by strict descent on `m.capacity - dist`.
+**Termination**: Proved by strict descent on `fuel`. Fuel is bounded by
+`capacity` — lookup terminates in at most `capacity` probes.
 
 ---
 
-#### Task N1-D: Core operation — `insert` with Robin Hood displacement
+#### Task N1-D: Core operation — `insertCore` with Robin Hood displacement
 
 **File**: `SeLe4n/Data/RobinHoodHashMap.lean`
 
 ```lean
 def insertCore (m : RobinHoodHashMap α β) (k : α) (v : β) : RobinHoodHashMap α β :=
-  if m.capacity = 0 then (empty).insertCore k v
-  else go m k v (m.idealIndex k) 0
+  if h : m.capacity = 0 then (empty).insertCore k v
+  else loop m (m.bucketIndex k) k v 0 m.capacity
 where
-  go (m : RobinHoodHashMap α β) (curK : α) (curV : β)
-      (idx : Fin m.capacity) (dist : Nat) : RobinHoodHashMap α β :=
-    if h : dist ≥ m.capacity then m
+  loop (m : RobinHoodHashMap α β) (idx : Nat)
+       (curK : α) (curV : β) (dist fuel : Nat) : RobinHoodHashMap α β :=
+    if fuel = 0 then m  -- safety: should not occur at load factor < 1
     else
-      match m.buckets[idx] with
-      | none =>
-        -- Empty bucket: place entry
+      let i := idx % m.capacity
+      match h : m.buckets[i]? with
+      | none => -- empty bucket: place entry here
         { m with
-          buckets := m.buckets.set idx (some (curK, curV))
-          psl     := m.psl.set ⟨idx, by rw [m.hPsl]; exact idx.isLt⟩ dist.toUInt8
-          size    := m.size + 1
-          hBuckets := by simp [Array.size_set, m.hBuckets]
-          hPsl     := by simp [Array.size_set, m.hPsl] }
-      | some (k', v') =>
-        if k' == curK then
-          -- Key exists: update in place (no size change)
+          buckets  := m.buckets.set ⟨i, by omega⟩ (some (curK, curV, dist))
+          size     := m.size + 1
+          hCapacity := by simp [Array.size_set, m.hCapacity] }
+      | some none => -- same as empty
+        { m with
+          buckets  := m.buckets.set ⟨i, by omega⟩ (some (curK, curV, dist))
+          size     := m.size + 1
+          hCapacity := by simp [Array.size_set, m.hCapacity] }
+      | some (some (k', v', psl')) =>
+        if k' == curK then -- key exists: update value, keep PSL
           { m with
-            buckets := m.buckets.set idx (some (curK, curV))
-            hBuckets := by simp [Array.size_set, m.hBuckets] }
-        else if m.psl[idx]!.toNat < dist then
-          -- Robin Hood displacement: existing entry has shorter PSL
-          -- Swap our entry in, continue inserting the displaced entry
+            buckets  := m.buckets.set ⟨i, by omega⟩ (some (curK, curV, psl'))
+            hCapacity := by simp [Array.size_set, m.hCapacity] }
+        else if psl' < dist then
+          -- Robin Hood displacement: swap and continue with displaced entry
           let m' := { m with
-            buckets := m.buckets.set idx (some (curK, curV))
-            psl     := m.psl.set ⟨idx, ...⟩ dist.toUInt8
-            hBuckets := ...
-            hPsl     := ... }
-          go m' k' v' (m'.nextIndex idx) (m.psl[idx]!.toNat + 1)
+            buckets  := m.buckets.set ⟨i, by omega⟩ (some (curK, curV, dist))
+            hCapacity := by simp [Array.size_set, m.hCapacity] }
+          loop m' ((idx + 1) % m.capacity) k' v' (psl' + 1) (fuel - 1)
         else
-          go m curK curV (m.nextIndex idx) (dist + 1)
-  termination_by m.capacity - dist
+          loop m ((idx + 1) % m.capacity) curK curV (dist + 1) (fuel - 1)
+  termination_by fuel
 ```
 
 **Robin Hood displacement**: When inserting and we find an existing entry with
@@ -389,18 +419,36 @@ PSL shorter than our current probe distance, we **swap**. The rich entry (long
 PSL) takes the spot; the poor entry (short PSL) gets displaced further along
 the chain. This equalizes probe chain lengths across all entries.
 
+**Termination**: Fuel-bounded by `capacity`. The original plan used
+`termination_by m.capacity - dist` which is **unsound** for Robin Hood
+displacement: when an entry with PSL `p` is displaced, the loop continues with
+`dist := p + 1` where `p < dist`, so `dist` can decrease. Fuel-based
+termination is always correct and matches the erase strategy (N1-E).
+
 **Key invariant**: After insertion, for any two adjacent occupied buckets at
 positions i and i+1, `psl[i+1] ≤ psl[i] + 1`. This is the Robin Hood property.
 
-**Load factor resize**: After `insertCore`, check `size * 8 ≥ capacity * 7`
-(87.5% load). If exceeded, resize to `capacity * 2` and reinsert all entries.
-The resize is amortized O(1) per insertion.
+#### Task N1-D2: Resize and public `insert`
+
+**File**: `SeLe4n/Data/RobinHoodHashMap.lean`
 
 ```lean
+def resize (m : RobinHoodHashMap α β) : RobinHoodHashMap α β :=
+  let newCap := m.capacity * 2
+  let base := empty newCap
+  m.buckets.foldl (init := base) fun acc bucket =>
+    match bucket with
+    | some (k, v, _) => acc.insertCore k v
+    | none => acc
+
 def insert (m : RobinHoodHashMap α β) (k : α) (v : β) : RobinHoodHashMap α β :=
   let m' := m.insertCore k v
   if m'.size * 8 ≥ m'.capacity * 7 then m'.resize else m'
 ```
+
+**Load factor resize**: After `insertCore`, check `size * 8 ≥ capacity * 7`
+(87.5% load). If exceeded, resize to `capacity * 2` and reinsert all entries.
+The resize is amortized O(1) per insertion.
 
 ---
 
@@ -410,53 +458,57 @@ def insert (m : RobinHoodHashMap α β) (k : α) (v : β) : RobinHoodHashMap α 
 
 ```lean
 def erase (m : RobinHoodHashMap α β) (k : α) : RobinHoodHashMap α β :=
-  if m.capacity = 0 then m
+  if h : m.capacity = 0 then m
   else
     match findIndex m k with
     | none => m  -- key not found
-    | some idx => backwardShift (clearBucket m idx) (m.nextIndex idx)
+    | some idx => backwardShift (clearBucket m idx) ((idx + 1) % m.capacity)
 where
-  findIndex (m : RobinHoodHashMap α β) (k : α) : Option (Fin m.capacity) :=
-    go (m.idealIndex k) 0
+  findIndex (m : RobinHoodHashMap α β) (k : α) : Option Nat :=
+    loop (m.bucketIndex k) 0 m.capacity
   where
-    go (idx : Fin m.capacity) (dist : Nat) : Option (Fin m.capacity) :=
-      if dist ≥ m.capacity then none
-      else match m.buckets[idx] with
+    loop (idx dist fuel : Nat) : Option Nat :=
+      if fuel = 0 then none
+      else
+        let i := idx % m.capacity
+        match m.buckets[i]? with
         | none => none
-        | some (k', _) =>
-          if k' == k then some idx
-          else if m.psl[idx]!.toNat < dist then none
-          else go (m.nextIndex idx) (dist + 1)
-    termination_by m.capacity - dist
+        | some none => none
+        | some (some (k', _, psl)) =>
+          if k' == k then some i
+          else if psl < dist then none
+          else loop ((idx + 1) % m.capacity) (dist + 1) (fuel - 1)
+    termination_by fuel
 
-  clearBucket (m : RobinHoodHashMap α β) (idx : Fin m.capacity) :
+  clearBucket (m : RobinHoodHashMap α β) (idx : Nat) :
       RobinHoodHashMap α β :=
     { m with
-      buckets := m.buckets.set idx none
-      psl     := m.psl.set ⟨idx, by rw [m.hPsl]; exact idx.isLt⟩ 0
-      size    := m.size - 1
-      hBuckets := by simp [Array.size_set, m.hBuckets]
-      hPsl     := by simp [Array.size_set, m.hPsl] }
+      buckets  := m.buckets.set ⟨idx % m.capacity, by omega⟩ none
+      size     := m.size - 1
+      hCapacity := by simp [Array.size_set, m.hCapacity] }
 
-  backwardShift (m : RobinHoodHashMap α β) (idx : Fin m.capacity) :
+  backwardShift (m : RobinHoodHashMap α β) (idx : Nat) :
       RobinHoodHashMap α β :=
-    go m idx m.capacity
+    loop m idx m.capacity
   where
-    go (m : RobinHoodHashMap α β) (idx : Fin m.capacity) (fuel : Nat) :
+    loop (m : RobinHoodHashMap α β) (idx fuel : Nat) :
         RobinHoodHashMap α β :=
       if fuel = 0 then m
-      else match m.buckets[idx] with
-        | none => m                        -- empty: done
-        | some (k', v') =>
-          if m.psl[idx]!.toNat = 0 then m  -- at ideal position: done
+      else
+        let i := idx % m.capacity
+        match m.buckets[i]? with
+        | none => m  -- empty bucket: done
+        | some none => m
+        | some (some (k', v', psl)) =>
+          if psl = 0 then m  -- at ideal position: done
           else
             -- Shift backward: move entry to previous bucket, decrement PSL
-            let prevIdx := ⟨(idx.val + m.capacity - 1) &&& (m.capacity - 1), ...⟩
+            let prev := (idx + m.capacity - 1) % m.capacity
             let m' := { m with
-              buckets := (m.buckets.set prevIdx (some (k', v'))).set idx none
-              psl := (m.psl.set ⟨prevIdx, ...⟩ (m.psl[idx]! - 1)).set ⟨idx, ...⟩ 0
-              ... }
-            go m' (m.nextIndex idx) (fuel - 1)
+              buckets := (m.buckets.set ⟨prev, by omega⟩ (some (k', v', psl - 1)))
+                           |>.set ⟨i, by omega⟩ none
+              hCapacity := by simp [Array.size_set, m.hCapacity] }
+            loop m' ((idx + 1) % m.capacity) (fuel - 1)
     termination_by fuel
 ```
 
@@ -474,7 +526,7 @@ empty bucket or PSL=0 entry. Fuel bounds the worst case to `capacity` steps.
 
 ---
 
-#### Task N1-F: Fold, toList, filter, size operations
+#### Task N1-F: Fold, toList, filter operations
 
 **File**: `SeLe4n/Data/RobinHoodHashMap.lean`
 
@@ -483,12 +535,12 @@ def fold {γ : Type _} (m : RobinHoodHashMap α β) (init : γ)
     (f : γ → α → β → γ) : γ :=
   m.buckets.foldl (init := init) fun acc bucket =>
     match bucket with
-    | some (k, v) => f acc k v
+    | some (k, v, _) => f acc k v
     | none => acc
 
 def toList (m : RobinHoodHashMap α β) : List (α × β) :=
   m.buckets.toList.filterMap fun
-    | some (k, v) => some (k, v)
+    | some (k, v, _) => some (k, v)
     | none => none
 
 def filter (m : RobinHoodHashMap α β) (f : α → β → Bool) :
@@ -497,6 +549,27 @@ def filter (m : RobinHoodHashMap α β) (f : α → β → Bool) :
   let kept := m.toList.filter fun (k, v) => f k v
   kept.foldl (init := empty m.capacity) fun acc (k, v) => acc.insert k v
 ```
+
+#### Task N1-F2: Contains, Membership, isEmpty
+
+**File**: `SeLe4n/Data/RobinHoodHashMap.lean`
+
+```lean
+@[inline] def contains (m : RobinHoodHashMap α β) (k : α) : Bool :=
+  m.get? k |>.isSome
+
+@[inline] def isEmpty (m : RobinHoodHashMap α β) : Bool :=
+  m.size = 0
+
+instance : Membership α (RobinHoodHashMap α β) where
+  mem k m := m.contains k = true
+
+instance : GetElem? (RobinHoodHashMap α β) α β (fun _ _ => True) where
+  getElem? m k _ := m.get? k
+```
+
+These instances enable `k ∈ m` notation and `m[k]?` subscript syntax,
+matching `Std.HashMap`'s API surface.
 
 **Deterministic fold order**: `fold` iterates buckets in index order (0 to
 capacity−1). This is deterministic for the same sequence of operations — entries
@@ -548,20 +621,26 @@ below corresponds to a `Prelude.lean` lemma that delegates to `Std.DHashMap.*`.
 | 4 | `not_contains_insert` | `(s.insert a).contains b = false ↔ b ≠ a ∧ s.contains b = false` |
 | 5 | `contains_erase` | `(s.erase a).contains b = (¬(a == b) && s.contains b)` |
 
-**Proof strategy for `getElem?_insert`** (the hardest lemma): This requires
-proving that after inserting `(k, v)`, looking up any key `a` returns:
-- `some v` if `k == a` (the just-inserted value)
-- `m[a]?` otherwise (unchanged for all other keys)
+**Proof strategy overview**: The bridge lemmas are proved via a **specification
+layer** that relates the Robin Hood HashMap to a logical association list. The
+key insight: rather than proving operational properties directly against the
+complex Robin Hood displacement logic, we prove:
 
-For the `k == a` case: the inserted entry is findable by its probe chain.
-For the `k ≠ a` case: Robin Hood displacement may move other entries but
-preserves their findability — each displaced entry's new PSL correctly reflects
-its new position, so the lookup algorithm still finds it.
+1. **Specification equivalence**: `m.get? k = m.toAssocList.lookup k` (the
+   Robin Hood lookup agrees with a simple list lookup).
+2. **Operation correctness on spec**: `(m.insert k v).toAssocList` contains
+   `(k, v)` and preserves all other entries.
+3. **Bridge lemmas as corollaries**: `getElem?_insert` follows from (1) + (2).
 
-This proof proceeds by strong induction on the probe distance and case analysis
-on whether Robin Hood displacement occurred. The key insight is that displacement
-only moves entries **forward** in the probe chain, and their PSL is updated to
-reflect the new distance, so the lookup early-termination condition still works.
+For the simpler lemmas (`getElem?_empty`, `size_erase_le`, `fold_eq_foldl_toList`),
+direct proofs are straightforward. For `getElem?_insert` and `getElem?_erase`,
+the specification-based approach avoids reasoning about Robin Hood displacement
+chains directly.
+
+**Pragmatic approach**: Where direct proof is tractable (empty, erase_le, fold),
+prove directly. Where it requires displacement chain reasoning (insert, erase),
+use the specification equivalence layer. All proofs must be fully machine-checked
+— zero `sorry`.
 
 ---
 
