@@ -10,16 +10,16 @@ import SeLe4n.Prelude
 namespace SeLe4n.Kernel
 open SeLe4n
 structure RunQueue where
-  byPriority : KernelHashMap Priority (List ThreadId)
-  membership : KernelHashSet ThreadId
-  threadPriority : KernelHashMap ThreadId Priority
+  byPriority : Std.HashMap Priority (List ThreadId)
+  membership : Std.HashSet ThreadId
+  threadPriority : Std.HashMap ThreadId Priority
   flat : List ThreadId
   size : Nat
   maxPriority : Option Priority
-  /-- WS-G4: Structural invariant — every flat-list entry is in the KernelHashSet.
-      Needed to bridge `∈ rq.flat` (flat list) and `∈ rq` (KernelHashSet) in proofs. -/
+  /-- WS-G4: Structural invariant — every flat-list entry is in the HashSet.
+      Needed to bridge `∈ rq.flat` (flat list) and `∈ rq` (HashSet) in proofs. -/
   flat_wf : ∀ tid, tid ∈ flat → membership.contains tid = true
-  /-- WS-H6: Reverse structural invariant — every KernelHashSet member appears in
+  /-- WS-H6: Reverse structural invariant — every HashSet member appears in
       the flat list. Together with `flat_wf`, this yields bidirectional
       consistency between O(1) membership checks and list-based scans. -/
   flat_wf_rev : ∀ tid, membership.contains tid = true → tid ∈ flat
@@ -37,7 +37,7 @@ namespace RunQueue
   flat_wf := fun _ h => nomatch h
   flat_wf_rev := by
     intro tid h
-    simp [SeLe4n.Data.RobinHoodHashSet.contains_empty] at h
+    simp [Std.HashSet.contains_empty] at h
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -48,7 +48,7 @@ instance : Membership ThreadId RunQueue where
 instance (tid : ThreadId) (rq : RunQueue) : Decidable (tid ∈ rq) :=
   show Decidable (rq.contains tid = true) from inferInstance
 
-private def recomputeMaxPriority (byPrio : KernelHashMap Priority (List ThreadId)) : Option Priority :=
+private def recomputeMaxPriority (byPrio : Std.HashMap Priority (List ThreadId)) : Option Priority :=
   byPrio.fold (fun acc prio bucket =>
     if bucket.isEmpty then acc
     else match acc with
@@ -72,12 +72,12 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
         simp only [List.mem_append, List.mem_singleton] at hx
         rcases hx with h | rfl
         · have := rq.flat_wf x h
-          simp [SeLe4n.Data.RobinHoodHashSet.contains_insert, this]
-        · simp [SeLe4n.Data.RobinHoodHashSet.contains_insert]
+          simp [Std.HashSet.contains_insert, this]
+        · simp [Std.HashSet.contains_insert]
       flat_wf_rev := by
         intro x hx
         have hx0 : tid = x ∨ rq.membership.contains x = true := by
-          simpa [SeLe4n.Data.RobinHoodHashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hx
+          simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hx
         have hx' : x = tid ∨ rq.membership.contains x = true :=
           hx0.elim (fun h => Or.inl h.symm) Or.inr
         rcases hx' with rfl | hOld
@@ -108,12 +108,12 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       have ⟨hFlat, hNe⟩ := List.mem_filter.mp hx
       have hXNeTid : x ≠ tid := by simpa using hNe
       have hMem := rq.flat_wf x hFlat
-      simp [SeLe4n.Data.RobinHoodHashSet.contains_erase, hMem, Ne.symm hXNeTid]
+      simp [Std.HashSet.contains_erase, hMem, Ne.symm hXNeTid]
     flat_wf_rev := by
       intro x hx
       have hx' : rq.membership.contains x = true ∧ x ≠ tid := by
         have hx0 : tid ≠ x ∧ rq.membership.contains x = true := by
-          simpa [SeLe4n.Data.RobinHoodHashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using hx
+          simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using hx
         exact ⟨hx0.2, fun hEq => hx0.1 hEq.symm⟩
       have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx'.1
       exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩ }
@@ -196,8 +196,7 @@ theorem contains_false_of_not_mem {rq : RunQueue} {tid : ThreadId}
   cases hc : rq.contains tid <;> simp_all
 
 theorem not_mem_empty (tid : ThreadId) : ¬(tid ∈ (empty : RunQueue)) := by
-  intro h; simp [Membership.mem, contains, RunQueue.empty,
-    SeLe4n.Data.RobinHoodHashSet.contains_empty] at h
+  intro h; simp [Membership.mem, contains, RunQueue.empty] at h
 
 theorem mem_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
     x ∈ rq.insert tid prio ↔ x ∈ rq ∨ x = tid := by
@@ -207,7 +206,7 @@ theorem mem_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : Threa
   · rename_i h
     exact ⟨Or.inl, fun hOr => hOr.elim id (fun heq => heq ▸ h)⟩
   · rename_i h
-    rw [SeLe4n.Data.RobinHoodHashSet.contains_insert]; simp only [Bool.or_eq_true, beq_iff_eq]
+    rw [Std.HashSet.contains_insert]; simp only [Bool.or_eq_true, beq_iff_eq]
     exact ⟨fun h => h.elim (fun h => Or.inr h.symm) Or.inl,
            fun h => h.elim Or.inr (fun h => Or.inl h.symm)⟩
 
@@ -218,12 +217,12 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
   constructor
   · intro h
     have h0 : tid ≠ x ∧ rq.contains x = true := by
-      simpa [SeLe4n.Data.RobinHoodHashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using h
+      simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using h
     exact ⟨h0.2, fun hEq => h0.1 hEq.symm⟩
   · intro h
     rcases h with ⟨hx, hne⟩
     have hne' : tid ≠ x := fun hEq => hne hEq.symm
-    simp [SeLe4n.Data.RobinHoodHashSet.contains_erase, hne', hx]
+    simp [Std.HashSet.contains_erase, hne', hx]
 
 theorem mem_rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
     x ∈ rq.rotateHead tid prio ↔ x ∈ rq := by
@@ -249,7 +248,7 @@ theorem not_mem_remove_self (rq : RunQueue) (tid : ThreadId) :
     ¬(tid ∈ rq.remove tid) := by
   rw [mem_remove]; exact fun ⟨_, hne⟩ => hne rfl
 
-/-- Bridge: if tid is not in the RunQueue (KernelHashSet), then tid is not in the flat list.
+/-- Bridge: if tid is not in the RunQueue (HashSet), then tid is not in the flat list.
     Contrapositive of `flat_wf`. -/
 theorem not_mem_toList_of_not_mem (rq : RunQueue) (tid : ThreadId)
     (h : ¬(tid ∈ rq)) : tid ∉ rq.toList := by
@@ -258,13 +257,13 @@ theorem not_mem_toList_of_not_mem (rq : RunQueue) (tid : ThreadId)
   have := rq.flat_wf tid hFlat
   exact h (by rw [mem_iff_contains]; exact this)
 
-/-- WS-H6: Reverse bridge from O(1) KernelHashSet membership to flat-list membership. -/
+/-- WS-H6: Reverse bridge from O(1) HashSet membership to flat-list membership. -/
 theorem membership_implies_flat (rq : RunQueue) (tid : ThreadId)
     (h : tid ∈ rq) : tid ∈ rq.toList := by
   exact rq.flat_wf_rev tid (by simpa [mem_iff_contains] using h)
 
 /-- WS-H6: Bidirectional consistency between `toList` membership and O(1)
-KernelHashSet membership checks. -/
+HashSet membership checks. -/
 theorem mem_toList_iff_mem (rq : RunQueue) (tid : ThreadId) :
     tid ∈ rq.toList ↔ tid ∈ rq := by
   constructor
@@ -641,35 +640,35 @@ theorem insert_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
         · -- t was in original bucket at priority prio
           have hFwd := hwf.1 prio t hOrig
           constructor
-          · simp [SeLe4n.Data.RobinHoodHashSet.contains_insert, hFwd.1]
-          · rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert,
+          · simp [Std.HashSet.contains_insert, hFwd.1]
+          · rw [Std.HashMap.getElem?_insert,
                 show (tid == t) = false from by
                   simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
             rw [← eq_of_beq hPEq]; exact hFwd.2
         · -- t = tid (newly inserted)
-          exact ⟨by simp [SeLe4n.Data.RobinHoodHashSet.contains_insert],
-                 by rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]; simp [eq_of_beq hPEq]⟩
+          exact ⟨by simp [Std.HashSet.contains_insert],
+                 by rw [Std.HashMap.getElem?_insert]; simp [eq_of_beq hPEq]⟩
       · -- prio ≠ p: bucket unchanged
         have hFwd := hwf.1 p t hMem
-        exact ⟨by simp [SeLe4n.Data.RobinHoodHashSet.contains_insert, hFwd.1],
-               by rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert,
+        exact ⟨by simp [Std.HashSet.contains_insert, hFwd.1],
+               by rw [Std.HashMap.getElem?_insert,
                     show (tid == t) = false from by
                       simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
                   exact hFwd.2⟩
     · -- Reverse: membership → ∃ prio with bucket entry
       intro t hMem
       have hMemOr : tid = t ∨ rq.membership.contains t = true := by
-        simpa [SeLe4n.Data.RobinHoodHashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hMem
+        simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hMem
       rcases hMemOr with rfl | hOld
       · -- t = tid: use prio
         refine ⟨prio, ?_, ?_⟩
-        · rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]; simp
+        · rw [Std.HashMap.getElem?_insert]; simp
         · rw [HashMap_getElem?_insert]; simp [Option.getD, List.mem_append]
       · -- t ≠ tid (old member)
         obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hOld
         have hNe : tid ≠ t := fun hEq => by subst hEq; exact hNotMem hOld
         refine ⟨p, ?_, ?_⟩
-        · rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert,
+        · rw [Std.HashMap.getElem?_insert,
               show (tid == t) = false from by simp [hNe]]
           exact hTP
         · rw [HashMap_getElem?_insert]

@@ -232,14 +232,14 @@ private theorem VSpaceRoot.unmapPage_mappings_erase
 
 /-- Recover a pre-state mapping from a post-erase lookup (for unmap proofs). -/
 private theorem HashMap_lookup_of_erase_lookup
-    (mappings : KernelHashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
+    (mappings : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
     (vaddr v : SeLe4n.VAddr) (p : SeLe4n.PAddr) (pm : PagePermissions)
     (hErase : (mappings.erase vaddr)[v]? = some (p, pm)) :
     mappings[v]? = some (p, pm) := by
   by_cases hV : vaddr = v
-  · subst hV; simp [SeLe4n.Data.RobinHoodHashMap.getElem?_erase] at hErase
+  · subst hV; simp at hErase
   · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
-    simp only [SeLe4n.Data.RobinHoodHashMap.getElem?_erase, hBeq] at hErase; exact hErase
+    simp only [Std.HashMap.getElem?_erase, hBeq] at hErase; exact hErase
 
 -- ============================================================================
 -- F-08 / TPI-D05: VSpace successful-operation invariant preservation
@@ -328,10 +328,10 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 rw [hInsert] at hMap
                 by_cases hV : v = vaddr
                 · subst hV
-                  simp only [SeLe4n.Data.RobinHoodHashMap.getElem?_insert, beq_self_eq_true, ↓reduceIte] at hMap
+                  simp only [Std.HashMap.getElem?_insert, beq_self_eq_true, ↓reduceIte] at hMap
                   cases hMap; exact hWx
                 · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h).symm
-                  simp only [SeLe4n.Data.RobinHoodHashMap.getElem?_insert, hBeq] at hMap
+                  simp only [Std.HashMap.getElem?_insert, hBeq] at hMap
                   exact hWxInv _ root v p pm hObjRoot hMap
               · rw [hObjNe oid hEq] at hObjR
                 exact hWxInv oid r v p pm hObjR hMap
@@ -343,10 +343,10 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 rw [hInsert] at hMap
                 by_cases hV : v = vaddr
                 · subst hV
-                  simp only [SeLe4n.Data.RobinHoodHashMap.getElem?_insert, beq_self_eq_true, ↓reduceIte] at hMap
+                  simp only [Std.HashMap.getElem?_insert, beq_self_eq_true, ↓reduceIte] at hMap
                   cases hMap; exact hBound
                 · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h).symm
-                  simp only [SeLe4n.Data.RobinHoodHashMap.getElem?_insert, hBeq] at hMap
+                  simp only [Std.HashMap.getElem?_insert, hBeq] at hMap
                   exact hBoundInv _ root v p pm hObjRoot hMap
               · rw [hObjNe oid hEq] at hObjR
                 exact hBoundInv oid r v p pm hObjR hMap

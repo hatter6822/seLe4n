@@ -158,7 +158,7 @@ false positive rejects a valid edge registration, while a false negative
 would silently allow a cycle — the safe default is to assume reachability.
 
 WS-G8/F-P08: Visited set migrated from `List ServiceId` (O(n) membership)
-to `KernelHashSet ServiceId` (O(1) membership). Frontier ordering changed
+to `Std.HashSet ServiceId` (O(1) membership). Frontier ordering changed
 from BFS (append) to DFS (prepend) — cycle detection is order-independent.
 Total complexity reduced from O(n²) to O(n+e).
 
@@ -172,7 +172,7 @@ def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
   go [src] {} fuel
 where
-  go (frontier : List ServiceId) (visited : KernelHashSet ServiceId) : Nat → Bool
+  go (frontier : List ServiceId) (visited : Std.HashSet ServiceId) : Nat → Bool
   | 0 => true  -- H-08/WS-E3: fuel exhausted — conservatively assume path exists
   | fuel + 1 =>
       match frontier with

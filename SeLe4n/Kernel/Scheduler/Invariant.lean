@@ -209,8 +209,7 @@ theorem runQueueThreadPriorityConsistent_default :
   · intro tid hMem
     exact absurd hMem (RunQueue.not_mem_empty tid)
   · intro tid hPrio
-    simp [default, Inhabited.default, RunQueue.empty,
-          SeLe4n.Data.RobinHoodHashMap.getElem?_empty] at hPrio
+    simp [default, Inhabited.default, RunQueue.empty] at hPrio
 
 -- ============================================================================
 -- WS-H6: Full scheduler invariant bundle

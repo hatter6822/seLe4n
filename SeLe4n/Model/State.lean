@@ -87,7 +87,7 @@ structure SlotRef where
   slot : SeLe4n.Slot
   deriving Repr, DecidableEq
 
-/-- WS-G1: Hash instance for composite KernelHashMap/KernelHashSet keying.
+/-- WS-G1: Hash instance for composite HashMap/HashSet keying.
     Combines cnode and slot hashes via `mixHash` for uniform distribution.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
 @[inline] instance : Hashable SlotRef where
@@ -98,11 +98,11 @@ structure SlotRef where
 `objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
 named by each populated capability slot reference.
 
-WS-G2/WS-H7: metadata maps are KernelHashMap-backed for O(1) amortized lookup,
+WS-G2/WS-H7: metadata maps are HashMap-backed for O(1) amortized lookup,
 eliminating closure-chain growth from repeated updates. -/
 structure LifecycleMetadata where
-  objectTypes : KernelHashMap SeLe4n.ObjId KernelObjectType
-  capabilityRefs : KernelHashMap SlotRef CapTarget
+  objectTypes : Std.HashMap SeLe4n.ObjId KernelObjectType
+  capabilityRefs : Std.HashMap SlotRef CapTarget
 
 /-- Configuration record holding policy predicates for service operations.
     The dispatch layer reads these from `SystemState.serviceConfig` to gate
@@ -123,10 +123,10 @@ instance : Inhabited ServiceConfig where
 
 structure SystemState where
   machine : SeLe4n.MachineState
-  /-- WS-G2/F-P01: Object store backed by `KernelHashMap` for O(1) amortized lookup.
+  /-- WS-G2/F-P01: Object store backed by `Std.HashMap` for O(1) amortized lookup.
       Replaces the closure-chain `ObjId → Option KernelObject` that accumulated
       nested closures on every `storeObject` call (O(k) per lookup after k stores). -/
-  objects : KernelHashMap SeLe4n.ObjId KernelObject
+  objects : Std.HashMap SeLe4n.ObjId KernelObject
   /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
       stored. This list is intentionally never pruned — `storeObject` prepends
       new IDs and never removes old ones.
@@ -148,22 +148,22 @@ structure SystemState where
       Maintained in parallel with `objectIndex` — `storeObject` inserts into
       both. The list remains the proof anchor (monotonic, append-only);
       this set is the runtime fast path. -/
-  objectIndexSet : KernelHashSet SeLe4n.ObjId := {}
-  services : KernelHashMap ServiceId ServiceGraphEntry
+  objectIndexSet : Std.HashSet SeLe4n.ObjId := {}
+  services : Std.HashMap ServiceId ServiceGraphEntry
   /-- Service policy configuration for `serviceStart`/`serviceStop` gating.
       Default permits all operations (backward compatible). -/
   serviceConfig : ServiceConfig := default
   scheduler : SchedulerState
-  irqHandlers : KernelHashMap SeLe4n.Irq SeLe4n.ObjId
+  irqHandlers : Std.HashMap SeLe4n.Irq SeLe4n.ObjId
   lifecycle : LifecycleMetadata
   /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
       Maintained by `storeObject` — insertions on `.vspaceRoot` stores, erasures
       when a VSpaceRoot is overwritten. Replaces the O(n) `objectIndex.findSome?`
       scan in `resolveAsidRoot`. -/
-  asidTable : KernelHashMap SeLe4n.ASID SeLe4n.ObjId := {}
+  asidTable : Std.HashMap SeLe4n.ASID SeLe4n.ObjId := {}
   cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
-  cdtSlotNode : KernelHashMap SlotRef CdtNodeId := {}
-  cdtNodeSlot : KernelHashMap CdtNodeId SlotRef := {}
+  cdtSlotNode : Std.HashMap SlotRef CdtNodeId := {}
+  cdtNodeSlot : Std.HashMap CdtNodeId SlotRef := {}
   cdtNextNode : CdtNodeId := ⟨0⟩
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
@@ -210,7 +210,7 @@ def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
 
 /-- Replace the object stored at `id` with `obj`.
 
-WS-G2/F-P01: Uses `KernelHashMap.insert` instead of closure wrapping, eliminating
+WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
 the O(k) closure-chain accumulation on every lookup.
 WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
 of O(n) list membership scan.
@@ -290,7 +290,7 @@ theorem revokeAndClearRefsState_preserves_objects
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   exact revokeAndClearRefsFoldBody_preserves_objects _ sourceSlot target cnodeId st
 
 private theorem revokeAndClearRefsFoldBody_preserves_cdt
@@ -332,7 +332,7 @@ theorem revokeAndClearRefsState_cdt_eq
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  rw [Std.HashMap.fold_eq_foldl_toList]
   have h := revokeAndClearRefsFoldBody_preserves_cdt cn.slots.toList sourceSlot target cnodeId st
   exact ⟨h.1, h.2.1, h.2.2,
     revokeAndClearRefsFoldBody_preserves_objects cn.slots.toList sourceSlot target cnodeId st⟩
@@ -366,7 +366,7 @@ theorem revokeAndClearRefsState_preserves_scheduler
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).1
 
 /-- M-P01: `revokeAndClearRefsState` preserves machine state. -/
@@ -374,7 +374,7 @@ theorem revokeAndClearRefsState_preserves_machine
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).machine = st.machine := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves services. -/
@@ -382,7 +382,7 @@ theorem revokeAndClearRefsState_preserves_services
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).services = st.services := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves irqHandlers. -/
@@ -390,7 +390,7 @@ theorem revokeAndClearRefsState_preserves_irqHandlers
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).irqHandlers = st.irqHandlers := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves objectIndex. -/
@@ -398,7 +398,7 @@ theorem revokeAndClearRefsState_preserves_objectIndex
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndex = st.objectIndex := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves objectIndexSet. -/
@@ -406,7 +406,7 @@ theorem revokeAndClearRefsState_preserves_objectIndexSet
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndexSet = st.objectIndexSet := by
-  unfold revokeAndClearRefsState; rw [SeLe4n.Data.RobinHoodHashMap.fold_eq_foldl_toList]
+  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
   exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.2.2.1
 
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
@@ -467,7 +467,7 @@ theorem storeServiceState_lookup_eq
     (sid : ServiceId)
     (entry : ServiceGraphEntry) :
     lookupService (storeServiceState sid entry st) sid = some entry := by
-  simp [lookupService, storeServiceState, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
+  simp [lookupService, storeServiceState]
 
 theorem storeServiceState_lookup_ne
     (st : SystemState)
@@ -1056,16 +1056,16 @@ theorem storeObject_preserves_objectIndexLive
     simp [h] at hMem
     cases hMem with
     | inl heq =>
-      subst heq; simp [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
+      subst heq; simp
     | inr hOld =>
       have hOldLive := hLive id hOld
-      simp [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
+      simp [Std.HashMap.getElem?_insert]
       split
       · simp
       · exact hOldLive
   · -- oid was already in objectIndexSet, so objectIndex unchanged
     simp [h] at hMem
-    simp [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
+    simp [Std.HashMap.getElem?_insert]
     split
     · simp
     · exact hLive id hMem

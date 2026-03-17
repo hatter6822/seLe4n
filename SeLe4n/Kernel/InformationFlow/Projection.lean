@@ -142,7 +142,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
 observationally equivalent results to filtering once.
 
 WS-G5: With HashMap-backed CNode slots, idempotency is stated at the slot
-lookup level rather than structural equality, because `KernelHashMap.filter`
+lookup level rather than structural equality, because `Std.HashMap.filter`
 in Lean 4.28.0 reverses internal `AssocList` bucket ordering, making
 `(m.filter f).filter f ≠ m.filter f` structurally despite identical entries.
 For all non-CNode variants, structural equality holds directly. -/
@@ -302,12 +302,12 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
 /-- WS-G9/F-P09: Precompute the set of all observable object IDs.
 
 Evaluates `objectObservable` exactly once per object in the index, building a
-`KernelHashSet ObjId` for O(1) subsequent lookups. This eliminates redundant
+`Std.HashSet ObjId` for O(1) subsequent lookups. This eliminates redundant
 `securityFlowsTo` evaluations across `projectObjects`, `projectIrqHandlers`,
 `projectObjectIndex`, and `capTargetObservable` within a single `projectState`
 call. -/
 @[inline] def computeObservableSet (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) : KernelHashSet SeLe4n.ObjId :=
+    (st : SystemState) : Std.HashSet SeLe4n.ObjId :=
   st.objectIndex.foldl (fun acc oid =>
     if objectObservable ctx observer oid then acc.insert oid else acc) {}
 
@@ -316,7 +316,7 @@ accumulator `s`, and element `a ∈ xs`: the result of the fold contains `a`
 iff `objectObservable ctx observer a = true` OR `s` already contained `a`. -/
 private theorem foldl_observable_set_mem
     (ctx : LabelingContext) (observer : IfObserver)
-    (xs : List SeLe4n.ObjId) (s : KernelHashSet SeLe4n.ObjId) (a : SeLe4n.ObjId)
+    (xs : List SeLe4n.ObjId) (s : Std.HashSet SeLe4n.ObjId) (a : SeLe4n.ObjId)
     (hMem : a ∈ xs) :
     (xs.foldl (fun acc oid =>
         if objectObservable ctx observer oid then acc.insert oid else acc) s).contains a =
@@ -333,7 +333,7 @@ private theorem foldl_observable_set_mem
         -- a is observable → inserted → stays in set through rest of fold
         show (xs.foldl _ (s.insert a)).contains a = _
         simp only [Bool.true_or]
-        exact List.foldl_preserves_contains _ _ _ (SeLe4n.Data.RobinHoodHashSet.contains_insert_self ..)
+        exact List.foldl_preserves_contains _ _ _ (Std.HashSet.contains_insert_self ..)
       | false =>
         -- a is not observable → skipped → stays at s.contains a via pred_false lemma
         show (xs.foldl _ s).contains a = _
@@ -344,7 +344,7 @@ private theorem foldl_observable_set_mem
       cases hObs : objectObservable ctx observer x with
       | true =>
         show (xs.foldl _ (s.insert x)).contains a = _
-        rw [ih (s.insert x) hInXs, SeLe4n.Data.RobinHoodHashSet.contains_insert]
+        rw [ih (s.insert x) hInXs, Std.HashSet.contains_insert]
         have hBeq : (x == a) = false := beq_false_of_ne (Ne.symm hEq)
         simp [hBeq]
       | false =>
@@ -377,7 +377,7 @@ theorem computeObservableSet_not_mem
 /-- WS-G9: Optimized object projection using precomputed observable set.
 Replaces per-object `objectObservable` evaluation with O(1) `HashSet.contains`. -/
 def projectObjectsFast (ctx : LabelingContext) (observer : IfObserver)
-    (observableOids : KernelHashSet SeLe4n.ObjId) (st : SystemState) :
+    (observableOids : Std.HashSet SeLe4n.ObjId) (st : SystemState) :
     SeLe4n.ObjId → Option KernelObject :=
   fun oid =>
     if observableOids.contains oid then
@@ -386,7 +386,7 @@ def projectObjectsFast (ctx : LabelingContext) (observer : IfObserver)
       none
 
 /-- WS-G9: Optimized IRQ handler projection using precomputed observable set. -/
-def projectIrqHandlersFast (observableOids : KernelHashSet SeLe4n.ObjId)
+def projectIrqHandlersFast (observableOids : Std.HashSet SeLe4n.ObjId)
     (st : SystemState) : SeLe4n.Irq → Option SeLe4n.ObjId :=
   fun irq =>
     match st.irqHandlers[irq]? with
@@ -394,7 +394,7 @@ def projectIrqHandlersFast (observableOids : KernelHashSet SeLe4n.ObjId)
     | none => none
 
 /-- WS-G9: Optimized object index projection using precomputed observable set. -/
-def projectObjectIndexFast (observableOids : KernelHashSet SeLe4n.ObjId)
+def projectObjectIndexFast (observableOids : Std.HashSet SeLe4n.ObjId)
     (st : SystemState) : List SeLe4n.ObjId :=
   st.objectIndex.filter (observableOids.contains ·)
 

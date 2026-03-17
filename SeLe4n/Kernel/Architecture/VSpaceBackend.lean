@@ -13,7 +13,7 @@ import SeLe4n.Model.State
 
 This module defines the `VSpaceBackend` typeclass — a forward-looking
 abstraction over VSpace implementations. The current HashMap model
-(`VSpaceRoot.mappings : KernelHashMap VAddr PAddr`) satisfies this interface
+(`VSpaceRoot.mappings : Std.HashMap VAddr PAddr`) satisfies this interface
 naturally. When H3 introduces ARMv8 hierarchical page tables, a new
 backend can be instantiated without changing the abstract kernel proofs.
 

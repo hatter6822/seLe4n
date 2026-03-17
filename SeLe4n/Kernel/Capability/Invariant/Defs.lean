@@ -122,7 +122,7 @@ def cdtMintCompleteness (st : SystemState) : Prop :=
 so `cdtMintCompleteness` holds vacuously. -/
 theorem cdtMintCompleteness_default : cdtMintCompleteness default := by
   intro childNode childRef hLookup
-  simp [default, SeLe4n.Data.RobinHoodHashMap.getElem?_empty] at hLookup
+  simp [default] at hLookup
 
 /-- WS-H13/H-01: CSpace depth consistency — every CNode has bounded depth and
 well-formed bit allocation.
@@ -584,7 +584,7 @@ private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
     ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.remove slot).slots[s]? = some cap → cn.slots[s]? = some cap := by
   intro s cap hLookup
   simp [CNode.remove] at hLookup
-  rw [SeLe4n.Data.RobinHoodHashMap.getElem?_erase] at hLookup
+  rw [Std.HashMap.getElem?_erase] at hLookup
   by_cases h : (slot == s) = true
   · simp [h] at hLookup
   · simp [h] at hLookup; exact hLookup
@@ -605,20 +605,16 @@ private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeL
   simp only [CNode.revokeTargetLocal] at hLookup
   -- Filter only keeps entries from the original map
   have hMem : s ∈ cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)) :=
-    (SeLe4n.Data.RobinHoodHashMap.mem_iff_isSome_getElem? _ _).mpr (by simp [hLookup])
-  have hMemInner : s ∈ (cn.slots.inner.filter (fun s c => s == sourceSlot || !(c.target == target))) :=
-    show s ∈ cn.slots.inner.filter _ from hMem
-  have hMemOrig : s ∈ cn.slots := show s ∈ cn.slots.inner from Std.HashMap.mem_of_mem_filter hMemInner
-  have hMemOrigInner : s ∈ cn.slots.inner := hMemOrig
+    Std.HashMap.mem_iff_isSome_getElem?.mpr (by rw [hLookup]; rfl)
+  have hMemOrig : s ∈ cn.slots := Std.HashMap.mem_of_mem_filter hMem
   -- Reconstruct the value
   have h1 : (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]? =
-      some ((cn.slots.inner.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]) :=
-    show (cn.slots.inner.filter _)[s]? = _ from Std.HashMap.getElem?_eq_some_getElem hMemInner
-  have h2 : cn.slots[s]? = some cn.slots.inner[s] :=
-    show cn.slots.inner[s]? = _ from Std.HashMap.getElem?_eq_some_getElem hMemOrigInner
+      some ((cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]) :=
+    Std.HashMap.getElem?_eq_some_getElem hMem
+  have h2 : cn.slots[s]? = some cn.slots[s] := Std.HashMap.getElem?_eq_some_getElem hMemOrig
   rw [h1] at hLookup
   have hCapEq := (Option.some.inj hLookup).symm
-  rw [hCapEq, Std.HashMap.getElem_filter (m := cn.slots.inner)
+  rw [hCapEq, Std.HashMap.getElem_filter (m := cn.slots)
     (f := fun s c => s == sourceSlot || !(c.target == target))]
   exact h2
 

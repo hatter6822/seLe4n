@@ -650,7 +650,7 @@ theorem timerTick_preserves_schedulerInvariantBundle
           rw [if_neg hExpire] at hStep
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          exact ⟨hQCC, hRQU, by unfold currentThreadValid; simp [hCur, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]⟩
+          exact ⟨hQCC, hRQU, by unfold currentThreadValid; simp [hCur]⟩
 
 /-- WS-F4/F-03: `timerTick` preserves `kernelInvariant`. -/
 theorem timerTick_preserves_kernelInvariant
@@ -686,7 +686,7 @@ theorem timerTick_preserves_kernelInvariant
           simp only [currentThreadInActiveDomain, hCur]
           have hDomOrig : tcb.domain = st.scheduler.activeDomain := by
             simp [currentThreadInActiveDomain, hCur, hObj] at hDom; exact hDom
-          simp [SeLe4n.Data.RobinHoodHashMap.getElem?_insert, hDomOrig]
+          simp [hDomOrig]
 
 -- ============================================================================
 -- WS-H6: Bucket-first scheduling helpers

@@ -41,7 +41,7 @@ private def baseState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+      slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
@@ -55,7 +55,7 @@ private def baseState : SystemState :=
       guardWidth := 1
       guardValue := 1
       radixWidth := 2
-      slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+      slots := Std.HashMap.ofList [
         (⟨1⟩, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
@@ -206,7 +206,7 @@ private def f2UntypedState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+      slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -235,7 +235,7 @@ private def f2DeviceState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+      slots := Std.HashMap.ofList [
         (⟨0⟩, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -316,7 +316,7 @@ private def runNegativeChecks : IO Unit := do
             guardWidth := 0
             guardValue := 0
             radixWidth := 0
-            slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+            slots := Std.HashMap.ofList [
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read, .write]
@@ -1065,7 +1065,7 @@ private def runH2NegativeChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+        slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1172,10 +1172,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : KernelHashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨4096⟩ (⟨8192⟩, default)).insert ⟨12288⟩ (⟨16384⟩, default) }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨4096⟩ (⟨8192⟩, default)).insert ⟨12288⟩ (⟨16384⟩, default) }
   let vr2 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : KernelHashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨12288⟩ (⟨16384⟩, default)).insert ⟨4096⟩ (⟨8192⟩, default) }
+      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨12288⟩ (⟨16384⟩, default)).insert ⟨4096⟩ (⟨8192⟩, default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else
@@ -1185,16 +1185,16 @@ private def runWSH7Checks : IO Unit := do
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := (({} : KernelHashMap SeLe4n.Slot Capability).insert ⟨1⟩ capA).insert ⟨2⟩ capB }
+      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert ⟨1⟩ capA).insert ⟨2⟩ capB }
   let cn2 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := (({} : KernelHashMap SeLe4n.Slot Capability).insert ⟨2⟩ capB).insert ⟨1⟩ capA }
+      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert ⟨2⟩ capB).insert ⟨1⟩ capA }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Data.RobinHoodHashMap.ofList [(⟨0⟩, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := Std.HashMap.ofList [(⟨0⟩, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -1462,7 +1462,7 @@ private def runWSH15Checks : IO Unit := do
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+    slots := Std.HashMap.ofList [
       (⟨0⟩, writeCap),
       (⟨1⟩, readOnlyCap)
     ]
@@ -1575,13 +1575,13 @@ def runWSH15PlatformChecks : IO Unit := do
   -- H15-PLAT-06: RPi5 boot contract — objectTypeMetadata verified by theorem
   -- `rpi5BootContract_objectType_holds` is a proof that the predicate holds.
   -- We verify the equivalent computational check: default objects HashMap is empty.
-  if ({} : KernelHashMap SeLe4n.ObjId KernelObject).size == 0 then
+  if ({} : Std.HashMap SeLe4n.ObjId KernelObject).size == 0 then
     IO.println "positive check passed [H15 rpi5BootContract objectTypeMetadata]"
   else
     throw <| IO.userError "H15 rpi5BootContract objectTypeMetadataConsistent should hold"
 
   -- H15-PLAT-07: RPi5 boot contract — capabilityRefMetadata verified by theorem
-  if ({} : KernelHashMap SlotRef CapTarget).size == 0 then
+  if ({} : Std.HashMap SlotRef CapTarget).size == 0 then
     IO.println "positive check passed [H15 rpi5BootContract capabilityRefMetadata]"
   else
     throw <| IO.userError "H15 rpi5BootContract capabilityRefMetadataConsistent should hold"
@@ -1609,7 +1609,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+        slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1653,7 +1653,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+        slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1710,7 +1710,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+        slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1754,7 +1754,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+        slots := Std.HashMap.ofList [
           (⟨0⟩, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -2292,7 +2292,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
   let fullCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+    slots := Std.HashMap.ofList [
       (⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap), (⟨3⟩, cap)
     ]
   }
@@ -2302,7 +2302,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject receiverRoot (.cnode fullCNode)
       |>.withObject senderRoot (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [(⟨0⟩, cap)]
+          slots := Std.HashMap.ofList [(⟨0⟩, cap)]
         })
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.build)
@@ -2354,7 +2354,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 4
           guardValue := 0xA
           radixWidth := 0
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨0⟩, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2393,7 +2393,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨5⟩, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2473,7 +2473,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 2
           guardValue := 3
           radixWidth := 2
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨0⟩, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2482,7 +2482,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 2
           guardValue := 1
           radixWidth := 2
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨0⟩, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2491,7 +2491,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨7⟩, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2540,7 +2540,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       guardWidth := 0
       guardValue := 0
       radixWidth := 8
-      slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+      slots := Std.HashMap.ofList [
         (⟨1⟩, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
       ]
     })
@@ -2550,7 +2550,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
     guardWidth := 0
     guardValue := 0
     radixWidth := 8
-    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+    slots := Std.HashMap.ofList [
       (⟨1⟩, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
     ]
   })
@@ -2582,11 +2582,10 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError "M4-A2 overflow: expected error for 65 bits, got success"
 
   -- M4-A6: Empty slot at intermediate (non-leaf) level.
-  -- WS-N2: resolveCapAddress now checks slot occupancy at ALL levels, including
-  -- leaf. This test validates the intermediate (non-leaf) path which was already
-  -- correct before WS-N2. The intermediate path has bits remaining after
-  -- consuming the current CNode, so it tries to recurse — the empty slot
-  -- lookup fails with invalidCapability.
+  -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
+  -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
+  -- unconditionally. So we need 3 levels where the middle level has an empty slot
+  -- and there are still bits remaining for recursion.
   --
   -- lvl0 (gw=0, rw=4, 4 bits) → slot 3 → lvl1 (gw=0, rw=4, empty, 4 bits)
   -- Total bitsRemaining = 10. At lvl1: bits=6, consumed=4, remaining=2 > 0
@@ -2600,7 +2599,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨3⟩, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2636,7 +2635,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
+          slots := Std.HashMap.ofList [
             (⟨1⟩, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2678,161 +2677,6 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
 
--- ============================================================================
--- WS-N2: resolveCapAddress leaf-level occupancy tests (N-C01, N-P02)
--- ============================================================================
-
-/-- WS-N2 (N-C01): Leaf-level occupancy check tests.
-
-Validates that `resolveCapAddress` now checks slot occupancy at the leaf level
-(bitsRemaining - consumed = 0), consistent with the intermediate path which
-has always checked occupancy. This is the core behavioral change of WS-N2. -/
-def runWSN2OccupancyChecks : IO Unit := do
-  IO.println "\n=== WS-N2: resolveCapAddress leaf-level occupancy tests ==="
-
-  -- N2-T1: Leaf empty slot → error (the core behavioral change)
-  -- CNode with radixWidth=4, no slots populated.
-  -- addr=5 → slot 5, consumed=4 bits, bitsRemaining - consumed = 0 → leaf path
-  -- Slot 5 is empty → should return .error .invalidCapability
-  let emptyLeafRoot : SeLe4n.ObjId := ⟨7001⟩
-  let stEmptyLeaf :=
-    (BootstrapBuilder.empty
-      |>.withObject emptyLeafRoot (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := {}  -- all slots empty
-        })
-      |>.build)
-
-  let resultEmptyLeaf := SeLe4n.Kernel.resolveCapAddress emptyLeafRoot ⟨5⟩ 4 stEmptyLeaf
-  match resultEmptyLeaf with
-  | .error .invalidCapability =>
-      IO.println "N2-T1 check passed [leaf empty slot returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"N2-T1: expected invalidCapability, got {reprStr e}"
-  | .ok _ =>
-      throw <| IO.userError "N2-T1: expected error for empty leaf slot, got success"
-
-  -- N2-T2: Leaf occupied slot → success (regression guard)
-  -- Same structure but with slot 5 populated. Should succeed as before WS-N2.
-  let occupiedLeafRoot : SeLe4n.ObjId := ⟨7002⟩
-  let occupiedLeafTarget : SeLe4n.ObjId := ⟨7003⟩
-  let stOccupiedLeaf :=
-    (BootstrapBuilder.empty
-      |>.withObject occupiedLeafRoot (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
-            (⟨5⟩, { target := .object occupiedLeafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          ]
-        })
-      |>.withObject occupiedLeafTarget (.endpoint {})
-      |>.build)
-
-  let resultOccupiedLeaf := SeLe4n.Kernel.resolveCapAddress occupiedLeafRoot ⟨5⟩ 4 stOccupiedLeaf
-  match resultOccupiedLeaf with
-  | .ok ref =>
-      if ref.cnode = occupiedLeafRoot ∧ ref.slot = ⟨5⟩ then
-        IO.println "N2-T2 check passed [leaf occupied slot resolves to correct SlotRef]"
-      else
-        throw <| IO.userError s!"N2-T2: expected slot 5, got {reprStr ref}"
-  | .error e =>
-      throw <| IO.userError s!"N2-T2: expected success, got {reprStr e}"
-
-  -- N2-T3: Intermediate empty slot → error (regression guard, unchanged behavior)
-  -- 2-level chain: root slot 3 → child (all empty), bitsRemaining=8 → 4 bits remain
-  -- At child: bits=4, consumed=4, remaining=0 → leaf. Slot 0 is empty → error.
-  -- (Before WS-N2 this would succeed at resolveCapAddress and fail later at lookup;
-  -- after WS-N2 it fails directly at resolveCapAddress.)
-  let interRoot : SeLe4n.ObjId := ⟨7004⟩
-  let interChild : SeLe4n.ObjId := ⟨7005⟩
-  let stInter :=
-    (BootstrapBuilder.empty
-      |>.withObject interRoot (.cnode {
-          depth := 8
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
-            (⟨3⟩, { target := .object interChild, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
-      |>.withObject interChild (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := {}  -- all slots empty at leaf level
-        })
-      |>.build)
-
-  -- addr=0x30 (8 bits): root shift=(8-4)=4, 0x30>>>4=3, slot 3 → child.
-  -- At child: bits=4, shift=(4-4)=0, 0x30>>>0=48, slot=48%16=0. Remaining=0 → leaf.
-  -- Slot 0 is empty → invalidCapability (now caught at leaf level by WS-N2).
-  let resultInter := SeLe4n.Kernel.resolveCapAddress interRoot ⟨0x30⟩ 8 stInter
-  match resultInter with
-  | .error .invalidCapability =>
-      IO.println "N2-T3 check passed [multi-level with empty leaf slot returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"N2-T3: expected invalidCapability, got {reprStr e}"
-  | .ok _ =>
-      throw <| IO.userError "N2-T3: expected error for multi-level empty leaf, got success"
-
-  -- N2-T4: Multi-level with occupied leaf → success (regression guard)
-  -- Same 2-level chain but with slot 0 populated at child.
-  let interTarget : SeLe4n.ObjId := ⟨7006⟩
-  let stInterOccupied :=
-    (BootstrapBuilder.empty
-      |>.withObject interRoot (.cnode {
-          depth := 8
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
-            (⟨3⟩, { target := .object interChild, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
-      |>.withObject interChild (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
-            (⟨0⟩, { target := .object interTarget, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
-      |>.withObject interTarget (.endpoint {})
-      |>.build)
-
-  let resultInterOccupied := SeLe4n.Kernel.resolveCapAddress interRoot ⟨0x30⟩ 8 stInterOccupied
-  match resultInterOccupied with
-  | .ok ref =>
-      if ref.cnode = interChild ∧ ref.slot = ⟨0⟩ then
-        IO.println "N2-T4 check passed [multi-level with occupied leaf resolves correctly]"
-      else
-        throw <| IO.userError s!"N2-T4: expected interChild slot 0, got {reprStr ref}"
-  | .error e =>
-      throw <| IO.userError s!"N2-T4: expected success, got {reprStr e}"
-
-  -- N2-T5: cspaceLookupMultiLevel with empty leaf → error (integration test)
-  -- Uses the single-level empty leaf state from N2-T1.
-  -- Before WS-N2: resolveCapAddress succeeded → cspaceLookupSlot failed.
-  -- After WS-N2: resolveCapAddress fails directly. Same observable error.
-  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel emptyLeafRoot ⟨5⟩ 4 stEmptyLeaf
-  match resultWrapper with
-  | .error .invalidCapability =>
-      IO.println "N2-T5 check passed [cspaceLookupMultiLevel empty leaf returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"N2-T5: expected invalidCapability, got {reprStr e}"
-  | .ok _ =>
-      throw <| IO.userError "N2-T5: expected error for empty leaf via wrapper, got success"
-
-  IO.println "all WS-N2 leaf-level occupancy tests passed"
-
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2850,4 +2694,3 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSL4BlockedThreadChecks
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
-  SeLe4n.Testing.runWSN2OccupancyChecks
