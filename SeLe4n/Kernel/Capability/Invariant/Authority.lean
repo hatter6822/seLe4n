@@ -32,7 +32,7 @@ private theorem cspaceDeleteSlot_authority_reduction
 
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
-          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
+          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -93,24 +93,27 @@ theorem cspaceRevoke_local_target_reduction
               simpa [hEq] using hLookup
             -- WS-G5: With HashMap-backed slots, CNode.lookup delegates to getElem?.
             -- Extract that the filtered HashMap lookup succeeds at `slot`.
-            have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
+            have hFilterLookup : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)))[slot]? = some cap := by
               simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                CNode.lookup] at hLookupStored
+                CNode.lookup, CNode.revokeTargetLocal, SeLe4n.Data.RobinHoodHashMap.getElem?_insert] at hLookupStored
               exact hLookupStored
             -- revokeTargetLocal filters with: fun s c => s == addr.slot || !(c.target == parent.target)
-            have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) := by
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [hFilterLookup])
+            have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) :=
+              (SeLe4n.Data.RobinHoodHashMap.mem_iff_isSome_getElem? _ _).mpr (by simp [hFilterLookup])
             -- By mem_filter, the filter predicate holds for the stored key and value.
-            have ⟨hMemOrig, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilter
+            have hMemFilterInner : slot ∈ cn.slots.inner.filter (fun s c => s == addr.slot || !(c.target == parent.target)) :=
+              show slot ∈ cn.slots.inner.filter _ from hMemFilter
+            have ⟨hMemOrigInner, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilterInner
+            have hMemOrig : slot ∈ cn.slots := show slot ∈ cn.slots.inner from hMemOrigInner
             -- Normalize: getKey slot ≈ slot, and the stored value cn.slots[slot] = cap
-            have hKeyEq : cn.slots.getKey slot hMemOrig = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrig)
-            have hValEq : cn.slots[slot] = cap := by
-              have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots _ _ _ slot hMemFilter
-              have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilter
+            have hKeyEq : cn.slots.inner.getKey slot hMemOrigInner = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrigInner)
+            have hValEq : cn.slots.inner[slot] = cap := by
+              have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots.inner _ _ _ slot hMemFilterInner
+              have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilterInner
               rw [h1] at h2
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              rw [hFilterLookup] at h2
+              have hFilterInner : (cn.slots.inner.filter (fun s c => s == addr.slot || !(c.target == parent.target)))[slot]? = some cap :=
+                hFilterLookup
+              rw [hFilterInner] at h2
               exact (Option.some.inj h2).symm
             rw [hKeyEq, hValEq] at hPredTrue
             -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
@@ -159,7 +162,7 @@ private theorem cspaceInsertSlot_lookup_eq
           | none =>
               simp [hLookupGuard] at hStep
               cases hStep
-              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
@@ -191,7 +194,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
           simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
+            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)
@@ -246,7 +249,7 @@ theorem cspaceRevoke_preserves_source
                   (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
                 have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
                   simpa [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                    Std.HashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+                    SeLe4n.Data.RobinHoodHashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
                 have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
                   have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
                   simpa [hEq] using hCapStored

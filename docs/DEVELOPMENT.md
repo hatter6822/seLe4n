@@ -63,8 +63,8 @@ audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **WS-N** portfolio (IPC & Capability cross-audit: Robin Hood hashing &
-correctness) is **in progress** (v0.17.1–). Phases 1–2 (WS-N1/N2) are
-**completed** (v0.17.1–v0.17.2). Phase 1 (WS-N1, v0.17.1): Robin Hood HashMap
+correctness) is **in progress** (v0.17.1–). Phases 1–3 (WS-N1/N2/N3) are
+**completed** (v0.17.1–v0.17.3). Phase 1 (WS-N1, v0.17.1): Robin Hood HashMap
 foundation with all 14 required HashMap bridge lemmas (`get?_insert`,
 `get?_empty`, `get?_erase`, `getElem?_insert`, `getElem?_empty`,
 `getElem?_erase`, `getElem?_eq_get?`, `get?_eq_getElem?`,
@@ -75,8 +75,12 @@ integration. Zero proof gaps. Phase 2 (WS-N2, v0.17.2): `resolveCapAddress`
 leaf-level occupancy fix — added `cn.lookup slot` check at leaf level,
 strengthened `resolveCapAddress_result_valid_cnode_and_slot` theorem, added
 `resolveCapAddress_success_implies_occupied` characterization theorem, 5 new
-test scenarios. Phases N3–N5 pending (codebase migration, test coverage,
-documentation sync).
+test scenarios. Phase 3 (WS-N3, v0.17.3): Full HashMap/HashSet migration —
+replaced all `Std.HashMap`/`Std.HashSet` usage across 20 source + 6 test files
+with `KernelHashMap`/`KernelHashSet`. Fixed `fold` argument order, redirected
+Prelude bridge lemmas, repaired proofs in Structures/Authority/Preservation,
+added `BEq`/`Repr` instances for `RobinHoodHashMap`. 148 build jobs, zero
+sorry/axiom. Phases N4–N5 pending (test coverage, documentation sync).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:

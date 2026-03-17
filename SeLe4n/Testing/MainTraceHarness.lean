@@ -66,7 +66,7 @@ def bootstrapState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := Std.HashMap.ofList
+      slots := SeLe4n.Data.RobinHoodHashMap.ofList
         [ (⟨0⟩, {
             target := .object ⟨1⟩
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -281,7 +281,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     guardWidth := 2
     guardValue := 3
     radixWidth := 12
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨1⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
       (⟨1024⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
@@ -923,7 +923,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           watermark := 0, children := [], isDevice := true })
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Data.RobinHoodHashMap.ofList [
             (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
             (⟨5⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }),
             (⟨6⟩, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write], badge := none }),
@@ -1119,7 +1119,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let retypeCap : Capability := { target := .object demoUntyped, rights := AccessRightSet.ofList [.retype], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨0⟩, writeCap),
       (⟨1⟩, readOnlyCap),
       (⟨2⟩, retypeCap)
@@ -1251,7 +1251,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object rdtEp,
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := none })
@@ -1289,7 +1289,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object rdtEp,
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := none })
@@ -1324,7 +1324,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object rdtEp,
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := none })
@@ -1370,7 +1370,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withObject ksdEpId (.endpoint {})
       |>.withObject ksdCnodeId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Data.RobinHoodHashMap.ofList [
           (⟨0⟩, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       })
@@ -1639,7 +1639,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcEp : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Data.RobinHoodHashMap.ofList [
       (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
   }
@@ -1868,7 +1868,7 @@ private def buildParameterizedTopology
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
       (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := Std.HashMap.ofList cnodeSlots }
+  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Data.RobinHoodHashMap.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩

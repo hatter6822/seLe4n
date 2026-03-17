@@ -246,7 +246,7 @@ private theorem default_capabilityInvariantBundle :
   ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
    by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
    by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-   by intro _ _ h; simp [default] at h,
+   by intro _ _ h; simp [default, SeLe4n.Data.RobinHoodHashMap.getElem?_empty] at h,
    by exact CapDerivationTree.empty_edgeWellFounded,
    by intro cnodeId cn hObj; have h : (default : SystemState).objects[cnodeId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)⟩
 

@@ -269,8 +269,8 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
-      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList []) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Data.RobinHoodHashMap.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
+      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Data.RobinHoodHashMap.ofList []) })
       |>.build)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -510,7 +510,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
+      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Data.RobinHoodHashMap.ofList
           [ (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , (⟨1⟩, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
@@ -566,7 +566,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (Std.HashMap.ofList
+      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Data.RobinHoodHashMap.ofList
           [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })

@@ -77,14 +77,14 @@ theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
 Hierarchical page-table levels are deferred behind this stable executable surface.
 
-`mappings` is backed by `Std.HashMap VAddr (PAddr × PagePermissions)` for O(1)
+`mappings` is backed by `KernelHashMap VAddr (PAddr × PagePermissions)` for O(1)
 amortized lookup, insert, and erase. HashMap key uniqueness is structural,
 making `noVirtualOverlap` trivially true.
 
 WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheable). -/
 structure VSpaceRoot where
   asid : SeLe4n.ASID
-  mappings : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  mappings : KernelHashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
   deriving Repr
 
 namespace VSpaceRoot
@@ -149,7 +149,7 @@ theorem lookup_unmapPage_eq_none
   | some p =>
       simp [hLookup] at hUnmap
       cases hUnmap
-      simp [lookup]
+      simp [lookup, SeLe4n.Data.RobinHoodHashMap.getElem?_erase]
 
 /-- WS-G6/WS-H11: After mapping vaddr→paddr with perms, lookup returns the entry.
 Maps to `HashMap.getElem?_insert`. -/
@@ -166,7 +166,7 @@ theorem lookup_mapPage_eq
   | none =>
       simp [hLookup] at hMap
       cases hMap
-      simp [lookup]
+      simp [lookup, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
 
 /-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr. -/
 theorem lookupAddr_mapPage_eq
@@ -209,7 +209,10 @@ theorem lookup_eq_none_iff
     (root : VSpaceRoot)
     (vaddr : SeLe4n.VAddr) :
     root.lookup vaddr = none ↔ vaddr ∉ root.mappings := by
-  simp [lookup]
+  show root.mappings.inner[vaddr]? = none ↔ ¬root.mappings.inner.contains vaddr
+  constructor
+  · intro h hMem; simp [Std.HashMap.getElem?_eq_some_getElem hMem] at h
+  · exact Std.HashMap.getElem?_eq_none
 
 /-- WS-G6: A successful `mapPage` preserves the no-virtual-overlap invariant.
 With HashMap-backed mappings, `noVirtualOverlap` is trivially true by key uniqueness. -/
@@ -318,7 +321,7 @@ def empty : CNode :=
   { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0, slots := {} }
 
 /-- Construct a CNode at a given depth with guard/radix parameters. -/
-def mk' (d gw gv rw : Nat) (s : Std.HashMap SeLe4n.Slot Capability := {}) : CNode :=
+def mk' (d gw gv rw : Nat) (s : KernelHashMap SeLe4n.Slot Capability := {}) : CNode :=
   { depth := d, guardWidth := gw, guardValue := gv, radixWidth := rw, slots := s }
 
 /-- Number of addressable slots represented by this CNode radix width. -/
@@ -444,14 +447,15 @@ def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTar
 Maps directly to `HashMap.getElem?_erase_self`. -/
 theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot) :
     (node.remove slot).lookup slot = none := by
-  simp [remove, lookup]
+  simp [remove, lookup, SeLe4n.Data.RobinHoodHashMap.getElem?_erase]
 
 /-- WS-G5: If `lookup` returns `some`, the slot key is present in the HashMap.
 Replaces the list-era membership theorem with HashMap semantics. -/
 theorem lookup_mem_of_some (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : node.lookup slot = some cap) : slot ∈ node.slots := by
-  simp [lookup] at h
-  exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [h])
+  show node.slots.contains slot = true
+  rw [SeLe4n.Data.RobinHoodHashMap.mem_iff_isSome_getElem?]
+  simp [lookup] at h; simp [h]
 
 theorem resolveSlot_depthMismatch
     (node : CNode)
@@ -526,7 +530,8 @@ def slotCountBounded (cn : CNode) : Prop :=
 /-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
 theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
   unfold slotCountBounded empty slotCount
-  simp
+  show SeLe4n.Data.RobinHoodHashMap.size ⟨∅⟩ ≤ 2 ^ 0
+  simp [SeLe4n.Data.RobinHoodHashMap.size]
 
 /-- Removing a slot preserves the slot-count bound (size can only decrease). -/
 theorem remove_slotCountBounded
@@ -534,7 +539,7 @@ theorem remove_slotCountBounded
     (hBounded : cn.slotCountBounded) :
     (cn.remove slot).slotCountBounded := by
   show (cn.slots.erase slot).size ≤ 2 ^ cn.radixWidth
-  have h : (cn.slots.erase slot).size ≤ cn.slots.size := Std.HashMap.size_erase_le
+  have h : (cn.slots.erase slot).size ≤ cn.slots.size := SeLe4n.Data.RobinHoodHashMap.size_erase_le cn.slots slot
   exact Nat.le_trans h hBounded
 
 /-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
@@ -543,7 +548,7 @@ theorem revokeTargetLocal_slotCountBounded
     (hBounded : cn.slotCountBounded) :
     (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
   show (cn.slots.filter (fun s c => s == sourceSlot || !c.target == target)).size ≤ 2 ^ cn.radixWidth
-  have h := @Std.HashMap.size_filter_le_size _ _ _ _ cn.slots _ _
+  have h := SeLe4n.Data.RobinHoodHashMap.size_filter_le_size cn.slots
     (fun s c => s == sourceSlot || !c.target == target)
   exact Nat.le_trans h hBounded
 
@@ -552,15 +557,16 @@ With HashMap-backed slots, `slotsUnique` is trivially satisfied (structural
 invariant of HashMap), so the uniqueness hypothesis is unused. -/
 theorem mem_lookup_of_slotsUnique (node : CNode) (_hUniq : node.slotsUnique)
     (slot : SeLe4n.Slot) (hMem : slot ∈ node.slots) :
-    node.lookup slot = some node.slots[slot] :=
-  Std.HashMap.getElem?_eq_some_getElem hMem
+    node.lookup slot = some node.slots[slot] := by
+  show node.slots.inner[slot]? = some node.slots.inner[slot]
+  exact Std.HashMap.getElem?_eq_some_getElem hMem
 
 /-- WS-G5: Lookup roundtrip after insert — inserting at `slot` makes lookup
 return the inserted capability. Maps directly to `HashMap.getElem?_insert_self`. -/
 theorem lookup_insert_eq
     (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
     (cn.insert slot cap).lookup slot = some cap := by
-  simp [insert, lookup]
+  simp [insert, lookup, SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
 
 /-- WS-G5: Insert at a different slot does not affect lookup.
 Maps directly to `HashMap.getElem?_insert`. -/
@@ -569,7 +575,7 @@ theorem lookup_insert_ne
     (hNe : slot ≠ slot') :
     (cn.insert slot cap).lookup slot' = cn.lookup slot' := by
   simp only [insert, lookup]
-  rw [Std.HashMap.getElem?_insert]
+  rw [SeLe4n.Data.RobinHoodHashMap.getElem?_insert]
   have : ¬((slot == slot') = true) := by
     intro h; exact hNe (eq_of_beq h)
   simp [this]
@@ -581,7 +587,7 @@ theorem lookup_remove_ne
     (hNe : slot ≠ slot') :
     (cn.remove slot).lookup slot' = cn.lookup slot' := by
   simp only [remove, lookup]
-  rw [Std.HashMap.getElem?_erase]
+  rw [SeLe4n.Data.RobinHoodHashMap.getElem?_erase]
   have : ¬((slot == slot') = true) := by
     intro h; exact hNe (eq_of_beq h)
   simp [this]
@@ -713,10 +719,10 @@ structure CapDerivationTree where
   /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup.
   Runtime index maintained in parallel with `edges`; `edges` remains the
   proof anchor. -/
-  childMap : Std.HashMap CdtNodeId (List CdtNodeId) := {}
+  childMap : KernelHashMap CdtNodeId (List CdtNodeId) := {}
   /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
   Maps each child node to its unique parent. Symmetric to `childMap`. -/
-  parentMap : Std.HashMap CdtNodeId CdtNodeId := {}
+  parentMap : KernelHashMap CdtNodeId CdtNodeId := {}
   deriving Repr
 
 namespace CapDerivationTree
@@ -1059,7 +1065,7 @@ theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
 
 /-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list. -/
 private theorem foldl_erase_preserves
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List CdtNodeId) (m : KernelHashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hNotAny : ∀ c ∈ xs, (c == k) = false) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
   induction xs generalizing m with
@@ -1073,7 +1079,7 @@ private theorem foldl_erase_preserves
 
 /-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none. -/
 private theorem foldl_erase_none
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List CdtNodeId) (m : KernelHashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hNone : m[k]? = none) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with
@@ -1088,7 +1094,7 @@ private theorem foldl_erase_none
 
 /-- M-P02: Helper — `foldl erase` erases entries for keys in the list. -/
 private theorem foldl_erase_mem
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List CdtNodeId) (m : KernelHashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hMem : ∃ c ∈ xs, (c == k) = true) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with

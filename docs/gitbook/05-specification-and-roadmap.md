@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 5,256 across 4 suites |
 | Proved declarations | 1,304 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood HashMap workstream plan |
-| Next workstreams | **WS-N** Robin Hood HashMap — **N1 COMPLETED** (v0.17.1). Foundation with machine-checked bridge lemmas. N2–N5 pending. **WS-M** Capability subsystem — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). **Next: WS-N2–N5, then Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-N** Robin Hood HashMap — **N1 COMPLETED** (v0.17.1), **N2 COMPLETED** (v0.17.2), **N3 COMPLETED** (v0.17.3: full HashMap/HashSet migration). Foundation with machine-checked bridge lemmas. N4–N5 pending. **WS-M** Capability subsystem — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** IPC subsystem — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). **Next: WS-N4–N5, then Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -68,7 +68,9 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M3 (IPC cap transfer, v0.16.17) — COMPLETED.** →
 **WS-M4 (test coverage expansion, v0.16.18) — COMPLETED.** →
 **WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
-**WS-N1 (Robin Hood HashMap foundation, v0.17.1) — COMPLETED.** N2–N5 pending.
+**WS-N1 (Robin Hood HashMap foundation, v0.17.1) — COMPLETED.** →
+**WS-N2 (resolveCapAddress leaf-level fix, v0.17.2) — COMPLETED.** →
+**WS-N3 (HashMap/HashSet migration, v0.17.3) — COMPLETED.** N4–N5 pending.
 
 ## Completed: WS-M Capability Subsystem Audit & Remediation (v0.16.13–v0.17.0, PORTFOLIO COMPLETE)
 

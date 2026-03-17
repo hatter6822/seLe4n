@@ -21,13 +21,13 @@ WS-N is an **in-progress** workstream portfolio (v0.17.1–v0.17.5), created fro
 comprehensive cross-subsystem audit of the IPC and Capability subsystems (15,000+
 LoC, 20+ files). The audit found zero critical vulnerabilities but identified
 performance optimization opportunities via Robin Hood hashing, a `resolveCapAddress`
-leaf-level asymmetry, and test coverage gaps. Phases 1–2 completed; phases 3–5 pending.
+leaf-level asymmetry, and test coverage gaps. Phases 1–3 completed; phases 4–5 pending.
 
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-N1** | Robin Hood HashMap foundation: core data structure, bridge lemmas (14 HashMap + 6 HashSet), `KernelHashMap`/`KernelHashSet` type aliases, Prelude integration | HIGH — **COMPLETED** (v0.17.1) |
 | **WS-N2** | `resolveCapAddress` leaf-level occupancy fix + strengthened theorems | HIGH — **COMPLETED** (v0.17.2) |
-| **WS-N3** | HashMap/HashSet migration across entire codebase (76 + 25 call sites) | MEDIUM — pending |
+| **WS-N3** | HashMap/HashSet migration across entire codebase (20 source + 6 test files) | MEDIUM — **COMPLETED** (v0.17.3) |
 | **WS-N4** | Test coverage, determinism validation, zero-gap audit | MEDIUM — pending |
 | **WS-N5** | Documentation sync, GitBook, codebase map | LOW — pending |
 
@@ -70,6 +70,19 @@ multi-level empty leaf error, N2-T4: multi-level occupied leaf success, N2-T5:
 `cspaceLookupMultiLevel` empty leaf integration). N2-G: Updated M4-A6 test
 comment documenting WS-N2 semantic change. Zero sorry/axiom. Zero warnings.
 All test tiers pass.
+
+**WS-N3** (v0.17.3): HashMap/HashSet migration — replaced all `Std.HashMap`/`Std.HashSet`
+usage with `KernelHashMap`/`KernelHashSet` across 20 source + 6 test files.
+N3-A: fold argument order fix aligning with RobinHoodHashMap's `fold` signature.
+N3-B: bridge lemma redirection in `Prelude.lean` routing through
+`RobinHoodHashMap`/`RobinHoodHashSet` bridge lemmas. N3-C: proof repairs in
+`Structures.lean` for updated HashMap API. N3-D: proof repairs in
+`Authority.lean` for capability invariant preservation under new types. N3-E:
+proof repairs in `Preservation.lean` for scheduler/capability preservation
+theorems. N3-F: `BEq` instance for `RobinHoodHashMap` enabling equality
+comparison in test harness and kernel logic. N3-G: full codebase migration of
+all remaining call sites. 148 build jobs pass. Zero sorry/axiom. `test_full.sh`
+passes.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 
