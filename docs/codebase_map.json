@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-hashmap-migration-GR6B4",
-      "commit_sha": "a646a3604f68b218f67063d4a3bb593b642779bb",
-      "tree_sha": "075f6f6ce8a43eb8d41b31870f77ebc86d99e174",
-      "committed_at_utc": "2026-03-17T15:02:58+00:00"
+      "commit_sha": "cc9fcb9a4cace9d38486393a738bf12ca1c8dbfa",
+      "tree_sha": "51b12851c1c0c9ab3d2a1c10e878d077e2607f48",
+      "committed_at_utc": "2026-03-17T15:22:07+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "84433555577f4d16adf68698b2c4b465f03641d8aa05faf401890cab78a1228b"
+    "source_digest": "bde2bd179d7cb93ce56437719d92dcc679e44e19d0cd421f73e3f4b1f1ee9d64"
   },
   "summary": {
     "module_count": 76,

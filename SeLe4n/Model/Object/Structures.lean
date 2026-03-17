@@ -1212,7 +1212,7 @@ def projectObservedEdges
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is now
-`Std.HashMap Slot Capability` which does not have a `DecidableEq` instance.
+`KernelHashMap Slot Capability` which does not have a `DecidableEq` instance.
 `Repr` is retained for trace output. `BEq` is provided manually via entry-wise
 HashMap comparison for runtime test assertions. -/
 inductive KernelObject where
