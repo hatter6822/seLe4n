@@ -15,6 +15,32 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-N workstream (Robin Hood hashing verified implementation)
+
+WS-N is the **active** workstream (v0.17.0+), created to close the trust gap
+between seLe4n's machine-checked proof surface and the unverified `Std.HashMap`
+library type used across 14 production source files (114 occurrences). The
+workstream delivers a formally verified Robin Hood hash table implementation
+with fuel-bounded recursion (no `partial`), bounds-checked array access (no
+`get!`/`set!`), and machine-checked invariant proofs.
+
+WS-N phases N1–N3 were previously attempted and **reverted** (PRs #453–#455)
+due to `partial` functions, unsafe array access, missing refinement proofs, and
+incorrect cluster-ordering invariants. This re-plan addresses every failure mode
+with a single-representation architecture, `Nat`-based bounded recursion, and
+per-cluster modular-arithmetic ordering.
+
+| ID | Focus | Priority |
+|----|-------|----------|
+| **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **PLANNED** |
+| **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`robinHoodOrdered` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_erase_eq`) | HIGH — **PLANNED** |
+| **WS-N3** | Kernel API bridge: `GetElem?`/`Membership` instances, 12 bridge lemmas matching `Std.HashMap` proof patterns, `filter` support | MEDIUM — **PLANNED** |
+| **WS-N4** | Kernel integration (first site): replace `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; update ~15 CNode theorems, ~8 invariant proofs, test fixtures | MEDIUM — **PLANNED** |
+| **WS-N5** | Test coverage + documentation: 12 standalone + 6 integration test scenarios, full documentation sync across 8 canonical files + 4 GitBook chapters | LOW — **PLANNED** |
+
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
+for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
+
 ### WS-M workstream (Capability subsystem audit & remediation)
 
 WS-M is a **completed** workstream portfolio (v0.16.14–v0.17.0), created from a
@@ -373,6 +399,7 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 
 | Plan | Scope |
 |------|-------|
+| [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) | **WS-N** Robin Hood hashing verified implementation (5 phases) — **active** |
 | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **completed** (v0.16.13) |
 | [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) — completed |
 | [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) — completed |
