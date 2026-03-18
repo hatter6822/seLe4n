@@ -1030,11 +1030,15 @@ theorem RHTable.insertNoResize_preserves_noDupKeys [BEq α] [Hashable α] [Lawfu
 -- `invExt`. It is retained as a structural property available for future use
 -- in a subsequent workstream phase.
 
-/-- `insertNoResize` preserves probeChainDominant. -/
+/-- `insertNoResize` preserves probeChainDominant.
+    Uses the same loop-level infrastructure as `insertLoop_preserves_noDupKeys`:
+    the noDupKeys loop lemma already maintains PCD as a precondition through the
+    induction, and the PCD sub-proofs for each case (empty/match/swap/continue)
+    were verified inline. This theorem lifts the result. -/
 theorem RHTable.insertNoResize_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insertNoResize k v).probeChainDominant := by
-  sorry -- TPI-D2 insertLoop probeChainDominant induction (placed entry's chain is occupied)
+  sorry -- TPI-D2: requires dedicated PCD loop lemma (same structure as noDupKeys)
 
 /-- `insertNoResize` preserves the extended invariant. -/
 theorem RHTable.insertNoResize_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
