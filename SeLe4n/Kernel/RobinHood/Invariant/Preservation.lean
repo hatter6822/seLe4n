@@ -1900,8 +1900,34 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
 theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).probeChainDominant := by
-  sorry -- TPI-D3: See proof strategy above. Requires backshiftLoop_preserves_pcd
-         -- with relaxedPCD induction (~200 lines). All other erase invariants proved.
+  sorry -- TPI-D3: BLOCKED — theorem false as stated for full tables (size = capacity).
+         --
+         -- **Counterexample** (capacity=3, size=3, all entries dist=2):
+         --   Position 0: {key=k0, ideal=1, dist=2}
+         --   Position 1: {key=k1, ideal=2, dist=2}
+         --   Position 2: {key=k2, ideal=0, dist=2}
+         -- This table satisfies invExt (WF, distCorrect, noDupKeys, PCD all hold).
+         -- After erasing k0: clear position 0, backshiftLoop with fuel=3.
+         -- After 3 shifts (wrapping around), fuel=0. Output:
+         --   Position 0: none, Position 1: {k2, dist=1}, Position 2: {k1, dist=0}
+         -- PCD fails: entry at 1 (ideal=0, dist=1) needs witness at 0, but position 0 is none.
+         --
+         -- **Root cause**: invExt allows size = capacity (full tables). With a full-wrap
+         -- cluster (all entries have dist>0), backshiftLoop needs >capacity shifts but
+         -- only has fuel=capacity. The loop terminates by fuel exhaustion, not naturally,
+         -- leaving an incomplete backshift that breaks PCD.
+         --
+         -- **Fix**: add `t.size < t.capacity` as a precondition (or to invExt). This
+         -- guarantees ≥2 empty slots after clearing, so the loop always terminates
+         -- naturally within capacity-1 shifts. This condition holds for all reachable
+         -- states: `insert` resizes at 75% load, so size < capacity for capacity ≥ 3.
+         -- For capacity ≤ 2 with size = capacity, erase preserves PCD trivially
+         -- (small case analysis: after clearing, the cluster is short enough).
+         --
+         -- **Proven infrastructure** (in this file):
+         -- - `relaxedPCD` definition: PCD with one excused gap position
+         -- - `relaxedPCD_to_pcd_at_termination`: collapse when next slot is inactive
+         -- Both are ready for use once the precondition is fixed.
 
 -- ============================================================================
 -- Section 12: Composite invariant bundle preservation

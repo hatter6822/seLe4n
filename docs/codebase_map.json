@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "c5bb64eb90f41afd8bc919225dc0c963aef33bd1",
-      "tree_sha": "a7b4f58a518756621e2e59b52dc8e7a051bb7e19",
-      "committed_at_utc": "2026-03-18T16:01:09+00:00"
+      "commit_sha": "53a91c9bdb4cdc56db764a0406bb89460776d8d2",
+      "tree_sha": "27a628c65f2ab0e84ff80d09254bd9f41b95f4ab",
+      "committed_at_utc": "2026-03-18T16:06:24+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "787e2808fc54ebbccde9ad702a9712289ec242701795b2ad4a99051d3c49c6d5"
+    "source_digest": "82669235e5b7923a9a7e5a4242009be59d1b86d9e7dc028846f8cbded07aa8db"
   },
   "summary": {
     "module_count": 81,
-    "declaration_count": 2476
+    "declaration_count": 2477
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 43876,
+    "production_loc": 44061,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1361,
+    "proved_theorem_lemma_decls": 1362,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9703,7 +9703,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -9823,14 +9823,24 @@
         },
         {
           "kind": "theorem",
-          "name": "RHTable.get_after_insert_ne",
-          "line": 783,
+          "name": "insertLoop_absent_ne_key",
+          "line": 787,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "RHTable.get_after_insert_ne",
+          "line": 865,
+          "called": [
+            "getLoop_finds_present",
+            "getLoop_none_of_absent",
+            "insertLoop_absent_ne_key"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 792,
+          "line": 950,
           "called": [
             "erase_removes_key",
             "getLoop_none_of_absent"
@@ -10231,7 +10241,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 1899,
+          "line": 1900,
           "called": [
             "probeChainDominant"
           ]
@@ -10239,19 +10249,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 1910,
+          "line": 1937,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 1919,
+          "line": 1946,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 1928,
+          "line": 1955,
           "called": []
         }
       ]
