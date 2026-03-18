@@ -1774,47 +1774,41 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
           (gap + 1) % capacity := by
         rw [show idealIndex e.key capacity hCapPos + (d + 1) =
             (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
-        have := hGapM; omega
-      cases hR2 with
-      | inl hGap2 =>
-        -- (h + d + 1) % cap = gap % cap
-        -- But (h + d + 1) % cap = (gap + 1) % cap (from above)
-        -- So (gap + 1) % cap = gap % cap
+        have hME : (idealIndex e.key capacity hCapPos + d) % capacity =
+            gap % capacity := hGapM.symm
+        calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
+            = ((idealIndex e.key capacity hCapPos + d) % capacity +
+                1 % capacity) % capacity := Nat.add_mod _ 1 _
+          _ = (gap % capacity + 1 % capacity) % capacity := by rw [hME]
+          _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
+      rcases hR2 with hGap2 | ⟨e', he', hge'⟩
+      · -- (h+d+1)%cap = gap%cap but should be (gap+1)%cap
         rw [hWitNext] at hGap2
-        -- This means (gap + 1) % cap = gap % cap
-        have : (gap + 1) % capacity = gap % capacity := hGap2
-        have h1 := Nat.mod_lt gap hCapPos
-        have h2 := Nat.mod_lt (gap + 1) hCapPos
-        -- gap%cap and (gap+1)%cap differ when cap > 1; if cap = 1, gap%1 = 0 = (gap+1)%1
         by_cases hCap1 : capacity = 1
-        · -- cap = 1: the entry at p has dist > 0 but p < 1, so p = 0
-          -- dist = (0 + 1 - ideal) % 1 = 0. But d < dist and d >= 0, so dist > 0. Contradiction.
-          subst hCap1
-          have := hDist p hp e hSlot; simp [Nat.mod_one] at this; omega
-        · -- cap > 1: gap%cap != (gap+1)%cap
-          have hCapGe2 : capacity ≥ 2 := by omega
-          by_cases hw : gap % capacity + 1 < capacity
+        · subst hCap1; have := hDist p hp e hSlot; simp [Nat.mod_one] at this; omega
+        · by_cases hw : gap % capacity + 1 < capacity
           · have : (gap + 1) % capacity = gap % capacity + 1 := by
-              have hDiv := Nat.div_add_mod gap capacity
-              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by omega,
+              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by
+                have := Nat.div_add_mod gap capacity; omega,
                 Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hw]
             omega
-          · have hEq : gap % capacity = capacity - 1 := by omega
+          · have hEqM : gap % capacity = capacity - 1 := by
+              have := Nat.mod_lt gap hCapPos; omega
             have : (gap + 1) % capacity = 0 := by
-              have hDiv := Nat.div_add_mod gap capacity
-              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by omega,
-                hEq, show capacity - 1 + 1 = capacity from by omega,
+              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by
+                have := Nat.div_add_mod gap capacity; omega,
+                hEqM, show capacity - 1 + 1 = capacity from by omega,
                 Nat.add_mul_mod_self_left, Nat.mod_self]
             omega
-      | inr ⟨e', he', hge'⟩ =>
-        -- Witness at (gap+1)%cap with dist >= d+1
-        rw [hWitNext] at he' hge'
-        -- But (gap+1)%cap is either none or has dist=0
-        cases hNextInactive with
-        | inl hNone => rw [hNone] at he'; exact Option.noConfusion he'
-        | inr ⟨ne, hne, hne0⟩ =>
-          rw [hne] at he'
-          have := Option.some.inj he'; subst this; omega
+      · -- Witness at (gap+1)%cap with dist >= d+1
+        have he'2 : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos)
+            = some e' := by
+          have : (idealIndex e.key capacity hCapPos + (d + 1)) % capacity =
+              (gap + 1) % capacity := hWitNext
+          simp only [this] at he'; exact he'
+        rcases hNextInactive with hNone | ⟨ne, hne, hne0⟩
+        · rw [hNone] at he'2; exact Option.noConfusion he'2
+        · rw [hne] at he'2; have := Option.some.inj he'2; subst this; omega
     · -- d + 1 >= e.dist, so d = e.dist - 1 (since d < e.dist)
       have hd_eq : d = e.dist - 1 := by omega
       -- Entry at p: (h + dist) % cap = p (by distCorrect roundtrip)
@@ -1830,7 +1824,13 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
           (gap + 1) % capacity := by
         rw [show idealIndex e.key capacity hCapPos + e.dist =
             (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
-        have := hGapM; omega
+        have hME : (idealIndex e.key capacity hCapPos + d) % capacity =
+            gap % capacity := hGapM.symm
+        calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
+            = ((idealIndex e.key capacity hCapPos + d) % capacity +
+                1 % capacity) % capacity := Nat.add_mod _ 1 _
+          _ = (gap % capacity + 1 % capacity) % capacity := by rw [hME]
+          _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
       rw [hPEq, hStep] at hSlot
       -- slots[(gap+1)%cap] = some e, but it's either none or dist=0
       cases hNextInactive with
