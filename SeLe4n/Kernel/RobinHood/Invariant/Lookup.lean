@@ -506,11 +506,21 @@ private theorem insertLoop_places_key [BEq α] [Hashable α]
             rw [Array.size_set]; exact hLen
           -- The inserted entry for k is at idx%cap in the new slots
           exact ⟨idx % capacity, hModLt, ⟨k, v, d⟩, by
-            -- Need to show the insertLoop result still has this entry
-            -- It was set at idx%cap, and then we recurse with e.key from idx%cap+1
-            -- The recursive insertLoop starts at idx%cap+1, so it won't touch idx%cap
-            -- if idx%cap is not reachable from idx%cap+1 in n steps
-            sorry, beq_self_eq_true k, rfl⟩
+            have hPreserved := insertLoop_preserves_slot n (idx % capacity + 1) e.key e.value
+              (e.dist + 1) (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)
+              capacity hLen' hCapPos (idx % capacity) hModLt (by
+                intro s hs
+                have h1s : 1 + s < capacity := by omega
+                intro heq
+                have : (idx % capacity + (1 + s)) % capacity = idx % capacity := by
+                  convert heq using 2; omega
+                rw [Nat.add_mod_right] at this
+                have := Nat.mod_eq_of_lt (by omega : s < capacity)
+                omega)
+            rw [hPreserved]
+            simp only [Array.getElem_set]; split
+            · simp
+            · rename_i hNe; exact absurd rfl hNe, beq_self_eq_true k, rfl⟩
         · -- continue probing
           obtain ⟨s, hs, hOr⟩ := hRoom
           if hZero : s = 0 then
