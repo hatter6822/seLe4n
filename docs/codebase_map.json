@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "97aec953b88602c5d7b64fe2a956871cb88ba00f",
-      "tree_sha": "dcebf1e1edd4335271fc8823f537932a23bc1404",
-      "committed_at_utc": "2026-03-18T07:07:57+00:00"
+      "commit_sha": "d88b8edef6ab31b295289289a89e91060e5fba01",
+      "tree_sha": "74d5b655109e3234cb70b00a6a2ae5fba4d664cb",
+      "committed_at_utc": "2026-03-18T15:13:48+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "01a6b15a52fbb4ef51d3d38d80216333bf5cc7c3d4374c37685d7edbe5771451"
+    "source_digest": "0641ebe9ecf7704eb88b22cf662c459d1c442a58047852b1178d02f3b3090656"
   },
   "summary": {
     "module_count": 81,
-    "declaration_count": 2459
+    "declaration_count": 2462
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 42664,
+    "production_loc": 42990,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1345,
+    "proved_theorem_lemma_decls": 1348,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9703,7 +9703,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 4,
+      "declaration_count": 6,
       "declarations": [
         {
           "kind": "namespace",
@@ -9713,28 +9713,43 @@
         },
         {
           "kind": "theorem",
+          "name": "getLoop_none_of_absent",
+          "line": 21,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_removes_key",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 19,
+          "line": 56,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 26,
+          "line": 63,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 34,
-          "called": []
+          "line": 72,
+          "called": [
+            "erase_removes_key",
+            "getLoop_none_of_absent"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Preservation",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean",
-      "declaration_count": 52,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -9968,8 +9983,21 @@
         },
         {
           "kind": "theorem",
+          "name": "insertLoop_preserves_pcd",
+          "line": 989,
+          "called": [
+            "carried_key_absent",
+            "displacement_roundtrip",
+            "dist_step_mod",
+            "getElem_idx_eq",
+            "offset_injective",
+            "probeChainDominant"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_distCorrect",
-          "line": 986,
+          "line": 1269,
           "called": [
             "insertLoop_preserves_distCorrect"
           ]
@@ -9977,19 +10005,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_distCorrect",
-          "line": 996,
+          "line": 1279,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_distCorrect",
-          "line": 1009,
+          "line": 1292,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_noDupKeys",
-          "line": 1020,
+          "line": 1303,
           "called": [
             "insertLoop_preserves_noDupKeys"
           ]
@@ -9997,21 +10025,22 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_probeChainDominant",
-          "line": 1036,
+          "line": 1319,
           "called": [
+            "insertLoop_preserves_pcd",
             "probeChainDominant"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_invExt",
-          "line": 1047,
+          "line": 1333,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_noDupKeys",
-          "line": 1056,
+          "line": 1342,
           "called": [
             "RHTable.empty_invExt"
           ]
@@ -10019,7 +10048,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_probeChainDominant",
-          "line": 1069,
+          "line": 1355,
           "called": [
             "RHTable.empty_invExt",
             "probeChainDominant"
@@ -10028,19 +10057,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invExt",
-          "line": 1082,
+          "line": 1368,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_noDupKeys",
-          "line": 1089,
+          "line": 1375,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_probeChainDominant",
-          "line": 1097,
+          "line": 1383,
           "called": [
             "probeChainDominant"
           ]
@@ -10048,19 +10077,19 @@
         {
           "kind": "theorem",
           "name": "noDupKeys_after_clear",
-          "line": 1109,
+          "line": 1395,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_noDupKeys",
-          "line": 1132,
+          "line": 1418,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "displacement_backward",
-          "line": 1234,
+          "line": 1520,
           "called": [
             "dist_step_mod"
           ]
@@ -10068,7 +10097,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_distCorrect",
-          "line": 1303,
+          "line": 1589,
           "called": [
             "displacement_backward"
           ]
@@ -10076,7 +10105,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_distCorrect",
-          "line": 1385,
+          "line": 1671,
           "called": [
             "backshiftLoop_preserves_distCorrect"
           ]
@@ -10084,7 +10113,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_noDupKeys",
-          "line": 1414,
+          "line": 1700,
           "called": [
             "backshiftLoop_preserves_noDupKeys",
             "findLoop_lt",
@@ -10094,7 +10123,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 1448,
+          "line": 1734,
           "called": [
             "probeChainDominant"
           ]
@@ -10102,19 +10131,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 1458,
+          "line": 1744,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 1467,
+          "line": 1753,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 1476,
+          "line": 1762,
           "called": []
         }
       ]
