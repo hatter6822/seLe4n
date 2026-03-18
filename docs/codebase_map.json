@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "e3dbc686f95867c44e79450940abcf89f6ddf3fd",
-      "tree_sha": "3f469fd735f799bbbc6d256c504be6724b163e6e",
-      "committed_at_utc": "2026-03-18T21:05:58+00:00"
+      "branch": "main",
+      "commit_sha": "ef4ebb01ad4a6dd5c202cdba6090ac50711f6142",
+      "tree_sha": "b840f8db922aa28c9a73751adb25d67626c6589b",
+      "committed_at_utc": "2026-03-18T17:23:31-04:00"
     }
   },
   "source_sync": {
