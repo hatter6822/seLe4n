@@ -156,6 +156,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~622 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~607 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~601 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~544 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~724 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~519 lines)
