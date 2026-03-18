@@ -1,4 +1,4 @@
-# WS-O Workstream Plan — Verified Service Interface Layer (v0.18.0)
+# WS-P Workstream Plan — Verified Service Interface Layer (v0.18.0)
 
 **Created**: 2026-03-18
 **Baseline version**: 0.17.1
@@ -101,8 +101,8 @@ lemmas are removed.
 
 **DD-3: Additive-first migration**
 
-Phases O1-O4 are purely additive — new types and operations coexist alongside
-legacy infrastructure. Phase O5 performs the legacy removal. This ensures
+Phases P1-P4 are purely additive — new types and operations coexist alongside
+legacy infrastructure. Phase P5 performs the legacy removal. This ensures
 compilation at every intermediate step.
 
 ---
@@ -188,7 +188,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ## 4. Phase Plan
 
-### Phase O1: Foundation Types (v0.18.0)
+### Phase P1: Foundation Types (v0.18.0)
 
 **Goal:** Introduce `InterfaceId`, `InterfaceSpec` (concrete), and `ServiceRegistration` types.
 
@@ -210,7 +210,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O2: Registry State and Core Operations (v0.18.1)
+### Phase P2: Registry State and Core Operations (v0.18.1)
 
 **Goal:** Add registry fields to `SystemState`; implement 4 registry operations.
 
@@ -237,7 +237,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O3: Registry Invariants and Preservation Proofs (v0.18.2)
+### Phase P3: Registry Invariants and Preservation Proofs (v0.18.2)
 
 **Goal:** Define registry invariants; prove preservation for all operations.
 
@@ -260,7 +260,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O4: API Integration and Syscall Dispatch (v0.18.3)
+### Phase P4: API Integration and Syscall Dispatch (v0.18.3)
 
 **Goal:** Wire registry operations into kernel API, syscall dispatch, and information flow.
 
@@ -276,7 +276,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O5: Legacy Deprecation and Migration (v0.18.4)
+### Phase P5: Legacy Deprecation and Migration (v0.18.4)
 
 **Goal:** Remove old lifecycle-based service operations; keep dependency cycle detection.
 
@@ -306,7 +306,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O6: Test Migration (v0.18.5)
+### Phase P6: Test Migration (v0.18.5)
 
 **Goal:** Update all test infrastructure for the new service model.
 
@@ -338,15 +338,15 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O7: Documentation and Cleanup (v0.18.6)
+### Phase P7: Documentation and Cleanup (v0.18.6)
 
 **Goal:** Synchronize all documentation with the new service model.
 
 **Modified files (12+):**
-- `docs/WORKSTREAM_HISTORY.md` — Add WS-O entry
+- `docs/WORKSTREAM_HISTORY.md` — Add WS-P entry
 - `docs/spec/SELE4N_SPEC.md` — Update service subsystem section
 - `docs/DEVELOPMENT.md` — Update service development guidance
-- `docs/CLAIM_EVIDENCE_INDEX.md` — Update/add WS-O claims
+- `docs/CLAIM_EVIDENCE_INDEX.md` — Update/add WS-P claims
 - `docs/gitbook/03-architecture-and-module-map.md` — Update service architecture
 - `docs/gitbook/04-project-design-deep-dive.md` — Update service design rationale
 - `docs/gitbook/05-specification-and-roadmap.md` — Update milestone table
@@ -362,7 +362,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ---
 
-### Phase O8: Finalize Workstream Plan Document (v0.18.7)
+### Phase P8: Finalize Workstream Plan Document (v0.18.7)
 
 **Goal:** Update this document with implementation details, lessons learned, and final metrics.
 
@@ -373,12 +373,12 @@ def registryInvariant (st : SystemState) : Prop :=
 ## 5. Dependency Order
 
 ```
-O1 (types) → O2 (operations) → O3 (invariants) → O4 (API) → O5 (migration) → O6 (tests) → O7 (docs) → O8 (finalize)
+P1 (types) → P2 (operations) → P3 (invariants) → P4 (API) → P5 (migration) → P6 (tests) → P7 (docs) → P8 (finalize)
 ```
 
-Phases O1-O4: purely additive (no breakage).
-Phase O5: destructive migration (highest risk).
-Phases O6-O8: cleanup and documentation.
+Phases P1-P4: purely additive (no breakage).
+Phase P5: destructive migration (highest risk).
+Phases P6-P8: cleanup and documentation.
 Each phase boundary: `test_smoke.sh` must pass.
 
 ---
@@ -387,14 +387,14 @@ Each phase boundary: `test_smoke.sh` must pass.
 
 | Phase | New Lines | Removed Lines | Modified Files | New Files |
 |-------|-----------|---------------|----------------|-----------|
-| O1 | ~100 | 0 | 2 | 1 |
-| O2 | ~250 | 0 | 1 | 1 |
-| O3 | ~350 | 0 | 3 | 1 |
-| O4 | ~300 | 0 | 6 | 0 |
-| O5 | ~150 | ~800 | 15 | 0 |
-| O6 | ~300 | ~200 | 7 | 0 |
-| O7 | ~150 | ~50 | 12 | 0 |
-| O8 | ~50 | 0 | 1 | 0 |
+| P1 | ~100 | 0 | 2 | 1 |
+| P2 | ~250 | 0 | 1 | 1 |
+| P3 | ~350 | 0 | 3 | 1 |
+| P4 | ~300 | 0 | 6 | 0 |
+| P5 | ~150 | ~800 | 15 | 0 |
+| P6 | ~300 | ~200 | 7 | 0 |
+| P7 | ~150 | ~50 | 12 | 0 |
+| P8 | ~50 | 0 | 1 | 0 |
 | **Total** | **~1,650** | **~1,050** | **~25 unique** | **3** |
 
 Net effect: ~600 line reduction with substantially simpler invariants.
@@ -403,7 +403,7 @@ Net effect: ~600 line reduction with substantially simpler invariants.
 
 ## 7. Risk Analysis
 
-### Risk 1: Phase O5 Breadth (HIGH → mitigated)
+### Risk 1: Phase P5 Breadth (HIGH → mitigated)
 The legacy removal touches ~15 files simultaneously.
 **Mitigation:** Rename `services` → `servicesLegacy` first to produce compile errors
 at every callsite. Fix each callsite individually. Run `test_smoke.sh` at each
@@ -413,7 +413,7 @@ intermediate commit.
 The information-flow subsystem references services in 6 files (~200 lines).
 **Mitigation:** The NI proof pattern is well-established (service ops only modify
 service state, not objects/scheduler). New registry ops follow the same pattern.
-Add new NI proofs in O4 before removing old ones in O5.
+Add new NI proofs in P4 before removing old ones in P5.
 
 ### Risk 3: SyscallId Renumbering (MEDIUM → mitigated)
 Removing `.serviceStart`/`.serviceStop` and adding `.serviceRegister`/`.serviceRevoke`/
@@ -422,7 +422,7 @@ Removing `.serviceStart`/`.serviceStop` and adding `.serviceRegister`/`.serviceR
 
 ### Risk 4: Test Fixture Drift (LOW)
 The expected output file has ~20 service-related lines that need updating.
-**Mitigation:** Update fixtures atomically with trace harness changes in O6.
+**Mitigation:** Update fixtures atomically with trace harness changes in P6.
 
 ### Risk 5: Capability Slot Revocation Cascades (LOW)
 When a capability slot is deleted via `cspaceDeleteSlot`, registered services
@@ -457,10 +457,10 @@ seL4's eventual consistency model for capabilities.
 - [ ] Zero `sorry`/`axiom` in production proof surface
 
 ### Documentation
-- [ ] WORKSTREAM_HISTORY.md updated with WS-O entry
+- [ ] WORKSTREAM_HISTORY.md updated with WS-P entry
 - [ ] SELE4N_SPEC.md reflects new service architecture
 - [ ] GitBook chapters updated
-- [ ] CLAIM_EVIDENCE_INDEX.md updated with WS-O claims
+- [ ] CLAIM_EVIDENCE_INDEX.md updated with WS-P claims
 - [ ] codebase_map.json regenerated
 
 ---
@@ -474,12 +474,12 @@ source ~/.elan/env && lake build          # Must succeed
 ./scripts/test_smoke.sh                    # Tier 0-2 (minimum before PR)
 ```
 
-After Phase O6 (tests complete):
+After Phase P6 (tests complete):
 ```bash
 ./scripts/test_full.sh                     # Tier 0-3
 ```
 
-After Phase O7 (docs complete):
+After Phase P7 (docs complete):
 ```bash
 ./scripts/generate_codebase_map.py --pretty --check  # Metrics sync
 ./scripts/test_full.sh                                # Full validation
