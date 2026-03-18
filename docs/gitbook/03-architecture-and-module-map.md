@@ -74,6 +74,11 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     (`validateRegBound_ok_iff`, `validateRegBound_error_iff`),
   - self-contained module: imports only `Model.State`, no kernel subsystem
     dependencies (WS-J1-B).
+- `SeLe4n/Kernel/RobinHood/Core.lean` — formally verified Robin Hood hash table
+  (WS-N1, v0.17.1): `RHEntry`/`RHTable` types, fuel-bounded `insertLoop`/`getLoop`/
+  `findLoop`/`backshiftLoop`, `insert`/`get?`/`erase`/`fold`/`resize` operations,
+  `empty_wf`/`insertLoop_preserves_len`/`backshiftLoop_preserves_len` proofs.
+  Re-export hub: `SeLe4n/Kernel/RobinHood.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,

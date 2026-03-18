@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "23ccc9e0f33c5f1a86094d7c38d317f5a0149337",
-      "tree_sha": "826e34b14507477856169b5a1d2f69ed283479b9",
-      "committed_at_utc": "2026-03-17T19:28:30-04:00"
+      "branch": "claude/audit-core-types-operations-pbzWv",
+      "commit_sha": "651674df32c3c9d7a3d7d5da4dfee1fd0d767455",
+      "tree_sha": "7e9e41bb103b6044b3e8cfa515d401c50dafc74f",
+      "committed_at_utc": "2026-03-18T00:23:59+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "eb98179699ef7e8194d1235f86fd9119e2b599f4bcca234aaeed64a9b18adc38"
+    "source_digest": "afd8f3cb8cd8c4fd16be925f75d7c8c8b60dd47111752954e7976665e925e616"
   },
   "summary": {
-    "module_count": 75,
-    "declaration_count": 2361
+    "module_count": 77,
+    "declaration_count": 2394
   },
   "readme_sync": {
-    "version": "0.17.0",
+    "version": "0.17.1",
     "lean_toolchain": "v4.28.0",
-    "production_files": 71,
-    "production_loc": 40664,
+    "production_files": 73,
+    "production_loc": 41057,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1283,
+    "proved_theorem_lemma_decls": 1292,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9353,6 +9353,291 @@
           ]
         }
       ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RobinHood.Core",
+      "path": "SeLe4n/Kernel/RobinHood/Core.lean",
+      "declaration_count": 33,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.RobinHood",
+          "line": 9,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "RHEntry",
+          "line": 17,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "RHTable",
+          "line": 26,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:33>",
+          "line": 33,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "idealIndex",
+          "line": 42,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "nextIndex",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "idealIndex_lt",
+          "line": 54,
+          "called": [
+            "idealIndex"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nextIndex_lt",
+          "line": 59,
+          "called": [
+            "nextIndex"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "countOccupied",
+          "line": 68,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "RHTable.WF",
+          "line": 72,
+          "called": [
+            "RHTable",
+            "countOccupied"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.empty",
+          "line": 79,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.empty_wf",
+          "line": 87,
+          "called": [
+            "RHTable",
+            "RHTable.empty",
+            "countOccupied"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insertLoop",
+          "line": 107,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_preserves_len",
+          "line": 132,
+          "called": [
+            "RHEntry",
+            "insertLoop"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getLoop",
+          "line": 159,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.get",
+          "line": 178,
+          "called": [
+            "RHTable",
+            "getLoop",
+            "idealIndex"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.contains",
+          "line": 183,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "findLoop",
+          "line": 192,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "backshiftLoop",
+          "line": 213,
+          "called": [
+            "RHEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_len",
+          "line": 238,
+          "called": [
+            "RHEntry",
+            "backshiftLoop"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.erase",
+          "line": 256,
+          "called": [
+            "RHTable",
+            "backshiftLoop",
+            "backshiftLoop_preserves_len",
+            "findLoop",
+            "idealIndex"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.fold",
+          "line": 278,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.toList",
+          "line": 285,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.insertNoResize",
+          "line": 290,
+          "called": [
+            "RHTable",
+            "idealIndex",
+            "insertLoop",
+            "insertLoop_preserves_len"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.insertNoResize_capacity",
+          "line": 305,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.resize",
+          "line": 310,
+          "called": [
+            "RHTable",
+            "RHTable.empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.resize_fold_capacity",
+          "line": 318,
+          "called": [
+            "RHTable",
+            "RHTable.empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.resize_preserves_len",
+          "line": 337,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.insert",
+          "line": 347,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.insertNoResize_size_le",
+          "line": 353,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:364>",
+          "line": 364,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:369>",
+          "line": 369,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:374>",
+          "line": 374,
+          "called": [
+            "RHTable"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RobinHood",
+      "path": "SeLe4n/Kernel/RobinHood.lean",
+      "declaration_count": 0,
+      "declarations": []
     },
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",

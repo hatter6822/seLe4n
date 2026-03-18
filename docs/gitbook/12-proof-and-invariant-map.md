@@ -105,10 +105,24 @@ Badge routing chain (H-03, WS-F5/D1):
 
 All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-**WS-N planned proof surface** (v0.17.0+, **ACTIVE** — Robin Hood hashing verified implementation):
+**WS-N proof surface** (v0.17.0+, **ACTIVE** — Robin Hood hashing verified implementation):
 
-The WS-N workstream will introduce a formally verified Robin Hood hash table
-with the following invariant bundle and preservation theorems:
+**N1 delivered proof surface** (v0.17.1, `SeLe4n/Kernel/RobinHood/Core.lean`):
+- `idealIndex_lt`/`nextIndex_lt` — index bound proofs via `Nat.mod_lt`
+- `RHTable.WF` — 4-conjunct well-formedness predicate (slotsLen, capPos,
+  sizeCount, sizeBound)
+- `RHTable.empty_wf` — well-formedness of empty table (zero sorry)
+- `insertLoop_preserves_len` — array size preservation through insertion loop
+  (by induction on fuel)
+- `backshiftLoop_preserves_len` — array size preservation through backward-shift
+  erasure (by induction on fuel)
+- `RHTable.insertNoResize_size_le` — insertion increases size by at most 1
+- `RHTable.resize_fold_capacity` — resize output capacity equals `t.capacity * 2`
+  (via `Array.foldl_induction`)
+- `RHTable.resize_preserves_len` — resize output `slots.size = t.capacity * 2`
+
+The WS-N workstream introduces a formally verified Robin Hood hash table
+with the following planned invariant bundle and preservation theorems (N2–N5):
 
 - **Invariant bundle** (`RHTable.invariant`): conjunction of `wf` (structural
   consistency), `distCorrect` (probe distance accuracy), `noDupKeys` (key

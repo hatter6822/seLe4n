@@ -1,3 +1,36 @@
+## [0.17.1] — WS-N1 Core Robin Hood Types + Operations
+
+- Completed Phase 1 (WS-N1) of the Robin Hood hashing workstream: core data
+  types, fuel-bounded operations, and array-size preservation proofs
+- N1-A: `RHEntry` (key, value, probe distance) and `RHTable` (single-
+  representation `Array (Option (RHEntry α β))` with `hCapPos`/`hSlotsLen`
+  invariants); `idealIndex`/`nextIndex` with `@[inline]`; `idealIndex_lt`/
+  `nextIndex_lt` bound proofs via `Nat.mod_lt`
+- N1-B: `RHTable.empty` constructor from `List.replicate`; `countOccupied`
+  helper; 4-conjunct `RHTable.WF` predicate (slotsLen, capPos, sizeCount,
+  sizeBound); `empty_wf` proof (zero sorry)
+- N1-C: Fuel-bounded `insertLoop` with 5 branches (empty slot, key match,
+  Robin Hood swap, continue probing, fuel exhausted); structural recursion on
+  `fuel : Nat`; `insertLoop_preserves_len` by induction
+- N1-D: `RHTable.insert` with 75% load-factor resize trigger; private
+  `insertNoResize` helper to avoid resize/insert circularity;
+  `insertNoResize_size_le` proof
+- N1-E: Fuel-bounded `getLoop` with Robin Hood early termination (empty slot,
+  dist < search dist); `RHTable.get?`; `RHTable.contains`
+- N1-F: `findLoop` (locate target slot) + `backshiftLoop` (fill gap after
+  removal, decrement dist); `backshiftLoop_preserves_len` proof;
+  `RHTable.erase` composing both phases
+- N1-G: `RHTable.fold`, `RHTable.toList`, `RHTable.resize` (double capacity,
+  re-insert all via `insertNoResize`); `resize_preserves_len` proof
+  (`slots.size = capacity * 2` via `Array.foldl_induction`);
+  `resize_fold_capacity` proof; `Membership` instance;
+  `GetElem`/`GetElem?` instances enabling `t[k]?` bracket notation
+- N1-H: Re-export hub `SeLe4n/Kernel/RobinHood.lean`
+- Files: `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines),
+  `SeLe4n/Kernel/RobinHood.lean` (15 lines)
+- Zero `sorry`/`axiom`; zero warnings; all test tiers pass
+- Bumped `lakefile.toml` version to `0.17.1`
+
 ## [0.16.18] — WS-M4 Test Coverage Expansion
 
 - Completed Phase 4 (WS-M4) of the capability subsystem workstream: test

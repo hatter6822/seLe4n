@@ -32,7 +32,7 @@ per-cluster modular-arithmetic ordering.
 
 | ID | Focus | Priority |
 |----|-------|----------|
-| **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **PLANNED** |
+| **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **COMPLETED** (v0.17.1) |
 | **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`robinHoodOrdered` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_erase_eq`) | HIGH — **PLANNED** |
 | **WS-N3** | Kernel API bridge: `GetElem?`/`Membership` instances, 12 bridge lemmas matching `Std.HashMap` proof patterns, `filter` support | MEDIUM — **PLANNED** |
 | **WS-N4** | Kernel integration (first site): replace `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; update ~15 CNode theorems, ~8 invariant proofs, test fixtures | MEDIUM — **PLANNED** |
@@ -40,6 +40,32 @@ per-cluster modular-arithmetic ordering.
 
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
+
+**WS-N1 (v0.17.1):** Core types + operations — 379 new lines in
+`SeLe4n/Kernel/RobinHood/Core.lean` plus re-export hub. Delivers:
+- **N1-A:** `RHEntry` (key, value, probe distance), `RHTable` (single-
+  representation `Array (Option (RHEntry α β))` with capacity-positivity and
+  slots-length invariants), `idealIndex`/`nextIndex` with `@[inline]`,
+  `idealIndex_lt`/`nextIndex_lt` bound proofs via `Nat.mod_lt`.
+- **N1-B:** `RHTable.empty` constructor, `countOccupied` helper, 4-conjunct
+  `RHTable.WF` predicate, `empty_wf` proof (zero sorry).
+- **N1-C:** Fuel-bounded `insertLoop` with 5 operational branches (empty slot,
+  key match, Robin Hood swap, continue probing, fuel exhausted).
+  `insertLoop_preserves_len` proof by induction on fuel.
+- **N1-D:** `RHTable.insert` with 75% load-factor resize trigger,
+  `insertNoResize_size_le` proof. Full `insert_size_le` deferred to N2
+  (requires WF preservation through resize).
+- **N1-E:** Fuel-bounded `getLoop` with Robin Hood early termination,
+  `RHTable.get?`, `RHTable.contains`.
+- **N1-F:** `findLoop` + `backshiftLoop` (backward-shift erasure),
+  `backshiftLoop_preserves_len` proof, `RHTable.erase`.
+- **N1-G:** `RHTable.fold`, `RHTable.toList`, `RHTable.resize` (double
+  capacity, re-insert all), `resize_preserves_len` proof (`slots.size =
+  capacity * 2` via `Array.foldl_induction`), `resize_fold_capacity` proof,
+  `Membership` instance, `GetElem`/`GetElem?` instances (bracket notation
+  `t[k]?`).
+- **N1-H:** Re-export hub `SeLe4n/Kernel/RobinHood.lean`.
+- Zero `sorry`/`axiom`. Zero warnings. All test tiers pass.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 
