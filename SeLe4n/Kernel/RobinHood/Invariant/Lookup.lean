@@ -873,22 +873,24 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
     have hAbsOrig : ∀ j (hj : j < t.capacity) (e : RHEntry α β),
         t.slots[j]'(t.hSlotsLen ▸ hj) = some e → (e.key == k') = false := by
       intro j hj e hSlot
-      by_contra hContra; push_neg at hContra; simp at hContra
-      have hKE : (e.key == k') = true := hContra
-      have hDist := hExt.2.1 j hj e hSlot
-      have hKeyEq : idealIndex e.key t.capacity t.hCapPos
-          = idealIndex k' t.capacity t.hCapPos := by rw [eq_of_beq hKE]
-      rw [hKeyEq] at hDist
-      have hdk_lt : e.dist < t.capacity := by
-        have := Nat.mod_lt (j + t.capacity -
-          idealIndex k' t.capacity t.hCapPos) t.hCapPos; omega
-      have hFound := getLoop_finds_present t.capacity
-        (idealIndex k' t.capacity t.hCapPos) k' 0 t.slots t.capacity
-        t.hSlotsLen t.hCapPos j hj e hSlot hKE rfl
-        hExt.2.1 hExt.2.2.2 hExt.2.2.1
-        (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
-        (by omega) (by omega)
-      unfold RHTable.get? at hGet; rw [hFound] at hGet; exact Option.noConfusion hGet
+      cases hKE : e.key == k' with
+      | false => rfl
+      | true =>
+        exfalso
+        have hDist := hExt.2.1 j hj e hSlot
+        have hKeyEq : idealIndex e.key t.capacity t.hCapPos
+            = idealIndex k' t.capacity t.hCapPos := by rw [eq_of_beq hKE]
+        rw [hKeyEq] at hDist
+        have hdk_lt : e.dist < t.capacity := by
+          have := Nat.mod_lt (j + t.capacity -
+            idealIndex k' t.capacity t.hCapPos) t.hCapPos; omega
+        have hFound := getLoop_finds_present t.capacity
+          (idealIndex k' t.capacity t.hCapPos) k' 0 t.slots t.capacity
+          t.hSlotsLen t.hCapPos j hj e hSlot hKE rfl
+          hExt.2.1 hExt.2.2.2 hExt.2.2.1
+          (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
+          (by omega) (by omega)
+        unfold RHTable.get? at hGet; rw [hFound] at hGet; exact Option.noConfusion hGet
     -- k' absent from (t.insert k v).slots via insertLoop_absent_ne_key
     have hAbsIns : ∀ j (hj : j < (t.insert k v).capacity) (e : RHEntry α β),
         (t.insert k v).slots[j]'((t.insert k v).hSlotsLen ▸ hj) = some e →
@@ -898,32 +900,37 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
       · -- Resize case: k' absent from t.resize.slots by same contrapositive argument
         -- on the resized table (which also satisfies invExt).
         intro j hj e hSlot
-        have hResExt := t.resize_preserves_invExt (hExt := hExt)
+        have hResExt := t.resize_preserves_invExt
         have hAbsRes : ∀ a (ha : a < (t.resize).capacity) (ea : RHEntry α β),
             (t.resize).slots[a]'((t.resize).hSlotsLen ▸ ha) = some ea →
             (ea.key == k') = false := by
           intro a ha ea hSlotA
-          by_contra hContra; push_neg at hContra; simp at hContra
-          have hKE : (ea.key == k') = true := hContra
-          have hDist := hResExt.2.1 a ha ea hSlotA
-          have hKeyEq : idealIndex ea.key (t.resize).capacity (t.resize).hCapPos
-              = idealIndex k' (t.resize).capacity (t.resize).hCapPos := by
-            rw [eq_of_beq hKE]
-          rw [hKeyEq] at hDist
-          have hdk_lt : ea.dist < (t.resize).capacity := by
-            have := Nat.mod_lt (a + (t.resize).capacity -
-              idealIndex k' (t.resize).capacity (t.resize).hCapPos) (t.resize).hCapPos
-            omega
-          have hFound := getLoop_finds_present (t.resize).capacity
-            (idealIndex k' (t.resize).capacity (t.resize).hCapPos) k' 0
-            (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
-            a ha ea hSlotA hKE rfl
-            hResExt.2.1 hResExt.2.2.2 hResExt.2.2.1
-            (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
-            (by omega) (by omega)
-          -- (t.resize).get? k' = some ea.value, but t.get? k' = none.
-          -- resize preserves the key-value mapping, so (t.resize).get? k' should also be none.
-          sorry -- TPI-D5-sub: resize_preserves_get (resize doesn't change get? results)
+          cases hKE : ea.key == k' with
+          | false => rfl
+          | true =>
+            exfalso
+            have hDist := hResExt.2.1 a ha ea hSlotA
+            have hKeyEq : idealIndex ea.key (t.resize).capacity (t.resize).hCapPos
+                = idealIndex k' (t.resize).capacity (t.resize).hCapPos := by
+              rw [eq_of_beq hKE]
+            rw [hKeyEq] at hDist
+            have hdk_lt : ea.dist < (t.resize).capacity := by
+              have := Nat.mod_lt (a + (t.resize).capacity -
+                idealIndex k' (t.resize).capacity (t.resize).hCapPos) (t.resize).hCapPos
+              omega
+            have hFound := getLoop_finds_present (t.resize).capacity
+              (idealIndex k' (t.resize).capacity (t.resize).hCapPos) k' 0
+              (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
+              a ha ea hSlotA hKE rfl
+              hResExt.2.1 hResExt.2.2.2 hResExt.2.2.1
+              (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
+              (by omega) (by omega)
+            -- (t.resize).get? k' = some ea.value, but t.get? k' = none.
+            -- Need: resize preserves the get? mapping.
+            -- TPI-D5: requires resize_preserves_get theorem (~60 lines,
+            -- fold induction showing each insertNoResize preserves existing
+            -- key-value pairs). Deferred.
+            sorry -- TPI-D5: resize_preserves_get
         exact insertLoop_absent_ne_key (t.resize).capacity
           (idealIndex k (t.resize).capacity (t.resize).hCapPos) k v 0
           (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
