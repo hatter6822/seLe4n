@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "317afb535b163b998ffb402a4722a760df8c58fc",
-      "tree_sha": "2b599b871ee91805ca76828fca334a57f12edf07",
-      "committed_at_utc": "2026-03-18T20:59:47+00:00"
+      "commit_sha": "e3dbc686f95867c44e79450940abcf89f6ddf3fd",
+      "tree_sha": "3f469fd735f799bbbc6d256c504be6724b163e6e",
+      "committed_at_utc": "2026-03-18T21:05:58+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b7ee40e3be0d3e3bdad03b596234e1975177d3d5ac118cdcebc3940f2c83e459"
+    "source_digest": "fa33fba8095eb4e45120104e961083a854bbcf93ab538df2e1b52d8b078ef30a"
   },
   "summary": {
     "module_count": 81,
@@ -27,7 +27,7 @@
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 44655,
+    "production_loc": 44656,
     "test_files": 4,
     "test_loc": 5256,
     "proved_theorem_lemma_decls": 1371,
