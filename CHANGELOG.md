@@ -45,13 +45,17 @@
   `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
   (key absent if probe reached empty/swap position), `getLoop_none_of_absent`
   (if key absent from all slots, getLoop returns none)
-- D6 (`get_after_erase_eq`) structured via `getLoop_none_of_absent` +
-  `erase_removes_key`
+- TPI-D4 completed: `get_after_insert_eq` — insert lookup correctness via
+  `getLoop_finds_present` + `insertLoop_places_key` (zero sorry)
+- TPI-D6 completed: `get_after_erase_eq` — erase lookup correctness via
+  `erase_removes_key` + `getLoop_none_of_absent` (zero sorry)
+- Additional helpers: `findLoop_none_implies_absent`, `backshiftLoop_preserves_key_absence`,
+  `getLoop_finds_present`, `insertLoop_places_key`
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
   `RobinHood.lean`)
-- 4 TPI-D deferred items remaining (TPI-D3 through TPI-D6): erase PCD
-  preservation and lookup correctness
+- 2 TPI-D deferred items remaining: TPI-D3 (erase PCD preservation,
+  requires relaxedPCD invariant), TPI-D5 (insert non-interference)
 - Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
 

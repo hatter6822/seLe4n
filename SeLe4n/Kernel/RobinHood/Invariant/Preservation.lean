@@ -1807,7 +1807,7 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
               (gap + 1) % capacity := hWitNext
           simp only [this] at he'; exact he'
         rcases hNextInactive with hNone | ⟨ne, hne, hne0⟩
-        · rw [hNone] at he'2; exact Option.noConfusion he'2
+        · rw [hNone] at he'2; exact absurd he'2 (by simp)
         · rw [hne] at he'2; have := Option.some.inj he'2; subst this; omega
     · -- d + 1 >= e.dist, so d = e.dist - 1 (since d < e.dist)
       have hd_eq : d = e.dist - 1 := by omega
@@ -1816,10 +1816,13 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
       -- So (h + dist) % cap = (gap + 1) % cap, meaning p = (gap + 1) % cap
       have hEDist := hDist p hp e hSlot
       have hPEq : p = (idealIndex e.key capacity hCapPos + e.dist) % capacity := by
-        rw [hEDist]
-        exact (displacement_roundtrip p (idealIndex e.key capacity hCapPos) capacity hCapPos
-          (idealIndex_lt e.key capacity hCapPos) _ hEDist
-          (by rw [hEDist]; exact Nat.mod_lt _ hCapPos)).symm
+        have hEDist' : e.dist = (p % capacity + capacity -
+            idealIndex e.key capacity hCapPos) % capacity := by
+          rw [Nat.mod_eq_of_lt hp] at hEDist ⊢; exact hEDist
+        have hdr := displacement_roundtrip p (idealIndex e.key capacity hCapPos) capacity
+          hCapPos (idealIndex_lt e.key capacity hCapPos) e.dist hEDist'
+          (by rw [hEDist']; exact Nat.mod_lt _ hCapPos)
+        rw [Nat.mod_eq_of_lt hp] at hdr; exact hdr.symm
       have hStep : (idealIndex e.key capacity hCapPos + e.dist) % capacity =
           (gap + 1) % capacity := by
         rw [show idealIndex e.key capacity hCapPos + e.dist =
@@ -1831,15 +1834,15 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
                 1 % capacity) % capacity := Nat.add_mod _ 1 _
           _ = (gap % capacity + 1 % capacity) % capacity := by rw [hME]
           _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
-      rw [hPEq, hStep] at hSlot
-      -- slots[(gap+1)%cap] = some e, but it's either none or dist=0
-      cases hNextInactive with
-      | inl hNone => rw [hNone] at hSlot; exact Option.noConfusion hSlot
-      | inr ⟨ne, hne, hne0⟩ =>
-        rw [hne] at hSlot
-        have := Option.some.inj hSlot; subst this
-        -- ne.dist = 0 but d < ne.dist means d < 0. Contradiction with d : Nat.
-        omega
+      -- p = (gap+1) % cap, so slots[(gap+1)%cap] = some e
+      have hSlot2 : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos)
+          = some e := by
+        have : p = (gap + 1) % capacity := by rw [hPEq, hStep]
+        simp only [this] at hSlot; exact hSlot
+      rcases hNextInactive with hNone | ⟨ne, hne, hne0⟩
+      · rw [hNone] at hSlot2; exact Option.noConfusion hSlot2
+      · rw [hne] at hSlot2
+        have := Option.some.inj hSlot2; subst this; omega
 
 -- Note: `erase_preserves_robinHoodOrdered` is NOT provable.
 -- The standard backshift-on-erase algorithm does NOT preserve non-decreasing
