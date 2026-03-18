@@ -70,10 +70,15 @@ for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
 **WS-N2 (v0.17.2):** Invariant proofs — invariant definitions, WF/distCorrect
 preservation, modular arithmetic helpers, and lookup correctness foundations.
 Delivers:
+- **Major finding:** Discovery: `robinHoodOrdered` (non-decreasing dist within
+  clusters) is NOT preserved by backshift-on-erase. The `invExt` bundle was
+  restructured to use `probeChainDominant` instead, which IS preserved by all
+  operations.
 - **N2-A:** Invariant definitions in `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean`:
   `distCorrect` (probe distance accuracy), `noDupKeys` (key uniqueness),
-  `robinHoodOrdered` (non-decreasing cluster distances), `RHTable.invariant`
-  (4-conjunct bundle: `wf ∧ distCorrect ∧ noDupKeys ∧ robinHoodOrdered`).
+  `robinHoodOrdered` (non-decreasing cluster distances), `probeChainDominant`
+  (replaces `robinHoodOrdered` in `invExt` bundle), `RHTable.invariant`
+  (restructured bundle using `probeChainDominant`).
   `empty_distCorrect`, `empty_noDupKeys`, `empty_robinHoodOrdered`,
   `empty_invariant` proofs for empty table.
 - **N2-B:** WF preservation in `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean`:
@@ -100,8 +105,14 @@ Delivers:
   `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean`,
   `SeLe4n/Kernel/RobinHood/Invariant.lean` (new);
   `SeLe4n/Kernel/RobinHood/Core.lean`, `SeLe4n/Kernel/RobinHood.lean` (modified).
-- noDupKeys, robinHoodOrdered preservation, and lookup correctness proofs
-  still in progress (finalized in subsequent N2 iterations).
+- **N2 additional deliverables:** `noDupKeys_after_clear`,
+  `backshiftLoop_preserves_noDupKeys`, `erase_preserves_noDupKeys`,
+  `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
+  `erase_preserves_distCorrect`.
+- Preservation theorems proved: WF (all ops), distCorrect (all ops),
+  noDupKeys (all ops). `probeChainDominant` preservation and lookup
+  correctness proofs still in progress.
+- 6 TPI-D items remaining (TPI-D1 through TPI-D6).
 - Zero `sorry`/`axiom` in completed proofs. Zero warnings. All test tiers pass.
 
 ### WS-M workstream (Capability subsystem audit & remediation)

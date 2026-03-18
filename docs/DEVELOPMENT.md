@@ -68,14 +68,16 @@ gap between seLe4n's machine-checked proofs and the unverified `Std.HashMap`
 library type. 5 phases (N1–N5, 122 subtasks). **WS-N1** (v0.17.1) —
 core types + operations — **COMPLETED**. **WS-N2** (v0.17.2) — invariant
 proofs — **IN PROGRESS**: invariant definitions (`distCorrect`, `noDupKeys`,
-`robinHoodOrdered`, `RHTable.invariant` bundle), WF preservation through
+`probeChainDominant`, `RHTable.invariant` bundle), WF preservation through
 insert/erase/resize, `distCorrect` preservation via full induction with modular
-arithmetic helpers, `findLoop_correct` lookup correctness, bundle preservation
-theorems (`insert_preserves_invariant`, `erase_preserves_invariant`,
-`resize_preserves_invariant`), lookup correctness signatures. noDupKeys and
-robinHoodOrdered preservation still being finalized. Zero sorry/axiom in
-completed proofs. Remaining: N3 (kernel API bridge), N4 (CNode.slots
-integration), N5 (tests + documentation).
+arithmetic helpers, noDupKeys preservation through all ops, `findLoop_correct`
+lookup correctness, bundle preservation theorems. Major finding:
+`robinHoodOrdered` is NOT preserved by backshift-on-erase; `invExt` bundle
+restructured to use `probeChainDominant` instead. Preservation complete for WF
+(all ops), distCorrect (all ops), noDupKeys (all ops). 6 TPI-D items remaining
+(TPI-D1 through TPI-D6) for `probeChainDominant` preservation and lookup
+correctness. Zero sorry/axiom in completed proofs. Remaining: N3 (kernel API
+bridge), N4 (CNode.slots integration), N5 (tests + documentation).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:

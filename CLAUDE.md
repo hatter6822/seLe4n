@@ -86,8 +86,8 @@ SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
 SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
   Core.lean                      Types, operations, proofs (N1 complete)
   Invariant.lean                 Re-export hub (N2)
-    Invariant/Defs.lean          Invariant definitions, empty table proofs
-    Invariant/Preservation.lean  WF, distCorrect, noDupKeys, robinHoodOrdered preservation
+    Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
+    Invariant/Preservation.lean  WF, distCorrect, noDupKeys preservation (all ops)
     Invariant/Lookup.lean        Functional correctness (get after insert/erase)
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
@@ -154,7 +154,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~622 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~607 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~601 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~1100 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~544 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~724 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~519 lines)

@@ -28,11 +28,20 @@
   `SeLe4n/Kernel/RobinHood.lean` to import Invariant; changed `private` to
   `protected` for `insertNoResize`, `insertNoResize_capacity`,
   `resize_fold_capacity` in `Core.lean`
+- **Major finding:** `robinHoodOrdered` (non-decreasing dist within clusters)
+  is NOT preserved by backshift-on-erase. `invExt` bundle restructured to use
+  `probeChainDominant` instead, which IS preserved by all operations
+- Additional helper lemmas proved: `noDupKeys_after_clear`,
+  `backshiftLoop_preserves_noDupKeys`, `erase_preserves_noDupKeys`,
+  `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
+  `erase_preserves_distCorrect`
+- Preservation theorems complete: WF (all ops), distCorrect (all ops),
+  noDupKeys (all ops)
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
   `RobinHood.lean`)
-- noDupKeys, robinHoodOrdered preservation, and lookup correctness proofs
-  still in progress
+- 6 TPI-D deferred items remaining (TPI-D1 through TPI-D6): probeChainDominant
+  preservation and lookup correctness
 - Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
 

@@ -635,7 +635,7 @@ theorem RHTable.insert_preserves_distCorrect [BEq α] [Hashable α]
 theorem RHTable.insertNoResize_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insertNoResize k v).noDupKeys := by
-  sorry
+  sorry -- TPI-D1 insertLoop noDupKeys induction (probeChainDominant prevents swap past existing key)
 
 -- Note: `insertNoResize_preserves_robinHoodOrdered` is provable for insert
 -- (unlike erase) but is not required for the operational invariant bundle
@@ -646,7 +646,7 @@ theorem RHTable.insertNoResize_preserves_noDupKeys [BEq α] [Hashable α] [Lawfu
 theorem RHTable.insertNoResize_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insertNoResize k v).probeChainDominant := by
-  sorry
+  sorry -- TPI-D2 insertLoop probeChainDominant induction (placed entry's chain is occupied)
 
 /-- `insertNoResize` preserves the extended invariant. -/
 theorem RHTable.insertNoResize_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
@@ -1053,7 +1053,7 @@ theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
 theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).probeChainDominant := by
-  sorry
+  sorry -- TPI-D3 backshiftLoop probeChainDominant induction (gap filled maintains chains)
 
 -- ============================================================================
 -- Section 12: Composite invariant bundle preservation

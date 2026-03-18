@@ -150,20 +150,34 @@ Bundle preservation (`Invariant/Preservation.lean`):
 - `insert_preserves_invariant`, `erase_preserves_invariant`,
   `resize_preserves_invariant`
 
+noDupKeys preservation (`Invariant/Preservation.lean`):
+- `noDupKeys_after_clear`, `backshiftLoop_preserves_noDupKeys`,
+  `erase_preserves_noDupKeys`
+
+Erase distCorrect preservation (`Invariant/Preservation.lean`):
+- `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
+  `erase_preserves_distCorrect`
+
 Lookup correctness signatures (`Invariant/Lookup.lean`):
 - `get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`
+
+**invExt bundle restructuring:** Discovery: `robinHoodOrdered` (non-decreasing
+dist within clusters) is NOT preserved by backshift-on-erase. The `invExt`
+bundle was restructured to use `probeChainDominant` instead, which IS preserved
+by all operations. Preservation theorems proved: WF (all ops), distCorrect
+(all ops), noDupKeys (all ops). 6 TPI items remaining for `probeChainDominant`
+preservation and lookup correctness.
 
 The WS-N workstream introduces a formally verified Robin Hood hash table
 with the following remaining planned theorems (N2 in-progress + N3–N5):
 
-- **Remaining N2 proofs** (in progress): `noDupKeys` preservation through
-  insert/erase/resize, `robinHoodOrdered` preservation through insert/erase/resize,
-  lookup correctness proof bodies for `get_after_insert_eq/ne`, `get_after_erase_eq`.
+- **Remaining N2 proofs** (in progress): `probeChainDominant` preservation
+  through insert/erase/resize, lookup correctness proof bodies for
+  `get_after_insert_eq/ne`, `get_after_erase_eq`. 6 TPI-D items (TPI-D1
+  through TPI-D6).
 - **Bridge lemmas** (N3, planned): 12 lemmas mirroring `Std.HashMap` proof patterns
   used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
   `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
-- **Critical path**: `insert_preserves_robinHoodOrdered` (N2-D3) — the Robin
-  Hood swap proof is the most complex theorem in the workstream.
 - See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
   for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
 
