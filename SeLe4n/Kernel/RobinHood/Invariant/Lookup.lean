@@ -91,7 +91,9 @@ private theorem displacement_roundtrip'
     (p h cap : Nat) (hCapPos : 0 < cap) (hp : p < cap) (hh : h < cap)
     (d : Nat) (hD : d = (p + cap - h) % cap) (hd : d < cap) :
     (h + d) % cap = p := by
-  sorry
+  have hp' : p % cap = p := Nat.mod_eq_of_lt hp
+  have := displacement_roundtrip p h cap hCapPos hh d (by rwa [hp']) hd
+  rwa [hp'] at this
 
 /-- If `(h + d1) % cap = (h + d2) % cap` with `d1 < cap` and `d2 < cap`,
     then `d1 = d2`. -/
@@ -99,7 +101,22 @@ private theorem offset_injective'
     (h cap d1 d2 : Nat) (_hCapPos : 0 < cap) (hd1 : d1 < cap) (hd2 : d2 < cap)
     (hEq : (h + d1) % cap = (h + d2) % cap) :
     d1 = d2 := by
-  sorry
+  have hm1 : (h + d1) % cap = (h % cap + d1) % cap := by
+    rw [Nat.add_mod, Nat.mod_eq_of_lt hd1]
+  have hm2 : (h + d2) % cap = (h % cap + d2) % cap := by
+    rw [Nat.add_mod, Nat.mod_eq_of_lt hd2]
+  rw [hm1, hm2] at hEq
+  have hr := Nat.mod_lt h _hCapPos
+  have red : ∀ (x : Nat), x < cap → h % cap + x ≥ cap →
+      (h % cap + x) % cap = h % cap + x - cap := by
+    intro x hx hge
+    have := show h % cap + x = (h % cap + x - cap) + cap from by omega
+    rw [this, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]; omega
+  by_cases hc1 : h % cap + d1 < cap <;> by_cases hc2 : h % cap + d2 < cap
+  · rw [Nat.mod_eq_of_lt hc1, Nat.mod_eq_of_lt hc2] at hEq; omega
+  · rw [Nat.mod_eq_of_lt hc1, red d2 hd2 (by omega)] at hEq; omega
+  · rw [red d1 hd1 (by omega), Nat.mod_eq_of_lt hc2] at hEq; omega
+  · rw [red d1 hd1 (by omega), red d2 hd2 (by omega)] at hEq; omega
 
 /-- Displacement step: `d + 1 = ((idx + 1) % cap + cap - h) % cap`
     given `d = (idx + cap - h) % cap`, `idx < cap`, `d + 1 < cap`. -/
