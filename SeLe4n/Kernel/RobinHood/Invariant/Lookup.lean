@@ -125,7 +125,7 @@ private theorem disp_step'
     (hh : h < cap) (d : Nat) (hD : d = (idx + cap - h) % cap)
     (hSmall : d + 1 < cap) :
     d + 1 = ((idx + 1) % cap + cap - h) % cap := by
-  sorry
+  exact dist_step_mod idx h cap hCapPos hIdx hh d hD hSmall
 
 /-- If a table satisfies `distCorrect`, `PCD`, and `noDupKeys`, and there exists
     a position `p` with `slots[p] = some e` where `e.key == k = true` and
