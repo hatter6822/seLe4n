@@ -1,3 +1,41 @@
+## [0.17.2] — WS-N2 Robin Hood Invariant Proofs
+
+- Completed Phase 2 (WS-N2) of the Robin Hood hashing workstream: invariant
+  definitions, WF/distCorrect preservation, modular arithmetic helpers, loop
+  count/correctness proofs, bundle preservation theorems, and lookup correctness
+  signatures
+- N2-A: Invariant definitions in `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean`:
+  `distCorrect` (probe distance accuracy), `noDupKeys` (key uniqueness),
+  `robinHoodOrdered` (non-decreasing cluster distances), `RHTable.invariant`
+  4-conjunct bundle; `empty_distCorrect`, `empty_noDupKeys`,
+  `empty_robinHoodOrdered`, `empty_invariant` proofs
+- N2-B: WF preservation in `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean`:
+  `insertNoResize_preserves_wf`, `insert_preserves_wf`, `resize_preserves_wf`,
+  `erase_preserves_wf`; modular arithmetic helpers `mod_succ_eq`,
+  `dist_step_mod`; `countOccupied_le_size` bound proof
+- N2-C: distCorrect preservation: `insertLoop_preserves_distCorrect` (full
+  induction proof with modular arithmetic),
+  `insertNoResize_preserves_distCorrect`, `insert_preserves_distCorrect`,
+  `resize_preserves_distCorrect` (via fold induction)
+- N2-D: Loop count and correctness: `insertLoop_countOccupied`,
+  `backshiftLoop_countOccupied`, `findLoop_lt`, `findLoop_correct`
+- N2-E: Bundle preservation: `insert_preserves_invariant`,
+  `erase_preserves_invariant`, `resize_preserves_invariant`
+- N2-F: Lookup correctness signatures in
+  `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean`: `get_after_insert_eq`,
+  `get_after_insert_ne`, `get_after_erase_eq`
+- N2-G: Re-export hub `SeLe4n/Kernel/RobinHood/Invariant.lean`; updated
+  `SeLe4n/Kernel/RobinHood.lean` to import Invariant; changed `private` to
+  `protected` for `insertNoResize`, `insertNoResize_capacity`,
+  `resize_fold_capacity` in `Core.lean`
+- Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
+  `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
+  `RobinHood.lean`)
+- noDupKeys, robinHoodOrdered preservation, and lookup correctness proofs
+  still in progress
+- Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
+- Bumped `lakefile.toml` version to `0.17.2`
+
 ## [0.17.1] — WS-N1 Core Robin Hood Types + Operations
 
 - Completed Phase 1 (WS-N1) of the Robin Hood hashing workstream: core data

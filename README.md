@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.17.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.17.2-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -57,7 +57,7 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.17.1` |
+| **Version** | `0.17.2` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 41,057 across 73 files |
 | **Test Lean LoC** | 5,256 across 4 test suites |
@@ -203,6 +203,12 @@ SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorem
   Invariant/Helpers.lean         Shared NI proof infrastructure
   Invariant/Operations.lean      Per-operation NI proofs
   Invariant/Composition.lean     Trace composition, 33-constructor NonInterferenceStep
+SeLe4n/Kernel/RobinHood/*       Robin Hood hash table verified implementation
+  Core.lean                      Types, operations, proofs (N1)
+  Invariant.lean                 Re-export hub (N2)
+    Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, robinHoodOrdered)
+    Invariant/Preservation.lean  WF/distCorrect preservation, modular arithmetic helpers
+    Invariant/Lookup.lean        Lookup correctness theorem signatures
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
