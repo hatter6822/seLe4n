@@ -21,10 +21,12 @@
   removal, decrement dist); `backshiftLoop_preserves_len` proof;
   `RHTable.erase` composing both phases
 - N1-G: `RHTable.fold`, `RHTable.toList`, `RHTable.resize` (double capacity,
-  re-insert all via `insertNoResize`); `resize_slotsLen` proof; `Membership`
-  instance
+  re-insert all via `insertNoResize`); `resize_preserves_len` proof
+  (`slots.size = capacity * 2` via `Array.foldl_induction`);
+  `resize_fold_capacity` proof; `Membership` instance;
+  `GetElem`/`GetElem?` instances enabling `t[k]?` bracket notation
 - N1-H: Re-export hub `SeLe4n/Kernel/RobinHood.lean`
-- Files: `SeLe4n/Kernel/RobinHood/Core.lean` (343 lines),
+- Files: `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines),
   `SeLe4n/Kernel/RobinHood.lean` (15 lines)
 - Zero `sorry`/`axiom`; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.1`

@@ -301,6 +301,11 @@ private def RHTable.insertNoResize [BEq α] [Hashable α]
            = t.capacity
       rw [insertLoop_preserves_len]; exact t.hSlotsLen }
 
+/-- `insertNoResize` preserves capacity (definitional). -/
+private theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β) :
+    (t.insertNoResize k v).capacity = t.capacity := rfl
+
 /-- N1-G3: Resize the table by doubling capacity and re-inserting all entries. -/
 def RHTable.resize [BEq α] [Hashable α] (t : RHTable α β) : RHTable α β :=
   let newCap := t.capacity * 2
@@ -308,10 +313,30 @@ def RHTable.resize [BEq α] [Hashable α] (t : RHTable α β) : RHTable α β :=
   let empty : RHTable α β := RHTable.empty newCap hNewPos
   t.fold empty (fun acc k v => acc.insertNoResize k v)
 
+/-- The fold step used by resize preserves capacity.
+    Proved via `Array.foldl_induction`. -/
+private theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) :
+    (t.resize).capacity = t.capacity * 2 := by
+  unfold resize fold
+  have hStep : ∀ (i : Fin t.slots.size) (acc : RHTable α β),
+      acc.capacity = t.capacity * 2 →
+      (match t.slots[i] with
+       | none => acc
+       | some e => acc.insertNoResize e.key e.value).capacity = t.capacity * 2 := by
+    intro i acc hAcc
+    split
+    · exact hAcc
+    · rw [insertNoResize_capacity]; exact hAcc
+  exact Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) => acc.capacity = t.capacity * 2)
+    (by simp [RHTable.empty])
+    hStep
+
 /-- N1-G4: After resize, slots array has the doubled capacity. -/
-theorem RHTable.resize_slotsLen [BEq α] [Hashable α] (t : RHTable α β) :
-    (t.resize).slots.size = (t.resize).capacity :=
-  (t.resize).hSlotsLen
+theorem RHTable.resize_preserves_len [BEq α] [Hashable α] (t : RHTable α β) :
+    (t.resize).slots.size = t.capacity * 2 := by
+  rw [← t.resize_fold_capacity]; exact (t.resize).hSlotsLen
 
 -- ============================================================================
 -- N1-D: Top-Level Insert with Resize
@@ -339,5 +364,16 @@ theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α]
 instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
     Membership κ (RHTable κ ν) where
   mem t k := t.contains k = true
+
+/-- GetElem instance for proof-bounded access (required by GetElem?). -/
+instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
+    GetElem (RHTable κ ν) κ ν (fun t k => (t.get? k).isSome) where
+  getElem t k h := (t.get? k).get h
+
+/-- GetElem? instance enabling `t[k]?` bracket notation. -/
+instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
+    GetElem? (RHTable κ ν) κ ν (fun t k => (t.get? k).isSome) where
+  getElem? t k := t.get? k
+  getElem! t k := (t.get? k).getD default
 
 end SeLe4n.Kernel.RobinHood

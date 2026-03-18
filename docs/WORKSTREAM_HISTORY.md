@@ -41,7 +41,7 @@ per-cluster modular-arithmetic ordering.
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
 
-**WS-N1 (v0.17.1):** Core types + operations — 343 new lines in
+**WS-N1 (v0.17.1):** Core types + operations — 379 new lines in
 `SeLe4n/Kernel/RobinHood/Core.lean` plus re-export hub. Delivers:
 - **N1-A:** `RHEntry` (key, value, probe distance), `RHTable` (single-
   representation `Array (Option (RHEntry α β))` with capacity-positivity and
@@ -53,13 +53,17 @@ for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
   key match, Robin Hood swap, continue probing, fuel exhausted).
   `insertLoop_preserves_len` proof by induction on fuel.
 - **N1-D:** `RHTable.insert` with 75% load-factor resize trigger,
-  `insertNoResize_size_le` proof.
+  `insertNoResize_size_le` proof. Full `insert_size_le` deferred to N2
+  (requires WF preservation through resize).
 - **N1-E:** Fuel-bounded `getLoop` with Robin Hood early termination,
   `RHTable.get?`, `RHTable.contains`.
 - **N1-F:** `findLoop` + `backshiftLoop` (backward-shift erasure),
   `backshiftLoop_preserves_len` proof, `RHTable.erase`.
 - **N1-G:** `RHTable.fold`, `RHTable.toList`, `RHTable.resize` (double
-  capacity, re-insert all), `resize_slotsLen` proof, `Membership` instance.
+  capacity, re-insert all), `resize_preserves_len` proof (`slots.size =
+  capacity * 2` via `Array.foldl_induction`), `resize_fold_capacity` proof,
+  `Membership` instance, `GetElem`/`GetElem?` instances (bracket notation
+  `t[k]?`).
 - **N1-H:** Re-export hub `SeLe4n/Kernel/RobinHood.lean`.
 - Zero `sorry`/`axiom`. Zero warnings. All test tiers pass.
 

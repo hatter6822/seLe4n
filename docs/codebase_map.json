@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-core-types-operations-pbzWv",
-      "commit_sha": "5bb5fe46b631e39e2da9d89bdf62ffdde7b853c4",
-      "tree_sha": "adc37aab7169216ad74064ff36274af22063dde1",
-      "committed_at_utc": "2026-03-17T23:28:39+00:00"
+      "commit_sha": "27921829323e7dca21f6cc2b2dc2810ea380ecda",
+      "tree_sha": "179cefd8dd240c74a8ec996fea534f3b43cfe6ea",
+      "committed_at_utc": "2026-03-17T23:59:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9be0be2486fa977423ce16d54f6f6928147e695985697f8a1725ddb1ccd46597"
+    "source_digest": "5bb487047ebc3d60b2c7ca6c2e60005a5738e5d73368839d17864bc7d0624bdc"
   },
   "summary": {
     "module_count": 77,
-    "declaration_count": 2390
+    "declaration_count": 2394
   },
   "readme_sync": {
     "version": "0.17.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 73,
-    "production_loc": 41021,
+    "production_loc": 41057,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1290,
+    "proved_theorem_lemma_decls": 1292,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9357,7 +9357,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Core",
       "path": "SeLe4n/Kernel/RobinHood/Core.lean",
-      "declaration_count": 29,
+      "declaration_count": 33,
       "declarations": [
         {
           "kind": "namespace",
@@ -9558,9 +9558,17 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "RHTable.insertNoResize_capacity",
+          "line": 305,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
           "kind": "def",
           "name": "RHTable.resize",
-          "line": 305,
+          "line": 310,
           "called": [
             "RHTable",
             "RHTable.empty"
@@ -9568,8 +9576,17 @@
         },
         {
           "kind": "theorem",
-          "name": "RHTable.resize_slotsLen",
-          "line": 312,
+          "name": "RHTable.resize_fold_capacity",
+          "line": 318,
+          "called": [
+            "RHTable",
+            "RHTable.empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.resize_preserves_len",
+          "line": 337,
           "called": [
             "RHTable"
           ]
@@ -9577,7 +9594,7 @@
         {
           "kind": "def",
           "name": "RHTable.insert",
-          "line": 322,
+          "line": 347,
           "called": [
             "RHTable"
           ]
@@ -9585,15 +9602,31 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_size_le",
-          "line": 328,
+          "line": 353,
           "called": [
             "RHTable"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:339>",
-          "line": 339,
+          "name": "<anonymous:instance:364>",
+          "line": 364,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:369>",
+          "line": 369,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:374>",
+          "line": 374,
           "called": [
             "RHTable"
           ]

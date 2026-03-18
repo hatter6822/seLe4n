@@ -15,9 +15,9 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.17.1` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 41,021 across 73 files |
+| Production LoC | 41,057 across 73 files |
 | Test LoC | 5,256 across 4 suites |
-| Proved declarations | 1,290 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,292 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem end-to-end audit |
 | Next workstreams | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **After WS-N: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
