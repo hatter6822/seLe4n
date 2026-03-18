@@ -407,41 +407,106 @@ private theorem dist_step_mod (i h cap : Nat) (hCapPos : 0 < cap)
   rw [key, Nat.add_mul_mod_self_left]
 
 -- ============================================================================
--- Section 9a: Gap consistency — cluster continuity invariant
+-- Section 9a: Probe-chain dominant invariant
 -- ============================================================================
 
-/-- Gap consistency: an occupied slot with dist > 0 must have an occupied
-    predecessor.  This invariant is maintained by all operations and is
-    required for noDupKeys preservation proofs. -/
-def gapConsistent
+/-- Probe-chain dominant: for every occupied slot at position `p`, every
+    position in its probe chain `(idealIndex e.key + d) % cap` for
+    `d < e.dist` is occupied by an entry with `dist ≥ d`.
+
+    This prevents insertLoop from Robin-Hood-swapping a key into a
+    position when the same key already exists further along the chain,
+    which would create duplicate keys. -/
+def probeChainDominant [Hashable α]
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
     : Prop :=
-  ∀ (i : Nat) (hi : i < capacity) (e : RHEntry α β),
-    slots[(i + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e →
-    e.dist > 0 →
-    ∃ e', slots[i]'(by rw [hLen]; exact hi) = some e'
+  ∀ (p : Nat) (hp : p < capacity) (e : RHEntry α β),
+    slots[p]'(by rw [hLen]; exact hp) = some e →
+    ∀ (d : Nat), d < e.dist →
+      ∃ e', slots[(idealIndex e.key capacity hCapPos + d) % capacity]'(by
+        rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' ∧ e'.dist ≥ d
 
-/-- Table-level gap consistency. -/
-def RHTable.gapConsistent (t : RHTable α β) : Prop :=
-  SeLe4n.Kernel.RobinHood.gapConsistent t.slots t.capacity t.hSlotsLen t.hCapPos
+/-- Table-level probe-chain dominant. -/
+def RHTable.probeChainDominant [Hashable α] (t : RHTable α β) : Prop :=
+  SeLe4n.Kernel.RobinHood.probeChainDominant t.slots t.capacity t.hSlotsLen t.hCapPos
 
-/-- Empty tables trivially satisfy gap consistency. -/
-theorem RHTable.empty_gapConsistent (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).gapConsistent := by
-  intro i hi e hSlot _
+/-- Empty tables trivially satisfy probe-chain dominant. -/
+theorem RHTable.empty_probeChainDominant [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).probeChainDominant := by
+  intro p hp e hSlot
   simp [RHTable.empty] at hSlot
 
-/-- Extended invariant: WF + distCorrect + noDupKeys + robinHoodOrdered +
-    gapConsistent.  The gap consistency property is required to prove
-    noDupKeys and robinHoodOrdered preservation. -/
+/-- Extended invariant: invariant + probeChainDominant. -/
 def RHTable.invExt [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
-  t.invariant ∧ t.gapConsistent
+  t.invariant ∧ t.probeChainDominant
 
 /-- Empty tables satisfy the extended invariant. -/
 theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invExt :=
-  ⟨RHTable.empty_invariant cap hPos, RHTable.empty_gapConsistent cap hPos⟩
+  ⟨RHTable.empty_invariant cap hPos, RHTable.empty_probeChainDominant cap hPos⟩
+
+-- ============================================================================
+-- Section 9b: Modular arithmetic displacement helpers
+-- ============================================================================
+
+/-- If `d = (idx%cap + cap - h) % cap` then `(h + d) % cap = idx % cap`. -/
+private theorem displacement_roundtrip
+    (idx h cap : Nat) (hCapPos : 0 < cap) (hh : h < cap)
+    (d : Nat) (hD : d = (idx % cap + cap - h) % cap) (hd : d < cap) :
+    (h + d) % cap = idx % cap := by
+  subst hD
+  have hMod := Nat.mod_lt idx hCapPos
+  by_cases hge : idx % cap ≥ h
+  · have hval : (idx % cap + cap - h) % cap = idx % cap - h := by
+      have : idx % cap + cap - h = (idx % cap - h) + cap := by omega
+      rw [this, Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+    rw [hval]
+    have : h + (idx % cap - h) = idx % cap := by omega
+    rw [this, Nat.mod_eq_of_lt hMod]
+  · have hlt := Nat.lt_of_not_le hge
+    have hval : (idx % cap + cap - h) % cap = idx % cap + cap - h := by
+      exact Nat.mod_eq_of_lt (by omega)
+    rw [hval]
+    have : h + (idx % cap + cap - h) = idx % cap + cap := by omega
+    rw [this, Nat.add_mod_right, Nat.mod_eq_of_lt hMod]
+
+/-- Two positions with the same displacement from a base are equal. -/
+private theorem same_displacement_eq
+    (i j h cap : Nat) (hCapPos : 0 < cap) (hi : i < cap) (hj : j < cap)
+    (hh : h < cap)
+    (hEq : (i + cap - h) % cap = (j + cap - h) % cap) :
+    i = j := by
+  by_cases hige : i ≥ h
+  · by_cases hjge : j ≥ h
+    · have h1 : (i + cap - h) % cap = i - h := by
+        have : i + cap - h = (i - h) + cap := by omega
+        rw [this, Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+      have h2 : (j + cap - h) % cap = j - h := by
+        have : j + cap - h = (j - h) + cap := by omega
+        rw [this, Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+      rw [h1, h2] at hEq; omega
+    · have hjlt := Nat.lt_of_not_le hjge
+      have h1 : (i + cap - h) % cap = i - h := by
+        have : i + cap - h = (i - h) + cap := by omega
+        rw [this, Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+      have h2 : (j + cap - h) % cap = j + cap - h := by
+        exact Nat.mod_eq_of_lt (by omega)
+      rw [h1, h2] at hEq; omega
+  · have hilt := Nat.lt_of_not_le hige
+    by_cases hjge : j ≥ h
+    · have h1 : (i + cap - h) % cap = i + cap - h := by
+        exact Nat.mod_eq_of_lt (by omega)
+      have h2 : (j + cap - h) % cap = j - h := by
+        have : j + cap - h = (j - h) + cap := by omega
+        rw [this, Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+      rw [h1, h2] at hEq; omega
+    · have hjlt := Nat.lt_of_not_le hjge
+      have h1 : (i + cap - h) % cap = i + cap - h := by
+        exact Nat.mod_eq_of_lt (by omega)
+      have h2 : (j + cap - h) % cap = j + cap - h := by
+        exact Nat.mod_eq_of_lt (by omega)
+      rw [h1, h2] at hEq; omega
 
 -- ============================================================================
 -- Section 10: insertLoop preserves distCorrect (N2-B2)
@@ -555,84 +620,174 @@ theorem RHTable.insert_preserves_distCorrect [BEq α] [Hashable α]
       (t.resize_preserves_distCorrect)
   · exact t.insertNoResize_preserves_distCorrect k v hInv.2.1
 
+/-- N2-C: `insertNoResize` preserves no-duplicate-keys.
+    Requires the extended invariant (probeChainDominant) to ensure insertLoop
+    finds existing keys before performing Robin Hood swaps. -/
+theorem RHTable.insertNoResize_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insertNoResize k v).noDupKeys := by
+  sorry
+
+/-- N2-D: `insertNoResize` preserves Robin Hood ordering. -/
+theorem RHTable.insertNoResize_preserves_robinHoodOrdered [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insertNoResize k v).robinHoodOrdered := by
+  sorry
+
+/-- `insertNoResize` preserves probeChainDominant. -/
+theorem RHTable.insertNoResize_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insertNoResize k v).probeChainDominant := by
+  sorry
+
+/-- `insertNoResize` preserves the extended invariant. -/
+theorem RHTable.insertNoResize_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insertNoResize k v).invExt :=
+  ⟨⟨t.insertNoResize_preserves_wf k v hExt.1.1,
+    t.insertNoResize_preserves_distCorrect k v hExt.1.2.1,
+    t.insertNoResize_preserves_noDupKeys k v hExt,
+    t.insertNoResize_preserves_robinHoodOrdered k v hExt⟩,
+   t.insertNoResize_preserves_probeChainDominant k v hExt⟩
+
+/-- N2-C: `resize` preserves no-duplicate-keys. -/
+theorem RHTable.resize_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) :
+    (t.resize).noDupKeys := by
+  unfold RHTable.resize RHTable.fold
+  exact (Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) => acc.invExt)
+    (RHTable.empty_invExt _ _)
+    (fun i acc hAcc => by
+      cases t.slots[i] with
+      | none => exact hAcc
+      | some e => exact acc.insertNoResize_preserves_invExt _ _ hAcc)).1.2.2.1
+
+/-- N2-D: `resize` preserves Robin Hood ordering. -/
+theorem RHTable.resize_preserves_robinHoodOrdered [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) :
+    (t.resize).robinHoodOrdered := by
+  unfold RHTable.resize RHTable.fold
+  exact (Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) => acc.invExt)
+    (RHTable.empty_invExt _ _)
+    (fun i acc hAcc => by
+      cases t.slots[i] with
+      | none => exact hAcc
+      | some e => exact acc.insertNoResize_preserves_invExt _ _ hAcc)).1.2.2.2
+
+/-- `resize` preserves probeChainDominant. -/
+theorem RHTable.resize_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) :
+    (t.resize).probeChainDominant := by
+  unfold RHTable.resize RHTable.fold
+  exact (Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) => acc.invExt)
+    (RHTable.empty_invExt _ _)
+    (fun i acc hAcc => by
+      cases t.slots[i] with
+      | none => exact hAcc
+      | some e => exact acc.insertNoResize_preserves_invExt _ _ hAcc)).2
+
+/-- `resize` preserves the extended invariant. -/
+theorem RHTable.resize_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) :
+    (t.resize).invExt :=
+  ⟨⟨t.resize_preserves_wf, t.resize_preserves_distCorrect,
+    t.resize_preserves_noDupKeys, t.resize_preserves_robinHoodOrdered⟩,
+   t.resize_preserves_probeChainDominant⟩
+
 /-- N2-C: `insert` preserves no-duplicate-keys. -/
 theorem RHTable.insert_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (v : β) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).noDupKeys := by
-  intro i j hi hj ei ej hSlotI hSlotJ hKeyEq
-  sorry
+  unfold RHTable.insert; split
+  · exact (t.resize).insertNoResize_preserves_noDupKeys k v t.resize_preserves_invExt
+  · exact t.insertNoResize_preserves_noDupKeys k v hExt
 
 /-- N2-D: `insert` preserves Robin Hood ordering. -/
 theorem RHTable.insert_preserves_robinHoodOrdered [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (v : β) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).robinHoodOrdered := by
-  intro i hi ei ej hSlotI hSlotJ
-  sorry
+  unfold RHTable.insert; split
+  · exact (t.resize).insertNoResize_preserves_robinHoodOrdered k v t.resize_preserves_invExt
+  · exact t.insertNoResize_preserves_robinHoodOrdered k v hExt
+
+/-- `insert` preserves probeChainDominant. -/
+theorem RHTable.insert_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insert k v).probeChainDominant := by
+  unfold RHTable.insert; split
+  · exact (t.resize).insertNoResize_preserves_probeChainDominant k v t.resize_preserves_invExt
+  · exact t.insertNoResize_preserves_probeChainDominant k v hExt
 
 /-- N2-B: `erase` preserves distance correctness. -/
 theorem RHTable.erase_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).distCorrect := by
-  intro j hj e hSlot
   sorry
 
 /-- N2-C: `erase` preserves no-duplicate-keys. -/
 theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).noDupKeys := by
-  intro i j hi hj ei ej hSlotI hSlotJ hKeyEq
   sorry
 
 /-- N2-D: `erase` preserves Robin Hood ordering. -/
 theorem RHTable.erase_preserves_robinHoodOrdered [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).robinHoodOrdered := by
-  intro i hi ei ej hSlotI hSlotJ
   sorry
 
-/-- N2-C: `resize` preserves no-duplicate-keys. -/
-theorem RHTable.resize_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (hInv : t.invariant) :
-    (t.resize).noDupKeys := by
-  intro i j hi hj ei ej hSlotI hSlotJ hKeyEq
-  sorry
-
-/-- N2-D: `resize` preserves Robin Hood ordering. -/
-theorem RHTable.resize_preserves_robinHoodOrdered [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (hInv : t.invariant) :
-    (t.resize).robinHoodOrdered := by
-  intro i hi ei ej hSlotI hSlotJ
+/-- `erase` preserves probeChainDominant. -/
+theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
+    (t.erase k).probeChainDominant := by
   sorry
 
 -- ============================================================================
--- Section 10: Composite invariant bundle preservation
+-- Section 12: Composite invariant bundle preservation
 -- ============================================================================
 
 /-- `insert` preserves the full invariant bundle. -/
 theorem RHTable.insert_preserves_invariant [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (v : β) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).invariant :=
-  ⟨t.insert_preserves_wf k v hInv.1,
-   t.insert_preserves_distCorrect k v hInv,
-   t.insert_preserves_noDupKeys k v hInv,
-   t.insert_preserves_robinHoodOrdered k v hInv⟩
+  ⟨t.insert_preserves_wf k v hExt.1.1,
+   t.insert_preserves_distCorrect k v hExt.1,
+   t.insert_preserves_noDupKeys k v hExt,
+   t.insert_preserves_robinHoodOrdered k v hExt⟩
+
+/-- `insert` preserves the extended invariant. -/
+theorem RHTable.insert_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insert k v).invExt :=
+  ⟨t.insert_preserves_invariant k v hExt,
+   t.insert_preserves_probeChainDominant k v hExt⟩
 
 /-- `erase` preserves the full invariant bundle. -/
 theorem RHTable.erase_preserves_invariant [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hInv : t.invariant) :
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).invariant :=
-  ⟨t.erase_preserves_wf k hInv.1,
-   t.erase_preserves_distCorrect k hInv,
-   t.erase_preserves_noDupKeys k hInv,
-   t.erase_preserves_robinHoodOrdered k hInv⟩
+  ⟨t.erase_preserves_wf k hExt.1.1,
+   t.erase_preserves_distCorrect k hExt,
+   t.erase_preserves_noDupKeys k hExt,
+   t.erase_preserves_robinHoodOrdered k hExt⟩
+
+/-- `erase` preserves the extended invariant. -/
+theorem RHTable.erase_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
+    (t.erase k).invExt :=
+  ⟨t.erase_preserves_invariant k hExt,
+   t.erase_preserves_probeChainDominant k hExt⟩
 
 /-- `resize` preserves the full invariant bundle. -/
 theorem RHTable.resize_preserves_invariant [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (hInv : t.invariant) :
+    (t : RHTable α β) :
     (t.resize).invariant :=
   ⟨t.resize_preserves_wf,
    t.resize_preserves_distCorrect,
-   t.resize_preserves_noDupKeys hInv,
-   t.resize_preserves_robinHoodOrdered hInv⟩
+   t.resize_preserves_noDupKeys,
+   t.resize_preserves_robinHoodOrdered⟩
 
 end SeLe4n.Kernel.RobinHood
