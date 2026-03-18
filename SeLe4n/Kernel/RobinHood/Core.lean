@@ -287,7 +287,7 @@ def RHTable.toList [BEq α] [Hashable α] (t : RHTable α β) : List (α × β) 
 
 /-- Internal insert without resize check — used by `resize` to avoid circularity.
     Composes `insertLoop` with table metadata bookkeeping. -/
-private def RHTable.insertNoResize [BEq α] [Hashable α]
+protected def RHTable.insertNoResize [BEq α] [Hashable α]
     (t : RHTable α β) (k : α) (v : β) : RHTable α β :=
   let start := idealIndex k t.capacity t.hCapPos
   let result := insertLoop t.capacity start k v 0
@@ -302,7 +302,7 @@ private def RHTable.insertNoResize [BEq α] [Hashable α]
       rw [insertLoop_preserves_len]; exact t.hSlotsLen }
 
 /-- `insertNoResize` preserves capacity (definitional). -/
-private theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α]
+protected theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α]
     (t : RHTable α β) (k : α) (v : β) :
     (t.insertNoResize k v).capacity = t.capacity := rfl
 
@@ -315,7 +315,7 @@ def RHTable.resize [BEq α] [Hashable α] (t : RHTable α β) : RHTable α β :=
 
 /-- The fold step used by resize preserves capacity.
     Proved via `Array.foldl_induction`. -/
-private theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
+protected theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
     (t : RHTable α β) :
     (t.resize).capacity = t.capacity * 2 := by
   unfold resize fold
@@ -327,7 +327,7 @@ private theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
     intro i acc hAcc
     split
     · exact hAcc
-    · rw [insertNoResize_capacity]; exact hAcc
+    · rw [RHTable.insertNoResize_capacity]; exact hAcc
   exact Array.foldl_induction
     (motive := fun _ (acc : RHTable α β) => acc.capacity = t.capacity * 2)
     (by simp [RHTable.empty])
@@ -353,7 +353,7 @@ def RHTable.insert [BEq α] [Hashable α] (t : RHTable α β) (k : α) (v : β)
 theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α]
     (t : RHTable α β) (k : α) (v : β) :
     (t.insertNoResize k v).size ≤ t.size + 1 := by
-  unfold insertNoResize
+  unfold RHTable.insertNoResize
   dsimp only []
   split <;> omega
 

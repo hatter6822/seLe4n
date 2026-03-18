@@ -121,19 +121,45 @@ All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.
   (via `Array.foldl_induction`)
 - `RHTable.resize_preserves_len` — resize output `slots.size = t.capacity * 2`
 
-The WS-N workstream introduces a formally verified Robin Hood hash table
-with the following planned invariant bundle and preservation theorems (N2–N5):
+**N2 delivered proof surface** (v0.17.2, `SeLe4n/Kernel/RobinHood/Invariant/`):
 
-- **Invariant bundle** (`RHTable.invariant`): conjunction of `wf` (structural
-  consistency), `distCorrect` (probe distance accuracy), `noDupKeys` (key
-  uniqueness), `robinHoodOrdered` (non-decreasing cluster distances).
-- **Preservation theorems** (planned): `insert_preserves_wf`, `insert_preserves_distCorrect`,
-  `insert_preserves_noDupKeys`, `insert_preserves_robinHoodOrdered`;
-  `erase_preserves_wf`, `erase_preserves_distCorrect`, `erase_preserves_noDupKeys`,
-  `erase_preserves_robinHoodOrdered`; `resize_preserves_*` (all four).
-- **Functional correctness** (planned): `get_after_insert_eq`, `get_after_insert_ne`,
-  `get_after_erase_eq`, `get_after_erase_ne`.
-- **Bridge lemmas** (planned): 12 lemmas mirroring `Std.HashMap` proof patterns
+Invariant definitions (`Invariant/Defs.lean`):
+- `distCorrect` — probe distance accuracy for all occupied slots
+- `noDupKeys` — key uniqueness across the table
+- `robinHoodOrdered` — non-decreasing cluster distances (Robin Hood property)
+- `RHTable.invariant` — 4-conjunct bundle: `wf ∧ distCorrect ∧ noDupKeys ∧ robinHoodOrdered`
+- `empty_distCorrect`, `empty_noDupKeys`, `empty_robinHoodOrdered`, `empty_invariant`
+
+WF preservation (`Invariant/Preservation.lean`):
+- `insertNoResize_preserves_wf`, `insert_preserves_wf`, `resize_preserves_wf`,
+  `erase_preserves_wf`
+- `mod_succ_eq` — modular arithmetic increment helper
+- `dist_step_mod` — displacement step for probe distance
+- `countOccupied_le_size` — count bound
+
+distCorrect preservation (`Invariant/Preservation.lean`):
+- `insertLoop_preserves_distCorrect` — full induction proof with modular arithmetic
+- `insertNoResize_preserves_distCorrect`, `insert_preserves_distCorrect`
+- `resize_preserves_distCorrect` — via fold induction
+
+Loop correctness (`Invariant/Preservation.lean`):
+- `insertLoop_countOccupied`, `backshiftLoop_countOccupied`
+- `findLoop_lt`, `findLoop_correct`
+
+Bundle preservation (`Invariant/Preservation.lean`):
+- `insert_preserves_invariant`, `erase_preserves_invariant`,
+  `resize_preserves_invariant`
+
+Lookup correctness signatures (`Invariant/Lookup.lean`):
+- `get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`
+
+The WS-N workstream introduces a formally verified Robin Hood hash table
+with the following remaining planned theorems (N2 in-progress + N3–N5):
+
+- **Remaining N2 proofs** (in progress): `noDupKeys` preservation through
+  insert/erase/resize, `robinHoodOrdered` preservation through insert/erase/resize,
+  lookup correctness proof bodies for `get_after_insert_eq/ne`, `get_after_erase_eq`.
+- **Bridge lemmas** (N3, planned): 12 lemmas mirroring `Std.HashMap` proof patterns
   used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
   `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
 - **Critical path**: `insert_preserves_robinHoodOrdered` (N2-D3) — the Robin
