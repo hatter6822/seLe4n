@@ -153,7 +153,34 @@ private theorem backshiftLoop_preserves_key_absence [BEq α]
       (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[j]'(by
         rw [backshiftLoop_preserves_len, hLen]; exact hj) = some e →
       (e.key == k) = false := by
-  sorry
+  induction fuel generalizing gapIdx slots hLen hAbsent with
+  | zero => simp [backshiftLoop]; exact hAbsent
+  | succ n ih =>
+    unfold backshiftLoop; simp only []
+    have hNext : (gapIdx + 1) % capacity < slots.size := by
+      rw [hLen]; exact Nat.mod_lt _ hCapPos
+    split
+    · exact hAbsent  -- next slot is none → no change
+    · rename_i eNext hSlotNext
+      split
+      · exact hAbsent  -- eNext.dist == 0 → no change
+      · -- backshift: set gap to {eNext with dist - 1}, set nextI to none, recurse
+        have hGap : gapIdx % capacity < slots.size := by
+          rw [hLen]; exact Nat.mod_lt _ hCapPos
+        apply ih
+        intro j' hj' e' hSlot'
+        simp only [Array.getElem_set] at hSlot'
+        split at hSlot'
+        · -- j' = nextI → slot set to none
+          simp at hSlot'
+        · -- j' ≠ nextI
+          simp only [Array.getElem_set] at hSlot'
+          split at hSlot'
+          · -- j' = gapIdx % capacity → slot set to {eNext with dist - 1}
+            simp at hSlot'; obtain rfl := hSlot'
+            exact hAbsent _ (Nat.mod_lt _ hCapPos) eNext hSlotNext
+          · -- j' untouched
+            exact hAbsent j' hj' e' hSlot'
 
 /-- Key `k` is absent from the erased table: after `erase k`, no slot
     contains an entry with key `k`. -/
