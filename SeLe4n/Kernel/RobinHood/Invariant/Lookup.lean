@@ -847,6 +847,127 @@ private theorem insertLoop_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
         exact ih (idx % capacity + 1) kIns vIns (d + 1) slots hLen
           hNeIns hAbsent j hj e hSlot
 
+/-- If `getLoop` returns `some val`, there is a slot with a matching entry. -/
+private theorem getLoop_some_implies_entry [BEq α] [Hashable α]
+    (fuel idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (val : β)
+    (hGet : getLoop fuel idx k d slots capacity hLen hCapPos = some val) :
+    ∃ p (hp : p < capacity) (e : RHEntry α β),
+      slots[p]'(hLen ▸ hp) = some e ∧ (e.key == k) = true ∧ e.value = val := by
+  induction fuel generalizing idx d with
+  | zero => simp [getLoop] at hGet
+  | succ n ih =>
+    unfold getLoop at hGet; simp only [] at hGet
+    have hIdx : idx % capacity < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    split at hGet
+    · simp at hGet
+    · rename_i e hSlot
+      if hKey : e.key == k then
+        simp [hKey] at hGet
+        exact ⟨idx % capacity, Nat.mod_lt _ hCapPos, e, hSlot, hKey, hGet⟩
+      else if hDist : e.dist < d then
+        simp [hKey, hDist] at hGet
+      else
+        simp only [hKey, ite_false, hDist, ite_false] at hGet
+        exact ih (idx % capacity + 1) (d + 1) hGet
+
+/-- If key `k'` is absent from every slot of `t`, then `k'` is absent from
+    every slot of `t.resize`. -/
+private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k' : α)
+    (hAbsent : ∀ j (hj : j < t.capacity) (e : RHEntry α β),
+      t.slots[j]'(t.hSlotsLen ▸ hj) = some e → (e.key == k') = false) :
+    ∀ j (hj : j < (t.resize).capacity) (e : RHEntry α β),
+      (t.resize).slots[j]'((t.resize).hSlotsLen ▸ hj) = some e →
+      (e.key == k') = false := by
+  unfold RHTable.resize RHTable.fold
+  exact Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) =>
+      ∀ j (hj : j < acc.capacity) (e : RHEntry α β),
+        acc.slots[j]'(acc.hSlotsLen ▸ hj) = some e → (e.key == k') = false)
+    (by intro j hj e hSlot; simp [RHTable.empty] at hSlot)
+    (fun i acc hAcc => by
+      cases hSlotI : t.slots[i] with
+      | none => exact hAcc
+      | some eOrig =>
+        have hi : (i : Nat) < t.capacity := by rw [← t.hSlotsLen]; exact i.isLt
+        have hOrigAbs : ¬(eOrig.key == k') = true := by
+          have := hAbsent i hi eOrig (by
+            show t.slots[(i : Nat)]'(t.hSlotsLen ▸ hi) = some eOrig
+            exact hSlotI)
+          simp [this]
+        show ∀ j hj e, (acc.insertNoResize eOrig.key eOrig.value).slots[j]'(
+          (acc.insertNoResize eOrig.key eOrig.value).hSlotsLen ▸ hj) = some e →
+          (e.key == k') = false
+        intro j hj e hSlot
+        unfold RHTable.insertNoResize at hSlot hj; simp only [] at hSlot hj
+        exact insertLoop_absent_ne_key acc.capacity
+          (idealIndex eOrig.key acc.capacity acc.hCapPos) eOrig.key eOrig.value 0
+          acc.slots acc.capacity acc.hSlotsLen acc.hCapPos k' hOrigAbs hAcc j hj e hSlot)
+
+/-- Every entry in the output of `insertLoop` either has (key = kIns, value = vIns)
+    or existed in the input with the same key and value. -/
+private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel idx : Nat) (kIns : α) (vIns : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) :
+    ∀ j (hj : j < capacity) (e : RHEntry α β),
+      (insertLoop fuel idx kIns vIns d slots capacity hLen hCapPos).1[j]'(by
+        rw [insertLoop_preserves_len, hLen]; exact hj) = some e →
+      ((e.key == kIns) = true ∧ e.value = vIns) ∨
+      (∃ q (hq : q < capacity), slots[q]'(hLen ▸ hq) = some e) := by
+  induction fuel generalizing idx kIns vIns d slots hLen with
+  | zero =>
+    intro j hj e hSlot; simp [insertLoop] at hSlot
+    exact Or.inr ⟨j, hj, hSlot⟩
+  | succ n ih =>
+    have hIdx : idx % capacity < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    intro j hj e hSlotR
+    unfold insertLoop at hSlotR; simp only [] at hSlotR
+    cases hSlot : slots[idx % capacity]'hIdx with
+    | none =>
+      simp only [hSlot] at hSlotR
+      simp only [Array.getElem_set] at hSlotR
+      split at hSlotR
+      · cases hSlotR; exact Or.inl ⟨BEq.refl kIns, rfl⟩
+      · exact Or.inr ⟨j, hj, hSlotR⟩
+    | some eOld =>
+      simp only [hSlot] at hSlotR
+      if hKey : eOld.key == kIns then
+        simp only [hKey, ite_true] at hSlotR
+        simp only [Array.getElem_set] at hSlotR
+        split at hSlotR
+        · -- Updated entry: key = eOld.key (== kIns), value = vIns
+          cases hSlotR
+          exact Or.inl ⟨hKey, rfl⟩
+        · exact Or.inr ⟨j, hj, hSlotR⟩
+      else if hRH : eOld.dist < d then
+        simp only [hKey, ite_false, hRH, ite_true] at hSlotR
+        have hLen' : (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx).size
+            = capacity := by rw [Array.size_set]; exact hLen
+        have hIH := ih (idx % capacity + 1) eOld.key eOld.value (eOld.dist + 1)
+          (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) capacity hLen' hCapPos
+          j hj e hSlotR
+        rcases hIH with ⟨hKeyE, hValE⟩ | ⟨q, hq, hSlotQ⟩
+        · -- Entry has key == eOld.key and value == eOld.value.
+          -- eOld was in original slots at idx%cap.
+          exact Or.inr ⟨idx % capacity, Nat.mod_lt _ hCapPos, by
+            rw [hValE]; show slots[idx % capacity]'(hLen ▸ Nat.mod_lt _ hCapPos) =
+              some { eOld with value := eOld.value }
+            simp; exact hSlot⟩
+        · -- Entry from slots' (set array). Check if q = idx%cap.
+          simp only [Array.getElem_set] at hSlotQ
+          split at hSlotQ
+          · -- q = idx%cap: e = ⟨kIns, vIns, d⟩
+            cases hSlotQ; exact Or.inl ⟨BEq.refl kIns, rfl⟩
+          · -- q ≠ idx%cap: e from original slots
+            exact Or.inr ⟨q, hq, hSlotQ⟩
+      else
+        simp only [hKey, ite_false, hRH, ite_false] at hSlotR
+        exact ih (idx % capacity + 1) kIns vIns (d + 1) slots hLen hCapPos j hj e hSlotR
+
 /-- N2-E2: Inserting key `k` does not affect lookups of other keys.
     This ensures insert doesn't corrupt existing mappings.
 
@@ -897,44 +1018,12 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
         (e.key == k') = false := by
       unfold RHTable.insert RHTable.insertNoResize; simp only []
       split
-      · -- Resize case: k' absent from t.resize.slots by same contrapositive argument
-        -- on the resized table (which also satisfies invExt).
+      · -- Resize case: k' absent from t.resize via resize_preserves_key_absence
         intro j hj e hSlot
-        have hResExt := t.resize_preserves_invExt
-        have hAbsRes : ∀ a (ha : a < (t.resize).capacity) (ea : RHEntry α β),
-            (t.resize).slots[a]'((t.resize).hSlotsLen ▸ ha) = some ea →
-            (ea.key == k') = false := by
-          intro a ha ea hSlotA
-          cases hKE : ea.key == k' with
-          | false => rfl
-          | true =>
-            exfalso
-            have hDist := hResExt.2.1 a ha ea hSlotA
-            have hKeyEq : idealIndex ea.key (t.resize).capacity (t.resize).hCapPos
-                = idealIndex k' (t.resize).capacity (t.resize).hCapPos := by
-              rw [eq_of_beq hKE]
-            rw [hKeyEq] at hDist
-            have hdk_lt : ea.dist < (t.resize).capacity := by
-              have := Nat.mod_lt (a + (t.resize).capacity -
-                idealIndex k' (t.resize).capacity (t.resize).hCapPos) (t.resize).hCapPos
-              omega
-            have hFound := getLoop_finds_present (t.resize).capacity
-              (idealIndex k' (t.resize).capacity (t.resize).hCapPos) k' 0
-              (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
-              a ha ea hSlotA hKE rfl
-              hResExt.2.1 hResExt.2.2.2 hResExt.2.2.1
-              (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
-              (by omega) (by omega)
-            -- (t.resize).get? k' = some ea.value, but t.get? k' = none.
-            -- Need: resize preserves the get? mapping.
-            -- TPI-D5: requires resize_preserves_get theorem (~60 lines,
-            -- fold induction showing each insertNoResize preserves existing
-            -- key-value pairs). Deferred.
-            sorry -- TPI-D5: resize_preserves_get
         exact insertLoop_absent_ne_key (t.resize).capacity
           (idealIndex k (t.resize).capacity (t.resize).hCapPos) k v 0
           (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
-          k' hNe hAbsRes j hj e hSlot
+          k' hNe (resize_preserves_key_absence t k' hAbsOrig) j hj e hSlot
       · -- No resize case: direct application
         intro j hj e hSlot
         exact insertLoop_absent_ne_key t.capacity
@@ -944,12 +1033,161 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
     unfold RHTable.get?
     exact getLoop_none_of_absent _ _ _ _ _ _ _ _ hAbsIns
   | some val =>
-    -- TPI-D5: k' present → still present after insert → same lookup result.
-    -- Requires: (1) getLoop_some_implies_present to extract witness position,
-    -- (2) insertLoop_present_ne_entry to show entry survives insert,
-    -- (3) getLoop_finds_present on the result table.
-    -- Each helper is ~50-80 lines; deferred to keep this proof block manageable.
-    sorry -- TPI-D5: some-case pending getLoop_some_implies_present + insertLoop_present_ne_entry
+    -- Step 1: extract witness from t.get? k' = some val
+    obtain ⟨p, hp, eP, hSlotP, hKeyP, hValP⟩ :=
+      getLoop_some_implies_entry t.capacity _ k' 0 t.slots t.capacity t.hSlotsLen t.hCapPos val
+        (by unfold RHTable.get? at hGet; exact hGet)
+    -- Step 2: k' exists in result (by insertLoop_absent_ne_key contrapositive)
+    have hPresent : ∃ p' (hp' : p' < (t.insert k v).capacity) (e' : RHEntry α β),
+        (t.insert k v).slots[p']'((t.insert k v).hSlotsLen ▸ hp') = some e' ∧
+        (e'.key == k') = true := by
+      by_contra hAll; push_neg at hAll
+      -- k' would be absent from result → get? k' = none → contradicts hGet
+      have hAbs : ∀ j (hj : j < (t.insert k v).capacity) (e : RHEntry α β),
+          (t.insert k v).slots[j]'((t.insert k v).hSlotsLen ▸ hj) = some e →
+          (e.key == k') = false := by
+        intro j hj e hSlot
+        by_contra hNF; push_neg at hNF; simp at hNF
+        exact hAll j hj e hSlot hNF
+      have hNone : (t.insert k v).get? k' = none := by
+        unfold RHTable.get?; exact getLoop_none_of_absent _ _ _ _ _ _ _ _ hAbs
+      rw [hNone] at hGet; simp at hGet
+    obtain ⟨p', hp', e', hSlotP', hKeyP'⟩ := hPresent
+    -- Step 3: e'.value = val (via insertLoop_output_source + noDupKeys)
+    -- insertLoop_output_source says e' either has (key=k, value=v) or came from input
+    have hSource := insertLoop_output_source (t.insert k v |>.capacity)
+      (idealIndex k (t.insert k v |>.capacity) (t.insert k v |>.hCapPos))
+      k v 0
+    -- Actually, we need to unfold insert to apply insertLoop_output_source.
+    -- The insert function is: t' = if resize_needed then t.resize else t; t'.insertNoResize k v
+    -- insertNoResize calls insertLoop with fuel=t'.capacity, d=0.
+    -- Let's use a simpler approach: apply insertLoop_output_source to the actual
+    -- insertLoop call inside insert.
+    have hVal : e'.value = val := by
+      -- Unfold insert to get at the insertLoop call
+      unfold RHTable.insert RHTable.insertNoResize at hSlotP'
+      simp only [] at hSlotP'
+      split at hSlotP'
+      · -- Resize case
+        have hResOrig := insertLoop_output_source (t.resize).capacity
+          (idealIndex k (t.resize).capacity (t.resize).hCapPos) k v 0
+          (t.resize).slots (t.resize).capacity (t.resize).hSlotsLen (t.resize).hCapPos
+          p' (by simpa using hp') e' hSlotP'
+        rcases hResOrig with ⟨hKeyK, hValV⟩ | ⟨q, hq, hSlotQ⟩
+        · -- e' has key == k and value v. But e'.key == k' and k ≠ k'. Contradiction.
+          exact absurd (BEq.beq_trans hKeyK.symm hKeyP') hNe
+        · -- e' came from t.resize slots. So e' was in t.resize.
+          -- By resize_preserves_key_absence: if k' absent from t, absent from t.resize.
+          -- But k' IS present in t (at position p). Contrapositive doesn't directly help.
+          -- We need: e' has same key and value as something in t.
+          -- Actually, e' came from t.resize.slots[q] = some e'. And e'.key == k'.
+          -- By noDupKeys of t (hExt.2.2.1): the only entry with key k' in t is eP at p.
+          -- If we can show e' came from t (not just from t.resize), then e' = eP by noDupKeys.
+          -- t.resize = fold over t.slots, inserting each entry. Each entry in t.resize
+          -- came from the fold, which uses insertLoop. By insertLoop_output_source recursively,
+          -- every entry in t.resize either was placed by an insertLoop (with key from t)
+          -- or existed in a prior accumulator (which traces back to t's entries or earlier inserts).
+          -- Ultimately, every entry in t.resize has key and value from some entry in t.
+          -- The entry e' has key k', and the only entry with key k' in t has value val.
+          -- So e'.value = val.
+          -- To formalize this, use resize_output_source (similar to insertLoop_output_source
+          -- but for the fold). Let me use a simpler argument:
+          -- By insertLoop_output_source applied to the resize fold, every entry in t.resize
+          -- has (key, value) from some original entry in t. The fold uses insertNoResize
+          -- which uses insertLoop. By induction on the fold steps (Array.foldl_induction):
+          -- each entry in the accumulator has (key, value) from t.
+          -- Since e' has key k' and the only entry with key k' in t has value val,
+          -- e'.value = val.
+          -- This requires proving resize_output_source, which is complex.
+          -- SIMPLER: since e' came from t.resize.slots[q] and e'.key == k', and
+          -- t.resize satisfies invExt, we can use getLoop_finds_present on t.resize
+          -- to get t.resize.get? k' = some e'.value. Then show t.resize.get? k' = t.get? k'.
+          -- But that's what we're trying to prove (insert ≠ resize, but similar issue).
+          -- ALTERNATIVE: use the fold induction directly. Every entry in t.resize has
+          -- key and value matching some entry from t. This is a simple fold property.
+          -- Let me prove: ∀ entry in t.resize.slots with key k', value = val.
+          -- By Array.foldl_induction:
+          -- Invariant: every entry in acc.slots with key k' has value val.
+          -- Base: empty table has no entries. ✓
+          -- Step: insertNoResize adds eOrig from t. If eOrig.key == k', then
+          -- eOrig.value = val (by noDupKeys of t, eOrig.key == k' = eP.key, so eOrig = eP).
+          -- By insertLoop_output_source on insertNoResize: entries with key k' either
+          -- have (key=eOrig.key, value=eOrig.value) [if eOrig.key == k'] or came from acc
+          -- [which by induction have value val].
+          -- If eOrig.key ≠ k': entries with key k' in output came from acc → value val.
+          -- If eOrig.key == k': new entry has value eOrig.value = val, and entries from
+          -- acc also have value val. ✓
+          -- This is clean but requires a fold induction. Let me write it inline.
+          have hResVal : ∀ a (ha : a < (t.resize).capacity) (ea : RHEntry α β),
+              (t.resize).slots[a]'((t.resize).hSlotsLen ▸ ha) = some ea →
+              (ea.key == k') = true → ea.value = val := by
+            unfold RHTable.resize RHTable.fold
+            exact Array.foldl_induction
+              (motive := fun _ (acc : RHTable α β) =>
+                ∀ a (ha : a < acc.capacity) (ea : RHEntry α β),
+                  acc.slots[a]'(acc.hSlotsLen ▸ ha) = some ea →
+                  (ea.key == k') = true → ea.value = val)
+              (by intro a ha ea hSlotA; simp [RHTable.empty] at hSlotA)
+              (fun i acc hAcc => by
+                cases hSlotI : t.slots[i] with
+                | none => exact hAcc
+                | some eOrig =>
+                  intro a ha ea hSlotA hKeyA
+                  unfold RHTable.insertNoResize at hSlotA ha; simp only [] at hSlotA ha
+                  have hOS := insertLoop_output_source acc.capacity
+                    (idealIndex eOrig.key acc.capacity acc.hCapPos) eOrig.key eOrig.value 0
+                    acc.slots acc.capacity acc.hSlotsLen acc.hCapPos a ha ea hSlotA
+                  rcases hOS with ⟨hKeyO, hValO⟩ | ⟨q', hq', hSlotQ'⟩
+                  · -- ea has key=eOrig.key, value=eOrig.value
+                    -- ea.key == k' and ea.key = eOrig.key, so eOrig.key == k'.
+                    -- By noDupKeys: eOrig at position i in t.slots, eP at position p.
+                    -- Both have key k'. So i = p and eOrig = eP.
+                    rw [hValO]
+                    have hi : (i : Nat) < t.capacity := by rw [← t.hSlotsLen]; exact i.isLt
+                    have hOrigSlot : t.slots[(i : Nat)]'(t.hSlotsLen ▸ hi) = some eOrig := hSlotI
+                    have hKeyOrig : (eOrig.key == k') = true := by
+                      have := eq_of_beq hKeyO; rw [this] at hKeyA; exact hKeyA
+                    have := hExt.2.2.1 i p hi hp eOrig eP hOrigSlot hSlotP
+                      (BEq.beq_trans hKeyOrig hKeyP.symm)
+                    subst this
+                    rw [hOrigSlot] at hSlotP; cases hSlotP
+                    exact hValP.symm
+                  · -- ea came from acc. By induction, ea.value = val.
+                    exact hAcc q' hq' ea hSlotQ' hKeyA)
+          exact hResVal q hq e' hSlotQ hKeyP'
+      · -- No resize case
+        have hOrigSrc := insertLoop_output_source t.capacity
+          (idealIndex k t.capacity t.hCapPos) k v 0
+          t.slots t.capacity t.hSlotsLen t.hCapPos
+          p' (by simpa using hp') e' hSlotP'
+        rcases hOrigSrc with ⟨hKeyK, hValV⟩ | ⟨q, hq, hSlotQ⟩
+        · exact absurd (BEq.beq_trans hKeyK.symm hKeyP') hNe
+        · -- e' = original entry at q with same key and value.
+          -- e'.key == k' and the only entry with key k' in t is eP with value val.
+          have hQP := hExt.2.2.1 q p hq hp e' eP hSlotQ hSlotP
+            (BEq.beq_trans hKeyP' hKeyP.symm)
+          subst hQP
+          rw [hSlotQ] at hSlotP; cases hSlotP
+          exact hValP.symm
+    -- Step 4: use getLoop_finds_present on result table
+    rw [hVal]
+    unfold RHTable.get?
+    have hDE := hInsExt.2.1 p' hp' e' hSlotP'
+    have hKeyEq : idealIndex e'.key (t.insert k v).capacity (t.insert k v).hCapPos
+        = idealIndex k' (t.insert k v).capacity (t.insert k v).hCapPos := by
+      rw [eq_of_beq hKeyP']
+    rw [hKeyEq] at hDE
+    have hdk_lt : e'.dist < (t.insert k v).capacity := by
+      have := Nat.mod_lt (p' + (t.insert k v).capacity -
+        idealIndex k' (t.insert k v).capacity (t.insert k v).hCapPos) (t.insert k v).hCapPos
+      omega
+    exact getLoop_finds_present (t.insert k v).capacity
+      (idealIndex k' (t.insert k v).capacity (t.insert k v).hCapPos) k' 0
+      (t.insert k v).slots (t.insert k v).capacity (t.insert k v).hSlotsLen (t.insert k v).hCapPos
+      p' hp' e' hSlotP' hKeyP' rfl
+      hInsExt.2.1 hInsExt.2.2.2 hInsExt.2.2.1
+      (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
+      (by omega) (by omega)
 
 /-- N2-E3: After erasing key `k`, looking up `k` returns `none`.
     Proved via `getLoop_none_of_absent`: key `k` is not in the erased table
@@ -962,3 +1200,4 @@ theorem RHTable.get_after_erase_eq [BEq α] [Hashable α] [LawfulBEq α]
     (erase_removes_key t k hExt)
 
 end SeLe4n.Kernel.RobinHood
+-- test comment
