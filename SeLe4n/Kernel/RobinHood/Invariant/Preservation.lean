@@ -407,6 +407,43 @@ private theorem dist_step_mod (i h cap : Nat) (hCapPos : 0 < cap)
   rw [key, Nat.add_mul_mod_self_left]
 
 -- ============================================================================
+-- Section 9a: Gap consistency — cluster continuity invariant
+-- ============================================================================
+
+/-- Gap consistency: an occupied slot with dist > 0 must have an occupied
+    predecessor.  This invariant is maintained by all operations and is
+    required for noDupKeys preservation proofs. -/
+def gapConsistent
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    : Prop :=
+  ∀ (i : Nat) (hi : i < capacity) (e : RHEntry α β),
+    slots[(i + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e →
+    e.dist > 0 →
+    ∃ e', slots[i]'(by rw [hLen]; exact hi) = some e'
+
+/-- Table-level gap consistency. -/
+def RHTable.gapConsistent (t : RHTable α β) : Prop :=
+  SeLe4n.Kernel.RobinHood.gapConsistent t.slots t.capacity t.hSlotsLen t.hCapPos
+
+/-- Empty tables trivially satisfy gap consistency. -/
+theorem RHTable.empty_gapConsistent (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).gapConsistent := by
+  intro i hi e hSlot _
+  simp [RHTable.empty] at hSlot
+
+/-- Extended invariant: WF + distCorrect + noDupKeys + robinHoodOrdered +
+    gapConsistent.  The gap consistency property is required to prove
+    noDupKeys and robinHoodOrdered preservation. -/
+def RHTable.invExt [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+  t.invariant ∧ t.gapConsistent
+
+/-- Empty tables satisfy the extended invariant. -/
+theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).invExt :=
+  ⟨RHTable.empty_invariant cap hPos, RHTable.empty_gapConsistent cap hPos⟩
+
+-- ============================================================================
 -- Section 10: insertLoop preserves distCorrect (N2-B2)
 -- ============================================================================
 
