@@ -1816,13 +1816,14 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
       -- So (h + dist) % cap = (gap + 1) % cap, meaning p = (gap + 1) % cap
       have hEDist := hDist p hp e hSlot
       have hPEq : p = (idealIndex e.key capacity hCapPos + e.dist) % capacity := by
+        have hpMod : p % capacity = p := Nat.mod_eq_of_lt hp
         have hEDist' : e.dist = (p % capacity + capacity -
             idealIndex e.key capacity hCapPos) % capacity := by
-          rw [Nat.mod_eq_of_lt hp] at hEDist ⊢; exact hEDist
+          rw [hpMod]; exact hEDist
         have hdr := displacement_roundtrip p (idealIndex e.key capacity hCapPos) capacity
           hCapPos (idealIndex_lt e.key capacity hCapPos) e.dist hEDist'
           (by rw [hEDist']; exact Nat.mod_lt _ hCapPos)
-        rw [Nat.mod_eq_of_lt hp] at hdr; exact hdr.symm
+        rw [hpMod] at hdr; exact hdr.symm
       have hStep : (idealIndex e.key capacity hCapPos + e.dist) % capacity =
           (gap + 1) % capacity := by
         rw [show idealIndex e.key capacity hCapPos + e.dist =
@@ -1840,7 +1841,7 @@ private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
         have : p = (gap + 1) % capacity := by rw [hPEq, hStep]
         simp only [this] at hSlot; exact hSlot
       rcases hNextInactive with hNone | ⟨ne, hne, hne0⟩
-      · rw [hNone] at hSlot2; exact Option.noConfusion hSlot2
+      · rw [hNone] at hSlot2; exact absurd hSlot2 (by simp)
       · rw [hne] at hSlot2
         have := Option.some.inj hSlot2; subst this; omega
 
