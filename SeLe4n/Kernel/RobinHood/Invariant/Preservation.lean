@@ -1850,7 +1850,155 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
         (by rw [Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos))
       capacity
       (by rw [Array.size_set, Array.size_set, hLen]) hCapPos := by
-  sorry
+  -- We need: for all occupied p in slots'', for all d < e.dist,
+  -- (h+d)%cap = (gap+1)%cap ∨ ∃ e' at (h+d)%cap with e'.dist ≥ d.
+  -- slots'' = (slots.set gap%cap (some {nextE with dist-1})).set (gap+1)%cap none
+  let gM := gap % capacity
+  let nM := (gap + 1) % capacity
+  have hgM : gM < capacity := Nat.mod_lt _ hCapPos
+  have hnM : nM < capacity := Nat.mod_lt _ hCapPos
+  intro p hp e hSlot d hd
+  -- Reading from slots'': first peel off the outer set at nM
+  simp only [Array.getElem_set] at hSlot
+  split at hSlot
+  · -- p = nM: slots''[p] = none, contradiction with some e
+    simp at hSlot
+  · rename_i hpNeN
+    -- Now peel off inner set at gM
+    simp only [Array.getElem_set] at hSlot
+    split at hSlot
+    · -- p = gM: slots''[p] = some {nextE with dist := nextE.dist - 1}
+      rename_i hpEqG
+      have hEInj := Option.some.inj hSlot
+      -- e = {nextE with dist := nextE.dist - 1}
+      -- e.key = nextE.key, e.dist = nextE.dist - 1
+      -- nextE was at (gap+1)%cap in original slots with dist = nextE.dist
+      -- distCorrect says nextE.dist = ((gap+1)%cap + cap - idealIndex nextE.key cap) % cap
+      -- After shift, e is at gap%cap with dist = nextE.dist - 1
+      -- We need: for d < nextE.dist - 1, (idealIndex nextE.key cap + d)%cap = nM ∨ witness
+      -- idealIndex e.key = idealIndex nextE.key (same key)
+      -- Since nextE was at nM with dist nextE.dist, by distCorrect:
+      --   nextE.dist = (nM + cap - idealIndex nextE.key cap) % cap
+      -- So idealIndex nextE.key + nextE.dist ≡ nM (mod cap)
+      -- and idealIndex nextE.key + (nextE.dist - 1) ≡ gM (mod cap)
+      -- For d < nextE.dist - 1, d < nextE.dist, so from hRelaxed applied to
+      -- the original entry at nM: (idealIndex nextE.key + d) % cap = gM (old gap) ∨ witness
+      have hNextDistC := hDist nM hnM nextE hNextSome
+      have hKeyEq : e.key = nextE.key := by
+        have : e = { nextE with dist := nextE.dist - 1 } := by
+          exact congrArg Option.get! (by rw [← hEInj]; rfl) |>.symm |>.symm
+          <;> simp_all
+        sorry
+      sorry
+    · -- p ≠ gM, p ≠ nM: slots''[p] = slots[p] = some e (unchanged)
+      rename_i hpNeG
+      -- From original slots, e is at p. By hRelaxed: (h+d)%cap = gM ∨ witness
+      have hOrig : slots[p]'(by rw [hLen]; exact hp) = some e := hSlot
+      have hR := hRelaxed p hp e hOrig d hd
+      rcases hR with hGap | ⟨e', he', hge'⟩
+      · -- (h+d)%cap = gM (old gap). But we moved nextE there.
+        -- New slots''[gM] = some {nextE with dist-1}. Need dist-1 ≥ d.
+        -- nextE.dist = (nM + cap - idealIndex nextE.key) % cap  (distCorrect)
+        -- From original: e at p with d < e.dist, (h+d)%cap = gM
+        -- If d+1 < e.dist, then by hRelaxed for d+1: (h+d+1)%cap = gM ∨ witness at (h+d+1)%cap
+        -- (h+d+1)%cap = (gM+1)%cap = nM, and slots[nM] = some nextE
+        -- So from relaxedPCD at d+1: (h+d+1)%cap = gM ∨ ∃ e' at nM with e'.dist ≥ d+1
+        -- (h+d+1)%cap = nM ≠ gM (by hNe), so must have e' = nextE with nextE.dist ≥ d+1
+        -- So nextE.dist - 1 ≥ d, and we can use the entry at gM in slots''.
+        -- If d+1 = e.dist, then ... need another argument.
+        -- Actually d < e.dist, so d+1 ≤ e.dist.
+        -- Case d+1 < e.dist: use argument above.
+        -- Case d+1 = e.dist: use distCorrect. e.dist = (p + cap - h) % cap.
+        --   (h + e.dist) % cap = p. (h + d) % cap = gM. (h + d + 1) % cap = nM.
+        --   But (h + e.dist) % cap = p and d + 1 = e.dist, so p = nM.
+        --   But p ≠ nM (hpNeN). Contradiction!
+        -- So we always have d+1 < e.dist in this branch.
+        have hd1 : d + 1 < e.dist := by
+          by_contra h_not
+          push_neg at h_not
+          have hd1_eq : d + 1 = e.dist := by omega
+          -- (h + d) % cap = gM, so (h + d + 1) % cap = nM
+          have hWitN : (idealIndex e.key capacity hCapPos + (d + 1)) % capacity = nM := by
+            rw [show idealIndex e.key capacity hCapPos + (d + 1) =
+                (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
+            calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
+                = ((idealIndex e.key capacity hCapPos + d) % capacity +
+                    1 % capacity) % capacity := Nat.add_mod _ 1 _
+              _ = (gM + 1 % capacity) % capacity := by rw [hGap]
+              _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
+          -- (h + e.dist) % cap = p by displacement_roundtrip
+          have hEDist := hDist p hp e hOrig
+          have hpMod : p % capacity = p := Nat.mod_eq_of_lt hp
+          have hEDist' : e.dist = (p % capacity + capacity -
+              idealIndex e.key capacity hCapPos) % capacity := by
+            rw [hpMod]; exact hEDist
+          have hdr := displacement_roundtrip p (idealIndex e.key capacity hCapPos) capacity
+            hCapPos (idealIndex_lt e.key capacity hCapPos) e.dist hEDist'
+            (by rw [hEDist']; exact Nat.mod_lt _ hCapPos)
+          rw [hpMod] at hdr
+          -- p = (h + e.dist) % cap = (h + d + 1) % cap = nM
+          rw [hd1_eq] at hWitN
+          have : p = nM := by rw [hdr]; exact hWitN.symm ▸ hdr |>.symm; exact hWitN.symm
+          exact absurd this hpNeN
+        -- Now d + 1 < e.dist, get relaxedPCD witness at d+1
+        have hR2 := hRelaxed p hp e hOrig (d + 1) hd1
+        have hWitNext : (idealIndex e.key capacity hCapPos + (d + 1)) % capacity = nM := by
+          rw [show idealIndex e.key capacity hCapPos + (d + 1) =
+              (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
+          calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
+              = ((idealIndex e.key capacity hCapPos + d) % capacity +
+                  1 % capacity) % capacity := Nat.add_mod _ 1 _
+            _ = (gM + 1 % capacity) % capacity := by rw [hGap]
+            _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
+        rcases hR2 with hGap2 | ⟨e'2, he'2, hge'2⟩
+        · -- (h+d+1)%cap = gM, but we showed = nM, and gM ≠ nM
+          rw [hWitNext] at hGap2; exact absurd hGap2 hNe.symm
+        · -- e'2 at nM with e'2.dist ≥ d+1. So e'2 = nextE.
+          rw [hWitNext] at he'2
+          have hEq : e'2 = nextE := Option.some.inj he'2
+          subst hEq
+          -- nextE.dist ≥ d + 1, so nextE.dist - 1 ≥ d
+          -- Provide witness at gM in slots'' = some {nextE with dist-1}
+          right
+          refine ⟨{ nextE with dist := nextE.dist - 1 }, ?_, by omega⟩
+          -- Need: slots''[(h+d)%cap] = some {nextE with dist-1}
+          -- (h+d)%cap = gM = gap%cap
+          simp only [Array.getElem_set]
+          -- Outer set: (h+d)%cap vs nM
+          split
+          · -- (h+d)%cap = nM, but (h+d)%cap = gM ≠ nM
+            rename_i hEq; rw [hGap] at hEq; exact absurd hEq hNe
+          · -- Inner set: (h+d)%cap vs gM
+            simp only [Array.getElem_set]
+            split
+            · rfl
+            · -- (h+d)%cap ≠ gM, but hGap says = gM
+              rename_i hNeG2; exact absurd hGap hNeG2
+      | ⟨e', he', hge'⟩ =>
+        -- Witness at (h+d)%cap in original slots. Show it survives in slots''.
+        let w := (idealIndex e.key capacity hCapPos + d) % capacity
+        by_cases hwN : w = nM
+        · -- w = nM = (gap+1)%cap. In slots'', this is none. So excuse it.
+          left; exact hwN
+        · by_cases hwG : w = gM
+          · -- w = gM = gap%cap. In slots'', this is some {nextE with dist-1}.
+            -- Need {nextE with dist-1}.dist ≥ d.
+            -- From e' at w=gM in original slots: slots[gM] = some e'. But hGapNone
+            -- says slots[gM] = none. Contradiction!
+            exfalso
+            have : slots[gM]'(by rw [hLen]; exact hgM) = some e' := by
+              rw [← hwG] at he'; exact he'
+            rw [hGapNone] at this; exact absurd this (by simp)
+          · -- w ≠ nM, w ≠ gM: slots''[w] = slots[w] = some e'
+            right
+            refine ⟨e', ?_, hge'⟩
+            simp only [Array.getElem_set]
+            split
+            · rename_i hEq; exact absurd hEq hwN
+            · simp only [Array.getElem_set]
+              split
+              · rename_i hEq; exact absurd hEq hwG
+              · exact he'
 
 -- ============================================================================
 -- Section 11c: backshiftLoop PCD preservation
