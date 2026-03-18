@@ -25,7 +25,19 @@ private theorem getLoop_none_of_absent [BEq α] [Hashable α]
     (hAbsent : ∀ j (hj : j < capacity) (e : RHEntry α β),
       slots[j]'(by rw [hLen]; exact hj) = some e → (e.key == k) = false) :
     getLoop fuel idx k d slots capacity hLen hCapPos = none := by
-  sorry
+  induction fuel generalizing idx d with
+  | zero => simp [getLoop]
+  | succ n ih =>
+    unfold getLoop; simp only []
+    have hIdx : idx % capacity < capacity := Nat.mod_lt _ hCapPos
+    split
+    · rfl  -- none slot → return none
+    · rename_i e hSlot
+      have hKeyNe := hAbsent (idx % capacity) hIdx e hSlot
+      rw [hKeyNe]; simp only [Bool.false_eq_true, ↓reduceIte]
+      split
+      · rfl  -- e.dist < d → return none
+      · exact ih (idx % capacity + 1) (d + 1)
 
 /-- When `findLoop` returns `none`, key `k` is absent from the table.
     By induction on fuel, each step either terminates at an empty slot or
@@ -43,6 +55,7 @@ private theorem findLoop_none_implies_absent [BEq α] [Hashable α] [LawfulBEq �
     (hNotFound : ∀ d', d' < d →
       ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
         rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' → (e'.key == k) = false)
+    (hFuelBound : capacity ≤ d + fuel)
     (hNone : findLoop fuel idx k d slots capacity hLen hCapPos = none) :
     ∀ j (hj : j < capacity) (e : RHEntry α β),
       slots[j]'(by rw [hLen]; exact hj) = some e → (e.key == k) = false := by
