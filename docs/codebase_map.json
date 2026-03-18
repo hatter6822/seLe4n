@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "d88b8edef6ab31b295289289a89e91060e5fba01",
-      "tree_sha": "74d5b655109e3234cb70b00a6a2ae5fba4d664cb",
-      "committed_at_utc": "2026-03-18T15:13:48+00:00"
+      "commit_sha": "da19e709c7a8e8dfd164a58703b225e9f259b966",
+      "tree_sha": "e520601f2b10e817c06121ecae6a981ece0fbe9d",
+      "committed_at_utc": "2026-03-18T15:21:31+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0641ebe9ecf7704eb88b22cf662c459d1c442a58047852b1178d02f3b3090656"
+    "source_digest": "c485f6c85befbf462b651801c649693daf5098db73dd2e141486fd74617fe329"
   },
   "summary": {
     "module_count": 81,
@@ -27,7 +27,7 @@
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 42990,
+    "production_loc": 43003,
     "test_files": 4,
     "test_loc": 5256,
     "proved_theorem_lemma_decls": 1348,
@@ -9726,19 +9726,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 56,
+          "line": 69,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 63,
+          "line": 76,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 72,
+          "line": 85,
           "called": [
             "erase_removes_key",
             "getLoop_none_of_absent"

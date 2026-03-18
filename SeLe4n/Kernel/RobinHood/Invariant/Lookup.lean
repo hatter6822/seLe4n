@@ -49,7 +49,20 @@ private theorem erase_removes_key [BEq α] [Hashable α] [LawfulBEq α]
     ∀ j (hj : j < (t.erase k).capacity) (e : RHEntry α β),
       (t.erase k).slots[j]'(by rw [(t.erase k).hSlotsLen]; exact hj) = some e →
       (e.key == k) = false := by
-  sorry -- TPI-D6a: erase removes key (structural argument from findLoop + backshift)
+  simp only [RHTable.erase]
+  split
+  · -- Key not found: table unchanged. k was not in table, so trivially absent.
+    -- Actually if findLoop returns none, t.erase k = t. Need to show k absent.
+    -- But we have hExt : t.invExt. If k was in table, findLoop should find it.
+    -- So if findLoop returns none, k was already absent from t.
+    sorry -- TPI-D6a: findLoop returns none → k absent (structural)
+  · -- Key found at idx: clear + backshift
+    rename_i idx hFound
+    intro j hj e hSlot
+    -- After backshiftLoop, the entries are from the cleared table
+    -- The cleared table has no entry with key k (noDupKeys + clear)
+    -- backshiftLoop doesn't introduce new keys
+    sorry -- TPI-D6a: backshift preserves key absence (structural)
 
 /-- N2-E1: After inserting key `k` with value `v`, looking up `k` returns `v`.
     This is the fundamental correctness theorem for Robin Hood insertion. -/
