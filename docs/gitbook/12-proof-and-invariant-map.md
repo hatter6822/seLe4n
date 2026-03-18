@@ -116,9 +116,10 @@ All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.
   (by induction on fuel)
 - `backshiftLoop_preserves_len` — array size preservation through backward-shift
   erasure (by induction on fuel)
-- `backshiftLoop_slotsLen` — bridge: backshift output size equals capacity
 - `RHTable.insertNoResize_size_le` — insertion increases size by at most 1
-- `RHTable.resize_slotsLen` — resize output slots match declared capacity
+- `RHTable.resize_fold_capacity` — resize output capacity equals `t.capacity * 2`
+  (via `Array.foldl_induction`)
+- `RHTable.resize_preserves_len` — resize output `slots.size = t.capacity * 2`
 
 The WS-N workstream introduces a formally verified Robin Hood hash table
 with the following planned invariant bundle and preservation theorems (N2–N5):

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-core-types-operations-pbzWv",
-      "commit_sha": "27921829323e7dca21f6cc2b2dc2810ea380ecda",
-      "tree_sha": "179cefd8dd240c74a8ec996fea534f3b43cfe6ea",
-      "committed_at_utc": "2026-03-17T23:59:33+00:00"
+      "commit_sha": "651674df32c3c9d7a3d7d5da4dfee1fd0d767455",
+      "tree_sha": "7e9e41bb103b6044b3e8cfa515d401c50dafc74f",
+      "committed_at_utc": "2026-03-18T00:23:59+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5bb487047ebc3d60b2c7ca6c2e60005a5738e5d73368839d17864bc7d0624bdc"
+    "source_digest": "afd8f3cb8cd8c4fd16be925f75d7c8c8b60dd47111752954e7976665e925e616"
   },
   "summary": {
     "module_count": 77,

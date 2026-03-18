@@ -224,7 +224,7 @@ def backshiftLoop
     match slots[nextI] with
     | none => slots
     | some e =>
-      if e.dist = 0 then slots
+      if e.dist == 0 then slots
       else
         have hGap : gapIdx % capacity < slots.size := by
           rw [hLen]; exact Nat.mod_lt _ hCapPos
