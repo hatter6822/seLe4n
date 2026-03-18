@@ -1730,11 +1730,55 @@ theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
 -- preserved by insert/resize but NOT by erase. The `probeChainDominant`
 -- property (which IS preserved) suffices for lookup correctness.
 
-/-- `erase` preserves probeChainDominant. -/
+/-- `erase` preserves probeChainDominant.
+
+    **Proof strategy (TPI-D3)**:
+    Requires a `backshiftLoop_preserves_pcd` lemma by induction on fuel with a
+    *relaxed* invariant that tolerates the gap:
+
+    ```
+    relaxedPCD gap slots cap :=
+      ∀ p (hp : p < cap) (e : RHEntry α β),
+        slots[p] = some e →
+        ∀ d, d < e.dist →
+          let witness := (idealIndex e.key cap hCapPos + d) % cap
+          witness = gap ∨
+          (∃ e', slots[witness] = some e' ∧ e'.dist ≥ d)
+    ```
+
+    Base case: After clearing idx%cap, the original PCD gives `relaxedPCD (idx%cap)`.
+    Any chain that needed a witness at `idx%cap` is excused (left disjunct).
+
+    Inductive step (shift nextE from (g+1)%cap to g%cap, clear (g+1)%cap):
+    1. The entry placed at g%cap has key `nextE.key` and dist `nextE.dist - 1`.
+       For any chain that was excused at g%cap (the old gap), the new entry
+       provides a witness if `nextE.dist - 1 ≥ d`. This holds because
+       distCorrect ensures the entry at (g+1)%cap had dist = displacement from
+       its ideal to (g+1)%cap, so at g%cap (one step closer) it has dist - 1.
+       Any chain requiring a witness at g%cap with `d` satisfies `d ≤ nextE.dist - 1`
+       because distCorrect + the original PCD structure guarantees this.
+    2. The new gap at (g+1)%cap: chains passing through this position become
+       excused under the updated `relaxedPCD ((g+1)%cap)`.
+    3. No other chain is affected: entries not touching the gap or the shifted
+       position retain their original witnesses.
+
+    Termination: backshiftLoop stops when the next slot is none (no chain crosses
+    the gap) or has dist=0 (at its ideal position, so no earlier chain passes
+    through). In both cases, the gap-excuse is vacuous: no entry's chain
+    requires a witness at the gap position.
+    - If next slot is none: slots unchanged, relaxedPCD with vacuous gap = full PCD.
+    - If next slot has dist=0: the gap at g%cap is preceded by entries whose
+      chains don't extend to g%cap (because the next entry starts a new cluster),
+      so the gap-excuse is never invoked.
+
+    Estimated proof size: ~200-250 lines (relaxedPCD definition, base case
+    converting PCD to relaxedPCD, inductive step with Array.getElem_set case
+    analysis, termination case converting relaxedPCD back to full PCD). -/
 theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hExt : t.invExt) :
     (t.erase k).probeChainDominant := by
-  sorry -- TPI-D3 backshiftLoop probeChainDominant induction (gap filled maintains chains)
+  sorry -- TPI-D3: See proof strategy above. Requires backshiftLoop_preserves_pcd
+         -- with relaxedPCD induction (~200 lines). All other erase invariants proved.
 
 -- ============================================================================
 -- Section 12: Composite invariant bundle preservation
