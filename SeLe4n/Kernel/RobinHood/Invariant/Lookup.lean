@@ -740,8 +740,7 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
     (motive := fun _ (acc : RHTable α β) =>
       ∀ j (hj : j < acc.capacity) (e : RHEntry α β),
         acc.slots[j]'(acc.hSlotsLen ▸ hj) = some e → (e.key == k') = false)
-  · intro j hj e hSlot
-    simp [RHTable.empty] at hSlot
+  · intro j hj e hSlot; simp [RHTable.empty] at hSlot
   · intro ⟨i, hi⟩ acc hAcc
     split
     · exact hAcc
@@ -749,14 +748,14 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
       have hOrigAbsent : (eOrig.key == k') = false := by
         have hi' : i < t.capacity := by rw [← t.hSlotsLen]; exact hi
         exact hAbsent i hi' eOrig hSlotOrig
-      unfold RHTable.insertNoResize
-      simp only []
+      unfold RHTable.insertNoResize; simp only []
       intro j hj e' hSlot'
       exact insertLoop_absent_ne_key acc.capacity
         (idealIndex eOrig.key acc.capacity acc.hCapPos)
         eOrig.key eOrig.value 0
         acc.slots acc.capacity acc.hSlotsLen acc.hCapPos
         k' (by rw [hOrigAbsent]; simp) hAcc j hj e' hSlot'
+
 
 /-- Every entry in the output of `insertLoop` either has (key = kIns, value = vIns)
     or existed in the input with the same key and value. -/
@@ -849,3 +848,159 @@ theorem RHTable.get_after_erase_eq [BEq α] [Hashable α] [LawfulBEq α]
     (erase_removes_key t k hExt)
 
 end SeLe4n.Kernel.RobinHood
+
+/-- If every element of a list satisfies `p`, then `countP p = length`. -/
+private theorem List.countP_eq_length {p : α → Bool} :
+    ∀ (l : List α), (∀ i (hi : i < l.length), p (l.get ⟨i, hi⟩) = true) →
+    l.countP p = l.length := by
+  intro l h
+  induction l with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.countP_cons, List.length_cons]
+    have hx : p x = true := by have := h 0 (by omega); simp [List.get] at this; exact this
+    rw [hx]; simp only [ite_true]
+    rw [ih (fun i hi => by have := h (i + 1) (by omega); simp [List.get] at this; exact this)]
+
+/-- If `countOccupied slots < capacity`, there exists an empty slot. -/
+private theorem exists_empty_slot
+    (slots : Array (Option (RHEntry α β))) (cap : Nat)
+    (hLen : slots.size = cap) (_hCapPos : 0 < cap)
+    (hLt : countOccupied slots < cap) :
+    ∃ j, ∃ hj : j < cap, slots[j]'(hLen ▸ hj) = none := by
+  by_contra h; push_neg at h
+  have hAllSome : ∀ j (hj : j < cap), (slots[j]'(hLen ▸ hj)).isSome = true := by
+    intro j hj
+    have := h j hj
+    cases hSlot : slots[j]'(hLen ▸ hj) with
+    | none => exact absurd rfl (this (by intro e he; rw [hSlot] at he; simp at he))
+    | some _ => rfl
+  have hCount : countOccupied slots = cap := by
+    unfold countOccupied; rw [← hLen]
+    apply List.countP_eq_length
+    intro i hi
+    rw [Array.length_toList] at hi
+    have hLt' : i < cap := by rw [← hLen]; exact hi
+    show (slots.toList[i]).isSome = true
+    rw [Array.getElem_toList]; exact hAllSome i hLt'
+  omega
+
+/-- Any position is reachable from any starting index within `cap` steps. -/
+private theorem position_reachable
+    (idx j cap : Nat) (hCapPos : 0 < cap) (hj : j < cap) :
+    ∃ s, s < cap ∧ (idx + s) % cap = j := by
+  refine ⟨(j + cap - idx % cap) % cap, Nat.mod_lt _ hCapPos, ?_⟩
+  have hIdxMod := Nat.mod_lt idx hCapPos
+  by_cases hge : j ≥ idx % cap
+  · have hval : (j + cap - idx % cap) % cap = j - idx % cap := by
+      have h1 : j + cap - idx % cap = (j - idx % cap) + cap := by omega
+      rw [h1, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+    rw [hval, Nat.add_mod, Nat.mod_self_add _ hCapPos, Nat.mod_eq_of_lt (by omega)]
+    have : idx % cap + (j - idx % cap) = j := by omega
+    rw [this, Nat.mod_eq_of_lt hj]
+  · have hlt := Nat.lt_of_not_le hge
+    have hval : (j + cap - idx % cap) % cap = j + cap - idx % cap := by
+      exact Nat.mod_eq_of_lt (by omega)
+    rw [hval, Nat.add_mod, Nat.mod_self_add _ hCapPos, Nat.mod_eq_of_lt (by omega)]
+    have : idx % cap + (j + cap - idx % cap) = j + cap := by omega
+    rw [this, Nat.add_mod_right, Nat.mod_eq_of_lt hj]
+
+/-- After `insert k v`, the result table contains key k with value v. -/
+private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invariant) :
+    ∃ p, ∃ hp : p < (t.insert k v).capacity,
+      ∃ e : RHEntry α β,
+        (t.insert k v).slots[p]'((t.insert k v).hSlotsLen ▸ hp) = some e
+        ∧ (e.key == k) = true ∧ e.value = v := by
+  unfold RHTable.insert
+  split
+  · unfold RHTable.insertNoResize; simp only []
+    have hRes := t.resize_preserves_invariant
+    have hResCap : 0 < (t.resize).capacity := hRes.1.capPos
+    apply insertLoop_places_key; · omega
+    · have hNewCap : (t.resize).capacity = t.capacity * 2 := RHTable.resize_fold_capacity t
+      have hLt : countOccupied (t.resize).slots < (t.resize).capacity := by
+        rw [← hRes.1.sizeCount, hNewCap]; have := hExt.1.sizeBound; omega
+      obtain ⟨j, hj, hNone⟩ := exists_empty_slot (t.resize).slots
+        (t.resize).capacity (t.resize).hSlotsLen hResCap hLt
+      obtain ⟨s, hs, hEq⟩ := position_reachable
+        (idealIndex k (t.resize).capacity hResCap) j (t.resize).capacity hResCap hj
+      exact ⟨s, hs, Or.inl (by rw [hEq]; exact hNone)⟩
+  · unfold RHTable.insertNoResize; simp only []
+    apply insertLoop_places_key; · omega
+    · rename_i hNoResize; push_neg at hNoResize
+      have hSizeLt : t.size < t.capacity := by omega
+      have hLt : countOccupied t.slots < t.capacity := by rw [← hExt.1.sizeCount]; exact hSizeLt
+      obtain ⟨j, hj, hNone⟩ := exists_empty_slot t.slots t.capacity t.hSlotsLen t.hCapPos hLt
+      obtain ⟨s, hs, hEq⟩ := position_reachable
+        (idealIndex k t.capacity t.hCapPos) j t.capacity t.hCapPos hj
+      exact ⟨s, hs, Or.inl (by rw [hEq]; exact hNone)⟩
+
+/-- N2-E1: After inserting key `k` with value `v`, looking up `k` returns `v`. -/
+theorem RHTable.get_after_insert_eq [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invariant) :
+    (t.insert k v).get? k = some v := by
+  have hIns := t.insert_preserves_invariant k v hExt
+  obtain ⟨p, hp, e, hSlotP, hKey, hVal⟩ := insert_has_key t k v hExt
+  unfold RHTable.get?
+  exact getLoop_finds_present
+    (t.insert k v).capacity
+    (idealIndex k (t.insert k v).capacity (t.insert k v).hCapPos)
+    k 0 (t.insert k v).slots (t.insert k v).capacity
+    (t.insert k v).hSlotsLen (t.insert k v).hCapPos
+    p hp e hSlotP hKey hVal hIns.2.1 hIns.2.2.2 hIns.2.2.1
+    (by simp [Nat.mod_eq_of_lt (idealIndex_lt k (t.insert k v).capacity
+      (t.insert k v).hCapPos)])
+    (by omega) (by omega)
+
+/-- Every entry in the output of `insertLoop` either has (key = kIns, value = vIns)
+    or existed in the input with the same key and value. -/
+private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel idx : Nat) (kIns : α) (vIns : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) :
+    ∀ j (hj : j < capacity) (e : RHEntry α β),
+      (insertLoop fuel idx kIns vIns d slots capacity hLen hCapPos).1[j]'(by
+        rw [insertLoop_preserves_len, hLen]; exact hj) = some e →
+      ((e.key == kIns) = true ∧ e.value = vIns) ∨
+      (∃ q, ∃ hq : q < capacity, slots[q]'(hLen ▸ hq) = some e) := by
+  induction fuel generalizing idx kIns vIns d slots hLen with
+  | zero => simp [insertLoop]; intro j hj e hSlot; exact Or.inr ⟨j, hj, hSlot⟩
+  | succ n ih =>
+    unfold insertLoop; simp only []
+    have hIdx : idx % capacity < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    have hIdxLt : idx % capacity < capacity := Nat.mod_lt _ hCapPos
+    intro j hj eJ hSlotJ
+    split at hSlotJ
+    · -- empty slot
+      simp [Array.getElem_set] at hSlotJ
+      split at hSlotJ
+      · cases hSlotJ; exact Or.inl ⟨BEq.refl, rfl⟩
+      · exact Or.inr ⟨j, hj, hSlotJ⟩
+    · rename_i e hSlot
+      split at hSlotJ
+      · -- key match
+        simp [Array.getElem_set] at hSlotJ
+        split at hSlotJ
+        · cases hSlotJ; exact Or.inl ⟨by assumption, rfl⟩
+        · exact Or.inr ⟨j, hj, hSlotJ⟩
+      · split at hSlotJ
+        · -- Robin Hood swap: kIns→idx%cap, e displaced forward
+          have hLenSet := show (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩)
+            hIdx).size = capacity from by rw [Array.size_set]; exact hLen
+          have := ih (idx % capacity + 1) e.key e.value (e.dist + 1)
+            (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) hLenSet
+            j hj eJ hSlotJ
+          rcases this with ⟨hKeyEq, hValEq⟩ | ⟨q, hq, hOrig⟩
+          · -- eJ.key == e.key (the displaced entry's key) and eJ.value = e.value
+            -- e came from slots[idx%cap], so eJ has e's key
+            -- eJ exists in original slots at idx%cap
+            right; simp [Array.getElem_set] at hOrig
+          · -- eJ existed in the set-array at position q
+            simp [Array.getElem_set] at hOrig
+            split at hOrig
+            · -- q = idx%cap: eJ = ⟨kIns, vIns, d⟩
+              cases hOrig; exact Or.inl ⟨BEq.refl, rfl⟩
+            · exact Or.inr ⟨q, hq, hOrig⟩
+        · -- continue probing
+          exact ih (idx % capacity + 1) kIns vIns (d + 1) slots hLen j hj eJ hSlotJ
